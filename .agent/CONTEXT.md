@@ -149,6 +149,14 @@ individually:
 learned_dir)` is the factory: it instantiates both toolkits and concatenates
 their `get_tools()`. `SkillRegistryMixin` wires them into a bot automatically.
 
+**Per-tenant skills (FEAT-707).** With `tenant_based = True`, `SkillRegistryMixin` also loads
+`AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/` and serves a per-request *view* in which the tenant
+tree shadows the global `skills/` tree by name and `/trigger` (`global_only: true` skills cannot be
+shadowed; learned skills stay global). The tenant comes from `ask(tenant=...)` → `RequestContext.kwargs["tenant"]`
+→ the bound ContextVar → the instance `tenant_id`; HTTP handlers pass the server-resolved Navigator tenant
+and drop any client-supplied one before forwarding `**data`, Telegram uses the bot's static `tenant:`. The
+`/trigger`-activated skill is request-local. See `docs/skills/per-tenant-skills.md`.
+
 ---
 
 ## Key Patterns to Follow

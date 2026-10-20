@@ -132,7 +132,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      when it says `rerun`, run in the background
      `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
      then `python -m scripts.sdd.test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
-     (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: done`. The feature tier always re-runs fresh at the final HEAD, driven by the index's `test_contract`; the table has New red / Baseline red / Unknown columns and a `cached` line, and the PR is blocked only by new reds or unknowns; baseline reds are reported, not blocking
+     (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: done`. The feature tier always re-runs fresh at the final HEAD, driven by the index's `test_contract`; the table has New red / Baseline red / Unknown columns and a `cached` line, and the PR is blocked only by new reds or unknowns; baseline reds are reported, not blocking; rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners
    - lint residuals and any missing review evidence
 7. Respect flags:
    - `--dry-run`: stop after the report

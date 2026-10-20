@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+import json
 import shlex
 import subprocess
 import sys
@@ -42,13 +43,27 @@ def _build_parser() -> argparse.ArgumentParser:
     baseline.add_argument("--baseline", dest="baseline", action="store_true", default=True)
     baseline.add_argument("--no-baseline", dest="baseline", action="store_false")
     parser.add_argument("--timeout-baseline", type=int, default=600, metavar="SECONDS")
+    parser.add_argument(
+        "--timeout-total",
+        type=int,
+        default=3600,
+        metavar="SECONDS",
+        help="Overall wall-clock cap across every planned invocation (0 disables).",
+    )
     parser.add_argument("--task-file", action="append", default=[], type=Path)
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--verdict", action="store_true", help="run the plan and print only verdict JSON")
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path("artifacts/logs/validation"),
+        help="verdict-mode report and child-output directory",
+    )
     parser.add_argument("--feature", default=None, help="FEAT-<NNN>: record structured results (FEAT-695)")
     parser.add_argument("--report-task", default=None, help="TASK-<NNN> or _rerun: record owner (FEAT-695)")
-    parser.add_argument("--no-ledger", action="store_true", help="report-only: never touch the escalation ledger")
+    parser.add_argument("--no-ledger", action="store_true", help="report-only: never write the green test cache")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -108,6 +123,204 @@ def _record_suite(
         )
 
 
+def _write_verdict(verdict: object) -> None:
+    """Write exactly one compact verdict JSON object to stdout."""
+    import test_scope.verdict as verdict_mod  # noqa: PLC0415 — path-dependent import
+
+    sys.stdout.write(json.dumps(verdict_mod.verdict_to_json(verdict), sort_keys=True) + "\n")
+
+
+def _blocked_verdict(kernel: ModuleType, *, tier: str, note: str) -> object:
+    """Build the blocked payload used when a task-tier plan is empty."""
+    return kernel.ValidationVerdict(
+        schema=1,
+        status="blocked",
+        tier=tier,
+        runners=(),
+        failures=(),
+        notes=(note,),
+    )
+
+
+def _report_suffix(report_format: str) -> str:
+    """Return a stable file suffix for one adapter report format."""
+    return {
+        "junit": ".xml",
+        "e2e-verdict": ".json",
+        "libtest": ".txt",
+        "exit-code": ".txt",
+    }.get(report_format, ".report")
+
+
+def _safe_report_name(value: str) -> str:
+    """Make a runner or suite label safe for a report filename."""
+    return "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in value)
+
+
+def _run_verdict_mode(
+    *,
+    args: argparse.Namespace,
+    kernel: ModuleType,
+    plan: object,
+    worktree: Path,
+    base_ref: str,
+) -> int:
+    """Run a plan through its adapters and emit only the normalized verdict."""
+    import test_scope.baseline as baseline_mod  # noqa: PLC0415 — path-dependent import
+    import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+    import test_scope.verdict as verdict_mod  # noqa: PLC0415 — path-dependent import
+    from test_scope.runners.registry import load_registry  # noqa: PLC0415 — path-dependent import
+
+    log_dir = args.log_dir if args.log_dir.is_absolute() else worktree / args.log_dir
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        verdict = _blocked_verdict(kernel, tier=args.tier, note=f"cannot create validation log directory: {exc}")
+        _write_verdict(verdict)
+        return 2
+
+    try:
+        registry = load_registry(worktree)
+    except (ValueError, OSError) as exc:
+        _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"cannot load the runner registry: {exc}"))
+        return 2
+    reports = []
+    evidence: list[str] = []
+    log_path = log_dir / "validation.log"
+    log_lines = [f"tier: {args.tier}", f"base: {base_ref}"]
+    deadline = None if not args.timeout_total else time.monotonic() + args.timeout_total
+
+    for ordinal, invocation in enumerate(plan.invocations):
+        try:
+            adapter = registry.adapter_for_kind(invocation.runner)
+        except (KeyError, ModuleNotFoundError) as exc:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"unusable runner: {exc}"))
+            return 2
+        report_path = log_dir / (
+            f"{ordinal:02d}-{_safe_report_name(invocation.runner)}-"
+            f"{_safe_report_name(invocation.distribution)}{_report_suffix(invocation.report_format)}"
+        )
+        try:
+            report_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        run_invocation = replace(invocation, report_path=str(report_path))
+        argv = list(run_invocation.argv)
+        if invocation.runner == "pytest":
+            argv = list(report_mod.with_report(run_invocation, report_path))
+        elif invocation.report_format == "junit":
+            argv = [
+                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument for argument in argv
+            ]
+
+        run_cwd = worktree / invocation.cwd
+        timeout_s = invocation.timeout_s or registry.timeout_for(invocation.runner)
+        suite = report_mod.suite_name(run_invocation)
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            # Spec S9: the overall cap is spent -- report this invocation as timed out WITHOUT
+            # launching it. Evidence already collected by the invocations that did run is kept.
+            reports.append(
+                adapter.parse_report(
+                    report_path=report_path,
+                    exit_code=124,
+                    stdout="",
+                    stderr="",
+                    duration_s=0.0,
+                    timed_out=True,
+                    suite=suite,
+                )
+            )
+            log_lines.extend(("", f"$ {shlex.join(argv)}", f"cwd: {run_cwd}", "skipped: overall deadline exceeded"))
+            continue
+        if remaining is not None:
+            timeout_s = max(1, min(timeout_s, int(remaining)))
+        started = time.monotonic()
+        timed_out = False
+        try:
+            result = subprocess.run(
+                argv,
+                cwd=run_cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+            exit_code = result.returncode
+            stdout = result.stdout
+            stderr = result.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = 124
+            stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+            stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr or ""
+        except OSError as exc:
+            exit_code = 127
+            stdout = ""
+            stderr = str(exc)
+
+        duration_s = time.monotonic() - started
+        report = adapter.parse_report(
+            report_path=report_path,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+            duration_s=duration_s,
+            timed_out=timed_out,
+            suite=suite,
+        )
+        reports.append(report)
+        log_lines.extend(
+            (
+                "",
+                f"$ {shlex.join(argv)}",
+                f"cwd: {run_cwd}",
+                f"exit: {exit_code}",
+                "stdout:",
+                stdout,
+                "stderr:",
+                stderr,
+            )
+        )
+        try:
+            evidence.append(report_path.relative_to(worktree).as_posix())
+        except ValueError:
+            evidence.append(str(report_path))
+
+    pytest_failures = [
+        nodeid
+        for report in reports
+        if report.runner == "pytest"
+        for nodeid, status in report.nodes
+        if status in {"failed", "error"}
+    ]
+    baseline = ()
+    if pytest_failures and args.baseline:
+        baseline = baseline_mod.classify_failures(
+            worktree=worktree,
+            base_ref=base_ref,
+            failed_nodeids=pytest_failures,
+            timeout_s=args.timeout_baseline or 600,
+        )
+
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    try:
+        evidence.append(log_path.relative_to(worktree).as_posix())
+    except ValueError:
+        evidence.append(str(log_path))
+    verdict = verdict_mod.build_verdict(
+        tier=args.tier,
+        reports=reports,
+        baseline=baseline,
+        cached=plan.cached,
+        notes=plan.notes,
+        evidence=evidence,
+    )
+    _write_verdict(verdict)
+    return 0 if verdict.status == "passed" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: 0 ok, 1 an invocation failed, 2 usage error / empty task-tier plan."""
     try:
@@ -134,13 +347,22 @@ def main(argv: list[str] | None = None) -> int:
             continue
         declared.extend(kernel.contract.parse_validation_commands(text))
 
-    plan = kernel.plan_tests(
-        worktree=worktree,
-        changed_files=kernel.changed_files(worktree, base_ref),
-        tier=args.tier,
-        declared=declared,
-        contract=contract,
-    )
+    try:
+        plan = kernel.plan_tests(
+            worktree=worktree,
+            changed_files=kernel.changed_files(worktree, base_ref),
+            tier=args.tier,
+            declared=declared,
+            contract=contract,
+        )
+    except (ValueError, KeyError, ModuleNotFoundError) as exc:
+        # A malformed `.parrot/test_runners.toml` or an unknown runner kind must not escape as a
+        # traceback: under --verdict the only legal stdout is one verdict object.
+        if args.verdict:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"cannot plan validation: {exc}"))
+            return 2
+        print(f"error: {exc}", file=sys.stderr)  # noqa: T201 - CLI output
+        return 2
     if index_notes:
         plan = replace(plan, notes=(*plan.notes, *index_notes))
 
@@ -160,9 +382,14 @@ def main(argv: list[str] | None = None) -> int:
     if not plan.invocations and args.tier == "task":
         import test_scope.guard as guard_mod  # noqa: PLC0415 — path-dependent import
 
+        if args.verdict:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=guard_mod.BLOCK_MESSAGE))
+            return 2
         print(guard_mod.BLOCK_MESSAGE)  # noqa: T201 - CLI output
         return 2
 
+    if args.verdict:
+        return _run_verdict_mode(args=args, kernel=kernel, plan=plan, worktree=worktree, base_ref=base_ref)
     if args.json:
         import test_scope.models as models_mod  # noqa: PLC0415 — the only kernel module importing pydantic
 
@@ -174,10 +401,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"# cached: {target}")  # noqa: T201 - CLI output
         for note in plan.notes:
             print(f"# note: {note}")  # noqa: T201 - CLI output
-        for dist in plan.escalated:
-            print(f"# escalated: {dist}")  # noqa: T201 - CLI output
-        for dist in plan.skipped_escalations:
-            print(f"# skipped: {dist}")  # noqa: T201 - CLI output
 
     if not args.run:
         return 0
@@ -244,8 +467,13 @@ def main(argv: list[str] | None = None) -> int:
                     distribution=invocation.distribution,
                     argv=tuple(argv),
                     targets=invocation.targets,
+                    runner=invocation.runner,
+                    cwd=invocation.cwd,
+                    report_path=invocation.report_path,
+                    report_format=invocation.report_format,
+                    timeout_s=invocation.timeout_s,
                 )
-                argv = list(report_mod.with_junit(invocation_copy, junit))
+                argv = list(report_mod.with_report(invocation_copy, junit))
             except OSError:
                 junit = None
         started = time.monotonic()
@@ -261,13 +489,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             suites.append(suite)
             _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
-        # FEAT-699: `plan_tests` no longer emits `core`/`escalated` targets (a core hit is a plan
-        # note, "covered by nightly"), so these FEAT-604 ledger branches fire only for legacy plans.
-        # Gate on the invocation's own targets -- the same rule as
-        # `ValidationSupervisor._record_invocation_outcome` -- never on `plan.core_hits`: a
-        # non-escalated run proves nothing about a suite and must leave the ledger alone.
-        is_core_escalation = any(target.reason == "core" for target in invocation.targets)
-        is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
             if suite is None or suite.status in {"no_junit", "report_parse_error"} or suite.unmapped:
@@ -277,23 +498,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not nodes:
                     unclassified_failure = True
                 failed_nodeids.extend(nodes)
-            if not args.no_ledger and (is_core_escalation or is_cap_escalation):
-                import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
-
-                # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
-                ledger.record_red_run(worktree, [invocation.distribution])
             continue
-        if not args.no_ledger and (is_core_escalation or is_cap_escalation):
-            import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
-
-            dist = invocation.distribution
-            core_files = [hit.path for hit in plan.core_hits]
-            impact_files = list(plan.cap_hits.get(dist, ()))
-            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
-            if core_files or impact_files:
-                ledger.record_green_escalation(
-                    worktree, [dist], core_files, impact_files=impact_files, impacted_hashes=impacted_hashes
-                )
 
     verdicts = ()
     if failed_nodeids and args.baseline:

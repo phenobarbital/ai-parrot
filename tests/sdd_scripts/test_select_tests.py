@@ -60,6 +60,85 @@ def test_empty_task_plan_exits_2(fixture_monorepo):
     assert main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo)]) == 2
 
 
+def test_empty_task_plan_verdict_is_blocked_json_only(fixture_monorepo, capsys):
+    """Verdict mode turns an empty task plan into the structured blocked payload."""
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == 2
+    assert payload["status"] == "blocked"
+    assert payload["notes"]
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(("failed", "expected_status", "expected_exit"), [(False, "passed", 0), (True, "failed", 1)])
+def test_select_tests_verdict_mode_json_only(
+    fixture_monorepo, tmp_path, monkeypatch, capsys, failed, expected_status, expected_exit
+):
+    """Verdict mode captures child output, parses the adapter report, and maps exit codes."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
+
+    target = "packages/a/tests/test_x.py"
+    plan = ScopePlan(
+        tier="task",
+        invocations=(
+            Invocation(
+                distribution="a",
+                argv=("pytest", target),
+                targets=(TestTarget(path=target, distribution="a", reason="declared"),),
+            ),
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+
+    def _run(argv, **kwargs):
+        report_path = Path(
+            next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml=")
+        ).resolve()
+        failure = '<failure message="broken">assert False</failure>' if failed else ""
+        report_path.write_text(
+            f'<testsuites><testsuite tests="1" failures="{int(failed)}">'
+            '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
+            f"{failure}</testcase></testsuite></testsuites>"
+        )
+        return SimpleNamespace(returncode=int(failed), stdout="child stdout\n", stderr="child stderr\n")
+
+    monkeypatch.setattr(select_tests_mod.subprocess, "run", _run)
+    log_dir = tmp_path / "validation"
+    rc = main(
+        [
+            "--tier",
+            "task",
+            "--base",
+            "HEAD",
+            "--worktree",
+            str(fixture_monorepo),
+            "--verdict",
+            "--no-baseline",
+            "--log-dir",
+            str(log_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == expected_exit
+    assert payload["status"] == expected_status
+    assert captured.err == ""
+    assert "child stdout" not in captured.out
+    assert "child stdout" in (log_dir / "validation.log").read_text()
+
+
 def test_index_contract_selects_declared_operands(fixture_monorepo, capsys):
     """An explicit contract selects its operands instead of import-derived targets."""
     from scripts.sdd.select_tests import _load_kernel
@@ -141,13 +220,13 @@ def test_baseline_verdict_controls_failure_exit(fixture_monorepo, monkeypatch, s
     kernel = _load_kernel()
     import scripts.sdd.select_tests as sel
     import test_scope.baseline as baseline
-    from test_scope.datatypes import BaselineVerdict, PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import BaselineVerdict, Invocation, ScopePlan, TestTarget
 
     target = "packages/a/tests/test_x.py"
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", target),
                 targets=(TestTarget(path=target, distribution="a", reason="declared"),),
@@ -301,10 +380,9 @@ def test_cli_fresh_process_green_core_change_exits_zero(tmp_path):
 def test_run_red_fallback_run_leaves_ledger_untouched(fixture_monorepo, monkeypatch):
     """FEAT-699 re-baseline of the FEAT-563 re-arm test (R14/AC9c).
 
-    Re-arming only ever applied to an *escalated* invocation. In the bounded fallback no invocation
-    is an escalation, so a red run must neither drop nor refresh ledger records — the same rule as
-    `ValidationSupervisor._record_invocation_outcome` ("an invocation with no escalated target
-    records nothing")."""
+    Re-arming only ever applied to an *escalated* invocation, and `plan_tests` can no longer
+    emit one (TASK-4542 retired the escalation-ledger writes), so `--run` must never drop or
+    refresh a ledger record. This is now a regression guard: the CLI leaves the ledger alone."""
     from scripts.sdd.select_tests import _load_kernel
 
     _load_kernel()
@@ -324,93 +402,6 @@ def test_run_red_fallback_run_leaves_ledger_untouched(fixture_monorepo, monkeypa
     assert rc == 1  # "a"'s mirror test failed; "b"'s importer test passed
 
     assert ctx.read_ledger(fixture_monorepo) == before
-
-
-def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
-    """--run on a green cap-escalated invocation writes impact blobs and its impacted hash."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
-
-    driving_file = "packages/a/src/pa/x.py"
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            PytestInvocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={"a": (driving_file,)},
-        cap_impacted={"a": "cap-impact-hash"},
-    )
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 0
-
-    import test_scope.context as ctx
-
-    ledger = ctx.read_ledger(fixture_monorepo)
-    assert driving_file in ledger["a"].impact_blobs
-    assert ledger["a"].impacted_hash == "cap-impact-hash"
-
-
-def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
-    """--run on a red cap-escalated invocation drops the previous ledger entry."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
-
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            PytestInvocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={"a": ("packages/a/src/pa/x.py",)},
-        cap_impacted={"a": "cap-impact-hash"},
-    )
-    import test_scope.context as ctx
-
-    ctx.record_green_escalation(
-        fixture_monorepo,
-        ["a"],
-        [],
-        impact_files=["packages/a/src/pa/x.py"],
-        impacted_hashes={"a": "cap-impact-hash"},
-    )
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=1)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 1
-    assert "a" not in ctx.read_ledger(fixture_monorepo)
-
-
-# ── FEAT-617: --timeout bounds a hung test in the merge-tier sweep ──────────
-
 
 def _captured_argvs(monkeypatch) -> list[list[str]]:
     """Record the pytest argvs `--run` dispatches, without executing them.
@@ -524,46 +515,6 @@ def test_select_tests_records(fixture_monorepo, monkeypatch, tmp_path):
     assert all(suite.tests == 2 and suite.passed == 1 and suite.skipped == 1 for suite in record.suites)
     assert all(suite.argv[-1].startswith("--junitxml=") for suite in record.suites)
 
-
-def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
-    """Report-only runs never alter the escalation ledger."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
-
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            PytestInvocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={},
-        cap_impacted={},
-    )
-    calls: list[str] = []
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    import test_scope.context as ctx
-
-    monkeypatch.setattr(ctx, "record_red_run", lambda *_: calls.append("red"))
-    monkeypatch.setattr(ctx, "record_green_escalation", lambda *_args, **_kwargs: calls.append("green"))
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run", "--no-ledger"]) == 0
-    assert calls == []
-
-
 def test_empty_plan_selection_error(fixture_monorepo, monkeypatch, tmp_path):
     """A flagged empty plan produces a reportable selection-error result."""
     from scripts.sdd.select_tests import _load_kernel
@@ -610,3 +561,153 @@ def test_empty_plan_selection_error(fixture_monorepo, monkeypatch, tmp_path):
     record = records["TASK-4412"]
     assert record.notes == ("selection_error: no test invocations planned",)
     assert record.suites[0].status == "selection_error"
+
+
+# -- TASK-4543: --verdict fails closed and honours an overall deadline -------------------
+
+
+def _write_runner_config(root: Path, body: str) -> None:
+    (root / ".parrot").mkdir(parents=True, exist_ok=True)
+    (root / ".parrot/test_runners.toml").write_text(body)
+
+
+def test_verdict_blocked_on_malformed_runner_config(fixture_monorepo, capsys):
+    """Malformed .parrot/test_runners.toml yields one blocked verdict, not a traceback."""
+    _write_runner_config(fixture_monorepo, "this is not = = toml\n")
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.err == ""
+    payload = json.loads(captured.out)  # exactly one object, nothing else
+    assert payload["status"] == "blocked"
+    assert "test_runners.toml" in " ".join(payload["notes"])
+
+
+def test_non_verdict_mode_keeps_stderr_error_on_malformed_config(fixture_monorepo, capsys):
+    """Without --verdict the pre-existing stderr contract is unchanged."""
+    _write_runner_config(fixture_monorepo, "this is not = = toml\n")
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo)])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "error:" in captured.err
+    assert captured.out == ""
+
+
+def test_verdict_blocked_on_unknown_runner_kind(fixture_monorepo, capsys):
+    """A runner kind with no adapter blocks instead of escaping as KeyError."""
+    _write_runner_config(fixture_monorepo, '[runners.not-a-runner]\ntimeout_s = 10\n')
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.err == ""
+    payload = json.loads(captured.out)
+    assert payload["status"] == "blocked"
+    assert "not-a-runner" in " ".join(payload["notes"])
+
+
+def _two_invocation_plan():
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
+
+    def _inv(dist: str, target: str):
+        return Invocation(
+            distribution=dist,
+            argv=("pytest", target),
+            targets=(TestTarget(path=target, distribution=dist, reason="declared"),),
+        )
+
+    return ScopePlan(
+        tier="task",
+        invocations=(_inv("a", "packages/a/tests/test_x.py"), _inv("b", "packages/b/tests/test_y.py")),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+
+
+def _green_junit_runner(monkeypatch, select_tests_mod, calls):
+    """subprocess.run stub that writes a passing junit report and records each call."""
+
+    def _run(argv, **kwargs):
+        calls.append(kwargs.get("timeout"))
+        report_path = Path(
+            next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml=")
+        ).resolve()
+        report_path.write_text(
+            '<testsuites><testsuite tests="1" failures="0">'
+            '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
+            "</testcase></testsuite></testsuites>"
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(select_tests_mod.subprocess, "run", _run)
+
+
+def test_timeout_total_zero_disables_the_overall_cap(fixture_monorepo, tmp_path, monkeypatch, capsys):
+    """--timeout-total 0 leaves each invocation's own timeout untouched."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: _two_invocation_plan())
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    calls: list[int | None] = []
+    _green_junit_runner(monkeypatch, select_tests_mod, calls)
+
+    rc = main(
+        [
+            "--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
+            "--verdict", "--no-baseline", "--timeout-total", "0",
+            "--log-dir", str(tmp_path / "validation"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["status"] == "passed"
+    # The pytest registry default (60s) reaches subprocess.run unclamped, for both invocations.
+    assert calls == [60, 60]
+
+
+def test_exhausted_overall_deadline_marks_unstarted_invocations_timed_out(
+    fixture_monorepo, tmp_path, monkeypatch, capsys
+):
+    """Finished evidence is kept; only unfinished invocations are timed_out (spec S9)."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: _two_invocation_plan())
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    calls: list[int | None] = []
+    _green_junit_runner(monkeypatch, select_tests_mod, calls)
+
+    # Burn the whole budget inside the first invocation: the clock jumps past the cap once.
+    ticks = iter([0.0, 0.0, 0.0, 0.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0])
+    monkeypatch.setattr(select_tests_mod.time, "monotonic", lambda: next(ticks, 10_000.0))
+
+    rc = main(
+        [
+            "--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
+            "--verdict", "--no-baseline", "--timeout-total", "60",
+            "--log-dir", str(tmp_path / "validation"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == 1  # a timed-out runner is not a pass
+    assert captured.err == ""
+    # Exactly one child was launched; the second never started.
+    assert len(calls) == 1
+    runners = payload["runners"]
+    assert len(runners) == 2
+    assert "overall deadline exceeded" in (tmp_path / "validation" / "validation.log").read_text()

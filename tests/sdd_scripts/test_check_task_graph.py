@@ -307,3 +307,74 @@ def test_legacy_index_has_no_test_contract_findings(tmp_path):
         tmp_path,
     )
     assert not [finding for finding in report.findings if finding.code.startswith("test-contract-")]
+
+
+def _runner_header(runners: list[dict]) -> dict:
+    """Index header carrying a raw schema-2 runner payload (digest irrelevant to runner-level findings)."""
+    return {
+        "parallel_semantics": "exclusive",
+        "test_contract": {"schema": 2, "runners": runners, "digest": "x"},
+    }
+
+
+def _runner(kind: str, targets: list[str], settings: dict | None = None, tiers: list[str] | None = None) -> dict:
+    return {"kind": kind, "targets": targets, "settings": settings or {}, "tiers": tiers or ["task"]}
+
+
+def _contract_codes(tmp_path: Path, header: dict, validation: list[str] | None = None) -> dict:
+    task = {"id": "TASK-1", "files": {}, "validation": validation or []}
+    index = _repo(tmp_path, [task], header=header)
+    return {f.code: f for f in check_graph(index, tmp_path).findings}
+
+
+def test_unknown_runner_kind_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("jest", ["a.test.ts"])]))
+    assert found["test-contract-unknown-runner"].level == "error"
+    assert "test-contract-malformed" not in found
+
+
+def test_forbidden_tier_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("parrot-e2e", ["plan.md"], tiers=["task"])]))
+    assert found["test-contract-tier-forbidden"].level == "error"
+
+
+def test_invalid_runner_settings_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("cargo", [], settings={"crate": "crates/nowhere"})]))
+    assert found["test-contract-settings-invalid"].level == "error"
+
+
+def test_invalid_registry_toml_is_settings_error(tmp_path):
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot/test_runners.toml").write_text("[runners.pytest]\ntiers = ['bogus']\n")
+    found = _contract_codes(tmp_path, _test_contract_header(["tests/x.py"]))
+    assert found["test-contract-settings-invalid"].level == "error"
+
+
+def test_unimportable_extension_is_error(tmp_path):
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot/test_runners.toml").write_text('[extensions]\nzig = "no_such_module_xyz:Adapter"\n')
+    found = _contract_codes(tmp_path, _test_contract_header(["tests/x.py"]))
+    assert found["test-contract-extension-invalid"].level == "error"
+
+
+def test_unrecognised_validation_command_is_warning(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/x.py").write_text("def test_x(): pass\n")
+    found = _contract_codes(
+        tmp_path, _test_contract_header(["tests/x.py"]), validation=["make check", "pytest tests/x.py"]
+    )
+    assert found["validation-command-unrecognised"].level == "warning"
+    assert "test-contract-task-tests-uncovered" not in found
+
+
+def test_feat699_index_lints_clean_of_contract_errors():
+    root = Path(__file__).resolve().parents[2]
+    index = root / "sdd/tasks/index/tests-optimization-sdd-flow.json"
+    if not index.is_file():
+        import pytest
+
+        pytest.skip("FEAT-699 index not present")
+    errors = [
+        f for f in check_graph(index, root).findings if f.code.startswith("test-contract-") and f.level == "error"
+    ]
+    assert errors == []

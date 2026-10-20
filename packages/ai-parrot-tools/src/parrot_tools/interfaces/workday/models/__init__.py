@@ -13,6 +13,7 @@ from .time_off_balance import TimeOffBalance
 from .custom_punch_field_report import CustomPunchFieldReportEntry, WorkerGroup
 from .reference import WorkdayReference
 from .clock_event import ClockEvent, ClockEventResult, ClockEventType, ReportedTimeBlock
+from .worker_event import FieldChange, JobChange, JobSnapshot, ResolvedWorkerReference, WorkerEvent
 
 __all__ = [
     "TimeBlock",
@@ -34,4 +35,9 @@ __all__ = [
     "ClockEventResult",
     "ClockEventType",
     "ReportedTimeBlock",
+    "FieldChange",
+    "JobChange",
+    "JobSnapshot",
+    "ResolvedWorkerReference",
+    "WorkerEvent",
 ]

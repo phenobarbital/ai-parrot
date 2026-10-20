@@ -1,0 +1,35 @@
+Two gaps remain after FEAT-563 (scoped test selection) and FEAT-699 (spec-declared
+validation contract, green cache, baseline-aware verdict):
+
+1. **The task tier still burns strong-seat tokens on raw test output.** The merge
+   tier (`sdd-worker` → `coder_run_validation`) and the feature tier (`/sdd-done`)
+   run pytest as a background subprocess owned by `ValidationSupervisor`; the
+   model only reads a verdict. The task tier does not: every `sdd-coder` seat —
+   Sonnet/Opus native, Nova, Gemini, codex — runs its task's `## Validation
+   Commands` through `run_command` (MCP seats, `dispatchers/llm.py`) or Bash
+   (native seats, `wikitoolkit claude-hook` → `worktree_environment._scope_guard`).
+   The guard only *rewrites* an over-broad pytest to the task-tier plan; the full
+   pytest stdout/stderr still lands in the seat's context. Discussion on
+   2026-10-20 settled that delegating test *execution* to a cheaper LLM seat
+   (haiku) is the wrong fix: running tests needs no intelligence, a model
+   between the process and the evidence is an integrity risk (the `agy`
+   fabricated-run incident), and the model-worthy part — interpreting a failure
+   — is exactly where the strong seat is wanted. The right fix is a process that
+   returns a structured verdict and a gate the seat cannot skip.
+
+2. **The whole kernel is pytest-shaped.** `test_scope` types (`PytestInvocation`,
+   `TestContract.tests` as "pytest operands"), parsing (`is_pytest_invocation`,
+   `is_broad_pytest`), planning (`planner._invocation` hard-codes
+   `("pytest", *AGENT_FLAGS, "-m", …)`), evidence (`report.parse_junit`), the
+   guard and the supervisor all assume pytest. The same SDD flow is used in
+   flowtask, querysource and other repositories with Cython and Rust code, and
+   this repository ships a Svelte admin UI whose tests are `vitest run`
+   (`packages/ai-parrot-server/ui/package.json:14`) and a deterministic E2E gate
+   (`parrot e2e run`, FEAT-581) — none of which the contract can declare, plan,
+   guard or record today.
+
+**Who is affected**: every `sdd-coder` seat (token cost per attempt), `sdd-worker`
+(merge-tier blind spots for UI/E2E), `/sdd-done` (closeout evidence has no
+non-pytest rows), and maintainers of sibling SDD repos (no Rust/JS validation).
+
+---

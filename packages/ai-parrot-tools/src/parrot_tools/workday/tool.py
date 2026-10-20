@@ -57,6 +57,7 @@ Example usage:
     worker = await toolkit.wd_get_worker(worker_id="12345")
     time_off = await toolkit.wd_get_time_off_balance(worker_id="12345")
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -73,10 +74,7 @@ from parrot.interfaces.http import HTTPService
 from ..interfaces.workday.service import WorkdayService as WorkdayComposable
 from ..interfaces.workday.config import WorkdayConfig
 from ..interfaces.workday.utils.utils import ensure_list, extract_by_type, first
-from .models import (
-    WorkerModel,
-    WorkdayResponseParser
-)
+from .models import WorkerModel, WorkdayResponseParser
 from parrot.conf import (
     WORKDAY_DEFAULT_TENANT,
     WORKDAY_CLIENT_ID,
@@ -87,9 +85,8 @@ from parrot.conf import (
     WORKDAY_REPORT_USERNAME,
     WORKDAY_REPORT_PASSWORD,
     WORKDAY_REPORT_OWNER,
-    WORKDAY_URL
+    WORKDAY_URL,
 )
-
 
 
 # -----------------------------
@@ -98,215 +95,161 @@ from parrot.conf import (
 class WorkdayToolkitInput(BaseModel):
     """Default configuration for Workday toolkit operations."""
 
-    tenant_name: str = Field(
-        description="Workday tenant name (e.g., 'acme_impl', 'company_prod')"
-    )
-    include_reference: bool = Field(
-        default=True,
-        description="Include reference data in responses"
-    )
+    tenant_name: str = Field(description="Workday tenant name (e.g., 'acme_impl', 'company_prod')")
+    include_reference: bool = Field(default=True, description="Include reference data in responses")
 
 
 class GetWorkerInput(BaseModel):
     """Input for retrieving a single worker by ID."""
 
-    worker_id: str = Field(
-        description="Worker ID (Employee ID, Contingent Worker ID, or WID)"
-    )
+    worker_id: str = Field(description="Worker ID (Employee ID, Contingent Worker ID, or WID)")
     output_format: Optional[Type[BaseModel]] = Field(
-        default=None,
-        description="Optional Pydantic model to format the output"
+        default=None, description="Optional Pydantic model to format the output"
     )
 
 
 class SearchWorkersInput(BaseModel):
     """Input for searching workers with filters."""
 
-    search_text: Optional[str] = Field(
-        default=None,
-        description="Text to search in worker names, emails, or IDs"
-    )
-    manager_id: Optional[str] = Field(
-        default=None,
-        description="Filter by manager's worker ID"
-    )
-    location_id: Optional[str] = Field(
-        default=None,
-        description="Filter by location ID"
-    )
-    job_profile_id: Optional[str] = Field(
-        default=None,
-        description="Filter by job profile ID"
-    )
-    hire_date_from: Optional[str] = Field(
-        default=None,
-        description="Filter by hire date (YYYY-MM-DD format) - from"
-    )
-    hire_date_to: Optional[str] = Field(
-        default=None,
-        description="Filter by hire date (YYYY-MM-DD format) - to"
-    )
-    max_results: int = Field(
-        default=100,
-        description="Maximum number of results to return"
-    )
+    search_text: Optional[str] = Field(default=None, description="Text to search in worker names, emails, or IDs")
+    manager_id: Optional[str] = Field(default=None, description="Filter by manager's worker ID")
+    location_id: Optional[str] = Field(default=None, description="Filter by location ID")
+    job_profile_id: Optional[str] = Field(default=None, description="Filter by job profile ID")
+    hire_date_from: Optional[str] = Field(default=None, description="Filter by hire date (YYYY-MM-DD format) - from")
+    hire_date_to: Optional[str] = Field(default=None, description="Filter by hire date (YYYY-MM-DD format) - to")
+    max_results: int = Field(default=100, description="Maximum number of results to return")
 
 
 class GetWorkerContactInput(BaseModel):
     """Input for retrieving worker contact information."""
 
-    worker_id: str = Field(
-        description="Worker ID to get contact info for"
-    )
-    include_personal: bool = Field(
-        default=True,
-        description="Include personal contact information"
-    )
-    include_work: bool = Field(
-        default=True,
-        description="Include work contact information"
-    )
+    worker_id: str = Field(description="Worker ID to get contact info for")
+    include_personal: bool = Field(default=True, description="Include personal contact information")
+    include_work: bool = Field(default=True, description="Include work contact information")
 
 
 class GetOrganizationInput(BaseModel):
     """Input for retrieving organization information."""
 
-    org_id: str = Field(
-        description="Organization ID or reference ID"
-    )
-    include_hierarchy: bool = Field(
-        default=False,
-        description="Include organizational hierarchy"
-    )
+    org_id: str = Field(description="Organization ID or reference ID")
+    include_hierarchy: bool = Field(default=False, description="Include organizational hierarchy")
 
 
 class GetWorkerJobDataInput(BaseModel):
     """Input for retrieving worker's job-related data."""
 
-    worker_id: str = Field(
-        description="Worker ID to get job data for"
-    )
+    worker_id: str = Field(description="Worker ID to get job data for")
     effective_date: Optional[str] = Field(
-        default=None,
-        description="Effective date for job data (YYYY-MM-DD). Defaults to today."
+        default=None, description="Effective date for job data (YYYY-MM-DD). Defaults to today."
     )
 
 
 class GetTimeOffBalanceInput(BaseModel):
     """Input for retrieving time off balance information."""
 
-    worker_id: str = Field(
-        description="Worker ID to get time off balance for"
-    )
-    time_off_plan_id: Optional[str] = Field(
-        default=None,
-        description="Optional specific time off plan ID to filter by"
-    )
+    worker_id: str = Field(description="Worker ID to get time off balance for")
+    time_off_plan_id: Optional[str] = Field(default=None, description="Optional specific time off plan ID to filter by")
     output_format: Optional[Type[BaseModel]] = Field(
-        default=None,
-        description="Optional Pydantic model to format the output"
+        default=None, description="Optional Pydantic model to format the output"
     )
+
 
 class CustomReportInput(BaseModel):
     """Input for executing a Workday RaaS custom report."""
 
-    report_name: str = Field(
-        description="Workday custom report name (as defined in Workday)"
-    )
+    report_name: str = Field(description="Workday custom report name (as defined in Workday)")
     report_owner: Optional[str] = Field(
-        default=None,
-        description="Owner of the report (email/ID). Defaults to configured owner."
+        default=None, description="Owner of the report (email/ID). Defaults to configured owner."
     )
     params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Query parameters for the custom report (keys/values sent to RaaS)"
+        default_factory=dict, description="Query parameters for the custom report (keys/values sent to RaaS)"
     )
     query_string_template: Optional[str] = Field(
         default=None,
-        description="Optional query string template, e.g., 'Organization!WID={org_wid}&To_Date={end_date}'"
+        description="Optional query string template, e.g., 'Organization!WID={org_wid}&To_Date={end_date}'",
     )
     flatten_list_dicts: bool = Field(
-        default=False,
-        description="Flatten nested dict/list fields in the response entries"
+        default=False, description="Flatten nested dict/list fields in the response entries"
     )
     drop_flattened_columns: bool = Field(
-        default=False,
-        description="Drop columns that remain as lists/dicts after flattening"
+        default=False, description="Drop columns that remain as lists/dicts after flattening"
     )
 
 
 class GetPayrollBalancesInput(BaseModel):
     """Input for retrieving payroll balances."""
 
-    worker_id: str = Field(
-        description="Worker ID to get balances for"
-    )
-    start_date: Optional[str] = Field(
-        default=None,
-        description="Start date for balance calculation (YYYY-MM-DD)"
-    )
-    end_date: Optional[str] = Field(
-        default=None,
-        description="End date for balance calculation (YYYY-MM-DD)"
-    )
+    worker_id: str = Field(description="Worker ID to get balances for")
+    start_date: Optional[str] = Field(default=None, description="Start date for balance calculation (YYYY-MM-DD)")
+    end_date: Optional[str] = Field(default=None, description="End date for balance calculation (YYYY-MM-DD)")
     pay_component_group_ids: Optional[List[str]] = Field(
-        default=None,
-        description="List of Pay Component Group IDs to filter by"
+        default=None, description="List of Pay Component Group IDs to filter by"
     )
 
 
 class GetPayrollResultsInput(BaseModel):
     """Input for retrieving payroll results (historical/off-cycle)."""
 
-    worker_id: str = Field(
-        description="Worker ID to get results for"
-    )
-    start_date: Optional[str] = Field(
-        default=None,
-        description="Start date for results (YYYY-MM-DD)"
-    )
-    end_date: Optional[str] = Field(
-        default=None,
-        description="End date for results (YYYY-MM-DD)"
-    )
-    include_details: bool = Field(
-        default=False,
-        description="Include detailed result lines"
-    )
+    worker_id: str = Field(description="Worker ID to get results for")
+    start_date: Optional[str] = Field(default=None, description="Start date for results (YYYY-MM-DD)")
+    end_date: Optional[str] = Field(default=None, description="End date for results (YYYY-MM-DD)")
+    include_details: bool = Field(default=False, description="Include detailed result lines")
 
 
 class GetCompanyPaymentDatesInput(BaseModel):
     """Input for retrieving company payment dates."""
 
-    start_date: str = Field(
-        description="Start date for payment dates (YYYY-MM-DD)"
-    )
-    end_date: str = Field(
-        description="End date for payment dates (YYYY-MM-DD)"
-    )
-    pay_group_id: Optional[str] = Field(
-        default=None,
-        description="Optional Pay Group ID to filter by"
-    )
+    start_date: str = Field(description="Start date for payment dates (YYYY-MM-DD)")
+    end_date: str = Field(description="End date for payment dates (YYYY-MM-DD)")
+    pay_group_id: Optional[str] = Field(default=None, description="Optional Pay Group ID to filter by")
 
 
 class GetPositionInput(BaseModel):
     """Input for retrieving a single position (seat) by Position_ID."""
 
-    position_id: str = Field(
-        description="Workday Position ID (e.g., 'P105294')"
-    )
+    position_id: str = Field(description="Workday Position ID (e.g., 'P105294')")
     include_closed: bool = Field(
-        default=True,
-        description="Also return closed positions (Workday omits them by default)"
+        default=True, description="Also return closed positions (Workday omits them by default)"
     )
 
 
 class GetJobProfileInput(BaseModel):
     """Input for retrieving a Job Profile by Job_Profile_ID."""
 
-    job_profile_id: str = Field(
-        description="Workday Job Profile ID / job code (e.g., 'STFLV')"
+    job_profile_id: str = Field(description="Workday Job Profile ID / job code (e.g., 'STFLV')")
+
+
+class GetWorkerEventHistoryInput(BaseModel):
+    """Input for retrieving a worker's Workday event history."""
+
+    worker_id: str = Field(description="Worker WID, Employee ID or Contingent Worker ID")
+    worker_id_type: Optional[str] = Field(
+        default=None,
+        description="WID | Employee_ID | Contingent_Worker_ID; omit to auto-detect "
+        "(WID by shape, else Employee_ID then Contingent_Worker_ID)",
+    )
+    effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_through")
+    effective_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_from")
+    updated_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires updated_through")
+    updated_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires updated_from")
+
+
+class GetWorkerJobChangesInput(BaseModel):
+    """Input for detecting a worker's job position / profile / organization changes."""
+
+    worker_id: str = Field(description="Worker WID, Employee ID or Contingent Worker ID")
+    worker_id_type: Optional[str] = Field(
+        default=None,
+        description="WID | Employee_ID | Contingent_Worker_ID; omit to auto-detect "
+        "(WID by shape, else Employee_ID then Contingent_Worker_ID)",
+    )
+    effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_through")
+    effective_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_from")
+    include_unchanged: bool = Field(default=False, description="Also return job events whose snapshots are identical")
+    include_compensation: bool = Field(
+        default=False,
+        description="Also snapshot and diff compensation (wage, currency, frequency, package/grade/profile) "
+        "and include compensation-change events",
     )
 
 
@@ -331,18 +274,14 @@ class GetTimeOffHistoryInput(BaseModel):
     start_date: Optional[str] = Field(
         default=None, description="Start of date range (YYYY-MM-DD). Defaults to 7 days ago."
     )
-    end_date: Optional[str] = Field(
-        default=None, description="End of date range (YYYY-MM-DD). Defaults to today."
-    )
+    end_date: Optional[str] = Field(default=None, description="End of date range (YYYY-MM-DD). Defaults to today.")
 
 
 class GetTimeOffBalanceInput2(BaseModel):
     """Input for retrieving time off plan balances."""
 
     worker_id: str = Field(description="Workday Employee ID")
-    time_off_plan_id: Optional[str] = Field(
-        default=None, description="Optional specific time off plan ID to filter"
-    )
+    time_off_plan_id: Optional[str] = Field(default=None, description="Optional specific time off plan ID to filter")
 
 
 class RequestTimeOffInput(BaseModel):
@@ -352,9 +291,7 @@ class RequestTimeOffInput(BaseModel):
     start_date: str = Field(description="First day of the time-off period (YYYY-MM-DD)")
     end_date: str = Field(description="Last day of the time-off period (YYYY-MM-DD)")
     time_off_type: str = Field(description="Time_Off_Type_ID value (e.g. 'VACATION', 'PTO')")
-    daily_quantity: float = Field(
-        default=8.0, description="Hours or days per calendar day (default 8.0)"
-    )
+    daily_quantity: float = Field(default=8.0, description="Hours or days per calendar day (default 8.0)")
     comment: Optional[str] = Field(default=None, description="Optional comment on the request")
     dry_run: bool = Field(
         default=True,
@@ -393,7 +330,7 @@ class WorkdayToolkit(AbstractToolkit):
         redis_url: Optional[str] = None,
         redis_key: str = "workday:access_token",
         timeout: int = 30,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize Workday toolkit with support for multiple service WSDLs.
@@ -439,16 +376,11 @@ class WorkdayToolkit(AbstractToolkit):
             or WORKDAY_REPORT_OWNER
             or self.report_username
         )
-        self.workday_url = (
-            kwargs.get("workday_url")
-            or self.credentials.get("workday_url")
-            or WORKDAY_URL
-        )
+        self.workday_url = kwargs.get("workday_url") or self.credentials.get("workday_url") or WORKDAY_URL
         self._http_client: Optional[HTTPService] = None
 
         # Composable service instances keyed by operation_type
         self._composables: Dict[str, WorkdayComposable] = {}
-
 
         self._initialized = False
 
@@ -459,7 +391,7 @@ class WorkdayToolkit(AbstractToolkit):
             "client_secret": WORKDAY_CLIENT_SECRET,
             "token_url": WORKDAY_TOKEN_URL,
             "wsdl_path": WORKDAY_WSDL_PATH,
-            "refresh_token": WORKDAY_REFRESH_TOKEN
+            "refresh_token": WORKDAY_REFRESH_TOKEN,
         }
 
     async def wd_start(self) -> str:
@@ -554,7 +486,7 @@ class WorkdayToolkit(AbstractToolkit):
         job_profile_id: Optional[str] = None,
         hire_date_from: Optional[str] = None,
         hire_date_to: Optional[str] = None,
-        max_results: int = 100
+        max_results: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Search for workers based on various criteria.
@@ -583,9 +515,7 @@ class WorkdayToolkit(AbstractToolkit):
         if search_text:
             request_criteria["Search_Text"] = search_text
         if manager_id:
-            request_criteria["Manager_Reference"] = {
-                "ID": [{"type": "Employee_ID", "_value_1": manager_id}]
-            }
+            request_criteria["Manager_Reference"] = {"ID": [{"type": "Employee_ID", "_value_1": manager_id}]}
 
         request: Dict[str, Any] = {
             "Request_Criteria": request_criteria,
@@ -639,9 +569,7 @@ class WorkdayToolkit(AbstractToolkit):
         svc = await self._get_composable("get_workers")
 
         request = {
-            "Request_References": {
-                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
-            },
+            "Request_References": {"Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}},
             "Response_Group": {
                 "Include_Personal_Information": include_personal,
                 "Include_Employment_Information": include_work,
@@ -656,11 +584,7 @@ class WorkdayToolkit(AbstractToolkit):
         )
 
     @tool_schema(GetWorkerJobDataInput)
-    async def wd_get_worker_job_data(
-        self,
-        worker_id: str,
-        effective_date: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def wd_get_worker_job_data(self, worker_id: str, effective_date: Optional[str] = None) -> Dict[str, Any]:
         """
         Get job-related data for a worker.
 
@@ -683,9 +607,7 @@ class WorkdayToolkit(AbstractToolkit):
             effective_date = datetime.now().strftime("%Y-%m-%d")
 
         request = {
-            "Request_References": {
-                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
-            },
+            "Request_References": {"Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}},
             "Response_Filter": {"As_Of_Effective_Date": effective_date},
             "Response_Group": {
                 "Include_Employment_Information": True,
@@ -716,11 +638,7 @@ class WorkdayToolkit(AbstractToolkit):
         return {"worker_id": worker_id, "job_data": parsed}
 
     @tool_schema(GetOrganizationInput)
-    async def wd_get_organization(
-        self,
-        org_id: str,
-        include_hierarchy: bool = False
-    ) -> Dict[str, Any]:
+    async def wd_get_organization(self, org_id: str, include_hierarchy: bool = False) -> Dict[str, Any]:
         """
         Get organization information by ID.
 
@@ -741,9 +659,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_References": {
-                "Organization_Reference": {
-                    "ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]
-                }
+                "Organization_Reference": {"ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]}
             },
             "Response_Group": {
                 "Include_Reference": True,
@@ -756,9 +672,7 @@ class WorkdayToolkit(AbstractToolkit):
         return helpers.serialize_object(result) if result else {}
 
     async def wd_get_worker_time_off_balance(
-        self,
-        worker_id: str,
-        output_format: Optional[Type[BaseModel]] = None
+        self, worker_id: str, output_format: Optional[Type[BaseModel]] = None
     ) -> Dict[str, Any]:
         """
         Get time off balance for a worker.
@@ -778,9 +692,7 @@ class WorkdayToolkit(AbstractToolkit):
         svc = await self._get_composable("get_workers")
 
         request = {
-            "Request_References": {
-                "Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}
-            },
+            "Request_References": {"Worker_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]}},
             "Response_Group": {"Include_Reference": True},
         }
 
@@ -793,10 +705,7 @@ class WorkdayToolkit(AbstractToolkit):
 
     @tool_schema(GetTimeOffBalanceInput)
     async def wd_get_time_off_balance(
-        self,
-        worker_id: str,
-        time_off_plan_id: Optional[str] = None,
-        output_format: Optional[Type[BaseModel]] = None
+        self, worker_id: str, time_off_plan_id: Optional[str] = None, output_format: Optional[Type[BaseModel]] = None
     ) -> Union[Dict[str, Any], BaseModel]:
         """
         Get time off plan balances for a worker using Absence Management API.
@@ -832,7 +741,7 @@ class WorkdayToolkit(AbstractToolkit):
         params: Optional[Dict[str, Any]] = None,
         query_string_template: Optional[str] = None,
         flatten_list_dicts: bool = False,
-        drop_flattened_columns: bool = False
+        drop_flattened_columns: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Execute a Workday RaaS (Reports as a Service) custom report via REST.
@@ -850,31 +759,25 @@ class WorkdayToolkit(AbstractToolkit):
         """
         if not self.report_username or not self.report_password:
             raise ValueError(
-                "Custom report credentials not configured. "
-                "Set WORKDAY_REPORT_USERNAME and WORKDAY_REPORT_PASSWORD."
+                "Custom report credentials not configured. " "Set WORKDAY_REPORT_USERNAME and WORKDAY_REPORT_PASSWORD."
             )
         # Debug logging (masked) to verify which creds/owner are being used
         try:
-            user_preview = (self.report_username[:3] + "..." if self.report_username else "none")
+            user_preview = self.report_username[:3] + "..." if self.report_username else "none"
             owner_preview = report_owner or self.report_owner or self.report_username
-            self.logger.debug(
-                "[wd_run_custom_report] user=%s owner=%s", user_preview, owner_preview
-            )
+            self.logger.debug("[wd_run_custom_report] user=%s owner=%s", user_preview, owner_preview)
         except Exception:  # noqa: BLE001
             pass
 
         # Initialize HTTP client lazily
         if self._http_client is None:
             self._http_client = HTTPService(
-                credentials={
-                    "username": self.report_username,
-                    "password": self.report_password
-                },
+                credentials={"username": self.report_username, "password": self.report_password},
                 auth_type="basic",
                 accept="application/xml",
                 timeout=max(self.timeout, 30),
                 rotate_ua=False,
-                use_http2=False
+                use_http2=False,
             )
 
         # Build URL and sanitize parameters
@@ -883,15 +786,12 @@ class WorkdayToolkit(AbstractToolkit):
             report_name=report_name,
             report_owner=report_owner,
             query_params=filtered_params,
-            query_string_template=query_string_template
+            query_string_template=query_string_template,
         )
 
         # Execute HTTP GET; use full_response to keep raw bytes
         response, error = await self._http_client.httpx_request(
-            url=url,
-            method="GET",
-            full_response=True,
-            follow_redirects=True
+            url=url, method="GET", full_response=True, follow_redirects=True
         )
 
         if error:
@@ -906,10 +806,7 @@ class WorkdayToolkit(AbstractToolkit):
         if not flatten_list_dicts:
             return entries
 
-        return self._flatten_entries(
-            entries,
-            drop_flattened_columns=drop_flattened_columns
-        )
+        return self._flatten_entries(entries, drop_flattened_columns=drop_flattened_columns)
 
     async def wd_get_workers_by_organization(
         self,
@@ -917,7 +814,7 @@ class WorkdayToolkit(AbstractToolkit):
         output_format: Optional[Type[BaseModel]] = None,
         include_subordinate: bool = True,
         exclude_inactive: bool = True,
-        max_results: int = 100
+        max_results: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Get all workers in an organization.
@@ -941,9 +838,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_Criteria": {
-                "Organization_Reference": [
-                    {"ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]}
-                ],
+                "Organization_Reference": [{"ID": [{"type": "Organization_Reference_ID", "_value_1": org_id}]}],
                 "Include_Subordinate_Organizations": include_subordinate,
                 "Exclude_Inactive_Workers": exclude_inactive,
             },
@@ -963,11 +858,7 @@ class WorkdayToolkit(AbstractToolkit):
         result = await svc.call_operation("Get_Workers", **request)
         return WorkdayResponseParser.parse_workers_response(result, output_format=output_format)
 
-    async def wd_get_workers_by_ids(
-        self,
-        worker_ids: List[str],
-        id_type: str = "Employee_ID"
-    ) -> List[Dict[str, Any]]:
+    async def wd_get_workers_by_ids(self, worker_ids: List[str], id_type: str = "Employee_ID") -> List[Dict[str, Any]]:
         """
         Get multiple workers by their IDs.
 
@@ -987,10 +878,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_References": {
-                "Worker_Reference": [
-                    {"ID": [{"type": id_type, "_value_1": wid}]}
-                    for wid in worker_ids
-                ]
+                "Worker_Reference": [{"ID": [{"type": id_type, "_value_1": wid}]} for wid in worker_ids]
             },
             "Response_Filter": {"As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d")},
             "Response_Group": {
@@ -1004,10 +892,7 @@ class WorkdayToolkit(AbstractToolkit):
         return self._parse_workers_response(result)
 
     async def wd_search_workers_by_name(
-        self,
-        name: str,
-        max_results: int = 100,
-        search_type: str = "Contains"  # Contains, Equals, Starts_With
+        self, name: str, max_results: int = 100, search_type: str = "Contains"  # Contains, Equals, Starts_With
     ) -> List[Dict[str, Any]]:
         """
         Search workers by name using Field_And_Parameter_Criteria.
@@ -1049,10 +934,7 @@ class WorkdayToolkit(AbstractToolkit):
         return self._parse_workers_response(result)
 
     async def wd_get_workers_by_manager(
-        self,
-        manager_id: str,
-        include_indirect_reports: bool = False,
-        max_results: int = 100
+        self, manager_id: str, include_indirect_reports: bool = False, max_results: int = 100
     ) -> List[Dict[str, Any]]:
         """
         Get all workers reporting to a manager.
@@ -1098,9 +980,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         # Now get all workers in that supervisory org
         return await self.wd_get_workers_by_organization(
-            org_id=supervisory_org_id,
-            include_subordinate=include_indirect_reports,
-            max_results=max_results
+            org_id=supervisory_org_id, include_subordinate=include_indirect_reports, max_results=max_results
         )
 
     async def wd_get_inactive_workers(
@@ -1108,7 +988,7 @@ class WorkdayToolkit(AbstractToolkit):
         org_id: Optional[str] = None,
         termination_date_from: Optional[str] = None,
         termination_date_to: Optional[str] = None,
-        max_results: int = 100
+        max_results: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Get terminated/inactive workers.
@@ -1152,7 +1032,7 @@ class WorkdayToolkit(AbstractToolkit):
         if termination_date_from or termination_date_to:
             filtered = []
             for worker in workers:
-                if (term_date := self._extract_termination_date(worker)):
+                if term_date := self._extract_termination_date(worker):
                     if termination_date_from and term_date < termination_date_from:
                         continue
                     if termination_date_to and term_date > termination_date_to:
@@ -1200,7 +1080,7 @@ class WorkdayToolkit(AbstractToolkit):
         worker_id: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        include_details: bool = False
+        include_details: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Get payroll results (historical/off-cycle) for a worker.
@@ -1228,10 +1108,7 @@ class WorkdayToolkit(AbstractToolkit):
 
     @tool_schema(GetCompanyPaymentDatesInput)
     async def wd_get_company_payment_dates(
-        self,
-        start_date: str,
-        end_date: str,
-        pay_group_id: Optional[str] = None
+        self, start_date: str, end_date: str, pay_group_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get company payment dates.
@@ -1282,11 +1159,7 @@ class WorkdayToolkit(AbstractToolkit):
         svc = await self._get_composable("get_positions")
 
         request = {
-            "Request_References": {
-                "Positions_Reference": [
-                    {"ID": [{"type": "Position_ID", "_value_1": position_id}]}
-                ]
-            },
+            "Request_References": {"Positions_Reference": [{"ID": [{"type": "Position_ID", "_value_1": position_id}]}]},
             "Request_Criteria": {"Include_Closed_Positions": include_closed},
             "Response_Group": {
                 "Include_Reference": True,
@@ -1335,9 +1208,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         request = {
             "Request_References": {
-                "Job_Profile_Reference": [
-                    {"ID": [{"type": "Job_Profile_ID", "_value_1": job_profile_id}]}
-                ]
+                "Job_Profile_Reference": [{"ID": [{"type": "Job_Profile_ID", "_value_1": job_profile_id}]}]
             },
         }
 
@@ -1356,21 +1227,85 @@ class WorkdayToolkit(AbstractToolkit):
         ]
         return self._parse_job_profile(profiles[0]) if profiles else {}
 
+    @tool_schema(GetWorkerEventHistoryInput)
+    async def wd_get_worker_event_history(
+        self,
+        worker_id: str,
+        worker_id_type: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_through: Optional[str] = None,
+        updated_from: Optional[str] = None,
+        updated_through: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the Workday event history of a worker (hire, change job, organization
+        assignment, time entry, time off, benefits, ...).
+
+        Returns one dict per event with event_id, event_type, description,
+        effective_date and completed_at, sorted by effective date. Events are
+        references only: use wd_get_worker_job_changes to see what a job change changed.
+        """
+        if not self._initialized:
+            await self.wd_start()
+        svc = await self._get_composable("get_worker_event_history")
+        models = await svc.fetch_models(
+            "get_worker_event_history",
+            worker_id=worker_id,
+            worker_id_type=worker_id_type,
+            effective_from=effective_from,
+            effective_through=effective_through,
+            updated_from=updated_from,
+            updated_through=updated_through,
+        )
+        return [model.model_dump(mode="json") for model in models]
+
+    @tool_schema(GetWorkerJobChangesInput)
+    async def wd_get_worker_job_changes(
+        self,
+        worker_id: str,
+        worker_id_type: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_through: Optional[str] = None,
+        include_unchanged: bool = False,
+        include_compensation: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a worker's job changes over time: position, job profile, business title,
+        location, supervisory organization, cost center, company, pay group and manager,
+        and optionally compensation (include_compensation=True).
+
+        Returns one dict per effective date with kind ("hire" | "change" | "no_change"),
+        the triggering events, the before/after job snapshots and the list of changed fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+        svc = await self._get_composable("get_worker_job_changes")
+        models = await svc.fetch_models(
+            "get_worker_job_changes",
+            worker_id=worker_id,
+            worker_id_type=worker_id_type,
+            effective_from=effective_from,
+            effective_through=effective_through,
+            include_unchanged=include_unchanged,
+            include_compensation=include_compensation,
+        )
+        return [model.model_dump(mode="json") for model in models]
+
     def _parse_job_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """
         Flatten a serialized Get_Job_Profiles ``Job_Profile`` element.
         """
+
         def ref_id(ref: Any, id_type: str) -> Optional[str]:
             return extract_by_type((first(ref) or {}).get("ID", []), id_type)
 
         jp_data = (profile.get("Job_Profile_Data") or {}).get("Job_Profile_Request_Data") or {}
         basic = first(jp_data.get("Job_Profile_Basic_Data"))
         compensation = first(jp_data.get("Job_Profile_Compensation_Data"))
-        skills = ((jp_data.get("Qualification_Replacement_Data") or {}).get("Skill_Qualification_Replacement") or {})
+        skills = (jp_data.get("Qualification_Replacement_Data") or {}).get("Skill_Qualification_Replacement") or {}
 
         return {
-            "job_profile_id": ref_id(profile.get("Job_Profile_Reference"), "Job_Profile_ID")
-            or jp_data.get("Job_Code"),
+            "job_profile_id": ref_id(profile.get("Job_Profile_Reference"), "Job_Profile_ID") or jp_data.get("Job_Code"),
             "job_profile_wid": ref_id(profile.get("Job_Profile_Reference"), "WID"),
             "job_code": jp_data.get("Job_Code"),
             "job_title": basic.get("Job_Title"),
@@ -1433,6 +1368,7 @@ class WorkdayToolkit(AbstractToolkit):
         """
         Flatten a serialized Get_Positions ``Position`` element.
         """
+
         def ref_id(ref: Any, id_type: str) -> Optional[str]:
             return extract_by_type((first(ref) or {}).get("ID", []), id_type)
 
@@ -1468,8 +1404,7 @@ class WorkdayToolkit(AbstractToolkit):
         ]
 
         return {
-            "position_id": definition.get("Position_ID")
-            or ref_id(position.get("Position_Reference"), "Position_ID"),
+            "position_id": definition.get("Position_ID") or ref_id(position.get("Position_Reference"), "Position_ID"),
             "position_wid": ref_id(position.get("Position_Reference"), "WID"),
             "job_posting_title": definition.get("Job_Posting_Title"),
             "job_description": definition.get("Job_Description"),
@@ -1542,7 +1477,7 @@ class WorkdayToolkit(AbstractToolkit):
         report_name: str,
         report_owner: Optional[str],
         query_params: Dict[str, Any],
-        query_string_template: Optional[str] = None
+        query_string_template: Optional[str] = None,
     ) -> str:
         """Construct the RaaS URL for a custom report."""
         owner = report_owner or self.report_owner or self.report_username
@@ -1598,9 +1533,7 @@ class WorkdayToolkit(AbstractToolkit):
         return {k: v for k, v in params.items() if k not in internal_keys}
 
     def _flatten_entries(
-        self,
-        entries: List[Dict[str, Any]],
-        drop_flattened_columns: bool = False
+        self, entries: List[Dict[str, Any]], drop_flattened_columns: bool = False
     ) -> List[Dict[str, Any]]:
         """Flatten nested dict/list fields using pandas.json_normalize."""
         if not entries:
@@ -1680,17 +1613,19 @@ class WorkdayToolkit(AbstractToolkit):
         output = []
         for w in workers:
             worker_data = w.get("Worker_Data", {})
-            output.append({
-                "worker_id": worker_data.get("Worker_ID"),
-                "formatted_name": (
-                    worker_data.get("Personal_Data", {})
-                    .get("Name_Data", {})
-                    .get("Preferred_Name_Data", {})
-                    .get("Name_Detail_Data", {})
-                    .get("Formatted_Name")
-                    or worker_data.get("Worker_ID")
-                ),
-            })
+            output.append(
+                {
+                    "worker_id": worker_data.get("Worker_ID"),
+                    "formatted_name": (
+                        worker_data.get("Personal_Data", {})
+                        .get("Name_Data", {})
+                        .get("Preferred_Name_Data", {})
+                        .get("Name_Detail_Data", {})
+                        .get("Formatted_Name")
+                        or worker_data.get("Worker_ID")
+                    ),
+                }
+            )
         return output
 
     @tool_schema(GetWorkerInfoInput)
@@ -1788,9 +1723,7 @@ class WorkdayToolkit(AbstractToolkit):
         svc = await self._get_composable("get_workers")
         request = {
             "Request_Criteria": {
-                "Manager_Reference": {
-                    "ID": [{"type": "Employee_ID", "_value_1": worker_id}]
-                },
+                "Manager_Reference": {"ID": [{"type": "Employee_ID", "_value_1": worker_id}]},
                 "Exclude_Inactive_Workers": True,
             },
             "Response_Filter": {"Page": 1, "Count": 200},
@@ -1896,6 +1829,7 @@ class WorkdayToolkit(AbstractToolkit):
             Dict with 'date' (ISO-8601) and 'day_of_week' keys.
         """
         from datetime import date as _date
+
         d = _date.today()
         return {"date": d.isoformat(), "day_of_week": d.strftime("%A")}
 

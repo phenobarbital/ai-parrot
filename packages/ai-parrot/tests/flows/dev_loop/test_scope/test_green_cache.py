@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.test_scope import green_cache as gc
-from parrot.flows.dev_loop.test_scope.datatypes import TestTarget
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan, TestTarget
 from parrot.flows.dev_loop.test_scope.impact import ImportIndex
 from parrot.flows.dev_loop.test_scope.planner import build_plan
 from parrot.flows.dev_loop.test_scope.policy import ScopePolicy
@@ -55,6 +55,29 @@ def test_second_run_is_cached(git_repo):
     assert again.cached == (TEST,)
     assert all(TEST not in a for inv in again.invocations for a in inv.argv)
     assert any("green cache: skipped 1" in n for n in again.notes)
+
+
+def test_non_pytest_targets_pass_through_and_are_not_recorded(git_repo):
+    target = TestTarget(path="src/example.test.ts", distribution="ui", reason="declared", runner="vitest")
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            Invocation(
+                runner="vitest",
+                distribution="ui",
+                argv=("vitest", "run", target.path),
+                targets=(target,),
+            ),
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    gc.record_green(git_repo, namespace=NS, plan=plan, nodes=[("src/example.test.ts::runs", "passed")])
+    again = gc.filter_cached(git_repo, plan, namespace=NS)
+    assert again is plan
+    assert again.cached == ()
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,40 @@
+Agents that answer KPI questions today either write free SQL against `DatabaseQueryToolkit` /
+`SQLToolkit` or call pre-registered QuerySource slugs. Free text-to-SQL produces *plausible but
+wrong* numbers (the dbt Labs 2026 benchmark cited in the proposal: 84–90 % accuracy vs 98–100 %
+with a semantic layer, and — more important for governance — a semantic layer fails **loudly**
+on out-of-scope questions instead of inventing a figure). Slugs are exact but rigid: every new
+breakdown is a new slug.
+
+There is no place in ai-parrot where **metrics, dimensions, joins and time grains are declared
+once** and compiled on demand, and there is no governance plane for such queries: row-level
+security (RLS) in the repo exists only as a *post-hoc wrapper* (`inject_rls_sql` wraps the whole
+statement in `SELECT * FROM (...) WHERE pred`), which is **wrong for aggregates** — a tenant filter
+applied after `SUM()`/`COUNT()` either filters nothing (the column is gone) or leaks totals. There
+is no per-role metric/dimension allowlist, no column masking, no positive SQL allowlist, and no
+audit record that stores the compiled SQL next to the security context.
+
+Affected: **end users** (wrong KPI answers, data leakage across tenants/programs), **developers**
+(every dashboard agent re-invents metric definitions), **ops/security** (no auditable trail of
+what SQL ran under which identity).
+
+The proposal's research established three facts this brainstorm builds on:
+
+1. **No semantic-layer library is async.** The only viable integration is *compile-only*
+   (CPU-bound, `asyncio.to_thread`) and execute through our own async drivers.
+2. **No RLS format is portable** (Apache Ossie defines none; sidemantic / metrics_layer / semql
+   each differ), so governance is ai-parrot code regardless of engine.
+3. **Ibis was already rejected in this repo**: TASK-1437 (FEAT-219) resolved **NO-GO** for Ibis;
+   `dataset_manager/spatial/compiler.py:19` documents that two hand-written dialect templates are
+   used instead. That removes BSL-over-Ibis as the natural primary path.
+
+Decisions taken during discovery (Rounds 0–2):
+
+| Decision | Answer |
+|---|---|
+| Flow | `feature` → `dev` |
+| Engine | **sidemantic** (AGPL accepted, used directly, no engine-abstraction layer) for the main features; **own sqlglot compiler** where full control is needed |
+| Own-code responsibilities | free-SQL positive guard · RLS enforcement (not sidemantic `SecurityPolicy`) · column masking · a **fallback native metric compiler** |
+| Placement | new satellite distribution **`ai-parrot-semantic`** (PEP 420 namespace `parrot.semantic`) |
+| Model definitions / execution | YAML directory per agent (sidemantic-native + Ossie import); compile-only; execution via existing `DatabaseQueryToolkit` sources |
+| v1 scope | RLS via PBAC context · role allowlist · positive sqlglot guard + audit · saved/verified queries + Ossie import |
+| Surfaces | `SemanticLayerToolkit` · `parrot mcp-local` server · aiohttp handlers · DatasetManager hand-off |

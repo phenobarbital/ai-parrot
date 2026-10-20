@@ -1,0 +1,4 @@
+- Should cross-lane recursive follow-ups be supported in a future iteration?
+- Should the dedup merge preserve both findings verbatim when the file-path match has different symbols?
+- Should --budget=custom support user-specified per-lane limits?
+- What is the measured prompt-cache hit rate for forks of /sdd-proposal?

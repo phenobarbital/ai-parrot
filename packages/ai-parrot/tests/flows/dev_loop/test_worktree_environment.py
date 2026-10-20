@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -649,3 +650,32 @@ def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
     )
     assert follow_up.returncode == 0, follow_up.stderr
     assert str(main) in follow_up.stdout
+
+
+def test_lone_runner_command_detection() -> None:
+    assert policy._is_lone_runner_command("pytest tests/test_a.py")
+    assert policy._is_lone_runner_command("pnpm exec vitest run")
+    assert policy._is_lone_runner_command("npx vitest")
+    assert policy._is_lone_runner_command("cargo test")
+    assert not policy._is_lone_runner_command("pytest a.py && ls")
+    assert not policy._is_lone_runner_command("cd x; pytest")
+    assert not policy._is_lone_runner_command("ls -la")
+
+
+def test_scope_guard_verdict_is_returned_unchanged(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    verdict = "cd /w && python scripts/sdd/select_tests.py --tier task --run --verdict --worktree /w"
+    outcome = SimpleNamespace(action="verdict", message="")
+    monkeypatch.setattr(policy, "_load_guard_bash", lambda: (lambda command, worktree: (outcome, verdict)))
+    assert policy._scope_guard("pytest x.py", checkout[1]) == ("verdict", verdict)
+
+
+def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("verdict", "cd /w && python v.py"))
+    response = policy.hook_response(
+        {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest x"}}
+    )
+    updated = response["hookSpecificOutput"]["updatedInput"]
+    assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "cd /w && python v.py"]

@@ -87,3 +87,19 @@ def test_config_custom_histogram_buckets() -> None:
     buckets = [0.1, 0.5, 1.0, 2.0]
     cfg = ObservabilityConfig(histogram_buckets=buckets)
     assert cfg.histogram_buckets == buckets
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_metric_export_interval_must_be_positive(value: int) -> None:
+    """metric_export_interval_ms <= 0 is rejected at construction (FEAT-705 AC5)."""
+    with pytest.raises(ValidationError):
+        ObservabilityConfig(metric_export_interval_ms=value)
+
+
+def test_config_hash_changes_with_new_fields() -> None:
+    """A reconfigure that only flips enable_traces is detected by _hash_config."""
+    from parrot.observability.setup import _hash_config
+
+    assert _hash_config(ObservabilityConfig(enable_traces=True)) != _hash_config(
+        ObservabilityConfig(enable_traces=False)
+    )

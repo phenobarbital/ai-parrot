@@ -36,28 +36,65 @@ The task also creates the `parrot.sdd` package root (`__init__.py`, docstring on
 TASK-4085/4088 build `parrot.sdd.scripts` under, and the `packages/ai-parrot/tests/sdd/`
 test package (brief: `tests/sdd/` ownership belongs to this task).
 
-**Pre-seeded reference map.** Verified 2026-10-05 with
-`grep -oE 'scripts[./]sdd[./][a-z_]+'` over each file. The generated report must reproduce
-it (it is the scanner's acceptance oracle):
+**Pre-seeded reference map.** Re-verified 2026-10-19 on dev `9f51c7735` with
+`grep -oE 'scripts[./]sdd[./][A-Za-z_][A-Za-z0-9_]*'` over every file of `DEFAULT_GLOBS`. The
+generated report must reproduce it (it is the scanner's acceptance oracle). Helpers marked
+¹ are moved by TASK-4508 (move D):
 
 | Asset | Helpers referenced |
 |---|---|
-| `.claude/commands/sdd-done.md` | check_task_state, close_task, heal_orphans, sdd_meta, select_tests |
+| `.claude/commands/sdd-done.md` | check_e2e_closeout¹, check_task_state, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
 | `.claude/commands/sdd-fix.md` | ensure_worktree, reserve_ids |
-| `.claude/commands/sdd-insight.md` | insight (invoked as `python3 scripts/sdd/insight.py`, lines 51/85) |
+| `.claude/commands/sdd-insight.md` — not shipped (C22) | insight (invoked as `python3 scripts/sdd/insight.py`, lines 51/85) |
 | `.claude/commands/sdd-next.md`, `sdd-status.md` | doc_taxonomy, worktree_status |
-| `.claude/commands/sdd-spec.md` | reserve_ids, sdd_meta |
+| `.claude/commands/sdd-spec.md` | reserve_ids, sdd_meta, spec_tools |
 | `.claude/commands/sdd-start.md` | close_task, ensure_worktree, finalize_task, sdd_meta |
-| `.claude/commands/sdd-task.md` | check_task_graph, reserve_ids, sdd_meta |
+| `.claude/commands/sdd-task.md` | cache_test_contract¹, check_task_graph, reserve_ids, sdd_meta |
 | `.claude/commands/sdd-brief.md` *(rev 0.4 C17 — FEAT-698)* | brief_meta, check_task_graph, ensure_worktree |
 | `.claude/commands/sdd-brainstorm.md`, `sdd-proposal.md`, `sdd-tojira.md` | sdd_meta *(not in the original brief map — found by the verification grep)* |
 | `.claude/commands/sdd-codereview.md`, `sdd-explain.md`, `sdd-fromjira.md` | none |
+| `.claude/agents/sdd-autopilot.md` | ensure_worktree, select_tests |
+| `.claude/agents/sdd-ideation.md` | sdd_meta |
+| `.claude/agents/sdd-planner.md` | ensure_worktree, sdd_meta |
+| `.claude/agents/sdd-research.md` | ensure_worktree |
+| `.claude/agents/sdd-worker.md` | close_task, ensure_worktree, finalize_task, review_checkpoint, sdd_meta, select_tests |
+| `.claude/agents/sdd-coder.md`, `sdd-contract-probe.md` *[rev 0.5]*, `sdd-feedback.md`, `sdd-qa.md`, `sdd-secondopinion.md` | none |
+| `.claude/rules/worktree-management.md` | ensure_worktree, sdd_meta |
+| `.claude/rules/codebase-conventions.md`, `.claude/hooks/sdd-worker-format.sh` | none |
+| `sdd/templates/intake.procedure.md` | reserve_ids |
+| `sdd/templates/task.md` | close_task, ensure_worktree |
+| `sdd/templates/*` (the other 11) | none |
 | `sdd/WORKFLOW.md` | backfill_taxonomy, check_id_collisions, close_task, doc_taxonomy, ensure_worktree, id_ledger, install_hooks, migrate_index, reserve_ids |
+
+*(rev 0.5 C24)* Codex/Google twins, same grep, re-verified 2026-10-20 on `db7277048` (dev `0263f0724` +
+spec rev 0.5). They differ from their `.claude/` sources until TASK-4089 rewrites them:
+
+| Asset | Helpers referenced |
+|---|---|
+| `.agents/skills/sdd-done/SKILL.md` | check_e2e_closeout¹, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
+| `.agent/workflows/sdd-done.md` | check_task_state, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
+| `.agents/skills/sdd-task/SKILL.md`, `.agent/workflows/sdd-task.md` | cache_test_contract¹, check_task_graph, reserve_ids, sdd_meta |
+| `.agents/skills/sdd-spec/SKILL.md` | reserve_ids, sdd_meta |
+| `.agent/workflows/sdd-spec.md` | reserve_ids, sdd_meta, spec_tools |
+| `.agents/skills/sdd-start/SKILL.md` | ensure_worktree, finalize_task |
+| `.agent/workflows/sdd-start.md` | close_task, ensure_worktree, finalize_task, sdd_meta |
+| `.agents/skills/sdd-brief/SKILL.md` *(no Google twin yet — TASK-4089)* | brief_meta, check_task_graph, ensure_worktree |
+| `.agents/skills/sdd-fix/SKILL.md`, `.agent/workflows/sdd-fix.md` | ensure_worktree, reserve_ids |
+| `.agents/skills/sdd-{next,status}/SKILL.md`, `.agent/workflows/sdd-{next,status}.md` | doc_taxonomy, worktree_status |
+| `.agents/skills/sdd-insight/SKILL.md`, `.agent/workflows/sdd-insight.md` — not shipped (C22) | insight |
+| `.agents/skills/sdd-{brainstorm,fromjira,proposal}/SKILL.md`, `.agent/workflows/sdd-{brainstorm,proposal,tojira}.md` | sdd_meta |
+| `.agents/skills/sdd-{codereview,explain,tojira}/SKILL.md`, `.agent/workflows/sdd-{codereview,explain,fromjira}.md` | none |
+| `.agents/agents/sdd-worker/agent.md` | close_task, ensure_worktree, sdd_meta |
+| `.agent/agents/sdd-worker/agent.md` | close_task, ensure_worktree, finalize_task, sdd_meta, select_tests |
+| `.agent/agents/sdd-autopilot/agent.md` | select_tests |
+| `.agents/agents/sdd-ideation/agent.md`, `.agent/agents/sdd-ideation/agent.md` | sdd_meta |
+| `.agents/agents/sdd-research/agent.md`, `.agent/agents/sdd-research/agent.md` | ensure_worktree |
+| `.agents/agents/sdd-{autopilot,contract-probe,feedback,planner,qa,secondopinion}/agent.md` *(`contract-probe`: rev 0.5)*, `.agent/agents/sdd-{feedback,planner,qa,secondopinion}/agent.md` | none |
 
 External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 34,
 `tmux` 1, `codex` 9, `git-lfs` 0, `source .venv` 3, `.venv/bin` 4, `uv run` 3, `/tmp/` 2,
-`packages/ai-parrot` 8, `.claude/worktrees` 9. Example: `sdd-done.md:172` uses
-`TASK_FILES=$(jq -r '.tasks[].file' …)`.
+`packages/ai-parrot` 8, `.claude/worktrees` 9 *(counts from 2026-10-05; not re-counted)*.
+Example: `sdd-done.md:184` uses `TASK_FILES=$(jq -r '.tasks[].file' …)`.
 
 Publication-safety sample (C11, verified 2026-10-14 over the TASK-4090 asset set): 11 files
 contain `trocglobal.atlassian.net` or a real `NAV-<n>` ticket key; 14 files reference
@@ -94,8 +131,46 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   `sdd-brief.md` row (`brief_meta`, `check_task_graph`, `ensure_worktree`; verified on
   `925b0f1a2`: `sdd-brief.md:18,132` ensure_worktree, `:151` brief_meta, `:154`
   check_task_graph), the asset inventory counts 15 commands and 14 templates
-  (`sdd/templates/brief.md`), and AC-4 checks the new row. The scanner itself does not
+  (`sdd/templates/brief.md`) *(readiness 2026-10-19: 13 git-tracked templates on dev; rev 0.5 C22: `/sdd-insight` is not shipped)*, and AC-4 checks the new row. The scanner itself does not
   change — it globs `.claude/commands/sdd-*.md`.
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: helper-reference map regenerated over the full
+  `DEFAULT_GLOBS` set (agent/rule/template rows added; `sdd-done` gains `check_e2e_closeout`,
+  `close_resolved_issues`, `test_report`, `sdd-task` gains `cache_test_contract` — all four
+  moved by TASK-4508; `sdd-spec` gains `spec_tools`); templates are 13 (`research_plan.schema.json`
+  does not exist — also supersedes the "14 templates" count in the rev 0.4 bullet above);
+  anchors `sdd-done.md:172`→`:184`, the `E2E_STATUS … jq` lines are gone (0af88638e),
+  `pyproject.toml:960-963`→`:965-968`; move-list wording updated.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
+  `.claude/agents/sdd-contract-probe.md` (`cbbe243a7`; 10 Claude agents) and, later the same day (`b53d93ba4`), its
+  Antigravity copy `.agents/agents/sdd-contract-probe/agent.md` (9 Google agents) *[rev 0.5]*. `/sdd-task`,
+  `/sdd-brainstorm` and `/sdd-proposal` and their twins call it, so it ships (spec M6: 10 agents);
+  `.claude/agents/sdd-*.md` and `.agents/agents/sdd-*/agent.md` already glob it. FEAT-708 also inserted lines into
+  those three commands (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those
+  files must be re-located by `grep` at pickup.
+  Here: the inventory gains `sdd-contract-probe` on both hosts. It references no `scripts/sdd` helper (its oracle
+  rows are "none") and, since `b53d93ba4`, has no `monorepo-path` finding any more (the `import` check resolves
+  modules with `git ls-files`, the examples use generic paths; locked by
+  `tests/sdd_scripts/test_contract_probe_hosts.py`).
+- Resolved by spec rev 0.5 (2026-10-20; approved by Jesus Lara — every decision D1–D18 is closed, D11 included):
+  - C24 / D11 — S5 also scans `.agents/` and `.agent/`: `DEFAULT_GLOBS` gains `.agents/skills/sdd-*/SKILL.md`,
+    `.agents/agents/sdd-*/agent.md`, `.agent/workflows/sdd-*.md` and `.agent/agents/sdd-*/agent.md`;
+    the asset inventory, the reference map (twin table) and AC-4 cover them; a test pins the globs. No other
+    D1–D8 clause applies here.
+  - C22 — `/sdd-insight` is not shipped in v1; its rows stay in the map, marked "not shipped (C22)".
+- Verified on `dev` `69fb12a41` (2026-10-20) *[rev 0.5]*:
+  - Counts: 15 commands, **10 agents** (was 9), 13 tracked templates; the Google host has 15 workflows
+    (`.agent/workflows/sdd-brief.md` committed in `69fb12a41`) and 9 `.agents/agents/` agents. A dev checkout may
+    also hold an untracked `sdd/templates/research_plan.schema.json` (ignored by the global `templates/` rule,
+    `.gitignore:273`); the `sdd/templates/*` glob picks it up, it has no helper reference, and the report must not
+    depend on it (scan from a clean worktree).
+  - Anchors re-verified, unchanged: `sdd-insight.md:51,85`, `sdd-done.md:184,206,356`,
+    `sdd-brief.md:18,132,151,154`, `.claude/skills/second-opinion/SKILL.md:8`, `sdd-worker-format.sh:1`,
+    `pyproject.toml:965-968`. Helper map regenerated with the verification grep: identical to the Context table
+    except the new `sdd-contract-probe.md` / `agent.md` rows ("none").
 
 ---
 
@@ -125,7 +200,7 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   functions that task calls.
 - `parrot/sdd/cli.py`, `installer.py`, `scripts/`, `_assets/` (other M6 tasks).
 - `pyproject.toml` package-data. `[tool.setuptools.packages.find] include = ["parrot*"]`
-  (`packages/ai-parrot/pyproject.toml:960-963`, re-verified 2026-10-14) already picks up the
+  (`packages/ai-parrot/pyproject.toml:965-968`, re-verified 2026-10-19) already picks up the
   new `parrot.sdd` package.
 - Fixing the org-data / `CLAUDE.md` / branch-literal findings in the markdown (TASK-4089) and
   gating CI on them (TASK-4090). This task only detects and reports them.
@@ -157,7 +232,7 @@ from pathlib import Path
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/pyproject.toml:960-963 (re-verified 2026-10-14) — package discovery already covers parrot.sdd
+# packages/ai-parrot/pyproject.toml:965-968 (re-verified 2026-10-19) — package discovery already covers parrot.sdd
 # [tool.setuptools.packages.find] where = ["src"]; include = ["parrot*"]; namespaces = true
 
 # Publication-safety samples (C11a, verified 2026-10-14 by grep over the TASK-4090 asset set):
@@ -172,21 +247,29 @@ from pathlib import Path
 # Asset set to scan (all verified to exist 2026-10-05):
 #   .claude/commands/sdd-*.md   (15 files: brainstorm, brief [rev 0.4 C17], codereview, done, explain,
 #                                fix, fromjira, insight, next, proposal, spec, start, status, task, tojira)
-#   .claude/agents/sdd-*.md     (9 files: autopilot, coder, feedback, ideation, planner, qa,
-#                                research, secondopinion, worker)
+#   .claude/agents/sdd-*.md     (10 files [rev 0.5]: autopilot, coder, contract-probe, feedback, ideation,
+#                                planner, qa, research, secondopinion, worker)
 #   .claude/rules/*.md          (codebase-conventions.md, worktree-management.md)
 #   .claude/hooks/sdd-worker-format.sh
-#   sdd/templates/*             (14 files: brainstorm.md, brief.md [rev 0.4 C17], design_research.prompt.md,
-#                                design_research.schema.json, finding.md, intake.procedure.md,
-#                                intake.schema.json, proposal.md, research_plan.prompt.md,
-#                                research_plan.schema.json, spec.md, state.schema.json,
-#                                synthesis.prompt.md, task.md)
+#   sdd/templates/*             (13 files, re-verified 2026-10-19: brainstorm.md, brief.md [rev 0.4 C17],
+#                                design_research.prompt.md, design_research.schema.json, finding.md,
+#                                intake.procedure.md, intake.schema.json, proposal.md, research_plan.prompt.md,
+#                                spec.md, state.schema.json, synthesis.prompt.md, task.md)
 #   sdd/WORKFLOW.md
+#   rev 0.5 C24 — the Codex/Google twins (verified 2026-10-20 on db7277048):
+#   .agents/skills/sdd-*/SKILL.md     (15: the .claude/commands set, incl. brief and insight)
+#   .agents/agents/sdd-*/agent.md     (9 [rev 0.5]: autopilot, contract-probe (b53d93ba4), feedback, ideation, planner,
+#                                      qa, research, secondopinion, worker)
+#   .agent/workflows/sdd-*.md         (15 [rev 0.5]: sdd-brief.md committed in 69fb12a41 — TASK-4089 modifies it)
+#   .agent/agents/sdd-*/agent.md      (8: same names as .agents/agents/)
+#   /sdd-insight (command + both twins) is not shipped in v1 (C22) but is still scanned.
 
 # Verified sample references (line numbers):
 #   .claude/commands/sdd-insight.md:51,85   python3 scripts/sdd/insight.py \
-#   .claude/commands/sdd-done.md:172        TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
-#   .claude/commands/sdd-done.md:227-228    E2E_STATUS=$(echo "$E2E_JSON" | jq -r '.status // "MISSING"')
+#   .claude/commands/sdd-done.md:184        TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
+#   .claude/commands/sdd-done.md:356        STATUS=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .status' …)
+#   .claude/commands/sdd-done.md:206        GATE_JSON=$(python -m scripts.sdd.check_e2e_closeout \   (TASK-4462, 0af88638e —
+#                                            replaced the former E2E_STATUS jq lines)
 #   .claude/hooks/sdd-worker-format.sh:1    #!/usr/bin/env bash
 ```
 
@@ -332,6 +415,10 @@ DEFAULT_GLOBS: tuple[str, ...] = (
     ".claude/hooks/sdd-worker-format.sh",
     "sdd/templates/*",
     "sdd/WORKFLOW.md",
+    ".agents/skills/sdd-*/SKILL.md",      # rev 0.5 C24 — Codex/Google twins
+    ".agents/agents/sdd-*/agent.md",
+    ".agent/workflows/sdd-*.md",
+    ".agent/agents/sdd-*/agent.md",
 )
 REPO_SCRIPT_RE = re.compile(r"scripts[./]sdd[./](?P<name>[A-Za-z_][A-Za-z0-9_]*)(?:\.py|\.sh)?")
 # Command position only (line start, backtick, `$(`, pipe, `&&`, `;`) so prose like "ask codex for…" never matches.
@@ -468,7 +555,7 @@ See **Test Specification** below. That block is the starting file.
 <generated>
 
 ## Conclusions
-<hand-written: (1) helpers not in the 18-module move list, if any; (2) external tools TASK-4091 must
+<hand-written: (1) helpers not in the TASK-4085–4088 + TASK-4508 move list, if any; (2) external tools TASK-4091 must
 warn about; (3) POSIX-only constructs that cannot be made portable and must be documented as POSIX-first;
 (4) C11a: the org-data / claude-md-ref / branch-literal lines TASK-4089 must rewrite — placeholders
 `https://your-org.atlassian.net` and `PROJ-123`, no `CLAUDE.md` references, branch names read from
@@ -509,9 +596,14 @@ are generator output, not literal text.
 - [ ] AC-3: `python -m parrot.sdd.audit --root <empty dir>` exits 2. Over the repo it
   exits 0 and the report contains no absolute path.
 - [ ] AC-4: The Helper reference map generated over the real assets matches the Context
-  table. At minimum, `sdd-spec.md` maps to {reserve_ids, sdd_meta} and `sdd-done.md` to
-  {check_task_state, close_task, heal_orphans, sdd_meta, select_tests}, and `sdd-brief.md` to
-  {brief_meta, check_task_graph, ensure_worktree} *(rev 0.4 C17)*.
+  table. At minimum, `sdd-spec.md` maps to {reserve_ids, sdd_meta, spec_tools}, `sdd-done.md` to
+  {check_e2e_closeout, check_task_state, close_resolved_issues, close_task, heal_orphans, sdd_meta,
+  select_tests, test_report}, `sdd-task.md` to {cache_test_contract, check_task_graph, reserve_ids,
+  sdd_meta} (`check_e2e_closeout`, `close_resolved_issues`, `test_report`, `cache_test_contract`:
+  moved by TASK-4508), and `sdd-brief.md` to {brief_meta, check_task_graph, ensure_worktree}
+  *(rev 0.4 C17)*. *(rev 0.5 C24)* The twin rows match the second Context table (e.g.
+  `.agents/skills/sdd-done/SKILL.md` and `.agent/workflows/sdd-done.md` each include `test_report` and
+  `close_resolved_issues`); `/sdd-insight` rows are kept and labelled "not shipped (C22)".
 - [ ] AC-5: `missing_tools` returns only tools `shutil.which` cannot resolve (tested with
   monkeypatch).
 - [ ] AC-6: `sdd/state/FEAT-633/spikes/S5-sdd-assumptions.md` is committed, generated by
@@ -623,6 +715,13 @@ def test_real_assets_reference_map() -> None:
     findings = scan_paths([REPO_ROOT / ".claude/commands/sdd-spec.md"])
     names = {m.group("name") for f in findings if f.kind == "repo-script" for m in audit.REPO_SCRIPT_RE.finditer(f.snippet)}
     assert {"reserve_ids", "sdd_meta"} <= names
+
+
+def test_default_globs_cover_codex_and_google_twins() -> None:  # rev 0.5 C24
+    assert {
+        ".agents/skills/sdd-*/SKILL.md", ".agents/agents/sdd-*/agent.md",
+        ".agent/workflows/sdd-*.md", ".agent/agents/sdd-*/agent.md",
+    } <= set(audit.DEFAULT_GLOBS)
 
 
 def test_main_empty_root_exits_2(tmp_path: Path) -> None:

@@ -1,0 +1,36 @@
+- **Async-first, compile-only.** sidemantic (and any fallback) runs as a pure function in
+  `asyncio.to_thread`; the event loop never touches a sync DB adapter. Execution goes through
+  `AbstractDatabaseSource.query()` (asyncpg / BigQuery / DuckDB) — never sidemantic's own adapters.
+- **AGPL containment.** sidemantic is AGPL-3.0; core `ai-parrot` is MIT (`packages/ai-parrot/pyproject.toml:17`).
+  Only `ai-parrot-semantic` may import sidemantic. Nothing under `packages/ai-parrot/`,
+  `ai-parrot-tools/` or `ai-parrot-server/` may import it at module level; the server handler
+  imports lazily and registers only when the satellite is installed.
+- **Governance is deny-by-default.** A model marked governed compiled without a
+  `PermissionContext` raises — this is *stricter* than `DataPlanePolicyGuard`'s fail-open when
+  `ctx is None` and must be an explicit design statement.
+- **RLS before aggregation.** Predicates are injected at the base-table scan (fan-out safe), never
+  by wrapping the final statement. Values are rendered as typed literals/parameters, never string-formatted.
+- **Positive allowlists only.** sqlglot is a transpiler, not a validator: the guard walks the AST
+  and requires every table / column / function to be known. One `Select`, no `Command`/DDL/DML,
+  forced `LIMIT`.
+- **PBAC gates every request.** Resolve physical resources and enforce `driver:connect` and
+  `table:read` before returning compiled SQL or executing it, including cache hits, saved queries,
+  dimension-value queries and raw SQL. Governed requests fail closed if the evaluator is unavailable.
+- **Caches contain no governed SQL.** Cache only pre-governance compiler output. Apply current
+  member permissions, PBAC, RLS and masking on every request; never cache authorization decisions.
+  No reusable query-result cache in v1; dataset hand-off uses bounded, expiring, subject-owned handles.
+- **Sensitive-column use is explicit.** A projection mask grants no right to filter, group, order,
+  join or compute on the underlying value. Enforce role-specific usage rights through AST lineage.
+- **Dataset isolation survives hand-off.** Results and attached DatasetManager instances must be
+  scoped to the authenticated subject and session. A shared manager is not an eligible destination.
+- **Dialects:** Postgres, BigQuery, DuckDB in v1 (all three have `AbstractDatabaseSource`
+  implementations and entries in `SQLGLOT_DIALECT_MAP`).
+- **Pins:** `sidemantic==0.12.0` (exact — field moves and CLI renames shipped unlabeled; `main`
+  already adds a Rust wheel `sidemantic-rs`), `sqlglot>=30.1,<31` (sidemantic floor), Apache Ossie
+  spec `0.1.1` pinned in the loader.
+- **No new tool surface in core.** Only base machinery lives in `parrot/tools/`; the concrete
+  toolkit ships in the satellite (the AGPL boundary is the reason it is not in `ai-parrot-tools`).
+- Codebase conventions apply (`.claude/rules/codebase-conventions.md`): aiohttp only, Pydantic v2,
+  `self.logger`, `uv`, 120 cols, tests under `packages/ai-parrot-semantic/tests/`.
+
+---

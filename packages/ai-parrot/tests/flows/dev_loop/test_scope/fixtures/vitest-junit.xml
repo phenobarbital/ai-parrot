@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="vitest tests" tests="3" failures="1" errors="0" time="0.42">
+  <testsuite name="src/lib/form.test.ts" tests="3" failures="1" errors="0" skipped="0" time="0.40">
+    <testcase classname="src/lib/form.test.ts" file="src/lib/form.test.ts" name="renders a field" time="0.01"/>
+    <testcase classname="src/lib/form.test.ts" file="src/lib/form.test.ts" name="skips hidden" time="0.01"/>
+    <testcase classname="src/lib/form.test.ts" file="src/lib/form.test.ts" name="validates required" time="0.02">
+      <failure message="expected true to be false" type="AssertionError">AssertionError: expected true to be false
+ ❯ src/lib/form.test.ts:42:18</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

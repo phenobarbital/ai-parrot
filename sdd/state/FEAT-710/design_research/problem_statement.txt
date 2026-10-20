@@ -1,0 +1,26 @@
+
+The Navigator telemetry epic (NVP-502) needs AI cost, tokens and error rate per **tenant**, user and agent,
+written to a BigQuery sink (`TelemetryEvent` + `BigQueryBatchSubscriber`, NVP-505, which lands in
+`navigator-eventbus`). The closed PR #1747 proposed doing this with a `TelemetryBridge` *inside* ai-parrot.
+That design would have added a fourth in-process subscriber to every LLM call, recomputed cost a fourth time,
+run BigQuery I/O in the agent process, collided with the existing `parrot.observability.setup_telemetry`,
+and introduced a TROC-specific `program_slug` concept into the framework.
+
+ai-parrot already has everything needed for an out-of-process design:
+- `navigator-eventbus` is a core dependency (`packages/ai-parrot/pyproject.toml:187`), and the lifecycle
+  `EventRegistry` used by every bot *is* `navigator_eventbus.lifecycle.registry.EventRegistry`.
+- The registry has per-subscription dual-emit (`forward_to_bus=True`) to an `EventBus` channel
+  `"{prefix}.{EventClassName}"`, fire-and-forget (FEAT-176/177, extracted in FEAT-313/317, brokers FEAT-316).
+- Tenancy already exists (FEAT-707): handlers resolve the tenant server-side via `resolve_request_tenant`
+  and pass `ask(tenant=...)`.
+
+What is missing:
+- Nothing forwards the four usage events to a bus: the global registry has no `EventBus`, and no
+  subscription with `forward_to_bus=True` exists for them.
+- The events carry `user_id`/`session_id` but no `tenant` and no `cost_usd`. A ContextVar cannot cross the
+  bus, and an external consumer has no pricing tables.
+- The tenant ContextVar is skills-specific (`_skill_tenant`, `skills/tenancy.py:77`) and is bound only for
+  `tenant_based` bots.
+- AgentTalk (`handlers/agent.py`) neither resolves nor passes the tenant. Its two `save_turn` calls omit
+  `metadata`, so per-turn usage is lost.
+

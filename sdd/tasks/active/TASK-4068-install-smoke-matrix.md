@@ -13,9 +13,10 @@
 ## Context
 
 Spec §3 Module 0, spike **S1**: before building the `--global` bootstrap (M2), prove that
-`uv venv --python 3.12` + `uv pip install ai-parrot` works on a clean, compiler-free machine
+`uv venv --python 3.12` + `uv pip install ai-parrot ai-parrot-tools` works on a clean, compiler-free machine
 (macOS arm64 / Windows x64 / Ubuntu x64) and that `wikitoolkit mcp` then answers an MCP
-`initialize`, recording every sdist fallback. The compiled dependency chain
+`initialize`, recording every sdist fallback. *[rev 0.5 C20]* `ai-parrot-tools` is part of the
+managed runtime: `wikitoolkit mcp`'s wiki tools live in `parrot_tools.wiki` since FEAT-540. The compiled dependency chain
 (navigator-api[uvloop], navigator-auth, asyncdb, ormsgpack, brotli, numexpr, faiss-cpu,
 pyarrow, the two in-repo Cython extensions — spec §7 "Wheel availability is the gating risk")
 is the unproven part.
@@ -27,13 +28,40 @@ codex S11 requires ("build success is not the gate").
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `wiki/cli.py` / `wiki/mcp_server.py` line anchors and the new
+  `--transport` selection in the Codebase Contract; `--only-binary` Does-NOT-Exist entry reworded (the
+  flag exists); the `workflow_call` input is now `wheel-artifact-pattern`, downloaded with `pattern:` +
+  `merge-multiple: true` (consistent with TASK-4094's `core-dist-*`). Verified on dev:
+  `wikitoolkit build --quiet --no-export --no-graph` succeeds in a fresh temp git repo.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C20 — default install spec is now `ai-parrot ai-parrot-tools` (script `DEFAULT_SPEC` + both workflow `spec`
+    inputs; `--wheel` repeatable so core + tools wheels install together); the decision rule treats a
+    `parrot_tools` import error as a missing-dependency failure; S1 records per leg whether ai-parrot-tools'
+    deps (PyGithub → cryptography/pynacl, ruamel-yaml) install compiler-free.
+  - D1 (→ C20) — why the bridge: core-only `wikitoolkit mcp` fails today because `build_framework_tools`
+    (`mcp_server.py:347`) imports `create_wiki_tools` from `knowledge/wiki/tools.py`, whose `_EXPORTS` at :69
+    point at `parrot_tools.wiki.*` (wiki rows :70-78); the transport-neutral descriptors already live in core
+    (`knowledge/wiki/transport.py:482`, `build_operation_descriptors`). A core-only fallback is follow-up
+    `issue:2c263fd19a1a`, outside FEAT-633 — never a new FEAT-633 task and never a condition for closing this one.
+  - `mcp_ok` is stricter than a bare handshake: `initialize` answers AND a `tools/list` sent after
+    `notifications/initialized` lists the wiki tools (at least `wiki_query`). A unit test covers that check
+    against a fake stdio server.
+  - Anchors re-checked on dev 2026-10-20: all Codebase Contract anchors are current.
+
+---
+
 ## Scope
 
 - Implement `scripts/install/smoke_install.py`, a stdlib-only CLI that creates a throwaway
-  uv venv, installs ai-parrot (from a requirement or a local wheel) with `--no-build` by
+  uv venv, installs ai-parrot + ai-parrot-tools (default spec `ai-parrot ai-parrot-tools`,
+  *[rev 0.5 C20]*; or local wheels) with `--no-build` by
   default, runs the three console scripts' `--help`, builds a wiki in a temp git repo and
   performs a JSON-RPC `initialize` against `wikitoolkit mcp` over stdio, and writes a
-  JSON `SmokeReport`.
+  JSON `SmokeReport`. *[rev 0.5 D1]* After `initialize` it sends `notifications/initialized` and
+  `tools/list`; `mcp_ok` needs the wiki tools (at least `wiki_query`) in that list.
+- *[rev 0.5 C20]* S1 also records, per leg, whether ai-parrot-tools' dependencies
+  (PyGithub → cryptography/pynacl, ruamel-yaml) install without a compiler.
 - Add `.github/workflows/install-matrix.yml` (`workflow_dispatch` + `workflow_call`) running
   the script on ubuntu/macos/windows with a uv-managed Python only.
 - Write unit tests for `mcp_initialize` (fake stdio server) and `venv_script` (both platforms).
@@ -42,7 +70,9 @@ codex S11 requires ("build success is not the gate").
 
 **NOT in scope**: running the workflow on GitHub (a human triggers it; results are pasted
 into the report); changing `release.yml` or `[tool.cibuildwheel]` (TASK-4094); the
-`--global` bootstrap (TASK-4074/4075); any launcher code (TASK-4071/4072).
+`--global` bootstrap (TASK-4074/4075); any launcher code (TASK-4071/4072); the linux-aarch64
+install-matrix leg (TASK-4094, *[rev 0.5 C24]*); *[rev 0.5 C20]* a core-only `wikitoolkit mcp`
+(follow-up `issue:2c263fd19a1a`, outside FEAT-633).
 
 ---
 
@@ -73,14 +103,23 @@ import importlib.util  # stdlib — scripts/install/ is NOT a package (no __init
 # bookstore = "parrot.knowledge.bookstore.cli:main"          # line 206
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/cli.py
-def mcp() -> None:            # line 1464 — `wikitoolkit mcp` → parrot.knowledge.wiki.mcp_server.main
-def build(...):               # line 1515 — options --quiet (1488), --no-export (1490), --no-graph (1495), --no-git (1487)
+def mcp() -> None:            # line 1537 — `wikitoolkit mcp` → parrot.knowledge.wiki.mcp_server.main (declares no click options)
+def build(...):               # line 1604 — options --quiet (1561), --no-export (1563), --no-graph (1568), --no-git (1560)
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py
-def main() -> None:           # line 313 — exits 1 on stderr "Error: not inside a git repository with a wiki"
-#   when find_project_root(cwd) is None (lines 321-327) AND exits 1 with
-#   "wiki not built yet ... Run `wikitoolkit build` first." when not config.is_built(root) (lines 335-340)
+def main() -> None:           # line 699 — exits 1 on stderr "Error: not inside a git repository with a wiki"
+#   when find_project_root(cwd) is None (lines 711-717) AND, when no remote is configured
+#   (resolve_remote, lines 727-729), exits 1 with "wiki not built yet ... Run `wikitoolkit build` first."
+#   when not config.is_built(root) (lines 731-735)
 #   ⇒ the smoke MUST `git init` + `wikitoolkit build` in the temp dir before `wikitoolkit mcp`.
+#   Transport: main() parses `--transport auto|framework|sdk` (line 708, default auto) from argv — not exposed by
+#   the `wikitoolkit mcp` click command. auto = the framework StdioMCPServer below; it falls back to the MCP SDK
+#   server only when importing parrot.mcp fails (_resolve_transport, lines 525-545), logging
+#   "framework MCP transport unavailable ...; falling back to the SDK" to stderr (line 544).
+#   [rev 0.5 C20] build_framework_tools (line 347) imports create_wiki_tools, which
+#   packages/ai-parrot/src/parrot/knowledge/wiki/tools.py:69-90 (_EXPORTS) resolves from parrot_tools.wiki.tools —
+#   i.e. the ai-parrot-tools distribution (packages/ai-parrot-tools/pyproject.toml:6), whose dependencies include
+#   "PyGithub>=2.1" (:30) and "ruamel-yaml>=0.18" (:35). Without it `wikitoolkit mcp` fails before `initialize`.
 
 # packages/ai-parrot/src/parrot/mcp/local_server.py — the wire format mcp_initialize must speak
 class StdioMCPServer(LocalMCPServerBase):          # line 54
@@ -105,7 +144,8 @@ async def handle_initialize(self, params) -> dict:                         # lin
 - ~~`.github/workflows/install-matrix.yml`~~ — new here; no existing workflow uses `workflow_call`.
 - ~~Content-Length (LSP-style) framing in the parrot stdio server~~ — it is newline-delimited JSON only.
 - ~~a `wikitoolkit mcp` that serves an unbuilt repo~~ — it exits 1 (see above).
-- ~~`uv pip install --only-binary`~~ — use uv's `--no-build` (refuses every sdist build).
+- ~~`--only-binary` as this smoke's no-sdist switch~~ — the flag does exist in `uv pip install` (uv 0.11.29),
+  but it is not used here; use uv's `--no-build` (refuses every sdist build).
 - ~~macOS core wheels~~ — only `parrot-codec` builds them today (spec §6); an S1 failure on macOS is expected evidence, not a script bug.
 
 ---
@@ -197,6 +237,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 SCRIPTS: tuple[str, ...] = ("parrot", "wikitoolkit", "bookstore")
+DEFAULT_SPEC = "ai-parrot ai-parrot-tools"   # rev 0.5 C20: wikitoolkit mcp's wiki tools live in parrot_tools.wiki
 INITIALIZE = {
     "jsonrpc": "2.0", "id": 1, "method": "initialize",
     "params": {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -256,8 +297,12 @@ def mcp_initialize(cmd: list[str], cwd: Path, timeout: float = 30.0) -> dict:
         raise NotImplementedError
 
 
-def run_smoke(spec: str | None, wheel: Path | None, python: str, no_build: bool) -> SmokeReport:
-    """Create a temp uv venv, install, run the three scripts' ``--help`` and the MCP handshake."""
+def run_smoke(spec: str | None, wheels: list[Path], python: str, no_build: bool) -> SmokeReport:
+    """Create a temp uv venv, install, run the three scripts' ``--help`` and the MCP handshake.
+
+    ``spec`` is a whitespace-separated requirement list (``DEFAULT_SPEC``); ``wheels`` are local
+    wheels installed together instead (core + ai-parrot-tools, rev 0.5 C20).
+    """
     report = SmokeReport(platform=f"{platform.system()}-{platform.machine()}", python=python)
     uv = shutil.which("uv")
     if uv is None:
@@ -266,12 +311,16 @@ def run_smoke(spec: str | None, wheel: Path | None, python: str, no_build: bool)
     with tempfile.TemporaryDirectory(prefix="parrot-smoke-") as tmp:
         venv, repo = Path(tmp) / "venv", Path(tmp) / "repo"
         # FILL IN: `uv venv <venv> --python <python>`; `uv pip install --python <venv> [--no-build]
-        #   <spec | wheel>`; on failure parse stderr for each package uv refused to build into
-        #   sdist_failures — bounded by "every sdist fallback recorded" (spec §3 M0)
+        #   <spec.split() | *wheels>`; on failure parse stderr for each package uv refused to build into
+        #   sdist_failures — bounded by "every sdist fallback recorded" (spec §3 M0; incl. ai-parrot-tools'
+        #   PyGithub → cryptography/pynacl and ruamel-yaml, rev 0.5 C20)
         # FILL IN: for each SCRIPTS run venv_script(venv, name) --help → scripts_ok[name]
         # FILL IN: git init <repo>, write one tracked file, `wikitoolkit build --quiet --no-export
         #   --no-graph` (exact flags/needs of a fresh repo decided by running it — bounded by
-        #   mcp_server.py:335-340), then mcp_initialize([wikitoolkit, "mcp"], repo) → mcp_ok
+        #   mcp_server.py:731-735), then mcp_initialize([wikitoolkit, "mcp"], repo) → mcp_ok; a
+        #   `parrot_tools` import error in the stderr tail is recorded in `errors` as a missing-dependency
+        #   failure, not stdout pollution — bounded by the decision rule (rev 0.5 C20)
+        #   *[rev 0.5 D1]* mcp_ok also needs tools/list (after notifications/initialized) to hold wiki_query
         raise NotImplementedError
     return report
 
@@ -280,14 +329,15 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry: exit 0 iff install, all scripts and the MCP handshake succeeded."""
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--spec", default=None, help="pip requirement (default: ai-parrot)")
-    source.add_argument("--wheel", type=Path, default=None, help="local wheel to install instead")
+    source.add_argument("--spec", default=None, help=f"whitespace-separated pip requirements (default: {DEFAULT_SPEC})")
+    source.add_argument("--wheel", type=Path, action="append", default=None,
+                        help="local wheel to install instead; repeat for core + ai-parrot-tools")
     parser.add_argument("--python", default="3.12")
     parser.add_argument("--no-build", dest="no_build", action="store_true", default=True)
     parser.add_argument("--allow-build", dest="no_build", action="store_false")
     parser.add_argument("--json-out", type=Path, default=None)
     args = parser.parse_args(argv)
-    report = run_smoke(args.spec or (None if args.wheel else "ai-parrot"), args.wheel, args.python, args.no_build)
+    report = run_smoke(args.spec or (None if args.wheel else DEFAULT_SPEC), args.wheel or [], args.python, args.no_build)
     payload = json.dumps(asdict(report), indent=2)
     if args.json_out:
         args.json_out.write_text(payload, encoding="utf-8")
@@ -308,12 +358,12 @@ name: install-matrix
 on:
   workflow_dispatch:
     inputs:
-      spec: {description: "pip requirement to install", default: "ai-parrot", type: string}
+      spec: {description: "pip requirements to install (whitespace-separated)", default: "ai-parrot ai-parrot-tools", type: string}
       python: {description: "uv-managed Python", default: "3.12", type: string}
   workflow_call:
     inputs:
-      spec: {type: string, default: "ai-parrot", required: false}
-      wheel-artifact: {type: string, default: "", required: false}   # TASK-4094: name of an uploaded wheel artifact
+      spec: {type: string, default: "ai-parrot ai-parrot-tools", required: false}   # rev 0.5 C20
+      wheel-artifact-pattern: {type: string, default: "", required: false}   # TASK-4094: pattern for the core-dist-* + dist-tools artifacts
       python: {type: string, default: "3.12", required: false}
 
 jobs:
@@ -329,13 +379,15 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v10.2.0     # verified pin: release.yml:90
       # NO actions/setup-python — uv supplies Python
-      - if: ${{ inputs.wheel-artifact != '' }}
+      - if: ${{ inputs.wheel-artifact-pattern != '' }}
         uses: actions/download-artifact@v8   # verified: release.yml:541
-        with: {name: "${{ inputs.wheel-artifact }}", path: dist}
+        with: {pattern: "${{ inputs.wheel-artifact-pattern }}", merge-multiple: true, path: dist}
       - name: Smoke
         shell: bash
         run: |
-          # FILL IN: when dist/ holds a wheel for this platform pass --wheel <it>, else --spec "${{ inputs.spec }}"
+          # FILL IN: when the merged dist/ holds an ai_parrot wheel whose platform tag matches this leg (and the
+          #   cp tag of inputs.python) pass --wheel <it> --wheel <the ai_parrot_tools wheel> (rev 0.5 C20),
+          #   else --spec "${{ inputs.spec }}"
           #   — bounded by one uv invocation per leg and the report path below
           uv run --no-project --python "${{ inputs.python }}" scripts/install/smoke_install.py \
             --spec "${{ inputs.spec }}" --json-out "smoke-${{ matrix.os }}.json"
@@ -424,24 +476,29 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 # Spike S1 — clean-machine install matrix (FEAT-633)
 
 ## How to run
-- GitHub → Actions → **install-matrix** → Run workflow (inputs: `spec`, default `ai-parrot`;
-  `python`, default `3.12`), or `gh workflow run install-matrix.yml -f spec=ai-parrot -f python=3.12`.
+- GitHub → Actions → **install-matrix** → Run workflow (inputs: `spec`, default `ai-parrot ai-parrot-tools`;
+  `python`, default `3.12`), or `gh workflow run install-matrix.yml -f spec="ai-parrot ai-parrot-tools" -f python=3.12`.
 - Each leg uploads `smoke-<os>.json` (`SmokeReport`). Local: `uv run --no-project --python 3.12
   scripts/install/smoke_install.py --json-out smoke.json`.
 
 ## Results (fill from the run)
-| OS | Run URL | install_ok | sdist_failures | parrot | wikitoolkit | bookstore | mcp_ok |
-|---|---|---|---|---|---|---|---|
-| ubuntu-latest (x64) | | | | | | | |
-| macos-latest (arm64) | | | | | | | |
-| windows-latest (x64) | | | | | | | |
+| OS | Run URL | install_ok | sdist_failures | tools deps wheel-only (PyGithub → cryptography/pynacl, ruamel-yaml) | parrot | wikitoolkit | bookstore | mcp_ok |
+|---|---|---|---|---|---|---|---|---|
+| ubuntu-latest (x64) | | | | | | | | |
+| macos-latest (arm64) | | | | | | | | |
+| windows-latest (x64) | | | | | | | | |
 
 ## Decision rule (spec §3 M0)
 - All three legs green ⇒ S1 passes; bootstrap (TASK-4074/4075) may proceed in any order vs TASK-4094.
 - Any leg with `sdist_failures` or `install_ok=false` ⇒ S1 FAILS: TASK-4094 (core wheel matrix)
   ships BEFORE the bootstrap; list each failing package and its proposed remedy (marker-guarded
   extra, upstream wheel, in-repo wheel build) here.
-- `mcp_ok=false` with install green ⇒ file a ledger issue (stdio/stdout pollution) — blocks M1/M2.
+- `mcp_ok=false` with install green ⇒ a `parrot_tools` import error in the MCP stderr is a
+  missing-dependency failure (the install spec lacks ai-parrot-tools, rev 0.5 C20) — fix the spec;
+  otherwise file a ledger issue (stdio/stdout pollution) — blocks M1/M2. *[rev 0.5 D1]* `mcp_ok` also
+  requires `tools/list` to hold `wiki_query`; a handshake without the wiki tools is not a pass.
+- Per leg, record whether ai-parrot-tools' dependencies (PyGithub → cryptography/pynacl, ruamel-yaml)
+  installed without a compiler (none of them in `sdist_failures`) — rev 0.5 C20.
 
 ## Verdict
 <!-- pass | fail — with date and run URLs -->
@@ -450,7 +507,7 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 ### FILL IN checklist
 - [ ] `smoke_install.py::mcp_initialize` — response validation + teardown; bounded by AC4 and local_server.py framing
 - [ ] `smoke_install.py::run_smoke` — uv invocations, sdist-failure parsing, fresh-repo build flags; bounded by spec §3 M0
-- [ ] `install-matrix.yml` — wheel-vs-spec selection when `wheel-artifact` is set; bounded by TASK-4094 reuse
+- [ ] `install-matrix.yml` — wheel-vs-spec selection when `wheel-artifact-pattern` is set (pick this leg's platform wheel and the `ai_parrot_tools` wheel from the merged `dist/`); bounded by TASK-4094 reuse
 
 ---
 
@@ -462,7 +519,10 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 - [ ] `--no-build` is on by default; an sdist fallback makes `install_ok` false and is listed in `sdist_failures`.
 - [ ] `install-matrix.yml` has `workflow_dispatch` and `workflow_call` triggers, 3-OS matrix, `astral-sh/setup-uv@v10.2.0`, no `setup-python`, `UV_PYTHON_PREFERENCE: only-managed`, and uploads the JSON report even on failure.
 - [ ] `S1-install-matrix.md` contains trigger instructions, the per-OS table and the spec §3 M0 decision rule.
-- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note).
+- [ ] *[rev 0.5 C20]* The default install spec is `ai-parrot ai-parrot-tools` in `smoke_install.py` (`DEFAULT_SPEC`) and in both `install-matrix.yml` `spec` inputs; `--wheel` is repeatable (core + tools wheels).
+- [ ] *[rev 0.5 C20]* The decision rule treats a `parrot_tools` import error as a missing-dependency failure, and the per-OS table records whether ai-parrot-tools' dependencies (PyGithub → cryptography/pynacl, ruamel-yaml) install without a compiler.
+- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note). *[rev 0.5 D1]* `mcp_ok` includes `tools/list` (after `notifications/initialized`) holding `wiki_query`.
+- [ ] *[rev 0.5 D1]* A unit test covers the `tools/list` check against a fake stdio server (lists `wiki_query` → ok; no wiki tools → `SmokeError`). The `mcp_initialize` signature stays as the blueprint fixes it.
 - [ ] `ruff check scripts/install/smoke_install.py packages/ai-parrot/tests/docs/test_smoke_install.py` passes.
 
 ---

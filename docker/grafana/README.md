@@ -119,15 +119,17 @@ OBSERVABILITY_ENABLED=true
 OBSERVABILITY_BACKEND=otel
 OBSERVABILITY_SERVICE_NAME=parrot
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp
-OBSERVABILITY_SAMPLING=0.0
+OBSERVABILITY_TRACES=false
 OBSERVABILITY_COST=True
 ```
 
-The endpoint is a **base URL** — the exporter appends `/v1/metrics`. Sampling is
-`0.0` because that endpoint carries both signals, Prometheus 2.x serves no
-`/v1/traces`, and `enable_traces` is not settable from the environment
-(`config.py:132`). Metrics export every 60 s and that interval has no env var, so
-allow a minute after the first LLM call before calling the dashboard broken.
+The endpoint is a **base URL** — the exporter appends `/v1/metrics`. Traces are
+off (`OBSERVABILITY_TRACES=false`) because that endpoint is Prometheus, which
+serves no `/v1/traces`. Metrics export every 60 s by default; set
+`OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` lower to see them sooner. Before
+adding `OTLP_TARGETS`, read the migration note in
+`docs/architecture/10-observability.md`: explicit targets replace this endpoint
+for both signals.
 
 The dashboard is provisioned from a **sibling** mount,
 `docker/grafana/provisioning/dashboards-parrot/` — not a subdirectory of the

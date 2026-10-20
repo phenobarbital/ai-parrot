@@ -28,6 +28,18 @@ so `import parrot.launcher` stays cheap.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `wiki/project.py` anchors (`parrot_home` 1223-1235→1371-1383, `PARROT_DIR`
+  :44→:45, `find_project_root` :920→:1034) and wiki `--project` options (cli.py:2734/3907/5496→2983/4445/6026);
+  added the approved rev 0.3 C16 note on the port source (TASK-4085 relocation). `worktree_environment.py`
+  anchors and the three `parrot_home` semantics are unchanged.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 — the launcher's `.git` walk-up (`find_project_root` and the `repository_paths` port) stops at the system
+    temp directory, mirroring `wiki.project._is_temp_root` (`project.py:1011-1031`) with stdlib `tempfile`; added
+    to imports, contract, Key Constraints, blueprint (`_is_temp_root`), AC-8 and `test_walk_up_stops_at_temp_root`.
+
+---
+
 ## Scope
 
 - Create `packages/ai-parrot/src/parrot/launcher.py` with constants `PARROT_HOME_ENV`,
@@ -37,6 +49,8 @@ so `import parrot.launcher` stays cheap.
 - Port (do NOT import) `repository_paths` and its `existing_directory` helper from
   `flows/dev_loop/worktree_environment.py`.
 - Implement warn-once-per-process stderr warnings for a project venv lacking the script.
+- *[rev 0.5 C24]* Stop the launcher's `.git` walk-up at the system temp directory, mirroring
+  `wiki.project._is_temp_root` with stdlib `tempfile`.
 - Create `packages/ai-parrot/tests/launcher/__init__.py` (this task owns the new test dir) and
   unit tests for every spec §4 M1 row except the subprocess ones.
 
@@ -63,6 +77,7 @@ emitters (TASK-4081+).
 ```python
 # Stdlib ONLY. No parrot.* import, no third-party import — not even typing_extensions.
 import os, sys                                   # stdlib
+import tempfile                                  # stdlib — rev 0.5 C24 temp-dir stop for the .git walk-up
 from collections.abc import Mapping, Sequence    # stdlib
 from pathlib import Path                         # stdlib
 ```
@@ -71,6 +86,8 @@ from pathlib import Path                         # stdlib
 ```python
 # packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py — PORT SOURCE (copy logic, never import:
 #   importing parrot.flows.* would break the stdlib-only rule)
+#   rev 0.3 C16: if TASK-4085 is done, port from packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py;
+#   the old path is a re-export shim (spec §2 Integration Points). Line anchors below are for the dev copy.
 def existing_directory(path: Path) -> Path:                     # line 27 — nearest existing ancestor, resolved
 def repository_paths(cwd: Path) -> tuple[Path, Path | None]:    # lines 53-71
 #   walks cwd + parents; `.git` dir → (root, marker.resolve()); `.git` FILE → must start "gitdir: "
@@ -81,16 +98,23 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
 #   `git_dir.parent / ".venv"` (line 79) and validity = `(resolved / "pyvenv.cfg").is_file()` (line 86)
 
 # The three existing PARROT_HOME readers — semantics parrot_home() MUST reproduce exactly:
-# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1223-1235
-#   raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   (line 1234; PARROT_DIR = ".parrot", line 44)
+# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1371-1383
+#   raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   (line 1382; PARROT_DIR = ".parrot", line 45)
 #   return Path(raw).expanduser()                               — read per call, never cached; NO .resolve()
 # packages/ai-parrot/src/parrot/knowledge/bookstore/config.py:66-75  — same, literal "~/.parrot" (line 74)
 # packages/ai-parrot/src/parrot/cli/modes.py:68-74                   — same, literal "~/.parrot" (line 70)
 #   ⇒ empty-string PARROT_HOME falls back to the default (`or`), `~` is expanded, path is NOT resolved.
 
+# rev 0.5 C24 — the temp-dir stop the launcher mirrors (copy the logic, never import wiki.project):
+# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1011-1031
+def _is_temp_root(candidate: Path) -> bool:   # temp_root = Path(tempfile.gettempdir()).resolve(); (OSError, RuntimeError) → False;
+#   True iff candidate == temp_root or candidate in temp_root.parents (projects BELOW the temp dir are unaffected)
+# project.py:1034-1058 find_project_root — `for candidate in (current, *current.parents): if _is_temp_root(candidate): break`
+#   (checked BEFORE the candidate's markers are inspected)
+
 # Existing CLI options named --project (collision hazard for argv parsing, see Implementation Notes):
-# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:3907  @click.option("--project", ...)  (entity attribute)
-# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:2734, :5496  (other subcommand --project options)
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:4445  @click.option("--project", ...)  (entity attribute)
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:2983, :6026  (other subcommand --project options)
 ```
 
 ### Does NOT Exist
@@ -99,7 +123,7 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
 - ~~Windows venv handling (`Scripts\`, `.exe`) anywhere in the repo~~ — `script_path` is the first.
 - ~~`packages/ai-parrot/tests/launcher/`~~ — new dir, created by this task.
 - ~~`parrot.knowledge.wiki.project.find_project_root` as a reusable launcher helper~~ — it exists
-  (project.py:920) but looks for `.parrot/wiki.json` and lives behind pydantic imports; the launcher's
+  (project.py:1034) but looks for `.parrot/wiki.json` and lives behind pydantic imports; the launcher's
   `find_project_root` is a different, stdlib function with a different signature. Never import it.
 
 ---
@@ -119,6 +143,7 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
     "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#repository_paths",
     "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#shared_environments",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#parrot_home",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#_is_temp_root",
     "sym:packages/ai-parrot/src/parrot/knowledge/bookstore/config.py#_parrot_home",
     "sym:packages/ai-parrot/src/parrot/cli/modes.py#cli_state_dir"
   ]
@@ -134,7 +159,8 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
 "can run directly as a Claude hook" (its module docstring, lines 1-5). Copy its
 `repository_paths` loop verbatim in spirit, with ONE deliberate change: a malformed `.git`
 file must NOT raise — a launcher crash would take down every console script, so treat it as
-"no repository" (return `(cwd, None)`).
+"no repository" (return `(cwd, None)`). *[rev 0.5 C24]* Plus the temp-dir stop below, which
+`wiki.project` has and `worktree_environment` does not.
 
 ### Key Constraints
 - **Pure functions**: everything takes `env`/`argv`/`cwd` parameters; nothing but `parrot_home()`
@@ -148,7 +174,7 @@ file must NOT raise — a launcher crash would take down every console script, s
 - **Symlinks**: compare `os.path.realpath` of both sides in `is_managed` and the self-skip above
   (a symlinked interpreter/venv must still count as managed — spec §4 integration row).
 - **`--project` collision**: wikitoolkit subcommands already define `--project` options with
-  other meanings (cli.py:2734, 3907, 5496). `find_project_root` therefore honours `--project`
+  other meanings (cli.py:2983, 4445, 6026). `find_project_root` therefore honours `--project`
   ONLY in leading position (`argv[0] == "--project"` with `argv[1]`, or `argv[0]` starting with
   `--project=`), i.e. before any subcommand. TASK-4072 strips it before dispatching.
 - **Warnings**: `sys.stderr.write` only (never stdout — spec §5 AC4); at most once per process per
@@ -157,10 +183,16 @@ file must NOT raise — a launcher crash would take down every console script, s
   inside a patched `os.name == "nt"` window (pathlib would instantiate `WindowsPath` on POSIX).
 - No `logging` — the module must not configure or emit through logging handlers (they may point
   at stdout in host processes).
+- *[rev 0.5 C24]* **Temp-dir stop**: the `.git` walk-up (`find_project_root`'s cwd walk and the
+  `repository_paths` port) stops — without inspecting the candidate — at the system temp directory or
+  any of its ancestors, mirroring `wiki.project._is_temp_root` (project.py:1011-1031) with stdlib
+  `tempfile` in a private launcher `_is_temp_root`. A stray `/tmp/.git` must never become the project;
+  projects below the temp dir (e.g. `tmp_path`) are unaffected.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` — port source
-- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1223` — PARROT_HOME semantics
+- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1371` — PARROT_HOME semantics
+- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1011` — `_is_temp_root` (rev 0.5 C24 temp-dir stop)
 
 ---
 
@@ -184,10 +216,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1234
+PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1382
 PARROT_VENV_ENV = "PARROT_VENV"            # new explicit override
 PARROT_PROJECT_ENV = "PARROT_PROJECT"      # new project-root pin
 LOOP_GUARD_ENV = "PARROT_LAUNCHER_RESOLVED"
@@ -209,6 +242,18 @@ def is_managed(prefix: str | None = None, *, env: Mapping[str, str] | None = Non
     return current == managed or current.startswith(managed + os.sep)
 
 
+def _is_temp_root(candidate: Path) -> bool:
+    """True when ``candidate`` is the system temp dir or one of its ancestors (rev 0.5 C24).
+
+    Mirrors ``wiki.project._is_temp_root`` (project.py:1011-1031); the ``.git`` walk-ups stop there.
+    """
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+    except (OSError, RuntimeError):
+        return False
+    return candidate == temp_root or candidate in temp_root.parents
+
+
 def _existing_directory(path: Path) -> Path:
     """Port of worktree_environment.existing_directory (:27): nearest existing ancestor, resolved."""
     # FILL IN: copy the body from worktree_environment.py:46-50 — bounded by stdlib-only
@@ -219,18 +264,20 @@ def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
     """(repo_root, common_git_dir_or_None). Port of worktree_environment.py:53-71.
 
     Deviation: a malformed ``.git`` file yields ``(cwd, None)`` instead of raising.
+    The walk stops at ``_is_temp_root`` (rev 0.5 C24) → ``(cwd, None)``.
     The main checkout of a linked worktree is ``common_git_dir.parent``.
     """
     # FILL IN: port lines 55-71 (gitdir:/commondir parsing, pruned admin dir → None) — bounded by
-    #   the deviation above and spec §4 test_worktree_prefers_local_then_main
+    #   the deviations above and spec §4 test_worktree_prefers_local_then_main
     raise NotImplementedError
 
 
 def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
     """Leading ``--project <p>``/``--project=<p>`` → PARROT_PROJECT → CLAUDE_PROJECT_DIR → walk-up to ``.git``."""
     # FILL IN: leading-position --project only (collision with wiki subcommand --project options,
-    #   wiki/cli.py:2734,3907,5496); relative values resolve against cwd; a pinned root that does
-    #   not exist falls through to the next source; walk-up accepts `.git` dir OR file — bounded by AC-3
+    #   wiki/cli.py:2983,4445,6026); relative values resolve against cwd; a pinned root that does
+    #   not exist falls through to the next source; walk-up accepts `.git` dir OR file and stops at
+    #   _is_temp_root (rev 0.5 C24) — bounded by AC-3, AC-8
     raise NotImplementedError
 
 
@@ -367,6 +414,17 @@ def test_warn_once_per_session(tmp_path, capsys):
     assert captured.err.count("\n") == 1
 
 
+def test_walk_up_stops_at_temp_root(tmp_path, monkeypatch):
+    """rev 0.5 C24: a stray `.git` in the system temp dir never becomes the project (mirrors wiki.project)."""
+    fake_tmp = tmp_path / "systmp"
+    (fake_tmp / ".git").mkdir(parents=True)
+    cwd = fake_tmp / "a" / "b"
+    cwd.mkdir(parents=True)
+    monkeypatch.setattr(launcher.tempfile, "gettempdir", lambda: str(fake_tmp))
+    assert launcher.find_project_root([], {}, cwd) is None
+    assert launcher.repository_paths(cwd) == (cwd.resolve(), None)
+
+
 # FILL IN: find_project_root precedence (leading --project / --project= > PARROT_PROJECT >
 #   CLAUDE_PROJECT_DIR > walk-up), non-leading --project ignored, malformed .git file → no crash,
 #   managed venv never returned as 'VIRTUAL_ENV' — bounded by spec §4 M1 rows
@@ -374,7 +432,7 @@ def test_warn_once_per_session(tmp_path, capsys):
 
 ### FILL IN checklist
 - [ ] `launcher.py::_existing_directory` / `repository_paths` — faithful port + no-raise deviation; bounded by worktree_environment.py:27-71
-- [ ] `launcher.py::find_project_root` — leading-only `--project`, precedence, existence checks; bounded by AC-3
+- [ ] `launcher.py::find_project_root` — leading-only `--project`, precedence, existence checks, temp-dir stop; bounded by AC-3, AC-8
 - [ ] `launcher.py::resolve_venv` — candidate order, validity, self-skip, warn-once; bounded by spec §5 AC2
 - [ ] `test_launcher_core.py` — remaining cases listed in the trailing FILL IN
 
@@ -389,6 +447,7 @@ def test_warn_once_per_session(tmp_path, capsys):
 - [ ] AC-5: `parrot_home()` matches today's three copies exactly: env read per call, empty value → `~/.parrot`, `~` expanded, not resolved.
 - [ ] AC-6: `script_path` returns `Scripts/<name>.exe` for Windows and `bin/<name>` otherwise (spec §5 Windows AC).
 - [ ] AC-7: a malformed `.git` file never raises out of any launcher function.
+- [ ] AC-8 *[rev 0.5 C24]*: the `.git` walk-up in `find_project_root` and `repository_paths` stops at the system temp directory or its ancestors, mirroring `wiki.project._is_temp_root` with stdlib `tempfile` (`test_walk_up_stops_at_temp_root`).
 - [ ] `ruff check packages/ai-parrot/src/parrot/launcher.py packages/ai-parrot/tests/launcher/` passes.
 
 ---
@@ -407,7 +466,8 @@ editable-installed against the main checkout).
 The `test_launcher_core.py` blueprint block above is the scaffold (spec §4 rows
 `test_launcher_not_managed_direct_call` (pure half), `test_resolve_order_and_validity`,
 `test_worktree_prefers_local_then_main`, `test_script_path_windows`,
-`test_warn_once_per_session`; fixture `linked_worktree_repo` per spec §4 Test Data). Fake venvs
+`test_warn_once_per_session`; plus `test_walk_up_stops_at_temp_root` for rev 0.5 C24, which
+patches `launcher.tempfile.gettempdir`; fixture `linked_worktree_repo` per spec §4 Test Data). Fake venvs
 are `pyvenv.cfg` + script stubs in `tmp_path`; no subprocess, no real git.
 
 ---

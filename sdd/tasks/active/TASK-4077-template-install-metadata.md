@@ -17,7 +17,8 @@ Spec §3 Module 4 (and §2 Data Models). Packaged toolkit templates today carry 
 nothing, so a missing distribution (e.g. `parrot_tools`, Playwright's browser) is only
 discovered when the MCP server fails to start. This task adds three install-metadata
 header keys to `ToolkitTemplate` and its lenient header parser, and fills them in for the
-four templates whose toolkits need extra packages. It is the data source for
+six templates whose toolkits need extra packages (`bounded-source` / `targeted-writer` added
+by spec rev 0.5 C24). It is the data source for
 `parrot self add <component>` (TASK-4079), the inventory hint (TASK-4078) and the
 `parrot self doctor` env check (TASK-4080).
 
@@ -31,6 +32,11 @@ Contract boundaries (spec §3 M4, codex S6 adopted scoped):
   tolerate templates carrying the new keys (forward compatibility).
 
 ---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: ai-parrot-tools pyproject anchors `scraping` 73→74 and `db` 77→78 (extras content unchanged); `toolkit_seed.py` and the 9-template set unchanged since 3677f322b; `querysource/conf.py:38-44` marked unverifiable (querysource not installed) — re-check at pickup.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 — `bounded-source.yaml` and `targeted-writer.yaml` now declare `requires_dist: parrot_tools` and `requires_pip: ai-parrot-tools`: added to Scope, Files, Complexity Contract, blueprint, tests and acceptance criteria (six templates instead of four).
 
 ## Scope
 
@@ -48,11 +54,13 @@ Contract boundaries (spec §3 M4, codex S6 adopted scoped):
 - Keep unknown keys silently ignored (and test it).
 - Add install metadata header lines to `browsing`, `scraping`, `lsp`, `querysource`
   templates (header lines only — template bodies untouched).
+- *[spec rev 0.5 C24]* Add `requires_dist: parrot_tools` and `requires_pip: ai-parrot-tools`
+  header lines to `bounded-source` and `targeted-writer` (header lines only).
 - Write tests for parsing, repeatability, unknown-key tolerance and the shipped values.
 
 **NOT in scope**: `ToolkitRow` / inventory / CLI hints (TASK-4078); running installs or
 post-install commands (TASK-4079); doctor checks (TASK-4080); headers for any template
-other than the four listed; validating requirement strings with `packaging` (not a core
+other than the six listed; validating requirement strings with `packaging` (not a core
 dependency — spec §5 "no new runtime dependency").
 
 ---
@@ -66,6 +74,8 @@ dependency — spec §5 "no new runtime dependency").
 | `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/scraping.yaml` | MODIFY | Header: requires_pip + post_install |
 | `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/lsp.yaml` | MODIFY | Header: requires_pip |
 | `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/querysource.yaml` | MODIFY | Header: requires_pip + requires_env |
+| `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/bounded-source.yaml` | MODIFY | Header: requires_dist + requires_pip (rev 0.5 C24) |
+| `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/targeted-writer.yaml` | MODIFY | Header: requires_dist + requires_pip (rev 0.5 C24) |
 | `packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py` | CREATE | Parser + shipped-values tests |
 
 ---
@@ -103,17 +113,22 @@ def load_template(name: str) -> ToolkitTemplate:               # line 63
 # packages/ai-parrot/src/parrot/mcp/_toolkit_templates/<name>.yaml — line 3 of each of the four:
 # browsing.yaml / scraping.yaml / lsp.yaml:  # parrot:requires_dist: parrot_tools
 # querysource.yaml:                          # parrot:requires_dist: parrot_tools,querysource
+# bounded-source.yaml / targeted-writer.yaml: NO requires_dist line — line 1 summary, line 2
+#   `# parrot:requires_llm: false|true`, line 3 the section key; line 4 `class: parrot_tools.tool_optimizations.*`
+#   (ai-parrot-tools — core ai-parrot does not depend on it)
 ```
 ```toml
 # packages/ai-parrot-tools/pyproject.toml
 name = "ai-parrot-tools"                                       # line 6 — the PyPI distribution name
-scraping = ["selenium>=4.35", ..., "playwright>=1.52", ...]    # line 73
-db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]             # line 77
+scraping = ["selenium>=4.35", ..., "playwright>=1.52", ...]    # line 74
+db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]             # line 78
 ```
 - `querysource.conf.asyncpg_url` (the DSN the querysource toolkit uses,
   `parrot_tools/querysource/_qs.py:63-64`) is built from `PG_USER`, `PG_PWD`, `PG_HOST`,
   `PG_PORT`, `PG_DATABASE` (`.venv/.../querysource/conf.py:38-44`); only `PG_USER` and
-  `PG_PWD` have no fallback.
+  `PG_PWD` have no fallback. **Not verifiable at the 2026-10-19 readiness review** —
+  querysource is not installed in the shared venv (`find_spec("querysource") is None`);
+  re-check these lines and the no-fallback claim at pickup before writing `requires_env`.
 - LSP: Pyright 1.1.414 + Node.js are operator-provisioned, "Nothing here is automatic"
   (`docs/sdd/lsp-pilot.md:19-37`).
 - Existing tests that must stay green: `tests/mcp/test_toolkit_templates.py`
@@ -141,6 +156,8 @@ db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]             # line 77
     {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/scraping.yaml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/lsp.yaml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/querysource.yaml", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/bounded-source.yaml", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/targeted-writer.yaml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -184,7 +201,7 @@ elif meta_content.startswith("requires_dist:"):
 ### Steps (in order)
 1. Add `import shlex` and the three fields to `ToolkitTemplate` — *why*: §2 Data Models fixes names/types; defaults keep every other template valid.
 2. Add the three local accumulators and three `elif` branches, then pass them to the ctor — *why*: mirrors the `requires_dist:` branch (spec §3 M4 "parser keys mirror existing branch").
-3. Add header lines to the four templates — *why*: these are the toolkits whose distributions are not core.
+3. Add header lines to the six templates — *why*: these are the toolkits whose distributions are not core (`bounded-source` / `targeted-writer`: spec rev 0.5 C24).
 4. Create the test file — *why*: spec §4 `test_template_new_headers_parse`, `test_template_unknown_keys_ignored`.
 
 ### `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` (MODIFY)
@@ -258,7 +275,7 @@ every branch and are skipped.
 # parrot:requires_pip: ai-parrot-tools[scraping]
 # parrot:post_install: python -m playwright install chromium
 ```
-**Why**: `playwright>=1.52` ships only in the `scraping` extra (ai-parrot-tools pyproject.toml:73); the browser binary is a separate download.
+**Why**: `playwright>=1.52` ships only in the `scraping` extra (ai-parrot-tools pyproject.toml:74); the browser binary is a separate download.
 
 ### `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/lsp.yaml` (MODIFY)
 ```yaml
@@ -275,7 +292,26 @@ every branch and are skipped.
 # parrot:requires_pip: ai-parrot-tools[db]
 # parrot:requires_env: PG_USER,PG_PWD
 ```
-**Why**: the `db` extra is the declared carrier of `querysource>=5.1.2` (ai-parrot-tools pyproject.toml:77); `PG_USER`/`PG_PWD` are the only `asyncpg_url` inputs with no fallback (querysource/conf.py:39-44). navconfig can also read them from `env/.env` — doctor (TASK-4080) reports them as a warning, not an error.
+**Why**: the `db` extra is the declared carrier of `querysource>=5.1.2` (ai-parrot-tools pyproject.toml:78); `PG_USER`/`PG_PWD` are the only `asyncpg_url` inputs with no fallback (querysource/conf.py:39-44). navconfig can also read them from `env/.env` — doctor (TASK-4080) reports them as a warning, not an error.
+
+### `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/bounded-source.yaml` (MODIFY — spec rev 0.5 C24)
+```yaml
+# occurrences: 1 (verified: grep -c '^# parrot:requires_llm:' packages/ai-parrot/src/parrot/mcp/_toolkit_templates/bounded-source.yaml)
+# AFTER — insert below `# parrot:requires_llm: false` (verified: bounded-source.yaml:2)
+# parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools
+```
+
+### `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/targeted-writer.yaml` (MODIFY — spec rev 0.5 C24)
+```yaml
+# occurrences: 1 (verified: grep -c '^# parrot:requires_llm:' packages/ai-parrot/src/parrot/mcp/_toolkit_templates/targeted-writer.yaml)
+# AFTER — insert below `# parrot:requires_llm: true` (verified: targeted-writer.yaml:2)
+# parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools
+```
+**Why**: both load `parrot_tools.tool_optimizations.*` (line 4 of each), which ships in
+ai-parrot-tools. With `requires_dist` set, `tests/mcp/test_toolkit_templates.py:38` skips the
+class-import probe for them, as it does for every other `requires_dist` template.
 
 ### `packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py` (CREATE)
 ```python
@@ -353,6 +389,15 @@ def test_lsp_and_querysource_metadata() -> None:
     raise NotImplementedError
 
 
+@pytest.mark.parametrize("name", ["bounded-source", "targeted-writer"])
+def test_tool_optimization_templates_declare_ai_parrot_tools(name: str) -> None:
+    """Spec rev 0.5 C24 — both declare requires_dist parrot_tools + requires_pip ai-parrot-tools."""
+    tpl = load_template(name)
+    assert tpl.requires_dist == ("parrot_tools",)
+    assert tpl.requires_pip == ("ai-parrot-tools",)
+    assert tpl.post_install == ()
+
+
 def test_every_shipped_template_still_loads() -> None:
     for name in available_templates():
         assert isinstance(load_template(name), ToolkitTemplate)
@@ -373,6 +418,7 @@ synthetic headers without adding a repo-local template source (forbidden by spec
 - [ ] `requires_pip` is repeatable and never comma-split; `post_install` is `shlex.split`; `requires_env` is comma-split.
 - [ ] Unknown `# parrot:` keys and an unparsable `post_install` are ignored, never fatal (spec §5 "old runtimes still parse new templates").
 - [ ] browsing/scraping/lsp/querysource ship the values fixed above; every other template parses with `()` defaults.
+- [ ] *[spec rev 0.5 C24]* bounded-source/targeted-writer declare `requires_dist == ("parrot_tools",)` and `requires_pip == ("ai-parrot-tools",)` (`test_tool_optimization_templates_declare_ai_parrot_tools`).
 - [ ] Existing template/seed tests still pass (`tests/mcp/test_toolkit_templates.py`, `tests/mcp/test_toolkit_seed.py`, `packages/ai-parrot/tests/mcp/test_lsp_template.py`).
 - [ ] `ruff check packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` clean.
 
@@ -394,7 +440,8 @@ editable-installed against the main checkout).
 
 See the CREATE block above (`packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py`):
 `test_template_new_headers_parse`, `test_template_unknown_keys_ignored` (spec §4 names),
-plus malformed-`post_install`, defaults, and shipped-value tests.
+plus malformed-`post_install`, defaults, and shipped-value tests (incl. the rev 0.5 C24
+`bounded-source` / `targeted-writer` values).
 
 ---
 

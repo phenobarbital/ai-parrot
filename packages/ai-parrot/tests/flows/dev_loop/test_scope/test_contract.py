@@ -3,6 +3,7 @@
 import pytest
 
 from parrot.flows.dev_loop.test_scope import is_broad_pytest, parse_validation_commands
+from parrot.flows.dev_loop.test_scope.datatypes import RunnerContract
 
 TASK_MD = (
     "## Acceptance Criteria\n- [ ] x\n\n## Validation Commands\n\n"
@@ -14,6 +15,17 @@ TASK_MD = (
 def test_parse_validation_commands():
     assert parse_validation_commands(TASK_MD) == [["pytest", "tests/a.py", "-q"], ["pytest", "tests/b.py::test_x"]]
     assert parse_validation_commands("## Scope\n") == []
+
+
+def test_runner_contract_freezes_settings():
+    """Runner settings cannot be mutated through a frozen contract."""
+    settings = {"markers": "unit"}
+    runner = RunnerContract(kind="pytest", targets=("tests/test_x.py",), settings=settings)
+    settings["markers"] = "changed"
+
+    assert runner.settings["markers"] == "unit"
+    with pytest.raises(TypeError):
+        runner.settings["markers"] = "changed"
 
 
 @pytest.mark.parametrize(

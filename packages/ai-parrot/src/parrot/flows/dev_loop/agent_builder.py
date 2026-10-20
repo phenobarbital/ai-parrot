@@ -133,6 +133,42 @@ def _get_int(getter: ConfigGetter, key: str, fallback: int) -> int:
 ENV_LLM_MAX_TURNS: str = "DEV_LOOP_LLM_MAX_TURNS"
 DEFAULT_LLM_MAX_TURNS: int = 60
 
+#: Per-task turn scaling (FEAT-709 follow-up). A flat budget starves tasks that
+#: touch many/long files (a 9-file docs task spent its 60 turns on one-call reads and
+#: never delivered), so the engine raises the budget with the task's declared file
+#: count: ``min(ceiling, max(base, LLM_TURNS_FIXED + per_file * declared_files))``.
+#: ``base`` stays the floor, so small tasks keep ``DEV_LOOP_LLM_MAX_TURNS``.
+ENV_LLM_TURNS_PER_FILE: str = "DEV_LOOP_LLM_TURNS_PER_FILE"
+DEFAULT_LLM_TURNS_PER_FILE: int = 6
+LLM_TURNS_FIXED: int = 30
+#: ``LLMCodeDispatchProfile.max_turns`` is validated ``le=100`` — never exceed it.
+LLM_TURNS_CEILING: int = 100
+
+
+def scaled_max_turns(
+    base: int,
+    declared_files: Optional[int],
+    *,
+    per_file: int = DEFAULT_LLM_TURNS_PER_FILE,
+    ceiling: int = LLM_TURNS_CEILING,
+) -> int:
+    """Return the turn budget for a task that declares ``declared_files`` files.
+
+    Args:
+        base: The configured flat budget (the floor).
+        declared_files: Files the task lists under "Files to Create / Modify";
+            ``None``/non-positive (unknown) keeps ``base``.
+        per_file: Turns added per declared file.
+        ceiling: Hard upper bound (the profile field's own limit).
+
+    Returns:
+        ``base`` clamped to ``ceiling`` when the count is unknown, otherwise
+        ``min(ceiling, max(base, LLM_TURNS_FIXED + per_file * declared_files))``.
+    """
+    if declared_files is None or declared_files < 1:
+        return min(base, ceiling)
+    return min(ceiling, max(base, LLM_TURNS_FIXED + per_file * declared_files))
+
 
 def build_dispatcher(
     spec: DevAgentSpec,

@@ -14,7 +14,7 @@ from parrot.flows.dev_loop.sdd_coder import background as background_module
 from parrot.flows.dev_loop.sdd_coder.background import BackgroundRegistry, ValidationSupervisor
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.test_scope.contract import contract_to_header, parse_spec_contract
-from parrot.flows.dev_loop.test_scope.datatypes import BaselineVerdict, PytestInvocation, ScopePlan, TestTarget
+from parrot.flows.dev_loop.test_scope.datatypes import BaselineVerdict, Invocation, ScopePlan, TestTarget
 
 
 def _supervisor(tmp_path: Path) -> tuple[ValidationSupervisor, BackgroundRegistry, Path]:
@@ -52,7 +52,7 @@ def _index(worktree: Path, *, malformed: bool = False) -> Path:
 def _plan(argv: tuple[str, ...] = ("pytest", "tests/test_declared.py"), *, tier: str = "merge") -> ScopePlan:
     """Return one cacheable invocation plan."""
     target = TestTarget(path="tests/test_declared.py", distribution="root", reason="declared")
-    invocation = PytestInvocation(distribution="root", argv=argv, targets=(target,))
+    invocation = Invocation(distribution="root", argv=argv, targets=(target,))
     return ScopePlan(
         tier=tier,
         invocations=(invocation,),
@@ -88,7 +88,7 @@ async def test_supervisor_passes_declared_and_contract(tmp_path: Path, monkeypat
     )
 
     assert captured["declared"] == [["pytest", "tests/test_declared.py", "-q"]]
-    assert captured["contract"].tests == ("tests/test_contract.py",)
+    assert captured["contract"].pytest.targets == ("tests/test_contract.py",)
 
 
 async def test_malformed_contract_is_admission_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

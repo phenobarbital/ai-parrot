@@ -40,6 +40,7 @@ from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...conf import AGENTS_DIR
+from ..scope import resolve_request_tenant
 
 
 class RedisWriter:
@@ -276,7 +277,6 @@ class AgentHandler(BaseView):
 
     def define_tools(self):
         """Define additional tools for the agent."""
-        pass
 
     def db_connection(
         self,
@@ -538,12 +538,9 @@ class AgentHandler(BaseView):
                     {'message': 'Address is required'},
                     status=400
                 )
-            rcpt = Actor(**{
-                "name": name,
-                "account": {
+            rcpt = Actor(name=name, account={
                     "address": email
-                }
-            })
+                })
             rcpts.append(rcpt)
         return rcpts
 
@@ -882,12 +879,15 @@ class AgentHandler(BaseView):
                 raise ValueError(
                     "No query provided or found in the request."
                 )
+        # Resolved outside the try: a resolver's 401/403 must reach the client, not become a 500.
+        tenant = await resolve_request_tenant(self.request.app, self.request)
         try:
             response = await agent.ask(
                 question=query,
                 use_conversation_history=False,
                 use_vector_context=False,
-                max_tokens=16000
+                max_tokens=16000,
+                tenant=tenant,
             )
             if isinstance(response, Exception):
                 raise response

@@ -16,15 +16,21 @@ class TestTarget:
     path: str  # repo-relative file, dir or node id
     distribution: str  # "<dist>" or "root"
     reason: str  # "declared" | "mirror" | "import" | "core" | "escalated"
+    runner: str = "pytest"
 
 
 @dataclass(frozen=True)
-class PytestInvocation:
-    """One pytest command for exactly one distribution."""
+class Invocation:
+    """One runner command for exactly one (runner, distribution) group (FEAT-709)."""
 
     distribution: str
-    argv: tuple[str, ...]  # full argv starting with "pytest"
+    argv: tuple[str, ...]
     targets: tuple[TestTarget, ...]
+    runner: str = "pytest"
+    cwd: str = "."
+    report_path: str = ""
+    report_format: str = "junit"
+    timeout_s: int = 0
 
 
 @dataclass(frozen=True)
@@ -43,7 +49,7 @@ class ScopePlan:
     """The per-tier selection result."""
 
     tier: str  # "task" | "merge" | "feature"
-    invocations: tuple[PytestInvocation, ...]
+    invocations: tuple[Invocation, ...]
     escalated: tuple[str, ...]
     core_hits: tuple[CoreHit, ...]
     skipped_escalations: tuple[str, ...]
@@ -62,15 +68,66 @@ class ScopePlan:
 
 
 @dataclass(frozen=True)
+class RunnerContract:
+    """One runner block of a schema-2 Validation Contract (FEAT-709)."""
+
+    __test__ = False
+    kind: str
+    targets: tuple[str, ...]
+    settings: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    tiers: tuple[str, ...] = ("task", "merge", "feature")
+
+    def __post_init__(self) -> None:
+        """Freeze settings so the frozen dataclass is deeply immutable."""
+        if not isinstance(self.settings, MappingProxyType):
+            object.__setattr__(self, "settings", MappingProxyType(dict(self.settings)))
+
+
+@dataclass(frozen=True, init=False)
 class TestContract:
-    """Normalized spec-declared validation contract (per-spec index header ``test_contract``, FEAT-699)."""
+    """Normalized Validation Contract (index header ``test_contract``; schema 2, schema 1 lifted)."""
 
-    __test__ = False  # not a pytest test class
+    __test__ = False
+    schema: int
+    runners: tuple[RunnerContract, ...]
+    digest: str
 
-    schema: int  # payload version; only 1 is understood
-    tests: tuple[str, ...]  # pytest operands: repo-relative file or file::node
-    markers: tuple[str, ...]  # registered marker names, never "real_llm"
-    digest: str  # "sha256:<hex>" of the normalized payload
+    def __init__(
+        self,
+        schema: int,
+        runners: tuple[RunnerContract, ...] | None = None,
+        digest: str = "",
+        *,
+        tests: tuple[str, ...] | None = None,
+        markers: tuple[str, ...] | None = None,
+    ) -> None:
+        """Initialize schema 2, accepting the former constructor only for transitional callers.
+
+        Schema-1 payloads from disk are validated and lifted by ``lift_schema1``. The
+        keyword-only compatibility branch exists solely for callers that constructed
+        the old value object directly; stored contracts never bypass digest validation.
+        """
+        if runners is None:
+            if schema != 1 or tests is None or markers is None:
+                raise TypeError("TestContract requires runners")
+            runners = (
+                RunnerContract(
+                    kind="pytest",
+                    targets=tuple(tests),
+                    settings={"markers": ",".join(sorted(markers))},
+                ),
+            )
+            schema = 2
+        elif tests is not None or markers is not None:
+            raise TypeError("TestContract accepts either runners or legacy tests/markers, not both")
+        object.__setattr__(self, "schema", schema)
+        object.__setattr__(self, "runners", tuple(runners))
+        object.__setattr__(self, "digest", digest)
+
+    @property
+    def pytest(self) -> RunnerContract | None:
+        """The pytest block, if any (green cache, planner markers, legacy consumers)."""
+        return next((runner for runner in self.runners if runner.kind == "pytest"), None)
 
 
 @dataclass(frozen=True)
@@ -89,6 +146,71 @@ class BaselineVerdict:
     nodeid: str
     status: str  # "new_red" | "baseline_red" | "unknown" | "flaky"
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """Normalized outcome of one Invocation, whatever its runner."""
+
+    runner: str
+    suite: str
+    tests: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    duration_s: float
+    exit_code: int
+    status: str
+    nodes: tuple[tuple[str, str], ...] = ()
+    failure_text: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    unmapped: int = 0
+
+    def __post_init__(self) -> None:
+        """Freeze ``failure_text``."""
+        if not isinstance(self.failure_text, MappingProxyType):
+            object.__setattr__(self, "failure_text", MappingProxyType(dict(self.failure_text)))
+
+
+@dataclass(frozen=True)
+class Failure:
+    """One failed node as a seat sees it."""
+
+    runner: str
+    nodeid: str
+    verdict: str
+    excerpt: str
+
+
+@dataclass(frozen=True)
+class RunnerSummary:
+    """Per-invocation counts inside a verdict."""
+
+    runner: str
+    suite: str
+    tests: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    cached: int
+    duration_s: float
+    exit_code: int
+    status: str
+
+
+@dataclass(frozen=True)
+class ValidationVerdict:
+    """The only validation payload a coder seat ever receives (FEAT-709)."""
+
+    schema: int
+    status: str
+    tier: str
+    runners: tuple[RunnerSummary, ...]
+    failures: tuple[Failure, ...]
+    cached: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

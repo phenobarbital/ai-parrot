@@ -14,11 +14,13 @@
 
 Spec §3 Module 6 moves the doc-referenced SDD helpers into `parrot/sdd/scripts/`. The
 `scripts/sdd/*.py` files become thin wrappers. The spec §5 bullet is: "every helper
-referenced by installed markdown resolves as `python -m parrot.sdd.scripts.<name>`;
-`scripts/sdd/` wrappers keep the monorepo's existing invocations working".
+referenced by installed markdown is invoked as `parrot sdd run <name>` and runs from a
+wheel-only managed install (C3 test); `scripts/sdd/` wrappers keep the monorepo's existing
+invocations working". *[rev 0.5: quote refreshed; `python -m parrot.sdd.scripts.<name>` still works for direct use]*
 
 This is move **C**, the remaining six Python helpers: `doc_taxonomy`,
-`backfill_taxonomy`, `migrate_index`, `select_tests`, `insight` and `install_hooks`.
+`backfill_taxonomy`, `migrate_index`, `select_tests`, `insight` and `install_hooks` — plus
+`prune_intake` and `spec_tools` (decided below, see Scope), **eight** modules in all.
 Prerequisites from TASK-4085 are `parrot/sdd/scripts/__init__.py` and the
 `parrot.sdd.scripts.sdd_meta` re-export. The mechanics are the same as TASK-4085/4086:
 `git mv`, rewrite only the lines listed in the blueprint, and turn the old path into the
@@ -32,23 +34,58 @@ module assumes and how it locates the repository:
 | `doc_taxonomy` | `--root` default `Path(".")` (:84); globs `sdd/specs/*.spec.md` etc. (:28-30) | cwd | import rewrite only |
 | `backfill_taxonomy` | `--root` default `Path(".")` (:149); `_SDD_TOOLING_RE = r"scripts/sdd/\|\.claude/commands/\|sdd/templates/"` (:41) classifies docs as SDD tooling | cwd | import rewrite only (regex: see NOT in scope) |
 | `migrate_index` | `--source sdd/tasks/.index.json`, `--dest sdd/tasks/index` (:158,:164) | cwd | none |
-| `select_tests` | `_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (:17), which **breaks in site-packages**. `--worktree` default `Path.cwd()` (:35). The kernel calls `git` with `cwd=worktree`. The kernel's planning encodes the monorepo `packages/<dist>/{src,tests}` layout (`test_scope/mirror.py:62-64,132`; `policy.py:17+`) | cwd (`--worktree`) + git inside the kernel | make `_KERNEL_PARENT` package-relative |
-| `insight` | stdlib-only. `--sdd-dir` default `$SDD_DIR` or `"sdd"` (:1923). Report goes to `./ai_fluency_report.html`. Transcripts come from `~/.claude/projects` (:59). It is invoked as **`python3 scripts/sdd/insight.py`** (a path, not `-m`) in `.claude/commands/sdd-insight.md:51,85` | cwd + `~` | no change to the module; the shim gets a bare-interpreter fallback (see blueprint) |
-| `install_hooks` | `--repo-root` default `Path.cwd()` (:118). Hooks dir from `git rev-parse --git-path hooks` (:26-30, honours `core.hooksPath`), with a fallback to `<root>/.git/hooks` (:126). The rendered hook bakes `sys.executable` (:140) and runs `python -m scripts.sdd.prune_intake` from the repo root (:40), and **`prune_intake` is not in the spec's move list** | cwd + git | none (see NOT in scope) |
+| `select_tests` | `_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (:19), which **breaks in site-packages**. `--worktree` default `Path.cwd()` (:46). The kernel calls `git` with `cwd=worktree`. The kernel's planning encodes the monorepo `packages/<dist>/{src,tests}` layout (`test_scope/mirror.py:62-64,132`; `policy.py:17+`) | cwd (`--worktree`) + git inside the kernel | make `_KERNEL_PARENT` package-relative |
+| `insight` | stdlib-only. `--sdd-dir` default `$SDD_DIR` or `"sdd"` (:1918 *[rev 0.5: was :1923]*). Report goes to `./ai_fluency_report.html`. Transcripts come from `~/.claude/projects` (:59). It is invoked as **`python3 scripts/sdd/insight.py`** (a path, not `-m`) in `.claude/commands/sdd-insight.md:51,85` | cwd + `~` | no change to the module; the shim gets a bare-interpreter fallback (see blueprint) |
+| `install_hooks` | `--repo-root` default `Path.cwd()` (:147). Hooks dir from `git rev-parse --git-path hooks` (:24-30, honours `core.hooksPath`), with a fallback to `<root>/.git/hooks` (:156). The rendered hook bakes `sys.executable` (:170) and runs `python -m scripts.sdd.prune_intake` from the primary checkout resolved by `primary_checkout()` (:33, `git rev-parse --git-common-dir`; f-string :69), and **`prune_intake` is not in the spec's move list** (moved here by the 2026-10-05 decision below) | cwd + git | retarget the rendered hook (see Scope) |
 
 None of the modules derives the **repository root** from `__file__`. Only `select_tests`
 uses `__file__`, and it does so to find a sibling package. That becomes package-relative.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `select_tests.py` grew 130→359 lines (FEAT-699, 613b206f6) and
+  `install_hooks.py` 149→179 (5cc9719ab, new `primary_checkout()`) — anchors updated; the
+  `prune_intake` retarget string occurs **2** times (docstring `:5` + f-string `:69`), edit the
+  f-string only; `test_install_hooks.py` has no module-path assert, so its MODIFY now adds one;
+  counts fixed to **eight** modules (`prune_intake`, `spec_tools` in `MOVED`, steps, ACs, shims),
+  `spec_tools` blueprint blocks added; `test_prune_intake.py` + `test_spec_tools.py` added to
+  Validation Commands; note on the new by-path `select_tests` invocation
+  (`tests/sdd_scripts/test_select_tests.py:289`). `cache_test_contract` / `test_report` (same
+  `_KERNEL_PARENT` pattern) are moved by TASK-4508, not here.
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4088 exactly: `select_tests`, `insight`,
+  `doc_taxonomy`, `backfill_taxonomy`, `migrate_index`, `install_hooks`, `spec_tools`,
+  `prune_intake`. The spec gives the same reason for `prune_intake` (the rendered hook runs it,
+  `install_hooks.py:69`). No change.
+- **Package-relative path loader.** Already covered: Scope makes `_KERNEL_PARENT`
+  (`select_tests.py:19`) resolve to `<parrot package>/flows/dev_loop`, still loaded by path as
+  top-level `test_scope`; AC-3 and `test_select_tests_kernel_is_package_relative` check it against
+  `parrot.__file__`, so it holds in an installed wheel with no monorepo checkout. No change.
+- **D2 (not owned here).** How `/sdd-done` skips or guards `select_tests` in a foreign repo is
+  TASK-4089's (D2). The "`select_tests` in foreign repos" NOT-in-scope item stands.
+- **Anchors re-verified** on the working tree (2026-10-20). Fixed: `insight` `--sdd-dir` is `:1918`
+  (was `:1923`, twice); the Files-table `install_hooks` retarget points at `:67`/`:69` (was `:38-40`).
+  Refreshed the spec §5 quote in Context. All other anchors hold.
+
+---
+
 ## Scope
 
-- `git mv` the six modules into `packages/ai-parrot/src/parrot/sdd/scripts/`.
+- `git mv` the eight modules (the six above plus `prune_intake` and `spec_tools`, decided
+  below) into `packages/ai-parrot/src/parrot/sdd/scripts/`.
 - Rewrite the `sdd_meta` imports in `doc_taxonomy` and `backfill_taxonomy` to
   `parrot.sdd.scripts.sdd_meta`.
 - Make `select_tests._KERNEL_PARENT` package-relative
   (`<parrot pkg>/flows/dev_loop`).
-- Recreate the six `scripts/sdd/<name>.py` as alias shims. The `insight` shim
+- Recreate the eight `scripts/sdd/<name>.py` as alias shims. The `insight` shim
   additionally falls back to its own checkout's `packages/ai-parrot/src`, so
   `python3 scripts/sdd/insight.py` keeps working with a bare interpreter.
 - Add `packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py`.
@@ -64,15 +101,16 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 - **`prune_intake` moves too** (19th module; no `__file__` usage — verified; pydantic is a
   core dep). Same move + shim pattern as the rest of this task's modules.
 - **`install_hooks.render_block` retargets the rendered hook** to
-  `"{python}" -m parrot.sdd.scripts.prune_intake --daily --apply` (install_hooks.py:40) and
-  updates the marker comment at :38 accordingly — the rendered block is the one piece of
+  `"{python}" -m parrot.sdd.scripts.prune_intake --daily --apply` (install_hooks.py:69) and
+  updates the marker comment at :67 accordingly — the rendered block is the one piece of
   this module that RUNS in installed repos, where `scripts.sdd` does not exist. Re-running
   install replaces the old marker block, so monorepo hooks pick the new form up on the next
-  `install_hooks` run. The baked absolute `sys.executable` (:140) stays as-is (hook runs
+  `install_hooks` run. The baked absolute `sys.executable` (:170) stays as-is (hook runs
   outside any venv activation; still correct in foreign repos once ai-parrot is installed).
-- **`tests/sdd_scripts/test_install_hooks.py`** must be updated where it asserts the
-  rendered block's contents (it imports render_block at :12 — grep it for
-  `prune_intake`/block-content asserts and fix only those).
+- **`tests/sdd_scripts/test_install_hooks.py`** has no assert on the module path today
+  (verified 2026-10-19: the block asserts are `:129-131` — `[ -d .git ]`, `--daily --apply`,
+  `|| true`). Add `assert "-m parrot.sdd.scripts.prune_intake" in block` to
+  `test_block_never_fails_git` (after `:130`); change nothing else.
 
 **NOT in scope** (record each item in the Completion Note as an open follow-up):
 - **`select_tests` in foreign repos.** The kernel's `packages/<dist>` layout logic is
@@ -96,7 +134,7 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 | `packages/ai-parrot/src/parrot/sdd/scripts/migrate_index.py` | CREATE | `git mv` (no line changes) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py` | CREATE | `git mv` + package-relative `_KERNEL_PARENT` |
 | `packages/ai-parrot/src/parrot/sdd/scripts/insight.py` | CREATE | `git mv` (no line changes; 2079 lines) |
-| `packages/ai-parrot/src/parrot/sdd/scripts/install_hooks.py` | CREATE | `git mv` + hook retarget to `parrot.sdd.scripts.prune_intake` (:38-40) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/install_hooks.py` | CREATE | `git mv` + hook retarget to `parrot.sdd.scripts.prune_intake` (marker `:67`, f-string `:69` *[rev 0.5: was :38-40]*) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/prune_intake.py` | CREATE | `git mv` (no line changes; no `__file__`, pydantic is core) |
 | `scripts/sdd/doc_taxonomy.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/backfill_taxonomy.py` | MODIFY | Becomes alias shim |
@@ -107,7 +145,7 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 | `scripts/sdd/prune_intake.py` | MODIFY | Becomes alias shim |
 | `packages/ai-parrot/src/parrot/sdd/scripts/spec_tools.py` | CREATE | `git mv` + `prog` + `reserve_ids` import rewrite (TASK-4334) |
 | `scripts/sdd/spec_tools.py` | MODIFY | Becomes alias shim (TASK-4334) |
-| `tests/sdd_scripts/test_install_hooks.py` | MODIFY | Update rendered-block content asserts to the new module path |
+| `tests/sdd_scripts/test_install_hooks.py` | MODIFY | Add one assert that the rendered block runs `-m parrot.sdd.scripts.prune_intake` |
 | `packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py` | CREATE | Importability, `-m --help`, shim identity, kernel path, insight path-run |
 
 ---
@@ -120,7 +158,9 @@ from parrot.sdd.scripts.sdd_meta import normalize_project, normalize_tag, parse_
 from parrot.sdd.scripts.sdd_meta import KNOWN_PROJECTS, parse_taxonomy                     # parrot/knowledge/wiki/ledger/sdd_meta.py
 #   (normalize_project :188, normalize_tag :173, parse_taxonomy :247, KNOWN_PROJECTS :45)
 # Third-party imports across the six modules: pydantic only (doc_taxonomy :19, backfill_taxonomy :17) — core dep.
-# select_tests, insight, install_hooks, migrate_index: stdlib only (verified import lists).
+# select_tests, insight, install_hooks, migrate_index: stdlib only at module level (verified import lists;
+#   select_tests lazily path-imports kernel modules, of which test_scope.models uses pydantic — :167).
+# prune_intake: pydantic (:21). spec_tools: jsonschema (:19) — core dep ("jsonschema>=4.20").
 ```
 
 ### Existing Signatures to Use
@@ -140,37 +180,53 @@ if __name__ == "__main__": sys.exit(main())                     # :183-184
 def main(argv: list[str] | None = None) -> int:                 # :150 (defaults :158 .index.json, :164 index/)
 if __name__ == "__main__": raise SystemExit(main())             # :176-177
 
-# scripts/sdd/select_tests.py (130 lines)
-_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"   # :17 ← REWRITE
-def _load_kernel() -> ModuleType:                               # :20 — sys.path.insert(0, _KERNEL_PARENT); import test_scope
-parser.add_argument("--worktree", type=Path, default=Path.cwd())   # :35
-def main(argv: list[str] | None = None) -> int:                 # :52 — subprocess.run(argv, cwd=worktree) :108 (pytest, not scripts/sdd)
-if __name__ == "__main__": raise SystemExit(main())             # :129-130
+# scripts/sdd/select_tests.py (359 lines — re-verified 2026-10-19 on dev 9f51c7735; FEAT-699 613b206f6)
+_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"   # :19 ← REWRITE
+def _load_kernel() -> ModuleType:                               # :22 — sys.path.insert(0, _KERNEL_PARENT); import test_scope
+parser.add_argument("--worktree", type=Path, default=Path.cwd())   # :46
+def main(argv: list[str] | None = None) -> int:                 # :111 — subprocess.run(argv, cwd=worktree) :252 (pytest,
+#   not scripts/sdd); git rev-parse HEAD :195. Lazy path-imports of top-level test_scope.* after _load_kernel():
+#   green_cache :150/:333, guard :161, models :167, report :189, context :281/:287, baseline :300 — all resolve
+#   from _KERNEL_PARENT, so the package-relative rewrite covers them.
+if __name__ == "__main__": raise SystemExit(main())             # :358-359
 
 # scripts/sdd/insight.py (2079 lines, git mode 100644, shebang :1 "#!/usr/bin/env python3")
 DEFAULT_DIRS = ["~/.claude/projects", "~/.claude/sessions"]     # :59
 def main(argv=None):                                            # :1894 — returns 0/1 (:1956,1961,1990,2050,2075)
-    ap.add_argument("--sdd-dir", default=os.environ.get("SDD_DIR", "sdd"), ...)   # :1923
+    ap.add_argument("--sdd-dir", default=os.environ.get("SDD_DIR", "sdd"), ...)   # :1918 [rev 0.5: was :1923]
 if __name__ == "__main__": raise SystemExit(main())             # :2078-2079
 # Invoked by path: .claude/commands/sdd-insight.md:51,85 `python3 scripts/sdd/insight.py \`
 
-# scripts/sdd/install_hooks.py (149 lines)
+# scripts/sdd/install_hooks.py (179 lines — re-verified 2026-10-19; 5cc9719ab)
 MARKER_BEGIN, MARKER_END, HOOK_EVENTS, SHEBANG                  # :18-21
 def hooks_dir(repo_root: Path) -> Path:                         # :24 — git rev-parse --git-path hooks (cwd=repo_root) :26-28
-def render_block(python: str, repo_root: Path) -> str:          # :33 — hook runs `"{python}" -m scripts.sdd.prune_intake --daily --apply` :40
-def install(hooks: Path, block: str, events=HOOK_EVENTS) -> list[Path]:   # :64
-def uninstall(hooks: Path, events=HOOK_EVENTS) -> list[Path]:   # :92
-def main(argv: list[str] | None = None) -> int:                 # :114 — --repo-root default Path.cwd() :118; block uses sys.executable :140
-if __name__ == "__main__": raise SystemExit(main())             # :148-149
+def primary_checkout(repo_root: Path) -> Path:                  # :33 — git rev-parse --git-common-dir; parent = primary checkout
+def render_block(python: str, repo_root: Path) -> str:          # :62 — marker comment :67; hook runs
+#   `"{python}" -m scripts.sdd.prune_intake --daily --apply` :69 (the module docstring :5 repeats the string)
+def install(hooks: Path, block: str, events=HOOK_EVENTS) -> list[Path]:   # :93
+def uninstall(hooks: Path, events=HOOK_EVENTS) -> list[Path]:   # :121
+def main(argv: list[str] | None = None) -> int:                 # :143 — --repo-root default Path.cwd() :147; fallback
+#   <root>/.git/hooks :156; block = render_block(sys.executable, primary_checkout(repo_root)) :170
+if __name__ == "__main__": raise SystemExit(main())             # :178-179
+
+# scripts/sdd/prune_intake.py (169 lines) — main(argv: list[str] | None = None) -> int :142; __main__ :168
+# scripts/sdd/spec_tools.py (195 lines; TASK-4334)
+from scripts.sdd.reserve_ids import existing_feature_id         # :21 ← REWRITE (reserve_ids :420, moved by TASK-4085)
+    prog="python -m scripts.sdd.spec_tools",                    # :142 ← REWRITE (decided 2026-10-15, see Scope)
+def main(argv: list[str] | None = None) -> int:                 # :188; __main__ :194
 
 # Existing tests that must keep passing through the shim (all verified to exist):
 #   tests/sdd_scripts/test_doc_taxonomy.py      (from scripts.sdd.doc_taxonomy import TaxonomyRow, collect, filter_rows, main :10)
 #   tests/sdd_scripts/test_backfill_taxonomy.py (from scripts.sdd.backfill_taxonomy import infer_projects, main, plan_edit :8)
 #   tests/sdd_scripts/test_migrate_index.py     (from scripts.sdd.migrate_index import migrate :10)
-#   tests/sdd_scripts/test_select_tests.py      (from scripts.sdd.select_tests import main / _load_kernel :12,76;
-#                                                monkeypatch.setattr("scripts.sdd.select_tests.subprocess", …) :154-155)
+#   tests/sdd_scripts/test_select_tests.py      (from scripts.sdd.select_tests import main :13 / _load_kernel :65,94,…;
+#                                                monkeypatch.setattr("scripts.sdd.select_tests.subprocess", …) :355-358;
+#                                                runs `sys.executable scripts/sdd/select_tests.py` BY PATH :289-295, FEAT-699)
 #   tests/sdd_scripts/test_insight_sdd.py       (from scripts.sdd import insight :16)
-#   tests/sdd_scripts/test_install_hooks.py     (from scripts.sdd.install_hooks import HOOK_EVENTS, MARKER_BEGIN, install, main, … :12)
+#   tests/sdd_scripts/test_install_hooks.py     (from scripts.sdd import install_hooks as install_hooks_mod :12;
+#                                                from scripts.sdd.install_hooks import (…, primary_checkout, …) :13;
+#                                                monkeypatch.setattr(install_hooks_mod, "hooks_dir", …) :205,221)
+#   tests/sdd_scripts/test_prune_intake.py, tests/sdd_scripts/test_spec_tools.py (import the scripts.sdd modules)
 ```
 
 ### Does NOT Exist
@@ -181,8 +237,8 @@ if __name__ == "__main__": raise SystemExit(main())             # :148-149
   `parrot.flows.dev_loop` `__init__` (about 2.4 s, navconfig). Keep that.
 - ~~A `main(argv)` return annotation on insight~~ — `def main(argv=None):` is untyped.
   Do not retype a moved file.
-- ~~Any `__file__`-based repo-root derivation in these six modules~~ — none. Only
-  `select_tests:17` uses `__file__`, for a sibling package path.
+- ~~Any `__file__`-based repo-root derivation in these eight modules~~ — none. Only
+  `select_tests:19` uses `__file__`, for a sibling package path.
 
 ---
 
@@ -260,6 +316,12 @@ sys.modules[__name__] = _impl
   `__file__` here is legitimate, because the shim is repo-local and never installed.
 - **Worktree gotcha (same as TASK-4085).** Inside the FEAT-633 worktree, the other
   shims only resolve with `PYTHONPATH=packages/ai-parrot/src`.
+- **`select_tests` is also run by path** (added 2026-10-18, FEAT-699 613b206f6):
+  `tests/sdd_scripts/test_select_tests.py:289-295` runs `sys.executable scripts/sdd/select_tests.py …`.
+  The standard alias shim handles it (`__main__` → `_impl.main()`), but it needs `parrot`
+  importable: the shared venv after merge, or `PYTHONPATH=packages/ai-parrot/src` (inherited by
+  the subprocess) inside the worktree. Unlike `insight`, no bare-interpreter fallback is
+  specified for it — keep the standard shim.
 - The `ruff.toml` rules apply equally to `scripts/` and `packages/`.
 
 ### References in Codebase
@@ -271,16 +333,16 @@ sys.modules[__name__] = _impl
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. `git mv` the seven files (the six below plus `prune_intake.py`) into
+1. `git mv` the eight files (the six below plus `prune_intake.py` and `spec_tools.py`) into
    `packages/ai-parrot/src/parrot/sdd/scripts/`, one command per file. *Why*: this
    preserves history.
-2. Apply the in-file edits below (two imports, `_KERNEL_PARENT`, and the
-   `install_hooks.render_block` retarget). *Why*: the package must not depend on the
-   repo-local `scripts` package or on the monorepo path layout — and the rendered hook
-   is the one output that RUNS in installed repos.
-3. Commit the renames on their own, then write the seven shims and update
-   `tests/sdd_scripts/test_install_hooks.py`'s block-content asserts. *Why*: rename
-   detection stays intact.
+2. Apply the in-file edits below (two `sdd_meta` imports, `_KERNEL_PARENT`, the
+   `install_hooks.render_block` retarget, and `spec_tools`' import + `prog`). *Why*: the
+   package must not depend on the repo-local `scripts` package or on the monorepo path
+   layout — and the rendered hook is the one output that RUNS in installed repos.
+3. Commit the renames on their own, then write the eight shims and add the one
+   `prune_intake` module-path assert to `tests/sdd_scripts/test_install_hooks.py`. *Why*:
+   rename detection stays intact.
 4. Write the test file and run every Validation Command. *Why*: the shim must preserve
    `monkeypatch.setattr("scripts.sdd.select_tests.subprocess", …)` and
    `from scripts.sdd import insight`.
@@ -311,7 +373,7 @@ from parrot.sdd.scripts.sdd_meta import KNOWN_PROJECTS, parse_taxonomy
 ```python
 # git mv scripts/sdd/select_tests.py packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py, then:
 # occurrences: 1 (verified: grep -c '_KERNEL_PARENT = Path(__file__).resolve().parents\[2\] / "packages/ai-parrot/src/parrot/flows/dev_loop"' scripts/sdd/select_tests.py)
-# REPLACE — `_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (verified: scripts/sdd/select_tests.py:17)
+# REPLACE — `_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (verified 2026-10-19: scripts/sdd/select_tests.py:19)
 # parrot/sdd/scripts/select_tests.py -> parents[2] is the `parrot` package dir (package-relative, wheel-safe).
 _KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
 ```
@@ -326,13 +388,33 @@ _KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
 ```python
 # git mv scripts/sdd/install_hooks.py packages/ai-parrot/src/parrot/sdd/scripts/install_hooks.py
 # Then ONE functional edit in render_block:
-# occurrences: 1 (verified: grep -cF 'scripts.sdd.prune_intake --daily --apply' scripts/sdd/install_hooks.py)
-# REPLACE — in the f-string at install_hooks.py:40
+# occurrences: 2 (verified 2026-10-19: grep -cF 'scripts.sdd.prune_intake --daily --apply' scripts/sdd/install_hooks.py —
+#   the module docstring at :5 also matches) — edit the f-string at :69 only; the docstring is text owned by TASK-4089.
+# REPLACE — in the f-string at install_hooks.py:69
 #   old: "{python}" -m scripts.sdd.prune_intake --daily --apply
 #   new: "{python}" -m parrot.sdd.scripts.prune_intake --daily --apply
-# Also update the marker comment at :38 ("Installed by `python -m scripts.sdd.install_hooks`"
+# Also update the marker comment at :67 ("Installed by `python -m scripts.sdd.install_hooks`"
 # → `python -m parrot.sdd.scripts.install_hooks`). Re-running install replaces old marker
 # blocks, so existing monorepo hooks converge on the next run.
+```
+
+### `packages/ai-parrot/src/parrot/sdd/scripts/spec_tools.py` (CREATE — TASK-4334)
+```python
+# git mv scripts/sdd/spec_tools.py packages/ai-parrot/src/parrot/sdd/scripts/spec_tools.py, then TWO edits:
+# occurrences: 1 (verified 2026-10-19: grep -c 'from scripts.sdd.reserve_ids import existing_feature_id' scripts/sdd/spec_tools.py)
+# REPLACE — `from scripts.sdd.reserve_ids import existing_feature_id` (verified: scripts/sdd/spec_tools.py:21)
+from parrot.sdd.scripts.reserve_ids import existing_feature_id
+# occurrences: 1 (verified: grep -c 'prog="python -m scripts.sdd.spec_tools"' scripts/sdd/spec_tools.py)
+# REPLACE — `prog="python -m scripts.sdd.spec_tools",` (verified: scripts/sdd/spec_tools.py:142)
+        prog="python -m parrot.sdd.scripts.spec_tools",
+```
+
+### `scripts/sdd/spec_tools.py` (MODIFY — TASK-4334)
+```python
+# Becomes the standard alias shim (same pattern as doc_taxonomy's block above); first line was
+# `"""Helpers behind /sdd-spec's design-research and intake sub-flows (FEAT-633 Q1 residual).` (verified :1):
+# import parrot.sdd.scripts.spec_tools as _impl; __main__ → SystemExit(_impl.main());
+# sys.modules[__name__] = _impl
 ```
 
 ### `packages/ai-parrot/src/parrot/sdd/scripts/prune_intake.py` (CREATE)
@@ -351,9 +433,10 @@ _KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
 
 ### `tests/sdd_scripts/test_install_hooks.py` (MODIFY)
 ```python
-# grep this file for 'prune_intake' / rendered-block content asserts (it imports
-# render_block at :12) and update ONLY those expected strings to
-# 'parrot.sdd.scripts.prune_intake' / the new marker comment. No behavioral test changes.
+# Verified 2026-10-19: no existing assert names the module path (block asserts are :129-131).
+# ADD — after `assert "--daily --apply" in block` (:130) in test_block_never_fails_git:
+    assert "-m parrot.sdd.scripts.prune_intake" in block
+# No other changes.
 ```
 
 ### `scripts/sdd/doc_taxonomy.py` (MODIFY)
@@ -465,8 +548,8 @@ See **Test Specification**. That block is the starting file.
 ## Acceptance Criteria
 
 - [ ] AC-1: `python -m parrot.sdd.scripts.<name> --help` exits 0 from a non-repo cwd for
-  all six modules.
-- [ ] AC-2: `scripts.sdd.<name> is parrot.sdd.scripts.<name>` for all six.
+  all eight modules.
+- [ ] AC-2: `scripts.sdd.<name> is parrot.sdd.scripts.<name>` for all eight.
 - [ ] AC-3: `parrot.sdd.scripts.select_tests._KERNEL_PARENT` equals
   `<parrot pkg>/flows/dev_loop` and `_load_kernel()` returns the `test_scope` kernel.
 - [ ] AC-4: `python3 -I -S scripts/sdd/insight.py --help` exits 0 when run by path from
@@ -479,7 +562,7 @@ See **Test Specification**. That block is the starting file.
   is clean.
 - [ ] Spec §5: "every helper referenced by installed markdown resolves as
   `python -m parrot.sdd.scripts.<name>`; `scripts/sdd/` wrappers keep the monorepo's
-  existing invocations working" (for these six).
+  existing invocations working" (for these eight).
 
 ---
 
@@ -495,6 +578,8 @@ editable-installed against the main checkout).
 - `pytest tests/sdd_scripts/test_select_tests.py -q`
 - `pytest tests/sdd_scripts/test_insight_sdd.py -q`
 - `pytest tests/sdd_scripts/test_install_hooks.py -q`
+- `pytest tests/sdd_scripts/test_prune_intake.py -q`
+- `pytest tests/sdd_scripts/test_spec_tools.py -q`
 
 ---
 
@@ -515,7 +600,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC = REPO_ROOT / "packages" / "ai-parrot" / "src"
-MOVED = ("doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "insight", "install_hooks")
+MOVED = (
+    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "insight", "install_hooks",
+    "prune_intake", "spec_tools",
+)
 
 
 def _env() -> dict[str, str]:

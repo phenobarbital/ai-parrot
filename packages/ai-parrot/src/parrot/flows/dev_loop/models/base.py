@@ -488,6 +488,13 @@ class TaskScopedBrief(BaseModel):
     coder_feedback: str = Field(
         default="", description="Confirmed corrections from this coder model's prior deliveries."
     )
+    validation_verdict: str = Field(
+        default="",
+        description=(
+            "Rendered engine validation verdict of the failed previous attempt (FEAT-709 same-seat "
+            "repair); empty on a first attempt."
+        ),
+    )
     task_file: str = Field(
         default="",
         description=(

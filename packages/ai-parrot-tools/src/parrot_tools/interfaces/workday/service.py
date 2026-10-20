@@ -66,6 +66,8 @@ from parrot_tools.interfaces.workday.handlers import (
     TimeOffBalanceType,
     TimeOffEligibilityType,
     TimeRequestType,
+    WorkerEventHistoryType,
+    WorkerJobChangesType,
     WorkerType,
 )
 from parrot_tools.interfaces.workday.handlers.location_hierarchy_assignments import (
@@ -94,6 +96,7 @@ from parrot_tools.interfaces.workday.models.time_off_eligibility import (
 )
 from parrot_tools.interfaces.workday.models.time_request import TimeRequest
 from parrot_tools.interfaces.workday.models.worker import Worker
+from parrot_tools.interfaces.workday.models.worker_event import JobChange, WorkerEvent
 
 # ---------------------------------------------------------------------------
 # Operation-type → Pydantic model class (for fetch_models typed path, C7)
@@ -115,6 +118,8 @@ _OPERATION_MODEL_MAP: dict[str, type] = {
     "get_time_off_balances": TimeOffBalance,
     "get_time_off_eligibility": TimeOffEligibility,
     "get_references": WorkdayReference,
+    "get_worker_event_history": WorkerEvent,
+    "get_worker_job_changes": JobChange,
 }
 
 # REST custom report types that require Basic Auth (workday.py:364)
@@ -204,13 +209,8 @@ class WorkdayService(SOAPClient):
         wsdl_path = get_wsdl_path(operation_type)
 
         # 2. Auth branching — identical to workday.py:362-368
-        is_rest_custom_report: bool = (
-            operation_type in _REST_REPORT_TYPES
-            or operation_type.startswith("extract_")
-        )
-        is_soap_custom_report: bool = (
-            operation_type.endswith("_report") and not is_rest_custom_report
-        )
+        is_rest_custom_report: bool = operation_type in _REST_REPORT_TYPES or operation_type.startswith("extract_")
+        is_soap_custom_report: bool = operation_type.endswith("_report") and not is_rest_custom_report
 
         # 3. Build creds dict — workday.py:371-377
         creds: dict[str, Any] = {
@@ -253,17 +253,11 @@ class WorkdayService(SOAPClient):
         self.workday_url: str = config.resolved_workday_url
 
         # Log WSDL choice and auth method — workday.py:432-445
-        self._logger.info(
-            "WorkdayService: WSDL=%s  operation_type=%s", wsdl_path, operation_type
-        )
+        self._logger.info("WorkdayService: WSDL=%s  operation_type=%s", wsdl_path, operation_type)
         if is_soap_custom_report:
-            self._logger.info(
-                "Using OAuth + Proxy_User_Name for SOAP custom report: %s", operation_type
-            )
+            self._logger.info("Using OAuth + Proxy_User_Name for SOAP custom report: %s", operation_type)
         elif _using_basic_auth:
-            self._logger.info(
-                "Using Basic auth for REST custom report: %s", operation_type
-            )
+            self._logger.info("Using Basic auth for REST custom report: %s", operation_type)
         elif _missing_report_creds and is_rest_custom_report:
             self._logger.warning(
                 "REST custom report '%s' detected but no credentials provided. "
@@ -308,6 +302,9 @@ class WorkdayService(SOAPClient):
             # FEAT-230: Absence Management handlers
             "request_time_off": RequestTimeOffType(self),
             "get_time_off_eligibility": TimeOffEligibilityType(self),
+            # FEAT-706: worker event history + job changes (HR WSDL)
+            "get_worker_event_history": WorkerEventHistoryType(self),
+            "get_worker_job_changes": WorkerJobChangesType(self),
         }
 
         self.metrics: dict[str, Any] = {}
@@ -351,8 +348,7 @@ class WorkdayService(SOAPClient):
         handler = self._type_handlers.get(operation_type)
         if handler is None:
             raise ValueError(
-                f"Unknown Workday operation type: '{operation_type}'. "
-                f"Available: {list(self._type_handlers)}"
+                f"Unknown Workday operation type: '{operation_type}'. " f"Available: {list(self._type_handlers)}"
             )
         return await handler.execute(**params)
 
@@ -376,8 +372,7 @@ class WorkdayService(SOAPClient):
         model_class = _OPERATION_MODEL_MAP.get(operation_type)
         if model_class is None:
             self._logger.warning(
-                "fetch_models: no Pydantic model registered for operation_type '%s'. "
-                "Returning empty list.",
+                "fetch_models: no Pydantic model registered for operation_type '%s'. " "Returning empty list.",
                 operation_type,
             )
             return []
@@ -452,9 +447,7 @@ class WorkdayService(SOAPClient):
         """
         if auto_submit is not None:
             # Apply service-level override to a shallow copy of each event
-            events = [
-                ev.model_copy(update={"auto_submit": auto_submit}) for ev in events
-            ]
+            events = [ev.model_copy(update={"auto_submit": auto_submit}) for ev in events]
         handler = self._type_handlers["put_time_clock_events"]
         return await handler.execute(events=events)
 
@@ -571,13 +564,9 @@ class WorkdayService(SOAPClient):
         if cur.netloc == cfg.netloc and cur.scheme == scheme:
             return  # already on the configured host (production default no-op)
 
-        new_addr = urlunparse(
-            (scheme, cfg.netloc, cur.path, cur.params, cur.query, cur.fragment)
-        )
+        new_addr = urlunparse((scheme, cfg.netloc, cur.path, cur.params, cur.query, cur.fragment))
         options["address"] = new_addr
-        self._logger.info(
-            "Workday SOAP endpoint host set to %s (was %s)", cfg.netloc, cur.netloc
-        )
+        self._logger.info("Workday SOAP endpoint host set to %s (was %s)", cfg.netloc, cur.netloc)
 
     # ------------------------------------------------------------------
     # Helpers

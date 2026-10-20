@@ -16,8 +16,14 @@ def test_template_example_parses() -> None:
     text = (ROOT / "sdd/templates/spec.md").read_text(encoding="utf-8").replace("<dist>", "ai-parrot")
     parsed = contract.parse_spec_contract(text)
     assert parsed is not None
-    assert len(parsed.tests) == 2
-    assert tuple(parsed.markers) == ()
+    # FEAT-709 schema 2: the template still writes the flat `tests:` form, which is lifted on
+    # read into exactly one pytest runner. `TestContract.tests`/`.markers` no longer exist.
+    assert parsed.schema == 2
+    assert len(parsed.runners) == 1
+    runner = parsed.runners[0]
+    assert runner.kind == "pytest"
+    assert len(runner.targets) == 2
+    assert runner.settings.get("markers", "") == ""
 
 
 def test_twins_carry_hint() -> None:

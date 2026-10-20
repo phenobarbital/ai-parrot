@@ -198,6 +198,49 @@ incomplete — same bar as the Codebase Contract. If the blueprint would be the
 full implementation, the task is too small; if it needs more than ~80 lines per
 file, the task is too big.
 
+#### Delegating flat checks to `sdd-contract-probe` (optional)
+
+The checks behind the two contracts above are flat and deterministic: does this
+symbol still exist and what is its signature, how many times does this anchor
+occur and on which line, is this "Does NOT Exist" name really absent, what is
+this file's `sha256`. When your host can launch the `sdd-contract-probe` subagent
+(Claude Code: the `Agent` tool, Haiku; Antigravity: the
+`.agents/agents/sdd-contract-probe/agent.md` subagent; Codex and other hosts: none)
+you MAY hand them to it (read-only) and keep your own effort for
+the judgement: the decomposition, the graph, what goes into each contract, and
+the blueprints.
+
+1. **Plan first, probe second.** Probe only after the decomposition is settled,
+   so every check belongs to a task. Collect the checks across all tasks and
+   dedupe them (one check per `path`+`anchor`, `module`+`name`, …).
+2. **Write probe sheets** with the kinds the agent defines: `symbol`, `import`,
+   `anchor` (every §6 Edit Sites row you use, and every MODIFY anchor),
+   `absent` (every "Does NOT Exist" candidate — scope it to the whole module,
+   never a shim), `sha256` (every `modify` target of a Delegation Contract),
+   `outline` (files the spec's §6 does not cover), `file` (a cited `path:NN` exists). Give each check a stable `id`.
+3. **Fan out**: split the sheet into groups of at most ~40 checks, grouped by
+   file, and launch all the probes in ONE message so they run in parallel. Pass
+   the repo root and the sheet; nothing else — not the spec, not your plan.
+4. **Verify before you use** (the report is advisory until checked):
+   - `head` in every report must equal `git rev-parse --short HEAD`; if not,
+     the tree moved — re-probe.
+   - Re-run yourself every `missing`, `module-missing`, `ambiguous`, `present`
+     and `error` result, every `anchor` whose count differs from the spec's §6
+     row, and at least one `found` result in ten, chosen at random. Any re-run
+     that does not reproduce the report's `output` discards that whole report:
+     do its checks yourself.
+   - Copy only verified facts into the contracts: signatures from `signature`,
+     line numbers from `lines`, occurrence counts from `count`, hashes from
+     `output`. A count of `0` is drift: stop and report it, as in rule 5 above.
+5. **Do it yourself instead** when your host cannot launch the probe (Codex; the
+   dev-loop `sdd-planner`, which runs this command with no `Agent` tool) or when the
+   whole spec needs fewer than ~10 checks — the fan-out costs more than it
+   saves. The contract rules above are the same either way.
+
+Never delegate the judgement: which imports a task needs, which plausible
+names belong in "Does NOT Exist", how a task is cut, its `depends_on`, and the
+blueprint code stay with you.
+
 ### 4. Generate Tasks
 1. Ensure `sdd/tasks/active/` directory exists (create if needed).
 2. Read the task template at `sdd/templates/task.md`.
@@ -368,6 +411,12 @@ It writes the spec §4 `### Validation Contract` into the header as `test_contra
 `none — fallback`). Never hand-write `test_contract`. Exit 2 means the spec subsection is malformed or
 missing — fix the spec, do not skip the step. Each task's `## Validation Commands` lists that task's OWN
 test files; the contract is added by the selector at merge/feature tier, never copied into every task.
+
+The script accepts both authoring forms (flat `tests:`/`markers:` and the FEAT-709 `runners:` form) and always
+writes schema 2 (`runners` blocks + digest); a legacy schema-1 header is lifted on read to one pytest runner.
+Kinds, tiers and settings are validated against the runner registry (`.parrot/test_runners.toml`, `--root`);
+`check_task_graph.py` then flags `test-contract-unknown-runner`, `-tier-forbidden`, `-settings-invalid`,
+`-extension-invalid`, and warns `validation-command-unrecognised` for a task command no adapter matches.
 
 #### Validation Commands (mandatory, per task — FEAT-563)
 

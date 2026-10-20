@@ -63,12 +63,12 @@ async def test_empty_feature_plan_derives_no_criterion(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_qanode_records_green_escalations(tmp_path, monkeypatch):
     import parrot.flows.dev_loop.nodes.qa as qa_mod
-    from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, PytestInvocation, ScopePlan, TestTarget
+    from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, Invocation, ScopePlan, TestTarget
 
     plan = ScopePlan(
         tier="feature",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="ai-parrot",
                 argv=("pytest", "packages/ai-parrot/tests"),
                 targets=(TestTarget(path="packages/ai-parrot/tests", distribution="ai-parrot", reason="core"),),

@@ -11,7 +11,7 @@ def test_core_is_stdlib_only():
     """AC3: importable by path under an isolated interpreter without site-packages."""
     dl = str(Path(dev_loop.__file__).parent)
     code = (
-        "import sys; sys.path.insert(0, %r); import test_scope; "
+        "import sys; sys.path.insert(0, %r); import test_scope; import test_scope.runners; "
         "assert 'pydantic' not in sys.modules; assert 'parrot' not in sys.modules" % dl
     )
     proc = subprocess.run([sys.executable, "-I", "-S", "-c", code], capture_output=True, text=True)

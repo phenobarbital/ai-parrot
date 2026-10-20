@@ -46,6 +46,33 @@ def _hermetic_durable_root(monkeypatch, tmp_path_factory) -> Path:
     return root
 
 
+@pytest.fixture(autouse=True)
+def _task_tier_gate_green(request, monkeypatch):
+    """Stub the task-tier gate green for every test that is not *about* the gate.
+
+    The gate fails closed (spec S13, TASK-4540): an attempt with no `execution_id` -- the legacy
+    in-process `run_chunk`/`merge`/`prepare_native` shape these older tests use -- no longer merges.
+    Production cannot reach that shape (`coder_run_chunk` and friends all require `execution_id: str`),
+    so it is a harness artefact, not a behaviour worth preserving.
+
+    Before the gate existed these tests merged because the gate was skipped; they bind a REAL
+    `ValidationSupervisor` through `_hermetic_durable_root`, so letting the gate run would spawn real
+    validation subprocesses and make the whole suite slow and flaky. Stubbing it green restores exactly
+    their pre-gate behaviour. Modules that ARE about the gate opt out with
+    `pytestmark = pytest.mark.task_tier_gate`, and the gate keeps its own dedicated coverage there.
+    """
+    if request.node.get_closest_marker("task_tier_gate"):
+        return
+
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+    from parrot.flows.dev_loop.test_scope.datatypes import ValidationVerdict
+
+    async def _green(self, ctx, task, **kwargs):
+        return ValidationVerdict(schema=1, status="passed", tier="task", runners=(), failures=(), notes=())
+
+    monkeypatch.setattr(SddCoderEngine, "_task_tier_gate", _green)
+
+
 FEATURE_BRANCH = "feat-FEAT-549-demo"
 FEATURE_ID = "FEAT-549"
 FEATURE_SLUG = "demo"

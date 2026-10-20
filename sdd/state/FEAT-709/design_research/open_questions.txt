@@ -1,0 +1,1 @@
+- [ ] Task-tier gate budgets per runner (pytest 60 s, vitest 120 s, cargo 300 s assumed) and whether a timeout re-dispatches the same seat or goes straight to the ladder. — *Owner: Jesus*: not decided yet — the spec keeps the assumed defaults in `.parrot/test_runners.toml` and measures them in the FEAT-563/699 style (`artifacts/logs/`) before freezing.

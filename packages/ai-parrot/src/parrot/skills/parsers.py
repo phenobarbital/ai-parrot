@@ -57,6 +57,15 @@ def _count_tokens(text: str) -> int:
     return len(_get_encoding().encode(text))
 
 
+def _parse_bool(value: object) -> bool:
+    """Coerce a frontmatter value to a boolean."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1", "on"}
+    return bool(value)
+
+
 def parse_skill_file(file_path: Path) -> SkillDefinition:
     """Parse a .md skill file with YAML frontmatter into a SkillDefinition.
 
@@ -111,6 +120,7 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
     version = str(metadata.get("version", "1.0"))
     category = metadata.get("category", None)
     priority = int(metadata.get("priority", 90))
+    global_only = _parse_bool(metadata.get("global_only", False))
 
     # Count tokens
     token_count = _count_tokens(template_body)
@@ -123,6 +133,7 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
         priority=priority,
         version=version,
         category=category,
+        global_only=global_only,
         template_body=template_body,
         token_count=token_count,
         file_path=file_path,

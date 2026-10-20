@@ -51,7 +51,7 @@ Jesus Lara on 2026-10-14). Already applied to the sections below; this list is t
 
 - **C12 — no shipped reference to a monorepo-only helper.** `scripts/sdd/review_checkpoint.py`
   joins this move. It is the only non-moved helper any shipped file references
-  (`.claude/agents/sdd-worker.md:588,607` — rewritten by TASK-4089 to
+  (`.claude/agents/sdd-worker.md:588,607`, now `:607,626` — rewritten by TASK-4089 to
   `parrot sdd run review_checkpoint …`). Verified 2026-10-14 on `a6e51614b`: 145 lines; imports
   are stdlib (`argparse`, `asyncio`, `json`, `os`, `pathlib`) plus
   `parrot.flows.dev_loop.sdd_coder.checkpoint` (:19-27), `.evidence.ExecutionEvidenceStore`
@@ -64,6 +64,40 @@ Jesus Lara on 2026-10-14). Already applied to the sections below; this list is t
   `parrot.flows.dev_loop.sdd_coder.checkpoint` directly; `test_worker_prompt_orchestrator.py:187,197`
   only assert the substrings `review_checkpoint prepare` / `validate` in the worker prompt).
   Same mechanics as the other four: `git mv`, alias shim, `--help` + identity tests.
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `check_task_graph.py` grew to 538 lines (2994e2f75 FEAT-699
+  `_check_test_contract`, 0e268ae4b notes rule) — anchors updated (`_KERNEL_DIR` `:68`,
+  `_load_contract` `:204`, now also called at `:246`/`:321`, `main` `:522`, `__main__` `:537-538`);
+  the `_KERNEL_DIR` REPLACE string is unchanged (1 occurrence). Added
+  `test_brief_scaffold_integration.py` (runs `-m scripts.sdd.check_task_graph` at `:79`) to
+  Validation Commands; `sdd-worker.md` refs now `:607,626`; restored the missing `## Scope`
+  heading. The other four modules are unchanged since the task was written.
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4086 exactly: `check_task_state`,
+  `check_task_graph`, `finalize_task`, `worktree_status`, `review_checkpoint`. No change.
+- **Package-relative path loader.** Already covered: Scope makes `_KERNEL_DIR` (`check_task_graph.py:68`)
+  resolve to `<parrot package>/flows/dev_loop`, still loaded by path as top-level `test_scope`;
+  AC-3 and `test_check_task_graph_kernel_is_package_relative` check it against `parrot.__file__`,
+  so it holds in an installed wheel with no monorepo checkout. No change.
+- **C12 wording.** Spec rev 0.5 notes `review_checkpoint` is no longer the only shipped-referenced
+  helper; that changes nothing in this task.
+- **`finalize_task.py:394` follow-up.** Rev 0.5 does not assign it; it stays a Completion Note item.
+- **Anchors re-verified** on the working tree (2026-10-20): all line anchors hold. Fixed one stale
+  fact: the core pydantic pin is `"pydantic>=2.12.5,<3"`, not `"pydantic==2.12.5"`.
+
+---
+
+## Scope
 
 - `git mv` `finalize_task.py`, `check_task_state.py`, `check_task_graph.py`,
   `worktree_status.py` and `review_checkpoint.py` (C12) into
@@ -124,7 +158,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (...)                    
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore                               # review_checkpoint.py:28
 from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewCheckpoint                          # review_checkpoint.py:29
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root                                # review_checkpoint.py:30
-# third-party in all five modules: pydantic only — core dep ("pydantic==2.12.5")
+# third-party in all five modules: pydantic only — core dep ("pydantic>=2.12.5,<3") *[rev 0.5: pin re-verified]*
 ```
 
 ### Existing Signatures to Use
@@ -144,11 +178,12 @@ def main(argv: list[str] | None = None) -> int:                # :163 (cwd-relat
 if __name__ == "__main__": raise SystemExit(main())            # :204-205
 #   No inter-import, no __file__, no subprocess. Hint strings at :196-197 mention scripts/sdd/*.sh (unchanged).
 
-# scripts/sdd/check_task_graph.py (461 lines)
-_KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"  # :59  ← REWRITE
-def _load_contract():  # :198 — inserts _KERNEL_DIR on sys.path, importlib.import_module("test_scope.contract")
-def main(argv: list[str] | None = None) -> int:                # :445 (--root default Path(".") :449)
-if __name__ == "__main__": raise SystemExit(main())            # :460-461
+# scripts/sdd/check_task_graph.py (538 lines — re-verified 2026-10-19 on dev 9f51c7735)
+_KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"  # :68  ← REWRITE
+def _load_contract():  # :204 — inserts _KERNEL_DIR on sys.path, importlib.import_module("test_scope.contract")
+#   called unconditionally by _check_validation_contract (:246) and _check_test_contract (:321, FEAT-699)
+def main(argv: list[str] | None = None) -> int:                # :522 (--root default Path(".") :526)
+if __name__ == "__main__": raise SystemExit(main())            # :537-538
 # Kernel exists: packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/{__init__,contract,...}.py
 
 # scripts/sdd/worktree_status.py (718 lines)
@@ -168,7 +203,8 @@ def main(argv: list[str] | None = None) -> int:                # :84 — prog="p
 
 # Existing tests that must keep passing through the shim (verified to exist):
 #   tests/sdd_scripts/test_check_task_state.py   (from scripts.sdd.check_task_state import find_violations, main :6)
-#   tests/sdd_scripts/test_check_task_graph.py   (from scripts.sdd.check_task_graph import check_graph, main, … :6)
+#   tests/sdd_scripts/test_check_task_graph.py   (from scripts.sdd.check_task_graph import _load_contract, check_graph, main, … :6)
+#   tests/sdd_scripts/test_brief_scaffold_integration.py (subprocess `python -m scripts.sdd.check_task_graph` :79)
 #   tests/sdd_scripts/test_worktree_status.py    (patch("scripts.sdd.worktree_status._git" / ".WORKTREE_ROOT" …) :120-122)
 #   packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py
 #       (import scripts.sdd as scripts_sdd_pkg :20; copies Path(scripts_sdd_pkg.__file__).parent / "close_task.sh" :33)
@@ -288,7 +324,7 @@ sys.modules[__name__] = _impl
 ```python
 # git mv scripts/sdd/check_task_graph.py packages/ai-parrot/src/parrot/sdd/scripts/check_task_graph.py, then:
 # occurrences: 1 (verified: grep -c '_KERNEL_DIR = Path(__file__).resolve().parents\[2\] / "packages/ai-parrot/src/parrot/flows/dev_loop"' scripts/sdd/check_task_graph.py)
-# REPLACE — `_KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (verified: scripts/sdd/check_task_graph.py:59)
+# REPLACE — `_KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (verified 2026-10-19: scripts/sdd/check_task_graph.py:68)
 # parrot/sdd/scripts/check_task_graph.py -> parents[2] is the `parrot` package dir (package-relative, wheel-safe).
 _KERNEL_DIR = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
 ```
@@ -345,7 +381,7 @@ sys.modules[__name__] = _impl
 ```python
 # occurrences: 1 (verified: grep -c '"""``check_task_graph.py`` — deterministic lint for a per-spec task graph.' scripts/sdd/check_task_graph.py)
 # REPLACE — whole file; first line was `"""``check_task_graph.py`` — deterministic lint for a per-spec task graph.`
-#   (verified: scripts/sdd/check_task_graph.py:1); original entry `def main(argv: list[str] | None = None) -> int:` (:445)
+#   (verified: scripts/sdd/check_task_graph.py:1); original entry `def main(argv: list[str] | None = None) -> int:` (:522)
 """Compatibility shim — moved to ``parrot.sdd.scripts.check_task_graph`` (FEAT-633)."""
 import sys
 
@@ -426,6 +462,7 @@ editable-installed against the main checkout).
 - `pytest packages/ai-parrot/tests/sdd/test_scripts_task_state.py -q`
 - `pytest tests/sdd_scripts/test_check_task_state.py -q`
 - `pytest tests/sdd_scripts/test_check_task_graph.py -q`
+- `pytest tests/sdd_scripts/test_brief_scaffold_integration.py -q` (runs `-m scripts.sdd.check_task_graph` as a subprocess)
 - `pytest tests/sdd_scripts/test_worktree_status.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_workflow_contracts.py -q`

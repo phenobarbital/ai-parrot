@@ -9,12 +9,13 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.test_scope import report
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation
 
 XUNIT1 = """<testsuites><testsuite tests="2" failures="1" errors="0" skipped="0">
 <testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x.TestC" name="test_ok"/>
 <testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_bad[1]"><failure/></testcase>
 </testsuite></testsuites>"""
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture(autouse=True)
@@ -47,20 +48,77 @@ def _append(root: str, suite: str) -> None:
     )
 
 
-def test_with_junit_does_not_mutate(tmp_path):
-    invocation = PytestInvocation("root", ("pytest", "test_x.py"), ())
-    argv = report.with_junit(invocation, tmp_path / "result.xml")
+def test_with_report_does_not_mutate(tmp_path):
+    invocation = Invocation("root", ("pytest", "test_x.py"), ())
+    argv = report.with_report(invocation, tmp_path / "result.xml")
     assert invocation.argv == ("pytest", "test_x.py")
     assert argv[-3:] == ("-o", "junit_family=xunit1", f"--junitxml={tmp_path / 'result.xml'}")
 
+    vitest = Invocation("admin-ui", ("pnpm", "exec", "vitest", "run"), (), runner="vitest")
+    assert report.with_report(vitest, tmp_path / "unused.xml") == vitest.argv
+
 
 def test_suite_name_variants():
-    default = PytestInvocation("ai-parrot", ("pytest", "-m", "not slow"), ())
-    contract = PytestInvocation("ai-parrot", ("pytest", "-m", "not real_llm"), ())
-    markers = PytestInvocation("ai-parrot", ("pytest", "-m", "(unit or smoke) and not real_llm"), ())
+    default = Invocation("ai-parrot", ("pytest", "-m", "not slow"), ())
+    contract = Invocation("ai-parrot", ("pytest", "-m", "not real_llm"), ())
+    markers = Invocation("ai-parrot", ("pytest", "-m", "(unit or smoke) and not real_llm"), ())
     assert report.suite_name(default) == "ai-parrot"
     assert report.suite_name(contract) == "ai-parrot[contract]"
     assert report.suite_name(markers) == "ai-parrot[markers]"
+    assert report.suite_name(Invocation("admin-ui", ("vitest",), (), runner="vitest")) == "vitest:admin-ui"
+
+
+def test_parse_junit_vitest_fixture():
+    result = report.parse_junit_report(
+        FIXTURES / "vitest-junit.xml",
+        runner="vitest",
+        suite="vitest:admin-ui",
+        exit_code=1,
+        duration_s=0.42,
+    )
+    assert result.nodes == (
+        ("src/lib/form.test.ts::renders a field", "passed"),
+        ("src/lib/form.test.ts::skips hidden", "passed"),
+        ("src/lib/form.test.ts::validates required", "failed"),
+    )
+    assert result.failure_text["src/lib/form.test.ts::validates required"] == (
+        "expected true to be false\nAssertionError: expected true to be false\n ❯ src/lib/form.test.ts:42:18"
+    )
+
+
+def test_parse_junit_nested_and_missing_file_stays_red():
+    nested = report.parse_junit_report(
+        FIXTURES / "vitest-nested.xml",
+        runner="vitest",
+        suite="vitest:admin-ui",
+        exit_code=0,
+        duration_s=0.2,
+    )
+    assert nested.tests == 2
+    assert len(nested.nodes) == 2
+
+    no_file = report.parse_junit_report(
+        FIXTURES / "vitest-nofile.xml",
+        runner="vitest",
+        suite="vitest:admin-ui",
+        exit_code=1,
+        duration_s=0.1,
+    )
+    assert no_file.unmapped == 1
+    assert no_file.status == "failed"
+
+
+def test_parse_junit_retains_long_pytest_failure_text():
+    result = report.parse_junit_report(
+        FIXTURES / "pytest-failure.xml",
+        runner="pytest",
+        suite="ai-parrot",
+        exit_code=1,
+        duration_s=0.1,
+    )
+    nodeid = "packages/ai-parrot/tests/test_long.py::test_long_failure"
+    assert result.nodes == ((nodeid, "failed"),)
+    assert len(result.failure_text[nodeid].splitlines()) > 30
 
 
 def test_parse_junit_nodes(tmp_path):
@@ -238,6 +296,17 @@ def test_render_new_red_and_unknown_gate():
         {"TASK-1": _record("TASK-1", result)}, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None
     )
     assert "Gate: ❌ 1 new red, 1 unknown" in output
+
+
+def test_render_non_pytest_baseline_cells_are_not_applicable():
+    output = report.render_markdown(
+        {"TASK-1": _record("TASK-1", _result("vitest:admin-ui", failed=1, passed=3, status="failed"))},
+        ["TASK-1"],
+        final_head="final",
+        rerun=None,
+        rerun_skip_reason=None,
+    )
+    assert "| vitest:admin-ui ❌ | 4 | 3 | 1 | 0 | 0 | n/a | n/a | n/a | 1.25s |" in output
 
 
 def test_append_cached_merges_sorted_targets():

@@ -32,9 +32,33 @@ The two `.sh` files become thin wrappers that exec the Python modules. Every exi
 `finalize_task.py:394/423` keeps working until TASK-4089 rewrites the references.
 
 `close_task.sh` is load-bearing. `finalize_task` (moved by TASK-4086) runs it under an
-**isolated `GIT_INDEX_FILE`** (`finalize_task.py:415-424`), and its internal
+**isolated `GIT_INDEX_FILE`** (`finalize_task.py:416-428` *[rev 0.5: was :415-424]*), and its internal
 `git add -u sdd/tasks/active` must keep honouring that environment variable. The port
 must therefore inherit `os.environ` unchanged for every `git` call.
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `close_task.sh` (152 lines), `heal_orphans.sh` (85 lines),
+  `finalize_task.py:394-428` and `tests/sdd/test_close_task_ledger.py` are unchanged since the
+  task was written (C/H-step contract still exact); `find_shared_root` anchor `project.py:1398`→`:1546`
+  (same signature); added `tests/sdd/test_ledger_lifecycle_acceptance.py` (runs `close_task.sh`
+  at `:197`) to Validation Commands. The third `.sh` (`codex_hook.sh`) stays repo-only, out of scope.
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4087 exactly: `close_task`, `heal_orphans`,
+  ported from the `.sh` files, which stay as wrappers. `codex_hook.sh` stays in `scripts/sdd/`
+  (inventory "Stay" list). No change.
+- **Package-relative path loaders.** None of these modules loads the `test_scope` kernel. Not applicable.
+- **Anchors re-verified** on the working tree (2026-10-20). Fixed: the isolated-index block in
+  `finalize_task.py` is `:416-428` (was `:415-424`, twice), and `_close_task_isolated` spans
+  `:375-466` (was `:375-460`). All other anchors hold.
 
 ---
 
@@ -89,7 +113,7 @@ must therefore inherit `os.environ` unchanged for every `git` call.
 # scripts/sdd/close_task.sh:135-137):
 from parrot.knowledge.wiki.ledger.events import LedgerEvent   # ledger/events.py:103 (fields kind, subject, actor, ts, payload)
 from parrot.knowledge.wiki.ledger.log import LedgerLog        # ledger/log.py:10; __init__(self, path: str) :13; append(event) :21
-from parrot.knowledge.wiki.project import find_shared_root    # project.py:1398  def find_shared_root(start: Path | None = None) -> Path | None
+from parrot.knowledge.wiki.project import find_shared_root    # project.py:1546  def find_shared_root(start: Path | None = None) -> Path | None
 # Everything else: stdlib (argparse not required — positional parsing mirrors bash), json, os, shutil, subprocess, sys,
 # datetime, pathlib. No third-party import at module level.
 ```
@@ -168,6 +192,8 @@ subprocess.run(["bash", str(close_script), task_id, feature_slug, _VERIFICATION]
                env={**os.environ, "GIT_INDEX_FILE": str(tmp_index_path)}, capture_output=True, text=True)  # :422-428
 # tests/sdd/test_close_task_ledger.py:18 runs ["bash", str(REPO_ROOT/"scripts/sdd/close_task.sh"), ...] with
 #   PYTHONPATH=<repo>/packages/ai-parrot/src prepended (:54-68); asserts exit codes 0/2 and events.jsonl contents.
+# tests/sdd/test_ledger_lifecycle_acceptance.py:27,197 runs ["bash", str(REPO_ROOT/"scripts/sdd/close_task.sh"), "TASK-9001", …]
+#   with the same PYTHONPATH prepend (:81-91) — verified 2026-10-19.
 # packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py:33,110-113 copies the real
 #   scripts/sdd/close_task.sh into a tmp repo's scripts/sdd/ and runs finalize_task against it.
 ```
@@ -252,7 +278,7 @@ def _run_git(args, *, cwd, env=None, check=True) -> subprocess.CompletedProcess[
 
 ### References in Codebase
 - `scripts/sdd/close_task.sh`, `scripts/sdd/heal_orphans.sh` — the sources being ported.
-- `parrot/sdd/scripts/finalize_task.py:375-460` — the isolated-index caller.
+- `parrot/sdd/scripts/finalize_task.py:375-466` *[rev 0.5: was :375-460]* — the isolated-index caller.
 
 ---
 
@@ -495,7 +521,7 @@ See **Test Specification**. That block is the starting file.
 **Why**: in the monorepo the wrapper is preferred (byte-identical behavior, existing tests
 copy the real `.sh` into tmp repos — test_finalize_task.py:33,110-113 keep passing); in a
 foreign repo the module port is the only thing installed. Thread `close_argv` into the
-existing subprocess call at finalize_task.py:415-424 in place of the hardcoded
+existing subprocess call at finalize_task.py:422-428 *[rev 0.5: was :415-424]* in place of the hardcoded
 `["bash", str(close_script)]` form — verify the exact call shape there and keep the
 inherited env untouched. Check `sys` is already imported (it is — verify).
 
@@ -549,6 +575,7 @@ editable-installed against the main checkout).
 
 - `pytest packages/ai-parrot/tests/sdd/test_scripts_shell_port.py -q`
 - `pytest tests/sdd/test_close_task_ledger.py -q`
+- `pytest tests/sdd/test_ledger_lifecycle_acceptance.py -q` (runs `bash scripts/sdd/close_task.sh` at `:197` with the worktree's `PYTHONPATH`)
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py -q`
 - `pytest tests/sdd_scripts/test_check_task_state.py -q`
 

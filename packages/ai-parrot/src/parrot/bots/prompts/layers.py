@@ -62,6 +62,10 @@ class PromptLayer:
             caching (FEAT-181). Defaults to ``True`` for CONFIGURE-phase
             layers and ``False`` for REQUEST-phase layers. Can be explicitly
             overridden per-layer by passing ``cacheable=False`` (or ``True``).
+        literal: When ``True`` the template is plain text, never substituted:
+            ``render()`` / ``partial_render()`` return it verbatim. Use it for
+            layers built from untrusted or user-authored text (e.g. skill
+            descriptions) where a ``$name`` must not expand (FEAT-707).
     """
     name: str
     priority: LayerPriority | int
@@ -71,6 +75,7 @@ class PromptLayer:
     required_vars: frozenset[str] = field(default_factory=frozenset)
     # FEAT-181: None sentinel triggers __post_init__ to derive from phase.
     cacheable: Optional[bool] = field(default=None)
+    literal: bool = False
 
     def __post_init__(self) -> None:
         """Derive cacheable default from phase when not explicitly set."""
@@ -90,6 +95,8 @@ class PromptLayer:
         """
         if self.condition and not self.condition(context):
             return None
+        if self.literal:
+            return self.template
         tmpl = Template(self.template)
         return tmpl.safe_substitute(**context)
 
@@ -115,8 +122,10 @@ class PromptLayer:
         """
         if self.condition and not self.condition(context):
             return self
-        tmpl = Template(self.template)
-        partially_resolved = tmpl.safe_substitute(**context)
+        if self.literal:
+            partially_resolved = self.template
+        else:
+            partially_resolved = Template(self.template).safe_substitute(**context)
         # Condition was already evaluated successfully during configure phase.
         # Clear it so build() doesn't re-evaluate against REQUEST-only context
         # (which may not have the configure-phase variables the condition needs).
@@ -129,6 +138,7 @@ class PromptLayer:
             required_vars=frozenset(),
             # FEAT-181: propagate cacheable so build_segments() sees the right flag.
             cacheable=self.cacheable,
+            literal=self.literal,
         )
 
 

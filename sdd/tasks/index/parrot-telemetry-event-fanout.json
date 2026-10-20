@@ -1,0 +1,251 @@
+{
+  "feature": "parrot-telemetry-event-fanout",
+  "feature_id": "FEAT-710",
+  "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-20T22:48:21+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/observability/test_client_global_bridge.py",
+          "packages/ai-parrot/tests/unit/observability/test_usage_subscriber.py",
+          "packages/ai-parrot/tests/unit/observability/test_bootstrap.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py",
+          "packages/ai-parrot/tests/unit/observability/test_trace_subscriber.py",
+          "packages/ai-parrot/tests/unit/observability/test_context.py",
+          "packages/ai-parrot/tests/unit/events/lifecycle/test_registry_fire_and_forget.py",
+          "packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py",
+          "packages/ai-parrot/tests/test_chat_storage.py",
+          "packages/ai-parrot/tests/unit/observability/test_tenant_contextvar.py",
+          "packages/ai-parrot/tests/unit/bots/test_current_tenant_binding.py",
+          "packages/ai-parrot/tests/unit/bots/test_agent_identity_binding.py",
+          "packages/ai-parrot/tests/unit/events/lifecycle/test_usage_event_fields.py",
+          "packages/ai-parrot/tests/unit/observability/test_shared_cost_calculator.py",
+          "packages/ai-parrot/tests/unit/observability/test_setup.py",
+          "packages/ai-parrot/tests/unit/observability/test_client_event_tenant_cost.py",
+          "packages/ai-parrot/tests/unit/bots/test_invoke_event_attribution.py",
+          "packages/ai-parrot/tests/unit/observability/test_cost_computed_once.py",
+          "packages/ai-parrot/tests/unit/storage/test_chat_hot_tier_metadata.py",
+          "packages/ai-parrot-server/tests/handlers/test_agenttalk_tenant_metadata.py",
+          "packages/ai-parrot/tests/unit/observability/test_event_fanout.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:10e13bbb291d7fcce00f60a18e8d6fd94bfd0563ac6e36a747e6070fa74c83bc"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4544",
+      "slug": "generic-current-tenant-contextvar",
+      "title": "Generic current_tenant ContextVar reused by skills tenancy",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task: creates current_tenant in observability/context.py; no upstream dependency.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4544-generic-current-tenant-contextvar.md"
+    },
+    {
+      "id": "TASK-4545",
+      "slug": "basebot-bind-current-tenant",
+      "title": "Bind current_tenant on every ask()/ask_stream()",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4544"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports current_tenant from TASK-4544 (observability/context.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4545-basebot-bind-current-tenant.md"
+    },
+    {
+      "id": "TASK-4546",
+      "slug": "usage-event-tenant-cost-fields",
+      "title": "Add tenant / user / session / cost_usd fields to the four usage events",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task: only adds defaulted dataclass fields to invoke.py and client.py; no upstream dependency.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4546-usage-event-tenant-cost-fields.md"
+    },
+    {
+      "id": "TASK-4547",
+      "slug": "shared-cost-calculator",
+      "title": "Process-wide shared CostCalculator + resolve_event_cost helper",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4546"
+      ],
+      "parallel": true,
+      "parallelism_notes": "resolve_event_cost reads AfterClientCallEvent.cost_usd, created by TASK-4546 (events/client.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4547-shared-cost-calculator.md"
+    },
+    {
+      "id": "TASK-4548",
+      "slug": "client-events-tenant-cost",
+      "title": "Fill tenant and cost_usd at the AbstractClient emit sites",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4544",
+        "TASK-4546",
+        "TASK-4547"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Reads current_tenant (TASK-4544, observability/context.py), sets AfterClientCallEvent.tenant/cost_usd (TASK-4546, events/client.py), calls get_shared_cost_calculator (TASK-4547, observability/cost/__init__.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4548-client-events-tenant-cost.md"
+    },
+    {
+      "id": "TASK-4549",
+      "slug": "invoke-events-attribution",
+      "title": "Fill tenant / user_id / session_id on the bot invoke events",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4545",
+        "TASK-4546"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sets fields created by TASK-4546 (events/invoke.py); serialized after TASK-4545 because both modify bots/base.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4549-invoke-events-attribution.md"
+    },
+    {
+      "id": "TASK-4550",
+      "slug": "subscribers-use-event-cost",
+      "title": "Subscribers consume event.cost_usd (single cost computation)",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4547"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls resolve_event_cost from TASK-4547 (observability/cost/__init__.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4550-subscribers-use-event-cost.md"
+    },
+    {
+      "id": "TASK-4551",
+      "slug": "chat-hot-tier-metadata",
+      "title": "ChatStorage Redis hot tier keeps caller metadata",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent: only storage/chat.py; no symbol from another task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4551-chat-hot-tier-metadata.md"
+    },
+    {
+      "id": "TASK-4552",
+      "slug": "agenttalk-tenant-and-turn-metadata",
+      "title": "AgentTalk: server-resolved tenant + per-turn usage metadata",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4548"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Persists usage.estimated_cost that TASK-4548 backfills at the origin (clients/base.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4552-agenttalk-tenant-and-turn-metadata.md"
+    },
+    {
+      "id": "TASK-4553",
+      "slug": "event-fanout-wiring",
+      "title": "Event fan-out wiring: attach_bus + forward_to_bus over durable Streams",
+      "feature_id": "FEAT-710",
+      "feature": "parrot-telemetry-event-fanout",
+      "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4546",
+        "TASK-4547"
+      ],
+      "parallel": false,
+      "parallelism_notes": "EXCLUSIVE: bumps the navigator-eventbus pin in packages/ai-parrot/pyproject.toml (shared manifest). Redacts the fields added by TASK-4546 (events/*.py); serialized after TASK-4547 because both modify observability/bootstrap.py and it calls ensure_shared_cost_calculator. BLOCKED until navigator-eventbus FEAT-711 is released.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4553-event-fanout-wiring.md"
+    }
+  ]
+}

@@ -23,6 +23,9 @@ three user-facing sites.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Verified current against dev 9f51c7735; no changes.
+
 ## Scope
 
 - Add `requires_pip`, `post_install`, `requires_env` (`tuple[str, ...] = ()`) to
