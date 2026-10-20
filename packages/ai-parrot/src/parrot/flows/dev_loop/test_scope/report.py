@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .datatypes import PytestInvocation
+from .datatypes import Invocation
 from .planner import OVERRIDE_MARKER_EXPRESSION
 
 try:  # POSIX only
@@ -103,7 +103,7 @@ def junit_path_for(feature_id: str, task_id: str, suite: str, ordinal: int) -> P
     return path
 
 
-def with_junit(invocation: PytestInvocation, junit_path: Path) -> tuple[str, ...]:
+def with_junit(invocation: Invocation, junit_path: Path) -> tuple[str, ...]:
     """Invocation argv + isolated junit path, forcing xunit1 so testcases carry ``file`` (FEAT-699)."""
     return (*invocation.argv, "-o", "junit_family=xunit1", f"--junitxml={junit_path}")
 
@@ -124,7 +124,7 @@ def nodeid_from_testcase(file_attr: str | None, classname: str, name: str) -> st
     return "::".join((file_attr, *class_segments, name))
 
 
-def suite_name(invocation: PytestInvocation) -> str:
+def suite_name(invocation: Invocation) -> str:
     """Record key for one invocation: ``<dist>``, ``<dist>[contract]`` or ``<dist>[markers]``."""
     try:
         marker_expression = invocation.argv[invocation.argv.index("-m") + 1]

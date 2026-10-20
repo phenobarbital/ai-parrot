@@ -13,7 +13,7 @@ import dataclasses
 import json
 from types import MappingProxyType
 
-from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, PytestInvocation, ScopePlan, TestTarget
+from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, Invocation, ScopePlan, TestTarget
 from parrot.flows.dev_loop.test_scope.models import ScopePlanModel
 
 
@@ -21,7 +21,7 @@ def _plan(**overrides: object) -> ScopePlan:
     defaults: dict[str, object] = {
         "tier": "merge",
         "invocations": (
-            PytestInvocation(
+            Invocation(
                 distribution="ai-parrot",
                 argv=("pytest", "packages/ai-parrot/tests/a.py"),
                 targets=(TestTarget(path="packages/ai-parrot/tests/a.py", distribution="ai-parrot", reason="declared"),),

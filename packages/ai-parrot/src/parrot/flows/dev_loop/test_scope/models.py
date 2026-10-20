@@ -18,12 +18,17 @@ class TestTargetModel(BaseModel):
     reason: Literal["declared", "contract", "mirror", "import", "core", "escalated"]
 
 
-class PytestInvocationModel(BaseModel):
-    """One per-distribution pytest invocation."""
+class InvocationModel(BaseModel):
+    """One per-distribution runner invocation."""
 
     distribution: str
     argv: list[str]
     targets: list[TestTargetModel]
+    runner: str = "pytest"
+    cwd: str = "."
+    report_path: str = ""
+    report_format: str = "junit"
+    timeout_s: int = 0
 
 
 class CoreHitModel(BaseModel):
@@ -40,7 +45,7 @@ class ScopePlanModel(BaseModel):
     """JSON-serialisable mirror of `ScopePlan`."""
 
     tier: Literal["task", "merge", "feature"]
-    invocations: list[PytestInvocationModel]
+    invocations: list[InvocationModel]
     escalated: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     core_hits: list[CoreHitModel] = Field(default_factory=list)
@@ -56,12 +61,17 @@ class ScopePlanModel(BaseModel):
         return cls(
             tier=plan.tier,
             invocations=[
-                PytestInvocationModel(
+                InvocationModel(
                     distribution=inv.distribution,
                     argv=list(inv.argv),
                     targets=[
                         TestTargetModel(path=t.path, distribution=t.distribution, reason=t.reason) for t in inv.targets
                     ],
+                    runner=inv.runner,
+                    cwd=inv.cwd,
+                    report_path=inv.report_path,
+                    report_format=inv.report_format,
+                    timeout_s=inv.timeout_s,
                 )
                 for inv in plan.invocations
             ],

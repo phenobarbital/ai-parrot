@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from .datatypes import CoreHit, PytestInvocation, ScopePlan, TestContract, TestTarget
+from .datatypes import CoreHit, Invocation, ScopePlan, TestContract, TestTarget
 from .mirror import prune_nested
 from .policy import AGENT_FLAGS, TIERS, ScopePolicy
 
@@ -37,7 +37,7 @@ def _invocation(
     worktree: Path,
     policy: ScopePolicy,
     marker_expression: str | None = None,
-) -> PytestInvocation:
+) -> Invocation:
     """Build the argv for one distribution's pruned targets."""
     kept_paths = prune_nested({t.path for t in targets})
     candidates = tuple(t for t in targets if t.path in kept_paths)
@@ -54,7 +54,7 @@ def _invocation(
     extra = tuple(a.format(worktree=str(worktree), dist_root=_dist_root(distribution)) for a in PER_DIST_EXTRA_ARGS)
     expression = marker_expression or policy.marker_expression
     argv = ("pytest", *AGENT_FLAGS, "-m", expression, *xdist, *extra, *kept_paths)
-    return PytestInvocation(distribution=distribution, argv=argv, targets=kept)
+    return Invocation(distribution=distribution, argv=argv, targets=kept)
 
 
 def build_plan(
@@ -72,7 +72,7 @@ def build_plan(
     contract: TestContract | None = None,
     mode: str = "fallback",
 ) -> ScopePlan:
-    """Group by distribution, prune nested, add flags/markers/xdist → one PytestInvocation per group.
+    """Group by distribution, prune nested, add flags/markers/xdist → one Invocation per group.
 
     Raises:
         ValueError: when ``tier`` is not one of ``TIERS``.
@@ -83,7 +83,7 @@ def build_plan(
     for target in targets:
         groups.setdefault(target.distribution, []).append(target)
 
-    invocations: list[PytestInvocation] = []
+    invocations: list[Invocation] = []
     for distribution in sorted(groups):
         group = groups[distribution]
         contract_paths = {target.path for target in group if target.reason == "contract"}

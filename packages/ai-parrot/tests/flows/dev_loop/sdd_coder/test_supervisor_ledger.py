@@ -20,7 +20,7 @@ from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.test_scope import green_cache
 from parrot.flows.dev_loop.test_scope.baseline import BaselineVerdict
 from parrot.flows.dev_loop.test_scope.context import read_ledger, record_green_escalation, worktree_git_dir
-from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, PytestInvocation, ScopePlan, TestTarget
+from parrot.flows.dev_loop.test_scope.datatypes import CoreHit, Invocation, ScopePlan, TestTarget
 from parrot.flows.dev_loop.test_scope.policy import ScopePolicy
 from parrot.flows.dev_loop.test_scope.select import plan_tests as real_plan_tests
 
@@ -46,7 +46,7 @@ async def _settle(supervisor: ValidationSupervisor, execution_id: str, handle: s
 
 def _canned_plan(argv: tuple[str, ...], *, reason: str, core_files: tuple[str, ...] = ()) -> ScopePlan:
     """A `ScopePlan` carrying exactly one controlled invocation attributed to distribution `root`."""
-    invocation = PytestInvocation(
+    invocation = Invocation(
         distribution="root", argv=argv, targets=(TestTarget(path="tests", distribution="root", reason=reason),)
     )
     core_hits = tuple(
@@ -333,7 +333,7 @@ def _real_plan_with_argv(argv: tuple[str, ...]):
     def _plan(*, worktree: Path, changed_files, tier: str, **_extra) -> ScopePlan:
         plan = real_plan_tests(worktree=worktree, changed_files=changed_files, tier=tier, policy=ScopePolicy())
         invocations = tuple(
-            PytestInvocation(distribution=inv.distribution, argv=argv, targets=inv.targets) for inv in plan.invocations
+            Invocation(distribution=inv.distribution, argv=argv, targets=inv.targets) for inv in plan.invocations
         )
         return replace(plan, invocations=invocations)
 

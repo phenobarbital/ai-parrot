@@ -57,7 +57,7 @@ from parrot.flows.dev_loop.task_scheduler import iter_index_files
 from parrot.flows.dev_loop.worktree_environment import protected_argv
 
 if TYPE_CHECKING:  # never imported at runtime -- annotations only (deferred by `__future__`).
-    from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+    from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
 logger = logging.getLogger(__name__)
 
@@ -873,8 +873,8 @@ class ValidationSupervisor:
         process: "asyncio.subprocess.Process",
         log_path: Path,
         deadline: float,
-        remaining_invocations: list["PytestInvocation"],
-        first_invocation: "PytestInvocation",
+        remaining_invocations: list["Invocation"],
+        first_invocation: "Invocation",
         plan: "ScopePlan",
         worktree: Path,
         feature_id: str = "",
@@ -1019,7 +1019,7 @@ class ValidationSupervisor:
 
     @staticmethod
     def _argv_with_junit(
-        feature_id: str, task_id: str, invocation: "PytestInvocation", ordinal: int, *, enabled: bool = True
+        feature_id: str, task_id: str, invocation: "Invocation", ordinal: int, *, enabled: bool = True
     ) -> Tuple[list[str], Optional[Path]]:
         """Return the invocation argv plus a unique junit path; plain argv when the path is unavailable."""
         if not enabled:
@@ -1037,7 +1037,7 @@ class ValidationSupervisor:
         worktree: Path,
         feature_id: str,
         task_ids: list[str],
-        invocation: "PytestInvocation",
+        invocation: "Invocation",
         junit_path: Path,
         exit_code: int,
         duration_s: float,
@@ -1113,7 +1113,7 @@ class ValidationSupervisor:
         worktree: Path,
         namespace: str,
         plan: "ScopePlan",
-        invocation: "PytestInvocation",
+        invocation: "Invocation",
         result: Optional[test_report.SuiteResult],
     ) -> None:
         """Record one invocation's node evidence without letting cache I/O affect the gate."""
@@ -1145,7 +1145,7 @@ class ValidationSupervisor:
         )
 
     async def _record_invocation_outcome(
-        self, *, worktree: Path, invocation: "PytestInvocation", plan: "ScopePlan", exit_code: int
+        self, *, worktree: Path, invocation: "Invocation", plan: "ScopePlan", exit_code: int
     ) -> None:
         """Record this invocation's escalation verdict in the per-worktree ledger.
 

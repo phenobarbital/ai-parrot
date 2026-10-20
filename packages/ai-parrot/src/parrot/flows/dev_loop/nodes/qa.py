@@ -578,7 +578,7 @@ class QANode(DevLoopNode):
             research: Upstream research output, for the worktree path.
 
         Returns:
-            One ``ShellCriterion`` per feature-tier ``PytestInvocation``
+            One ``ShellCriterion`` per feature-tier ``Invocation``
             (FEAT-563) — never a bare, unscoped ``pytest`` — or an empty
             list when nothing pytest-shaped changed or nothing mapped.
         """
