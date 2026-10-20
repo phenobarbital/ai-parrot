@@ -34,6 +34,7 @@ then asks targeted questions about genuine unknowns.
 /sdd-proposal NAV-8421 --no-gate                # skip user gates (autopilot mode)
 /sdd-proposal --resume FEAT-156                 # resume interrupted run
 /sdd-proposal NAV-8421 --budget=loose           # tight | default | loose
+/sdd-proposal NAV-8421 --no-parallel
 ```
 
 ## Guardrails
@@ -73,7 +74,7 @@ You must be on `dev`, `staging`, or the integration branch when starting. The
 
 Extract from the user's invocation:
 - **source**: Jira key (regex `^[A-Z]+-\d+$`), inline string, or path to file.
-- **flags**: `--mode`, `--no-gate`, `--resume`, `--budget`.
+- **flags**: `--mode`, `--no-gate`, `--resume`, `--budget`, `--no-parallel`.
 
 If `--resume <FEAT-ID>` is set, jump to **Step R** at the bottom.
 
@@ -100,6 +101,31 @@ Initialize `${STATE_DIR}/state.json` per the schema in
 | `tight`     |         15 |         10 |         5 |     1 |          120 |
 | `default`   |         40 |         25 |        10 |     2 |          300 |
 | `loose`     |        100 |         60 |        20 |     3 |          900 |
+
+#### Per-lane allocation (parallel research, FEAT-708)
+
+When Phase 2 runs in parallel (§4a), each of the three research lanes gets a
+fixed slice of the profile. All fractions use `floor()` so the lanes together
+never exceed the profile; unused quota in one lane is **not** reclaimable by
+another.
+
+| Lane | files_read | grep_calls | git_calls | depth | wall_seconds |
+|------|-----------:|-----------:|----------:|------:|-------------:|
+| codebase | `floor(0.60 × files_read)` | `floor(0.80 × grep_calls)` | 0 | profile | `floor(0.85 × wall_seconds)` |
+| git      | `floor(0.20 × files_read)` | 0 | `git_calls` | 1 | `floor(0.85 × wall_seconds)` |
+| wiki     | `floor(0.20 × files_read)` | `floor(0.20 × grep_calls)` | 0 | profile | `floor(0.85 × wall_seconds)` |
+
+Wiki queries remain free against the budget, as specified by the Phase 2
+iteration rule.
+
+The remaining `wall_seconds − floor(0.85 × wall_seconds)` (~15%) is the
+**merge window**, reserved for join + dedup + checkpoint (§4c).
+
+Phase 2 runs **sequentially** (no lanes, no forks) when any of:
+- `--budget=tight` — fork overhead is not justified for 15 files / 120 s;
+- any non-standard (custom) budget — per-lane custom limits are not supported;
+- `--no-parallel` was passed;
+- the Agent tool is unavailable (detected at dispatch, §4a).
 
 ### 2. Phase 0 — Resolve Source
 
@@ -198,7 +224,60 @@ Update `state.json`:
 
 ### 4. Phase 2 — Execute Research
 
+#### 4.0 Dispatch — parallel lanes or sequential (FEAT-708)
+
+Decide the execution mode first. Run **sequentially** (skip to §4a, record
+`phases.research.parallel = {"enabled": false, "fallback_reason": "<why>"}`)
+when the per-lane allocation in §1 says so (tight, custom, `--no-parallel`).
+Otherwise:
+
+1. **Partition** the approved plan by query `type`:
+
+   | Lane | Prefix | Query types |
+   |---|---|---|
+   | codebase | `FC` | `grep`, `glob`, `read`, `tree` |
+   | git | `FG` | `git_log` |
+   | wiki | `FW` | `wiki_query`, `wiki_page`, `wiki_related` |
+
+   A query with a `parent_id` stays in its parent's lane, so `wiki_query → wiki_page`
+   chains never split. An empty lane is not dispatched (status `completed`, 0 findings).
+2. **Allocate** each lane its quota from the §1 per-lane table.
+3. **Dispatch** all non-empty lanes in ONE message — one `Agent` call per lane:
+
+   ```
+   Agent({
+     subagent_type: "fork",
+     description: "<lane> research lane",
+     prompt: "Lane: <lane>. Prefix: <FC|FG|FW>. STATE_DIR: <abs path>.
+              Limits: <lane quota JSON>. Queries: <lane query list JSON>.
+              Follow §4a of /sdd-proposal for each query. Write findings ONLY as
+              ${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md. Do NOT write state.json.
+              Record any follow-up that belongs to another lane as a Notes line
+              `[cross-lane: type=<type>, intent=<text>]`. End with a JSON line:
+              {\"lane\":..., \"queries_executed\":N, \"queries_skipped\":N,
+               \"files_read\":N, \"grep_calls\":N, \"git_calls\":N, \"findings\":[ids]}"
+   })
+   ```
+
+   The prompt carries no `source.md`/Jira text — forks read the state dir on disk.
+   **If the Agent call errors** (tool unavailable, fork not supported), this IS the
+   capability probe: record `fallback_reason: "agent-unavailable"` and run §4a sequentially.
+4. **Collect** each fork's completion. The parent stops waiting at
+   `floor(0.85 × wall_seconds)`; a lane still running at that point is failed. Keep
+   completed lanes' findings. Stop the timed-out fork (TaskStop) or move its `<PREFIX>-*` files to `findings/.audit/partial/` first, so late writes are never double-counted. Re-run a failed or timed-out lane's queries sequentially
+   through §4a; if that retry also fails, set the lane `status: failed`,
+   `error: <msg>`, and continue.
+5. **Checkpoint** `state.json` (parent only): set `phases.research.parallel.lanes.<lane>`
+   (`lane_record`), add every lane's counters into `consumed.*`, then go to §4c (merge).
+
+**Resume.** On `--resume` in Phase 2: a lane whose `<PREFIX>-*` findings exist AND whose
+`lanes.<lane>.completed_at` is set is skipped; a lane with findings but no
+`completed_at` is re-dispatched (its partial `<PREFIX>-*` files are moved to
+`findings/.audit/partial/` first).
+
 #### 4a. Iteration loop
+
+This loop is the sequential path and the per-lane procedure each fork follows.
 
 For each query in the approved plan, in priority order:
 
@@ -221,13 +300,15 @@ For each query in the approved plan, in priority order:
    - `git_log` → `git log --follow --since=<window> -- <path>`
    - `tree` → `find <path> -type f -maxdepth N`
 3. **Persist a digest** at `${STATE_DIR}/findings/F<NNN>-<slug>.md` using the
-   format in `sdd/templates/finding.md`. The digest is **compact** — never
-   inline full file content; cite line ranges and excerpts only. For wiki
-   findings, cite the wiki page ID and score alongside file paths.
+   format in `sdd/templates/finding.md`. Inside a fork, use
+   `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md` instead. The digest is
+   **compact** — never inline full file content; cite line ranges and excerpts
+   only. For wiki findings, cite the wiki page ID and score alongside file paths.
 4. **Decide on recursion.** If a finding surfaces a new file/symbol that
    strongly warrants exploration AND `depth_reached < max_depth`, add a
    follow-up query to the plan with `parent_id: F<NNN>` and re-enter the loop.
 5. **Update `state.json`** after each query: `consumed.*`, `phases.research.*`.
+   Inside a fork, do NOT write `state.json`; the parent is the sole state writer.
 
 #### 4b. Stop conditions
 
@@ -239,18 +320,73 @@ Update `state.json`:
 - `phase: "research_complete"`
 - `phases.research.completed_at`, `duration_seconds`, `files_read`, etc.
 
+#### 4c. Merge lane findings (parallel mode only)
+
+Skip when Phase 2 ran sequentially (findings are already `F<NNN>`).
+
+1. Read every `${STATE_DIR}/findings/{FC,FG,FW}-*.md` and extract each
+   citation as a `(path, symbol, line_range)` tuple from its `## Citations`.
+2. **Group by citation identity**: two findings merge when they share a
+   `(path, symbol)` and their line ranges overlap. Same path but different
+   symbols → separate findings (never merge on path alone).
+   Findings with **no** citations (e.g. a pure wiki overview): define them as never merging —
+   each stays its own canonical finding (bounded by "never merge on path alone").
+3. **Merge** a group: union of citations (overlapping ranges collapsed),
+   summaries concatenated, the deeper `depth` kept, `## Notes` combined
+   (cross-lane notes preserved verbatim).
+4. **Renumber** the merged set `F001`, `F002`, … in lane order codebase → git → wiki,
+   then by original number. Write them to `${STATE_DIR}/findings/F<NNN>-<slug>.md`.
+5. **Archive** the lane originals: move every `FC-*`, `FG-*`, `FW-*` to
+   `${STATE_DIR}/findings/.audit/`.
+6. **Validate**: no two canonical findings share a `(path, symbol)`; IDs run
+   `F001..F<N>` with no gaps. A failure here is fixed before Phase 3, never skipped.
+7. **Checkpoint** `phases.research.parallel.merge` = `{started_at, completed_at,
+   input_count, output_count, merged_count: input_count − output_count,
+   audit_dir: "findings/.audit"}`, then set `phase: "research_complete"`.
+
+#### 4d. Citation probe (FEAT-708)
+
+Extract every citation from `${STATE_DIR}/findings/F*.md` (`## Citations`),
+dedupe across findings, and map each to an `sdd-contract-probe` check
+(`file` for `path:NN`, `symbol` for a cited class/function — keep the cited
+signature as `expected` — `anchor` for a quoted line, `import` for an import,
+`absent` for a "does not exist" claim; ids `c0, c1, …`, keep a
+check-id → finding-id map). Launch the probes in ONE message
+(≤ ~40 checks each, grouped by file):
+`Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
+prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`
+and continue with §5a. With fewer than ~10 citations, or without the Agent
+tool, run the same checks inline.
+
 ### 5. Phase 3 — Synthesis
 
 #### 5a. Build the synthesis input
 
+If §4d probes are running, assemble the input now; tags are applied before §5b.
+
 Concatenate, in order:
 - `${STATE_DIR}/source.md` content
 - `${STATE_DIR}/research_plan.json` content
-- All `${STATE_DIR}/findings/*.md` digests, wrapped in `<finding id="F00N">` tags
+- All `${STATE_DIR}/findings/F<NNN>-*.md` digests (never `findings/.audit/`), wrapped in `<finding id="F00N">` tags
 - A `<budget_status>` block with `consumed`, `truncated`, `truncation_reason`
 - A `<mode>` block with the resolved mode (forced or auto-detected)
 
 #### 5b. Run the synthesis prompt
+
+**First, collect the §4d probes.** Verify each report with `/sdd-task` §3's
+rules for `sdd-contract-probe`, classify every check:
+
+| Probe result | Claim status |
+|---|---|
+| `import` `found`/`reexported`; `file` `found`; `anchor` `found`; `absent` `absent` | `verified` (evidence = `path:lines[0]`) |
+| `symbol` `found` and `signature` == `expected` (whitespace-normalized) | `verified` |
+| `symbol` `found` and `signature` ≠ `expected` | `stale` (evidence = actual `signature` + line) |
+| `anchor` `ambiguous`; `absent` `present` (the "missing" thing exists) | `stale` |
+| `import` `missing`/`module-missing`; `symbol`/`file`/`anchor` `missing`; `file` `short` | `missing` |
+
+and for each `stale` or `missing` check append
+`[citation-check: stale|missing] <path:line> — <evidence>` to the owning
+finding's `## Notes`. Re-read the tagged findings into the §5a input.
 
 Invoke `sdd/templates/synthesis.prompt.md`. The agent produces a JSON object
 conforming to the synthesis output schema embedded in that prompt.
@@ -444,6 +580,8 @@ If `--resume <FEAT-ID>` is set:
    - `proposal_drafted` → Step 9 (commit)
 4. If a phase is in `running` status (orphaned from a crash), restart **that
    phase** from scratch (don't try to recover partial state for it).
+   Exception: Phase 2 (research) that ran in parallel resumes per lane — follow §4.0 **Resume**,
+   never restart-from-scratch (that would discard completed lanes' findings).
 
 Print:
 ```

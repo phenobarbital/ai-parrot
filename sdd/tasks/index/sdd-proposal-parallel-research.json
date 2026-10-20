@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-20T00:24:45+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-20T00:41:12+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -26,16 +26,17 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no deps: only task touching sdd/templates/state.schema.json",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4511-state-schema-parallel-record.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:29:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4511-state-schema-parallel-record.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4512",
@@ -44,16 +45,17 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no deps: first of the serialized sdd-proposal.md edits (§1 budget table)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4512-per-lane-budget-allocation.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:29:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4512-per-lane-budget-allocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4513",
@@ -62,7 +64,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,9 +74,10 @@
       "parallel": true,
       "parallelism_notes": "needs research.parallel/lane_record from TASK-4511 (state.schema.json); same file .claude/commands/sdd-proposal.md as TASK-4512, references its §1 per-lane table",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4513-parallel-dispatch-logic.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4513-parallel-dispatch-logic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4514",
@@ -83,7 +86,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -92,9 +95,10 @@
       "parallel": true,
       "parallelism_notes": "same file sdd-proposal.md as TASK-4513; consumes FC/FG/FW lane findings and §4.0 dispatch defined there",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4514-finding-merge-dedup.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:33:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4514-finding-merge-dedup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4515",
@@ -103,16 +107,17 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no in-feature deps: only task editing .claude/commands/sdd-brainstorm.md; cross-feature gate PR #1742 (.claude/agents/sdd-contract-probe.md)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4515-brainstorm-contract-probe.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:29:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4515-brainstorm-contract-probe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4516",
@@ -121,7 +126,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -130,9 +135,10 @@
       "parallel": true,
       "parallelism_notes": "same file sdd-proposal.md as TASK-4514; inserts §4d after its §4c; cross-feature gate PR #1742",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4516-proposal-citation-probe.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:37:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4516-proposal-citation-probe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4517",
@@ -141,7 +147,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -151,9 +157,10 @@
       "parallel": true,
       "parallelism_notes": "copies final bodies of sdd-brainstorm.md (TASK-4515) and sdd-proposal.md (TASK-4516) into .agent/workflows twins",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4517-twin-file-sync.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:41:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4517-twin-file-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4518",
@@ -162,7 +169,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -172,9 +179,10 @@
       "parallel": true,
       "parallelism_notes": "validates state.schema.json parallel record from TASK-4511; asserts §1/§4.0/§4c command text whose last writer is TASK-4514",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4518-tests-proposal-parallel.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:37:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4518-tests-proposal-parallel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4519",
@@ -183,7 +191,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -193,9 +201,10 @@
       "parallel": true,
       "parallelism_notes": "asserts probe text in sdd-brainstorm.md (TASK-4515) and sdd-proposal.md §4d (TASK-4516)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4519-tests-contract-validation.md"
+      "started_at": "2026-10-20T00:27:06+00:00",
+      "completed_at": "2026-10-20T00:41:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4519-tests-contract-validation.md",
+      "verification": "verified"
     }
   ]
 }
