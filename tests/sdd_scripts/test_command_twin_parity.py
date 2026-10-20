@@ -19,13 +19,13 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_TWINNED = ("sdd-next", "sdd-spec", "sdd-status", "sdd-task")
+_TWINNED = ("sdd-brainstorm", "sdd-next", "sdd-proposal", "sdd-spec", "sdd-status", "sdd-task")
 
 # name -> (exact original substring, exact twin substring). Each pair must
 # appear exactly once in its respective file today; see TASK-3098's
 # Completion Note for how these were re-verified against a stale assumption.
 # A twinned command with no entry here must match its twin byte-for-byte
-# (modulo frontmatter) — `sdd-status` does today.
+# (modulo frontmatter) — `sdd-brainstorm`, `sdd-proposal`, and `sdd-status` do today.
 _SUBSTITUTIONS: dict[str, tuple[str, str]] = {
     "sdd-next": (
         '- Worktree policy: `CLAUDE.md` (section "Worktree Policy")',
