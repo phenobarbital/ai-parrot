@@ -148,8 +148,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by minimax.minimax-m2.5 (nova), 1 attempt, 309.0s; orchestrator rewrote the broken e2e test and filled the evidence file
+**Date**: 2026-10-20
+**Notes**: Fix 9c4c6bfad. Evidence file artifacts/logs/feat-709-task-tier-budget.md filled with measured timings of FEAT-699 validation commands (not an engine-gate replay). Closed via close_task.sh.
 
 **Deviations from spec**: none
