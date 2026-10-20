@@ -1,0 +1,43 @@
+- **Kernel stays stdlib-only and path-importable.** `test_scope/__init__.py` is
+  loaded as top-level `test_scope` by the system-python native hook; no Pydantic,
+  no `parrot.*` imports inside the kernel. Runner adapters therefore live in the
+  kernel as plain modules; the Pydantic mirror of any new model lives in
+  `sdd_coder/models.py` or `test_scope/models.py` (the existing boundary).
+- **Never run a full suite from an agent-issued command** (FEAT-563 rule kept).
+- **Evidence is produced by a process, never narrated by a model.** The task-tier
+  verdict must be recorded through the same `report.append_suite` /
+  `ValidationSupervisor` path as merge/feature tiers, with an `EvidenceRef`.
+- **Decided in Rounds 1–2 (2026-10-20):**
+  - Hybrid execution: a seat-callable `run_validation` tool for iteration **and**
+    an engine-owned task-tier gate after the attempt commits, before fidelity →
+    merge; on a red gate the engine re-dispatches the **same seat** with the
+    verdict as feedback, counting as an attempt; a second red follows the normal
+    retry ladder.
+  - Verdict shape: counts + per-failure node id + bounded traceback excerpt
+    (≈30 lines), `new_red` vs `baseline_red` where a baseline exists, `cached`
+    targets, no raw stdout.
+  - Runners in v1: pytest (refactored into an adapter), vitest, cargo test,
+    `parrot e2e run` (deterministic only, never exploration).
+  - Contract **schema 2** with `runners[]`; task `## Validation Commands` stay
+    plain commands and are mapped to a runner by `argv[0]` through an adapter
+    registry.
+  - Adapters are code in the kernel, with a per-repo extension/override hook
+    (`.parrot/test_runners.toml`) so sibling repos add runners without editing
+    the kernel. Sibling repos vendor `scripts/sdd/` + `test_scope` by path
+    (`parrot-installer`, FEAT-633, has not landed), so the TOML is the **only**
+    extension point in v1.
+  - Resolved after the interview (see Open Questions): fresh-conversation
+    same-seat re-dispatch; `parrot-e2e` never in the task tier; cargo parses
+    stable libtest text; native guard rewrites lone commands only; excerpts
+    come from junit (or the adapter's own parse); schema 1 lifts on read.
+  - Native-seat Bash that runs pytest/vitest/cargo inside an attempt is
+    intercepted by the guard and **rewritten to the verdict-producing path**, so
+    the seat gets the verdict instead of stdout and cannot bypass evidence.
+- Backward compatible with schema-1 indexes (FEAT-699 is its own first consumer:
+  `sdd/tasks/index/tests-optimization-sdd-flow.json` carries a schema-1 payload).
+- Hard cuts are acceptable for internal APIs (no deprecation shims), but every
+  caller of a renamed kernel type must be updated in the same feature.
+- Task-tier gate budget: FEAT-563 evidence put the task tier under 60 s; the gate
+  must not become the slowest step of an attempt (see Open Questions for E2E).
+
+---
