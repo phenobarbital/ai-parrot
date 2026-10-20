@@ -3,6 +3,13 @@
 The dispatch and merge are agent-executed Markdown, so this module holds
 reference implementations of the deterministic rules and asserts that
 `.claude/commands/sdd-proposal.md` states the same rules.
+
+These are **drift guards, not behavioral guarantees** (issue:8eb2e5870472). A
+reference helper only proves that this module's restatement of a rule is
+self-consistent; nothing here executes the command, so nothing here can prove
+the agent behaves that way. What the module does guarantee is that helper and
+command never drift apart: every helper is pinned by a test below to the exact
+command text it mirrors, so editing one without the other fails the suite.
 """
 
 from __future__ import annotations
@@ -428,3 +435,72 @@ def test_state_lane_record_shape(schema_validator):
         "errors": [],
     }
     assert not schema_validator.is_valid(bad_lane_state)
+
+
+# Drift guards — pin each reference helper to the command text it mirrors
+# (issue:8eb2e5870472). See the module docstring for why these are the strongest
+# guarantee available for agent-executed Markdown.
+
+#: A §1 per-lane allocation row: lane + 5 quota cells.
+_ALLOC_ROW_RE = re.compile(r"^[ \t]*\|\s*(codebase|git|wiki)\s*\|(.+)\|\s*$", re.M)
+_ALLOC_FIELDS = ("files_read", "grep_calls", "git_calls", "depth", "wall_seconds")
+
+
+def _parse_alloc_table(text: str) -> dict[str, list[str]]:
+    """Read the §1 per-lane allocation table into {lane: [cell, ...]}."""
+    rows: dict[str, list[str]] = {}
+    for match in _ALLOC_ROW_RE.finditer(text):
+        cells = [cell.strip() for cell in match.group(2).split("|")]
+        if len(cells) == len(_ALLOC_FIELDS):  # the §4.0 lane table has 2 cells, not 5
+            rows[match.group(1)] = cells
+    return rows
+
+
+def test_partition_lane_table_pinned(command_text):
+    """`_LANES` must match the §4.0 lane/prefix/query-type table verbatim."""
+    for lane, (prefix, types) in _LANES.items():
+        row = re.search(rf"^[ \t]*\|\s*{lane}\s*\|\s*`{prefix}`\s*\|(.+)\|\s*$", command_text, re.M)
+        assert row, f"§4.0 lane table has no row for {lane} / {prefix}"
+        assert set(re.findall(r"`(\w+)`", row.group(1))) == types, (
+            f"{lane}: command lists {row.group(1).strip()}, helper uses {sorted(types)}"
+        )
+    assert "A query with a `parent_id` stays in its parent's lane" in command_text
+
+
+def test_allocate_fractions_pinned(command_text, sample_budget_profile):
+    """Every `_allocate` quota must equal what the §1 allocation table states."""
+    rows = _parse_alloc_table(command_text)
+    assert set(rows) == {"codebase", "git", "wiki"}, f"allocation table lanes: {sorted(rows)}"
+
+    allocated = _allocate(sample_budget_profile)
+    for lane, cells in rows.items():
+        for field, cell in zip(_ALLOC_FIELDS, cells, strict=True):
+            fraction = re.search(r"floor\(([\d.]+)\s*×\s*(\w+)\)", cell)
+            if fraction:
+                expected = math.floor(float(fraction.group(1)) * sample_budget_profile[fraction.group(2)])
+            elif cell == "0":
+                expected = 0
+            elif cell == "1":
+                expected = 1
+            elif cell == "profile":
+                expected = sample_budget_profile["depth"]
+            elif cell == "`git_calls`":
+                expected = sample_budget_profile["git_calls"]
+            else:
+                pytest.fail(f"unrecognised allocation cell {cell!r} for {lane}.{field}")
+            assert allocated[lane][field] == expected, (
+                f"{lane}.{field}: helper gives {allocated[lane][field]}, command says {cell}"
+            )
+
+
+def test_merge_rule_text_pinned(command_text):
+    """`_merge`'s dedup key, no-citation rule, renumbering and archive must be stated."""
+    for phrase in (
+        "two findings merge when they share a",
+        "`(path, symbol)`",
+        "their line ranges overlap",
+        "never merge on path alone",
+        "`F001`, `F002`",
+        "findings/.audit",
+    ):
+        assert phrase in command_text, f"§4c no longer states: {phrase!r}"

@@ -1,4 +1,11 @@
-"""FEAT-708 M7 — claim → sdd-contract-probe check mapping and caller-side classification."""
+"""FEAT-708 M7 — claim → sdd-contract-probe check mapping and caller-side classification.
+
+`_classify` and `_report_usable` are reference implementations of rules the
+commands state in Markdown and an agent executes, so they are **drift guards,
+not behavioral guarantees** (issue:8eb2e5870472): they prove helper and command
+agree, never that a run behaves that way. Each is pinned below to the command
+text it mirrors, so editing one without the other fails the suite.
+"""
 
 from __future__ import annotations
 
@@ -303,3 +310,34 @@ def test_uses_shared_probe_agent():
         assert 'model: "haiku"' not in content, f'{command_name} should not have model: "haiku" anywhere'
         # Also check for model: haiku (without quotes)
         assert "model: haiku" not in content, f"{command_name} should not have model: haiku anywhere"
+
+
+# Drift guards — pin the helpers and the §4d/§5a/§5b ordering to the command
+# text (issue:8eb2e5870472).
+
+
+def test_classification_table_pinned():
+    """Every `_classify` outcome must appear as a row of the §5b classification table."""
+    text = _COMMANDS["sdd-proposal"].read_text(encoding="utf-8")
+    for phrase in (
+        "`signature` == `expected` (whitespace-normalized)",
+        "`symbol` `found` and `signature` ≠ `expected`",
+        "`anchor` `ambiguous`; `absent` `present`",
+        "`import` `missing`/`module-missing`",
+    ):
+        assert phrase in text, f"§5b classification table no longer states: {phrase!r}"
+
+
+def test_citation_probe_ordering_is_acyclic():
+    """§4d launch → §5a provisional → §5b collect+tag → §5a re-run → prompt.
+
+    The original wording had §5a assemble the input and §5b "re-read the tagged
+    findings into the §5a input", which never said which assembly the prompt
+    receives (issue:8eb2e5870472).
+    """
+    text = _COMMANDS["sdd-proposal"].read_text(encoding="utf-8")
+    assert "Re-read the tagged findings into the §5a input" not in text
+    assert "that assembly is **provisional**" in text
+    assert "assemble the input now as a **provisional** pass" in text
+    assert "**Then re-run §5a** over the tagged findings" in text
+    assert text.index("#### 4d.") < text.index("#### 5a.") < text.index("#### 5b.")
