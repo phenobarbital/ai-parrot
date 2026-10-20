@@ -979,6 +979,103 @@ class TestNonModelFailuresDoNotSuspend:
         )
         assert reason is None
 
+    def test_max_turns_exhaustion_not_suspendable(self):
+        """Exhausting the dispatch turn budget does not suspend the seat (issue:d88684064bdb)."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error=(
+                "LLM code dispatch exceeded max_turns=60; the forced final_output "
+                "turn did not recover a result (no final_output tool call)"
+            ),
+            error_class="DispatchExecutionError",
+        )
+        assert reason is None
+
+    def test_dispatch_error_without_max_turns_still_suspendable(self):
+        """A genuine dispatch failure is still charged against the seat."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="provider returned 503 Service Unavailable",
+            error_class="DispatchExecutionError",
+        )
+        assert reason == "dispatch_error"
+
+    #: The dispatcher's real message (dispatchers/llm.py), including the salvage suffix.
+    _MAX_TURNS_ERROR = (
+        "LLM code dispatch exceeded max_turns=60; "
+        "the forced final_output turn did not recover a result (no final_output tool call)"
+    )
+
+    @pytest.mark.parametrize("error_class", ["DispatchExecutionError", "RuntimeError", "Exception"])
+    def test_overrun_is_not_suspendable_whatever_wrapped_it(self, error_class):
+        """The message decides, not the class.
+
+        The check sits above both the `DispatchExecutionError` arm and the generic
+        `error_class in ("RuntimeError", "Exception") and "dispatch" in error.lower()`
+        fallback -- and the dispatcher's message contains the word "dispatch", so that
+        fallback would otherwise re-classify a differently-wrapped overrun as suspendable.
+        """
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(roster=_roster(("a", "nova")))
+        assert engine._classify_failure_reason(error=self._MAX_TURNS_ERROR, error_class=error_class) is None
+
+    async def test_classify_and_suspend_never_suspends_for_an_overrun(self):
+        """End of the chain: `_classify_and_suspend` returns before touching the pool."""
+        from types import SimpleNamespace
+
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(roster=_roster(("a", "nova")))
+        suspended: list[object] = []
+
+        await engine._classify_and_suspend(
+            ctx=SimpleNamespace(feature_id="FEAT-709"),
+            pool=SimpleNamespace(suspend=lambda record: suspended.append(record)),
+            execution_id="e1",
+            task=SimpleNamespace(task_id="TASK-4536"),
+            seat=RosterSeat(label="a", backend="nova", model="zai.glm-4.7-flash"),
+            attempt_rec=SimpleNamespace(
+                attempt_uid="u1",
+                resolved_model="zai.glm-4.7-flash",
+                duration_s=1.0,
+                error_class="DispatchExecutionError",
+            ),
+            error=self._MAX_TURNS_ERROR,
+            job_id="j1",
+        )
+
+        assert suspended == []
+
+    def test_wall_clock_cap_still_classifies_as_timeout(self):
+        """No regression: a dispatch timeout is still the seat's problem."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(roster=_roster(("a", "nova")))
+        reason = engine._classify_failure_reason(
+            error="Dispatch exceeded 900s wall-clock cap", error_class="DispatchExecutionError"
+        )
+        assert reason == "timeout"
+
+    def test_invalid_output_still_classifies_as_invalid_output(self):
+        """No regression: a malformed DevelopmentOutput is still charged against the seat."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(roster=_roster(("a", "nova")))
+        reason = engine._classify_failure_reason(
+            error="model returned a malformed DevelopmentOutput",
+            error_class="DispatchOutputValidationError",
+        )
+        assert reason == "invalid_output"
+
 
 class TestStalePlanAdmitsNothing:
     """FEAT-559 TASK-3280: Test that stale plans are rejected before job/worktree creation."""
