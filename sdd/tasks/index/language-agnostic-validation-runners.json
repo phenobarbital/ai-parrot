@@ -408,7 +408,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -419,8 +419,9 @@
       "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) — semantics must be frozen first",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4536-docs-and-prompts.md"
+      "completed_at": "2026-10-20T15:17:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4536-docs-and-prompts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4537",

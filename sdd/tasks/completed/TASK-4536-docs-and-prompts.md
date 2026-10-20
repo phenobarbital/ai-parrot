@@ -191,8 +191,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by qwen.qwen3-coder-480b (nova) attempt 2 (salvaged) after glm hit max_turns; orchestrator completed the SKILL.md edit and the sdd-worker twin and tightened the doc-contract test
+**Date**: 2026-10-20
+**Notes**: Fixes f98de103b and bc474180b. Merge-tier validation: only baseline bwrap failures after fixes. Deviation: _subagent_data/sdd-worker.md edited though not in the task table (required by the doc contract test). Closed via close_task.sh.
 
 **Deviations from spec**: none
