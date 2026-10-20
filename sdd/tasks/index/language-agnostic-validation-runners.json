@@ -300,7 +300,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -310,8 +310,9 @@
       "parallelism_notes": "ValidationVerdictModel.from_kernel mirrors ValidationVerdict/verdict_to_json from TASK-4529 (test_scope/verdict.py)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4531-verdict-models-repair-worktree.md"
+      "completed_at": "2026-10-20T14:50:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4531-verdict-models-repair-worktree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4532",
