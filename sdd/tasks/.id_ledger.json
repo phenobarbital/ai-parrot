@@ -1,6 +1,6 @@
 {
   "next_task_id": 4561,
-  "next_feature_id": 712,
-  "updated_at": "2026-10-20T22:54:32+00:00",
-  "updated_by": "durable-lifecycle-fanout"
+  "next_feature_id": 713,
+  "updated_at": "2026-10-20T23:47:33+00:00",
+  "updated_by": "ledger-service-fixes"
 }
