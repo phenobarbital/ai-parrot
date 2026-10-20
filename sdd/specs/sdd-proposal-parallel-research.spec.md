@@ -53,8 +53,9 @@ of 3, limited only by the slowest lane.
   between forks).
 - Preserve full audit trail of lane-level findings.
 - Offload mechanical codebase contract verification (import resolution, file
-  existence, signature matching) to inline Haiku-class forks in
-  `/sdd-brainstorm` and `/sdd-proposal`, freeing the thinking model for
+  existence, signature matching) in `/sdd-brainstorm` and `/sdd-proposal` to
+  the shared read-only Haiku subagent `sdd-contract-probe` (the same one
+  `/sdd-task` uses, PR #1742), freeing the thinking model for
   creative/analytical work.
 
 ### Non-Goals (explicitly out of scope)
@@ -66,9 +67,13 @@ of 3, limited only by the slowest lane.
   the `custom` budget profile always runs sequential (S11).
 - Changing the finding file format (`sdd/templates/finding.md`).
 - Modifying Phase 3 synthesis or Phase 1 plan generation.
-- Contract validation in `/sdd-spec` or `/sdd-task` — those commands already
-  have their own verification steps; M7 targets only the upstream exploration
-  commands (`/sdd-brainstorm`, `/sdd-proposal`).
+- Contract validation in `/sdd-spec` or `/sdd-task`. `/sdd-task` already
+  delegates it to `sdd-contract-probe` (PR #1742), and `/sdd-spec` keeps its
+  own inline step. M7 only wires the *same* probe into the upstream
+  exploration commands (`/sdd-brainstorm`, `/sdd-proposal`).
+- A second contract-validation agent or fork. M7 reuses
+  `.claude/agents/sdd-contract-probe.md`. A missing check kind is added to that
+  agent, where `/sdd-task` gets it too, never to a copy of it.
 
 ---
 
@@ -141,8 +146,10 @@ Phase 1 (plan) ──→ Partition ──→ Fork codebase-lane ──┐
 | `sdd/templates/synthesis.prompt.md` | unchanged | Reads canonical `F001`+ findings |
 | `sdd/templates/research_plan.prompt.md` | extends | Partitioning metadata for plan queries |
 | Claude Code Agent tool | uses | `subagent_type: "fork"` for parallel dispatch |
-| `.claude/commands/sdd-brainstorm.md` §4 | modifies | Inline Haiku fork for Code Context verification |
-| `.claude/commands/sdd-brainstorm.md` §10 | modifies | Collect fork results before commit |
+| `.claude/commands/sdd-brainstorm.md` §4 | modifies | `sdd-contract-probe` dispatch for Code Context verification |
+| `.claude/commands/sdd-brainstorm.md` §10 | modifies | Collect probe reports before commit |
+| `.claude/agents/sdd-contract-probe.md` | uses (unchanged) | Shared Haiku probe from PR #1742; kinds `symbol`/`import`/`anchor`/`absent`/`sha256`/`outline`/`file` |
+| `.claude/commands/sdd-task.md` §3 | reference | Source of the probe verification rules M7 reuses verbatim |
 
 ### Data Models
 
@@ -210,7 +217,7 @@ logic live entirely within the skill command text as agent instructions.
 | M4: State Schema Extension | yes | Optional `parallel` object shape — schema defined above | — |
 | M5: Twin-File Sync | yes | Update `.agents/skills/` + `.agent/workflows/` twins — mechanical | — |
 | M6: Tests | yes | Test invariants enumerated in §4 | — |
-| M7: Contract Validation Forks | yes | Haiku fork template, claim extraction, report schema — all decided | — |
+| M7: Contract Validation Forks | yes | Reuses `sdd-contract-probe` (PR #1742); claim→kind mapping and probe→verified/stale/missing classification — all decided | — |
 
 ### Module 1: Dispatch Logic (M1)
 - **Path**: `.claude/commands/sdd-proposal.md` (§4, lines 199–240)
@@ -359,77 +366,93 @@ logic live entirely within the skill command text as agent instructions.
 ### Module 7: Contract Validation Forks (M7)
 - **Path**: `.claude/commands/sdd-brainstorm.md` (§4, line 121),
   `.claude/commands/sdd-proposal.md` (between §4b and §5, line ~240)
-- **Responsibility**: Offload mechanical codebase contract verification to
-  inline Haiku-class forks in `/sdd-brainstorm` and `/sdd-proposal`.
-  The fork runs `grep -n`, `test -e`, and targeted `read` to verify every
-  claim (import path, file path, class signature, method name) the main
-  agent intends to include in Code Context or findings citations. Returns
-  a structured JSON report so the main agent can mark references as
-  `verified` / `stale` / `missing` without burning thinking-model tokens
-  on mechanical checks.
-- **Depends on**: none (independent of M1–M6; touches different sections of
-  `sdd-proposal.md` and a different command file entirely)
+- **Responsibility**: Offload mechanical codebase contract verification in
+  `/sdd-brainstorm` and `/sdd-proposal` to the **shared** read-only Haiku
+  subagent `sdd-contract-probe` (`.claude/agents/sdd-contract-probe.md`, PR
+  #1742, already used by `/sdd-task` §3). The main agent turns every claim it
+  intends to put in Code Context or in finding citations (import path, file
+  path, class/method signature, "does not exist") into probe checks. It then
+  classifies the verified probe results as `verified` / `stale` / `missing`
+  without spending thinking-model tokens on the checks themselves.
+- **Depends on**: none inside FEAT-708 (independent of M1–M6; touches
+  different sections of `sdd-proposal.md` and a different command file
+  entirely). **Cross-feature:** PR #1742 merged into `dev`, since the probe
+  agent must exist.
+- **Why a named subagent and not a fork**: `subagent_type: "fork"` ignores a
+  `model` override. A fork always runs on the parent's model (Opus/Fable) with
+  the parent's whole context, so the v0.2 `fork` + `model: "haiku"` pattern
+  would not have run Haiku at all. A named subagent takes `model: haiku` from
+  its own frontmatter and starts from a clean context. Reusing the
+  `/sdd-task` agent also reuses its fixed commands, which ban truncating
+  filters (`| head`), and its reproducible JSON report.
 - **Interface Skeleton**:
 
-  **Claim types** (what the fork verifies):
-  | Claim | Verification | Tool |
+  **Claim → probe check** (the main agent builds the probe sheet):
+  | Claim | Probe check | Notes |
   |---|---|---|
-  | Import path (`from parrot.X import Y`) | `grep -rn "class Y\|def Y\|Y =" packages/*/src/` + `test -e` on module path | Bash |
-  | File path (`parrot/tools/base.py:42`) | `test -e` + `wc -l` (line exists) | Bash |
-  | Class/method signature (`class Foo(Bar)`) | `grep -n "class Foo" <path>` → read surrounding lines | Bash + Read |
-  | "Does NOT exist" claim | `grep -rn "<symbol>" packages/*/src/` returns empty | Bash |
+  | Import (`from parrot.X import Y`) | `{"kind": "import", "module": "parrot.X", "name": "Y"}` | `found`/`reexported` resolve the claim |
+  | File path (`parrot/tools/base.py:42`) | `{"kind": "file", "path": "<repo-relative path>", "line": 42}` | `line` optional |
+  | Class/method signature (`class Foo(Bar):`) | `{"kind": "symbol", "path": "<file>", "name": "Foo"}` | main agent keeps `expected` and compares |
+  | "Does NOT exist" (`parrot.tools.NonExistent`) | `{"kind": "absent", "name": "NonExistent", "scope": "<whole module dir>"}` | scope the whole module, never a shim |
+  | Edit-site anchor (proposal/brainstorm cites `path:NN` + verbatim line) | `{"kind": "anchor", "path": "<file>", "anchor": "<line>"}` | occurrence count + lines |
 
-  **Fork dispatch pattern** (same for both commands):
+  **Dispatch** (same for both commands): launch one or more
+  `sdd-contract-probe` subagents in ONE message (groups of ≤ ~40 checks,
+  grouped by file). Pass only the repo root and the probe sheet:
   ```
   Agent({
-    subagent_type: "fork",
-    model: "haiku",
-    name: "contract-validator",
+    subagent_type: "sdd-contract-probe",
     description: "Verify codebase claims",
-    prompt: "<claim-list as JSON> + verification instructions"
+    prompt: "Repository root: <abs path>\nProbe sheet: <JSON array of checks with stable ids>"
   })
   ```
-  The fork receives a JSON array of claims:
-  ```json
-  [
-    {"type": "import", "statement": "from parrot.tools import AbstractTool", "expected_at": "packages/ai-parrot/src/parrot/tools/__init__.py"},
-    {"type": "file", "path": "packages/ai-parrot/src/parrot/tools/base.py", "line": 42},
-    {"type": "signature", "path": "packages/ai-parrot/src/parrot/bots/agent.py", "symbol": "Agent", "expected": "class Agent(AbstractBot):"},
-    {"type": "absent", "symbol": "parrot.tools.NonExistent", "search_root": "packages/ai-parrot/src/"}
-  ]
-  ```
-  The fork returns a JSON report:
-  ```json
-  {
-    "verified": [{"claim_index": 0, "evidence": "parrot/tools/__init__.py:15"}],
-    "stale": [{"claim_index": 2, "evidence": "agent.py:88 — actual: class Agent(AbstractBot, ToolMixin):"}],
-    "missing": [{"claim_index": 1, "evidence": "file exists but has only 38 lines"}]
-  }
-  ```
+  The probe returns its own report (schema owned by the agent file). Each
+  result carries `id`, `kind`, `status`, `command`, raw `output`, `count`,
+  `lines`, `signature`, plus the report-level `head`.
+
+  **Verify before use**: the same rules as `/sdd-task` §3, *Delegating flat
+  checks to `sdd-contract-probe`*. `head` must equal the current
+  `git rev-parse --short HEAD`. Re-run every `missing` / `module-missing` /
+  `short` / `ambiguous` / `present` / `error` result plus one `found` in ten.
+  A report with any non-reproducing re-run is discarded and its checks are
+  run inline.
+
+  **Classification** (deterministic, done by the main agent after
+  verification):
+  | Probe result | Claim status |
+  |---|---|
+  | `import` `found`/`reexported`; `file` `found`; `anchor` `found`; `absent` `absent` | `verified` (evidence = `path:lines[0]`) |
+  | `symbol` `found` and `signature` == `expected` (whitespace-normalized) | `verified` |
+  | `symbol` `found` and `signature` ≠ `expected` | `stale` (evidence = actual `signature` + line) |
+  | `anchor` `ambiguous`; `absent` `present` (the "missing" thing exists) | `stale` |
+  | `import` `missing`/`module-missing`; `symbol`/`file`/`anchor` `missing`; `file` `short` | `missing` |
 
   **In `/sdd-brainstorm` (Step 4 → Step 5 boundary):**
   1. Main agent scans the codebase, builds a candidate reference list.
-  2. Fork the Haiku validator with the claim list.
-  3. Main agent proceeds to Step 5 (Generate Options) — creative work that
+  2. Launch the probe(s) with the claim list mapped to probe checks.
+  3. Main agent proceeds to Step 5 (Generate Options): creative work that
      does not depend on verification results.
-  4. Before Step 10 (Save and Commit), collect fork results.
+  4. Before Step 10 (Save and Commit), collect and verify the reports.
   5. Update Code Context: mark verified references with line numbers from
-     the fork's evidence; drop `missing` references; flag `stale` with
-     corrected signatures.
+     `lines`; drop `missing` references; correct `stale` signatures from
+     `signature`; remove a "Does NOT Exist" entry whose `absent` check came
+     back `present`.
 
   **In `/sdd-proposal` (Phase 2 → Phase 3 boundary):**
-  1. After Phase 2 research completes (all findings collected), extract
-     all `## Citations` from `${STATE_DIR}/findings/*.md`.
-  2. Fork the Haiku validator with the citation claim list.
-  3. Main agent begins Phase 3 synthesis input assembly (Step 5a) — can
-     proceed in parallel since the synthesis prompt is being constructed.
-  4. Before Step 5b (Run synthesis prompt), collect fork results.
+  1. After Phase 2 research completes (all canonical findings collected),
+     extract all `## Citations` from `${STATE_DIR}/findings/*.md`.
+  2. Launch the probe(s) with the citation checks (deduped across findings).
+  3. Main agent begins Phase 3 synthesis input assembly (Step 5a). This can
+     run in parallel because only the synthesis prompt is being built.
+  4. Before Step 5b (Run synthesis prompt), collect and verify the reports.
   5. Annotate findings whose citations are stale/missing: add a
      `[citation-check: stale|missing]` tag in the finding's `## Notes`
      so the synthesis agent can weigh evidence accordingly.
 
-  **Fallback**: if Agent tool is unavailable or fork fails, the main agent
-  runs the verification inline (current behavior — no regression).
+  **Fallback**: run the same checks inline when the Agent tool is
+  unavailable (Codex, dev-loop seats without `Agent`), when a report is
+  discarded, or when there are fewer than ~10 checks (the fan-out costs more
+  than it saves). This is the current behavior, so there is no regression.
 
 ---
 
@@ -452,21 +475,25 @@ logic live entirely within the skill command text as agent instructions.
 | `test_state_parallel_optional` | M4 | state.json valid with and without parallel field |
 | `test_state_lane_record_shape` | M4 | lane_record schema validates correctly |
 | `test_twin_parity_sdd_proposal` | M5 | sdd-proposal included in twin parity check |
-| `test_claim_extraction_imports` | M7 | Import claims extracted from Code Context references |
-| `test_claim_extraction_signatures` | M7 | Signature claims extracted with expected patterns |
-| `test_claim_extraction_absent` | M7 | "Does NOT exist" entries produce absent-type claims |
-| `test_report_merge_verified` | M7 | Verified claims update references with evidence lines |
-| `test_report_merge_stale_corrected` | M7 | Stale claims update signatures in Code Context |
-| `test_report_merge_missing_dropped` | M7 | Missing claims remove references from output |
-| `test_fallback_inline_verification` | M7 | Fork unavailable → main agent verifies inline |
+| `test_claim_extraction_imports` | M7 | Import claims map to `import` probe checks (`module` + `name`) |
+| `test_claim_extraction_signatures` | M7 | Signature claims map to `symbol` checks; `expected` kept by the caller |
+| `test_claim_extraction_absent` | M7 | "Does NOT exist" entries map to `absent` checks scoped to the whole module |
+| `test_claim_extraction_files` | M7 | `path:NN` citations map to `file` checks with `line` |
+| `test_classify_verified` | M7 | Probe `found`/`absent` results classify as verified with `path:line` evidence |
+| `test_classify_stale_signature` | M7 | `symbol` found with a different `signature` → stale, actual signature carried |
+| `test_classify_absent_present_is_stale` | M7 | `absent` check returning `present` → stale (entry removed from Does NOT Exist) |
+| `test_classify_missing` | M7 | `missing`/`module-missing`/`short` → missing |
+| `test_probe_report_head_mismatch_rejected` | M7 | Report whose `head` ≠ current HEAD is not used |
+| `test_fallback_inline_verification` | M7 | Agent unavailable / report discarded / < ~10 checks → inline verification |
+| `test_uses_shared_probe_agent` | M7 | Both commands name `sdd-contract-probe`; neither defines a fork validator nor `model: "haiku"` on a fork |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
 | `test_sequential_fallback_no_agent` | Full Phase 2 runs sequentially when Agent unavailable |
 | `test_parallel_default_profile` | Dispatch + merge produces canonical findings for default budget |
-| `test_contract_fork_brainstorm_flow` | Haiku fork verifies Code Context claims before commit |
-| `test_contract_fork_proposal_flow` | Haiku fork verifies finding citations before synthesis |
+| `test_contract_probe_brainstorm_flow` | `sdd-contract-probe` verifies Code Context claims before commit |
+| `test_contract_probe_proposal_flow` | `sdd-contract-probe` verifies finding citations before synthesis |
 
 ### Validation Contract
 
@@ -504,25 +531,39 @@ def sample_budget_profile():
 
 @pytest.fixture
 def sample_contract_claims():
-    """Claim list for contract validation fork tests."""
+    """Claim list, as the main agent collects it, with the probe check each maps to."""
     return [
-        {"type": "import", "statement": "from parrot.tools import AbstractTool",
-         "expected_at": "packages/ai-parrot/src/parrot/tools/__init__.py"},
-        {"type": "file", "path": "packages/ai-parrot/src/parrot/tools/base.py", "line": 42},
-        {"type": "signature", "path": "packages/ai-parrot/src/parrot/bots/agent.py",
-         "symbol": "Agent", "expected": "class Agent(AbstractBot):"},
-        {"type": "absent", "symbol": "parrot.tools.NonExistent",
-         "search_root": "packages/ai-parrot/src/"},
+        {"claim": "from parrot.tools import AbstractTool",
+         "check": {"id": "c0", "kind": "import", "module": "parrot.tools", "name": "AbstractTool"}},
+        {"claim": "packages/ai-parrot/src/parrot/tools/base.py:42",
+         "check": {"id": "c1", "kind": "file", "path": "packages/ai-parrot/src/parrot/tools/base.py", "line": 42}},
+        {"claim": "class Agent(AbstractBot):", "expected": "class Agent(AbstractBot):",
+         "check": {"id": "c2", "kind": "symbol", "path": "packages/ai-parrot/src/parrot/bots/agent.py", "name": "Agent"}},
+        {"claim": "parrot.tools.NonExistent does not exist",
+         "check": {"id": "c3", "kind": "absent", "name": "NonExistent", "scope": "packages/ai-parrot/src/parrot/tools"}},
     ]
 
 @pytest.fixture
-def sample_validation_report():
-    """Fork output report for merge tests."""
+def sample_probe_report():
+    """sdd-contract-probe report (schema owned by .claude/agents/sdd-contract-probe.md)."""
     return {
-        "verified": [{"claim_index": 0, "evidence": "parrot/tools/__init__.py:15"}],
-        "stale": [{"claim_index": 2, "evidence": "agent.py:88 — actual: class Agent(AbstractBot, ToolMixin):"}],
-        "missing": [{"claim_index": 1, "evidence": "file exists but has only 38 lines"}],
+        "repo_root": "/repo", "head": "abc1234",
+        "results": [
+            {"id": "c0", "kind": "import", "status": "found", "command": "...", "output": "15:class AbstractTool(ABC):",
+             "count": 1, "lines": [15], "signature": "class AbstractTool(ABC):", "truncated": False, "note": None},
+            {"id": "c1", "kind": "file", "status": "short", "command": "wc -l < packages/ai-parrot/src/parrot/tools/base.py",
+             "output": "38", "count": 38, "lines": [], "signature": None, "truncated": False, "note": None},
+            {"id": "c2", "kind": "symbol", "status": "found", "command": "...", "output": "88:class Agent(AbstractBot, ToolMixin):",
+             "count": 1, "lines": [88], "signature": "class Agent(AbstractBot, ToolMixin):", "truncated": False, "note": None},
+            {"id": "c3", "kind": "absent", "status": "absent", "command": "...", "output": "",
+             "count": 0, "lines": [], "signature": None, "truncated": False, "note": None},
+        ],
     }
+
+@pytest.fixture
+def expected_classification():
+    """Deterministic classification of sample_probe_report against sample_contract_claims."""
+    return {"c0": "verified", "c1": "missing", "c2": "stale", "c3": "verified"}
 ```
 
 ---
@@ -546,12 +587,14 @@ def sample_validation_report():
 - [ ] All unit tests pass
 - [ ] Resume after partial-lane failure produces correct results (S2)
 - [ ] Dedup preserves distinct symbols from same file (S6)
-- [ ] `/sdd-brainstorm` Step 4 dispatches a Haiku fork for Code Context verification
-- [ ] `/sdd-proposal` dispatches a Haiku fork for citation verification between Phase 2 and Phase 3
-- [ ] Contract fork returns structured JSON report (verified/stale/missing)
+- [ ] `/sdd-brainstorm` Step 4 dispatches `sdd-contract-probe` (not a fork) for Code Context verification
+- [ ] `/sdd-proposal` dispatches `sdd-contract-probe` for citation verification between Phase 2 and Phase 3
+- [ ] No new contract-validation agent or fork prompt is introduced; any new check kind lands in `.claude/agents/sdd-contract-probe.md`
+- [ ] Probe reports are verified with `/sdd-task` §3's rules (HEAD match, negatives + 1-in-10 re-run) before use
+- [ ] Verified probe results are classified deterministically as verified/stale/missing (table in M7)
 - [ ] Stale signatures are corrected in Code Context before commit
 - [ ] Missing references are dropped (brainstorm) or tagged (proposal)
-- [ ] Fork fallback to inline verification when Agent tool unavailable
+- [ ] Inline verification fallback when Agent tool unavailable, a report is discarded, or < ~10 checks
 
 ---
 
@@ -580,6 +623,8 @@ def sample_validation_report():
 | Parallel state | Research phase_record | Extends with optional `parallel` | `sdd/templates/state.schema.json:103` |
 | Twin sync | Skill twin | Mirrors dispatch changes | `.agents/skills/sdd-proposal/SKILL.md:88` |
 | Twin sync | Workflow twin | Mirrors dispatch changes | `.agent/workflows/sdd-proposal.md` |
+| Contract probe dispatch (M7) | Shared Haiku probe | `Agent(subagent_type: "sdd-contract-probe")` | `.claude/agents/sdd-contract-probe.md` (PR #1742; verify on `dev` at task time) |
+| Probe verification rules (M7) | `/sdd-task` delegation section | Same rules, referenced not copied | `.claude/commands/sdd-task.md` §3 "Delegating flat checks to `sdd-contract-probe`" (PR #1742) |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -589,8 +634,9 @@ def sample_validation_report():
 - ~~`sdd/templates/lane.md`~~ — no lane template; lanes use `finding.md`
 - ~~`findings/.audit/` directory~~ — does not exist; created by the merge step
 - ~~"Phase 2" text in SKILL.md~~ — the twin uses "5. Execute research:" (line 88), not "Phase 2"
-- ~~contract validation in any SDD skill~~ — no existing SDD skill dispatches a verification fork; all contract checks are inline today
-- ~~`model: "haiku"` in any Agent fork call~~ — no existing skill overrides the fork model
+- ~~a verification **fork** in any SDD skill~~. None exists, and M7 must not add one. Contract checks are delegated to the named subagent `sdd-contract-probe` (`/sdd-task` since PR #1742) or run inline.
+- ~~`model: "haiku"` on an Agent fork call~~. A fork ignores the model override and always runs on the parent's model. Haiku comes from `sdd-contract-probe`'s frontmatter (`model: haiku`).
+- ~~`contract-validator` agent / `verified|stale|missing` probe output~~. The probe emits per-check `status` values; the verified/stale/missing classification is M7's caller-side step.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -613,6 +659,7 @@ Verified against: `HEAD` of dev, 2026-10-20.
 | `.claude/commands/sdd-brainstorm.md` | MODIFY | `### 4. Research the Codebase & Build Code Context` | `:121` | 1 |
 | `.claude/commands/sdd-brainstorm.md` | MODIFY | `### 5. Generate Options` | `:142` | 1 |
 | `.claude/commands/sdd-brainstorm.md` | MODIFY | `### 10. Save and Commit` | `:180` | 1 |
+| `.claude/agents/sdd-contract-probe.md` | READ-ONLY (reused) | `## Check kinds and their fixed commands` | (PR #1742 — verify on `dev` at task time) | 1 |
 | `tests/sdd_scripts/test_proposal_parallel.py` | CREATE | — | — | — |
 | `tests/sdd_scripts/test_contract_validation.py` | CREATE | — | — | — |
 
@@ -654,12 +701,20 @@ Verified against: `HEAD` of dev, 2026-10-20.
   findings. The dispatch logic retries the failed lane sequentially. If the
   retry also fails, mark the lane as failed and proceed with available
   findings (degraded but not blocked).
+- **Forks ignore `model`** (M7): research lanes (M1) are forks on purpose,
+  because they share the parent's cache and run on the parent's model.
+  Contract checks must NOT be forks. Only the named `sdd-contract-probe`
+  subagent actually runs on Haiku.
+- **Probe cost floor** (M7): a probe run costs roughly 77K Haiku tokens of
+  mostly fixed startup (PR #1742 smoke test: 7/7 checks correct in 30 s).
+  Batch ~40 checks per probe and skip delegation below ~10 checks.
 
 ### External Dependencies
 
 | Package | Version | Reason |
 |---|---|---|
-| Claude Code Agent tool | built-in | `subagent_type: "fork"` for parallel dispatch |
+| Claude Code Agent tool | built-in | `subagent_type: "fork"` for parallel dispatch (M1); `subagent_type: "sdd-contract-probe"` for contract checks (M7) |
+| `.claude/agents/sdd-contract-probe.md` | PR #1742 | Shared Haiku probe reused by M7 (must be merged into `dev` first) |
 
 No new Python packages.
 
@@ -714,7 +769,9 @@ Summary: **11** confirmed · **0** rejected · **0** escalated.
   dependency edge for M1/M2, M7 is independent — different section).
   `.claude/commands/sdd-brainstorm.md` is modified only by M7.
 - **Exclusive resources**: none — no migrations, no lockfiles.
-- **Cross-feature dependencies**: none — no in-flight features modify these files.
+- **Cross-feature dependencies**: M7 requires PR #1742 (`sdd-contract-probe`
+  agent + `/sdd-task` §3 delegation rules) merged into `dev` before its task
+  starts. No other in-flight feature modifies these files.
 
 ---
 
@@ -724,3 +781,4 @@ Summary: **11** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-20 | Jesus Lara | Initial draft from brainstorm + codex design research (11/11 confirmed) |
 | 0.2 | 2026-10-20 | Jesus Lara | Add M7 — Contract Validation Forks (inline Haiku forks in sdd-brainstorm/sdd-proposal) |
+| 0.3 | 2026-10-20 | Jesus Lara (with Claude) | Fold in `sdd-proposal-parallel-research.addendum.md`: M7 reuses the shared `sdd-contract-probe` agent (PR #1742) instead of a `fork` + `model: "haiku"` validator (forks ignore the model override); claim→probe-check mapping; caller-side verified/stale/missing classification; `/sdd-task` §3 verification rules; tests/fixtures/ACs/§6 updated; cross-feature dependency on PR #1742 |
