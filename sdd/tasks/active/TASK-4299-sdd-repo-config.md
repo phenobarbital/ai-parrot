@@ -1,7 +1,7 @@
 # TASK-4299: Per-repo SDD configuration — sdd/config.json read by the branch policy
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.2, §3 M6 amendment **C6**)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.2, §3 M6 amendment **C6**; rev 0.5 **C21**, **C22**, **C24**)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
@@ -28,7 +28,8 @@ change so the monorepo's behaviour does not change.
 
 Downstream consumers (not this task): TASK-4089 rewrites shipped markdown to say "the base
 branch in `sdd/config.json`"; TASK-4091 seeds the file on `parrot sdd install`; TASK-4080's
-doctor reads `base_branch`; C7 option C uses `test_command`; C9 uses `reviewer`.
+doctor reads `base_branch`; C7 option C / rev 0.5 C21 use `test_command` (TASK-4089 prose,
+TASK-4091 install warning); C9 uses `reviewer`; rev 0.5 C22 uses `projects` (TASK-4089/4090 seed).
 
 ---
 
@@ -57,14 +58,14 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   Contract gains the `parrot/sdd/scripts/brief_meta.py` MODIFY target; the C17 AC now names the real
   `WorktreePlan` fields (`name`, `path`, `base_ref`; `sdd_meta.py:328-333`). `sdd/config.json`,
   `parrot/sdd/config.py` and the new names still do not exist on dev.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **`brief_meta` / `ensure_worktree` ignore `sdd/config.json`.** TASK-4298 hands these branch
-    literals to this task: `scripts/sdd/brief_meta.py:28` (`BRIEF_BASE_BRANCHES`, enforced by
-    `_check_base_branch` `:45-55`), `:74` (default `"main"`), `:98` (ledger brief ⇒ `"dev"`), `:166`
-    (`hotfix` prefix iff `"main"`), and `scripts/sdd/ensure_worktree.py:304` (`--brief-key` default
-    `"main"`), `:318` (`--jira-key` ⇒ `"main"`). With `base_branch: "develop"`, `/sdd-brief` rejects
-    the configured branch. Decide: extend this task's scope to read `SddConfig` there, or record a
-    follow-up. Until then, implement only the `sdd_meta` wiring and the C17 CLI as specified.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 — scope extended: `brief_meta` and `ensure_worktree` (as moved by TASK-4085) read `SddConfig`
+    instead of the branch literals TASK-4298 handed over (`brief_meta.py:28,74,98,166`,
+    `ensure_worktree.py:304,318`); Scope, Files, Contract, ACs, tests and validation updated.
+  - C21 — `test_command` semantics fixed: a shell string, run once with cwd = repo root by its
+    consumers (TASK-4089/4091, not this task), non-blank when set; validator, AC and tests added.
+  - C22 — `SddConfig.projects: list[str] | None` added: replaces `KNOWN_PROJECTS` when set; unset keeps
+    today's warn-never-fail behaviour (`sdd_meta.py:198-199`); field, AC and tests added.
 
 ---
 
@@ -76,10 +77,27 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
     `base_branch: str = "dev"`, `staging_branch: str | None = None`,
     `hotfix_base: str = "main"`, `issue_tracker: Literal["jira", "none"] = "none"`,
     `jira_host: str | None = None`, `reviewer: Literal["codex", "none"] = "none"`,
-    `test_command: str | None = None`. `model_config = ConfigDict(extra="forbid")`.
+    `test_command: str | None = None`, `projects: list[str] | None = None` *(rev 0.5 C22)*.
+    `model_config = ConfigDict(extra="forbid")`.
     Validators: every branch name non-blank and without whitespace; `base_branch !=
     hotfix_base`; `staging_branch` differs from both when set; `issue_tracker == "jira"`
-    requires `jira_host`; `jira_host` is a bare hostname (no scheme, no path).
+    requires `jira_host`; `jira_host` is a bare hostname (no scheme, no path);
+    *(rev 0.5 C21)* `test_command`, when set, is non-blank.
+  - *(rev 0.5 C21)* `test_command` semantics (field docstring): a shell string that its consumers
+    run once with cwd = the repo root. This task only stores and validates it; running it is
+    TASK-4089 (shipped prose) and TASK-4091 (install warning when null).
+  - *(rev 0.5 C22)* `projects`: when set, it replaces `KNOWN_PROJECTS` as the vocabulary
+    `normalize_project` checks; when unset, `KNOWN_PROJECTS` applies and unknown values warn and
+    never fail (today's behaviour, `sdd_meta.py:198-199`).
+    Resolved (PR #1746 review, 2026-10-20), the same `_config_for` pattern as `resolve_flow`:
+    - `normalize_project(raw, *, known: frozenset[str] | None = None)`, where `None` means `KNOWN_PROJECTS`.
+    - `parse_taxonomy(doc_path, *, config: SddConfig | None = None)` resolves `cfg = _config_for(doc_path,
+      config)` and `known = frozenset(cfg.projects) if cfg.projects else KNOWN_PROJECTS`. It validates with
+      `DocTaxonomy.model_validate(data, context={"known_projects": known})`.
+    - `DocTaxonomy._norm_projects(cls, value, info: ValidationInfo)` passes
+      `(info.context or {}).get("known_projects")` to `normalize_project`.
+    - A value outside the configured list **warns, never fails**, exactly like today's `KNOWN_PROJECTS`
+      rule (`sdd_meta.py:198-199`).
   - `default_sdd_config() -> SddConfig`.
   - `find_repo_root(start: Path | None = None) -> Path | None`: walk up from `start`
     (default `Path.cwd()`) to the first directory containing `.git` (dir **or** file —
@@ -101,6 +119,29 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   - `KNOWN_BRANCHES` soft warning: the configured branches count as known
     (`known = KNOWN_BRANCHES | {cfg.base_branch, cfg.hotfix_base, cfg.staging_branch}`).
 - `plan_worktree()` is unchanged (`origin/<meta.base_branch>` already follows the meta).
+- *(rev 0.5 C24)* **Brief and worktree helpers read `SddConfig`** instead of branch literals, in the
+  files TASK-4085 moved to `packages/ai-parrot/src/parrot/sdd/scripts/` (line numbers below are
+  today's `scripts/sdd/` ones; the move changes only import lines):
+  - `brief_meta.py:28` `BRIEF_BASE_BRANCHES = frozenset({"main", "dev", "staging"})` (enforced by
+    `_check_base_branch`, `:45-55`) → the configured `{hotfix_base, base_branch, staging_branch}`
+    (`staging_branch` only when set);
+  - `brief_meta.py:74` `BriefMeta.base_branch: str = "main"` → default `hotfix_base`;
+  - `brief_meta.py:98` ledger-sourced brief requires `"dev"` → requires `base_branch`;
+  - `brief_meta.py:166` `"hotfix"` prefix iff base is `"main"` → iff base is `hotfix_base`;
+  - `ensure_worktree.py:304` `--brief-key` default `"main"` and `:318` `--jira-key` ⇒ `"main"` →
+    `hotfix_base`.
+  With ai-parrot's config (or no config) every value equals today's literal, so behaviour and the
+  `ensure_worktree` CLI (flags, help, output) are unchanged.
+  Resolved (PR #1746 review, 2026-10-20):
+  - `brief_worktree_plan(*, slug, key, base_branch, config: SddConfig | None = None)`, where `None` means
+    `load_sdd_config()` from the current repository root.
+  - `BriefMeta` gets its config through pydantic's validation context:
+    `BriefMeta.model_validate(data, context={"sdd_config": cfg})`. A `model_validator(mode="before")`
+    fills a missing `base_branch` with `cfg.hotfix_base`, replacing the `"main"` field default at `:74`.
+    The `base_branch` validator checks membership in the config-derived set.
+  - `ensure_worktree.main()` loads the config **once** from the root it already uses (`Path.cwd()`,
+    `:343`) and passes `config=cfg` both to `brief_worktree_plan` and to the `--brief-key` / `--jira-key`
+    defaults (`:304`, `:318`).
 - **Q1 residual — a CLI for `sdd_meta`.** Six shipped one-liners import `sdd_meta` inline
   (`python -c "from scripts.sdd.sdd_meta import parse …"` ×3 in `sdd-task.md:55`,
   `sdd-done.md:71` and `agents/sdd-worker.md:152`, `parse_taxonomy` ×2 at `sdd-spec.md:523` and
@@ -120,7 +161,7 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 - Commit ai-parrot's own `sdd/config.json`:
   `{"base_branch": "dev", "staging_branch": "staging", "hotfix_base": "main",
   "issue_tracker": "jira", "jira_host": "trocglobal.atlassian.net", "reviewer": "codex",
-  "test_command": null}`.
+  "test_command": null}`. `projects` stays unset, so `KNOWN_PROJECTS` keeps applying (C22).
 - Tests (see Test Specification).
 
 **NOT in scope**:
@@ -131,6 +172,8 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 - A `sync_down` field or any rendered `sdd/CONFIG.md` (rejected, proposal §5).
 - Reading environment variables for any field (secrets stay out of this file by design:
   `jira_host` is a hostname, not a credential).
+- Running `test_command` or switching any test step on it (C21: TASK-4089, TASK-4091).
+- The `sdd/CONVENTIONS.md` `## Project areas` seed section (C22: TASK-4089/4090).
 
 ---
 
@@ -139,9 +182,10 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/sdd/config.py` | CREATE | `SddConfig`, `SddConfigError`, `CONFIG_PATH`, `default_sdd_config`, `find_repo_root`, `load_sdd_config`, `write_default_config` |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` | MODIFY | `config` keyword on `parse`/`resolve_flow`; `FlowMeta.hotfix_base`; configured defaults |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` | MODIFY | `config` keyword on `parse`/`resolve_flow`; `FlowMeta.hotfix_base`; configured defaults; configured `projects` vocabulary (rev 0.5 C22) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py` | MODIFY | add argparse `main()` (`parse` / `taxonomy` / `resolve-flow`) to the TASK-4085 re-export module |
-| `packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py` | MODIFY | add argparse `main()` (`plan` / `write-index`) to the module TASK-4085 moved (rev 0.4 C17) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py` | MODIFY | add argparse `main()` (`plan` / `write-index`) to the module TASK-4085 moved (rev 0.4 C17); branch literals → `SddConfig` (rev 0.5 C24) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py` | MODIFY | `--brief-key` / `--jira-key` `"main"` defaults → `SddConfig.hotfix_base` (rev 0.5 C24; module moved by TASK-4085) |
 | `sdd/config.json` | CREATE | ai-parrot's own configuration (values above) |
 | `packages/ai-parrot/tests/sdd/test_config.py` | CREATE | model, loader, root discovery, writer |
 | `tests/sdd_scripts/test_sdd_meta_config_defaults.py` | CREATE | policy follows the config; absent config keeps today's behaviour |
@@ -174,7 +218,23 @@ def emit(meta: FlowMeta) -> str:                 # :156 — renders `type:` and 
 def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_override=None) -> FlowMeta:  # :263
 #   final_type = type_override or resolved_type or "feature"; final_base = ... or "dev"  (:309-310)
 #   warning when final_base not in KNOWN_BRANCHES (:312-317)
+KNOWN_PROJECTS: frozenset[str] = frozenset(...)  # :45 (rev 0.5 C22: replaced by SddConfig.projects when set)
+def normalize_project(raw: str) -> str:          # :188 — warns (never raises) when not in KNOWN_PROJECTS (:198-199)
 # parrot/sdd/__init__.py — docstring-only package root (TASK-4070); parrot/sdd/scripts/ (TASK-4085)
+
+# rev 0.5 C24 — branch literals to replace (re-verified 2026-10-20 on dev 0263f0724; moved by TASK-4085
+# to packages/ai-parrot/src/parrot/sdd/scripts/, import lines only):
+# scripts/sdd/brief_meta.py
+BRIEF_BASE_BRANCHES: frozenset[str] = frozenset({"main", "dev", "staging"})          # :28
+def _check_base_branch(base_branch: str) -> str:                                     # :45-55 — raises outside the set
+class BriefMeta(BaseModel): ... base_branch: str = "main"                            # :68, :74
+    def _ledger_implies_dev(self) -> "BriefMeta": ... != "dev"                       # :95-100 (literal :98)
+def brief_worktree_plan(*, slug: str, key: str, base_branch: str) -> WorktreePlan:   # :150 — prefix "hotfix" iff "main" :166
+def plan_brief_worktree(meta: BriefMeta) -> WorktreePlan:                            # :175
+# scripts/sdd/ensure_worktree.py
+#   :301-305  brief_worktree_plan(slug=..., key=args.brief_key, base_branch=args.base_branch or "main")   (literal :304)
+#   :315-318  if args.jira_key and not type_override: type_override = "hotfix"; base_branch_override = "main" (:318)
+#   :343      repo_root = Path.cwd()
 ```
 
 ### Callers that must keep working (behaviour identical with ai-parrot's config)
@@ -183,11 +243,12 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
 - `scripts/sdd/worktree_status.py:21`, `scripts/sdd/doc_taxonomy.py:21`, `scripts/sdd/backfill_taxonomy.py:19`.
 - `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_ingest.py:20-21` — `parse` as `parse_spec_meta`.
 - `flows/dev_loop/nodes/{research,feature_handoff,base}.py` — via TASK-4298's names.
-- Tests: `tests/sdd_scripts/test_sdd_meta_resolve_flow.py` (kind mapping, missing doc, precedence, `hotfix_off_main_is_rejected`, `unknown_branch_warns_but_succeeds`), `test_worktree_plan.py`, `test_command_contracts.py`, `test_ensure_worktree.py`.
+- Tests: `tests/sdd_scripts/test_sdd_meta_resolve_flow.py` (kind mapping, missing doc, precedence, `hotfix_off_main_is_rejected`, `unknown_branch_warns_but_succeeds`), `test_worktree_plan.py`, `test_command_contracts.py`, `test_ensure_worktree.py`; *(rev 0.5 C24)* `test_brief_meta.py`, `test_brief_scaffold_integration.py`, `test_brief_template_contract.py`.
 
 ### Does NOT Exist (create here)
 - ~~`parrot/sdd/config.py`, `SddConfig`, `load_sdd_config`, `find_repo_root`, `sdd/config.json`~~ — new in this task.
 - ~~`FlowMeta.hotfix_base`, a `config` parameter on `parse`/`resolve_flow`~~ — new in this task.
+- ~~`SddConfig.projects`~~ — new in this task (rev 0.5 C22).
 - ~~`sdd/CONFIG.md`, `sync_down`~~ — rejected; never create.
 - ~~`sdd_meta.resolve_flow` "does not exist"~~ — it exists (`:263`); an early amendment draft said otherwise and was corrected.
 
@@ -204,6 +265,7 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
     {"path": "sdd/config.json", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_config.py", "action": "CREATE"},
     {"path": "tests/sdd_scripts/test_sdd_meta_config_defaults.py", "action": "CREATE"}
   ],
@@ -216,7 +278,10 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py#KNOWN_BRANCHES",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py#WORK_KIND_FLOW",
     "sym:scripts/sdd/ensure_worktree.py#main",
-    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_ingest.py#parse_spec_meta"
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_ingest.py#parse_spec_meta",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py#normalize_project",
+    "sym:scripts/sdd/brief_meta.py#BriefMeta",
+    "sym:scripts/sdd/brief_meta.py#brief_worktree_plan"
   ]
 }
 ```
@@ -281,7 +346,14 @@ class SddConfig(BaseModel):
     issue_tracker: Literal["jira", "none"] = "none"
     jira_host: str | None = None
     reviewer: Literal["codex", "none"] = "none"
-    test_command: str | None = None
+    test_command: str | None = None          # rev 0.5 C21: shell string, run once with cwd = repo root (by TASK-4089/4091 consumers)
+    projects: list[str] | None = None        # rev 0.5 C22: replaces sdd_meta.KNOWN_PROJECTS when set
+
+    @field_validator("test_command")
+    @classmethod
+    def _non_blank_command(cls, value: str | None) -> str | None:
+        # FILL IN: None passes; reject a blank / whitespace-only string (rev 0.5 C21); keep the value otherwise
+        ...
 
     @field_validator(*_BRANCH_FIELDS)
     @classmethod
@@ -343,6 +415,23 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
     #   final_base = base_branch_override or resolved_base or cfg.base_branch
     #   known = KNOWN_BRANCHES | {b for b in (cfg.base_branch, cfg.hotfix_base, cfg.staging_branch) if b}
     #   return FlowMeta(type=final_type, base_branch=final_base, hotfix_base=cfg.hotfix_base)
+
+# rev 0.5 C22 — normalize_project's vocabulary: cfg.projects when set, else KNOWN_PROJECTS; warning only.
+#   normalize_project(raw, *, known=None); parse_taxonomy(doc_path, *, config=None) → _config_for → known set →
+#   DocTaxonomy.model_validate(data, context={"known_projects": known}); _norm_projects reads info.context.
+#   Outside the configured list → warning only (PR #1746 review).
+```
+
+```python
+# rev 0.5 C24 — parrot/sdd/scripts/brief_meta.py and ensure_worktree.py (after TASK-4085's move), literal → SddConfig:
+#   brief_meta :28  BRIEF_BASE_BRANCHES           → {cfg.hotfix_base, cfg.base_branch} | ({cfg.staging_branch} if set)
+#   brief_meta :74  BriefMeta.base_branch = "main" → cfg.hotfix_base
+#   brief_meta :98  ledger brief != "dev"          → != cfg.base_branch
+#   brief_meta :166 "hotfix" iff == "main"         → iff == cfg.hotfix_base (else "fix")
+#   ensure_worktree :304 / :318 "main"             → cfg.hotfix_base
+#   brief_worktree_plan(*, slug, key, base_branch, config=None) (None → load_sdd_config());
+#   BriefMeta.model_validate(data, context={"sdd_config": cfg}) + model_validator(mode="before") default for
+#   base_branch; ensure_worktree.main() loads cfg once from its root (Path.cwd(), :343) and passes it down.
 ```
 
 ---
@@ -363,6 +452,18 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
       `.claude/worktrees/hotfix-NAV-1-crew-guards`, `base_ref` = `origin/main`); `write-index <brief.md>
       --tasks <tasks.json> --worktree-root <dir>` writes the per-brief index and prints its path;
       `--help` exits 0 from a foreign cwd; an unknown subcommand exits 2; the module's existing names are unchanged.
+- [ ] *(rev 0.5 C21)* `SddConfig(test_command="")` and `SddConfig(test_command="   ")` are rejected; a set
+      value (e.g. `"make test && echo ok"`) is stored unchanged; `None` is the default.
+- [ ] *(rev 0.5 C22)* `SddConfig().projects is None`; with `projects` unset, an unknown project warns and does
+      not fail (as today); with `projects: ["billing"]` set, `billing` (not in `KNOWN_PROJECTS`) is accepted
+      without a warning.
+- [ ] *(rev 0.5 C24)* With `{"base_branch": "develop", "hotfix_base": "main"}`: `brief_worktree_plan(...,
+      base_branch="develop")` is accepted and planned as `fix-<KEY>-<slug>` on `origin/develop`; a ledger-sourced
+      brief requires `develop`; `BriefMeta` defaults `base_branch` to `main`; `ensure_worktree --brief-key K`
+      without `--base-branch` (and `--jira-key K` without `--type`) plans on `origin/main`. With
+      `hotfix_base: "release"`, the brief default and both `ensure_worktree` defaults are `release`. Absent
+      config: `test_brief_meta.py`, `test_brief_scaffold_integration.py`, `test_brief_template_contract.py`
+      and `test_ensure_worktree.py` pass unmodified.
 
 ---
 
@@ -378,6 +479,9 @@ editable-installed against the main checkout).
 - `pytest tests/sdd_scripts/test_worktree_plan.py -q`
 - `pytest tests/sdd_scripts/test_command_contracts.py -q`
 - `pytest tests/sdd_scripts/test_ensure_worktree.py -q`
+- `pytest tests/sdd_scripts/test_brief_meta.py -q` (rev 0.5 C24)
+- `pytest tests/sdd_scripts/test_brief_scaffold_integration.py -q` (rev 0.5 C24)
+- `pytest tests/sdd_scripts/test_brief_template_contract.py -q` (rev 0.5 C24)
 
 Also, outside the pytest contract: `ruff check packages/ai-parrot/src/parrot/sdd/config.py packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py`;
 `python -c "from parrot.sdd.config import load_sdd_config; from pathlib import Path; print(load_sdd_config(Path('.')).model_dump())"`
@@ -392,6 +496,8 @@ prints ai-parrot's values; `python -m scripts.sdd.ensure_worktree --help` still 
 - `test_defaults_match_today`, `test_extra_keys_rejected`, `test_base_equals_hotfix_rejected`,
   `test_staging_collides_rejected`, `test_jira_requires_host`, `test_jira_host_bare_hostname`
   (`https://x.atlassian.net` rejected, `x.atlassian.net` accepted), `test_branch_blank_rejected`.
+- *(rev 0.5 C21/C22)* `test_test_command_blank_rejected` (`""`, `"   "`), `test_test_command_kept_verbatim`,
+  `test_projects_default_none`, `test_projects_list_accepted`.
 - `test_load_absent_is_default`, `test_load_valid`, `test_load_invalid_json_raises`,
   `test_load_validation_error_raises` (message contains the path).
 - `test_find_repo_root_git_dir`, `test_find_repo_root_git_file` (write a `.git` file with
@@ -409,6 +515,10 @@ Fixture `foreign_repo(tmp_path, monkeypatch)`: `.git/` dir, `sdd/config.json` wi
 Acceptance Criteria, `parse` default, explicit `config=` beats discovery, `hotfix_base:
 release` both ways, `caplog` has no "canonical branches" warning for `develop`, and
 `emit(resolve_flow(...))` contains no `hotfix_base` line.
+*(rev 0.5 C22)* `parse_taxonomy` with `projects: ["billing"]` → no "Unknown SDD project" warning for
+`billing`; without `projects` → the warning fires and nothing raises.
+*(rev 0.5 C24)* the `brief_meta` / `ensure_worktree` bullets of the Acceptance Criteria (call
+`ensure_worktree.main([... "--dry-run", "--json", "--no-sync"])` in the fixture repo).
 
 ---
 

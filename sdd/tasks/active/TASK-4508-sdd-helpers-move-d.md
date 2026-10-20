@@ -21,7 +21,7 @@ before spec rev 0.3/0.4; the other two came with FEAT-699 and FEAT-703.
 
 | Helper | Shipped callers on dev | Notes |
 |---|---|---|
-| `cache_test_contract` | `.claude/commands/sdd-task.md:410`, `.agents/skills/sdd-task/SKILL.md:110`, `.agent/workflows/sdd-task.md:406` *[rev 0.5: were :369 / :365]* | FEAT-699. Finds `test_scope` through a monorepo `_KERNEL_PARENT` (`:15`) |
+| `cache_test_contract` | `.claude/commands/sdd-task.md:410`, `.agents/skills/sdd-task/SKILL.md:110`, `.agent/workflows/sdd-task.md:406` *[rev 0.5: were :369 / :365, after FEAT-708 on 2026-10-20]* | FEAT-699. Finds `test_scope` through a monorepo `_KERNEL_PARENT` (`:15`) |
 | `test_report` | `.claude/commands/sdd-done.md:257,277`, `.agents/skills/sdd-done/SKILL.md:131,134`, `.agent/workflows/sdd-done.md:170,190` | FEAT-695. Monorepo `_KERNEL_PARENT` (`:18`) |
 | `check_e2e_closeout` | `.claude/commands/sdd-done.md:206`, `.agents/skills/sdd-done/SKILL.md:100` | FEAT-703. Imports `yaml` (core dependency `PyYAML>=6.0.2`) and, lazily, `parrot.e2e` (ai-parrot-server), reporting MISSING when that is absent |
 | `close_resolved_issues` | `.claude/commands/sdd-done.md:414` and both twins | Uses `pydantic` (core), the `wikitoolkit` CLI and `git` through `subprocess` |
@@ -40,31 +40,24 @@ path), it uses only the stdlib, and nothing shipped references it.
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Created by the readiness review; no prior version. Spec §2/M6's helper list and the C12 premise
   are stale. Spec rev 0.5 should list these four modules (see `sdd/state/FEAT-633/`).
-- Open decisions: none for the move itself. How `cache_test_contract`/`test_report` behave in a
-  foreign repo (FEAT-699 vs C7, the `test_command` override) is a spec rev 0.5 decision. It does not
-  block this mechanical move.
-
----
-
-## Spec rev 0.5 — 2026-10-20
-
-Spec §3 Module 6 "M6 helper inventory" and D2 (approved by Jesus Lara, 2026-10-20).
-
-- **Module list.** The inventory row for TASK-4508 lists exactly these four: `cache_test_contract`,
-  `test_report`, `check_e2e_closeout`, `close_resolved_issues`. The spec now names them, and C12
-  no longer claims `review_checkpoint` is the only one. No change.
-- **FEAT-699 steps in a foreign repo — Resolved (rev 0.5 D2), not in this task:** when
-  the repo config sets `test_command` (TASK-4299), the shipped commands skip `cache_test_contract`,
-  `select_tests` and `test_report` and run `test_command`; when unset, the steps run as today and
-  must fail with a clear message, never a traceback. TASK-4089 owns it. This task still changes no
-  helper behaviour.
-- **Package-relative path loaders.** Already in Scope for both `_KERNEL_PARENT`s
-  (`cache_test_contract.py:15`, `test_report.py:18`), with `test_kernel_parent_is_package_relative`.
-  Added AC-7 so the loaders are shown to import the kernel from the installed package.
-- **Anchors re-verified** on the working tree (2026-10-20). Fixed: `.claude/commands/sdd-task.md`
-  caller `:369` → `:410`, `.agent/workflows/sdd-task.md` `:365` → `:406`; `test_report` `Usage:`
-  lines are `:5-6` (was `:4-5`; `Usage:` itself is `:4`). Answered the FILL IN item:
-  `close_resolved_issues.py` has a usage line at `:30`. All other anchors hold.
+- **Resolved by spec rev 0.5 (2026-10-20)** — C18 / §3 "M6 helper inventory" and C21 / D2
+  (decisions by Jesus Lara):
+  - **Module list.** The inventory row for TASK-4508 lists exactly these four:
+    `cache_test_contract`, `test_report`, `check_e2e_closeout`, `close_resolved_issues`. C18
+    confirms the move and the package-relative loaders; C12 no longer claims `review_checkpoint`
+    is the only one. No change to this task.
+  - **FEAT-699 steps in a foreign repo (C21 / D2) — not in this task:** when the repo's SDD config (TASK-4299)
+    sets `test_command`, the shipped commands skip `cache_test_contract`,
+    `select_tests` and `test_report` and run `test_command`; when unset, the steps run as today
+    and must fail with a clear message, never a traceback. TASK-4089 owns it (with 4299/4091).
+    This task stays a mechanical move with no behaviour change.
+  - **Package-relative path loaders.** Already in Scope for both `_KERNEL_PARENT`s
+    (`cache_test_contract.py:15`, `test_report.py:18`), with `test_kernel_parent_is_package_relative`.
+    AC-7 shows the loaders import the kernel from the installed package.
+  - **Anchors re-verified** on dev `9625844f5` (2026-10-20). Fixed: `.claude/commands/sdd-task.md`
+    caller `:369` → `:410`, `.agent/workflows/sdd-task.md` `:365` → `:406` (FEAT-708 growth);
+    `test_report` `Usage:` lines are `:5-6` (was `:4-5`; `Usage:` itself is `:4`). Answered the
+    FILL IN item: `close_resolved_issues.py` has a usage line at `:30`. All other anchors hold.
 
 ---
 
