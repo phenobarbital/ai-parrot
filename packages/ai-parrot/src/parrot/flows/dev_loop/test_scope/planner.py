@@ -18,6 +18,13 @@ _REASON_PRIORITY: dict[str, int] = {"declared": 0, "contract": 1, "core": 2, "es
 OVERRIDE_MARKER_EXPRESSION: str = "not real_llm"
 
 
+def _contract_markers(contract: TestContract | None) -> tuple[str, ...]:
+    """Return normalized marker names from the contract's pytest runner."""
+    block = contract.pytest if contract is not None else None
+    raw = block.settings.get("markers", "") if block is not None else ""
+    return tuple(marker for marker in raw.split(",") if marker)
+
+
 def marker_expression_for(targets: Sequence[TestTarget], *, contract: TestContract | None, policy: ScopePolicy) -> str:
     """Return the permissive marker expression for an all-contract invocation."""
     if contract is not None and targets and all(target.reason == "contract" for target in targets):
@@ -102,10 +109,11 @@ def build_plan(
                     marker_expression=marker_expression_for(contract_targets, contract=contract, policy=policy),
                 )
             )
-            if contract is not None and contract.markers:
+            markers = _contract_markers(contract)
+            if markers:
                 tests_root = "tests" if distribution == "root" else f"packages/{distribution}/tests"
                 marker_target = TestTarget(path=tests_root, distribution=distribution, reason="contract")
-                marker_expression = f"({' or '.join(contract.markers)}) and {OVERRIDE_MARKER_EXPRESSION}"
+                marker_expression = f"({' or '.join(markers)}) and {OVERRIDE_MARKER_EXPRESSION}"
                 invocations.append(
                     _invocation(
                         distribution,

@@ -68,15 +68,66 @@ class ScopePlan:
 
 
 @dataclass(frozen=True)
+class RunnerContract:
+    """One runner block of a schema-2 Validation Contract (FEAT-709)."""
+
+    __test__ = False
+    kind: str
+    targets: tuple[str, ...]
+    settings: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    tiers: tuple[str, ...] = ("task", "merge", "feature")
+
+    def __post_init__(self) -> None:
+        """Freeze settings so the frozen dataclass is deeply immutable."""
+        if not isinstance(self.settings, MappingProxyType):
+            object.__setattr__(self, "settings", MappingProxyType(dict(self.settings)))
+
+
+@dataclass(frozen=True, init=False)
 class TestContract:
-    """Normalized spec-declared validation contract (per-spec index header ``test_contract``, FEAT-699)."""
+    """Normalized Validation Contract (index header ``test_contract``; schema 2, schema 1 lifted)."""
 
-    __test__ = False  # not a pytest test class
+    __test__ = False
+    schema: int
+    runners: tuple[RunnerContract, ...]
+    digest: str
 
-    schema: int  # payload version; only 1 is understood
-    tests: tuple[str, ...]  # pytest operands: repo-relative file or file::node
-    markers: tuple[str, ...]  # registered marker names, never "real_llm"
-    digest: str  # "sha256:<hex>" of the normalized payload
+    def __init__(
+        self,
+        schema: int,
+        runners: tuple[RunnerContract, ...] | None = None,
+        digest: str = "",
+        *,
+        tests: tuple[str, ...] | None = None,
+        markers: tuple[str, ...] | None = None,
+    ) -> None:
+        """Initialize schema 2, accepting the former constructor only for transitional callers.
+
+        Schema-1 payloads from disk are validated and lifted by ``lift_schema1``. The
+        keyword-only compatibility branch exists solely for callers that constructed
+        the old value object directly; stored contracts never bypass digest validation.
+        """
+        if runners is None:
+            if schema != 1 or tests is None or markers is None:
+                raise TypeError("TestContract requires runners")
+            runners = (
+                RunnerContract(
+                    kind="pytest",
+                    targets=tuple(tests),
+                    settings={"markers": ",".join(sorted(markers))},
+                ),
+            )
+            schema = 2
+        elif tests is not None or markers is not None:
+            raise TypeError("TestContract accepts either runners or legacy tests/markers, not both")
+        object.__setattr__(self, "schema", schema)
+        object.__setattr__(self, "runners", tuple(runners))
+        object.__setattr__(self, "digest", digest)
+
+    @property
+    def pytest(self) -> RunnerContract | None:
+        """The pytest block, if any (green cache, planner markers, legacy consumers)."""
+        return next((runner for runner in self.runners if runner.kind == "pytest"), None)
 
 
 @dataclass(frozen=True)
