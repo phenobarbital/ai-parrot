@@ -83,7 +83,9 @@ def test_registry_rejects_tier_outside_adapter_support():
 def test_load_registry_reads_toml_settings_and_extension(tmp_path, monkeypatch):
     """TOML settings and protocol-compliant extension classes are loaded fail-closed."""
     module = tmp_path / "fake_runner_extension.py"
-    module.write_text("from test_runners_registry import FakeAdapter\\nclass Adapter(FakeAdapter):\\n    kind = 'extension'\\n")
+    module.write_text(
+        "from test_runners_registry import FakeAdapter\\nclass Adapter(FakeAdapter):\\n    kind = 'extension'\\n"
+    )
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setitem(sys.modules, "test_runners_registry", sys.modules[__name__])
     config = tmp_path / ".parrot" / "test_runners.toml"
