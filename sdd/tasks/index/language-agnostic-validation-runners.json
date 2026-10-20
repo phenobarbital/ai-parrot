@@ -82,7 +82,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -92,8 +92,9 @@
       "parallelism_notes": "imports Invocation/RunReport/TestTarget from TASK-4520 (test_scope/datatypes.py)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4521-runner-protocol-registry.md"
+      "completed_at": "2026-10-20T13:38:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4521-runner-protocol-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4522",
