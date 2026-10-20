@@ -8,6 +8,33 @@
   "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
+  "test_contract": {
+    "schema": 1,
+    "tests": [
+      "packages/ai-parrot/tests/sdd/test_audit.py",
+      "packages/ai-parrot/tests/launcher/test_launcher_reexec.py",
+      "packages/ai-parrot/tests/launcher/test_launcher_stdlib_only.py",
+      "packages/ai-parrot/tests/docs/test_install_posix.py",
+      "packages/ai-parrot/tests/docs/test_install_powershell.py",
+      "packages/ai-parrot/tests/self_/test_doctor_sdd.py",
+      "tests/mcp/test_toolkit_seed.py",
+      "packages/ai-parrot/tests/cli/test_toolkits_cli.py",
+      "tests/knowledge/wiki/test_claude_code.py",
+      "tests/knowledge/wiki/test_codex_integration.py",
+      "tests/knowledge/wiki/test_google_integration.py",
+      "packages/ai-parrot/tests/sdd/test_config.py",
+      "packages/ai-parrot/tests/sdd/test_installer.py",
+      "tests/sdd_scripts/test_check_asset_sync.py",
+      "tests/sdd_scripts/test_command_contracts.py",
+      "tests/sdd_scripts/test_command_twin_parity.py",
+      "tests/sdd_scripts/test_ensure_worktree.py",
+      "packages/ai-parrot/tests/knowledge/wiki/test_store_meta.py",
+      "packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py",
+      "packages/ai-parrot/tests/docs/test_getting_started_claims.py"
+    ],
+    "markers": [],
+    "digest": "sha256:966bd572e806f255adb0b19768b6cbcec7572cfcc1a1a312a3b3e20db2a4b34f"
+  },
   "tasks": [
     {
       "id": "TASK-4068",
@@ -683,6 +710,6 @@
       "file": "sdd/tasks/active/TASK-4509-launcher-sdd-hook-fast-path.md"
     }
   ],
-  "amended_at": "2026-10-18T21:29:23+00:00",
-  "spec_revision": "0.4"
+  "amended_at": "2026-10-20T00:00:00+00:00",
+  "spec_revision": "0.5"
 }

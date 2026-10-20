@@ -12,14 +12,20 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.4 (2026-10-18) — folds in C17 of
+**Revision**: 0.5 (2026-10-20) — folds in C18–C24 of
+`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.6), from the 2026-10-19
+readiness review (`sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`) and Jesus Lara's
+answers: helper inventory completed (TASK-4508), C16 move mechanics (TASK-4509),
+`wikitoolkit mcp` on a core-only install, test steps in foreign repos, monorepo-specific
+shipped text, the shared ledger in foreign repos, host/store follow-through.
+**Revision 0.4** (2026-10-18) — folds in C17 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.5): `/sdd-brief` (FEAT-698)
 ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 **Revision 0.3** (2026-10-17) — folds in C16 of the same proposal (rev 0.4):
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -51,8 +57,9 @@ Codex or Gemini/Antigravity assumes a developer who already has Python and a pro
    three hosts. Gemini's config is **user-global** (`~/.gemini/config/mcp_config.json`),
    so absolute per-project paths collide across repos.
 4. **The SDD flow is not installable.** 15 `/sdd-*` commands *[rev 0.4 C17: `/sdd-brief`,
-   FEAT-698]*, 9 `sdd-*` agents, hooks, rules, 14 templates and ~30 `scripts/sdd/` helpers
-   live only in this repo.
+   FEAT-698]*, 9 `sdd-*` agents, hooks, rules, 13 templates and ~31 `scripts/sdd/` helpers
+   *[rev 0.5: recounted on `dev` `0263f0724`]* live only in this repo. *[rev 0.5 C22]* 14 of
+   the 15 commands ship in v1; `/sdd-insight` stays repo-local.
 5. **Toolkit exposure installs nothing.** Templates carry only
    `summary|requires_llm|requires_dist`; no pip requirement, post-install step, or
    env-var declaration.
@@ -113,6 +120,13 @@ Codex or Gemini/Antigravity assumes a developer who already has Python and a pro
 - No implicit modification of a project's dependencies — installing into a project venv
   is always the explicit `--here` verb.
 - No new root-level `install.sh`/`install.ps1` — the scripts stay in `scripts/install/`.
+- No foreign-repo validation phase in v1 *[rev 0.5 C21]*: outside ai-parrot the shipped test
+  steps run `test_command` or report "⚠️ not run"; layout-aware selection, a provisioned
+  worktree venv and a zero-test gate in `report.py` are deferred to v1.1 with C7 option A.
+- No `/sdd-insight` in the shipped set in v1 *[rev 0.5 C22]*: it depends on unshipped
+  `reference/sdd-insight/` and `.claude/workflows/sdd-insight.js`.
+- No core-only `wikitoolkit mcp` in v1 *[rev 0.5 C20]*: the managed runtime installs
+  `ai-parrot-tools` alongside core; a core-only fallback is a follow-up outside FEAT-633.
 
 ---
 
@@ -239,7 +253,7 @@ class ToolkitTemplate(BaseModel):
 - `sdd/.sdd-installed.json` (install receipt: writing version + SHA-256 per target) and
   the `sdd/CONVENTIONS.md` seed *[rev 0.2 C4/C10]*.
 - `parrot self doctor [--sdd | --runtime-only]` *[rev 0.2 C14/C15]*.
-- `parrot sdd run <name>` for the 18 flow helpers (see M6).
+- `parrot sdd run <name>` for the flow helpers (see M6; 26 modules plus `__init__` after *[rev 0.5 C18]*).
 - `--portable` flag on `parrot claude|codex|google install`.
 - `--global` / `-Global` mode on `scripts/install/install-parrot.{sh,ps1}`.
 
@@ -288,7 +302,10 @@ class ToolkitTemplate(BaseModel):
   *[rev 0.3 C16]* The same fast-path shape covers
   `parrot sdd run worktree_environment --hook`: it fires on every `PreToolUse` of an
   `sdd-coder`/`sdd-worker` seat, so its argv check happens before Click is imported,
-  behind one `is_managed()` call. TASK-4072 fixes the latency budget.
+  behind one `is_managed()` call. *[rev 0.5 C19]* That fast path is TASK-4509 (split out of
+  TASK-4072); its budget reuses S4's targets (median delta ≤ 5 ms non-managed, ≤ 50 ms
+  managed→project). *[rev 0.5 C24]* The launcher's `.git` walk-up stops at the system temp
+  directory, mirroring `wiki.project._is_temp_root`.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/launcher.py  (new; stdlib-only)
@@ -356,6 +373,9 @@ class ToolkitTemplate(BaseModel):
   (c) *Post-install*: the script runs `"$PARROT_HOME/bin/parrot" self doctor --runtime-only`
   against the new managed runtime; a runtime failure triggers the existing rollback and
   prints doctor's fixes. Repository readiness (C15) never rolls back the runtime.
+- *[rev 0.5 C20]* The managed venv installs `ai-parrot-tools` at the same version pin as
+  `ai-parrot`: `wikitoolkit mcp`'s wiki tools live in `parrot_tools.wiki` since FEAT-540, so a
+  core-only venv cannot answer MCP `initialize`.
 - **Depends on**: M1 (the installed package must expose the launcher-fronted scripts).
 - **Interface Skeleton** *(shell contract — flags only)*:
   ```
@@ -371,6 +391,10 @@ class ToolkitTemplate(BaseModel):
 - **Responsibility**: component install into the managed venv, environment inspection,
   diagnostics, update/uninstall of the managed home. Home-path consolidation: the three
   existing copies delegate to `parrot.launcher.parrot_home` (import is stdlib-safe).
+- *[rev 0.5 C20/C23/C24]* `parrot self` treats `ai-parrot-tools` as part of the base runtime.
+  `doctor` checks that `parrot_tools.wiki` imports. `doctor --sdd` checks the `.gitattributes`
+  ledger block and the four ledger hooks. Both Gemini MCP config files are checked, with
+  cross-repo collisions checked only on the user-global one.
 - **Depends on**: M1 (home paths, `resolve_venv` for `env`); M4 (component metadata).
 - **Interface Skeleton**:
   ```python
@@ -418,6 +442,8 @@ class ToolkitTemplate(BaseModel):
   by `self add` ONLY for templates shipped as package data (`available_templates()`
   reads `importlib.resources` exclusively, toolkit_seed.py:49 — there is no repo-local
   template loading), never from any user-writable source.
+- *[rev 0.5 C24]* `bounded-source.yaml` and `targeted-writer.yaml` declare
+  `requires_dist: parrot_tools` / `requires_pip: ai-parrot-tools`.
 - **Depends on**: nothing (M3 consumes it).
 - **Interface Skeleton**:
   ```python
@@ -444,6 +470,11 @@ class ToolkitTemplate(BaseModel):
   `cwd` — and test the default↔portable transitions in both directions; (e) Google's
   managed-entry detection uses `PurePosixPath` and must be made path-flavor-safe before
   the Windows branch lands (codex S4).
+- *[rev 0.5 C24]* (a) also covers the git-hook bodies: `git_hook_block`/`ledger_hook_block`
+  quote the binary path and write it with forward slashes, and `_is_wikitoolkit_entry` matches
+  the script basename (`.exe` included). `--remote` (FEAT-569) composes with `--portable`:
+  `--remote` decides only the `wikitoolkit` key. When that entry is http, url-only, absent or
+  foreign, the portable mode is inferred from the managed `parrot-*` entries.
 - **Depends on**: M1 (`script_path`; portable form assumes launcher on PATH).
 - **Interface Skeleton**:
   ```python
@@ -464,9 +495,9 @@ class ToolkitTemplate(BaseModel):
   `installer.py`, `scripts/`, `_assets/{commands,agents,hooks,rules,templates}/`),
   `cli/__init__.py` (lazy `sdd`), `pyproject.toml` (package-data),
   `scripts/sdd/check_asset_sync.py` (new CI check), `scripts/sdd/*.py` (thin wrappers)
-- **Responsibility**: package the 15 commands *[rev 0.4 C17]*, 9 agents, SDD hooks, **one** rule
+- **Responsibility**: package 14 of the 15 commands *[rev 0.4 C17; rev 0.5 C22: not `/sdd-insight`]*, 9 agents, SDD hooks, **one** rule
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
-  `CONVENTIONS.md` seed and 14 templates *[rev 0.4 C17]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
+  `CONVENTIONS.md` seed and 13 templates *[rev 0.4 C17; rev 0.5: 13]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
   installer.py:50). The 18 doc-referenced helpers (`sdd_meta`, `reserve_ids`,
   `ensure_worktree`, `close_task`, `heal_orphans`, `check_task_state`, `select_tests`,
@@ -503,6 +534,47 @@ class ToolkitTemplate(BaseModel):
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
   (15 commands per host, 13 tracked templates, 81 manifest entries) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
+- **Rev 0.5 amendments C18–C24 (M6 part)** (details and "done when" in the amendments
+  proposal §3, rev 0.6):
+  - **C18 — helper inventory.** Every module that moves into `parrot.sdd.scripts`: the 17
+    this module named, plus `review_checkpoint`, `spec_tools`, `prune_intake`, `brief_meta`,
+    `worktree_environment`, `test_report`, `close_resolved_issues`, `cache_test_contract`
+    and `check_e2e_closeout`. That is 26 plus `__init__`; TASK-4508 moves the last four.
+    Every `_KERNEL_PARENT`-style path loader becomes package-relative. `nightly_red_set`
+    stays repo-local (CI only). C12's "`review_checkpoint` is the only one" is superseded.
+  - **C19 — C16 move mechanics.** In both module and script mode, `_load_guard_bash` puts
+    the package-relative kernel parent on `sys.path` and never imports
+    `parrot.flows.dev_loop`; otherwise FEAT-563's guard fails open. The old path is a
+    re-export shim that, run as a script, executes the moved file through `runpy`, so a
+    bare `python3` keeps working. The programmatic hook command is
+    `sys.executable -m parrot.sdd.scripts.worktree_environment --hook`. (TASK-4085, TASK-4509)
+  - **C21 — test steps in a foreign repo.** `sdd/config.json` `test_command` is the switch:
+    - When it is set, shipped `/sdd-done`, sdd-worker, qa-runner and sdd-autopilot run it
+      once from the repo root instead of `select_tests`/`test_report`, and a non-zero exit
+      blocks the merge.
+    - When it is null (ai-parrot), the FEAT-699 path is unchanged.
+    - Zero tests is reported "⚠️ not run", never ✅.
+    - The spec template hints `none — fallback` for such repos, and `parrot sdd install`
+      warns when `test_command` is null. (TASK-4089, TASK-4299, TASK-4091)
+  - **C22 — monorepo-specific text.** Five categories, applied to all twins:
+    - A: examples become placeholders.
+    - B: layout and environment point to `sdd/CONVENTIONS.md`, which gains `## Repository
+      layout` and `## Project areas`; ai-parrot's own rules move to the unshipped
+      `codebase-conventions.md` twins; `SddConfig.projects` replaces `KNOWN_PROJECTS` when set.
+    - C: citations of this repo's tests or CI are dropped.
+    - D: `sdd-worker-format.sh:76` is the only allowlisted line.
+    - E: navconfig one-liners become an env-var precondition.
+
+    Both C16 gates add `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`.
+    `/sdd-insight` does not ship, so there are **78** manifest entries. (TASK-4089, 4090,
+    4091, 4299)
+  - **C23 — shared ledger in foreign repos.** `parrot sdd install` (any host) writes a
+    marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and
+    `archive/*.jsonl`), records it in the receipt, and installs the four ledger hooks.
+    (TASK-4091, TASK-4080)
+  - **C24 (SDD part).** TASK-4089 ports the E2E gate to the Google `/sdd-done` twin.
+    `brief_meta`/`ensure_worktree` read `SddConfig` (TASK-4299). S5 also scans `.agents/` and
+    `.agent/` (TASK-4070).
 - **Rev 0.2 amendments** (details and "done when" in the amendments proposal §3):
   - **C2 — one copy of each agent prompt.** `load_subagent_definition()`
     (`flows/dev_loop/_subagent_defs.py`) reads the packaged `_assets/` copy, stripping
@@ -592,6 +664,13 @@ class ToolkitTemplate(BaseModel):
   per-instance and the repo's existing file-lock precedent is `fcntl`-based
   (POSIX-only, see project.py:38-41) — use an `os.O_EXCL` sidecar lockfile or
   equivalent, never a no-op on Windows. Foreign/read-only stores keep never migrating.
+- *[rev 0.5 C24]* The plane is stamped at creation (`_ensure_schema`) as well as in
+  `_migrate`. A stored `schema_version` greater than `SCHEMA_VERSION`, compared as integers,
+  raises `WikiStoreVersionError` instead of being migrated and re-stamped downward (ledger
+  `issue:f249c19e8a4d`). Lock or backup creation failing with any `OSError` other than
+  `FileExistsError` raises a clear error naming the directory; migration is never silently
+  skipped. `SourceRegistry` opening `wiki.db` directly is a known bypass, out of scope
+  (ledger `issue:1555e747bcb9`).
 - **Depends on**: spike S6 (validates the concurrent-older-runtime failure mode).
 - **Interface Skeleton**:
   ```python
@@ -626,6 +705,9 @@ class ToolkitTemplate(BaseModel):
   (`parrot sdd install` in a temp non-Python repo, then every `parrot sdd run <name>`
   invocation from the installed markdown with fixture inputs), skipped with a notice while
   `parrot sdd` is absent from the wheel under test.
+  *[rev 0.5 C20/C24]* Smoke legs install the `ai-parrot-tools` wheel (from `build-tools`)
+  alongside core before the MCP `initialize`. `install-matrix` gains a linux-aarch64 leg so
+  that wheel is smoke-tested too.
 
 ---
 
@@ -702,6 +784,35 @@ class ToolkitTemplate(BaseModel):
 | `test_portable_config_two_roots` | same `--portable` output generated from two different fake roots is byte-identical (committable) |
 | `test_wheel_only_foreign_repo` | *(replaces `test_sdd_flow_in_foreign_repo` [rev 0.2 C3])* build the wheel, install it into a temp `PARROT_HOME`, `parrot sdd install` into a tmp non-Python git repo, run every helper invocation from the installed markdown with fixture inputs and only `$PARROT_HOME/bin` + an allowlist of system tools on PATH |
 | `test_store_migrate_then_old_open` | migrate a fixture store, reopen with a mocked older version ⇒ fail-fast gate (spike S6 codified) |
+
+### Validation Contract
+> *[rev 0.5 C21]* Merge- and feature-tier selection for FEAT-633 (FEAT-699 format). Operands that tasks
+> create are skipped until they exist. Each task's own tests still run at `/sdd-done` through
+> `--task-file`. `test_wheel_only_foreign_repo` (TASK-4091) runs `uv build` and is left out of
+> the merge tier on purpose.
+
+tests:
+- packages/ai-parrot/tests/sdd/test_audit.py  # M0 S5, TASK-4070
+- packages/ai-parrot/tests/launcher/test_launcher_reexec.py  # M1, TASK-4072
+- packages/ai-parrot/tests/launcher/test_launcher_stdlib_only.py  # M1, TASK-4072
+- packages/ai-parrot/tests/docs/test_install_posix.py  # M2
+- packages/ai-parrot/tests/docs/test_install_powershell.py  # M2
+- packages/ai-parrot/tests/self_/test_doctor_sdd.py  # M3, TASK-4080
+- tests/mcp/test_toolkit_seed.py  # M4
+- packages/ai-parrot/tests/cli/test_toolkits_cli.py  # M4
+- tests/knowledge/wiki/test_claude_code.py  # M5
+- tests/knowledge/wiki/test_codex_integration.py  # M5
+- tests/knowledge/wiki/test_google_integration.py  # M5
+- packages/ai-parrot/tests/sdd/test_config.py  # M6, TASK-4299
+- packages/ai-parrot/tests/sdd/test_installer.py  # M6, TASK-4091
+- tests/sdd_scripts/test_check_asset_sync.py  # M6, TASK-4090
+- tests/sdd_scripts/test_command_contracts.py  # M6
+- tests/sdd_scripts/test_command_twin_parity.py  # M6
+- tests/sdd_scripts/test_ensure_worktree.py  # M6
+- packages/ai-parrot/tests/knowledge/wiki/test_store_meta.py  # M7
+- packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py  # M7, TASK-4092
+- packages/ai-parrot/tests/docs/test_getting_started_claims.py  # docs
+markers: none
 
 ### Test Data / Fixtures
 ```python
@@ -789,6 +900,19 @@ def linked_worktree_repo(tmp_path):
       macOS arm64 (cp311–cp313 minimum); the redundant quadruple ubuntu legs are gone.
 - [x] `sdd/specs/portable-sdd-flow.spec.md` is stamped `Status: superseded` referencing
       FEAT-633 (done in `2ed09515e`, 2026-10-14 *[rev 0.2]*).
+- [ ] *[rev 0.5 C18]* No shipped file invokes a helper outside `parrot.sdd.scripts`.
+- [ ] *[rev 0.5 C19]* `test_worktree_environment.py` passes against the moved module, and the old
+      path still answers `--hook` when run with a bare interpreter.
+- [ ] *[rev 0.5 C20]* S1: `wikitoolkit mcp` answers `initialize` from the managed runtime on every leg.
+- [ ] *[rev 0.5 C21]* In a foreign repo with `test_command` set, every shipped test step runs it or
+      reports ⚠️, and none reports ✅ on zero tests. `cache_test_contract --check` passes on
+      this spec and its index.
+- [ ] *[rev 0.5 C22]* Both C16 gates pass with the single allowlisted line;
+      `check_asset_sync.py` reports 78 entries.
+- [ ] *[rev 0.5 C23]* After `parrot sdd install --host codex`, the C3 foreign repo has the
+      `.gitattributes` ledger block and the four ledger hooks.
+- [ ] *[rev 0.5 C24]* A newer `schema_version` is refused, not re-stamped (`issue:f249c19e8a4d`
+      closed by TASK-4092), and git-hook bodies survive a Windows path.
 - [ ] No new runtime dependency in ai-parrot core; `ruff check` passes; all tests in §4
       pass; docs updated *[rev 0.2 C13]*: `docs/getting-started.md` is the canonical,
       CI-verified install guide (`--global`, `parrot self`, `parrot sdd`, "Use the SDD
@@ -800,6 +924,10 @@ def linked_worktree_repo(tmp_path):
 ## 6. Codebase Contract
 
 > Verified on branch `dev` @ `56ff8cd58` (2026-10-05) by direct source reads.
+> *[rev 0.5]* Several anchors below have since moved on `dev`, e.g. `store.py` +144 after
+> `6791d81ce`, `project.py` `parrot_home` 1223→1371, `cli/__init__.py` `status` 134→136, and
+> `claude_code/installer.py` `_install_mcp_json` → 694 with a `remote=` parameter. The task
+> files carry anchors re-verified on 2026-10-19 (`dev` `9f51c7735`) and are authoritative.
 > Paths relative to `packages/ai-parrot/src/parrot/` unless noted.
 
 ### Verified Imports
@@ -1058,9 +1186,19 @@ Rev 0.2 amendment decisions (Jesus Lara, 2026-10-14; full text in
 - [x] C4 install receipt — approved; the non-goal rejected FEAT-583's packaging manifest, not a receipt.
 - [x] C6 repo config — approved, reduced: one `sdd/config.json`, no `CONFIG.md`, `test_command` added, `sync_down` dropped.
 - [x] C10 conventions seed — approved; `codebase-conventions.md` stays an ai-parrot repo file.
-- [x] C12 monorepo-only helpers — approved; `review_checkpoint` is the only one a shipped file references.
+- [x] C12 monorepo-only helpers — approved; `review_checkpoint` is the only one a shipped file references. *[rev 0.5 C18: superseded — four more found, moved by TASK-4508]*
 - [x] Q1 helper invocation — `parrot sdd run <name>`; `parrot-python` shim rejected.
 - [x] C7 test-selection policy — option C for v1 (`test_command`); option A revisited in v1.1 with evidence.
+- [x] *[rev 0.5]* Readiness decisions D1–D18 (2026-10-19):
+  - D1 → C20
+  - D2 → C21
+  - D3 and D18 → C22
+  - D4 and D17 → C19
+  - D5 → C23
+  - D6–D16 → C24
+
+  Jesus Lara answered D1, D2, D3, D4 and D8. The others adopt the review's recommendations
+  and are confirmed in the PR review.
 
 ---
 
@@ -1098,3 +1236,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
+| 0.5 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara | Amendments C18–C24 folded in (proposal rev 0.6) from the 2026-10-19 readiness review: four more helpers to move (TASK-4508) and package-relative loaders; C16 move mechanics and the TASK-4509 fast path; `ai-parrot-tools` in the managed runtime for `wikitoolkit mcp` (core-only fallback is a follow-up); test steps in foreign repos via `test_command`, own §4 Validation Contract, validation phase deferred to v1.1; monorepo-text rules A–E, `/sdd-insight` not shipped (78 assets); `.gitattributes` + ledger hooks in foreign repos; Windows hook quoting, `--remote` × `--portable`, store downgrade refusal (`issue:f249c19e8a4d`), `SourceRegistry` bypass recorded (`issue:1555e747bcb9`); counts and §6 anchor note |
