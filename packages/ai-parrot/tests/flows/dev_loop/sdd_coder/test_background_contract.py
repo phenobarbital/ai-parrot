@@ -87,7 +87,7 @@ async def test_supervisor_passes_declared_and_contract(tmp_path: Path, monkeypat
     )
 
     assert captured["declared"] == [["pytest", "tests/test_declared.py", "-q"]]
-    assert captured["contract"].tests == ("tests/test_contract.py",)
+    assert captured["contract"].pytest.targets == ("tests/test_contract.py",)
 
 
 async def test_malformed_contract_is_admission_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
