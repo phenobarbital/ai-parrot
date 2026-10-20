@@ -313,3 +313,59 @@ class TestProfileTurnScaling:
 
         profile = NovaCodeDispatchProfile(model="m", max_turns=60)
         assert SddCoderEngine._profile_with_scaled_turns(profile, 50).max_turns == 100
+
+
+class TestGateBookkeepingIsBounded:
+    """Per-attempt state is pruned, and gate requests are identified by content (issue:3edabb9b953e)."""
+
+    async def test_settled_task_leaves_no_attempt_state(self, git_sandbox_feature):
+        """`_branch_attempts` / `_validation_reds` do not retain entries for a finished task."""
+        worktree, _fb, base_path, _ix = git_sandbox_feature
+        engine = _engine(base_path, fake_builder_factory({}), FakeSupervisor(["passed"]))
+        task = await _run_one(engine, worktree)
+
+        assert task.outcome == "merged", task.diagnostics
+        assert not [b for b in engine._branch_attempts if "TASK-0001" in b]
+        assert not [k for k in engine._validation_reds if k[1] == "TASK-0001"]
+
+    async def test_repair_still_works_despite_pruning(self, git_sandbox_feature):
+        """The prune runs after the ladder, so the same-seat repair still reads its red verdict."""
+        worktree, _fb, base_path, _ix = git_sandbox_feature
+        builder = _recording_builder()
+        engine = _engine(base_path, builder, FakeSupervisor(["failed", "passed"]))
+        task = await _run_one(engine, worktree)
+
+        assert task.outcome == "merged", task.diagnostics
+        assert "test_y" in _calls(builder)[1]["brief"].validation_verdict
+        assert not engine._branch_attempts and not engine._validation_reds
+
+    async def test_request_id_tracks_the_attempt_head_sha(self, git_sandbox_feature):
+        """Two gate runs at different HEADs must not share a request id (no stale verdict reuse)."""
+        worktree, _fb, base_path, _ix = git_sandbox_feature
+        supervisor = FakeSupervisor(["passed"])
+        engine = _engine(base_path, fake_builder_factory({}), supervisor)
+        await _run_one(engine, worktree)
+
+        request_id = supervisor.starts[0]["request_id"]
+        attempt_uid = request_id.split("-")[1]
+        assert request_id != f"gate-{attempt_uid}", "the id must carry more than the attempt uid"
+        assert len(request_id.rsplit("-", 1)[1]) == 12, "a 12-char HEAD sha suffix"
+
+    async def test_wait_is_strictly_inside_the_supervisor_deadline(self, git_sandbox_feature):
+        """`wait_verdict` must expire before the children it waits on, not with them."""
+        worktree, _fb, base_path, _ix = git_sandbox_feature
+        supervisor = FakeSupervisor(["passed"])
+        waits: list[float] = []
+        real_wait = supervisor.wait_verdict
+
+        async def _wait(execution_id, handle, timeout_s):
+            waits.append(timeout_s)
+            return await real_wait(execution_id, handle, timeout_s)
+
+        supervisor.wait_verdict = _wait
+        engine = _engine(base_path, fake_builder_factory({}), supervisor)
+        await _run_one(engine, worktree)
+
+        overall = engine.roster.runners.gate_overall_timeout_s
+        assert waits and all(w < overall for w in waits)
+        assert supervisor.starts[0]["timeout_seconds"] == overall

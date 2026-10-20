@@ -160,6 +160,11 @@ class CoderFailure(Exception):
         self.code, self.message, self.details = code, message, details
 
 
+#: The task-tier gate's own wait expires this many seconds before the supervisor deadline, so it
+#: never reports a timeout at the very instant its children were about to settle (issue:3edabb9b953e).
+_GATE_WAIT_MARGIN_S = 5
+
+
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
     """Run git in `cwd`; returns (rc, stdout, stderr). Shape copied from worktree_manager.py:113.
 
@@ -1425,6 +1430,12 @@ class SddCoderEngine:
             )
             return self._gate_unavailable(f"attempt {branch} has no execution_id")
         timeout_s = self.roster.runners.gate_overall_timeout_s
+        # The request id must change when the attempt's content changes: a re-run after new commits
+        # with the same `attempt_uid` would otherwise be served the first run's verdict
+        # (issue:3edabb9b953e). A failed rev-parse degrades to the uid-only id rather than the gate.
+        _rc, _head, _err = await _git("rev-parse", "HEAD", cwd=path)
+        _sha = _head.strip()[:12] if _rc == 0 else ""
+        request_id = f"gate-{attempt_uid}-{_sha}" if _sha else f"gate-{attempt_uid}"
         try:
             registration = await self._validation_supervisor.start(
                 feature=ctx.feature,
@@ -1433,14 +1444,18 @@ class SddCoderEngine:
                 task_ids=[task.task_id],
                 tier="task",
                 timeout_seconds=timeout_s,
-                request_id=f"gate-{attempt_uid}",
+                request_id=request_id,
                 base_ref=diff_base,
                 index_path=Path(ctx.index_path),
                 attempt_uid=attempt_uid,
             )
             self._handle_execution[registration.handle] = execution_id
             self._validation_handles.setdefault(execution_id, set()).add(registration.handle)
-            return await self._validation_supervisor.wait_verdict(execution_id, registration.handle, timeout_s)
+            # Strictly inside the supervisor's own deadline, so the wait cannot expire at the same
+            # instant as the children it is waiting on and report a timeout they were about to beat
+            # (issue:3edabb9b953e).
+            wait_s = max(1, timeout_s - _GATE_WAIT_MARGIN_S)
+            return await self._validation_supervisor.wait_verdict(execution_id, registration.handle, wait_s)
         except asyncio.TimeoutError as exc:
             status, note = "timed_out", str(exc) or f"gate exceeded {timeout_s}s"
         except Exception as exc:  # noqa: BLE001 -- a broken gate fails closed, never merges unvalidated
@@ -1449,6 +1464,20 @@ class SddCoderEngine:
         return ValidationVerdict(
             schema=VERDICT_SCHEMA, status=status, tier="task", runners=(), failures=(), notes=(note,)
         )
+
+    def _forget_task_state(self, task_id: str, execution_id: Optional[str]) -> None:
+        """Drop the per-attempt bookkeeping a settled task leaves behind (issue:3edabb9b953e).
+
+        `_branch_attempts` and `_validation_reds` were only ever written and read, so both grew for
+        the whole life of the engine. Called once per task from `_run_task`, after every attempt and
+        the same-seat repair have consumed what they need, so this only discards what is already
+        spent. Written as "discard if present" -- never an assert -- because the repair path pops its
+        own red first and a task may settle before any branch is registered.
+        """
+        self._validation_reds.pop((execution_id or "", task_id), None)
+        stale = [branch for branch in self._branch_attempts if branch.endswith(f"--{task_id}") or f"--{task_id}-" in branch]
+        for branch in stale:
+            self._branch_attempts.pop(branch, None)
 
     @staticmethod
     def _gate_unavailable(note: str) -> ValidationVerdict:
@@ -3992,6 +4021,29 @@ class SddCoderEngine:
         return rec, out, err, manager, branch, path, result
 
     async def _run_task(
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        job_id: str,
+        execution_id: Optional[str] = None,
+        pool: Optional["ExecutionPool"] = None,
+    ) -> TaskResult:
+        """Run the task's attempt ladder, then drop its per-attempt bookkeeping.
+
+        Thin wrapper around `_run_task_attempts` so that every one of its exits -- the four returns
+        and any exception -- prunes the task's `_branch_attempts` / `_validation_reds` entries
+        exactly once (issue:3edabb9b953e).
+        """
+        try:
+            return await self._run_task_attempts(
+                ctx, task, seat, job_id=job_id, execution_id=execution_id, pool=pool
+            )
+        finally:
+            self._forget_task_state(task.task_id, execution_id)
+
+    async def _run_task_attempts(
         self,
         ctx: _FeatureCtx,
         task: PlannedTask,
