@@ -132,10 +132,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat zai.glm-4.7-flash (nova), attempt 1
+**Date**: 2026-10-20
+**Notes**: created tests/sdd_scripts/test_contract_validation.py; attempt 1 on codex-spark failed (infra: model unsupported with ChatGPT account), attempt 2 on glm succeeded. Orchestrator read the full diff (42589592b); merge-tier validation green. Seat: zai.glm-4.7-flash · Backend: nova · Attempts: 1 · Duration: 78.1s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none
