@@ -3757,15 +3757,6 @@ class SddCoderEngine:
         if error_class == "TimeoutError" or "TimeoutError" in error or "wall-clock cap" in error:
             return "timeout"
 
-        # A turn-budget overrun is a task-size/budget property, not a seat fault: the model and its
-        # endpoint are healthy, the task simply needed more turns than the profile allowed. Suspending
-        # here pulled a healthy seat out of the roster for every other task in the run
-        # (issue:d88684064bdb). The attempt still fails and still goes through the retry ladder.
-        # Checked above both the DispatchExecutionError arm and the generic `"dispatch" in error`
-        # fallback, so the classification does not depend on which class wrapped the overrun.
-        if "exceeded max_turns=" in error:
-            return None
-
         # Check for dispatch execution error
         if error_class in ("DispatchExecutionError", "DispatchOutputValidationError"):
             # Check if wrapped cause is a timeout
