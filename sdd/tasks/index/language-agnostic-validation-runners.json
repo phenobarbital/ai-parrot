@@ -233,7 +233,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -243,8 +243,9 @@
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); returns RunReport from TASK-4520",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4528-parrot-e2e-adapter.md"
+      "completed_at": "2026-10-20T13:58:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4528-parrot-e2e-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4529",
