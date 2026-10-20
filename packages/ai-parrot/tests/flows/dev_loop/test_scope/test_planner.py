@@ -156,7 +156,7 @@ def test_contract_markers_add_distribution_sweep(tmp_path: Path):
     assert len(plan.invocations) == 2
     sweep = plan.invocations[1]
     assert sweep.targets == (_t("packages/a/tests", "a", "contract"),)
-    assert sweep.argv[sweep.argv.index("-m") + 1] == "(integration or e2e) and not real_llm"
+    assert sweep.argv[sweep.argv.index("-m") + 1] == "(e2e or integration) and not real_llm"
 
 
 def test_marker_expression_requires_all_contract_targets():
