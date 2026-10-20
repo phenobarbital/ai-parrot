@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_COMMANDS = {
-    name: _REPO_ROOT / ".claude" / "commands" / f"{name}.md" for name in ("sdd-brainstorm", "sdd-proposal")
-}
+_COMMANDS = {name: _REPO_ROOT / ".claude" / "commands" / f"{name}.md" for name in ("sdd-brainstorm", "sdd-proposal")}
 
 
 def _classify(result: dict, expected: str | None) -> str:
@@ -68,7 +66,7 @@ sample_contract_claims = [
         "check": {"id": "c2", "kind": "symbol", "path": "packages/ai-parrot/src/parrot/bots/agent.py", "name": "Agent"},
     },
     {
-        "claim": 'parrot.tools.NonExistent does not exist',
+        "claim": "parrot.tools.NonExistent does not exist",
         "check": {"id": "c3", "kind": "absent", "name": "NonExistent", "scope": "packages/ai-parrot/src/parrot/tools"},
     },
 ]
@@ -288,7 +286,9 @@ def test_uses_shared_probe_agent():
             if probe_start != -1 and probe_end != -1:
                 probe_section = content[probe_start:probe_end]
                 # Check for subagent_type: "fork" in probe section
-                assert 'subagent_type: "fork"' not in probe_section, f"{command_name} should not use fork in probe section"
+                assert (
+                    'subagent_type: "fork"' not in probe_section
+                ), f"{command_name} should not use fork in probe section"
         elif command_name == "sdd-proposal":
             # Find the probe section (§4d)
             probe_start = content.find("#### 4d. Citation probe")
@@ -296,8 +296,10 @@ def test_uses_shared_probe_agent():
             if probe_start != -1 and probe_end != -1:
                 probe_section = content[probe_start:probe_end]
                 # Check for subagent_type: "fork" in probe section
-                assert 'subagent_type: "fork"' not in probe_section, f"{command_name} should not use fork in probe section"
+                assert (
+                    'subagent_type: "fork"' not in probe_section
+                ), f"{command_name} should not use fork in probe section"
         # Check for no model: "haiku" anywhere in the file
-        assert 'model: "haiku"' not in content, f"{command_name} should not have model: \"haiku\" anywhere"
+        assert 'model: "haiku"' not in content, f'{command_name} should not have model: "haiku" anywhere'
         # Also check for model: haiku (without quotes)
         assert "model: haiku" not in content, f"{command_name} should not have model: haiku anywhere"
