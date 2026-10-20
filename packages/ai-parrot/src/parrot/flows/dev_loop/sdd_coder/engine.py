@@ -371,13 +371,10 @@ class AttemptTelemetryCollector:
         )
 
 
-
 class _EngineValidationCapability:
     """Task-tier validation runner bound to one task and attempt worktree (FEAT-709)."""
 
-    def __init__(
-        self, engine: Any, ctx: Any, task_id: str, *, path: str, attempt_uid: str, execution_id: str
-    ) -> None:
+    def __init__(self, engine: Any, ctx: Any, task_id: str, *, path: str, attempt_uid: str, execution_id: str) -> None:
         self.task_id = task_id
         self._engine = engine
         self._ctx = ctx
