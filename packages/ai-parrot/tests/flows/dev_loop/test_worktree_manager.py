@@ -22,9 +22,7 @@ async def _run_git(*args: str, cwd: Path) -> None:
         stderr=asyncio.subprocess.PIPE,
     )
     out, err = await proc.communicate()
-    assert proc.returncode == 0, (
-        f"git {' '.join(args)} failed in {cwd}: {err.decode()}\n{out.decode()}"
-    )
+    assert proc.returncode == 0, f"git {' '.join(args)} failed in {cwd}: {err.decode()}\n{out.decode()}"
 
 
 async def _write_and_commit(repo: Path, filename: str, content: str, message: str) -> None:
@@ -219,9 +217,7 @@ class TestCleanup:
 
         await _write_and_commit(Path(clean_path), "clean.py", "clean\n", "clean work")
         await _write_and_commit(base_worktree, "README.md", "base change\n", "base edits readme")
-        await _write_and_commit(
-            Path(conflict_path), "README.md", "worker change\n", "worker edits readme"
-        )
+        await _write_and_commit(Path(conflict_path), "README.md", "worker change\n", "worker edits readme")
 
         with pytest.raises(SubWorktreeMergeError):
             await manager.merge_sequential(resolver=None)

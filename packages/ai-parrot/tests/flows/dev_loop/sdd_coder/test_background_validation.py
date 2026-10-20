@@ -37,6 +37,7 @@ from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus
 from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
+
 def _make_supervisor(
     tmp_path: Path, *, owner_instance_id: str = "owner-A"
 ) -> Tuple[ValidationSupervisor, BackgroundRegistry, ExecutionEvidenceStore, Path]:

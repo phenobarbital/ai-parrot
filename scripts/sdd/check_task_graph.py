@@ -405,9 +405,11 @@ def _check_test_contract(data: dict, root: Path, tasks: dict[str, _Task]) -> lis
             blocking = True
             continue
         tiers = block.get("tiers")
-        forbidden = sorted(set(tiers) - set(allowed)) if isinstance(tiers, list) and all(
-            isinstance(t, str) for t in tiers
-        ) else []
+        forbidden = (
+            sorted(set(tiers) - set(allowed))
+            if isinstance(tiers, list) and all(isinstance(t, str) for t in tiers)
+            else []
+        )
         if forbidden:
             findings.append(
                 Finding(

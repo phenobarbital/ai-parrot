@@ -16,6 +16,7 @@ from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.test_scope.contract import contract_to_header, parse_spec_contract
 from parrot.flows.dev_loop.test_scope.datatypes import BaselineVerdict, Invocation, ScopePlan, TestTarget
 
+
 def _supervisor(tmp_path: Path) -> tuple[ValidationSupervisor, BackgroundRegistry, Path]:
     """Build a supervisor with isolated evidence and worktree roots."""
     store = ExecutionEvidenceStore(root=tmp_path / "evidence")

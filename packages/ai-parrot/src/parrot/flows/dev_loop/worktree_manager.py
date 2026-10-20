@@ -100,8 +100,7 @@ class SubWorktreeManager:
         self.worktree_base_path = str(Path(worktree_base_path).resolve())
         if not self._is_under_base(self.base_worktree):
             raise ValueError(
-                f"base_worktree {base_worktree!r} must live under "
-                f"worktree_base_path {worktree_base_path!r}"
+                f"base_worktree {base_worktree!r} must live under " f"worktree_base_path {worktree_base_path!r}"
             )
         self.logger = logging.getLogger(__name__)
         self._created: Dict[str, Tuple[str, str]] = {}  # worker_id -> (path, branch)
@@ -157,11 +156,7 @@ class SubWorktreeManager:
             SubWorktreeMergeError: If ``git worktree add`` fails.
         """
         branch = f"{self.feature_branch}--{self._branch_suffix(worker_id)}"
-        path = str(
-            Path(self.worktree_base_path)
-            / f"{self.feature_branch}--pool"
-            / self._branch_suffix(worker_id)
-        )
+        path = str(Path(self.worktree_base_path) / f"{self.feature_branch}--pool" / self._branch_suffix(worker_id))
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
         rc, _out, err = await self._git(
@@ -231,13 +226,9 @@ class SubWorktreeManager:
                 merged.append(branch)
                 continue
 
-            status_rc, status_out, _status_err = await self._git(
-                "status", "--porcelain", cwd=self.base_worktree
-            )
+            status_rc, status_out, _status_err = await self._git("status", "--porcelain", cwd=self.base_worktree)
             conflict_files = [
-                line[3:]
-                for line in status_out.splitlines()
-                if status_rc == 0 and line[:2] in _CONFLICT_STATUS_CODES
+                line[3:] for line in status_out.splitlines() if status_rc == 0 and line[:2] in _CONFLICT_STATUS_CODES
             ]
             conflict_desc = (
                 f"Merge conflict merging {branch!r} into {self.feature_branch!r}. "
@@ -291,9 +282,7 @@ class SubWorktreeManager:
             if worker_id in self._conflicted_worker_ids:
                 continue
             path, _branch = self._created[worker_id]
-            rc, _out, err = await self._git(
-                "merge", "--ff-only", self.feature_branch, cwd=path
-            )
+            rc, _out, err = await self._git("merge", "--ff-only", self.feature_branch, cwd=path)
             if rc != 0:
                 self.logger.warning(
                     "Failed to fast-forward sub-worktree %s to %s: %s",
@@ -317,9 +306,7 @@ class SubWorktreeManager:
             if keep_on_conflict and worker_id in self._conflicted_worker_ids:
                 continue
             path, _branch = self._created[worker_id]
-            rc, _out, err = await self._git(
-                "worktree", "remove", path, "--force", cwd=self.base_worktree
-            )
+            rc, _out, err = await self._git("worktree", "remove", path, "--force", cwd=self.base_worktree)
             if rc != 0:
                 self.logger.warning("Failed to remove sub-worktree %s: %s", path, err)
                 continue

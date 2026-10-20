@@ -360,7 +360,9 @@ def test_unimportable_extension_is_error(tmp_path):
 def test_unrecognised_validation_command_is_warning(tmp_path):
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests/x.py").write_text("def test_x(): pass\n")
-    found = _contract_codes(tmp_path, _test_contract_header(["tests/x.py"]), validation=["make check", "pytest tests/x.py"])
+    found = _contract_codes(
+        tmp_path, _test_contract_header(["tests/x.py"]), validation=["make check", "pytest tests/x.py"]
+    )
     assert found["validation-command-unrecognised"].level == "warning"
     assert "test-contract-task-tests-uncovered" not in found
 
@@ -372,5 +374,7 @@ def test_feat699_index_lints_clean_of_contract_errors():
         import pytest
 
         pytest.skip("FEAT-699 index not present")
-    errors = [f for f in check_graph(index, root).findings if f.code.startswith("test-contract-") and f.level == "error"]
+    errors = [
+        f for f in check_graph(index, root).findings if f.code.startswith("test-contract-") and f.level == "error"
+    ]
     assert errors == []

@@ -8,6 +8,7 @@ from parrot.flows.dev_loop.test_scope import guard as guard_mod
 from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 from parrot.flows.dev_loop.test_scope.guard import VERDICT_ARGV, guard_argv, guard_bash
 
+
 def _plan(*argvs: tuple[str, ...]) -> ScopePlan:
     return ScopePlan(
         tier="task",
