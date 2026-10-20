@@ -64,7 +64,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -75,8 +75,9 @@
       "parallelism_notes": "needs research.parallel/lane_record from TASK-4511 (state.schema.json); same file .claude/commands/sdd-proposal.md as TASK-4512, references its §1 per-lane table",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4513-parallel-dispatch-logic.md"
+      "completed_at": "2026-10-20T00:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4513-parallel-dispatch-logic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4514",
