@@ -83,6 +83,11 @@ Query `type` values in the plan: `wiki_query`, `wiki_page`, `wiki_related`, `gre
 
 ### Steps (in order)
 1. Re-grep the `#### 4a. Iteration loop` anchor (TASK-4512 shifted lines).
+   **Naming decision (issue:8eb2e5870472, rejected re-lettering).** `4.0` is a Phase-4
+   *pre-step*, not a sibling of the `4a…4d` letters — the same convention as the file's
+   existing `### 0. Save Repo Path`. Do NOT re-letter 4a→4b→4c→4d to make room: that
+   renames two stable headings pinned by the spec's anchor table (`:201`, `:232`) and
+   cascades through TASK-4514/4516/4518/4519. Keep `#### 4.0 Dispatch`.
 2. Insert the dispatch block between `### 4. Phase 2 — Execute Research` and `#### 4a. Iteration loop`.
 3. Add one sentence at the top of 4a: "This loop is the sequential path and the per-lane procedure each fork follows." — because forks reuse it.
 4. Amend step 3 of 4a: inside a fork, the digest is `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md`.

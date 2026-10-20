@@ -97,6 +97,18 @@ Do not wait — continue with Step 5. With fewer than ~10 checks, or without the
 Agent tool, verify inline as above instead.
 ```
 
+### `.claude/commands/sdd-brainstorm.md` (MODIFY) — Step 5 one-liner
+```markdown
+<!-- occurrences: 1 (verified: grep -c '^### 5. Generate Options' .claude/commands/sdd-brainstorm.md) -->
+<!-- AFTER — insert directly below `### 5. Generate Options` (verified :142), above the
+     existing `Produce **at least 3** distinct approaches.` line.
+     Spacing (issue:8eb2e5870472): this file puts body text on the line immediately after a
+     `### N` heading (steps 1,2,4,5,6,7,8,9,10,11 — only step 3 differs), so do NOT add a
+     blank line under the heading. The blank line to get right is the one separating the
+     Step 4 delegation block above from `### 5. Generate Options`. -->
+If contract probes are running (Step 4), generate options now; their results are applied in Step 10.
+```
+
 ### `.claude/commands/sdd-brainstorm.md` (MODIFY) — Step 10
 ```markdown
 <!-- occurrences: 1 (verified: grep -c '^### 10. Save and Commit' .claude/commands/sdd-brainstorm.md) -->
@@ -113,7 +125,7 @@ Agent tool, verify inline as above instead.
 
 ### FILL IN checklist
 - [ ] Classification table — copy spec M7 "Classification" table verbatim (5 rows)
-- [ ] Step 5 one-liner: "If contract probes are running (Step 4), generate options now; their results are applied in Step 10."
+- [ ] Step 5 one-liner — blueprint block above; keep the file's no-blank-line-after-heading spacing
 - [ ] Confirm the `/sdd-task` §3 heading text on dev and cite it exactly
 
 ## Acceptance Criteria
@@ -121,6 +133,8 @@ Agent tool, verify inline as above instead.
 - [ ] Step 4 dispatches `sdd-contract-probe` (not a fork, no `model:` override)
 - [ ] Inline fallback: no Agent tool, < ~10 checks, or discarded report
 - [ ] Step 10 verifies reports with `/sdd-task` §3 rules before use
+- [ ] Step 5 carries the one-liner, and the Step 4 block is separated from `### 5. Generate
+      Options` by exactly one blank line with none under the heading
 - [ ] Classification table identical to spec M7
 - [ ] Stale signatures corrected, missing refs dropped before commit
 

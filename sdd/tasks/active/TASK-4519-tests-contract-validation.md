@@ -102,6 +102,10 @@ def _report_usable(report: dict, head: str) -> bool:
 ## Acceptance Criteria
 
 - [ ] All spec §4 M7 unit tests present and passing
+- [ ] Each classification/mapping helper is paired with a contract assertion pinning the
+      corresponding command text (`#### 4d. Citation probe`, the classification table rows),
+      so a command edit without a test edit fails (issue:8eb2e5870472)
+- [ ] Module docstring states these are drift guards, not behavioral guarantees
 - [ ] `ruff check tests/sdd_scripts/test_contract_validation.py` clean
 
 ## Validation Commands

@@ -7,6 +7,7 @@
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4514 (same file). Cross-feature: **PR #1742 merged into `dev`**.
 **Assigned-to**: unassigned
+**Discovered-from**: `issue:8eb2e5870472`
 
 ---
 
@@ -22,7 +23,9 @@ tagged into the findings so synthesis weighs stale/missing evidence.
 ## Scope
 
 - New `#### 4d. Citation probe (FEAT-708)` after §4c, before `### 5. Phase 3 — Synthesis`.
-- Note in §5a that assembly may proceed while the probe runs; insert a collect step before §5b.
+- Note in §5a that assembly may proceed while the probe runs but its output is
+  **provisional**; insert a collect step before §5b that tags the findings and then
+  **re-runs the §5a concatenation** over the tagged findings.
 
 **NOT in scope**: brainstorm (TASK-4515), the existing synthesis linter (leave untouched), twins (TASK-4517).
 
@@ -66,7 +69,10 @@ Probe agent + `/sdd-task` §3 rules: see TASK-4515's contract (PR #1742).
 ### Steps (in order)
 1. Gate check; read the probe agent file.
 2. Insert §4d above `### 5. Phase 3 — Synthesis`.
-3. Under `#### 5b. Run the synthesis prompt`, add a first paragraph "Before running: collect the §4d probes …".
+3. Under `#### 5b. Run the synthesis prompt`, add a first paragraph "Before running: collect the §4d probes …",
+   ending with the explicit re-assembly step (§5a is re-run, never patched in place).
+4. Add the §5a one-liner from the FILL IN checklist, so the ordering reads forward with no
+   back-reference: §4d launch → §5a provisional assembly → §5b collect + tag → §5a re-run → §5b prompt.
 
 ### `.claude/commands/sdd-proposal.md` (MODIFY) — §4d
 ```markdown
@@ -83,7 +89,8 @@ check-id → finding-id map). Launch the probes in ONE message
 (≤ ~40 checks each, grouped by file):
 `Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
 prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`
-and continue with §5a. With fewer than ~10 citations, or without the Agent
+and continue with §5a — that assembly is **provisional**, because §5b re-runs it
+over the tagged findings. With fewer than ~10 citations, or without the Agent
 tool, run the same checks inline.
 ```
 
@@ -95,12 +102,16 @@ tool, run the same checks inline.
 rules for `sdd-contract-probe`, classify every check (FILL IN: table), and
 for each `stale` or `missing` check append
 `[citation-check: stale|missing] <path:line> — <evidence>` to the owning
-finding's `## Notes`. Re-read the tagged findings into the §5a input.
+finding's `## Notes`. **Then re-run §5a** over the tagged findings and use that
+second assembly as the synthesis input; the provisional assembly from before the
+collect step is discarded, never patched in place.
 ```
 
 ### FILL IN checklist
 - [ ] Classification table — spec M7 verbatim
-- [ ] §5a one-liner: "If §4d probes are running, assemble the input now; tags are applied before §5b."
+- [ ] §5a one-liner: "If §4d probes are running, assemble the input now as a **provisional**
+      pass; §5b collects the probes, tags the findings, and re-runs this section before the
+      synthesis prompt."
 - [ ] Confirm the synthesis linter section is untouched
 
 ## Acceptance Criteria
@@ -109,6 +120,8 @@ finding's `## Notes`. Re-read the tagged findings into the §5a input.
 - [ ] Reports verified with `/sdd-task` §3 rules before use
 - [ ] Stale/missing citations tagged `[citation-check: …]` in `## Notes`
 - [ ] Inline fallback documented
+- [ ] Ordering is acyclic and stated in the command: §4d launch → §5a (provisional) →
+      §5b collect + tag → §5a re-run → §5b prompt (no step refers back to an earlier one's output)
 - [ ] No fork, no `model:` override, no new agent file
 
 ## Validation Commands
