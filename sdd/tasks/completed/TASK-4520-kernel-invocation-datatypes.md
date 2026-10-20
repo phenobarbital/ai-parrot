@@ -375,8 +375,15 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-4520
+- Feature: language-agnostic-validation-runners
+- Implementation SHA: 0257d27d833540bb13e3c58900b7a8d0176f6423
+- Closed at (UTC): 2026-10-20T13:30:03+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 198.9s · Tokens: n/a |

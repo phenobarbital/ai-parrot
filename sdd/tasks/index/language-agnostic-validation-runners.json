@@ -63,7 +63,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -71,8 +71,9 @@
       "parallelism_notes": "root task: creates Invocation/RunReport/ValidationVerdict in test_scope/datatypes.py that every other task imports",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4520-kernel-invocation-datatypes.md"
+      "completed_at": "2026-10-20T13:30:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4520-kernel-invocation-datatypes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4521",
