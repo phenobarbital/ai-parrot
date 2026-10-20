@@ -74,6 +74,9 @@ class LLMCodeDispatchProfile(BaseModel):
         ],
         description=(
             "Executable names allowed through the run_command tool. "
+            "The sdd-coder engine extends this list per attempt with the "
+            "validation registry's runner binaries (FEAT-709); the default "
+            "list itself is unchanged. "
             "Everything past `find` is here because seats reached for it "
             "constantly and every rejection cost a whole turn: `ruff`/"
             "`mypy` ARE this repo's lint gate, `mkdir`/`mv` are how a task "
