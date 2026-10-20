@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.test_scope import report
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation
 
 XUNIT1 = """<testsuites><testsuite tests="2" failures="1" errors="0" skipped="0">
 <testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x.TestC" name="test_ok"/>
@@ -48,16 +48,16 @@ def _append(root: str, suite: str) -> None:
 
 
 def test_with_junit_does_not_mutate(tmp_path):
-    invocation = PytestInvocation("root", ("pytest", "test_x.py"), ())
+    invocation = Invocation("root", ("pytest", "test_x.py"), ())
     argv = report.with_junit(invocation, tmp_path / "result.xml")
     assert invocation.argv == ("pytest", "test_x.py")
     assert argv[-3:] == ("-o", "junit_family=xunit1", f"--junitxml={tmp_path / 'result.xml'}")
 
 
 def test_suite_name_variants():
-    default = PytestInvocation("ai-parrot", ("pytest", "-m", "not slow"), ())
-    contract = PytestInvocation("ai-parrot", ("pytest", "-m", "not real_llm"), ())
-    markers = PytestInvocation("ai-parrot", ("pytest", "-m", "(unit or smoke) and not real_llm"), ())
+    default = Invocation("ai-parrot", ("pytest", "-m", "not slow"), ())
+    contract = Invocation("ai-parrot", ("pytest", "-m", "not real_llm"), ())
+    markers = Invocation("ai-parrot", ("pytest", "-m", "(unit or smoke) and not real_llm"), ())
     assert report.suite_name(default) == "ai-parrot"
     assert report.suite_name(contract) == "ai-parrot[contract]"
     assert report.suite_name(markers) == "ai-parrot[markers]"

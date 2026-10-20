@@ -35,8 +35,7 @@ from parrot.flows.dev_loop.sdd_coder.background import (
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
-
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
 def _make_supervisor(
     tmp_path: Path, *, owner_instance_id: str = "owner-A"
@@ -52,7 +51,7 @@ def _make_supervisor(
 
 def _single_invocation_plan(argv: tuple[str, ...], *, tier: str = "merge") -> ScopePlan:
     """A `ScopePlan` carrying exactly one controlled, synthetic pytest-shaped invocation."""
-    invocation = PytestInvocation(distribution="root", argv=argv, targets=())
+    invocation = Invocation(distribution="root", argv=argv, targets=())
     return ScopePlan(tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=())
 
 

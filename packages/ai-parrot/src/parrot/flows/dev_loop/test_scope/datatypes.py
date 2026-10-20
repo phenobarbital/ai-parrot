@@ -16,15 +16,21 @@ class TestTarget:
     path: str  # repo-relative file, dir or node id
     distribution: str  # "<dist>" or "root"
     reason: str  # "declared" | "mirror" | "import" | "core" | "escalated"
+    runner: str = "pytest"
 
 
 @dataclass(frozen=True)
-class PytestInvocation:
-    """One pytest command for exactly one distribution."""
+class Invocation:
+    """One runner command for exactly one (runner, distribution) group (FEAT-709)."""
 
     distribution: str
-    argv: tuple[str, ...]  # full argv starting with "pytest"
+    argv: tuple[str, ...]
     targets: tuple[TestTarget, ...]
+    runner: str = "pytest"
+    cwd: str = "."
+    report_path: str = ""
+    report_format: str = "junit"
+    timeout_s: int = 0
 
 
 @dataclass(frozen=True)
@@ -43,7 +49,7 @@ class ScopePlan:
     """The per-tier selection result."""
 
     tier: str  # "task" | "merge" | "feature"
-    invocations: tuple[PytestInvocation, ...]
+    invocations: tuple[Invocation, ...]
     escalated: tuple[str, ...]
     core_hits: tuple[CoreHit, ...]
     skipped_escalations: tuple[str, ...]
@@ -89,6 +95,71 @@ class BaselineVerdict:
     nodeid: str
     status: str  # "new_red" | "baseline_red" | "unknown" | "flaky"
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """Normalized outcome of one Invocation, whatever its runner."""
+
+    runner: str
+    suite: str
+    tests: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    duration_s: float
+    exit_code: int
+    status: str
+    nodes: tuple[tuple[str, str], ...] = ()
+    failure_text: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    unmapped: int = 0
+
+    def __post_init__(self) -> None:
+        """Freeze ``failure_text``."""
+        if not isinstance(self.failure_text, MappingProxyType):
+            object.__setattr__(self, "failure_text", MappingProxyType(dict(self.failure_text)))
+
+
+@dataclass(frozen=True)
+class Failure:
+    """One failed node as a seat sees it."""
+
+    runner: str
+    nodeid: str
+    verdict: str
+    excerpt: str
+
+
+@dataclass(frozen=True)
+class RunnerSummary:
+    """Per-invocation counts inside a verdict."""
+
+    runner: str
+    suite: str
+    tests: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    cached: int
+    duration_s: float
+    exit_code: int
+    status: str
+
+
+@dataclass(frozen=True)
+class ValidationVerdict:
+    """The only validation payload a coder seat ever receives (FEAT-709)."""
+
+    schema: int
+    status: str
+    tier: str
+    runners: tuple[RunnerSummary, ...]
+    failures: tuple[Failure, ...]
+    cached: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

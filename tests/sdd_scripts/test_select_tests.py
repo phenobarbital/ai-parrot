@@ -141,13 +141,13 @@ def test_baseline_verdict_controls_failure_exit(fixture_monorepo, monkeypatch, s
     kernel = _load_kernel()
     import scripts.sdd.select_tests as sel
     import test_scope.baseline as baseline
-    from test_scope.datatypes import BaselineVerdict, PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import BaselineVerdict, Invocation, ScopePlan, TestTarget
 
     target = "packages/a/tests/test_x.py"
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", target),
                 targets=(TestTarget(path=target, distribution="a", reason="declared"),),
@@ -331,13 +331,13 @@ def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     driving_file = "packages/a/src/pa/x.py"
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
@@ -371,12 +371,12 @@ def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
@@ -530,12 +530,12 @@ def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
