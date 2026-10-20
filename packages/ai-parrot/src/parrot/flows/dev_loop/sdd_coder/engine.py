@@ -81,7 +81,8 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     TaskResult,
     ValidationVerdictModel,
 )
-from parrot.flows.dev_loop.test_scope.verdict import VERDICT_SCHEMA, render_for_prompt
+from parrot.flows.dev_loop.test_scope.verdict import VERDICT_SCHEMA, render_for_prompt, verdict_to_json
+from parrot.flows.dev_loop.test_scope.runners.registry import load_registry
 from parrot.flows.dev_loop.sdd_coder.optimization_models import (
     BackgroundRegistration,
     BackgroundStatus,
@@ -368,6 +369,46 @@ class AttemptTelemetryCollector:
             turn_series=turn_series,
             budget_report=budget_report,
         )
+
+
+
+class _EngineValidationCapability:
+    """Task-tier validation runner bound to one task and attempt worktree (FEAT-709)."""
+
+    def __init__(
+        self, engine: Any, ctx: Any, task_id: str, *, path: str, attempt_uid: str, execution_id: str
+    ) -> None:
+        self.task_id = task_id
+        self._engine = engine
+        self._ctx = ctx
+        self._path = path
+        self._attempt_uid = attempt_uid
+        self._execution_id = execution_id
+
+    async def run(self, targets: typing.Sequence[str] = ()) -> Dict[str, Any]:
+        """Run the task tier on the attempt tree and return the verdict as JSON.
+
+        Args:
+            targets: Accepted for protocol compatibility; the task tier plans its own scope.
+
+        Returns:
+            The JSON-compatible validation verdict.
+        """
+        engine = self._engine
+        ctx = self._ctx
+        timeout_s = engine.roster.runners.gate_overall_timeout_s
+        registration = await engine.run_validation(
+            feature=ctx.feature,
+            worktree=str(ctx.worktree),
+            execution_id=self._execution_id,
+            task_ids=[self.task_id],
+            tier="task",
+            timeout_seconds=timeout_s,
+            request_id=f"cap-{self._attempt_uid}-{uuid.uuid4().hex[:8]}",
+            attempt_uid=self._attempt_uid,
+        )
+        verdict = await engine._validation_supervisor.wait_verdict(self._execution_id, registration.handle, timeout_s)
+        return verdict_to_json(verdict)
 
 
 class SddCoderEngine:
@@ -1304,6 +1345,30 @@ class SddCoderEngine:
         """Execution that issued the attempt on *branch*, or None (legacy/no-execution scope)."""
         known = self._branch_attempts.get(branch)
         return (known[1] or None) if known is not None else None
+
+    def _profile_with_runner_binaries(self, profile: Any, path: str) -> Any:
+        """Extend the attempt profile's ``allowed_commands`` with the registry's runner binaries (FEAT-709).
+
+        A registry that cannot be loaded leaves the profile unchanged.
+        """
+        allowed = getattr(profile, "allowed_commands", None)
+        if allowed is None:
+            return profile
+        try:
+            binaries = load_registry(Path(path)).binaries
+        except Exception:  # noqa: BLE001 -- a broken runners TOML must not fail the attempt
+            self.logger.warning("runner registry unavailable for %s; allowed_commands unchanged", path, exc_info=True)
+            return profile
+        merged = list(dict.fromkeys([*allowed, *binaries]))
+        return profile.model_copy(update={"allowed_commands": merged})
+
+    def _validation_capability(
+        self, ctx: _FeatureCtx, task: PlannedTask, *, path: str, attempt_uid: str, execution_id: str
+    ) -> "_EngineValidationCapability":
+        """Build the validation capability bound to one task attempt (FEAT-709)."""
+        return _EngineValidationCapability(
+            self, ctx, task.task_id, path=path, attempt_uid=attempt_uid, execution_id=execution_id
+        )
 
     async def _task_tier_gate(
         self,
@@ -3408,37 +3473,48 @@ class SddCoderEngine:
                 stream_ttl_seconds=self._stream_ttl,
             )
             profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
+            profile = self._profile_with_runner_binaries(profile, path)
             feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
             self._feedback_contexts[attempt_uid] = feedback_context
-            output = await dispatcher.dispatch(
-                brief=TaskScopedBrief(
-                    research=self._research_for(ctx, worktree_path=path),
-                    task_id=task.task_id,
-                    task_file=task.task_file,
-                    coder_feedback=feedback_context,
-                    validation_verdict=verdict or "",
-                ),
-                profile=profile,
-                output_model=DevelopmentOutput,
-                run_id=job_id,
-                # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
-                # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
-                # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
-                # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
-                # so that construction would raise and `_apply_to_session_host` silently swallows
-                # it (by design — "the shim must never break a dispatch"), meaning
-                # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
-                # would silently no-op for every real dispatch. "development" IS a valid NodeId
-                # (the same one the interactive DevAgentPool dispatches under) and is not touched
-                # by this feature; per-seat identity for downstream consumers still flows through
-                # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
-                # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
-                # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
-                node_id=f"development.sdd-coder-{seat.label}",
-                cwd=path,
-                session_host=collector,
-                labels=self._labels_for(task, seat, attempt),
+            capability = self._validation_capability(
+                ctx, task, path=path, attempt_uid=attempt_uid, execution_id=execution_id or ""
             )
+            binder = getattr(dispatcher, "set_validation_runner", None)
+            if callable(binder):
+                binder(capability)
+            try:
+                output = await dispatcher.dispatch(
+                    brief=TaskScopedBrief(
+                        research=self._research_for(ctx, worktree_path=path),
+                        task_id=task.task_id,
+                        task_file=task.task_file,
+                        coder_feedback=feedback_context,
+                        validation_verdict=verdict or "",
+                    ),
+                    profile=profile,
+                    output_model=DevelopmentOutput,
+                    run_id=job_id,
+                    # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
+                    # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
+                    # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
+                    # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
+                    # so that construction would raise and `_apply_to_session_host` silently swallows
+                    # it (by design — "the shim must never break a dispatch"), meaning
+                    # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
+                    # would silently no-op for every real dispatch. "development" IS a valid NodeId
+                    # (the same one the interactive DevAgentPool dispatches under) and is not touched
+                    # by this feature; per-seat identity for downstream consumers still flows through
+                    # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
+                    # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
+                    # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
+                    node_id=f"development.sdd-coder-{seat.label}",
+                    cwd=path,
+                    session_host=collector,
+                    labels=self._labels_for(task, seat, attempt),
+                )
+            finally:
+                if callable(binder):
+                    binder(None)
             # FEAT-553: a banned import is an attempt error (not a fidelity outcome) so the
             # retry ladder below gives a different seat a shot at the same task.
             _rc, diff, _err = await _git("diff", "--name-only", f"{ctx.feature_branch}...HEAD", cwd=path)
