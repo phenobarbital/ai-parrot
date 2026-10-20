@@ -7,7 +7,6 @@
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4511, TASK-4514
 **Assigned-to**: unassigned
-**Discovered-from**: `issue:8eb2e5870472`
 
 ---
 
@@ -134,26 +133,10 @@ def schema_validator() -> Draft202012Validator:
 - [ ] `test_state_parallel_optional` (state without and with spec §2 example), `test_state_lane_record_shape` (bad status enum rejected; extra key in `parallel` rejected)
 - [ ] Build a minimal valid state.json — read the schema's top-level `required` list first
 
-### Reference helpers are not a behavioral guarantee (issue:8eb2e5870472)
-
-The rules under test are agent-executed Markdown, so a reference helper only proves
-that *this module's* restatement of a rule is self-consistent — it cannot prove the
-command behaves that way. The guarantee this module CAN give is that the helper and
-the command never drift apart. Therefore every reference helper must be paired with a
-contract assertion that pins the exact rule text in `.claude/commands/sdd-proposal.md`
-it mirrors (the lane/prefix table rows, the `floor()` allocation expression, the dedup
-key, the sequential-mode conditions), so editing the command without editing the helper
-fails the suite. State this limitation in the module docstring — do not imply the tests
-verify runtime behavior.
-
 ## Acceptance Criteria
 
 - [ ] All spec §4 M1–M4 unit tests present and passing
 - [ ] No helper module outside the test file
-- [ ] Every reference helper (`_partition`, `_allocate`, `_merge`) is paired with a
-      contract assertion pinning the command text it mirrors — changing one without
-      the other fails the suite
-- [ ] Module docstring states that these are drift guards, not behavioral guarantees
 - [ ] `ruff check tests/sdd_scripts/test_proposal_parallel.py` clean
 
 ## Validation Commands

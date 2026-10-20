@@ -123,8 +123,6 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
 ## Acceptance Criteria
 
 - [ ] `test_command_twin_parity.py` passes for all 6 commands
-- [ ] `.agent/workflows/sdd-proposal.md` carries TASK-4516's §4d/§5a/§5b ordering text
-      verbatim (the body copy mirrors it; verify, do not assume)
 - [ ] SKILL.md documents `--no-parallel` and the sequential Codex behavior
 - [ ] No command file edited by this task
 
