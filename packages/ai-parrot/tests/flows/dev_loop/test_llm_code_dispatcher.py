@@ -1590,8 +1590,12 @@ class TestObservationalScope:
 
     @pytest.mark.asyncio
     async def test_disabled_binds_no_scope(self, monkeypatch, brief, _patch_worktree_base):
-        # DEV_LOOP_CODER_TELEMETRY defaults to False — AC-1: no scope, no
-        # BudgetScope construction, current_budget_scope() stays None.
+        # AC-1: with the master switch off there is no scope, no BudgetScope construction, and
+        # current_budget_scope() stays None. Pin the switch rather than trusting its default:
+        # the repo's own env/.env sets DEV_LOOP_CODER_TELEMETRY=true, so reading the ambient
+        # value made this test fail on any machine that loads it while staying green in CI
+        # (issue:8d6136b63a8c). The two sibling tests in this class already pin it.
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.llm.conf.DEV_LOOP_CODER_TELEMETRY", False)
         (_patch_worktree_base / "app.py").write_text("print('hello')\n", encoding="utf-8")
 
         class _ScopeCheckingClient(_FakeClient):
