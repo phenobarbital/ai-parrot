@@ -10,7 +10,7 @@ tags: [test-scope, sdd-coder, validation-contract, runners, task-tier, token-bud
 **Feature ID**: FEAT-709
 **Date**: 2026-10-20
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 
 ---
