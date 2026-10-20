@@ -505,6 +505,46 @@
       "parallelism_notes": "edits the same gate body as TASK-4540; runs after it",
       "file": "sdd/tasks/completed/TASK-4541-gate-hygiene-and-budget-replay.md",
       "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-709",
+      "feature": "language-agnostic-validation-runners",
+      "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
+      "status": "in-progress",
+      "assigned_to": null,
+      "started_at": "2026-10-20T22:17:36+00:00",
+      "completed_at": null,
+      "id": "TASK-4542",
+      "slug": "retire-legacy-escalation-ledger-writes",
+      "title": "Retire the dead escalation-ledger writes in select_tests and the supervisor",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "edits the same select_tests --run loop as TASK-4543; runs before it",
+      "file": "sdd/tasks/active/TASK-4542-retire-legacy-escalation-ledger-writes.md",
+      "discovered_from": "issue:9b27d46a6bb2"
+    },
+    {
+      "feature_id": "FEAT-709",
+      "feature": "language-agnostic-validation-runners",
+      "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "id": "TASK-4543",
+      "slug": "verdict-mode-fails-closed-and-overall-deadline",
+      "title": "--verdict fails closed on registry/adapter errors and honours an overall deadline",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4542"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits the same select_tests regions as TASK-4542; runs after it",
+      "file": "sdd/tasks/active/TASK-4543-verdict-mode-fails-closed-and-overall-deadline.md",
+      "discovered_from": "issue:7e23927a1fa6"
     }
   ]
 }
