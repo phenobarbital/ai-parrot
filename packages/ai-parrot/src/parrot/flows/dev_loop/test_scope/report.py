@@ -110,9 +110,7 @@ def with_report(invocation: Invocation, report_path: Path) -> tuple[str, ...]:
     return tuple(invocation.argv)
 
 
-def nodeid_from_testcase(
-    file_attr: str | None, classname: str, name: str, *, runner: str = "pytest"
-) -> str | None:
+def nodeid_from_testcase(file_attr: str | None, classname: str, name: str, *, runner: str = "pytest") -> str | None:
     """Return a canonical pytest node id or ``<file>::<name>`` for another runner."""
     if runner != "pytest":
         return f"{file_attr}::{name}" if file_attr else None
