@@ -217,10 +217,10 @@ def test_budget_allocation_floor_rounding(sample_budget_profile):
     assert alloc["wiki"]["grep_calls"] == 5
 
     # check sums <= profile
-    total_files = sum(l["files_read"] for l in alloc.values())
+    total_files = sum(lane["files_read"] for lane in alloc.values())
     assert total_files <= sample_budget_profile["files_read"]
 
-    total_greps = sum(l["grep_calls"] for l in alloc.values())
+    total_greps = sum(lane["grep_calls"] for lane in alloc.values())
     assert total_greps <= sample_budget_profile["grep_calls"]
 
 
