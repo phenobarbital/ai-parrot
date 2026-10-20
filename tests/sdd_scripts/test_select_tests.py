@@ -380,10 +380,9 @@ def test_cli_fresh_process_green_core_change_exits_zero(tmp_path):
 def test_run_red_fallback_run_leaves_ledger_untouched(fixture_monorepo, monkeypatch):
     """FEAT-699 re-baseline of the FEAT-563 re-arm test (R14/AC9c).
 
-    Re-arming only ever applied to an *escalated* invocation. In the bounded fallback no invocation
-    is an escalation, so a red run must neither drop nor refresh ledger records — the same rule as
-    `ValidationSupervisor._record_invocation_outcome` ("an invocation with no escalated target
-    records nothing")."""
+    Re-arming only ever applied to an *escalated* invocation, and `plan_tests` can no longer
+    emit one (TASK-4542 retired the escalation-ledger writes), so `--run` must never drop or
+    refresh a ledger record. This is now a regression guard: the CLI leaves the ledger alone."""
     from scripts.sdd.select_tests import _load_kernel
 
     _load_kernel()
@@ -403,93 +402,6 @@ def test_run_red_fallback_run_leaves_ledger_untouched(fixture_monorepo, monkeypa
     assert rc == 1  # "a"'s mirror test failed; "b"'s importer test passed
 
     assert ctx.read_ledger(fixture_monorepo) == before
-
-
-def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
-    """--run on a green cap-escalated invocation writes impact blobs and its impacted hash."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
-
-    driving_file = "packages/a/src/pa/x.py"
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            Invocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={"a": (driving_file,)},
-        cap_impacted={"a": "cap-impact-hash"},
-    )
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 0
-
-    import test_scope.context as ctx
-
-    ledger = ctx.read_ledger(fixture_monorepo)
-    assert driving_file in ledger["a"].impact_blobs
-    assert ledger["a"].impacted_hash == "cap-impact-hash"
-
-
-def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
-    """--run on a red cap-escalated invocation drops the previous ledger entry."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
-
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            Invocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={"a": ("packages/a/src/pa/x.py",)},
-        cap_impacted={"a": "cap-impact-hash"},
-    )
-    import test_scope.context as ctx
-
-    ctx.record_green_escalation(
-        fixture_monorepo,
-        ["a"],
-        [],
-        impact_files=["packages/a/src/pa/x.py"],
-        impacted_hashes={"a": "cap-impact-hash"},
-    )
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=1)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 1
-    assert "a" not in ctx.read_ledger(fixture_monorepo)
-
-
-# ── FEAT-617: --timeout bounds a hung test in the merge-tier sweep ──────────
-
 
 def _captured_argvs(monkeypatch) -> list[list[str]]:
     """Record the pytest argvs `--run` dispatches, without executing them.
@@ -602,46 +514,6 @@ def test_select_tests_records(fixture_monorepo, monkeypatch, tmp_path):
     assert record.source == "select_tests"
     assert all(suite.tests == 2 and suite.passed == 1 and suite.skipped == 1 for suite in record.suites)
     assert all(suite.argv[-1].startswith("--junitxml=") for suite in record.suites)
-
-
-def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
-    """Report-only runs never alter the escalation ledger."""
-    from scripts.sdd.select_tests import _load_kernel
-
-    kernel = _load_kernel()
-    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
-
-    plan = ScopePlan(
-        tier="merge",
-        invocations=(
-            Invocation(
-                distribution="a",
-                argv=("pytest", "packages/a/tests"),
-                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
-            ),
-        ),
-        escalated=("a",),
-        core_hits=(),
-        skipped_escalations=(),
-        notes=(),
-        cap_hits={},
-        cap_impacted={},
-    )
-    calls: list[str] = []
-    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
-    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    import test_scope.context as ctx
-
-    monkeypatch.setattr(ctx, "record_red_run", lambda *_: calls.append("red"))
-    monkeypatch.setattr(ctx, "record_green_escalation", lambda *_args, **_kwargs: calls.append("green"))
-    monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess",
-        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
-    )
-
-    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run", "--no-ledger"]) == 0
-    assert calls == []
-
 
 def test_empty_plan_selection_error(fixture_monorepo, monkeypatch, tmp_path):
     """A flagged empty plan produces a reportable selection-error result."""

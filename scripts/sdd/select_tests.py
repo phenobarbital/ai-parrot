@@ -56,7 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--feature", default=None, help="FEAT-<NNN>: record structured results (FEAT-695)")
     parser.add_argument("--report-task", default=None, help="TASK-<NNN> or _rerun: record owner (FEAT-695)")
-    parser.add_argument("--no-ledger", action="store_true", help="report-only: never touch the escalation ledger")
+    parser.add_argument("--no-ledger", action="store_true", help="report-only: never write the green test cache")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -357,10 +357,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"# cached: {target}")  # noqa: T201 - CLI output
         for note in plan.notes:
             print(f"# note: {note}")  # noqa: T201 - CLI output
-        for dist in plan.escalated:
-            print(f"# escalated: {dist}")  # noqa: T201 - CLI output
-        for dist in plan.skipped_escalations:
-            print(f"# skipped: {dist}")  # noqa: T201 - CLI output
 
     if not args.run:
         return 0
@@ -449,13 +445,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             suites.append(suite)
             _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
-        # FEAT-699: `plan_tests` no longer emits `core`/`escalated` targets (a core hit is a plan
-        # note, "covered by nightly"), so these FEAT-604 ledger branches fire only for legacy plans.
-        # Gate on the invocation's own targets -- the same rule as
-        # `ValidationSupervisor._record_invocation_outcome` -- never on `plan.core_hits`: a
-        # non-escalated run proves nothing about a suite and must leave the ledger alone.
-        is_core_escalation = any(target.reason == "core" for target in invocation.targets)
-        is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
             if suite is None or suite.status in {"no_junit", "report_parse_error"} or suite.unmapped:
@@ -465,23 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not nodes:
                     unclassified_failure = True
                 failed_nodeids.extend(nodes)
-            if not args.no_ledger and (is_core_escalation or is_cap_escalation):
-                import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
-
-                # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
-                ledger.record_red_run(worktree, [invocation.distribution])
             continue
-        if not args.no_ledger and (is_core_escalation or is_cap_escalation):
-            import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
-
-            dist = invocation.distribution
-            core_files = [hit.path for hit in plan.core_hits]
-            impact_files = list(plan.cap_hits.get(dist, ()))
-            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
-            if core_files or impact_files:
-                ledger.record_green_escalation(
-                    worktree, [dist], core_files, impact_files=impact_files, impacted_hashes=impacted_hashes
-                )
 
     verdicts = ()
     if failed_nodeids and args.baseline:
