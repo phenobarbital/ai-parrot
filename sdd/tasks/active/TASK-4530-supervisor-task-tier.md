@@ -7,6 +7,7 @@
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4529
 **Assigned-to**: unassigned
+**Discovered-from**: `issue:72c4d5c42095`
 
 ---
 
@@ -24,6 +25,12 @@ cap; only unfinished invocations are `timed_out`; a partial run never writes the
 - Run each invocation with the adapter's `cwd`, report path and `registry.timeout_for(kind)`, bounded by the remaining overall `timeout_seconds`; parse with `adapter.parse_report`.
 - Build the verdict with `build_verdict`, persist with `put_artifact`, attach its `EvidenceRef` id in `verdict.evidence`, then settle the receipt.
 - Add `wait_verdict(execution_id, handle, timeout_s) -> ValidationVerdict`.
+- **Launch failure is fast, not a timeout** (`issue:72c4d5c42095`): when an invocation cannot start at all --
+  the sandbox is unavailable (Bubblewrap missing or the namespace denied), the runner binary is not on `PATH`,
+  or the `cwd` does not exist -- the invocation settles immediately as `unavailable` with the cause in its
+  diagnostics. It must NOT sit until `gate_overall_timeout_s` (600 s) expires. This was observed on a host where
+  Bubblewrap was denied and the gate blocked for >30 s in
+  `test_background_mcp.py::test_run_chunk_settles_handle_when_runner_beats_registration`.
 - `backend` label `"validation-subprocess"`; `record_green` only on a complete run and only for pytest reports.
 - Add the §4 integration test `test_merge_tier_includes_vitest_runner` (fake adapter subprocess via a stub script).
 
@@ -165,6 +172,9 @@ class ExecutionEvidenceStore:                        # line 154
 - [ ] `tier="task"` with two ids or without base_ref/attempt_uid ⇒ `ValueError` before any spawn.
 - [ ] A slow first invocation times out alone; the second still runs within the overall cap; verdict `timed_out`, finished evidence kept, no green cache write.
 - [ ] `put_artifact` is awaited before the receipt settles; `wait_verdict` returns the stored verdict.
+- [ ] An invocation that cannot be spawned (sandbox unavailable, runner binary missing, bad `cwd`) settles
+      `unavailable` promptly -- bounded by the per-invocation timeout, never by the overall cap -- with the
+      cause in its diagnostics.
 - [ ] Merge tier with a contract vitest block runs a `vitest:admin-ui` invocation.
 - [ ] `ruff check` clean on every touched `.py` file
 

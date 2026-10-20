@@ -7,6 +7,7 @@
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-4530, TASK-4531
 **Assigned-to**: unassigned
+**Discovered-from**: `issue:72c4d5c42095`, `issue:3edabb9b953e`
 
 ---
 
@@ -16,12 +17,26 @@ Spec §3 Module 7 (engine half), codex S2 (gate after the last engine mutation, 
 against the fork SHA) and S8 (explicit retry state machine). Brainstorm Q2: the repair is a fresh conversation
 on the same seat, seeded from the failed branch, with the verdict in the brief; it counts as an attempt.
 
+> **Amended 2026-10-20** (`issue:72c4d5c42095`, spec S13). This task previously instructed the gate to
+> return `None` and let the merge proceed when no validation supervisor was bound. The spec never granted
+> that fail-open — its §3 skeleton types the gate `-> ValidationVerdict`. The gate is now **fail closed**:
+> it always returns a verdict, and the unrunnable cases produce `status="unavailable"`.
+> `issue:3edabb9b953e` adds the bounded-state and request-id requirements below.
+
 ---
 
 ## Scope
 
 - `run_validation(..., tier: Literal["task","merge","feature"], *, attempt_uid=None, base_ref=None)`; `toolkit.coder_run_validation` gains the `task` literal + `attempt_uid`.
-- `_task_tier_gate(...)`: start task-tier validation with `base_ref=diff_base`, `wait_verdict` bounded by `roster.runners.gate_overall_timeout_s`.
+- `_task_tier_gate(...) -> ValidationVerdict` (never `Optional`): start task-tier validation with
+  `base_ref=diff_base`, `wait_verdict` bounded by `roster.runners.gate_overall_timeout_s`.
+  **Fail closed**: when `self._validation_supervisor is None`, or the attempt resolves no `execution_id`
+  (a plain `run_chunk`), return a synthetic `status="unavailable"` verdict naming the cause instead of `None`.
+- `request_id` includes the attempt's HEAD SHA (`f"gate-{attempt_uid}-{head_sha[:12]}"`) so a re-run after new
+  commits cannot be served a stale verdict from a prior request with the same id.
+- `wait_verdict` timeout is strictly below the supervisor deadline (`gate_overall_timeout_s`), so the wait
+  cannot outlive the children it is waiting on.
+- `_branch_attempts` / `_validation_reds` are pruned when a task settles, so neither grows unbounded across a run.
 - `_consolidate`: after `check_banned_imports` passes and before `async with self._acquire_merge_lock`, run the gate; red ⇒ `TaskResult(outcome="validation_failed", validation=…)`; nothing merged.
 - `_run_attempt(..., repair_from=None, verdict=None)`: `manager.create(worker_id, base=repair_from)`; verdict rendered (`render_for_prompt`) into `TaskScopedBrief.validation_verdict`.
 - `_run_task`: on `validation_failed` and `same_seat_repair` and not yet repaired ⇒ emit the red attempt's outcome, run attempt+1 on the SAME seat with `repair_from=branch`; a second red joins the existing ladder as `err`; never `_classify_and_suspend` for validation reds.
@@ -120,7 +135,13 @@ async def coder_run_validation(self, feature, worktree, execution_id, task_ids, 
 ## Implementation Notes
 
 - `_consolidate` has two `_consolidate(...)` callers in `_run_task`; the repair hook belongs after the FIRST (12-space indent, inside `if not err:`). The second (after the ladder) must ALSO treat `validation_failed` as terminal-for-this-attempt without another repair.
-- Gate disabled (validation supervisor is None) ⇒ log a warning and continue to merge (today's behaviour) — do not fail closed when the engine has no supervisor configured.
+- Gate unrunnable (validation supervisor is None, or no `execution_id` for the attempt) ⇒ log a warning AND
+  return `ValidationVerdict(status="unavailable", …)` naming the cause; `_consolidate` turns that into
+  `validation_failed` and merges nothing. Do **not** return `None` and do not merge unvalidated (spec S13,
+  `issue:72c4d5c42095`). Keep `unavailable` distinguishable from a test-failure red in the diagnostics
+  string so an operator can tell a misconfigured gate from a broken attempt.
+- An `unavailable` verdict is a configuration fault, not the seat's fault: it must not reach
+  `_classify_and_suspend` (same rule as any other validation red).
 - Engine edits are large: keep helpers private and small (<80 lines each).
 
 ---
@@ -145,7 +166,7 @@ async def coder_run_validation(self, feature, worktree, execution_id, task_ids, 
             ctx, task, path=path, branch=branch, diff_base=diff_base,
             attempt_uid=self._attempt_uid_for(task.task_id, branch), execution_id=self._execution_for(branch),
         )
-        if verdict is not None and verdict.status != "passed":
+        if verdict.status != "passed":
             return TaskResult(
                 task_id=task.task_id, outcome="validation_failed", branch=branch, worktree_path=path,
                 lint=lint_report, validation=ValidationVerdictModel.from_kernel(verdict),
@@ -155,11 +176,18 @@ async def coder_run_validation(self, feature, worktree, execution_id, task_ids, 
 #          if a lookup is impossible, generate a uuid4 hex (the gate still needs a unique handle)
 
     async def _task_tier_gate(self, ctx: _FeatureCtx, task: PlannedTask, *, path: str, branch: str,
-                              diff_base: str, attempt_uid: str, execution_id: Optional[str]) -> Optional["ValidationVerdict"]:
+                              diff_base: str, attempt_uid: str, execution_id: Optional[str]) -> "ValidationVerdict":
         """Run the task tier on the attempt tree after all engine mutations, before the merge lock (S2).
 
-        Returns None when no validation supervisor is configured (logged; merge proceeds as before).
+        Fail closed (S13): always returns a verdict. When the gate cannot run -- no supervisor bound, or
+        no execution_id for this attempt -- returns status="unavailable" naming the cause, which the
+        caller treats as a red. It never returns None and never lets an unvalidated merge through.
         """
+        # FILL IN: fail-closed guards FIRST, before any supervisor call:
+        #   if self._validation_supervisor is None:
+        #       return <unavailable verdict: "no validation supervisor bound">
+        #   if execution_id is None:
+        #       return <unavailable verdict: "attempt has no execution_id (plain run_chunk)">
         # FILL IN: self._validation_supervisor.start(tier="task", task_ids=[task.task_id], base_ref=diff_base,
         #          attempt_uid=attempt_uid, worktree=Path(path), request_id=f"gate-{attempt_uid}", …)
         #          then wait_verdict(..., timeout_s=self.roster.runners.gate_overall_timeout_s)
@@ -192,7 +220,12 @@ async def coder_run_validation(self, feature, worktree, execution_id, task_ids, 
 - [ ] Red gate ⇒ `validation_failed`, feature branch HEAD unchanged.
 - [ ] Repair attempt runs on the same seat, from the failed branch, with the verdict in `TaskScopedBrief.validation_verdict`; attempts list has one record per attempt with one outcome each.
 - [ ] Second red ⇒ `_select_retry_seat` is consulted; `_classify_and_suspend` is never called for validation reds.
-- [ ] No supervisor configured ⇒ merge proceeds, warning logged.
+- [ ] No supervisor bound ⇒ `unavailable` verdict, `validation_failed`, feature branch HEAD unchanged,
+      warning logged (NOT a merge).
+- [ ] Attempt with no `execution_id` ⇒ same fail-closed path.
+- [ ] `unavailable` never reaches `_classify_and_suspend`.
+- [ ] Gate `request_id` changes when the attempt HEAD SHA changes (no stale verdict reuse).
+- [ ] `_branch_attempts` / `_validation_reds` do not retain entries for settled tasks.
 - [ ] `ruff check` clean on every touched `.py` file
 
 ## Validation Commands
