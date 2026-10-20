@@ -10,6 +10,7 @@ from typing import Sequence
 from .context import read_attempt_context
 from .contract import parse_validation_commands
 from .datatypes import ScopePlan
+from .runners.base import RunnerAdapter
 from .runners.registry import load_registry
 from .select import changed_files, plan_tests
 
@@ -30,7 +31,7 @@ class GuardOutcome:
     message: str = ""
 
 
-def _runner_for(argv: Sequence[str], *, worktree: Path) -> "RunnerAdapter | None":
+def _runner_for(argv: Sequence[str], *, worktree: Path) -> RunnerAdapter | None:
     """Return the registered runner for ``argv``, or None when registry loading fails."""
     try:
         return load_registry(worktree).adapter_for_argv(argv)
