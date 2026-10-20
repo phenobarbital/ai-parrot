@@ -193,8 +193,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gpt-5.6-sol (codex), 1 attempt, 331.7s
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only 5 pre-existing bwrap failures + test_background_contract.py (owned by TASK-4530). Closed via close_task.sh.
 
 **Deviations from spec**: none
