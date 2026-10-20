@@ -16,6 +16,8 @@ from parrot.flows.dev_loop.test_scope.datatypes import Failure, ValidationVerdic
 
 from .test_engine_dispatch import _git, _roster, fake_builder_factory
 
+pytestmark = pytest.mark.task_tier_gate
+
 EXECUTION_ID = "12345678-1234-4234-8234-123456789abc"
 
 
@@ -180,14 +182,63 @@ async def test_second_red_joins_retry_ladder_without_suspension(git_sandbox_feat
     assert "validation_failed" in task.attempts[1].error
 
 
-async def test_no_supervisor_merges_with_warning(git_sandbox_feature, caplog):
-    worktree, _fb, base_path, _ix = git_sandbox_feature
+async def test_no_supervisor_fails_closed(git_sandbox_feature, caplog):
+    """S13: an unbound supervisor blocks the merge instead of waving it through (issue:72c4d5c42095)."""
+    worktree, feature_branch, base_path, _ix = git_sandbox_feature
     engine = _engine(base_path, fake_builder_factory({}), None)
+    _rc, before, _ = await _git("rev-parse", feature_branch, cwd=str(worktree))
     with caplog.at_level(logging.WARNING):
         task = await _run_one(engine, worktree)
-    assert task.outcome == "merged", task.diagnostics
-    assert task.validation is None
+    _rc, after, _ = await _git("rev-parse", feature_branch, cwd=str(worktree))
+
+    assert task.outcome == "validation_failed", task.diagnostics
+    assert task.validation is not None and task.validation.status == "unavailable"
+    assert before == after, "nothing may merge when the gate cannot run"
+    assert "no validation supervisor configured" in task.diagnostics
     assert any("no validation supervisor" in r.getMessage() for r in caplog.records)
+
+
+async def test_attempt_without_execution_fails_closed(git_sandbox_feature, caplog):
+    """S13: a plain run_chunk attempt (no execution_id) is also fail closed."""
+    worktree, feature_branch, base_path, _ix = git_sandbox_feature
+    engine = _engine(base_path, fake_builder_factory({}), FakeSupervisor(["passed"]))
+    engine._execution_for = lambda branch: None  # type: ignore[method-assign]
+    _rc, before, _ = await _git("rev-parse", feature_branch, cwd=str(worktree))
+    with caplog.at_level(logging.WARNING):
+        task = await _run_one(engine, worktree)
+    _rc, after, _ = await _git("rev-parse", feature_branch, cwd=str(worktree))
+
+    assert task.outcome == "validation_failed", task.diagnostics
+    assert task.validation is not None and task.validation.status == "unavailable"
+    assert before == after
+    assert "has no execution_id" in task.diagnostics
+
+
+async def test_gate_never_returns_none(git_sandbox_feature):
+    """The gate's contract is total: no code path yields None for the caller to skip."""
+    import inspect
+
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine as _E
+
+    source = inspect.getsource(_E._task_tier_gate)
+    assert "return None" not in source
+    assert inspect.signature(_E._task_tier_gate).return_annotation != "Optional[ValidationVerdict]"
+
+
+async def test_gate_unavailable_never_suspends(git_sandbox_feature):
+    """An unrunnable gate is a configuration fault, never the seat's: no suspension (S8 + S13)."""
+    worktree, _fb, base_path, _ix = git_sandbox_feature
+    engine = _engine(base_path, fake_builder_factory({}), None)
+    suspend_calls: list[dict] = []
+
+    async def _suspend(**kw):
+        suspend_calls.append(kw)
+
+    engine._classify_and_suspend = _suspend  # type: ignore[method-assign]
+    task = await _run_one(engine, worktree)
+
+    assert task.outcome == "validation_failed"
+    assert not suspend_calls
 
 
 async def test_prepare_native_carries_previous_red_verdict(git_sandbox_feature):

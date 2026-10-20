@@ -1402,22 +1402,28 @@ class SddCoderEngine:
         diff_base: str,
         attempt_uid: str,
         execution_id: Optional[str],
-    ) -> Optional[ValidationVerdict]:
+    ) -> ValidationVerdict:
         """Run the task tier on the attempt tree after all engine mutations, before the merge lock (S2).
 
-        Returns None when no validation supervisor is configured (logged; merge proceeds as before).
+        Fail closed (spec S13): ALWAYS returns a verdict, never ``None``. When the gate cannot run at
+        all -- no validation supervisor bound, or the attempt carries no ``execution_id`` (a plain
+        ``run_chunk``) -- it returns a synthetic ``status="unavailable"`` verdict naming the cause, which
+        the caller treats like any other non-``passed`` status. The gate's whole purpose is that nothing
+        merges unvalidated, so a misconfigured gate blocks the merge instead of waving it through.
         """
         if self._validation_supervisor is None:
             self.logger.warning(
-                "task-tier gate disabled for %s: no validation supervisor configured; merging unvalidated",
+                "task-tier gate unavailable for %s: no validation supervisor configured; refusing to merge",
                 task.task_id,
             )
-            return None
+            return self._gate_unavailable("no validation supervisor configured")
         if execution_id is None:
             self.logger.warning(
-                "task-tier gate skipped for %s: attempt %s has no execution; merging unvalidated", task.task_id, branch
+                "task-tier gate unavailable for %s: attempt %s has no execution; refusing to merge",
+                task.task_id,
+                branch,
             )
-            return None
+            return self._gate_unavailable(f"attempt {branch} has no execution_id")
         timeout_s = self.roster.runners.gate_overall_timeout_s
         try:
             registration = await self._validation_supervisor.start(
@@ -1442,6 +1448,13 @@ class SddCoderEngine:
             status, note = "unavailable", f"{type(exc).__name__}: {exc}"
         return ValidationVerdict(
             schema=VERDICT_SCHEMA, status=status, tier="task", runners=(), failures=(), notes=(note,)
+        )
+
+    @staticmethod
+    def _gate_unavailable(note: str) -> ValidationVerdict:
+        """A verdict for a gate that could not run at all (S13); the caller treats it as a red."""
+        return ValidationVerdict(
+            schema=VERDICT_SCHEMA, status="unavailable", tier="task", runners=(), failures=(), notes=(note,)
         )
 
     async def record_native_observation(
@@ -2979,7 +2992,7 @@ class SddCoderEngine:
             attempt_uid=self._attempt_uid_for(task.task_id, branch),
             execution_id=self._execution_for(branch),
         )
-        if verdict is not None and verdict.status != "passed":
+        if verdict.status != "passed":
             self._record_validation_red(task.task_id, branch, render_for_prompt(verdict))
             return TaskResult(
                 task_id=task.task_id,
@@ -2988,7 +3001,11 @@ class SddCoderEngine:
                 worktree_path=path,
                 lint=lint_report,
                 validation=ValidationVerdictModel.from_kernel(verdict),
-                diagnostics=f"task-tier validation {verdict.status}: {len(verdict.failures)} failure(s)",
+                diagnostics=(
+                    f"task-tier validation {verdict.status}: " + "; ".join(verdict.notes)
+                    if verdict.status == "unavailable" and verdict.notes
+                    else f"task-tier validation {verdict.status}: {len(verdict.failures)} failure(s)"
+                ),
             )
         async with self._acquire_merge_lock(lock_timeout_s):
             try:

@@ -16,7 +16,7 @@ from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat, RunnerConfig
 from parrot.flows.dev_loop.test_scope.datatypes import Failure, ValidationVerdict
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.task_tier_gate]
 
 
 # === Helpers from conftest.py (duplicated for hermetic test) ===
