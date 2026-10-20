@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-709 — Language-agnostic validation runners and an engine-owned task-tier gate
 **Spec**: `sdd/specs/language-agnostic-validation-runners.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -280,8 +280,28 @@ Work in `.claude/worktrees/feat-FEAT-709-language-agnostic-validation-runners`.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5 (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-10-21
+**Notes**: Removed both escalation-ledger write blocks and the two always-empty
+print loops from `select_tests.py`; removed `_record_invocation_outcome`, its
+call site, its import and the dead `escalated=`/`skipped_escalations=` header
+fields from `background.py`. `--no-ledger` was kept — its green-cache reader at
+`select_tests.py:493` is live and `/sdd-done` passes the flag — with the help
+text re-pointed at the cache. Deleted the 8 tests that only exercised the
+removed branches through synthetic legacy plans; kept
+`test_run_red_fallback_run_leaves_ledger_untouched` and
+`test_run_core_change_without_contract_is_a_note_never_an_escalation` as
+regression guards and refreshed the former's docstring.
+Verified: `plan` is still used by `_supervise` (`cached`, `notes`,
+`plan=invocation_plan`), so the parameter stays — FILL IN item resolved.
+Evidence: `tests/sdd_scripts/test_select_tests.py` 21 passed;
+`test_scope` + `sdd_coder` suites 840 passed; `ruff check` clean on all four files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Three header assertions in
+`test_start_logs_selection_summary` needed updating, not the one the task file
+predicted — the test also pins the all-skipped and non-empty headers. Their
+intent (an all-skipped plan stays distinguishable from an empty diff) is
+preserved: the distinction now rides the `# note:` line the plan already emits.
+The task file's premise that `is_core_escalation = bool(plan.core_hits)` was
+stale — that gate had already been narrowed to `invocation.targets` on this
+branch; the remaining debt was the unreachable ledger writes themselves.

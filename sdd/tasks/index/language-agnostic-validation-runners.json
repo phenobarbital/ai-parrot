@@ -265,7 +265,7 @@
         "TASK-4524"
       ],
       "parallel": true,
-      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=\u2026) from TASK-4524 (select.py)",
+      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=…) from TASK-4524 (select.py)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
       "completed_at": "2026-10-20T14:37:26+00:00",
@@ -394,7 +394,7 @@
         "TASK-4522"
       ],
       "parallel": true,
-      "parallelism_notes": "lint consumes contract_from_index_header(registry=\u2026) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
+      "parallelism_notes": "lint consumes contract_from_index_header(registry=…) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
       "completed_at": "2026-10-20T14:37:28+00:00",
@@ -416,7 +416,7 @@
         "TASK-4534"
       ],
       "parallel": true,
-      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) \u2014 semantics must be frozen first",
+      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) — semantics must be frozen first",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
       "completed_at": "2026-10-20T15:17:21+00:00",
@@ -510,10 +510,10 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-20T22:17:36+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-20T22:23:47+00:00",
       "id": "TASK-4542",
       "slug": "retire-legacy-escalation-ledger-writes",
       "title": "Retire the dead escalation-ledger writes in select_tests and the supervisor",
@@ -522,8 +522,9 @@
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "edits the same select_tests --run loop as TASK-4543; runs before it",
-      "file": "sdd/tasks/active/TASK-4542-retire-legacy-escalation-ledger-writes.md",
-      "discovered_from": "issue:9b27d46a6bb2"
+      "file": "sdd/tasks/completed/TASK-4542-retire-legacy-escalation-ledger-writes.md",
+      "discovered_from": "issue:9b27d46a6bb2",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-709",
