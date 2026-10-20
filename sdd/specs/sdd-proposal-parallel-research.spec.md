@@ -19,7 +19,7 @@ tags:
 **Feature ID**: FEAT-708
 **Date**: 2026-10-20
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.31.0
 
 ---
@@ -722,12 +722,10 @@ No new Python packages.
 
 ## 8. Open Questions
 
-- [ ] Should cross-lane recursive follow-ups be supported in a future iteration? (e.g. codebase finding spawns a git query) — *Owner: Jesus*
-- [ ] Should the dedup merge preserve both findings verbatim when the file-path match has different symbols (same file, different functions)? — *Owner: Jesus*
-  - Note: S6 recommends citation-identity dedup `(path, symbol, line_range)` — the spec adopts this, which inherently preserves distinct symbols. This question is resolved by the design research.
-- [ ] Should `--budget=custom` support user-specified per-lane limits (e.g. `--lane-budget codebase:files_read=80`)? — *Owner: Jesus*
-  - Note: S11 recommends keeping custom sequential for now. Adopted.
-- [ ] What is the measured prompt-cache hit rate for forks of `/sdd-proposal`? Need empirical data to validate the 1.8x cost estimate. — *Owner: Jesus*
+- [x] Should cross-lane recursive follow-ups be supported in a future iteration? — *Resolved*: **Deferred.** Current design records cross-lane suggestions as `[cross-lane: ...]` notes in findings. A future FEAT can promote them to dispatched queries if synthesis frequently flags them as unknowns.
+- [x] Should the dedup merge preserve both findings verbatim when the file-path match has different symbols (same file, different functions)? — *Resolved in design research (S6)*: Citation-identity dedup `(path, symbol, line_range)` inherently preserves distinct symbols from the same file. Same symbol + overlapping ranges merges; different symbols stay separate.
+- [x] Should `--budget=custom` support user-specified per-lane limits (e.g. `--lane-budget codebase:files_read=80`)? — *Resolved in design research (S11)*: Custom stays sequential. Per-lane custom semantics deferred indefinitely.
+- [x] What is the measured prompt-cache hit rate for forks of `/sdd-proposal`? — *Resolved as post-implementation metric*: Measure cache hit rate and effective cost multiplier on the first 3 parallel runs. If cost exceeds 2x sequential on `default` profile, add `--no-parallel` as default for `loose` and re-evaluate lane count.
 
 ---
 
