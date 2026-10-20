@@ -19,7 +19,9 @@ def test_fixture_counts_and_failure_text() -> None:
 
 
 def test_missing_file_is_no_report() -> None:
-    report = parse_e2e_verdict(Path("/nonexistent/e2e-verdict.json"), exit_code=0, suite="s", duration_s=0.0, timed_out=False)
+    report = parse_e2e_verdict(
+        Path("/nonexistent/e2e-verdict.json"), exit_code=0, suite="s", duration_s=0.0, timed_out=False
+    )
     assert report.status == "no_report"
     assert parse_e2e_verdict(None, exit_code=0, suite="s", duration_s=0.0, timed_out=True).status == "timed_out"
 
@@ -37,7 +39,12 @@ def test_pointer_fallback(tmp_path: Path) -> None:
     (tmp_path / "e2e" / "latest.json").write_text(json.dumps({"run_id": "run-0001"}), encoding="utf-8")
     report = ADAPTER.parse_report(
         report_path=tmp_path / "e2e" / "e2e-verdict.json",
-        exit_code=1, stdout="", stderr="", duration_s=1.0, timed_out=False, suite="s",
+        exit_code=1,
+        stdout="",
+        stderr="",
+        duration_s=1.0,
+        timed_out=False,
+        suite="s",
     )
     assert report.failed == 1
 
@@ -48,12 +55,21 @@ def test_tiers_and_settings(tmp_path: Path) -> None:
     assert ADAPTER.validate_settings({"plan": "plan.json"}, worktree=tmp_path) == []
     assert ADAPTER.validate_settings({}, worktree=tmp_path)
     assert ADAPTER.validate_settings({"plan": "nope.json"}, worktree=tmp_path)
-    assert any("task tier forbidden" in p for p in ADAPTER.validate_settings({"plan": "plan.json", "tiers": "task,merge"}, worktree=tmp_path))
+    assert any(
+        "task tier forbidden" in p
+        for p in ADAPTER.validate_settings({"plan": "plan.json", "tiers": "task,merge"}, worktree=tmp_path)
+    )
 
 
 def test_matches_and_argv() -> None:
     assert ADAPTER.matches(["parrot", "e2e", "run"])
     assert not ADAPTER.matches(["pytest"])
-    inv = ADAPTER.invocation([], distribution="d", worktree=Path("."), settings={"plan": "p.json", "owner_id": "o"},
-                             policy=None, report_path="r")  # type: ignore[arg-type]
+    inv = ADAPTER.invocation(
+        [],
+        distribution="d",
+        worktree=Path("."),
+        settings={"plan": "p.json", "owner_id": "o"},
+        policy=None,
+        report_path="r",
+    )  # type: ignore[arg-type]
     assert inv.argv == ("parrot", "e2e", "run", "--plan", "p.json", "--owner-id", "o")

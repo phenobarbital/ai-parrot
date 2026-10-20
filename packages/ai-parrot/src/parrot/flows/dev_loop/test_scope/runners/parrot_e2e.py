@@ -173,9 +173,7 @@ class ParrotE2EAdapter:
         resolved = report_path
         if report_path is not None and not report_path.is_file():
             resolved = _resolve_via_pointer(report_path)
-        return parse_e2e_verdict(
-            resolved, exit_code=exit_code, suite=suite, duration_s=duration_s, timed_out=timed_out
-        )
+        return parse_e2e_verdict(resolved, exit_code=exit_code, suite=suite, duration_s=duration_s, timed_out=timed_out)
 
     def validate_settings(self, settings: Mapping[str, str], *, worktree: Path) -> list[str]:
         """Return diagnostics: ``plan`` required and existing; the task tier is forbidden."""
