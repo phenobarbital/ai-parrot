@@ -264,7 +264,7 @@ Otherwise:
    capability probe: record `fallback_reason: "agent-unavailable"` and run §4a sequentially.
 4. **Collect** each fork's completion. The parent stops waiting at
    `floor(0.85 × wall_seconds)`; a lane still running at that point is failed. Keep
-   completed lanes' findings. Re-run a failed or timed-out lane's queries sequentially
+   completed lanes' findings. Stop the timed-out fork (TaskStop) or move its `<PREFIX>-*` files to `findings/.audit/partial/` first, so late writes are never double-counted. Re-run a failed or timed-out lane's queries sequentially
    through §4a; if that retry also fails, set the lane `status: failed`,
    `error: <msg>`, and continue.
 5. **Checkpoint** `state.json` (parent only): set `phases.research.parallel.lanes.<lane>`
@@ -580,6 +580,8 @@ If `--resume <FEAT-ID>` is set:
    - `proposal_drafted` → Step 9 (commit)
 4. If a phase is in `running` status (orphaned from a crash), restart **that
    phase** from scratch (don't try to recover partial state for it).
+   Exception: Phase 2 (research) that ran in parallel resumes per lane — follow §4.0 **Resume**,
+   never restart-from-scratch (that would discard completed lanes' findings).
 
 Print:
 ```
