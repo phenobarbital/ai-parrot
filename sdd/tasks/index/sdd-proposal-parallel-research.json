@@ -86,7 +86,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "same file sdd-proposal.md as TASK-4513; consumes FC/FG/FW lane findings and §4.0 dispatch defined there",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4514-finding-merge-dedup.md"
+      "completed_at": "2026-10-20T00:33:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4514-finding-merge-dedup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4515",
