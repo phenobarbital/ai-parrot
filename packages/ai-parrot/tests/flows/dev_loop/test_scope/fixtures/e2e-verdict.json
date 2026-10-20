@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "feature_id": "FEAT-999",
+  "run_id": "run-0001",
+  "policy": "required",
+  "selected_node_ids": ["tests/e2e/test_a.py::test_ok", "tests/e2e/test_a.py::test_bad", "tests/e2e/test_a.py::test_skip"],
+  "collected_node_ids": ["tests/e2e/test_a.py::test_ok", "tests/e2e/test_a.py::test_bad", "tests/e2e/test_a.py::test_skip"],
+  "results": [
+    {"scenario_id": "s1", "node_id": "tests/e2e/test_a.py::test_ok", "outcome": "passed", "duration_s": 1.0},
+    {"scenario_id": "s2", "node_id": "tests/e2e/test_a.py::test_bad", "outcome": "failed", "reason_code": "assertion", "detail": "AssertionError: boom", "duration_s": 2.0},
+    {"scenario_id": "s3", "node_id": "tests/e2e/test_a.py::test_skip", "outcome": "skipped", "duration_s": 0.0}
+  ],
+  "counts": {"passed": 1, "failed": 1, "skipped": 1},
+  "argv": ["parrot", "e2e", "run", "--plan", "plan.json"],
+  "exit_code": 1,
+  "status": "FAIL",
+  "gate_satisfied": false
+}
