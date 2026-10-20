@@ -3422,6 +3422,21 @@ class SddCoderEngine:
         if outcome == "fidelity_violation":
             return "fidelity_violation"
 
+        # A dispatch that merely burns its turn budget is a task-size/budget
+        # problem, not a seat fault (`issue:d88684064bdb`). `dispatchers/llm.py`
+        # raises `DispatchExecutionError("LLM code dispatch exceeded
+        # max_turns=<N>; the forced final_output turn did not recover a
+        # result ...")` once the loop is exhausted and the forced final turn
+        # fails to salvage one -- that message reaches the branch below and used
+        # to classify as a plain `dispatch_error`, suspending an otherwise
+        # healthy seat for the whole cooldown. During FEAT-709 one oversized
+        # task took the glm seat out of the roster for every other task that
+        # way, and the retry then burned a second seat on the same cap. The
+        # retry itself is unaffected: `_run_task` picks another seat from
+        # `_select_retry_seat` whether or not this returns a reason.
+        if "exceeded max_turns=" in error:
+            return None
+
         # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
         # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
         # exc: raise DispatchExecutionError(f"Dispatch exceeded {timeout}s

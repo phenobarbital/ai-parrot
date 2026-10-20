@@ -979,6 +979,35 @@ class TestNonModelFailuresDoNotSuspend:
         )
         assert reason is None
 
+    def test_max_turns_exhaustion_not_suspendable(self):
+        """Exhausting the dispatch turn budget does not suspend the seat (issue:d88684064bdb)."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error=(
+                "LLM code dispatch exceeded max_turns=60; the forced final_output "
+                "turn did not recover a result (no final_output tool call)"
+            ),
+            error_class="DispatchExecutionError",
+        )
+        assert reason is None
+
+    def test_dispatch_error_without_max_turns_still_suspendable(self):
+        """A genuine dispatch failure is still charged against the seat."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        reason = engine._classify_failure_reason(
+            error="provider returned 503 Service Unavailable",
+            error_class="DispatchExecutionError",
+        )
+        assert reason == "dispatch_error"
+
 
 class TestStalePlanAdmitsNothing:
     """FEAT-559 TASK-3280: Test that stale plans are rejected before job/worktree creation."""
