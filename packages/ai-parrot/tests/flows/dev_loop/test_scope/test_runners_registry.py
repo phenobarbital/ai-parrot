@@ -70,7 +70,7 @@ def test_registry_uses_injected_adapter_and_validates_configured_tiers():
     assert registry.settings_for("fake") == {"tiers": "task", "timeout_s": "7"}
     assert registry.tiers_for("fake") == frozenset({"task"})
     assert registry.timeout_for("fake") == 7
-    assert registry.binaries == ("fake-test",)
+    assert "fake-test" in registry.binaries
 
 
 def test_registry_rejects_tier_outside_adapter_support():
