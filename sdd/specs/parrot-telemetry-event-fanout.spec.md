@@ -86,33 +86,28 @@ clients/base.py _emit_after_call / _emit_failed_call
    │ emits AfterClientCall (tenant + cost_usd via shared CostCalculator) / ClientCallFailed (tenant)
    ▼
 global EventRegistry ──▶ existing subscribers (UsageRecording, Metrics, Trace)   [unchanged]
-   └──────────────▶ LifecycleBusForwarder (EventProvider, only when PARROT_EVENT_FANOUT_ENABLED)
-                        │ payload = event.to_dict() minus denylisted keys (error_message)
-                        │ create_task(bus.emit("lifecycle.<EventClass>", payload))  — fire-and-forget
-                        ▼
-                  EventBus (navigator-eventbus, Redis-backed when configured)
-                        ▼
-          external consumer (NVP-505: TelemetryEvent + BigQueryBatchSubscriber) — NOT in ai-parrot
+   │  attach_bus(bus, serializer=redact_usage_event)          (navigator-eventbus FEAT-711)
+   │  4 × subscribe(..., forward_to_bus=True)  — only when PARROT_EVENT_FANOUT_ENABLED
+   ▼
+EventBus(transport="streams", publish_only=True, outbox=<per-worker SQLite path>)
+   │  outbox write-ahead → XADD → ack ; relay re-publishes after failure/restart   (at-least-once)
+   ▼
+Redis Streams consumer group ──▶ external consumer (NVP-505: TelemetryEvent + BigQuery) — NOT in ai-parrot
+                                  dedups by envelope event_id
 
 AgentTalk ── resolve_request_tenant ──▶ bot.ask(tenant=...) ; save_turn(metadata={usage,cost_usd,tenant,agent})
 ```
 
-**Design decision: forwarder provider vs. `forward_to_bus=True` on the registry.** The original agreement was
-"attach the bus to the global registry and add a `forward_to_bus` subscription". Codebase research found two
-blockers to doing that literally:
-1. `EventRegistry` forwards `event.to_dict()` **verbatim** (`registry.py:280-285`). That would put
-   `error_message` (`str(exc)`, which can contain prompt or user data) of both failed events on the bus.
-2. `EventRegistry` has no public way to attach a bus after construction (`_event_bus` is set only in
-   `__init__`, `registry.py:112`), and `get_global_registry()` builds it lazily without one.
-
-So the fan-out is a small `LifecycleBusForwarder` EventProvider. It holds the bus, subscribes to the four
-events on the global registry, and publishes a **redacted** `to_dict()` on the *same channel contract* as
-`forward_to_bus` (`f"{prefix}.{EventClassName}"`, fire-and-forget `create_task`, exceptions logged and never
-propagated). Consumers cannot tell the difference, and no private attribute is touched. The literal
-`forward_to_bus` route remains available later if navigator-eventbus gains a payload-serializer hook (§8 Q1).
+**Design decision: native `forward_to_bus` on top of navigator-eventbus FEAT-711.** Research found that the
+registry forwarded `event.to_dict()` verbatim (leaking `error_message`), had no public way to attach a bus, and
+that the only transport reachable from the `EventBus` facade (Redis pub/sub) is at-most-once while the producer
+drops envelopes when the transport fails. Losing usage events is not acceptable, so these gaps are fixed
+upstream in navigator-eventbus (`../navigator-eventbus/sdd/specs/durable-lifecycle-fanout.spec.md`, FEAT-711):
+`EventRegistry.attach_bus()` + a payload serializer hook, `EventBus(transport="streams", publish_only=True,
+outbox=...)`, and a persistent SQLite producer outbox with a relay. ai-parrot adds no forwarding class of its own.
 
 **Tokens and cost are summed only from `AfterClientCallEvent`.** `AfterInvokeEvent.input/output_tokens` are an
-aggregate of the same calls. The forwarder does not change them, but this spec documents the rule for consumers
+aggregate of the same calls. The fan-out does not change them, but this spec documents the rule for consumers
 (§7) so dashboards do not double count.
 
 ### Component Diagram
@@ -131,7 +126,7 @@ See Overview.
 | Skill tenant | `skills/tenancy.py:77` `_skill_tenant` | becomes an alias of `current_tenant` |
 | Tenant binding | `bots/base.py:1118-1120` (ask), `:1874-1876` (ask_stream) | bind `current_tenant` for every bot |
 | Cost | `observability/cost/calculator.py:135` `CostCalculator`; `bootstrap.py:115` | shared process instance |
-| Bootstrap | `observability/bootstrap.py:138` `add_provider` | register forwarder when flag on |
+| Bootstrap | `observability/bootstrap.py:138` `add_provider` | `attach_bus` + 4 `forward_to_bus` subscriptions when flag on |
 | AgentTalk | `handlers/agent.py:1883` `bot.ask(`, `:2653` `bot.ask_stream(`, `:2729`/`:2968` `save_turn(` | tenant + metadata |
 | Tenant resolution | `handlers/scope.py:147` `resolve_request_tenant(app, request)`; pattern `handlers/chat.py:454-458` | reused as is |
 
@@ -151,7 +146,7 @@ cost_usd: Optional[float] = None      # None when no shared calculator or pricin
 tenant: Optional[str] = None
 ```
 
-Bus payload: `event.to_dict()` (includes `event_class`) with the keys in `FORWARD_DENYLIST = {"error_message"}` removed.
+Bus payload: produced by the serializer `redact_usage_event(event)` = `event.to_dict()` (includes `event_class`) minus the keys in `FORWARD_DENYLIST = {"error_message"}`; it returns `None` (skip) for any event class outside the four.
 
 ChatStorage turn metadata (both AgentTalk call sites):
 `{"usage": CompletionUsage.model_dump() | None, "cost_usd": float | None, "tenant": str | None, "agent": str}`.
@@ -167,7 +162,9 @@ def get_shared_cost_calculator() -> Optional[CostCalculator]: ...
 def set_shared_cost_calculator(calc: Optional[CostCalculator]) -> None: ...
 
 # observability/fanout.py (new)
-class LifecycleBusForwarder: ...                      # EventProvider
+def redact_usage_event(event: LifecycleEvent) -> Optional[dict[str, Any]]: ...   # BusSerializer (FEAT-711)
+def setup_event_fanout(bus: Optional[EventBus] = None) -> None: ...                # idempotent
+async def shutdown_event_fanout() -> None: ...
 ```
 
 ---
@@ -181,7 +178,7 @@ class LifecycleBusForwarder: ...                      # EventProvider
 | M1 tenant ContextVar | yes | token set/reset like `invocation_context`; `_skill_tenant` is the same object |
 | M2 event fields | yes | dataclass fields with `None` defaults, appended last (frozen dataclasses, keyword construction) |
 | M3 shared cost calculator | yes | module-level holder; bootstrap installs; clients read |
-| M4 bus forwarder | yes | signatures below; channel `f"{prefix}.{cls}"`; denylist |
+| M4 event fan-out wiring | yes | `attach_bus` + 4 `forward_to_bus=True` subscriptions + `redact_usage_event`; streams/publish-only/outbox bus; idempotent |
 | M6 single cost computation | yes | subscribers read `event.cost_usd`; own calculator only as fallback when no shared calculator is installed |
 | M7 chat hot-tier metadata | yes | `{**(metadata or {}), **fixed_keys}` at the Redis `ConversationTurn` |
 | M5 AgentTalk tenant + metadata | yes | copy `chat.py:454-458`; metadata dict shape above |
@@ -259,32 +256,38 @@ The cumulative-cost logic in `UsageRecordingSubscriber` (`:111-114`) keeps worki
 Result: one `cost_usd()` call per LLM call instead of up to three, and all sinks (Prometheus, OTel, usage
 log, bus) report the identical number.
 
-### Module 4: `LifecycleBusForwarder`
+### Module 4: event fan-out wiring (native `forward_to_bus`, durable transport)
 
-A new `observability/fanout.py`. It is an EventProvider, the same shape `UsageRecordingSubscriber` uses with
-`register(registry)`. It subscribes to the four events and publishes a redacted payload, fire-and-forget.
-It is registered in `bootstrap.py` only when `PARROT_EVENT_FANOUT_ENABLED=true`. The bus is either injected
-(server/orchestrator) or built from config: `EventBus(redis_url=PARROT_EVENT_FANOUT_REDIS_URL,
-use_redis=bool(url), channel_prefix=PARROT_EVENT_FANOUT_CHANNEL_PREFIX or "parrot:events:")`, mirroring
-`autonomous/orchestrator.py:245-249`, and connected lazily on first publish.
+A new `observability/fanout.py`, used from `bootstrap.py` only when `PARROT_EVENT_FANOUT_ENABLED=true`. It
+requires the navigator-eventbus release that contains FEAT-711; bump the pin in `packages/ai-parrot/pyproject.toml`.
+
+1. Build the bus, unless one is injected (server/orchestrator):
+   `EventBus(redis_url=PARROT_EVENT_FANOUT_REDIS_URL, transport="streams", publish_only=True,
+   channel_prefix=PARROT_EVENT_FANOUT_CHANNEL_PREFIX or "parrot:events:",
+   outbox=f"{PARROT_EVENT_FANOUT_OUTBOX_DIR}/{hostname}-{pid}.db")`.
+   `publish_only` keeps parrot workers out of the consumer group, and the outbox gives at-least-once delivery
+   across Redis outages and restarts.
+2. `get_global_registry().attach_bus(bus, serializer=redact_usage_event)`.
+3. Register a no-op callback with `forward_to_bus=True` for each of the four events, and keep the subscription ids.
 
 ```python
 FORWARD_DENYLIST: frozenset[str] = frozenset({"error_message"})
+FORWARDED_EVENTS: tuple[type[LifecycleEvent], ...] = (AfterInvokeEvent, InvokeFailedEvent,
+                                                      AfterClientCallEvent, ClientCallFailedEvent)
 
-class LifecycleBusForwarder:
-    """Forward usage lifecycle events to an EventBus as redacted dicts (fire-and-forget)."""
-    def __init__(self, bus: "EventBus", *, channel_prefix: str = "lifecycle",
-                 events: "Sequence[type[LifecycleEvent]]" = DEFAULT_FORWARDED_EVENTS) -> None: ...
-    def register(self, registry: "EventRegistry") -> list[str]: ...
-    async def _forward(self, event: "LifecycleEvent") -> None:
-        """Schedule bus.emit(f'{prefix}.{type(event).__name__}', redacted payload); never raises."""
-    def stats(self) -> dict[str, int]: ...          # forwarded, failed (publish failures counted, logged every 100)
-    async def aclose(self) -> None: ...
+def redact_usage_event(event: "LifecycleEvent") -> "Optional[dict[str, Any]]":
+    """BusSerializer: to_dict() minus FORWARD_DENYLIST for FORWARDED_EVENTS; None for anything else."""
+
+def setup_event_fanout(bus: "Optional[EventBus]" = None) -> None:
+    """Attach the bus to the global registry and add the four forward_to_bus subscriptions. Idempotent."""
+
+async def shutdown_event_fanout() -> None:
+    """Unsubscribe, detach_bus(), close the bus (BusCore flushes the outbox relay once; leftovers stay on disk)."""
 ```
 
-Setup is idempotent: one forwarder per process, exactly four subscriptions, IDs retained; a second setup is a
-no-op, and `shutdown_usage_recording()` unsubscribes and closes it. Bots must NOT also receive the same bus via
-`AbstractBot(event_bus=...)` for these events, or every event is published twice (S2).
+Setup is idempotent: a second call is a no-op. `shutdown_usage_recording()` calls `shutdown_event_fanout()`.
+Bots must NOT also receive the same bus via `AbstractBot(event_bus=...)`, or every event is published twice (S2).
+`stats()` of the bus (FEAT-711: `outbox_pending`, `outbox_rejected`, …) is exposed for health checks.
 
 ### Module 5: AgentTalk tenant and per-turn metadata
 
@@ -315,18 +318,20 @@ win), so `usage`/`cost_usd`/`tenant`/`agent` survive hot-tier reads (S12).
 - `test_after_client_call_carries_tenant_and_cost`: with a shared calculator and a priced model, `cost_usd`
   is set; without a calculator it is `None`, and a calculator that raises still gives `None` with no exception.
 - `test_invoke_events_carry_tenant`.
-- `test_forwarder_channel_and_redaction`: a fake bus receives `lifecycle.ClientCallFailedEvent` without the
+- `test_fanout_channel_and_redaction`: a fake bus receives `lifecycle.ClientCallFailedEvent` without the
   `error_message` key and with `tenant`.
-- `test_forwarder_never_blocks_or_raises`: a slow or raising bus does not delay or break `registry.emit`
+- `test_fanout_never_blocks_or_raises`: a slow or raising bus does not delay or break `registry.emit`
   (pattern: `tests/unit/events/lifecycle/test_registry_fire_and_forget.py`).
-- `test_forwarder_not_registered_when_flag_off`.
+- `test_fanout_not_registered_when_flag_off`.
+- `test_redact_usage_event_skips_other_events`.
+- `test_fanout_bus_is_streams_publish_only_with_outbox`: the bus built from config uses those options.
 - `test_cost_computed_once_per_call`: with a shared calculator spy and all three subscribers registered, one
   LLM call triggers exactly one `cost_usd()` call, and every sink sees the same value.
 - `test_subscriber_fallback_without_shared_calculator`: with no shared calculator, an injected one is still used.
 - `test_invoke_events_carry_user_and_session`.
 - `test_dispatcher_events_still_priced`: an `AfterClientCallEvent` from the dev-loop dispatcher (no `cost_usd`)
   is still priced by the subscribers.
-- `test_forwarder_setup_idempotent`: two setups → four subscriptions, one publish per event.
+- `test_fanout_setup_idempotent`: two setups → four subscriptions, one publish per event.
 - `test_nested_tenant_reset`: nested `ask()` calls restore the outer tenant.
 - `test_chat_hot_tier_keeps_metadata`: the Redis `ConversationTurn.metadata` contains `usage` and `tenant`.
 - `test_usage_record_unchanged`: `UsageRecord` still has no user, session or tenant fields.
@@ -358,7 +363,7 @@ bundled pricing.
 ## 5. Acceptance Criteria
 
 - [ ] With `PARROT_EVENT_FANOUT_ENABLED=true`, the four events reach the bus on `"<prefix>.<EventClass>"`;
-  with the flag off (default), no forwarder is registered and behavior is identical to today.
+  with the flag off (default), no bus is attached and no subscription is added and behavior is identical to today.
 - [ ] No forwarded payload contains `error_message`; none of the four events carries prompt or completion text.
 - [ ] A slow, failing or unreachable bus never delays or fails `ask()`/`ask_stream()`.
 - [ ] All four events carry `tenant`, server-resolved; a client-supplied tenant is ignored in AgentTalk and Chat.
@@ -367,10 +372,12 @@ bundled pricing.
 - [ ] `CostCalculator.cost_usd()` runs exactly once per LLM call (at the origin) when observability is booted;
   `UsageRecordingSubscriber`, `MetricsSubscriber` and the trace subscriber consume `event.cost_usd`.
 - [ ] There is exactly one tenant ContextVar in the codebase; `program`/`program_slug` appears nowhere in ai-parrot.
+- [ ] Delivery is at-least-once end to end: with Redis down or a worker restarted, no usage event is lost
+  (the FEAT-711 outbox holds and relays it); parrot workers never join the consumer group (`publish_only`).
 - [ ] FEAT-707 per-tenant skills behave as before (its tests pass unchanged).
 - [ ] `AfterInvokeEvent` and `InvokeFailedEvent` carry `user_id` and `session_id`.
 - [ ] Events not built by `AbstractClient` (dev-loop dispatcher) are still priced exactly as today.
-- [ ] Forwarder setup is idempotent: one bus publish per event, never duplicated.
+- [ ] Fan-out setup is idempotent: one bus publish per event, never duplicated.
 - [ ] Both AgentTalk `save_turn` calls persist `metadata.usage`, `metadata.cost_usd`, `metadata.tenant`, `metadata.agent`,
   in both the Redis hot tier and the cold tier.
 - [ ] `UsageRecord`, the Prometheus labels and the OTel span attributes are unchanged.
@@ -470,13 +477,14 @@ See §2 table.
   never `await` the bus in the call path.
 - Server-resolved tenant only, never from the body (`chat.py:454-458`, `ui_surfaces.py:621`).
 - Config via navconfig: `PARROT_EVENT_FANOUT_ENABLED` (default false), `PARROT_EVENT_FANOUT_REDIS_URL`,
-  `PARROT_EVENT_FANOUT_CHANNEL_PREFIX` (default `parrot:events:`), and the registry-level channel prefix
+  `PARROT_EVENT_FANOUT_CHANNEL_PREFIX` (default `parrot:events:`), `PARROT_EVENT_FANOUT_OUTBOX_DIR` (required when
+  enabled; startup fails loudly if unset or not writable), and the registry-level channel prefix
   `lifecycle` (final Redis channel e.g. `parrot:events:lifecycle.AfterClientCallEvent`).
 
 ### Known Risks / Gotchas
 - **Consumer double counting:** sum tokens and cost only from `AfterClientCallEvent`; `AfterInvokeEvent`
   tokens are aggregates. Document this in the consumer contract (NVP-505).
-- **Global registry is ContextVar-backed** (`global_registry.py`). Register the forwarder in the same
+- **Global registry is ContextVar-backed** (`global_registry.py`). Call `setup_event_fanout()` from the same
   bootstrap path that already registers `UsageRecordingSubscriber` (`bootstrap.py:138`), which is proven to
   observe all requests.
 - **`ensure_observability_bootstrapped` OTel path returns early** (`bootstrap.py` before :111). The shared
@@ -485,29 +493,31 @@ See §2 table.
   break (all known sites use keywords; re-check `flows/dev_loop/dispatchers/claude.py:980/1039`).
 - **Tenant alias:** making `_skill_tenant` the same ContextVar means a non-`tenant_based` bot now has a bound
   value. The skill code must keep gating on `tenant_based` (covered by a regression test).
-- **Delivery is at-most-once.** Fire-and-forget publishing plus Redis pub/sub (`navigator_eventbus/backends/redis_pubsub.py:10`)
-  loses events on worker crash or Redis outage, so BigQuery totals can undercount. This is accepted for v1 and
-  documented for consumers; `stats()` exposes failed publishes. A durable transport is §8 Q4 (S10).
+- **Delivery is at-least-once, not exactly-once** (FEAT-711 outbox + Redis Streams). The consumer MUST dedup by
+  envelope `event_id`. Residual window: a worker killed in the single loop iteration between the lifecycle emit
+  and the outbox append loses that event (FEAT-711 §7).
+- **Outbox storage:** `PARROT_EVENT_FANOUT_OUTBOX_DIR` must be a persistent volume, with one file per worker
+  (`{hostname}-{pid}.db`). An ephemeral container disk defeats restart recovery.
 - **PII:** `user_id`/`session_id` already travel on these events (spans only). With fan-out they cross the
   process boundary. The consumer (NVP-505) owns retention and access control.
 
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| navigator-eventbus | >=0.2.1 (already pinned) | `EventBus`, `EventRegistry` |
+| navigator-eventbus | >= the release containing FEAT-711 (0.4.0) — pin bump | `attach_bus`, serializer hook, `transport="streams"`, `publish_only`, outbox |
 
 ---
 
 ## 8. Open Questions
 
-- [ ] Q1. Upstream a payload-serializer hook (or `attach_bus()`) to navigator-eventbus's `EventRegistry` so the
-  literal `forward_to_bus=True` route can replace `LifecycleBusForwarder` later? — *Owner: Jesús Lara*
+- [x] Q1. Payload-serializer hook / `attach_bus()` upstream — *Resolved with the user (2026-10-20)*: implemented in
+  navigator-eventbus FEAT-711; ai-parrot uses native `forward_to_bus=True` and no forwarder class.
 - [ ] Q2. Should the server reuse the autonomous orchestrator's `EventBus` instance when both are active, or
   always build a dedicated forwarding bus? — *Owner: Jesús Lara*
 - [x] Q3. Source of `metadata.cost_usd` per turn — *Resolved by design research S4*: the origin writes the cost
   into `CompletionUsage.estimated_cost`; AgentTalk copies it and never recomputes.
-- [ ] Q4. Is at-most-once delivery acceptable for billing-grade accounting, or does the consumer need a durable
-  transport (Redis Streams / outbox)? — *Owner: Jesús Lara* (S10)
+- [x] Q4. Durability — *Resolved with the user (2026-10-20)*: losing events is not acceptable; Redis Streams +
+  persistent producer outbox (navigator-eventbus FEAT-711), at-least-once.
 - [x] Program vs tenant — *Resolved with the user (2026-10-20)*: use the generic `tenant`; `program_slug` is
   TROC-specific and its mapping lives in the external consumer.
 - [x] Where the BigQuery sink lives — *Resolved with the user (2026-10-20)*: outside ai-parrot (NVP-505).
@@ -521,7 +531,7 @@ All 12 `affected_paths` passed containment and existence checks.
 
 | # | Suggestion | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| S1 | Explicit global EventBus config on the registry | REJECT (partial) | No public attach API and `forward_to_bus` forwards unredacted payloads; the forwarder owns the bus. Shutdown/unsubscribe part adopted. | §3 M4 |
+| S1 | Explicit global EventBus config on the registry | CONFIRM (rev 0.3) | First rejected for lack of a public API; the API is now added upstream (FEAT-711 `attach_bus`) | §2, §3 M4 |
 | S2 | One idempotent forwarding provider | CONFIRM | Duplicate publishes possible if bots also get the bus | §3 M4, §4, §5 |
 | S3 | Cost independent of local observability setup | CONFIRM | Fan-out on + observability off left `cost_usd` empty | §3 M3 |
 | S4 | How origin cost reaches AgentTalk | CONFIRM | Verified `CompletionUsage.estimated_cost` (`basic.py:91`); origin fills it | §3 M2, M5, §8 Q3 |
@@ -530,7 +540,7 @@ All 12 `affected_paths` passed containment and existence checks.
 | S7 | `user_id`/`session_id` on invoke events | CONFIRM | Verified missing (`invoke.py:34-72`) | §2, §3 M2, §5 |
 | S8 | Sanitize failed-event payloads | CONFIRM | Already the design (denylist) | §3 M4 |
 | S9 | Non-AbstractClient emitters | CONFIRM | Verified `dispatchers/claude.py:980/1039`; `resolve_event_cost` recomputes only when `cost_usd is None` | §3 M6, §4, §5 |
-| S10 | Don't promise durable accounting over pub/sub | CONFIRM + ESCALATE | Verified at-most-once (`redis_pubsub.py:10`); documented, durability decision escalated | §7, §8 Q4 |
+| S10 | Don't promise durable accounting over pub/sub | CONFIRM | Verified at-most-once (`redis_pubsub.py:10`); the user required durability → Streams + outbox (FEAT-711) | §2, §3 M4, §5, §7, §8 Q4 |
 | S11 | Cross-layer test matrix | CONFIRM | Tests added | §4 |
 | S12 | Redis hot tier drops caller metadata | CONFIRM | Verified `chat.py` `ConversationTurn` metadata | §3 M7, §5 |
 
@@ -546,7 +556,8 @@ All 12 `affected_paths` passed containment and existence checks.
 - Shared files: `bots/base.py` (M1 binding + M2 event sites), `observability/bootstrap.py` (M3 + M4) —
   serialize those tasks.
 - Exclusive resources: none.
-- Cross-feature dependencies: none to merge first. The external consumer (NVP-505) depends on this
+- Cross-feature dependencies: **navigator-eventbus FEAT-711** (`durable-lifecycle-fanout`) must be released
+  first; M4 is blocked on it, while M1–M3 and M5–M7 are not. The external consumer (NVP-505) depends on this
   feature's channel and payload contract.
 
 ---
@@ -557,3 +568,4 @@ All 12 `affected_paths` passed containment and existence checks.
 |---|---|---|---|
 | 0.1 | 2026-10-20 | Jesús Lara / Claude | Initial draft, replacing the FEAT-775 draft of PR #1747 |
 | 0.2 | 2026-10-20 | Jesús Lara / Claude | Codex design research folded in (S1–S12); M7 added; Q3 resolved; Q4 added |
+| 0.3 | 2026-10-20 | Jesús Lara / Claude | Forwarder class dropped: native `forward_to_bus` + durable Streams/outbox via navigator-eventbus FEAT-711; Q1 and Q4 resolved |
