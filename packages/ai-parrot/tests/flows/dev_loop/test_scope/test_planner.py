@@ -11,7 +11,6 @@ from parrot.flows.dev_loop.test_scope.policy import AGENT_FLAGS, AGENT_MARKER_EX
 from parrot.flows.dev_loop.test_scope.runners.registry import RunnerRegistry
 from parrot.flows.dev_loop.test_scope.select import plan_tests
 
-
 def _t(path, dist, reason="mirror"):
     return TestTarget(path=path, distribution=dist, reason=reason)
 
@@ -207,6 +206,4 @@ def test_non_pytest_declared_command_produces_runner_target(tmp_path: Path):
     )
 
     assert plan.invocations[0].runner == "fake"
-    assert plan.invocations[0].targets == (
-        TestTarget("tests/test_fake.py", "root", "declared", runner="fake"),
-    )
+    assert plan.invocations[0].targets == (TestTarget("tests/test_fake.py", "root", "declared", runner="fake"),)

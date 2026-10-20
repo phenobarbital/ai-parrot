@@ -113,7 +113,9 @@ def _declared_targets(
             continue
         for operand in adapter.operands(argv) or ():
             try:
-                distribution = adapter.distribution_of(operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind))
+                distribution = adapter.distribution_of(
+                    operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind)
+                )
             except ValueError:
                 notes.append(f"declared path does not map to a distribution, dropped: {operand}")
                 continue
