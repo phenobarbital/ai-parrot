@@ -165,8 +165,10 @@ def _mapping_list(payload: Mapping[str, object], key: str) -> tuple[Mapping[str,
 def _string_list(payload: Mapping[str, object], key: str) -> tuple[str, ...]:
     """Read a sequence of strings from a verdict payload."""
     value = payload.get(key, ())
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or not all(
-        isinstance(item, str) for item in value
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or not all(isinstance(item, str) for item in value)
     ):
         raise ValueError(f"verdict field {key!r} must be a list of strings")
     return tuple(value)

@@ -62,9 +62,7 @@ def test_empty_task_plan_exits_2(fixture_monorepo):
 
 def test_empty_task_plan_verdict_is_blocked_json_only(fixture_monorepo, capsys):
     """Verdict mode turns an empty task plan into the structured blocked payload."""
-    rc = main(
-        ["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"]
-    )
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -107,11 +105,7 @@ def test_select_tests_verdict_mode_json_only(
         report_path = Path(
             next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml=")
         ).resolve()
-        failure = (
-            '<failure message="broken">assert False</failure>'
-            if failed
-            else ""
-        )
+        failure = '<failure message="broken">assert False</failure>' if failed else ""
         report_path.write_text(
             f'<testsuites><testsuite tests="1" failures="{int(failed)}">'
             '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'

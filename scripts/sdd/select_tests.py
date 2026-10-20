@@ -195,8 +195,7 @@ def _run_verdict_mode(
             argv = list(report_mod.with_report(run_invocation, report_path))
         elif invocation.report_format == "junit":
             argv = [
-                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument
-                for argument in argv
+                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument for argument in argv
             ]
 
         run_cwd = worktree / invocation.cwd
