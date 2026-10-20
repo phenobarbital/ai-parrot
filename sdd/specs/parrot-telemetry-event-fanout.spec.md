@@ -345,15 +345,31 @@ win), so `usage`/`cost_usd`/`tenant`/`agent` survive hot-tier reads (S12).
 | fan-out over a local EventBus | bot + mocked client call → a subscriber on the bus receives `AfterInvokeEvent` and `AfterClientCallEvent` dicts with the same `session_id` and `tenant` |
 
 ### Validation Contract
-- `packages/ai-parrot/tests/unit/observability/test_client_global_bridge.py`
-- `packages/ai-parrot/tests/unit/observability/test_usage_subscriber.py`
-- `packages/ai-parrot/tests/unit/observability/test_bootstrap.py`
-- `packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py`
-- `packages/ai-parrot/tests/unit/observability/test_trace_subscriber.py`
-- `packages/ai-parrot/tests/unit/observability/test_context.py`
-- `packages/ai-parrot/tests/unit/events/lifecycle/test_registry_fire_and_forget.py`
-- `packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py`
-- `packages/ai-parrot/tests/test_chat_storage.py`
+
+tests:
+- packages/ai-parrot/tests/unit/observability/test_client_global_bridge.py
+- packages/ai-parrot/tests/unit/observability/test_usage_subscriber.py
+- packages/ai-parrot/tests/unit/observability/test_bootstrap.py
+- packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py
+- packages/ai-parrot/tests/unit/observability/test_trace_subscriber.py
+- packages/ai-parrot/tests/unit/observability/test_context.py
+- packages/ai-parrot/tests/unit/events/lifecycle/test_registry_fire_and_forget.py
+- packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py
+- packages/ai-parrot/tests/test_chat_storage.py
+- packages/ai-parrot/tests/unit/observability/test_tenant_contextvar.py
+- packages/ai-parrot/tests/unit/bots/test_current_tenant_binding.py
+- packages/ai-parrot/tests/unit/bots/test_agent_identity_binding.py
+- packages/ai-parrot/tests/unit/events/lifecycle/test_usage_event_fields.py
+- packages/ai-parrot/tests/unit/observability/test_shared_cost_calculator.py
+- packages/ai-parrot/tests/unit/observability/test_setup.py
+- packages/ai-parrot/tests/unit/observability/test_client_event_tenant_cost.py
+- packages/ai-parrot/tests/unit/bots/test_invoke_event_attribution.py
+- packages/ai-parrot/tests/unit/observability/test_cost_computed_once.py
+- packages/ai-parrot/tests/unit/storage/test_chat_hot_tier_metadata.py
+- packages/ai-parrot-server/tests/handlers/test_agenttalk_tenant_metadata.py
+- packages/ai-parrot/tests/unit/observability/test_event_fanout.py
+
+markers: none
 
 ### Test Data / Fixtures
 A fake `EventBus` with an async `emit(channel, payload)` that records calls; a `CostCalculator` built on the
