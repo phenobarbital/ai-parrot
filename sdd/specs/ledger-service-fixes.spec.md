@@ -179,7 +179,7 @@ events.
 
 ### Module 3: Tests
 
-`packages/ai-parrot/tests/sdd/test_check_ledger_snapshot.py` — pure-function
+`tests/sdd_scripts/test_check_ledger_snapshot.py` — pure-function
 tests over `load_snapshot` / `find_violations`, plus end-to-end `main()` runs in
 a `tmp_path` git repo built by a fixture.
 
@@ -213,11 +213,9 @@ a `tmp_path` git repo built by a fixture.
 
 ### Validation Contract
 
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_check_ledger_snapshot.py -q
-ruff check scripts/sdd/check_ledger_snapshot.py
-python -m scripts.sdd.check_ledger_snapshot --base-ref origin/dev
-```
+tests:
+- tests/sdd_scripts/test_check_ledger_snapshot.py
+markers: none
 
 ### Test Data / Fixtures
 
@@ -280,7 +278,7 @@ Keys: `about`, `acknowledged`, `claimed_by`, `closed_by`, `closed_reason`,
 ### Does NOT Exist (Anti-Hallucination)
 
 - `scripts/sdd/check_ledger_snapshot.py` — created by this feature.
-- `packages/ai-parrot/tests/sdd/test_check_ledger_snapshot.py` — created here.
+- `tests/sdd_scripts/test_check_ledger_snapshot.py` — created here.
 - There is **no** `wikitoolkit ledger import` subcommand; the flow is
   `export-log` / `import-log` plus `rebuild`.
 - There is no existing CI step that reads `sdd/ledger/issues.jsonl`.
