@@ -2,8 +2,9 @@
 name: sdd-contract-probe
 description: |
   Read-only, deterministic fact-checker for `/sdd-task` (and any SDD command that
-  builds a Codebase Contract). Given a "probe sheet" — a flat list of checks
-  (symbol / import / anchor / absent / sha256 / outline) — it runs ONE fixed
+  builds a Codebase Contract, and /sdd-brainstorm + /sdd-proposal citation
+  checks, FEAT-708 M7). Given a "probe sheet" — a flat list of checks
+  (symbol / import / anchor / absent / sha256 / outline / file) — it runs ONE fixed
   shell command per check and returns a single JSON object in which every
   result carries the exact command it ran and that command's raw output, so
   the caller can re-run any line and get the same answer.
@@ -63,6 +64,7 @@ a result that does not reproduce makes the whole report unusable.
 | `absent` | `name`, `scope` (file or dir) | `grep -rnw '<name>' <scope> --include=*.py` | `absent` (no match), `present` (≥1 match) |
 | `sha256` | `path` | `sha256sum <path>` | `found` / `missing` |
 | `outline` | `path` | `grep -nE '^[[:space:]]*(async def|def|class) ' <path>` | `found` / `missing` |
+| `file` | `path`, optional `line` | `wc -l < <path>` (put the number in `count`) | `found` (exists, and `line` ≤ `count` when given), `short` (exists, `line` > `count`), `missing` |
 
 For `symbol` / `import` results with `found`, also read the matched line and
 the following lines up to the end of the signature (the line ending in `:`),

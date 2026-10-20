@@ -219,7 +219,7 @@ the blueprints.
    `anchor` (every §6 Edit Sites row you use, and every MODIFY anchor),
    `absent` (every "Does NOT Exist" candidate — scope it to the whole module,
    never a shim), `sha256` (every `modify` target of a Delegation Contract),
-   `outline` (files the spec's §6 does not cover). Give each check a stable `id`.
+   `outline` (files the spec's §6 does not cover), `file` (a cited `path:NN` exists). Give each check a stable `id`.
 3. **Fan out**: split the sheet into groups of at most ~40 checks, grouped by
    file, and launch all the probes in ONE message so they run in parallel. Pass
    the repo root and the sheet; nothing else — not the spec, not your plan.
