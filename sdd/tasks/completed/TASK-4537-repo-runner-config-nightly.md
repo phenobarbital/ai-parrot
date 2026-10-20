@@ -163,8 +163,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gemini-3.5-flash (google-compat), 1 attempt, 71.4s
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only pre-existing bwrap failures plus the downstream reds noted on TASK-4522. Closed via close_task.sh.
 
 **Deviations from spec**: none
