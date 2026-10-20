@@ -26,9 +26,6 @@ VALIDATION_RUNNER_FILES = [
     ".claude/agents/sdd-worker.md",
     f"{SUBAGENT}/sdd-worker.md",
     ".claude/agents/qa-runner.md",
-    ".claude/commands/sdd-done.md",
-    ".agent/workflows/sdd-done.md",
-    ".agents/skills/sdd-done/SKILL.md",
 ]
 
 
@@ -115,8 +112,8 @@ def test_sdd_done_runner_rows(rel):
 @pytest.mark.parametrize("rel", [".agents/skills/sdd-done/SKILL.md"])
 def test_skill_sdd_done_runner_rows(rel):
     text = _text(rel)
-    # The SKILL.md file doesn't contain the exact phrasing but should mention related concepts
-    assert "new red" in text.lower() or "baseline" in text.lower() or "cache" in text.lower()
+    assert "<runner>:<distribution>" in text
+    assert "n/a" in text
 
 
 def test_validation_runners_doc_exists():
