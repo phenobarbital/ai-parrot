@@ -1475,7 +1475,9 @@ class SddCoderEngine:
         own red first and a task may settle before any branch is registered.
         """
         self._validation_reds.pop((execution_id or "", task_id), None)
-        stale = [branch for branch in self._branch_attempts if branch.endswith(f"--{task_id}") or f"--{task_id}-" in branch]
+        stale = [
+            branch for branch in self._branch_attempts if branch.endswith(f"--{task_id}") or f"--{task_id}-" in branch
+        ]
         for branch in stale:
             self._branch_attempts.pop(branch, None)
 
@@ -4028,9 +4030,7 @@ class SddCoderEngine:
         exactly once (issue:3edabb9b953e).
         """
         try:
-            return await self._run_task_attempts(
-                ctx, task, seat, job_id=job_id, execution_id=execution_id, pool=pool
-            )
+            return await self._run_task_attempts(ctx, task, seat, job_id=job_id, execution_id=execution_id, pool=pool)
         finally:
             self._forget_task_state(task.task_id, execution_id)
 
