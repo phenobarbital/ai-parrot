@@ -26,7 +26,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -34,8 +34,9 @@
       "parallelism_notes": "no deps: only task touching sdd/templates/state.schema.json",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4511-state-schema-parallel-record.md"
+      "completed_at": "2026-10-20T00:29:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4511-state-schema-parallel-record.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4512",
@@ -44,7 +45,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -52,8 +53,9 @@
       "parallelism_notes": "no deps: first of the serialized sdd-proposal.md edits (§1 budget table)",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4512-per-lane-budget-allocation.md"
+      "completed_at": "2026-10-20T00:29:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4512-per-lane-budget-allocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4513",
@@ -103,7 +105,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -111,8 +113,9 @@
       "parallelism_notes": "no in-feature deps: only task editing .claude/commands/sdd-brainstorm.md; cross-feature gate PR #1742 (.claude/agents/sdd-contract-probe.md)",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4515-brainstorm-contract-probe.md"
+      "completed_at": "2026-10-20T00:29:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4515-brainstorm-contract-probe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4516",
