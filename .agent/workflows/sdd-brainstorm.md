@@ -1,5 +1,5 @@
 ---
-description: Explore a feature idea by generating multiple approaches with library and code references, then produce a brainstorm document that feeds into sdd-spec.
+description: Explore a feature idea by generating multiple approaches with library and code references, then produce a brainstorm document that feeds into /sdd-spec.
 ---
 
 # /sdd-brainstorm — Structured Idea Exploration
