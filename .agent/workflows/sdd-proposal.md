@@ -352,12 +352,16 @@ dedupe across findings, and map each to an `sdd-contract-probe` check
 signature as `expected` — `anchor` for a quoted line, `import` for an import,
 `absent` for a "does not exist" claim; ids `c0, c1, …`, keep a
 check-id → finding-id map). Launch the probes in ONE message
-(≤ ~40 checks each, grouped by file):
-`Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
-prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`
-and continue with §5a — that assembly is **provisional**, because §5b re-runs it
-over the tagged findings. With fewer than ~10 citations, or without the Agent
-tool, run the same checks inline.
+(≤ ~40 checks each, grouped by file), each with only the repository root and its
+probe sheet:
+- Claude Code: `Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
+  prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`;
+- Antigravity: ask the `sdd-contract-probe` subagent
+  (`.agents/agents/sdd-contract-probe/agent.md`) with that same prompt;
+- any other host (Codex included) has no probe agent: verify inline.
+Then continue with §5a — that assembly is **provisional**, because §5b re-runs it
+over the tagged findings. With fewer than ~10 citations, or when your host cannot
+launch the probe, run the same checks inline.
 
 ### 5. Phase 3 — Synthesis
 

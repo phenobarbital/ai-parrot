@@ -12,7 +12,7 @@
 
 ## Context
 
-Spec rev 0.3 C16 (spec §3 M1, lines 288-291; proposal §3 C16 items 2 and 3) was approved on
+Spec rev 0.3 C16 (spec §3 M1, lines 293-296 *[rev 0.5: were 288-291]*; proposal §3 C16 items 2 and 3) was approved on
 2026-10-17. It makes the shipped `sdd-coder`/`sdd-worker` `PreToolUse` guard call
 `parrot sdd run worktree_environment --hook` instead of a monorepo file path. The guard fires on
 **every** Bash/Write/Edit of those seats. The spec therefore requires a launcher argv fast path
@@ -32,19 +32,21 @@ stop deriving the command from a file path.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Created by the readiness review; no prior version.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **Hook command form for programmatic AgentDefinitions (item 3).** The proposal says "emits
-    the portable command" (`parrot sdd run worktree_environment --hook`). That depends on
-    `parrot` being on the hook's `PATH`. If it is not, `|| exit 2` blocks every tool call of the
-    seat. The alternative, `shlex.join([sys.executable, "-m",
-    "parrot.sdd.scripts.worktree_environment", "--hook"])`, has no `PATH` dependence and stays
-    cheap, because `parrot/sdd/__init__.py` and `parrot/sdd/scripts/__init__.py` are import-free
-    (TASK-4085). Shipped frontmatter keeps the portable form either way (TASK-4089). The owner
-    picks the programmatic form.
-  - **Latency budget number.** C16 leaves it open ("set it with TASK-4072"). This task measures
-    it against the S4 targets TASK-4072 already fixes (non-managed: median delta ≤ 5 ms versus
-    running the hook file directly; managed→project: ≤ 50 ms median). The owner confirms or
-    replaces those targets for this path.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C19 item 3 — programmatic hook command: `shlex.join([sys.executable, "-m",
+    "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"`. There is no `PATH`
+    dependence, and it stays cheap because the `parrot.sdd` package roots are import-free.
+    Shipped frontmatter keeps `parrot sdd run worktree_environment --hook` (TASK-4089).
+  - C19 item 4 / D17 — latency budget: S4's targets apply. Median delta ≤ 5 ms in a non-managed
+    venv (versus `python -m parrot.sdd.scripts.worktree_environment --hook`), ≤ 50 ms
+    managed→project.
+  - Folded in from dev's rev 0.5 D4c notes (2026-10-20): `dispatchers/claude.py:625` emits the form above;
+    `import parrot` costs about 9 ms. Context before this task lands: after TASK-4085,
+    `worktree_environment.__file__` names the moved `parrot/sdd/scripts/worktree_environment.py`, which
+    still runs by path, so the current hook keeps working until this task changes it.
+  - Anchors re-verified on dev `9625844f5` (2026-10-20): spec C16 text in §3 M1 is lines 293-296 (was
+    288-291); §7 "Hook latency budget (S4)" is line 1152 (was ~1015); `entry.py` pattern is `:18-29` (was
+    `:18-28`); the test function is defined at `:286` (`:285` is its parametrize line). All other anchors hold.
 
 ---
 
@@ -59,7 +61,8 @@ stop deriving the command from a file path.
   into a project venv, as for `claude-hook`. Neither `parrot.cli` nor Click is ever imported on
   this path.
 - `dispatchers/claude.py:625`: stop deriving the hook from `worktree_environment.__file__`. Emit
-  the form the owner picks (see Readiness review), still suffixed with ` || exit 2`.
+  `shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"`
+  (spec rev 0.5 C19 = D4c).
 - Tests: the fast path never imports `click`/`parrot.cli`; byte-equivalent behaviour (exit code,
   stdout JSON) to running the module with `--hook` on allow, deny and rewrite payloads; the
   dispatcher hook form.
@@ -81,7 +84,7 @@ stop deriving the command from a file path.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/launcher.py` | MODIFY | `SDD_HOOK_ARGV` + fast path in `main_parrot.load()` |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py` | MODIFY | `:625` hook command no longer derived from `__file__` |
-| `packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py` | MODIFY | `test_programmatic_claude_protection_does_not_depend_on_project_settings` (`:285-295`) asserts `"worktree_environment.py" in command`; update to the chosen form |
+| `packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py` | MODIFY | `test_programmatic_claude_protection_does_not_depend_on_project_settings` (`:285-295`, defined at `:286`) asserts `"worktree_environment.py" in command` (`:294`); update it to assert `-m parrot.sdd.scripts.worktree_environment --hook` (spec rev 0.5 C19 / D4c) |
 | `packages/ai-parrot/tests/launcher/test_launcher_sdd_hook.py` | CREATE | Fast-path tests (no Click import, behaviour parity, post-re-exec) |
 | `sdd/state/FEAT-633/spikes/S4-launcher-overhead.md` | MODIFY | `--hook` round-trip row + verdict |
 
@@ -112,7 +115,7 @@ from parrot.sdd.scripts.worktree_environment import main   # def main() -> None 
 #   def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int   # re-exec decision first, then load_entry()()
 #   def main_parrot() -> int:  def load(): from parrot.cli import cli; return cli;  return _dispatch("parrot", load)
 # packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py
-#   :285 test_programmatic_claude_protection_does_not_depend_on_project_settings — asserts "worktree_environment.py" in command (:294)
+#   :286 test_programmatic_claude_protection_does_not_depend_on_project_settings — asserts "worktree_environment.py" in command (:294)  [rev 0.5: def is :286; :285 is @parametrize]
 ```
 
 ### Does NOT Exist
@@ -145,7 +148,7 @@ from parrot.sdd.scripts.worktree_environment import main   # def main() -> None 
 ## Implementation Notes
 
 ### Pattern to Follow
-`parrot/knowledge/wiki/entry.py:18-28` (`HOOK_ARGV = ["claude-hook"]`): an exact argv match
+`parrot/knowledge/wiki/entry.py:18-29` *[rev 0.5: was :18-28]* (`HOOK_ARGV = ["claude-hook"]`): an exact argv match
 answered before the heavy CLI is imported.
 
 ### Key Constraints
@@ -157,7 +160,8 @@ answered before the heavy CLI is imported.
   ` || exit 2` suffix in the frontmatter turns that into a block.
 
 ### References in Codebase
-- Spec §3 M1 lines 285-291; §7 "Hook latency budget (S4)" (line ~1015).
+- Spec §3 M1 lines 293-296; §7 "Hook latency budget (S4)" (line 1152). *[rev 0.5: were 285-291 / ~1015]*
+- Spec §3 "Rev 0.5 decision clauses", D4 (c). *[rev 0.5]*
 - Proposal `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 items 2-3.
 
 ---
@@ -165,7 +169,7 @@ answered before the heavy CLI is imported.
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Confirm TASK-4072 and TASK-4085 are done, and confirm the owner's decision on the programmatic hook form.
+1. Confirm TASK-4072 and TASK-4085 are done. *[rev 0.5]* The programmatic hook form is fixed by C19 / D4c.
 2. Add the fast path to `main_parrot.load()`.
 3. Update `dispatchers/claude.py:625` and its test.
 4. Write `test_launcher_sdd_hook.py`; measure and append the S4 row.
@@ -200,7 +204,8 @@ def main_parrot() -> int:
       and stdout JSON equal those of `python -m parrot.sdd.scripts.worktree_environment --hook`.
 - [ ] `test_fast_path_survives_reexec`: in TASK-4072's fake managed home, the chain still answers the hook
       without importing Click in either interpreter.
-- [ ] Dispatcher test: the command ends with ` || exit 2` and contains no `packages/` or `flows/dev_loop` path.
+- [ ] Dispatcher test: the command ends with ` || exit 2`, contains `-m parrot.sdd.scripts.worktree_environment --hook`
+      *[rev 0.5 D4c]*, and contains no `packages/` or `flows/dev_loop` path.
 
 ---
 
@@ -209,7 +214,8 @@ def main_parrot() -> int:
 - [ ] `parrot sdd run worktree_environment --hook` answers `PreToolUse` payloads with the same exit code
       and stdout as the module itself, and imports neither `click` nor `parrot.cli` (test-enforced).
 - [ ] It works in a non-managed venv and after a managed→project re-exec.
-- [ ] `dispatchers/claude.py` no longer builds the hook from `worktree_environment.__file__`.
+- [ ] `dispatchers/claude.py` no longer builds the hook from `worktree_environment.__file__`; it emits
+      `<sys.executable> -m parrot.sdd.scripts.worktree_environment --hook || exit 2` *[rev 0.5 D4c]*.
 - [ ] The S4 report has a `--hook` row with method, median/p95 and a verdict against the budget.
 - [ ] `ruff check` passes on every touched Python file.
 
@@ -231,8 +237,10 @@ post-re-exec survival, and the dispatcher hook form.
 
 ## Agent Instructions
 
-1. STOP if the Readiness review's open decision on the programmatic hook form has not been
-   resolved. Record that in the Completion Note instead of picking a form.
+1. Use the programmatic hook form fixed by spec rev 0.5 C19 / D4c (see Scope); do not use the
+   PATH-dependent `parrot sdd run …` form in `dispatchers/claude.py`. The latency budget is C19 item 4 /
+   D17: the S4 targets as written in the Acceptance Criteria; report the measured numbers against them
+   and do not pick a new budget.
 2. Do not touch shipped markdown, the shim, or `parrot sdd`'s Click group.
 
 ---

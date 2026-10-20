@@ -1,6 +1,6 @@
 {
-  "next_task_id": 4539,
-  "next_feature_id": 710,
-  "updated_at": "2026-10-20T01:26:16+00:00",
-  "updated_by": "language-agnostic-validation-runners"
+  "next_task_id": 4542,
+  "next_feature_id": 712,
+  "updated_at": "2026-10-20T21:55:32+00:00",
+  "updated_by": "navigator-eventbus-durable-lifecycle-fanout"
 }

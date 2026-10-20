@@ -5,6 +5,57 @@
 **Index**: `sdd/tasks/index/parrot-installer.json`: 33 tasks (32 pending, TASK-4334 done);
 `check_task_graph` exits 0 with 8 waves and one expected warning (TASK-4299's validation file is created by its dependency TASK-4298).
 
+## Update — 2026-10-20: spec rev 0.5, all decisions resolved
+
+- **Every decision D1–D18 is resolved** by spec rev 0.5 (proposal rev 0.6, clauses C18–C24):
+  - D1 → C20; D2 → C21; D3 and D18 → C22; D4 and D17 → C19; D5 → C23; D6–D16 → C24.
+  - Jesus Lara answered D1, D2, D3, D4 and D8; each clause quotes his answer.
+  - The other decisions adopt this review's recommendations and are confirmed in the PR review.
+  - Two answers were re-checked against the code:
+    - **D1:** the MCP server base is already core (FEAT-403). The gap is the wiki tool wrappers in
+      ai-parrot-tools, so v1 installs `ai-parrot-tools` in the managed runtime.
+    - **D4:** FEAT-563/699 built the test-scope guard. C19 only keeps it working across FEAT-633's
+      own move, where it would otherwise fail open.
+- **Tasks:** no task carries an open decision any more. Each readiness section now says "Resolved by
+  spec rev 0.5". Where a clause leaves a detail open, the task carries a "Note for implementer" to
+  settle in review or record in the Completion Note: 13 tasks, about 30 notes.
+- **PR #1746 review (2026-10-20):** Codex flagged two lifecycle choices that TASK-4091 had left as
+  "notes for implementer". Both are fixed:
+  - an existing `sdd/config.json` is validated before any write;
+  - uninstall removes the ledger hooks only when the receipt says this integration created them and
+    the Claude/wiki integration does not share them.
+
+  Every other implementer note was triaged and resolved in its task, recorded with
+  `[PR #1746 review]` tags in the spec. **No task carries an implementer note any more.** One item
+  stays evidence-gated with an explicit default: the Codex project pin waits for spike S3.
+- **Validation Contract:** spec §4 now covers the 125 pytest files the tasks declare (FEAT-699
+  convention). It is cached in the index, and `cache_test_contract --check` exits 0.
+- **Ledger:**
+  - D8 → `issue:f249c19e8a4d` (bug: older runtime re-stamps a newer plane, fixed by TASK-4092) and
+    `issue:1555e747bcb9` (`SourceCollectionManager._connect` bypass; filed as `SourceRegistry`, a name that does not exist).
+  - Follow-ups outside FEAT-633 → `issue:2c263fd19a1a` (core-only `wikitoolkit mcp`),
+    `issue:7a366d6004de` (duplicate `StdioMCPServer`, Jesus's consolidation idea),
+    `issue:dee91130fa06` (foreign-repo validation phase, v1.1).
+- **Verification on 2026-10-20:**
+  - `check_task_graph`: 33 tasks, 8 waves, exit 0, one expected warning (TASK-4299's test file is
+    created by its dependency TASK-4298).
+  - Every Complexity Contract JSON parses.
+  - Every task's `Depends-on` header matches the index.
+- **Drift after the review (FEAT-708, merged 2026-10-20):** a `sdd-contract-probe` agent appeared
+  (Claude-only at first; `b53d93ba4` added the Google copy and removed its monorepo paths), and `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal` grew (+41/+39/+153 lines).
+  - Folded in: 10 Claude agents, 9 Google agents, **80** assets (TASK-4090/4091, spec) once `dev`'s
+    Google probe copy and `/sdd-brief` twin (`69fb12a41`) are counted, and TASK-4508's anchors.
+- **Merged with `dev`'s own rev 0.5 (2026-10-20):** `dev` carried a parallel rev 0.5 (clauses D1–D8, M6
+  helper inventory, anchors re-verified on `9625844f5`, 21 tasks). The merge keeps C18–C24 and the
+  curated Validation Contract, takes `dev`'s anchors and counts, and adopts the owner's later D8
+  correction: the store gate compares `schema_version` only; `min_runtime_version` is informational.
+  - Other anchors in those three commands must be re-located by `grep` at pickup. `dev` keeps
+    moving, and every task re-verifies its Codebase Contract before coding.
+- **Ready to run:** the dependency graph alone now decides order.
+  - Wave 1: TASK-4068, 4069, 4070, 4071, 4077, 4092 and 4298 (TASK-4334 is already done).
+  - The M6 chain starts at TASK-4070 → 4085. TASK-4508 and TASK-4509 follow TASK-4085, and
+    TASK-4509 also follows TASK-4072.
+
 ## Verdict
 
 - **The spec is still a sound basis.** Nothing merged on `dev` since rev 0.4 conflicts with

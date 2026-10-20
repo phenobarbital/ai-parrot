@@ -178,16 +178,56 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: TASK-4508's four helpers (`cache_test_contract`, `test_report`, `check_e2e_closeout`, `close_resolved_issues`) and C16's `worktree_environment` join the name lists (26) and Depends-on; Files table re-enumerated (56 files, dry run `total=216 residual=0`; + both `sdd-research/agent.md`, the `sdd-coder` hook, 5 more test files incl. `test_command_twin_parity.py`); rule 6 covers all 13 `sdd_meta` one-liners; name regexes `[a-z0-9_]+`; stale inline-python residual list, line anchors and the `test_prompt_parity` note corrected; C16 folded in.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **C16 widened test vs existing paths** — 33 `packages/` lines in 20 shipped files beyond the two hooks rule 7 rewrites (e.g. `sdd/templates/spec.md:157-158`, `.claude/commands/sdd-task.md:381-416`, `.claude/agents/sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`), `.claude/hooks/sdd-worker-format.sh:76` (`${CLAUDE_PROJECT_DIR:-}/.venv/bin`) and four `tests/sdd_scripts/…` references (`.claude/commands/sdd-done.md:239`, `.claude/commands/sdd-task.md:386`, `.agent/workflows/sdd-task.md:382`, `sdd/templates/task.md:281`): rewrite vs allowlist, per file. Blocks `_C16_ALLOWLIST` and `test_no_monorepo_source_paths_in_shipped_files` going green.
-  - **FEAT-699 vs C7** — the FEAT-633 spec has no Validation Contract; how `cache_test_contract` (`.claude/commands/sdd-task.md:369`), `select_tests` (`.claude/commands/sdd-done.md:185,264`) and `test_report` (`:257,277`) behave in a foreign repo, and whether `sdd/config.json`'s `test_command` overrides them. Blocks any prose change to those steps beyond the mechanical `parrot sdd run` rewrite.
-  - **Google `/sdd-done` twin has no E2E gate** — `.agent/workflows/sdd-done.md` has no `check_e2e_closeout` step (Claude `sdd-done.md:206`, Codex `.agents/skills/sdd-done/SKILL.md:100` do): port vs accept. Do not add the step in this task.
-  - **navconfig one-liners** — `python -c "from navconfig import config; …"` loads Jira credentials in shipped commands (`.claude/commands/sdd-done.md:781`, `.agent/workflows/sdd-done.md:664`; commented at `sdd-tojira.md:66`, `sdd-fromjira.md:55` + twins): rewrite vs accept. Until resolved, `sdd-done`/`sdd-tojira` stay out of `_SHIPPED_WITH_INLINE_PYTHON_BAN`; their `sdd_meta` one-liners are gated by `test_no_inline_python_imports_parrot` instead.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents) and, later the same day (`b53d93ba4`), its Antigravity
+  copy `.agents/agents/sdd-contract-probe/agent.md` (9 Google agents) *[rev 0.5]*. `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
+  (+41/+39/+153); the new anchors are listed under "Counts / anchors" below.
+- Resolved by spec rev 0.5 (2026-10-20; approved by Jesus Lara — every decision D1–D18 is closed, see
+  `sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`):
+  - C22 / D3 (C16 widened test vs existing paths) — categories A–E are applied to all twins in this task's single pass (Scope, "C21 / C22 / C24 hand edits"). The spec's D3 clause states the same work as rules (a)–(d): (a) templates → generic placeholders (`<source-root>`, `<test-path>`) = A; (b) runnable commands (`PYTHONPATH=packages/…`, `pytest packages/…`) → `parrot sdd run …` or a value read from `sdd/config.json` = B; (c) prose that describes ai-parrot itself (e.g. `sdd/WORKFLOW.md:135`) is rewritten or moved to the unshipped `codebase-conventions.md` twins = B/C (nothing is allowlisted for it); (d) `.claude/hooks/sdd-worker-format.sh:76` → resolve `black`/`pylint` via `PATH` first, keep the `.venv/bin` candidates as the fallback, and that one line is the ONLY allowlist entry = D. The four `tests/sdd_scripts/…` references count as monorepo paths (second gate pattern) and follow (b) or (c). `_C16_ALLOWLIST` holds only `.claude/hooks/sdd-worker-format.sh:76` (same single entry as TASK-4090's `MONOREPO_PATH_ALLOWLIST`); both gate patterns are in `test_no_repo_script_refs.py`; the gate goes green only when every hit is rewritten or that line is the one left. `/sdd-insight` left the rewrite and shipped sets (54 files, dry run `total=210 residual=0`); all three `codebase-conventions.md` twins are MODIFY rows. Record each file's category in the Completion Note.
+  - C21 / D2 (FEAT-699 vs C7; owner TASK-4089) — spec §4 carries the curated FEAT-633 Validation Contract (the test-scope map; it is NOT `none — fallback` — that hint is only what the shipped template suggests to repos with `test_command` set). `test_command` prose rules added for `/sdd-done`'s feature tier, sdd-worker's merge step, qa-runner, sdd-autopilot, `/sdd-task` and the `/sdd-spec` hint; `sdd/templates/spec.md` added (MODIFY). In the shipped `/sdd-task` (3 hosts: `sdd-task.md:410`, `.agent/workflows/sdd-task.md:406`, `.agents/skills/sdd-task/SKILL.md:110`) and `/sdd-done` (3 hosts: `sdd-done.md:185,257,264,277`, `.agent/workflows/sdd-done.md:150,170,177,190`, `.agents/skills/sdd-done/SKILL.md:94,131,133,134`) the rule reads: when `sdd/config.json` sets `test_command`, skip `cache_test_contract` / `select_tests` / `test_report` and run `test_command` instead. When it is unset, the steps run as today, and each of the three helpers must exit non-zero with a one-line stderr message — never a traceback — when the FEAT-699 `test_scope` kernel cannot be loaded. Prove it with a new test (`packages/ai-parrot/tests/sdd/test_test_command_fallback.py`); touch a helper module only if that test fails on it (the modules belong to TASK-4508, already a dependency). Keep the twin parity of `sdd-task` intact (same text in `.claude/commands` and `.agent/workflows`).
+  - C24 / D9 (Google `/sdd-done` E2E gate) — the Claude §4.6 gate is ported into `.agent/workflows/sdd-done.md` during the rewrite.
+  - C22 E / D18 (navconfig one-liners) — they become an env-var precondition; the `sdd-done` / `sdd-tojira` twins join `_SHIPPED_WITH_INLINE_PYTHON_BAN`.
+- Verified on `dev` `69fb12a41` (2026-10-20) *[rev 0.5]*:
+  - **Google `sdd-brief` twin exists.** `.agent/workflows/sdd-brief.md` was committed on
+    2026-10-20 (`69fb12a41`) with its parity test
+    `tests/sdd_scripts/test_sdd_brief_twin_contract.py::test_agy_preserves_full_procedure_with_native_handoff`
+    (`:39`). It is NOT byte-identical to the Claude command: it differs by frontmatter and the two
+    native hand-off lines. So this task does not create it (row → MODIFY, 4 lines rewritten by the
+    script like the Claude copy), and `sdd-brief` does **not** join `_TWINNED`; its parity stays
+    with that test. The Google host now has 15 workflows (14 shipped: C22 drops `sdd-insight`).
+  - **Shipped agent `sdd-contract-probe`** (`cbbe243a7`, 10 Claude agents). It has no
+    `scripts/sdd` reference. Its three `packages/` lines are gone (`b53d93ba4`): the `import` check
+    now resolves modules with `git ls-files` (any source root) and the examples use generic paths,
+    so this task does not touch it. The same change added the Antigravity copy
+    `.agents/agents/sdd-contract-probe/agent.md` (9 Google agents) and made the probe invocation in
+    `sdd-task` / `sdd-brainstorm` / `sdd-proposal` (both hosts) name each host; locked by
+    `tests/sdd_scripts/test_contract_probe_hosts.py`. Rule 6 / the substitution table must keep
+    those host lines intact.
+  - **`_TWINNED` changed on dev.** `tests/sdd_scripts/test_command_twin_parity.py:22` is now
+    `("sdd-brainstorm", "sdd-next", "sdd-proposal", "sdd-spec", "sdd-status", "sdd-task")`;
+    `_SUBSTITUTIONS` (`:29-50`) has five anchors (adds `sdd-brainstorm.md:277`,
+    `sdd-proposal.md:666`); `test_command_twin_parity` is at `:81`.
+  - **Counts / anchors.** Moved-helper grep over the 26 names: 56 → 57 files, 215 → 219 lines; the
+    read-only dry run reports `total=216` → `total=220 residual=0` (the extra 4 are the Google
+    `sdd-brief` twin) — **54 files, 209 lines, `total=210`** once C22's three `/sdd-insight` files
+    (10 lines) are excluded. `.claude/agents/sdd-*.md`: 9 → **10**. C16 hits in the shipped set beyond
+    the two rule-7 hooks, measured with `_MONOREPO_PATH` (lines that also name `scripts/sdd` left out):
+    33 `packages/` lines in 20 files → **31 lines in 18 files** (34 in 19 before the probe fix; the old
+    figure was a looser `grep packages/` count), plus `sdd-worker-format.sh:76`. With the widened pattern
+    the gate sees **38 lines in 20 files** (the two hooks, `:76` and the four `tests/sdd_scripts` lines
+    included). `.claude/commands/sdd-task.md:381-416` → **`:422-457`**; `sdd-task.md:386` → **`:427`**;
+    `.agent/workflows/sdd-task.md:382` → **`:423`**; `cache_test_contract` `sdd-task.md:369` → **`:410`**.
+    Unchanged: `sdd-done.md:185,239,257,264,277`, `sdd/templates/task.md:281,329,344`,
+    `sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`, `sdd-worker.md:32,152,537,607,626`,
+    `sdd-coder.md:21,157`, `sdd-brief.md:18,58,132,151,154`, the rule-6 anchors, and every test anchor
+    in the Codebase Contract except the twin-parity ones above.
 
 ## Scope
 
-- Rewrite every reference to a moved helper in the 56 files listed below (+ the Google
-  `sdd-brief` twin this task creates), using EXACTLY the
+- Rewrite every reference to a moved helper in the 54 files listed below (incl. the Google
+  `sdd-brief` twin, which already exists; rev 0.5 C22: the three `/sdd-insight` files left the set) *[rev 0.5]*, using EXACTLY the
   substitution table in the Implementation Blueprint (applied by the one-off script, never by
   hand-editing individual occurrences). The invocation form is `parrot sdd run <name>` (Q1).
 - Rewrite the two `scripts.sdd.review_checkpoint` invocations in `.claude/agents/sdd-worker.md`
@@ -196,13 +236,14 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
   and `.claude/agents/sdd-worker.md:32` to `parrot sdd run worktree_environment --hook || exit 2`
   (rule 7, by hand).
 - Keep every command twin byte-identical: the `.claude/commands/` ↔ `.agent/workflows/`
-  command twins (`_TWINNED` = sdd-next, sdd-spec, sdd-status, sdd-task, plus sdd-brief added by
-  this task — frontmatter + one tolerated line excepted, see
-  `tests/sdd_scripts/test_command_twin_parity.py`). (`_subagent_data/` copies are retired by
+  command twins (`_TWINNED` = sdd-brainstorm, sdd-next, sdd-proposal, sdd-spec, sdd-status, sdd-task
+  — frontmatter + one tolerated line excepted, see
+  `tests/sdd_scripts/test_command_twin_parity.py`; `sdd-brief` keeps its own native-hand-off
+  parity test, `test_sdd_brief_twin_contract.py`) *[rev 0.5]*. (`_subagent_data/` copies are retired by
   TASK-4090 / C2 and are not twins of this task.)
-- Apply the C11b / C6 / C9 text edits to every file in TASK-4090's shipped set (the 15
-  `.claude/commands/sdd-*.md`, 9 `.claude/agents/sdd-*.md`, 15 `.agents/skills/sdd-*/SKILL.md`,
-  8 `.agents/agents/sdd-*/agent.md`, `.codex/agents/sdd-worker.toml`, the 2 rules,
+- Apply the C11b / C6 / C9 text edits to every file in TASK-4090's shipped set (the 14
+  `.claude/commands/sdd-*.md`, 10 `.claude/agents/sdd-*.md` (incl. FEAT-708's `sdd-contract-probe`) *[rev 0.5]*, 14 `.agents/skills/sdd-*/SKILL.md` — no `sdd-insight`, C22,
+  9 `.agents/agents/sdd-*/agent.md` (incl. `sdd-contract-probe`) *[rev 0.5]*, `.codex/agents/sdd-worker.toml`, the 2 rules,
   `sdd/WORKFLOW.md`, `sdd/templates/*`, plus their `.agent/workflows/` twins):
   - Atlassian hosts → `https://your-org.atlassian.net`; real ticket keys → `PROJ-123`
     (on `a6e51614b`: `sdd-proposal` 5, `sdd-done` 3, `sdd-fromjira` 7, `sdd-tojira` 27,
@@ -224,9 +265,27 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
     (rule 6; see Amendments, Q1, and the rule-6 row of the substitution table).
   The exact line set is produced by the TASK-4070 scanner (`org-data`, `claude-md-ref`,
   `branch-literal` kinds) — regenerate it at run time; never hand-enumerate.
+- *(rev 0.5 C21)* `test_command` prose, in the same pass and on every twin (rules in the blueprint,
+  "C21 / C22 / C24 hand edits"): `/sdd-done`'s feature tier (`.claude/commands/sdd-done.md` §4.5
+  `:184-187`, §4.7 `:245-278` + twins), sdd-worker's merge step (`.claude/agents/sdd-worker.md:556`,
+  `.agent/agents/sdd-worker/agent.md:289`), qa-runner (`.claude/agents/qa-runner.md:69`), sdd-autopilot
+  (`.claude/agents/sdd-autopilot.md:567`, `.agent/agents/sdd-autopilot/agent.md:574`), `/sdd-task`'s
+  cache step (`.claude/commands/sdd-task.md:364-373` + twins) and the `/sdd-spec` hint
+  (`.claude/commands/sdd-spec.md:541-546` + twins), plus `sdd/templates/spec.md` (§4 Validation
+  Contract, `:147-158`).
+- *(rev 0.5 C22)* Apply categories A–E to every shipped twin in the same pass; ai-parrot's own
+  layout/environment rules move to `.claude/rules/codebase-conventions.md` and its twin
+  `.agent/rules/codebase-conventions.md` (not shipped). `/sdd-insight` (all hosts) is neither
+  rewritten nor shipped.
+- *(rev 0.5 C24)* Port `/sdd-done`'s E2E closeout gate (Claude `.claude/commands/sdd-done.md` §4.6,
+  `:193-243`, and its `E2E:` lines in Step 5 / Step 12, `:296`, `:899`, `:915`) into the Google twin `.agent/workflows/sdd-done.md` (between §4.5 `:126` and §4.7 `:158`).
 - Update the eight existing tests that assert the OLD literal string in markdown, plus
-  `test_command_twin_parity.py` (its tolerated-delta anchors and `_TWINNED`).
-- Create `packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py` (C12 sweep, widened by C16).
+  `test_command_twin_parity.py` (its tolerated-delta anchors; `_TWINNED` stays as on dev *[rev 0.5]*).
+- Create `packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py` (C12 sweep, widened by C16 and C22).
+- *[rev 0.5]* D3 / C22: rewrite or allowlist every C16 hit by category (C22 A–E ≙ D3 rules (a)–(d), see the
+  readiness section), including the formatter lookup in `.claude/hooks/sdd-worker-format.sh` (`PATH` first, D3 (d)).
+- *[rev 0.5]* D2 / C21: the `test_command` rule in the shipped `/sdd-task` and `/sdd-done` (3 hosts each), and
+  `packages/ai-parrot/tests/sdd/test_test_command_fallback.py` (clear error, no traceback).
 
 **NOT in scope**:
 - Implementing `parrot sdd run` (TASK-4091) and the wheel-only foreign-repo test (C3, TASK-4091).
@@ -240,8 +299,11 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 - Moving `cache_test_contract`, `test_report`, `check_e2e_closeout`, `close_resolved_issues`
   into `parrot.sdd.scripts` (TASK-4508); relocating `worktree_environment` (proposal C16 step 1)
   and its launcher fast path (TASK-4509). This task only rewrites the markdown that invokes them.
-- The four open decisions in the Readiness review above (C16 path allowlist, FEAT-699 vs C7,
-  the Google `/sdd-done` E2E gate, the navconfig one-liners).
+- `/sdd-insight` on any host (rev 0.5 C22: not shipped in v1 — it depends on unshipped
+  `reference/sdd-insight/` and `.claude/workflows/sdd-insight.js`); its three files keep calling
+  `scripts/sdd/insight.py` through the monorepo shim and are excluded from this task's gates.
+- A foreign-repo validation phase (rev 0.5 C21: deferred to v1.1); `cache_test_contract` itself stays
+  strict; `test_command` semantics and `SddConfig.projects` (TASK-4299).
 - Creating helpers for the former inline `python -c` blocks — TASK-4334 did (`spec_tools`);
   this task only rewrites their `python -m scripts.sdd.spec_tools` invocations via rule 5a.
 - Giving `sdd_meta` its CLI (`parse` / `taxonomy` / `resolve-flow`) — TASK-4299; this task only
@@ -284,76 +346,89 @@ produced by the TASK-4070 scanner at run time (see Scope) and is not enumerated 
 **Re-enumerated on `dev` @ `9f51c7735`** (readiness review, same grep over the 26 `MOVED`
 names): 56 files, 215 lines — the per-row counts below; a read-only dry run of the blueprint
 script reports `total=216 residual=0`. Rows marked *(C16)* carry the hand-rewritten hook.
+**Rev 0.5 (2026-10-20)**: the three `/sdd-insight` rows are gone (C22) and the Google `sdd-brief` twin is a
+MODIFY row (it exists since `69fb12a41`). Re-enumerated on `dev` @ `69fb12a41`: 57 files, 219 lines, dry run
+`total=220 residual=0` with `/sdd-insight` still included — **54 files, 209 lines, `total=210 residual=0`** once its
+three rows (10 lines) are excluded. Rows tagged *(C21)* / *(C24)* carry those hand edits; rows marked *[rev 0.5]* at
+the end are D2/D3 work; the C22 category edits (A–E) touch a superset of the shipped files, produced at run time by
+`test_no_monorepo_source_paths_in_shipped_files` (not enumerated here).
 
 | File | Action | Description |
 |---|---|---|
-| `.agent/agents/sdd-autopilot/agent.md` | MODIFY | Rewrite 1 line(s): select_tests |
+| `.agent/agents/sdd-autopilot/agent.md` | MODIFY | Rewrite 1 line(s): select_tests; *(C21)* `:574` |
 | `.agent/agents/sdd-ideation/agent.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `.agent/agents/sdd-research/agent.md` | MODIFY | Rewrite 1 line(s): ensure_worktree (`:61`, synced by 542fdbc08) |
-| `.agent/agents/sdd-worker/agent.md` | MODIFY | Rewrite 6 line(s): close_task,ensure_worktree,finalize_task,sdd_meta,select_tests |
+| `.agent/agents/sdd-worker/agent.md` | MODIFY | Rewrite 6 line(s): close_task,ensure_worktree,finalize_task,sdd_meta,select_tests; *(C21)* merge step `:289` |
 | `.agents/agents/sdd-ideation/agent.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `.agents/agents/sdd-research/agent.md` | MODIFY | Rewrite 1 line(s): ensure_worktree (`:61`, synced by 542fdbc08) |
 | `.agents/agents/sdd-worker/agent.md` | MODIFY | Rewrite 4 line(s): close_task,ensure_worktree,sdd_meta |
 | `.agent/skills/worktree-management/SKILL.md` | MODIFY | Rewrite 3 line(s): ensure_worktree,sdd_meta |
 | `.agents/skills/sdd-brainstorm/SKILL.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `.agents/skills/sdd-brief/SKILL.md` | MODIFY | Rewrite 3 line(s): ensure_worktree,brief_meta,check_task_graph (rev 0.4 C17) |
-| `.agents/skills/sdd-done/SKILL.md` | MODIFY | Rewrite 12 line(s): check_e2e_closeout,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report |
+| `.agents/skills/sdd-done/SKILL.md` | MODIFY | Rewrite 12 line(s): check_e2e_closeout,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report; *(C21)* `:94`, `:131-134` |
 | `.agents/skills/sdd-fix/SKILL.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,reserve_ids |
 | `.agents/skills/sdd-fromjira/SKILL.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.agents/skills/sdd-insight/SKILL.md` | MODIFY | Rewrite 4 line(s): insight |
 | `.agents/skills/sdd-next/SKILL.md` | MODIFY | Rewrite 2 line(s): doc_taxonomy,worktree_status |
 | `.agents/skills/sdd-proposal/SKILL.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.agents/skills/sdd-spec/SKILL.md` | MODIFY | Rewrite 4 line(s): reserve_ids,sdd_meta |
+| `.agents/skills/sdd-spec/SKILL.md` | MODIFY | Rewrite 4 line(s): reserve_ids,sdd_meta; *(C21)* hint `:133` |
 | `.agents/skills/sdd-start/SKILL.md` | MODIFY | Rewrite 6 line(s): ensure_worktree,finalize_task |
 | `.agents/skills/sdd-status/SKILL.md` | MODIFY | Rewrite 4 line(s): doc_taxonomy,worktree_status |
-| `.agents/skills/sdd-task/SKILL.md` | MODIFY | Rewrite 7 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta |
+| `.agents/skills/sdd-task/SKILL.md` | MODIFY | Rewrite 7 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta; *(C21)* `:110` |
 | `.agent/workflows/sdd-brainstorm.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.agent/workflows/sdd-brief.md` | CREATE | Google twin of `.claude/commands/sdd-brief.md` (`description:` frontmatter + byte-identical body), created BEFORE the rewrite so it is rewritten like the Claude copy (rev 0.4 C17) |
+| `.agent/workflows/sdd-brief.md` | MODIFY | *[rev 0.5]* Rewrite 4 line(s): ensure_worktree ×2, brief_meta, check_task_graph — same edits as the Claude copy; the twin already exists (`69fb12a41`) and its native hand-off lines stay |
 | `.claude/commands/sdd-brief.md` | MODIFY | Rewrite 4 line(s): ensure_worktree ×2, brief_meta (prose `write_brief_index` → `parrot sdd run brief_meta write-index …`), check_task_graph (rev 0.4 C17) |
-| `.agent/workflows/sdd-done.md` | MODIFY | Rewrite 12 line(s): check_task_state,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report |
+| `.agent/workflows/sdd-done.md` | MODIFY | Rewrite 12 line(s): check_task_state,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report; *(C24)* new §4.6 E2E gate between `:126` and `:158` + `E2E:` report lines; *(C21)* `:150`, `:158-191`; *(C22 E)* navconfig `:664` |
 | `.agent/workflows/sdd-fix.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,reserve_ids |
-| `.agent/workflows/sdd-insight.md` | MODIFY | Rewrite 3 line(s): insight |
 | `.agent/workflows/sdd-next.md` | MODIFY | Rewrite 2 line(s): doc_taxonomy,worktree_status |
 | `.agent/workflows/sdd-proposal.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.agent/workflows/sdd-spec.md` | MODIFY | Rewrite 13 line(s): reserve_ids,sdd_meta,spec_tools |
+| `.agent/workflows/sdd-spec.md` | MODIFY | Rewrite 13 line(s): reserve_ids,sdd_meta,spec_tools; *(C21)* hint `:545-550` |
 | `.agent/workflows/sdd-start.md` | MODIFY | Rewrite 5 line(s): close_task,ensure_worktree,finalize_task,sdd_meta |
 | `.agent/workflows/sdd-status.md` | MODIFY | Rewrite 4 line(s): doc_taxonomy,worktree_status |
-| `.agent/workflows/sdd-task.md` | MODIFY | Rewrite 6 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta |
+| `.agent/workflows/sdd-task.md` | MODIFY | Rewrite 6 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta; *(C21)* `:361-370` |
 | `.agent/workflows/sdd-tojira.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.claude/agents/qa-runner.md` | MODIFY | Rewrite 1 line(s): select_tests |
-| `.claude/agents/sdd-autopilot.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,select_tests |
+| `.claude/agents/qa-runner.md` | MODIFY | Rewrite 1 line(s): select_tests; *(C21)* `:69` |
+| `.claude/agents/sdd-contract-probe.md` | MODIFY | *(C22, FEAT-708)* `:19`, `:84` example paths → category A placeholders; `:62` `packages/*/src/` resolution rule → category B (the repo's source roots per `sdd/CONVENTIONS.md` § Repository layout); re-locate by `grep` |
+| `.claude/agents/sdd-autopilot.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,select_tests; *(C21)* `:567` |
 | `.claude/agents/sdd-coder.md` | MODIFY | *(C16)* hook `:21` → `parrot sdd run worktree_environment --hook \|\| exit 2` (rule 7); C10 pointer `:157` |
 | `.claude/agents/sdd-ideation.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `.claude/agents/sdd-planner.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,sdd_meta |
 | `.claude/agents/sdd-research.md` | MODIFY | Rewrite 1 line(s): ensure_worktree |
-| `.claude/agents/sdd-worker.md` | MODIFY | Rewrite 8 line(s): close_task,ensure_worktree,finalize_task,sdd_meta,select_tests + review_checkpoint (:607, :626 — C12); *(C16)* hook `:32` (rule 7); C10 pointer `:537` |
+| `.claude/agents/sdd-worker.md` | MODIFY | Rewrite 8 line(s): close_task,ensure_worktree,finalize_task,sdd_meta,select_tests + review_checkpoint (:607, :626 — C12); *(C16)* hook `:32` (rule 7); C10 pointer `:537`; *(C21)* merge step `:556` |
 | `.claude/commands/sdd-brainstorm.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.claude/commands/sdd-done.md` | MODIFY | Rewrite 14 line(s): check_e2e_closeout,check_task_state,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report |
+| `.claude/commands/sdd-done.md` | MODIFY | Rewrite 14 line(s): check_e2e_closeout,check_task_state,close_resolved_issues,close_task,heal_orphans,sdd_meta,select_tests,test_report; *(C21)* `:184-187`, `:245-278`; *(C22 C/E)* `:239`, navconfig `:781` |
 | `.claude/commands/sdd-fix.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,reserve_ids |
-| `.claude/commands/sdd-insight.md` | MODIFY | Rewrite 3 line(s): insight |
 | `.claude/commands/sdd-next.md` | MODIFY | Rewrite 2 line(s): doc_taxonomy,worktree_status |
 | `.claude/commands/sdd-proposal.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
-| `.claude/commands/sdd-spec.md` | MODIFY | Rewrite 13 line(s): reserve_ids,sdd_meta,spec_tools |
+| `.claude/commands/sdd-spec.md` | MODIFY | Rewrite 13 line(s): reserve_ids,sdd_meta,spec_tools; *(C21)* hint `:541-546` |
 | `.claude/commands/sdd-start.md` | MODIFY | Rewrite 5 line(s): close_task,ensure_worktree,finalize_task,sdd_meta |
 | `.claude/commands/sdd-status.md` | MODIFY | Rewrite 4 line(s): doc_taxonomy,worktree_status |
-| `.claude/commands/sdd-task.md` | MODIFY | Rewrite 6 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta |
+| `.claude/commands/sdd-task.md` | MODIFY | Rewrite 6 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta; *(C21)* `:364-373` |
 | `.claude/commands/sdd-tojira.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `CLAUDE.md` | MODIFY | Rewrite 3 line(s): ensure_worktree,migrate_index,reserve_ids |
-| `.claude/rules/worktree-management.md` | MODIFY | Rewrite 4 line(s): ensure_worktree,sdd_meta |
+| `.claude/rules/worktree-management.md` | MODIFY | Rewrite 4 line(s): ensure_worktree,sdd_meta; *(C22 B)* `PYTHONPATH=` / shared-venv rule `:52` moves to `codebase-conventions.md` |
+| `.claude/rules/codebase-conventions.md` | MODIFY | *(C22 B)* receives ai-parrot's own layout / environment rules removed from shipped files (not shipped) |
+| `.agent/rules/codebase-conventions.md` | MODIFY | *(C22 B)* byte twin of the row above (`test_rules_parity.py::test_claude_rules_twin_is_identical`) |
+| `packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md` | MODIFY | *(C22 B, PR #1746 review)* third byte twin (`test_package_rules_copy_is_identical`; `_rules_data` ≤ 8,000 bytes) |
 | `.codex/agents/sdd-worker.toml` | MODIFY | Rewrite 3 line(s): finalize_task,sdd_meta |
 | `docs/sdd/WORKFLOW.md` | MODIFY | Rewrite 4 line(s): close_task,ensure_worktree,reserve_ids,select_tests |
 | `sdd/templates/intake.procedure.md` | MODIFY | Rewrite 1 line(s): reserve_ids |
 | `sdd/templates/task.md` | MODIFY | Rewrite 2 line(s): close_task,ensure_worktree |
+| `sdd/templates/spec.md` | MODIFY | *(C21)* §4 Validation Contract hint "repos with `test_command` set: write `none — fallback`" (`:147-158`); *(C22 A / D3 (a))* example operands `:157-158` → placeholders; *[rev 0.5]* `:7,273-274` → generic placeholders too |
 | `sdd/WORKFLOW.md` | MODIFY | Rewrite 12 line(s): backfill_taxonomy,check_id_collisions,close_task,doc_taxonomy,ensure_worktree,id_ledger,install_hooks,migrate_index,reserve_ids |
-| `tests/sdd_scripts/test_command_contracts.py` | MODIFY | `ensure_worktree` contract asserts `parrot sdd run ensure_worktree`; `_SHIPPED_WITH_INLINE_PYTHON_BAN` widened to the sdd-worker agent copies (rule 6) |
-| `tests/sdd_scripts/test_command_twin_parity.py` | MODIFY | `_TWINNED` gains `"sdd-brief"`; `_SUBSTITUTIONS` anchors follow the C11b `CLAUDE.md`-pointer edits |
+| `tests/sdd_scripts/test_command_contracts.py` | MODIFY | `ensure_worktree` contract asserts `parrot sdd run ensure_worktree`; `_SHIPPED_WITH_INLINE_PYTHON_BAN` widened to the sdd-worker agent copies (rule 6) and the `sdd-done` / `sdd-tojira` twins (C22 E) |
+| `tests/sdd_scripts/test_command_twin_parity.py` | MODIFY | *[rev 0.5]* `_TWINNED` unchanged (no `sdd-brief`); `_SUBSTITUTIONS` anchors follow the C11b `CLAUDE.md`-pointer edits |
 | `tests/sdd_scripts/test_sdd_brief_command_contract.py` | MODIFY | `:18` asserts `parrot sdd run ensure_worktree` |
 | `tests/sdd_scripts/test_sdd_brief_twin_contract.py` | MODIFY | `_SHARED_TOKENS` `:12` → `"parrot sdd run ensure_worktree"` |
-| `tests/sdd_scripts/test_e2e_closeout_contract.py` | MODIFY | `:440` asserts `parrot sdd run check_e2e_closeout` |
+| `tests/sdd_scripts/test_e2e_closeout_contract.py` | MODIFY | `:440` asserts `parrot sdd run check_e2e_closeout`; `_DOC_SURFACES` (`:56`) gains `.agent/workflows/sdd-done.md` (C24, PR #1746 review) |
 | `tests/sdd/test_ledger_workflow_twins.py` | MODIFY | `:129` asserts `parrot sdd run close_resolved_issues` |
 | `tests/sdd/test_codex_sdd_sync.py` | MODIFY | Codex worker TOML asserts `parrot sdd run finalize_task` |
 | `packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py` | MODIFY | Orchestrator-loop assert uses `parrot sdd run finalize_task` |
 | `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py` | MODIFY | Closure-block markers: new finalize_task / close_task module form |
+| `.claude/hooks/sdd-worker-format.sh` | MODIFY | *[rev 0.5]* D3 (d): resolve `black`/`pylint` via `PATH` first, `.venv/bin` candidates (`:76-77`) as fallback |
+| `.agents/agents/sdd-autopilot/agent.md` | MODIFY | *[rev 0.5]* D3: `:669-670` (`packages/` lines) |
+| `sdd/templates/brainstorm.md`, `proposal.md`, `design_research.prompt.md` | MODIFY | *[rev 0.5]* D3 (a) / C22 A: `brainstorm.md:7`, `proposal.md:16`, `design_research.prompt.md:16` → generic placeholders (`spec.md` is the row above) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/{cache_test_contract,select_tests,test_report}.py` | MODIFY (only if needed) | *[rev 0.5]* D2: one-line stderr error, no traceback, when the `test_scope` kernel cannot be loaded |
+| `packages/ai-parrot/tests/sdd/test_test_command_fallback.py` | CREATE | *[rev 0.5]* D2: each of the three helpers fails cleanly without the kernel; the shipped `/sdd-task` and `/sdd-done` (3 hosts) carry the `test_command` rule |
 | `packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py` | CREATE | Regression: zero `repo-script` findings of ANY kind, zero `org-data` / `claude-md-ref` / `branch-literal` findings, no monorepo source path (C16) and no `python -c` importing `parrot.sdd.scripts`, across the shipped set |
 
 ---
@@ -395,11 +470,14 @@ _SHIPPED_WITH_INLINE_PYTHON_BAN = (...)                         # lines 102-108 
 def test_shipped_commands_have_no_inline_python(rel: str) -> None:  # line 115; sdd_meta allowance lines 125-126
 
 # tests/sdd_scripts/test_command_twin_parity.py
-_TWINNED = ("sdd-next", "sdd-spec", "sdd-status", "sdd-task")  # line 22
-_SUBSTITUTIONS: dict[str, tuple[str, str]] = {...}             # lines 29-42 — anchors pin `CLAUDE.md` lines:
-#   sdd-next.md:155 / sdd-spec.md:654 `- Worktree policy: `CLAUDE.md` (section "Worktree Policy")`,
+_TWINNED = ("sdd-brainstorm", "sdd-next", "sdd-proposal", "sdd-spec", "sdd-status", "sdd-task")  # line 22 [rev 0.5]
+_SUBSTITUTIONS: dict[str, tuple[str, str]] = {...}             # lines 29-50 [rev 0.5] — anchors pin `CLAUDE.md` lines:
+#   sdd-brainstorm.md:277 / sdd-next.md:155 / sdd-spec.md:654 `- Worktree policy: `CLAUDE.md` (section "Worktree Policy")`,
+#   sdd-proposal.md:666 (same text, wider spacing),
 #   sdd-task.md:65 `(sub-features extend a parent feature branch — see `CLAUDE.md`).`; each asserted to occur once
-def test_command_twin_parity(name: str) -> None:               # line 73
+def test_command_twin_parity(name: str) -> None:               # line 81 [rev 0.5]
+# tests/sdd_scripts/test_sdd_brief_twin_contract.py [rev 0.5] — the sdd-brief twin's parity (NOT via _TWINNED):
+def test_agy_preserves_full_procedure_with_native_handoff() -> None:  # line 39; Claude body + 2 hand-off replacements == agy body
 
 # tests/sdd_scripts/test_sdd_brief_command_contract.py
 def test_provisions_through_ensure_worktree_brief_key() -> None:  # line 15; `assert "python -m scripts.sdd.ensure_worktree" in text` line 18
@@ -439,6 +517,18 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
 # byte-identical to `.claude/agents/`, so test_prompt_parity no longer fails there):
 #   packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py::test_prompt_parity
 #   packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py::test_prompt_parity_with_repo_twin
+
+# rev 0.5 C22 — anchors verified on dev 0263f0724:
+# .claude/hooks/sdd-worker-format.sh:76 — the ONE C16 allowlisted line (category D; the target repo's own venv):
+#   for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \
+# packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py (FEAT-553) — THREE byte twins of codebase-conventions.md:
+def test_claude_rules_twin_is_identical(name: str) -> None:    # .claude/rules ↔ .agent/rules
+def test_package_rules_copy_is_identical(name: str) -> None:   # parrot/flows/_rules_data ↔ .agent/rules
+def test_coder_rules_fit_the_prompt_budget() -> None:          # sum of _rules_data/*.md <= 8_000 bytes (5_642 today)
+# .agents/skills/sdd-start/SKILL.md:132-133 — the evidence reference C22 E inlines:
+#   "read `TaskCompletionEvidence` in `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py`"
+# scripts/sdd/cache_test_contract.py:17,46 — prints `fallback` (exit 0) for `none — fallback`; exit 2 on a missing or
+#   malformed section (C21: "cache_test_contract stays strict")
 ```
 
 ### Does NOT Exist
@@ -466,7 +556,10 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
   `parrot.sdd.scripts.close_task` / `.heal_orphans` (TASK-4087); `scripts/sdd/*.sh` remain as
   wrappers. Markdown must call the module, never the `.sh`.
 - ~~any reference to moved helpers in `AGENTS.md`, `.claude/skills/`, `.agent/rules/`,
-  `flows/_rules_data/`~~ — verified zero hits; do not touch them.
+  `flows/_rules_data/`~~ — verified zero hits; do not touch them for the helper rewrite (C22 B
+  edits the three `codebase-conventions.md` twins, `_rules_data` included, for a different reason).
+- ~~`SddConfig.projects`~~ on `dev` today — added by TASK-4299 (C22 B: replaces `KNOWN_PROJECTS`
+  when set). Prose may cite it only once it exists in `parrot/sdd/config.py`.
 - ~~`parrot.sdd.scripts.lint_new` / `token_audit` / `codex_hook`~~ — not moved and (verified
   2026-10-14) referenced by no shipped file; nothing to rewrite. `review_checkpoint` IS moved
   (TASK-4086, C12) and IS rewritten.
@@ -535,10 +628,6 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
       "action": "MODIFY"
     },
     {
-      "path": ".agents/skills/sdd-insight/SKILL.md",
-      "action": "MODIFY"
-    },
-    {
       "path": ".agents/skills/sdd-next/SKILL.md",
       "action": "MODIFY"
     },
@@ -572,10 +661,6 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
     },
     {
       "path": ".agent/workflows/sdd-fix.md",
-      "action": "MODIFY"
-    },
-    {
-      "path": ".agent/workflows/sdd-insight.md",
       "action": "MODIFY"
     },
     {
@@ -615,6 +700,10 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
       "action": "MODIFY"
     },
     {
+      "path": ".claude/agents/sdd-contract-probe.md",
+      "action": "MODIFY"
+    },
+    {
       "path": ".claude/agents/sdd-ideation.md",
       "action": "MODIFY"
     },
@@ -640,10 +729,6 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
     },
     {
       "path": ".claude/commands/sdd-fix.md",
-      "action": "MODIFY"
-    },
-    {
-      "path": ".claude/commands/sdd-insight.md",
       "action": "MODIFY"
     },
     {
@@ -699,6 +784,22 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
       "action": "MODIFY"
     },
     {
+      "path": "sdd/templates/spec.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".claude/rules/codebase-conventions.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".agent/rules/codebase-conventions.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md",
+      "action": "MODIFY"
+    },
+    {
       "path": "sdd/WORKFLOW.md",
       "action": "MODIFY"
     },
@@ -736,7 +837,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
     },
     {
       "path": ".agent/workflows/sdd-brief.md",
-      "action": "CREATE"
+      "action": "MODIFY"
     },
     {
       "path": ".claude/agents/sdd-coder.md",
@@ -765,6 +866,34 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
     {
       "path": "packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py",
       "action": "CREATE"
+    },
+    {
+      "path": ".claude/hooks/sdd-worker-format.sh",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".agents/agents/sdd-autopilot/agent.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "sdd/templates/spec.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "sdd/templates/brainstorm.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "sdd/templates/proposal.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "sdd/templates/design_research.prompt.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/test_test_command_fallback.py",
+      "action": "CREATE"
     }
   ],
   "contract_symbols": [
@@ -778,7 +907,8 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
     "sym:tests/sdd_scripts/test_sdd_brief_command_contract.py#test_provisions_through_ensure_worktree_brief_key",
     "sym:tests/sdd_scripts/test_sdd_brief_twin_contract.py#test_shared_tokens_in_both_twins",
     "sym:tests/sdd_scripts/test_e2e_closeout_contract.py#test_each_surface_invokes_the_gate_script",
-    "sym:tests/sdd/test_ledger_workflow_twins.py#TestDoneTwins.test_closes_issues_resolved_by_verified_tasks"
+    "sym:tests/sdd/test_ledger_workflow_twins.py#TestDoneTwins.test_closes_issues_resolved_by_verified_tasks",
+    "sym:packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py#test_claude_rules_twin_is_identical"
   ]
 }
 ```
@@ -801,7 +931,8 @@ list preserves parity automatically — never hand-edit one side.
   `.sh` CLI: `<TASK-ID> <feature-slug> <verified|partial|forced>` and `<feature-slug>`). Verify
   against `parrot/sdd/scripts/close_task.py` before running; if TASK-4087 changed the argv, STOP and report.
 - Interpreter tokens are DROPPED (Q1): `python3 scripts/sdd/insight.py` and
-  `python -m scripts.sdd.insight` both become `parrot sdd run insight`; `bash ` prefixes are
+  `python -m scripts.sdd.insight` both become `parrot sdd run insight` (rule illustration only — rev 0.5
+  C22 keeps the `/sdd-insight` files that carry these forms out of the rewrite); `bash ` prefixes are
   dropped too. Only prose / import references (rules 4 and 5b) keep the dotted module form
   `parrot.sdd.scripts.<N>`.
 - The C11b / C6 / C9 text edits are NOT mechanical: apply them by hand per finding of the
@@ -847,6 +978,10 @@ list preserves parity automatically — never hand-edit one side.
    Then run `pytest tests/sdd_scripts/test_command_contracts.py::test_shipped_commands_have_no_inline_python -q`
    and confirm its `sdd_meta` allowance is no longer exercised — *why*: TASK-4334 banned inline
    Python in shipped commands; rule 6 retires the last allowed cases.
+5b. *(rev 0.5)* Apply the C21 / C22 / C24 hand edits (subsection below) to every twin in the same
+   pass, re-running `pytest packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py -q` until the
+   C16/C22 gate passes with the single allowlisted line — *why*: one pass keeps the twins
+   byte-identical; the gate is the oracle for C22 (its line set is not hand-enumerated).
 6. Apply the nine test edits, create `test_no_repo_script_refs.py`, run the Validation
    Commands — *why*: parity + contract tests prove twins and pins are intact.
 
@@ -863,10 +998,48 @@ list preserves parity automatically — never hand-edit one side.
 | 6 (hand) | `python -c "… from scripts.sdd.sdd_meta import parse\|parse_taxonomy\|resolve_flow …"` — 13 invocations (re-verified on `9f51c7735`): `parse` ×7 — `.claude/commands/sdd-task.md:55`, `.agent/workflows/sdd-task.md:51`, `.claude/commands/sdd-done.md:71`, `.agent/workflows/sdd-done.md:68`, `.claude/agents/sdd-worker.md:152`, `.agent/agents/sdd-worker/agent.md:101`, `.agents/agents/sdd-worker/agent.md:101`; `resolve_flow` ×2 (multi-line) — `.claude/commands/sdd-spec.md:173-180`, `.agent/workflows/sdd-spec.md:177`; `parse_taxonomy` ×4 — `.claude/commands/sdd-spec.md:523`, `.agent/workflows/sdd-spec.md:527`, `.claude/commands/sdd-tojira.md:145`, `.agent/workflows/sdd-tojira.md:145`. (`.agents/skills/sdd-task/SKILL.md:45` is prose → rule 5b, not rule 6.) | `parrot sdd run sdd_meta parse <doc>` / `taxonomy <doc>` / `resolve-flow [--kind K] [--doc PATH] [--type T] [--base B]` — applied AFTER the script, by hand (multi-line shapes); keep the surrounding `$(…)` / `awk` lines working; where the old one-liner printed a different shape than the CLI (`resolve_flow` printed `<type> <base_branch>`, `sdd-tojira.md:145` printed the space-joined projects+tags set) adapt the consumer to the TASK-4299 output, never re-embed Python |
 | 7 (hand, C16) | `command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook \|\| exit 2'` (`.claude/agents/sdd-coder.md:21`, `.claude/agents/sdd-worker.md:32`) | `command: 'parrot sdd run worktree_environment --hook \|\| exit 2'` — frontmatter only, byte-identical in both files |
 
-### All 56 markdown / TOML targets (MODIFY — one-off script, NOT committed)
+### C21 / C22 / C24 hand edits (rev 0.5 — spec M6 "Rev 0.5 amendments", proposal §3; every twin, same pass)
+
+**C21 — `sdd/config.json` `test_command` is the switch** (semantics — shell string, cwd = repo root,
+non-blank — owned by TASK-4299). Sites: the rows tagged *(C21)* in the Files table.
+1. When it is set, the shipped `/sdd-done` feature tier, sdd-worker's merge step, qa-runner and
+   sdd-autopilot run it once from the repo root instead of `select_tests` / `test_report`. They record
+   the command, exit code and output tail; a non-zero exit blocks the merge.
+2. When it is null (ai-parrot), the FEAT-699 path is unchanged — the rewritten `parrot sdd run
+   select_tests …` / `parrot sdd run test_report …` lines are that branch.
+3. A tier that ran no tests is reported "⚠️ not run — no tests selected", never ✅.
+4. `sdd/templates/spec.md` §4 and the `/sdd-spec` hint (+ twins) say: "repos with `test_command` set:
+   write `none — fallback`".
+5. `/sdd-task` continues past a missing Validation Contract section only when `test_command` is set;
+   `cache_test_contract` stays strict.
+
+Resolved (PR #1746 review, 2026-10-20): `.claude/agents/qa-runner.md` is not in TASK-4090's asset mapping (`.claude/agents/sdd-*.md`), so it does not ship. Edit it anyway, because C21 names it and ai-parrot's own qa-runner follows the same `test_command` rule. No asset or count change follows.
+Resolved (PR #1746 review, 2026-10-20): on both paths the shipped reporting prose owns item 3. When the selected run executed **zero** tests (no `pytest` invocation, or 0 collected), the report line is "⚠️ not run — no tests selected", even when `test_report render` prints its ✅ gate line. `report.py` is unchanged; its own zero-test gate is v1.1 (`issue:dee91130fa06`).
+
+**C22 — monorepo-specific text** (oracle: `test_no_monorepo_source_paths_in_shipped_files`, both patterns):
+
+| Cat | Rule | Examples on dev `0263f0724` (not exhaustive) |
+|---|---|---|
+| A | Real paths in examples become fixed placeholders: `<src>/<pkg>/module.py`, `<tests>/test_module.py::test_case`, `sym:<src>/<pkg>/module.py#ClassName`. Nothing in A is allowlisted. | `sdd/templates/spec.md:157-158`; `.claude/commands/sdd-task.md:381-416` + twins (`.agents/skills/sdd-task/SKILL.md:141,154`); `.claude/agents/sdd-autopilot.md:663-664` + twins |
+| B | Layout, venv activation, `PYTHONPATH` and the `projects` vocabulary point to `sdd/CONVENTIONS.md` (seed sections `## Repository layout`, `## Project areas` — TASK-4090); ai-parrot's own rules move to `.claude/rules/codebase-conventions.md` + `.agent/rules/codebase-conventions.md` (not shipped); `SddConfig.projects` replaces `KNOWN_PROJECTS` when set, unknown values warn and never fail (TASK-4299). | `.claude/rules/worktree-management.md:52`; `KNOWN_PROJECTS` prose (`.claude/commands/sdd-brainstorm.md:188-192` + twins, `sdd-proposal.md:385`, `sdd-spec.md:465`); `sdd/WORKFLOW.md:135`; `sdd/templates/{brainstorm,proposal,spec}.md` (`:7`, `:16`, `:7`) |
+| C | This repo's tests or CI cited as evidence: delete the citation, keep the behaviour statement; CI facts become conditions ("if your repo runs a sync-down Action…"). | `.claude/commands/sdd-done.md:239`; `.claude/commands/sdd-task.md:386` + `.agent/workflows/sdd-task.md:382`; `sdd/templates/task.md:281`; `sync-down.yml` (`sdd-done.md:51,676`, `sdd-brainstorm.md:67`, `sdd/WORKFLOW.md:88,93,121`); "the nightly workflow" (`sdd-spec.md:545`, `sdd/templates/spec.md:151`) |
+| D | Portable: allowlisted with a reason. Only `.claude/hooks/sdd-worker-format.sh:76` (`${CLAUDE_PROJECT_DIR:-}/.venv/bin`, the target repo's own venv). | `_C16_ALLOWLIST` |
+| E | Repo code through `python`: navconfig one-liners become a precondition ("export `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`; see `sdd/CONVENTIONS.md`"); the `sdd-start` evidence reference lists its fields inline. | `.claude/commands/sdd-done.md:781`, `.agent/workflows/sdd-done.md:664`, `sdd-tojira.md:66` + twin, `sdd-fromjira.md:55` + twin; `.agents/skills/sdd-start/SKILL.md:132-133` (`TaskCompletionEvidence`) |
+
+`/sdd-insight` (all hosts) is excluded: not rewritten, not shipped, not scanned.
+Resolved (PR #1746 review, 2026-10-20): edit all **three** byte twins identically, including `packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md`. The dev-loop coder seats load that copy, and they work in ai-parrot worktrees where the moved rules (worktree `PYTHONPATH` prefix, no `uv sync` in a worktree, venv activation) apply. Put the rules as 2–3 lines under the existing `## Repository layout` / `## Tooling` sections (~400 bytes). `test_rules_parity.py` enforces byte identity and the 8,000-byte `_rules_data` budget (5,642 today). If the addition would exceed the budget, STOP and report; do not trim other rules.
+
+**C24 — E2E gate on the Google `/sdd-done` twin.** Port the Claude §4.6 "Verify E2E Evidence"
+(`.claude/commands/sdd-done.md:193-243`, as rewritten — `parrot sdd run check_e2e_closeout …`, with the
+C22 C citation dropped) into `.agent/workflows/sdd-done.md` between §4.5 (`:126`) and §4.7 (`:158`),
+and its `E2E:` lines into that twin's Step 5 report and Step 12 output (Claude `:296`, `:899`, `:915`).
+Resolved (PR #1746 review, 2026-10-20): `tests/sdd_scripts/test_e2e_closeout_contract.py::_DOC_SURFACES` (`:56`) gains the Google twin `.agent/workflows/sdd-done.md`. C24 ports the gate there, so the contract test covers all three surfaces.
+
+### All 53 markdown / TOML targets (MODIFY — one-off script, NOT committed)
 ```python
-# occurrences: 216 substitutions across 56 files / 215 lines (re-verified on 9f51c7735 by a read-only dry run of this
-# script; was 173 across 52 files on 6c4ca5482)
+# occurrences: [rev 0.5] 210 substitutions across 54 files / 209 lines — derived from the read-only dry run on 69fb12a41
+# (220 / 57 files / 219 lines with the Google sdd-brief twin and /sdd-insight; its 3 files / 10 lines then excluded per C22);
+# 216 / 56 on 9f51c7735; 173 / 52 on 6c4ca5482
 # REPLACE — every match of the five rules below, in every file of the table (no single anchor:
 #           mechanical rewrite; per-file counts are in the Files table)
 """One-off FEAT-633 TASK-4089 rewrite (scratchpad only). Usage: python rewrite_refs.py --list files.txt [--write]"""
@@ -918,9 +1091,10 @@ if __name__ == "__main__":
 ```
 **Why this shape**: one deterministic pass over both sides of every twin is the only way to
 keep byte parity; the residual count makes the run self-verifying (expected first run:
-`total=216 residual=0` on `9f51c7735`, second run `total=0 residual=0`). Write `files.txt` with the 56
-MODIFY paths of the table that carry a `scripts/sdd` reference — plus the Google `sdd-brief`
-twin once created (one per line); you may append any `_subagent_data/*.md` copy that still
+`total=210 residual=0` on `69fb12a41` with `/sdd-insight` excluded *[rev 0.5]* (220 before the exclusion), second run
+`total=0 residual=0`). Write `files.txt` with the 54
+MODIFY paths of the table that carry a `scripts/sdd` reference, the Google `sdd-brief`
+twin included *[rev 0.5]* (one per line; no `sdd-insight` file); you may append any `_subagent_data/*.md` copy that still
 exists (C2 ordering note in Amendments) — it is not asserted.
 
 ### `tests/sdd_scripts/test_command_contracts.py` (MODIFY)
@@ -934,13 +1108,19 @@ exists (C2 ordering note in Amendments) — it is not asserted.
 # (rule 6 retires their only inline Python, the `sdd_meta parse` one-liner):
     ".claude/agents/sdd-worker.md",
     ".agents/agents/sdd-worker/agent.md",
+    # rev 0.5 C22 E: the navconfig one-liners become an env-var precondition, so after rules 6 + E these
+    # twins carry no inline Python either:
+    ".claude/commands/sdd-done.md",
+    ".agent/workflows/sdd-done.md",
+    ".claude/commands/sdd-tojira.md",
+    ".agent/workflows/sdd-tojira.md",
 ```
 **Why**: the old substring is NOT contained in the new form (`parrot sdd run ensure_worktree`),
 so the FEAT-552 contract would fail; the contract itself is unchanged. (The creator files invoke
 the helper — `python -m scripts.sdd.ensure_worktree …` — so rule 5a applies, not 5b.) The ban
-list grows only by files whose sole inline Python is a rule-6 one-liner; `sdd-done` / `sdd-tojira`
-also carry navconfig one-liners (open decision in the Readiness review), so their rule-6 lines are
-gated by `test_no_inline_python_imports_parrot` in `test_no_repo_script_refs.py` instead.
+list grows only by files whose inline Python is retired by this task: the rule-6 one-liners and,
+since rev 0.5 C22 E, the navconfig one-liners of `sdd-done` / `sdd-tojira` (the commented one in
+`sdd-fromjira.md:55` is caught by the second C22 gate pattern, `\bfrom navconfig\b`).
 
 ### `tests/sdd/test_codex_sdd_sync.py` (MODIFY)
 ```python
@@ -993,16 +1173,18 @@ keep working through the TASK-4508 shim and are not touched.
 
 ### `tests/sdd_scripts/test_command_twin_parity.py` (MODIFY)
 ```python
-# REPLACE — :22
-_TWINNED = ("sdd-brief", "sdd-next", "sdd-spec", "sdd-status", "sdd-task")
-# REPLACE — each `_SUBSTITUTIONS` anchor (:29-42) that the C11b `claude-md-ref` edit changes
-#   (sdd-next.md:155, sdd-spec.md:654, sdd-task.md:65 name `CLAUDE.md` today) with the post-edit line, or
+# KEEP — :22 [rev 0.5] `_TWINNED` stays as on dev; `sdd-brief` is NOT added (its twin differs by the native
+#   hand-off; test_sdd_brief_twin_contract.py holds its parity)
+# REPLACE — each `_SUBSTITUTIONS` anchor (:29-50 [rev 0.5]) that the C11b `claude-md-ref` edit changes
+#   (sdd-brainstorm.md:277, sdd-next.md:155, sdd-proposal.md:666, sdd-spec.md:654, sdd-task.md:65 name
+#   `CLAUDE.md` today [rev 0.5]) with the post-edit line, or
 #   DELETE the entry when the two twins become byte-identical (modulo frontmatter).
 # FILL IN: the post-edit anchor text — bounded by `count == 1` in `_apply_expected_substitution`.
 ```
 **Why**: the C11b edits remove the `CLAUDE.md` lines the tolerated-delta anchors assert exactly
-once, so the test is no longer read-only for this task; `sdd-brief` joins `_TWINNED` so the C17
-claim that the parity test covers the new Google twin is actually enforced.
+once, so the test is no longer read-only for this task. *[rev 0.5]* `sdd-brief` does not join `_TWINNED`:
+`test_sdd_brief_twin_contract.py::test_agy_preserves_full_procedure_with_native_handoff` already
+enforces the Google twin's parity, and must stay green after the rewrite.
 
 ### `packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py` (CREATE)
 ```python
@@ -1014,8 +1196,10 @@ invoked as ``parrot sdd run <name>`` (Q1). An installed asset that still says
 ``python -m scripts.sdd.<name>`` / ``scripts/sdd/<name>.py`` — moved helper or not — is broken in
 any repository that is not this monorepo (C12). Shipped files must also be free of
 ``org-data`` / ``claude-md-ref`` / ``branch-literal`` findings (C11) and of any monorepo source
-path — ``packages/``, ``scripts/``, ``$CLAUDE_PROJECT_DIR/…`` (C16); ``CLAUDE.md``, ``AGENTS.md``
-and ``docs/sdd/WORKFLOW.md`` are repo-only and exempt from those gates.
+path — ``packages/``, ``scripts/``, ``$CLAUDE_PROJECT_DIR/…`` (C16) — or other monorepo-specific
+text — ``tests/sdd_scripts/``, ``from navconfig``, ``PYTHONPATH=``, ``reference/sdd-insight/`` (C22);
+``CLAUDE.md``, ``AGENTS.md`` and ``docs/sdd/WORKFLOW.md`` are repo-only and exempt from those gates,
+and ``/sdd-insight`` (all hosts) is neither shipped nor rewritten (C22).
 """
 
 from __future__ import annotations
@@ -1058,17 +1242,28 @@ _SHIPPED_GLOBS: tuple[str, ...] = (
 _C11_KINDS: tuple[str, ...] = ("org-data", "claude-md-ref", "branch-literal")  # FILL IN: verify against parrot.sdd.audit.KINDS
 # C16: a monorepo source path — `packages/…`, `scripts/…`, `$CLAUDE_PROJECT_DIR/…` / `${CLAUDE_PROJECT_DIR…}/…`.
 _MONOREPO_PATH = re.compile(r"(?<![\w./-])(?:packages|scripts)/|\$\{?CLAUDE_PROJECT_DIR\b[^/\s]*/")
-# (posix path, stripped line) pairs exempted from the C16 gate. EMPTY until the Readiness-review open
-# decision (rewrite vs allowlist, per file) is resolved — FILL IN only from that decision.
-_C16_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
+# C22: the second pattern both C16 gates add (this test and TASK-4090's --check / --wheel). [rev 0.5 D3] the four
+# `tests/sdd_scripts/…` references count as monorepo paths — this pattern is what catches them.
+_MONOREPO_TEXT = re.compile(r"tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/")
+# (posix path, stripped line) pairs exempted from both patterns — C22 category D (= D3 (d)): the ONLY entry, the same
+# single entry as TASK-4090's `MONOREPO_PATH_ALLOWLIST`. Its reason: `${CLAUDE_PROJECT_DIR:-}/.venv/bin` is the target
+# repo's own venv (the PATH-first fallback), not a monorepo path. D3 (c) prose is rewritten (C22 B/C), never allowlisted.
+_C16_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({
+    (".claude/hooks/sdd-worker-format.sh", 'for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \\'),
+})
+# C22: /sdd-insight (all hosts) does not ship and is not rewritten — excluded from every gate here.
+_NOT_SHIPPED_PREFIX = "sdd-insight"
 
 
 def _glob_files(globs: tuple[str, ...]) -> list[Path]:
-    """Files matching ``globs`` in the checkout (``.claude/worktrees/`` excluded)."""
+    """Files matching ``globs`` in the checkout (``.claude/worktrees/`` and ``/sdd-insight`` excluded)."""
     if not (_REPO_ROOT / ".claude").is_dir():
         pytest.skip("not a repo checkout (installed package)")
     files = {p for g in globs for p in _REPO_ROOT.glob(g) if p.is_file()}
-    return sorted(p for p in files if "worktrees" not in p.parts)
+    return sorted(
+        p for p in files
+        if "worktrees" not in p.parts and not any(part.startswith(_NOT_SHIPPED_PREFIX) for part in p.parts)
+    )
 
 
 def _asset_files() -> list[Path]:
@@ -1120,12 +1315,14 @@ def test_no_inline_python_imports_parrot() -> None:
 
 
 def test_no_monorepo_source_paths_in_shipped_files() -> None:
-    """C16: no shipped file names ``packages/``, ``scripts/`` or ``$CLAUDE_PROJECT_DIR/…``."""
+    """C16 + C22: no shipped file names ``packages/``, ``scripts/``, ``$CLAUDE_PROJECT_DIR/…`` or other
+    monorepo-specific text, except the single category-D line in ``_C16_ALLOWLIST``."""
     offenders = []
     for p in _shipped_files():
         rel = p.relative_to(_REPO_ROOT).as_posix()
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
-            if _MONOREPO_PATH.search(line) and (rel, line.strip()) not in _C16_ALLOWLIST:
+            hit = _MONOREPO_PATH.search(line) or _MONOREPO_TEXT.search(line)
+            if hit and (rel, line.strip()) not in _C16_ALLOWLIST:
                 offenders.append(f"{rel}:{i}: {line.strip()[:100]}")
     assert not offenders, "\n".join(offenders)
 ```
@@ -1134,22 +1331,38 @@ def test_no_monorepo_source_paths_in_shipped_files() -> None:
 the third pins the Q1 invocation form; the fourth proves each dotted module name an asset still
 cites (rules 4 / 5b) actually resolves (spec §5); the fifth proves rule 6 retired all 13
 `sdd_meta` one-liners (rule 5b alone would leave them as `python -c "from parrot.sdd.scripts…"`);
-the sixth is C16's widened gate ("fails on any monorepo source path in a shipped file"). On
-`9f51c7735` the sixth would flag, besides the two hooks rule 7 fixes and the `scripts/sdd` lines
-the rewrite removes, 33 more `packages/` lines in 20 shipped files and
-`.claude/hooks/sdd-worker-format.sh:76` — the Readiness-review open decision;
-it stays red until that decision fills `_C16_ALLOWLIST` or drives the rewrites. `parents[4]`
+the sixth is C16's widened gate ("fails on any monorepo source path in a shipped file") plus C22's
+second pattern. On `9f51c7735` it flagged, besides the two hooks rule 7 fixes and the `scripts/sdd`
+lines the rewrite removes, 33 more `packages/` lines in 20 shipped files and
+`.claude/hooks/sdd-worker-format.sh:76` — *[rev 0.5]* on `69fb12a41`, after the 2026-10-20 probe fix, that is
+31 lines in 18 files (38 lines in 20 files with the widened pattern: the two hooks, `:76` and the four
+`tests/sdd_scripts` lines included). Rev 0.5 C22 / D3 resolves them — categories A, B, C and E (D3 rules
+(a)–(c)) rewrite every line, and D (D3 (d)) allowlists only the hook line (spec "done when": both C16 gates
+pass with the single allowlisted line). `parents[4]`
 mirrors `tests/sdd_scripts/test_command_twin_parity.py`'s fixed-depth root.
 
 ### Per-file checklist (after `--write`)
-- [ ] `git diff --stat` lists the 56 markdown/TOML files of the table (+ the created Google
-      `sdd-brief` twin and `.claude/agents/sdd-coder.md`), the shipped files touched
-      by the C11b / C6 / C9 hand edits, and the 10 test files — nothing else.
+- [ ] `git diff --stat` lists the 54 markdown/TOML files of the table (the Google `sdd-brief` twin
+      included *[rev 0.5]*), `.claude/agents/sdd-coder.md`, `sdd/templates/spec.md`, the three
+      `codebase-conventions.md` twins, the *[rev 0.5]* D2/D3 rows, the shipped files touched by the
+      C11b / C6 / C9 / C21 / C22 hand edits, and the 10 test files (+ `test_test_command_fallback.py`
+      *[rev 0.5]*) — nothing else (no `sdd-insight` file).
 - [ ] `.claude/commands/sdd-done.md` / `.agent/workflows/sdd-done.md` / `.agents/skills/sdd-done/SKILL.md`:
       `(cd "$WORKTREE_PATH" && parrot sdd run close_task "$TASK_ID" …)` and the
       `heal_orphans` lines keep their arguments; the ```` ```bash ```` fence lines are intact.
 - [ ] `sdd-start` (3 hosts) + `sdd-worker` (3 host copies): `close_task` / `finalize_task` lines read naturally.
-- [ ] `sdd-insight` (3 hosts): `parrot sdd run insight \` continuation lines intact.
+- [ ] `sdd-insight` (3 hosts): untouched — not rewritten, not shipped (rev 0.5 C22).
+- [ ] *(C21)* every `/sdd-done` feature-tier, sdd-worker merge, qa-runner and sdd-autopilot test step
+      reads: `test_command` set → run it once from the repo root, record command / exit code / output
+      tail, non-zero blocks the merge; null → the `parrot sdd run select_tests` / `test_report` path;
+      zero tests → "⚠️ not run — no tests selected"; `/sdd-task` continues past a missing Validation
+      Contract only when `test_command` is set; the spec template and `/sdd-spec` hint carry "repos with
+      `test_command` set: write `none — fallback`".
+- [ ] *(C22)* categories A–E applied on every twin; `test_no_monorepo_source_paths_in_shipped_files`
+      reports nothing beyond the single allowlisted hook line; ai-parrot's moved rules sit in both
+      `codebase-conventions.md` twins (and `test_rules_parity.py` still passes).
+- [ ] *(C24)* `.agent/workflows/sdd-done.md` has §4.6 (`parrot sdd run check_e2e_closeout …`) between
+      §4.5 and §4.7, and `E2E:` lines in its Step 5 report and Step 12 output.
 - [ ] `sdd-spec`/`sdd-task`/`sdd-done`/`sdd-tojira` + the three `sdd-worker` copies: the 13 `sdd_meta`
       one-liners now read `parrot sdd run sdd_meta parse|taxonomy|resolve-flow …`
       (rule 6); no `from parrot.sdd.scripts.sdd_meta import` remains inside a `python -c` string.
@@ -1158,11 +1371,11 @@ mirrors `tests/sdd_scripts/test_command_twin_parity.py`'s fixed-depth root.
 - [ ] *(TASK-4508 helpers)* `sdd-done` (3 hosts): `check_e2e_closeout` (Claude + Codex only),
       `test_report decide-rerun|render` and `close_resolved_issues` lines keep their flags and `\`
       continuations; `sdd-task` (3 hosts): `parrot sdd run cache_test_contract --spec … --index …`.
-- [ ] *(rev 0.4 C17)* `sdd-brief` (3 hosts; the Google twin is created first): the two
+- [ ] *(rev 0.4 C17)* `sdd-brief` (3 hosts; the Google twin already exists *[rev 0.5]*): the two
       `python -m scripts.sdd.ensure_worktree … --brief-key …` lines read `parrot sdd run ensure_worktree …`,
       the prose `scripts.sdd.brief_meta.write_brief_index` reads `parrot sdd run brief_meta write-index …`,
-      `python -m scripts.sdd.check_task_graph` reads `parrot sdd run check_task_graph`; the twin parity
-      test covers `sdd-brief` (`.claude/commands` ↔ `.agent/workflows`).
+      `python -m scripts.sdd.check_task_graph` reads `parrot sdd run check_task_graph`;
+      `test_sdd_brief_twin_contract.py` stays green *[rev 0.5]*.
 - [ ] No inline `python -c` block remains in `sdd-spec` / `sdd-task` (TASK-4334 retired the former
       `sdd-spec.md:290,362,381,393,542,666` blocks into `spec_tools`; on `9f51c7735` only the rule-6
       one-liners `:173` and `:523` were left); the `sdd_meta` allowance of
@@ -1183,7 +1396,8 @@ mirrors `tests/sdd_scripts/test_command_twin_parity.py`'s fixed-depth root.
       running rule 7 / the script.
 - [ ] `test_command_twin_parity.py` `_SUBSTITUTIONS` — the post-C11b anchor text, or delete the entry;
       bounded by `count == 1`.
-- [ ] `_C16_ALLOWLIST` — stays EMPTY until the Readiness-review open decision is resolved.
+- [ ] `_C16_ALLOWLIST` — fixed by rev 0.5 C22 D: exactly the one `sdd-worker-format.sh:76` entry (the same single
+      entry as TASK-4090's `MONOREPO_PATH_ALLOWLIST`); add nothing else.
 - [ ] `test_no_repo_script_refs.py::test_no_repo_script_findings_at_all` /
       `::test_no_publication_findings_in_shipped_files` — match the real `scan_paths`
       signature/return type and the exact kind strings; bounded by TASK-4070's `AssumptionFinding`
@@ -1203,23 +1417,40 @@ mirrors `tests/sdd_scripts/test_command_twin_parity.py`'s fixed-depth root.
 - [ ] `.claude/agents/sdd-worker.md:607,626` invoke `parrot sdd run review_checkpoint` (C12).
 - [ ] *(C16)* `.claude/agents/sdd-coder.md:21` and `.claude/agents/sdd-worker.md:32` run
       `parrot sdd run worktree_environment --hook || exit 2`; no shipped file names a monorepo source
-      path (`test_no_monorepo_source_paths_in_shipped_files`) — gated by the Readiness-review open
-      decision for the pre-existing `packages/` lines.
+      path (`test_no_monorepo_source_paths_in_shipped_files`).
+- [ ] *(rev 0.5 C22)* Both gate patterns pass over the shipped set with the single allowlisted line
+      (`.claude/hooks/sdd-worker-format.sh:76`); categories A–E applied to every twin; ai-parrot's own
+      layout / environment rules live in `.claude/rules/codebase-conventions.md` and
+      `.agent/rules/codebase-conventions.md` (byte-identical); `/sdd-insight` is untouched.
+- [ ] *(rev 0.5 C21)* In every shipped test step named by C21, `test_command` set → run once from the
+      repo root (command, exit code, output tail recorded; non-zero blocks the merge), null → FEAT-699
+      path unchanged; zero tests is "⚠️ not run — no tests selected", never ✅; `/sdd-task` continues
+      past a missing Validation Contract only when `test_command` is set; `sdd/templates/spec.md` and
+      the `/sdd-spec` hint say "repos with `test_command` set: write `none — fallback`".
+- [ ] *(rev 0.5 C24)* The Google `.agent/workflows/sdd-done.md` runs the E2E closeout gate
+      (`parrot sdd run check_e2e_closeout …`) before any stamp/push/merge/cleanup step, like its
+      Claude and Codex twins.
 - [ ] No shipped file carries an `org-data`, `claude-md-ref` or `branch-literal` finding (C11b/C6);
       `CLAUDE.md` / `AGENTS.md` / `docs/sdd/WORKFLOW.md` are exempt (repo-only).
 - [ ] `second-opinion` references in shipped files are conditional on `reviewer: codex` in
       `sdd/config.json` (C9).
-- [ ] The command twin parity test passes (`.claude/commands` ↔ `.agent/workflows`, `_TWINNED`
-      incl. `sdd-brief`); no `_subagent_data` parity is asserted (C2).
+- [ ] The command twin parity test passes (`.claude/commands` ↔ `.agent/workflows`, the six
+      `_TWINNED` names) and `test_sdd_brief_twin_contract.py` passes *[rev 0.5]*; no `_subagent_data` parity is asserted (C2).
 - [ ] The eight updated contract tests pass against the rewritten assets.
-- [ ] `test_no_repo_script_refs.py` passes (all six tests; the C16 one per the open decision).
+- [ ] `test_no_repo_script_refs.py` passes (all six tests).
+- [ ] `test_no_repo_script_refs.py` passes (all six tests) *[rev 0.5]*.
+- [ ] *[rev 0.5]* D2: the shipped `/sdd-task` and `/sdd-done` (3 hosts each) skip `cache_test_contract` /
+      `select_tests` / `test_report` and run `test_command` when `sdd/config.json` sets it;
+      `test_test_command_fallback.py` passes (each helper fails with a one-line message, no traceback,
+      when the kernel cannot be loaded).
+- [ ] *[rev 0.5]* D3: `.claude/hooks/sdd-worker-format.sh` finds `black` on `PATH` before the `.venv/bin` candidates.
 - [ ] The 13 `sdd_meta` one-liners invoke `parrot sdd run sdd_meta parse|taxonomy|resolve-flow`
       (rule 6) and `sdd-task`'s `TYPE=`/`BASE=` `awk` split still works on `parse`'s output;
       `test_no_inline_python_imports_parrot` passes.
 - [ ] No inline `python -c` block remains in `sdd-spec` / `sdd-task` (TASK-4334 retired the former
       residual list); the `sdd_meta` allowance of `test_shipped_commands_have_no_inline_python` is
-      exercised zero times. The navconfig one-liners in `sdd-done` / `sdd-tojira` are an open
-      decision (Readiness review), not part of this criterion.
+      exercised zero times; after C22 E no navconfig one-liner remains, and the widened ban list
+      (sdd-worker copies, `sdd-done` / `sdd-tojira` twins) passes.
 - [ ] No shipped file references `codebase-conventions.md`; the two former references point at
       `sdd/CONVENTIONS.md` (C10).
 - [ ] Re-running the rewrite script reports `total=0 residual=0` (idempotent).
@@ -1234,6 +1465,7 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 editable-installed against the main checkout).
 
 - `pytest packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py -q`
+- `pytest packages/ai-parrot/tests/sdd/test_test_command_fallback.py -q` *[rev 0.5]*
 - `pytest tests/sdd_scripts/test_command_twin_parity.py -q`
 - `pytest tests/sdd_scripts/test_command_contracts.py -q`
 - `pytest tests/sdd/test_codex_sdd_sync.py -q`
@@ -1244,6 +1476,7 @@ Also, outside the pytest contract: `python -m parrot.sdd.audit <every shipped as
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py -q`
 - `pytest tests/sdd_scripts/test_sdd_brief_command_contract.py tests/sdd_scripts/test_sdd_brief_twin_contract.py -q`
 - `pytest tests/sdd_scripts/test_e2e_closeout_contract.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py -q`
 
 ---
 
@@ -1258,7 +1491,7 @@ Also, outside the pytest contract: `python -m parrot.sdd.audit <every shipped as
 #   test_every_invocation_uses_parrot_sdd_run        (Q1 form)
 #   test_every_rewritten_reference_resolves          (dotted module names import)
 #   test_no_inline_python_imports_parrot             (rule 6 — all 13 sdd_meta one-liners retired)
-#   test_no_monorepo_source_paths_in_shipped_files   (C16 — packages/, scripts/, $CLAUDE_PROJECT_DIR/)
+#   test_no_monorepo_source_paths_in_shipped_files   (C16 + C22 second pattern; one allowlisted line)
 # Existing tests updated (assert the new form; intent unchanged):
 #   tests/sdd_scripts/test_command_contracts.py::test_every_creator_calls_ensure_worktree
 #   tests/sdd_scripts/test_command_contracts.py::test_shipped_commands_have_no_inline_python (ban list widened)

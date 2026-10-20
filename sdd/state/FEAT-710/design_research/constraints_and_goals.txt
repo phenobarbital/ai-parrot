@@ -1,0 +1,28 @@
+
+- G1. Forward `AfterInvokeEvent`, `InvokeFailedEvent`, `AfterClientCallEvent` and `ClientCallFailedEvent` to an
+  `EventBus`, behind a config flag (default off), so any consumer, in-process or not, can subscribe.
+- G2. Make the four events self-describing: add `tenant: Optional[str]` to all four, and `cost_usd: Optional[float]`
+  to `AfterClientCallEvent`. Cost is computed **once**, at the origin, with the process-shared `CostCalculator`.
+- G3. Use one generic `current_tenant` ContextVar, bound on every `ask()`/`ask_stream()`, that
+  `skills/tenancy.py` reuses. There is no `program`/`program_slug` concept anywhere in ai-parrot.
+- G5. **Cost is computed exactly once per LLM call.** Today each subscriber computes it independently
+  from the same `AfterClientCallEvent`: `UsageRecordingSubscriber` (`recorders/subscriber.py:103-104`),
+  `MetricsSubscriber` (`subscribers/metrics.py:243-244`) and the trace subscriber (`subscribers/trace.py:276-277`).
+  After this feature, the origin computes it (`clients/base.py`) and all three subscribers read `event.cost_usd`.
+- G4. AgentTalk resolves the tenant with the existing `resolve_request_tenant` (same as `chat.py:454-458`),
+  passes it to `ask`/`ask_stream`, and persists `metadata={usage, cost_usd, tenant, agent}` in both `save_turn`
+  calls.
+
+### Non-Goals (explicitly out of scope)
+
+- A `TelemetryBridge`, the `TelemetryEvent` model, the BigQuery sink, or `setup_telemetry(app)` inside
+  ai-parrot. All of these live in the external consumer (NVP-505, navigator-eventbus or a worker).
+- Mapping tenant → TROC program / `client_id`. That is the consumer's job, and ai-parrot never learns "program".
+- The question-topic clustering job (FEAT-775 draft Module 4). It can be specced separately against ChatStorage.
+- Changing the `UsageRecord` PII contract, the Prometheus label set or the OTel span attributes.
+- Forwarding `BeforeInvokeEvent` (carries `question` text), `ClientStreamChunkEvent` or tool events.
+- New tenant-resolution logic. `_get_user_session` is not touched, and no request/agent/session precedence
+  chain is added.
+
+---
+

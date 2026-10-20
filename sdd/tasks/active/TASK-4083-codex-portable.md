@@ -30,11 +30,15 @@ This task adds the Windows branch via `parrot.launcher.script_path` (TASK-4071),
 mode rule as the Claude host (TASK-4082):
 - **requested mode wins**: `--portable` / `--no-portable` land exactly that form (Codex regenerates the
   whole managed block on install, so this is automatic once the emitters take `portable`);
-- flag absent → **keep the current form**, inferred from the wikitoolkit table inside the managed
-  block (no block / baked table → baked; a fresh install is byte-identical to today);
+- flag absent → **keep the current form**, inferred from the stdio wikitoolkit table inside the managed
+  block (baked table → baked; a fresh install is byte-identical to today);
+- *[spec rev 0.5 C24 / D7]* `--remote` (FEAT-569) composes with `--portable`: `--remote` decides only the
+  wikitoolkit table (url table, `codex/assets.py:111-118`). When that table is http, url-only, absent or
+  foreign, the mode is inferred from the managed `parrot-*` tables (portable iff `args[-1] == PORTABLE_TOOLKIT_CONFIG`;
+  no block / no `parrot-*` table → baked), so a url table cannot turn a portable install baked;
 - **sticky for `parrot toolkits`**: `reconcile_toolkit_tables` — which `mcp/hosts.py::CodexAdapter.reconcile`
   calls (hosts.py:167-170) — preserves the wikitoolkit table verbatim (FEAT-570 AC5) and must emit
-  toolkit tables in the same form it finds there. `mcp/hosts.py` is NOT modified.
+  toolkit tables in the same form as the `parrot-*` tables it finds there *[rev 0.5]*. `mcp/hosts.py` is NOT modified.
 - Codex ownership is structural (inside the marker block = ours); foreign tables outside the block
   keep being warned-and-omitted (`_toolkit_sections`, codex/installer.py:144-175) — unchanged.
 
@@ -42,9 +46,12 @@ mode rule as the Claude host (TASK-4082):
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: `codex/assets.py`, `installer.py`, `cli.py` anchors shifted (a6340733f `--remote`); blueprint now keeps the FEAT-569 `remote=` plumbing (`mcp_block`/`_install_mcp`/`install_codex_integration` signatures, else-branch-only command replacement, call sites, CLI option/param/kwarg positions); `import os` confirmed in `local_cli.py`; one Validation Command added. `bookstore.py` unchanged.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - `--remote` × `--portable` stickiness: a remote wikitoolkit table has `url`, no `command` (codex/assets.py:111-118), so `_wikitoolkit_table_is_portable` reads it as baked and `reconcile_toolkit_tables` (`parrot toolkits`) would emit baked toolkit tables after `--remote --portable`. Spec is silent on remote; inference rule undecided.
-  - `mcp/local_cli.py` scope contradiction (present since the task was written): Files table, Complexity Contract, blueprint and AC modify it (`PARROT_PROJECT` root), while NOT in scope and Does NOT Exist below exclude it, and no test in the Test Specification covers it. `local_cli.py:183` is still `root = Path.cwd()`.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 `--remote` × `--portable` — `--remote` decides only the wikitoolkit table; when it is http, url-only, absent or foreign, `_current_portable_mode` infers the mode from the managed `parrot-*` tables (`args[-1] == PORTABLE_TOOLKIT_CONFIG`), and `reconcile_toolkit_tables` uses it; new test `test_remote_portable_sticky`.
+  - C24 `mcp/local_cli.py` — stays in this task's scope: the NOT-in-scope and Does-NOT-Exist exclusions are dropped, a Scope bullet is added, and the new test `test_mcp_local_parrot_project_root` covers it.
+  - C24 / D7 detail (dev 2026-10-20): `--remote` decides only the `[mcp_servers.wikitoolkit]` table (url table, `codex/assets.py:111-118`). The mode for the toolkit tables, rules and bookstore is the explicit flag or, when absent, `_current_portable_mode`: a stdio wikitoolkit table decides it (`_wikitoolkit_table_is_portable`); an http, url-only, absent or foreign table hands over to `_toolkit_tables_are_portable(block_body)` — the managed block body parsed with `tomllib`, portable iff ANY `[mcp_servers.parrot-<name>]` table has `args[2] == "--config"` and `args[3] == assets.PORTABLE_TOOLKIT_CONFIG` (PR #1746 review). A url table therefore never turns a portable install baked, and a portable install with no `parrot-*` table stays portable on a plain re-install (the stdio table decides).
+  - D16 (`mcp/local_cli.py` scope) is resolved by the C24 bullet above — implement it.
+- Anchors re-verified on dev 2026-10-20: all unchanged (`resolve_binary` :55, `install_codex_integration` :322).
 
 ## Scope
 
@@ -52,16 +59,19 @@ mode rule as the Claude host (TASK-4082):
   `toolkit_mcp_block`, `mcp_block` (stdio branch only; its FEAT-569 `remote` branch is unchanged), `rules_block`.
 - `codex/bookstore.py`: `portable=` on `mcp_block` (portable: `command = "bookstore"`,
   `args = ["mcp"]`, no `cwd` line) and `install_bookstore`.
-- `codex/installer.py`: `_current_portable_mode`, `_wikitoolkit_table_is_portable`;
+- `codex/installer.py`: `_current_portable_mode` (*[spec rev 0.5 C24 / D7]* http, url-only, absent or foreign
+  wikitoolkit table → mode inferred from the managed `parrot-*` tables via `_toolkit_tables_are_portable`),
+  `_wikitoolkit_table_is_portable`;
   `reconcile_toolkit_tables(root, *, portable: Optional[bool] = None)`; `_install_mcp` (keeping its
   `remote` keyword) / `_install_rules` take `*, portable: bool = False`;
   `install_codex_integration(…, remote=None, portable: Optional[bool] = None)`.
 - `codex/cli.py`: `--portable/--no-portable` (default unset).
+- `mcp/local_cli.py`: `parrot mcp-local` honours `PARROT_PROJECT` as the project root, `Path.cwd()`
+  otherwise (*[spec rev 0.5 C24]* in this task's scope).
 - Write `packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py`.
 
 **NOT in scope**:
 - `mcp/hosts.py` (unchanged — `CodexAdapter.reconcile(root)` → `reconcile_toolkit_tables(root)` is the inference path).
-- Making `parrot mcp-local` honour `PARROT_PROJECT` (mcp/local_cli.py:183 uses `Path.cwd()`).
 - Claude / Google hosts (TASK-4081/4082, TASK-4084).
 - AGENTS.md / skill / conventions blocks (contain no paths).
 
@@ -76,7 +86,7 @@ mode rule as the Claude host (TASK-4082):
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py` | MODIFY | Tri-state mode resolution; sticky `reconcile_toolkit_tables` |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` | MODIFY | `--portable/--no-portable` on `parrot codex install` |
 | `packages/ai-parrot/src/parrot/mcp/local_cli.py` | MODIFY | `parrot mcp-local` honours `PARROT_PROJECT` as the project root (portable `--config` resolution) |
-| `packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py` | CREATE | Emission, transitions, stickiness, Windows branch, PARROT_PROJECT root |
+| `packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py` | CREATE | Emission, transitions, stickiness (incl. `--remote` × `--portable`), Windows branch, PARROT_PROJECT root |
 
 ---
 
@@ -99,6 +109,7 @@ from parrot.knowledge.wiki.codex.cli import codex                         # code
 from parrot.knowledge.wiki.codex import bookstore                         # codex/bookstore.py
 import tomllib                                                            # stdlib; already used in codex/installer.py:7
 from parrot.knowledge.wiki.project import WikiRemoteConfig                # codex/installer.py:14 (already imported, FEAT-569); codex/assets.py:11 (TYPE_CHECKING)
+from parrot.mcp.local_cli import mcp_local                                # mcp/local_cli.py:136-164 (click command "mcp-local")
 ```
 
 ### Existing Signatures to Use
@@ -140,14 +151,22 @@ def install_codex_integration(root, config=None, gitignore=True, bookstore=True,
 #   install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore, remote=remote) line 112
 
 # packages/ai-parrot/src/parrot/mcp/hosts.py:167-170 — CodexAdapter.reconcile -> reconcile_toolkit_tables(root)
+
+# packages/ai-parrot/src/parrot/mcp/local_cli.py
+import os                                                                 # line 18 (already imported)
+def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:  # line 110 (the `--list` path)
+def mcp_local(name, config_path, include, exclude, list_toolkits) -> None:  # line 164; `--config` click.Path option line 139;
+#   root = Path.cwd() line 183; _print_toolkit_list(root, config_path) line 186
+# packages/ai-parrot/src/parrot/mcp/toolkit_config.py:90 — load_toolkits_config(root, config_path=None):
+#   an explicit config_path is used as given (Path(config_path)), so a relative one resolves against the process cwd
 ```
 
 ### Does NOT Exist
 - ~~Windows venv handling in `codex/`~~ — added here via `script_path` only.
 - ~~a `portable` parameter / `--portable` flag in `codex/`~~ — new.
 - ~~Codex variable expansion (`${VAR}`) in `config.toml` values~~ — NOT verified; spike S3 (TASK-4069) decides. Never assume it.
-- ~~`parrot mcp-local` reading `PARROT_PROJECT`~~ — it uses `Path.cwd()`; a relative `--config` resolves against the server process cwd.
 - ~~a per-entry managed-shape check for Codex~~ — ownership is structural (codex/installer.py:186-187); do not add one.
+- ~~`_wikitoolkit_table_is_portable`, `_toolkit_tables_are_portable`, `_current_portable_mode`~~ — new private helpers *[rev 0.5]*.
 
 ---
 
@@ -199,7 +218,8 @@ def install_codex_integration(root, config=None, gitignore=True, bookstore=True,
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py#install_codex_integration",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py#install",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py#codex",
-    "sym:packages/ai-parrot/src/parrot/mcp/hosts.py#CodexAdapter.reconcile"
+    "sym:packages/ai-parrot/src/parrot/mcp/hosts.py#CodexAdapter.reconcile",
+    "sym:packages/ai-parrot/src/parrot/mcp/local_cli.py#mcp_local"
   ]
 }
 ```
@@ -231,9 +251,17 @@ if assets.MCP_BEGIN in before:
   variable reference ONLY if the host expands variables, otherwise omit `cwd` and rely on the cwd).
 - Inference parses the preserved wikitoolkit table with `tomllib`; a parse failure means "baked"
   (never raise from inference — `_validate_toml` already guards real corruption).
+- *[spec rev 0.5 C24 / D7]* When the managed block's wikitoolkit table is http, url-only (no `command`),
+  absent or foreign, inference parses the managed block body with `tomllib` and reads its `parrot-*`
+  tables instead (`_toolkit_tables_are_portable(block_body)`; portable iff
+  `args[-1] == PORTABLE_TOOLKIT_CONFIG`). **Resolved (PR #1746 review, 2026-10-20)**: if **any** managed `parrot-*` table is portable, the
+  mode is portable, because the user opted in at some point and the mode is sticky; the reconcile then
+  rewrites every managed table in that mode. With no managed `parrot-*` table the mode is baked, so a fresh
+  install stays baked (spec default).
 - `print(..., file=sys.stderr)` for warnings stays as today (codex/installer.py:266).
 - `--remote` (FEAT-569) keeps its own wikitoolkit table: `portable` only changes the stdio (else)
   branch of `mcp_block`; every call that passes `remote=remote` today keeps it.
+  *[rev 0.5]* D7: with `--remote`, toolkit tables, rules and bookstore still follow the resolved mode.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/mcp/hosts.py:120-173` — CodexAdapter (toolkit-only, structural ownership).
@@ -249,9 +277,12 @@ if assets.MCP_BEGIN in before:
 2. `bookstore.py`: portable block + `install_bookstore(portable=)` — *why*: spec §5 "bookstore carries
    no `sys.executable`" in portable mode.
 3. `installer.py`: inference helpers, sticky `reconcile_toolkit_tables`, thread `portable` — *why*:
-   shared-brief STICKY rule; `parrot toolkits` passes through `reconcile_toolkit_tables`.
+   shared-brief STICKY rule; `parrot toolkits` passes through `reconcile_toolkit_tables`; spec rev 0.5
+   C24 (`--remote` × `--portable`: `parrot-*` inference).
 4. `cli.py`: the tri-state flag — *why*: spec §2 New Public Interfaces.
-5. Tests — *why*: spec §4 `test_portable_entries_no_abs_paths`, `test_default_emission_unchanged`.
+5. `local_cli.py`: `PARROT_PROJECT` root — *why*: spec rev 0.5 C24 keeps it in this task's scope.
+6. Tests — *why*: spec §4 `test_portable_entries_no_abs_paths`, `test_default_emission_unchanged`;
+   C24 `test_remote_portable_sticky`, `test_mcp_local_parrot_project_root`.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py` (MODIFY)
 ```python
@@ -368,25 +399,51 @@ def _wikitoolkit_table_is_portable(table_text: Optional[str]) -> bool:
     return isinstance(entry, dict) and entry.get("command") == "wikitoolkit"
 
 
+def _toolkit_tables_are_portable(block_body: Optional[str]) -> bool:  # [rev 0.5] D7 sub-step
+    """Portable iff ANY managed ``parrot-*`` table uses the relative config (PR #1746 review: sticky).
+
+    Used only when the wikitoolkit table cannot decide (http, url-only, absent or foreign).
+    """
+    if not block_body:
+        return False
+    try:
+        servers = tomllib.loads(block_body).get("mcp_servers", {})
+    except tomllib.TOMLDecodeError:
+        return False
+    tables = [entry for key, entry in servers.items() if key.startswith("parrot-") and isinstance(entry, dict)]
+    return any(
+        isinstance(t.get("args"), list) and len(t["args"]) >= 4 and t["args"][2] == "--config"
+        and t["args"][3] == assets.PORTABLE_TOOLKIT_CONFIG
+        for t in tables
+    )
+
+
 def _current_portable_mode(root: Path) -> bool:
-    """Infer the current mode from the managed block's wikitoolkit table (FEAT-633, sticky)."""
-    # FILL IN: read root/".codex"/"config.toml" if present, isolate the managed block exactly like
-    # reconcile_toolkit_tables (lines 206-210) and return _wikitoolkit_table_is_portable(...) —
-    # bounded by "no new state file" (shared brief) and never raising.
+    """Infer the current mode from the managed block (FEAT-633, sticky).
+
+    A stdio wikitoolkit table (one with a ``command``) decides it via
+    :func:`_wikitoolkit_table_is_portable`. When that table is http, url-only, absent or foreign
+    (spec rev 0.5 C24 / D7 — ``--remote`` decides only that table), the mode is inferred from the
+    managed ``parrot-*`` tables via :func:`_toolkit_tables_are_portable`.
+    """
+    # FILL IN: read root/".codex"/"config.toml" if present, isolate the managed block body exactly like
+    # reconcile_toolkit_tables (lines 206-210). Stdio wikitoolkit table → _wikitoolkit_table_is_portable(...);
+    # otherwise return _toolkit_tables_are_portable(block_body) — bounded by spec rev 0.5 C24 / D7,
+    # "no new state file" (shared brief) and never raising. Mixed managed tables → portable if ANY is portable; none → False (Key Constraints, resolved).
     raise NotImplementedError
 
 # occurrences: 1 (verified: grep -c 'def reconcile_toolkit_tables(root: Path) -> tuple\[list\[str\], list\[str\]\]:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# REPLACE — signature (:178); docstring gains: "portable: None infers from the preserved wikitoolkit
-#           table (sticky — the `parrot toolkits` path via mcp/hosts.py::CodexAdapter.reconcile)."
+# REPLACE — signature (:178); docstring gains: "portable: None infers via _current_portable_mode
+#           (sticky, spec rev 0.5 C24 / D7 — the `parrot toolkits` path via mcp/hosts.py::CodexAdapter.reconcile)."
 def reconcile_toolkit_tables(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
-# MOVE the wikitoolkit_text extraction (lines 206-210) ABOVE the toolkit_block computation (line 204,
-# first of 2 occurrences of `    toolkit_block = assets.toolkit_mcp_block(root, sections)`; context:
+# REPLACE the toolkit_block computation (line 204, first of 2 occurrences of
+# `    toolkit_block = assets.toolkit_mcp_block(root, sections)`; context:
 #     sections, warnings = _toolkit_sections(cfg, existing_tables)
 #     toolkit_block = assets.toolkit_mcp_block(root, sections)
 #     wikitoolkit_text: Optional[str] = None
-# ) and then:
+# ) with — the wikitoolkit_text extraction (lines 206-210) stays where it is:
     if portable is None:
-        portable = _wikitoolkit_table_is_portable(wikitoolkit_text)
+        portable = _current_portable_mode(root)  # reads config.toml before this function writes it
     toolkit_block = assets.toolkit_mcp_block(root, sections, portable=portable)
 
 # occurrences: 1 (verified: grep -c 'def _install_mcp(root: Path, \*, remote: Optional\[WikiRemoteConfig\] = None) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
@@ -405,7 +462,8 @@ def _install_rules(root: Path, *, portable: bool = False) -> str:
 # AFTER — `    remote: Optional[WikiRemoteConfig] = None,` in install_codex_integration's signature
 #         (verified: codex/installer.py:327; it follows `    bookstore: bool = True,` at :326)
     portable: Optional[bool] = None,
-# Docstring Args: portable — True: bare launcher commands, False: baked absolute paths, None: keep current form.
+# Docstring Args: portable — True: bare launcher commands, False: baked absolute paths, None: keep current form
+#   (inferred from the managed parrot-* tables, never the wikitoolkit table — [rev 0.5] D7).
 
 # occurrences: 1 (verified: grep -c '    save_project_config(root, config)' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
 # AFTER — insert below `    save_project_config(root, config)` (verified: codex/installer.py:349) — it only writes
@@ -459,8 +517,11 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import pytest
+from click.testing import CliRunner
 from parrot.knowledge.wiki.codex import assets, bookstore
 from parrot.knowledge.wiki.codex.installer import install_codex_integration, reconcile_toolkit_tables
+from parrot.knowledge.wiki.project import WikiRemoteConfig  # [rev 0.5] C24 / D7
+from parrot.mcp.local_cli import mcp_local
 
 
 def _strings(value: Any) -> Iterator[str]:
@@ -525,6 +586,57 @@ def test_reconcile_sticky(root: Path) -> None:
     assert _servers(root)["parrot-scraping"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
 
 
+def test_remote_portable_sticky(root: Path) -> None:
+    """Spec rev 0.5 C24: --remote decides only the wikitoolkit table; the mode comes from the parrot-* tables."""
+    remote = WikiRemoteConfig(url="https://h/mcp/w", token_env="WT")
+    install_codex_integration(root, gitignore=False, bookstore=False, remote=remote, portable=True)
+    assert "url" in _servers(root)["wikitoolkit"] and "command" not in _servers(root)["wikitoolkit"]
+    assert _servers(root)["parrot-memory"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+    install_codex_integration(root, gitignore=False, bookstore=False, remote=remote)  # flag absent → keep portable
+    assert _servers(root)["parrot-memory"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+    assert str(root) not in (root / assets.RULES_PATH).read_text()
+    with (root / ".parrot" / "mcp-toolkits.yaml").open("a") as fh:  # a toolkit added later by `parrot toolkits`
+        fh.write("  scraping:\n    class: tests.mcp.stub_toolkit.StubToolkit\n    enabled: true\n")
+    reconcile_toolkit_tables(root)  # the mcp/hosts.py::CodexAdapter.reconcile path
+    assert _servers(root)["parrot-scraping"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+
+
+def test_mcp_local_parrot_project_root(root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec rev 0.5 C24 (local_cli.py in scope): `parrot mcp-local` takes its root from PARROT_PROJECT."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("PARROT_PROJECT", str(root))
+    result = CliRunner().invoke(mcp_local, ["--list"])
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
+    monkeypatch.delenv("PARROT_PROJECT")
+    assert "memory" not in CliRunner().invoke(mcp_local, ["--list"]).output  # falls back to Path.cwd()
+
+
+def test_mcp_local_relative_config_resolves_against_root(root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A relative explicit ``--config`` resolves against the PARROT_PROJECT root, not the process cwd."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("PARROT_PROJECT", str(root))
+    result = CliRunner().invoke(mcp_local, ["--config", ".parrot/mcp-toolkits.yaml", "--list"])
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
+
+
+def test_remote_does_not_reset_portable_mode(root: Path) -> None:
+    """[rev 0.5] D7: --remote decides only the wikitoolkit table; the mode comes from the parrot-* tables."""
+    install_codex_integration(root, gitignore=False, bookstore=False, portable=True)
+    remote = WikiRemoteConfig(url="https://h/mcp/w", token_env="WT")
+    install_codex_integration(root, gitignore=False, bookstore=False, remote=remote)  # flag absent
+    assert _servers(root)["wikitoolkit"]["url"] == "https://h/mcp/w"
+    assert _servers(root)["parrot-memory"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+    assert str(root) not in (root / assets.RULES_PATH).read_text()
+    reconcile_toolkit_tables(root)
+    assert _servers(root)["parrot-memory"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+
+
 def test_portable_root_independent(tmp_path: Path) -> None:
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir()
@@ -546,6 +658,8 @@ def test_windows_scripts_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 # occurrences: 1 (verified: grep -cF '    root = Path.cwd()' packages/ai-parrot/src/parrot/mcp/local_cli.py)
 # REPLACE — the line `    root = Path.cwd()` (verified: packages/ai-parrot/src/parrot/mcp/local_cli.py:183)
     root = Path(os.environ.get("PARROT_PROJECT") or Path.cwd())
+    if config_path is not None and not config_path.is_absolute():
+        config_path = root / config_path  # resolved in the PR #1746 review (2026-10-20): same root as the default
 ```
 **Why**: a portable toolkit entry has no absolute `--config` and Codex's server cwd is
 unreliable (the very reason FEAT-556 pinned `--config` absolutely). `PARROT_PROJECT` is the
@@ -559,8 +673,8 @@ own the file; this task does.
 
 ### FILL IN checklist
 - [ ] `assets.py::toolkit_mcp_block` portable project pin — bounded by spike S3 (TASK-4069) evidence; spec §5 (no absolute path, root-independent).
-- [ ] `local_cli.py` — whether `--config` given explicitly should ALSO resolve against `PARROT_PROJECT` when relative (recommended: yes, same root) — bounded by FEAT-556's "config pinned regardless of cwd" intent.
-- [ ] `installer.py::_current_portable_mode` — lenient read of the managed block; bounded by "no new state file".
+- [x] `local_cli.py` — a relative explicit `--config` resolves against the same root (`PARROT_PROJECT`, else `Path.cwd()`); resolved in the PR #1746 review (2026-10-20), matching the acceptance criterion.
+- [ ] `installer.py::_current_portable_mode` — lenient read of the managed block, `parrot-*` inference for an http/url-only/absent/foreign wikitoolkit table; bounded by spec rev 0.5 C24 and "no new state file".
 - [ ] Google-style docstrings for every changed signature.
 
 ---
@@ -571,8 +685,10 @@ own the file; this task does.
 - [ ] `parrot codex install --portable` writes a managed block, bookstore block and rules file with no absolute path in any field and no `sys.executable` (spec §5); output identical for two roots.
 - [ ] Without `--portable`, a fresh install is byte-identical to today (spec §5 default unchanged).
 - [ ] `--portable` / `--no-portable` land exactly the requested form; flag absent keeps the current form.
-- [ ] `reconcile_toolkit_tables(root)` emits portable toolkit tables iff the preserved wikitoolkit table is portable; it still preserves that table verbatim (FEAT-570 AC5); `mcp/hosts.py` unchanged.
-- [ ] `parrot mcp-local` resolves the project root from `PARROT_PROJECT` when set, `Path.cwd()` otherwise; a relative `--config` resolves against that root (test with a tmp root + monkeypatched env).
+- [ ] `reconcile_toolkit_tables(root)` emits portable toolkit tables iff the inferred mode is portable; it still preserves the wikitoolkit table verbatim (FEAT-570 AC5); `mcp/hosts.py` unchanged.
+- [ ] *[spec rev 0.5 C24]* `--remote` decides only the wikitoolkit table: when it is http, url-only, absent or foreign, the mode is inferred from the managed `parrot-*` tables, so `--remote --portable` followed by a plain `--remote` re-install or `parrot toolkits` stays portable (`test_remote_portable_sticky`).
+- [ ] *[rev 0.5 D7]* `parrot codex install --remote` without `--portable/--no-portable` over a portable install keeps toolkit tables and rules portable (`test_remote_does_not_reset_portable_mode`).
+- [ ] `parrot mcp-local` resolves the project root from `PARROT_PROJECT` when set, `Path.cwd()` otherwise; a relative `--config` resolves against that root (test with a tmp root + monkeypatched env — `test_mcp_local_parrot_project_root`).
 - [ ] Existing Codex suites pass; `ruff check` clean on the five modified files.
 
 ---
@@ -594,8 +710,9 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 ## Test Specification
 
 See the CREATE block above: `test_portable_entries_no_abs_paths`, `test_default_emission_unchanged`,
-`test_portable_transitions_both_ways`, `test_reconcile_sticky`, `test_portable_root_independent`,
-`test_windows_scripts_branch`.
+`test_portable_transitions_both_ways`, `test_reconcile_sticky`, `test_remote_portable_sticky`,
+`test_mcp_local_parrot_project_root`, `test_portable_root_independent`, `test_windows_scripts_branch`,
+*[rev 0.5]* `test_remote_does_not_reset_portable_mode` (D7).
 
 ---
 
