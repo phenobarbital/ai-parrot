@@ -202,6 +202,47 @@ incomplete — same bar as the Codebase Contract. If the blueprint would be the
 full implementation, the task is too small; if it needs more than ~80 lines per
 file, the task is too big.
 
+#### Delegating flat checks to `sdd-contract-probe` (optional)
+
+The checks behind the two contracts above are flat and deterministic: does this
+symbol still exist and what is its signature, how many times does this anchor
+occur and on which line, is this "Does NOT Exist" name really absent, what is
+this file's `sha256`. When the `Agent` tool is available you MAY hand them to
+`sdd-contract-probe` subagents (Haiku, read-only) and keep your own effort for
+the judgement: the decomposition, the graph, what goes into each contract, and
+the blueprints.
+
+1. **Plan first, probe second.** Probe only after the decomposition is settled,
+   so every check belongs to a task. Collect the checks across all tasks and
+   dedupe them (one check per `path`+`anchor`, `module`+`name`, …).
+2. **Write probe sheets** with the kinds the agent defines: `symbol`, `import`,
+   `anchor` (every §6 Edit Sites row you use, and every MODIFY anchor),
+   `absent` (every "Does NOT Exist" candidate — scope it to the whole module,
+   never a shim), `sha256` (every `modify` target of a Delegation Contract),
+   `outline` (files the spec's §6 does not cover). Give each check a stable `id`.
+3. **Fan out**: split the sheet into groups of at most ~40 checks, grouped by
+   file, and launch all the probes in ONE message so they run in parallel. Pass
+   the repo root and the sheet; nothing else — not the spec, not your plan.
+4. **Verify before you use** (the report is advisory until checked):
+   - `head` in every report must equal `git rev-parse --short HEAD`; if not,
+     the tree moved — re-probe.
+   - Re-run yourself every `missing`, `module-missing`, `ambiguous`, `present`
+     and `error` result, every `anchor` whose count differs from the spec's §6
+     row, and at least one `found` result in ten, chosen at random. Any re-run
+     that does not reproduce the report's `output` discards that whole report:
+     do its checks yourself.
+   - Copy only verified facts into the contracts: signatures from `signature`,
+     line numbers from `lines`, occurrence counts from `count`, hashes from
+     `output`. A count of `0` is drift: stop and report it, as in rule 5 above.
+5. **Do it yourself instead** when the `Agent` tool is not available (e.g. the
+   dev-loop `sdd-planner` runs this command with no `Agent` tool) or when the
+   whole spec needs fewer than ~10 checks — the fan-out costs more than it
+   saves. The contract rules above are the same either way.
+
+Never delegate the judgement: which imports a task needs, which plausible
+names belong in "Does NOT Exist", how a task is cut, its `depends_on`, and the
+blueprint code stay with you.
+
 ### 4. Generate Tasks
 1. Ensure `sdd/tasks/active/` directory exists (create if needed).
 2. Read the task template at `sdd/templates/task.md`.
