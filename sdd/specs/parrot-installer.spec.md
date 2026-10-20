@@ -14,8 +14,8 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Target version**: Next release (assigned by release tooling)
 **Revision**: 0.5 (2026-10-20) — answers decisions D1–D8 of the readiness checkpoint
 (`sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`); clauses in §3 "Rev 0.5
-decision clauses", Validation Contract added to §4, M6 helper inventory in §3 M6. Other
-rev 0.5 items (counts, §6 anchor refresh) are still pending.
+decision clauses", Validation Contract added to §4, M6 helper inventory in §3 M6, counts re-verified. The §6 anchor
+refresh is still pending.
 **Revision 0.4** (2026-10-18) — folds in C17 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.5): `/sdd-brief` (FEAT-698)
 ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
@@ -55,8 +55,8 @@ Codex or Gemini/Antigravity assumes a developer who already has Python and a pro
    three hosts. Gemini's config is **user-global** (`~/.gemini/config/mcp_config.json`),
    so absolute per-project paths collide across repos.
 4. **The SDD flow is not installable.** 15 `/sdd-*` commands *[rev 0.4 C17: `/sdd-brief`,
-   FEAT-698]*, 9 `sdd-*` agents, hooks, rules, 14 templates and ~30 `scripts/sdd/` helpers
-   live only in this repo.
+   FEAT-698]*, 10 `sdd-*` agents *[rev 0.5: + `sdd-contract-probe`]*, hooks, rules, 13 templates and 30 `scripts/sdd/` Python
+   helpers (+ `__init__`, 3 `.sh`, 2 baseline JSON) *[rev 0.5]* live only in this repo.
 5. **Toolkit exposure installs nothing.** Templates carry only
    `summary|requires_llm|requires_dist`; no pip requirement, post-install step, or
    env-var declaration.
@@ -196,7 +196,7 @@ parrot/launcher.py ── is_managed()? ──no──► direct call (today's b
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `scripts/install/install-parrot.{sh,ps1}` (FEAT-586) | extends | `--global`/`-Global` mode; existing modes untouched; CI dry-run grows |
-| `pyproject.toml [project.scripts]` | modifies | three entries repointed to `parrot.launcher` wrappers |
+| `pyproject.toml [project.scripts]` | modifies | three of its four entries repointed to `parrot.launcher` wrappers; `parrot-graphindex` stays outside the launcher (TASK-4072) *[rev 0.5]* |
 | `cli/__init__.py::LazyGroup` | extends | `self`, `sdd` lazy commands |
 | `knowledge/wiki/{claude_code,codex,google}/assets.py` | modifies | Windows `Scripts\` branch; `portable=` emission |
 | `knowledge/wiki/{claude_code,codex,google}` bookstore emitters | modifies | `sys.executable` pin → `bookstore` command (portable) |
@@ -244,7 +244,7 @@ class ToolkitTemplate(BaseModel):
 - `sdd/.sdd-installed.json` (install receipt: writing version + SHA-256 per target) and
   the `sdd/CONVENTIONS.md` seed *[rev 0.2 C4/C10]*.
 - `parrot self doctor [--sdd | --runtime-only]` *[rev 0.2 C14/C15]*.
-- `parrot sdd run <name>` for the 18 flow helpers (see M6).
+- `parrot sdd run <name>` for the 26 flow helpers *[rev 0.5]* (see M6 helper inventory).
 - `--portable` flag on `parrot claude|codex|google install`.
 - `--global` / `-Global` mode on `scripts/install/install-parrot.{sh,ps1}`.
 
@@ -469,9 +469,11 @@ class ToolkitTemplate(BaseModel):
   `installer.py`, `scripts/`, `_assets/{commands,agents,hooks,rules,templates}/`),
   `cli/__init__.py` (lazy `sdd`), `pyproject.toml` (package-data),
   `scripts/sdd/check_asset_sync.py` (new CI check), `scripts/sdd/*.py` (thin wrappers)
-- **Responsibility**: package the 15 commands *[rev 0.4 C17]*, 9 agents, SDD hooks, **one** rule
+- **Responsibility**: package the 15 commands *[rev 0.4 C17]*, 10 agents *[rev 0.5: `sdd-contract-probe`, added
+  2026-10-20 in `cbbe243a7`, is invoked by the shipped `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal`, so it ships]*, SDD hooks, **one** rule
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
-  `CONVENTIONS.md` seed and 14 templates *[rev 0.4 C17]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
+  `CONVENTIONS.md` seed and 13 templates *[rev 0.5: tracked count; rev 0.4 said 14]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
   installer.py:50). *[rev 0.5]* 26 helper modules plus `__init__` move to
   `parrot/sdd/scripts/` (full list, owning task and the modules that stay behind: "M6 helper
@@ -497,14 +499,16 @@ class ToolkitTemplate(BaseModel):
 - **Rev 0.4 amendment C17 — `/sdd-brief` ships** (details and "done when" in the
   amendments proposal §3 C17). FEAT-698 (merged 2026-10-17, PR #1715) added a 15th command
   (`.claude/commands/sdd-brief.md` + the Codex twin `.agents/skills/sdd-brief/SKILL.md`), a
-  14th template (`sdd/templates/brief.md`), a repo-local helper (`scripts/sdd/brief_meta.py`)
+  new template (`sdd/templates/brief.md`, making 13 tracked; *[rev 0.5]* "14th" counted an untracked local file), a repo-local helper (`scripts/sdd/brief_meta.py`)
   and `ensure_worktree --brief-key`. The packaging globs pick the command, the skill and the
   template up by themselves; what does not follow by itself: `brief_meta` joins TASK-4085's
   move (`ensure_worktree` imports it, so it cannot stay behind) and gains an argparse
   `main()` (`plan`, `write-index`) in TASK-4299 so installed markdown can say
   `parrot sdd run brief_meta …`; the missing Google twin `.agent/workflows/sdd-brief.md` is
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
-  (15 commands per host, 13 tracked templates, 81 manifest entries) and TASK-4091's C3
+  (15 commands per host, 13 tracked templates, 81 manifest entries — *[rev 0.5]* 82 with
+  `sdd-contract-probe`; the Google host has 14 workflows until TASK-4089 adds its
+  `sdd-brief` twin) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
 - **M6 helper inventory** *[rev 0.5]* (verified against `dev` `206b4cd80`, 2026-10-20;
   replaces rev 0.2's list of 18). A helper moves when a shipped file invokes it, or when a
@@ -964,7 +968,7 @@ def inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[Toolk
 #   if row.requires_dist and not row.dist_available:   # line 134 — the "missing dist" hint site
 
 # cli/__init__.py
-cli._lazy_commands = {                                 # line 109; 24 entries; "toolkits" at line 117
+cli._lazy_commands = {                                 # line 109; 25 entries [rev 0.5]; "toolkits" at line 117
 #   NO self / sdd / env / doctor; `parrot status` is TAKEN (agentd)
 
 # knowledge/wiki/claude_code/assets.py
@@ -1240,4 +1244,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Still pending for rev 0.5: counts, §6 anchor refresh |
+| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries. Still pending for rev 0.5: §6 anchor refresh |
