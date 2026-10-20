@@ -124,7 +124,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -134,8 +134,9 @@
       "parallelism_notes": "edits test_scope/report.py after TASK-4520 renamed its Invocation import; returns RunReport from TASK-4520",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4523-report-parser-spine.md"
+      "completed_at": "2026-10-20T13:46:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4523-report-parser-spine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4524",
