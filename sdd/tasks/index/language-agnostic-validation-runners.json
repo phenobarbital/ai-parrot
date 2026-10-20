@@ -321,7 +321,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -332,8 +332,9 @@
       "parallelism_notes": "calls ValidationSupervisor.start(tier='task')/wait_verdict from TASK-4530 (background.py); returns TaskResult.validation/validation_failed and uses create(base=) from TASK-4531 (models.py, worktree_manager.py)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4532-engine-task-tier-gate.md"
+      "completed_at": "2026-10-20T15:01:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4532-engine-task-tier-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4533",

@@ -224,8 +224,15 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-4532
+- Feature: language-agnostic-validation-runners
+- Implementation SHA: cf02ca389fa1196a592bb51dcc1d0ef026777e76
+- Closed at (UTC): 2026-10-20T15:01:12+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: opus · Backend: native · Model: opus · Attempts: 1 · Duration: 480.8s · Tokens: n/a |
