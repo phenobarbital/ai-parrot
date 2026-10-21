@@ -174,3 +174,28 @@ def test_resolver_no_class_name_alias_for_host_entries(host_plugins):
     assert resolver.entry("tp_probe") is not None
     assert resolver.entry("ProbeToolkit") is None
     assert resolver.canonical_slug("ProbeToolkit") is None
+
+
+def test_resolver_alias_survives_same_class_under_two_slugs(caplog):
+    """builtin "wiki" and parrot_tools "llm_wiki" are the SAME class: the alias stays, no warning."""
+    resolver = get_toolkit_resolver()
+    with caplog.at_level(logging.WARNING, logger="parrot.tools.resolver"):
+        resolver.reload()
+        assert resolver.canonical_slug("LLMWikiToolkit") == "wiki"
+        assert resolver.resolve("LLMWikiToolkit") is resolver.resolve("llm_wiki")
+    assert not [r for r in caplog.records if "llmwikitoolkit" in r.getMessage()]
+
+
+def test_resolver_alias_dropped_only_for_different_classes(monkeypatch, caplog):
+    """Two slugs whose dotted paths end in the same class name but differ are genuinely ambiguous."""
+    import parrot_tools
+
+    monkeypatch.setitem(parrot_tools.TOOL_REGISTRY, "clash_a", "fake_pkg_a.ClashToolkit")
+    monkeypatch.setitem(parrot_tools.TOOL_REGISTRY, "clash_b", "fake_pkg_b.ClashToolkit")
+    resolver = get_toolkit_resolver()
+    with caplog.at_level(logging.WARNING, logger="parrot.tools.resolver"):
+        resolver.reload()
+        assert resolver.canonical_slug("ClashToolkit") is None
+        assert resolver.entry("clash_a") is not None and resolver.entry("clash_b") is not None
+    warning = next(r.getMessage() for r in caplog.records if "clashtoolkit" in r.getMessage())
+    assert "fake_pkg_a.ClashToolkit" in warning and "fake_pkg_b.ClashToolkit" in warning
