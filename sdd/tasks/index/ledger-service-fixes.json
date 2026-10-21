@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-20T23:52:53.846532+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-20T23:59:02+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -36,16 +36,17 @@
       "feature_id": "FEAT-712",
       "feature": "ledger-service-fixes",
       "spec": "sdd/specs/ledger-service-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates scripts/sdd/check_ledger_snapshot.py and its test module; shares no file with TASK-4562, which only edits .github/workflows/ci.yml.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4561-ledger-snapshot-guard-script.md"
+      "started_at": "2026-10-20T23:55:06.735474+00:00",
+      "completed_at": "2026-10-20T23:57:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4561-ledger-snapshot-guard-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4562",
@@ -54,7 +55,7 @@
       "feature_id": "FEAT-712",
       "feature": "ledger-service-fixes",
       "spec": "sdd/specs/ledger-service-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,9 +64,10 @@
       "parallel": true,
       "parallelism_notes": "Invokes scripts.sdd.check_ledger_snapshot and appends TestCiWiring to tests/sdd_scripts/test_check_ledger_snapshot.py, both created by TASK-4561 (shared file, so the dependency edge also serializes the edit).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4562-ledger-snapshot-guard-ci.md"
+      "started_at": "2026-10-20T23:57:52.735436+00:00",
+      "completed_at": "2026-10-20T23:59:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4562-ledger-snapshot-guard-ci.md",
+      "verification": "verified"
     }
   ]
 }

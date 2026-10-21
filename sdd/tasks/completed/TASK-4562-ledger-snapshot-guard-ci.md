@@ -184,8 +184,19 @@ run of a job that currently needs only the tip; the step fetches what it needs.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-21
+**Notes**: Added the `Check SDD ledger snapshot removals (FEAT-712)` step to the
+`lint-and-registry` job, immediately after `Check stalled SDD task files` (the
+anchor was re-verified as exactly 1 occurrence before editing). Added
+`TestCiWiring` (3 tests) to the guard's test module. Full module: 29 passed,
+`ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in behaviour. One implementation detail worth
+recording: `TestCiWiring` resolves `.github/workflows/ci.yml` from
+`Path(__file__).parents[2]`, not from the cwd. Inside a worktree, pytest runs
+with the MAIN checkout as its working directory, so the first version of these
+tests silently read the main checkout's workflow and failed against a file this
+task had not edited. A relative path here would make the test pass or fail for
+the wrong tree — the same cwd-escape hazard already recorded for heredocs in
+this repo.

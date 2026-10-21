@@ -366,8 +366,35 @@ which is the most likely cause of the 2026-10-17 loss.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-21
+**Notes**: Implemented `scripts/sdd/check_ledger_snapshot.py` (220 lines, stdlib
+only) and `tests/sdd_scripts/test_check_ledger_snapshot.py` (26 tests, all
+passing, none skipped). `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+Evidence for AC8: `python -m scripts.sdd.check_ledger_snapshot --base-ref
+origin/dev` reports `ok: 357 rows at origin/dev, 357 at HEAD; no open/claimed
+issue removed.` and exits 0. The guard was also shown to be live rather than
+vacuous — simulating the removal of three `open` rows from the real snapshot
+produced exactly three violations, each with id, status and title.
+
+Beyond the blueprint's `FILL IN` list, two fail-closed paths were made explicit
+because they decide whether the gate can be bypassed silently:
+`read_base_snapshot` raises when the base ref cannot be resolved (a shallow CI
+clone that never fetched the base must fail, not pass), and `allowed_removals`
+reads trailers only from `base..HEAD` so an older unrelated commit cannot
+authorize today's removal.
+
+**Deviations from spec**: two, both corrected in the spec/task before
+implementing rather than carried silently:
+1. The spec first located the tests at `packages/ai-parrot/tests/sdd/`, which
+   does not exist; guard tests live in `tests/sdd_scripts/` alongside
+   `test_check_id_collisions.py`. Spec and task were corrected.
+2. The spec's `### Validation Contract` was written as a bash fence, which
+   `cache_test_contract` rejects (exit 2). Rewritten in the `tests:`/`markers:`
+   form; contract now cached as
+   `sha256:fdb786589a08b55cb95cd04ea3a4c91c788f7756fc0134472560f20829feb1da`.
+
+One test-only adjustment: `_commit_snapshot` passes `--allow-empty`, because the
+"nothing changed" case is worth testing and git otherwise exits 1 when the
+snapshot is rewritten with identical bytes.
