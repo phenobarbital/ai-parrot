@@ -48,7 +48,16 @@ Same weights, same inputs — so scores must agree within numerical noise. A bac
 
 Flag rate per bucket. For `clean*` buckets **lower is better** (false positives); for `attack_*` buckets **higher is better** (recall). `clean_framework` is the `<user_context>` wrapper AI-Parrot's integrations inject — a tier that flags those is unusable in Telegram/Slack.
 
-## 4. Tiering
+## 4. Per-language quality
+
+| Tier | en benign FP | en recall | es benign FP | es recall | mixed benign FP | mixed recall |
+|---|---|---|---|---|---|---|
+| `clf-torch` | 1/30 (3.3%) | 89.2% (n=37) | 7/16 (43.8%) | 100.0% (n=12) | — | 100.0% (n=1) |
+| `clf-onnx` | 1/30 (3.3%) | 89.2% (n=37) | 7/16 (43.8%) | 100.0% (n=12) | — | 100.0% (n=1) |
+
+Benign false-positive count/rate and attack recall, per sample language, at each tier's production threshold. **Lower FP, higher recall is better.** `mixed` is the single deliberately bilingual obfuscation sample. A language column that is far worse than the others is the regression this table exists to catch — it is how the v1→v2 Spanish false-positive regression had to be hand-derived from a flipped-sample table before this gate existed.
+
+## 5. Tiering
 
 _Skipped — needs `regex`, an `embed-cosine-*`, and a `clf-*` tier in the same run._
 

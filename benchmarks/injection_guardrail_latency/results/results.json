@@ -1599,5 +1599,137 @@
       "flipped_verdicts": 39,
       "parity_ok": false
     }
+  },
+  "per_language": {
+    "regex": {
+      "en": {
+        "benign_n": 30,
+        "fp": 1,
+        "attack_n": 37,
+        "fn": 25,
+        "fp_rate": 0.0333,
+        "recall": 0.3243
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 0,
+        "attack_n": 12,
+        "fn": 12,
+        "fp_rate": 0.0,
+        "recall": 0.0
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 1,
+        "fp_rate": null,
+        "recall": 0.0
+      }
+    },
+    "embed-cosine-torch": {
+      "en": {
+        "benign_n": 30,
+        "fp": 0,
+        "attack_n": 37,
+        "fn": 37,
+        "fp_rate": 0.0,
+        "recall": 0.0
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 0,
+        "attack_n": 12,
+        "fn": 11,
+        "fp_rate": 0.0,
+        "recall": 0.0833
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 1,
+        "fp_rate": null,
+        "recall": 0.0
+      }
+    },
+    "clf-torch": {
+      "en": {
+        "benign_n": 30,
+        "fp": 1,
+        "attack_n": 37,
+        "fn": 12,
+        "fp_rate": 0.0333,
+        "recall": 0.6757
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 3,
+        "attack_n": 12,
+        "fn": 3,
+        "fp_rate": 0.1875,
+        "recall": 0.75
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 0,
+        "fp_rate": null,
+        "recall": 1.0
+      }
+    },
+    "clf-onnx": {
+      "en": {
+        "benign_n": 30,
+        "fp": 1,
+        "attack_n": 37,
+        "fn": 12,
+        "fp_rate": 0.0333,
+        "recall": 0.6757
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 3,
+        "attack_n": 12,
+        "fn": 3,
+        "fp_rate": 0.1875,
+        "recall": 0.75
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 0,
+        "fp_rate": null,
+        "recall": 1.0
+      }
+    },
+    "clf-onnx-int8": {
+      "en": {
+        "benign_n": 30,
+        "fp": 0,
+        "attack_n": 37,
+        "fn": 37,
+        "fp_rate": 0.0,
+        "recall": 0.0
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 0,
+        "attack_n": 12,
+        "fn": 12,
+        "fp_rate": 0.0,
+        "recall": 0.0
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 1,
+        "fp_rate": null,
+        "recall": 0.0
+      }
+    }
   }
 }

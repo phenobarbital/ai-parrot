@@ -60,7 +60,19 @@ Same weights, same inputs — so scores must agree within numerical noise. A bac
 
 Flag rate per bucket. For `clean*` buckets **lower is better** (false positives); for `attack_*` buckets **higher is better** (recall). `clean_framework` is the `<user_context>` wrapper AI-Parrot's integrations inject — a tier that flags those is unusable in Telegram/Slack.
 
-## 4. Tiering — does the classifier earn its keep?
+## 4. Per-language quality
+
+| Tier | en benign FP | en recall | es benign FP | es recall | mixed benign FP | mixed recall |
+|---|---|---|---|---|---|---|
+| `regex` | 1/30 (3.3%) | 32.4% (n=37) | 0/16 (0.0%) | 0.0% (n=12) | — | 0.0% (n=1) |
+| `embed-cosine-torch` | 0/30 (0.0%) | 0.0% (n=37) | 0/16 (0.0%) | 8.3% (n=12) | — | 0.0% (n=1) |
+| `clf-torch` | 1/30 (3.3%) | 67.6% (n=37) | 3/16 (18.8%) | 75.0% (n=12) | — | 100.0% (n=1) |
+| `clf-onnx` | 1/30 (3.3%) | 67.6% (n=37) | 3/16 (18.8%) | 75.0% (n=12) | — | 100.0% (n=1) |
+| `clf-onnx-int8` | 0/30 (0.0%) | 0.0% (n=37) | 0/16 (0.0%) | 0.0% (n=12) | — | 0.0% (n=1) |
+
+Benign false-positive count/rate and attack recall, per sample language, at each tier's production threshold. **Lower FP, higher recall is better.** `mixed` is the single deliberately bilingual obfuscation sample. A language column that is far worse than the others is the regression this table exists to catch — it is how the v1→v2 Spanish false-positive regression had to be hand-derived from a flipped-sample table before this gate existed.
+
+## 5. Tiering — does the classifier earn its keep?
 
 Composed: `regex` → `embed-cosine-torch` → `clf-torch` @ 0.98.
 
