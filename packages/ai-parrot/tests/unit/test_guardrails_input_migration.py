@@ -30,16 +30,49 @@ from parrot.bots.guardrails.base import (
 from parrot.bots.middleware import PromptMiddleware, PromptPipeline
 from parrot.models import AIMessage, CompletionUsage
 
+from _injection_test_helpers import mock_pytector_engine  # shared test infrastructure
+
 
 def _patched_bot(**kwargs):
-    """Construct a BasicBot without loading the real pytector model."""
+    """Construct a BasicBot with a pinned, mocked injection engine.
+
+    Patches `_resolve_injection_engine` — not the detector factory — because
+    that resolver is what `PromptInjectionGuardrail.__init__` reads
+    (`prompt_injection.py:727`), and its precedence chain prefers ONNX. Under
+    the ONNX backend the ctor sets `_pytector_detector = None`
+    (`prompt_injection.py:730`), so patching only
+    `_get_shared_injection_detector` — which is consulted nowhere but the
+    pytector branch at `prompt_injection.py:548` — left this suite passing or
+    failing on whether the machine happened to have a graph cached
+    (`issue:d6027c24b96d`).
+    """
+    mock_detector = MagicMock()
+    mock_detector.detect_injection.return_value = (False, 0.0)
     with patch(
-        "parrot.bots.guardrails.builtin.prompt_injection._get_shared_injection_detector"
-    ) as mock_get_shared:
-        mock_detector = MagicMock()
-        mock_detector.detect_injection.return_value = (False, 0.0)
-        mock_get_shared.return_value = mock_detector
+        "parrot.bots.guardrails.builtin.prompt_injection._resolve_injection_engine",
+        return_value=mock_pytector_engine(mock_detector),
+    ):
         bot = BasicBot(name="TestBot", **kwargs)
+
+    # Fail loudly if the patch ever goes inert again: every test below drives
+    # detection through `_pytector_detector`, so a None there must not surface
+    # as eight opaque `AttributeError: 'NoneType'` failures. Only assert when
+    # the bot actually has the guardrail — `_patched_bot()` without
+    # `injection_detection=True` legitimately has none.
+    input_pipeline = bot._guardrail_pipelines.get(GuardrailStage.INPUT)
+    pi_guardrail = next(
+        (
+            g for g in getattr(input_pipeline, "_guardrails", ())
+            if g.name == "prompt_injection"
+        ),
+        None,
+    )
+    if pi_guardrail is not None:
+        assert pi_guardrail._pytector_detector is mock_detector, (
+            "injection-engine patch went inert: PromptInjectionGuardrail resolved a "
+            "different engine, so `_pytector_detector` is not this test's mock "
+            "(see issue:d6027c24b96d)"
+        )
     return bot, mock_detector
 
 
