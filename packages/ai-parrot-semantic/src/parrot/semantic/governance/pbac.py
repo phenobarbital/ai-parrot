@@ -14,7 +14,6 @@ from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
 from ..errors import SemanticAccessError
 from ..loader import LoadedModel
 
-
 # DataPlanePolicyGuard fails open on an ImportError of this module, not of the ``navigator_auth`` root,
 # so probing the root would report PBAC as enforceable while the guard silently allows everything.
 _EVALUATOR_MODULE = "navigator_auth.abac.policies.environment"

@@ -1,4 +1,5 @@
 """Shared fixtures for ai-parrot-semantic tests: subjects and PBAC guard doubles."""
+
 from __future__ import annotations
 
 from typing import Any, Callable

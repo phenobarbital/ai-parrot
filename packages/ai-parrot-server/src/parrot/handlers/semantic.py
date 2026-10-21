@@ -198,5 +198,5 @@ class SemanticLayerHandler(BaseView):
         for error_type, status in statuses.items():
             if isinstance(error, error_type):
                 return self.json_response({"error": error.code, "details": error.details}, status=status)
-        self.logger.exception("Unexpected semantic handler error")
+        self.logger.error("Unexpected semantic handler error", exc_info=error)
         return self.json_response({"error": "semantic request failed"}, status=502)

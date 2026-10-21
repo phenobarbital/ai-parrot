@@ -1,4 +1,5 @@
 """Packaging tests for ai-parrot-semantic: PEP 420 namespace and the AGPL import ban."""
+
 import subprocess
 from pathlib import Path
 
