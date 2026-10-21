@@ -4570,6 +4570,49 @@ class TestCIPermissionDenials:
         assert (verdict.mergeable, verdict.defer) == (True, False)
         assert any("no CI checks" in w for w in verdict.warnings)
 
+    def test_an_empty_but_readable_ci_is_not_blamed_on_the_permission(self) -> None:
+        """Live case: Actions + statuses answered, and this commit has no run.
+
+        Saying "not visible to this token" there sends an operator chasing a
+        permission that is already granted. The denial still matters (checks
+        from other apps could be hidden), so the note says both things.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": ["workflow_runs", "commit_statuses"],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        note = "\n".join(verdict.warnings)
+        assert "no CI run or status exists for this commit" in note
+        assert "read: workflow_runs, commit_statuses" in note
+        assert "may be hidden" in note
+        assert "not visible to this token" not in note
+        assert r._format_checks_line(checks) == "CI: nothing reported for this commit (check_runs not readable)"
+
+    def test_nothing_answered_still_reads_as_invisible(self) -> None:
+        """With no source answering, the permission IS the story."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": [],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert any("visible to this token" in w for w in r._merge_verdict(self._approved(), checks).warnings)
+        assert r._format_checks_line(checks) == "CI: no check visible to this token (check_runs denied)"
+
     def test_the_checks_line_names_the_denial(self) -> None:
         r = _wire_reviewer()
         empty = GitHubReviewer._summarize_checks(
@@ -4795,46 +4838,3 @@ class TestWorkflowRunSourcedVerdict:
             PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
         )
         assert (verdict.mergeable, verdict.defer) == (True, False)
-
-    def test_an_empty_but_readable_ci_is_not_blamed_on_the_permission(self) -> None:
-        """Live case: Actions + statuses answered, and this commit has no run.
-
-        Saying "not visible to this token" there sends an operator chasing a
-        permission that is already granted. The denial still matters (checks
-        from other apps could be hidden), so the note says both things.
-        """
-        r = _wire_reviewer()
-        checks = GitHubReviewer._summarize_checks(
-            {
-                "checks": [],
-                "total": 0,
-                "available": True,
-                "answered": ["workflow_runs", "commit_statuses"],
-                "denied": ["check_runs"],
-                "reason": self._REASON,
-            }
-        )
-        verdict = r._merge_verdict(self._approved(), checks)
-        assert (verdict.mergeable, verdict.defer) == (True, False)
-        note = "\n".join(verdict.warnings)
-        assert "no CI run or status exists for this commit" in note
-        assert "read: workflow_runs, commit_statuses" in note
-        assert "may be hidden" in note
-        assert "not visible to this token" not in note
-        assert r._format_checks_line(checks) == "CI: nothing reported for this commit (check_runs not readable)"
-
-    def test_nothing_answered_still_reads_as_invisible(self) -> None:
-        """With no source answering, the permission IS the story."""
-        r = _wire_reviewer()
-        checks = GitHubReviewer._summarize_checks(
-            {
-                "checks": [],
-                "total": 0,
-                "available": True,
-                "answered": [],
-                "denied": ["check_runs"],
-                "reason": self._REASON,
-            }
-        )
-        assert any("visible to this token" in w for w in r._merge_verdict(self._approved(), checks).warnings)
-        assert r._format_checks_line(checks) == "CI: no check visible to this token (check_runs denied)"

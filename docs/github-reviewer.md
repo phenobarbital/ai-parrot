@@ -390,7 +390,13 @@ The four CI states are kept apart:
 | green, or green enough ("all OK or a great part") | passes |
 | **red** below the ratio | **blocks** — draft + comment + notifications |
 | still **running** | `deferred` — the PR is left untouched; evidence arrives in a minute and the next push re-runs the review |
-| **absent or unreadable** (no CI in the repo, an outage, a permission a PAT cannot hold) | passes with a non-blocking note; the approval says *"this approval rests on the ticket comparison alone"* |
+| **absent or unreadable** (no CI in the repo, nothing run for this commit, an outage, a permission a PAT cannot hold) | passes with a non-blocking note; the approval says *"this approval rests on the ticket comparison alone"* |
+
+The note distinguishes the two ways "no evidence" happens, because they have
+different fixes: when a source answered and was empty it reads *"no CI run or
+status exists for this commit (read: workflow_runs, commit_statuses)"*; only
+when nothing could be read at all does it blame a permission. `answered` on the
+`get_pr_checks` payload is what keeps the two apart.
 
 Set `GITHUB_REVIEW_REQUIRE_CHECKS=true` to make the evidence mandatory: then
 missing or unreadable CI blocks too. Leave it off and a configuration problem
