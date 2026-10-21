@@ -16,6 +16,62 @@ class ThreatLevel(Enum):
     CRITICAL = "critical"
 
 
+#: Explicit severity order for :class:`ThreatLevel`. ``Enum`` provides no
+#: total ordering, so a bare ``max()`` over two or more levels raises
+#: ``TypeError`` — the fail-open reported as ``issue:a6abf12a2027``. This
+#: table is the single source of truth; every aggregation of threat
+#: severities MUST go through :func:`max_threat_level`.
+THREAT_LEVEL_ORDER: Dict[ThreatLevel, int] = {
+    ThreatLevel.LOW: 0,
+    ThreatLevel.MEDIUM: 1,
+    ThreatLevel.HIGH: 2,
+    ThreatLevel.CRITICAL: 3,
+}
+
+
+def max_threat_level(
+    threats: List[Dict[str, Any]],
+    default: ThreatLevel = ThreatLevel.LOW,
+) -> ThreatLevel:
+    """Return the highest-severity ``level`` across ``threats``.
+
+    Args:
+        threats: Threat dicts as produced by
+            :meth:`PromptInjectionDetector.detect_threats` /
+            :meth:`PromptInjectionDetector.sanitize`, or by any other
+            detector. Each may carry a ``'level'`` key holding a
+            :class:`ThreatLevel` or its string value.
+        default: Level returned for an empty list, and the rank assigned to
+            a threat whose ``'level'`` is missing or unrecognized.
+
+    Returns:
+        The member of :class:`ThreatLevel` with the highest
+        :data:`THREAT_LEVEL_ORDER` rank. Never raises, for any input shape:
+        this runs on a fail-open guardrail path, where an exception means
+        the threat is silently dropped.
+    """
+    try:
+        max_level = default
+        max_rank = THREAT_LEVEL_ORDER.get(default, 0)
+        for threat in threats:
+            try:
+                level = threat.get("level", default)
+                if isinstance(level, str):
+                    level = ThreatLevel(level.lower())
+                if not isinstance(level, ThreatLevel):
+                    level = default
+                rank = THREAT_LEVEL_ORDER.get(level, max_rank)
+            except Exception:  # noqa: BLE001 - malformed detector payloads must not fail open
+                level = default
+                rank = max_rank
+            if rank > max_rank:
+                max_level = level
+                max_rank = rank
+        return max_level
+    except Exception:  # noqa: BLE001 - this helper must not raise on a guardrail path
+        return default
+
+
 class PromptInjectionException(Exception):
     """Raised when a critical prompt injection is detected in strict mode."""
     def __init__(self, message: str, threats: List[Dict], original_input: str):
@@ -241,10 +297,7 @@ class SecurityEventLogger:
         """
         Log a detected prompt injection attempt.
         """
-        max_severity = max(
-            (t['level'] for t in threats),
-            default=ThreatLevel.LOW
-        )
+        max_severity = max_threat_level(threats)
 
         # Always log to application logger. Threat dicts come from multiple
         # detectors (regex patterns, pytector model) so use .get() defaults
