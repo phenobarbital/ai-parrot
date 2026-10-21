@@ -239,6 +239,15 @@ def _flatten_adf(node: Any) -> str:
 # ──────────────────────────────────────────────────────────────
 
 
+def _upper_first(text: str) -> str:
+    """Capitalize the first character only.
+
+    ``str.capitalize()`` lower-cases everything after it, which would turn
+    "CI status could not be read" into "Ci status…".
+    """
+    return text[:1].upper() + text[1:] if text else text
+
+
 class Discrepancy(BaseModel):
     """Single mismatch between the PR and the Jira acceptance criteria."""
 
@@ -2500,7 +2509,7 @@ class GitHubReviewer(Agent):
                 repo,
                 int(pr_number),
                 "COMMENT",
-                self._format_deferred_body(payload, ticket_key, checks),
+                self._format_deferred_body(payload, ticket_key, result, checks),
                 outcome,
             )
             self.logger.info(
@@ -2620,23 +2629,59 @@ class GitHubReviewer(Agent):
         running = ", ".join(names) or "unnamed checks"
         return f"{checks.pending} check(s) are still running ({running})"
 
+    def _format_findings_section(self, result: PRReviewResult) -> List[str]:
+        """Render the ticket comparison: the AC verdict, prose and findings.
+
+        Shared by every outcome, so a deferred review reports what it actually
+        found instead of only why it is waiting — the review ran in full, and
+        its result is the valuable part even when the CI verdict is unknown.
+        """
+        if result.approve:
+            headline = "**Every acceptance criterion is addressed by this PR.**"
+        else:
+            headline = "**The review did not confirm that the acceptance criteria are met.**"
+        lines: List[str] = ["### Comparison against the ticket", "", headline]
+        if result.summary:
+            lines.extend(["", result.summary])
+        lines.append("")
+        if result.discrepancies:
+            lines.append("**Findings**")
+            lines.extend(f"- **[{d.severity.upper()}] {d.criterion}** — {d.issue}" for d in result.discrepancies)
+        else:
+            lines.append("No discrepancy was found against the ticket's requirements.")
+        return lines
+
     def _format_deferred_body(
         self,
         payload: Dict[str, Any],
         ticket_key: str,
+        result: PRReviewResult,
         checks: PRChecksSummary,
     ) -> str:
-        """Render the COMMENT review left when the test evidence is unknown."""
-        cause = self._deferral_cause(checks, code=True)
-        return (
-            f"## Automated review — verdict deferred ({ticket_key})\n\n"
-            f"The comparison against `{ticket_key}` is done, but {cause}, so the verdict is "
-            f"deferred rather than guessed. The PR was left exactly as it is — neither approved "
-            f"nor converted to a draft.\n\n"
-            f"Re-run the reviewer once CI settles — or push a commit and the webhook will do it "
-            f"for you.\n\n"
-            f"_Posted by the GitHubReviewer agent._"
-        )
+        """Render the COMMENT review left when the test evidence is unknown.
+
+        Leads with the ticket comparison — that part DID finish — and only then
+        explains what is missing for a verdict.
+        """
+        lines: List[str] = [
+            f"## Automated review — verdict deferred ({ticket_key})",
+            "",
+            *self._format_findings_section(result),
+            "",
+            "### Why the verdict is deferred",
+            "",
+            f"{_upper_first(self._deferral_cause(checks, code=True))}, so the merge verdict is deferred "
+            f"rather than guessed. The PR was left exactly as it is — neither approved nor converted "
+            f"to a draft.",
+            "",
+            f"**{self._format_checks_line(checks)}**",
+            "",
+            f"Linked Jira ticket: {ticket_key}",
+            "",
+            "_Posted by the GitHubReviewer agent. Re-run the reviewer once CI settles — or push a "
+            "commit and the webhook will do it for you._",
+        ]
+        return "\n".join(lines)
 
     @telegram_command(
         "review_pr",
@@ -2712,14 +2757,35 @@ class GitHubReviewer(Agent):
 
         verdict = outcome.get("verdict") or {}
         checks = PRChecksSummary.model_validate(outcome.get("checks") or {})
+        summary = str(outcome.get("summary") or "").strip()
+        findings = outcome.get("discrepancies") or []
         lines: List[str] = []
         if status == "approved":
             lines.append(f"✅ {head}\n\nMeets `{ticket}` and its acceptance criteria. Approved.")
+            if summary:
+                lines.extend(["", summary])
         elif status == "deferred":
             cause = self._deferral_cause(checks)
-            lines.append(
-                f"⏳ {head}\n\nThe comparison against `{ticket}` is done, but {cause}, so I left a "
-                f"comment instead of a verdict and changed nothing on the PR."
+            verdict_line = (
+                f"it **meets** `{ticket}` and its acceptance criteria"
+                if outcome.get("approve")
+                else f"the review did **not** confirm `{ticket}`'s acceptance criteria"
+            )
+            lines.append(f"⏳ {head}\n\nThe ticket comparison finished — {verdict_line}.")
+            if summary:
+                lines.extend(["", summary])
+            if findings:
+                lines.append("")
+                lines.append("*Findings*")
+                lines.extend(
+                    f"- [{str(f.get('severity', '?')).upper()}] {f.get('criterion')} — {f.get('issue')}"
+                    for f in findings[:10]
+                )
+            lines.extend(
+                [
+                    "",
+                    f"No merge verdict yet: {cause}. I left a comment and changed nothing on the PR.",
+                ]
             )
         else:
             draft = (outcome.get("draft") or {}).get("status")
