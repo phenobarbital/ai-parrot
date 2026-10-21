@@ -22,6 +22,8 @@ import pytest
 from parrot import conf
 from parrot.bots import github_reviewer
 from parrot.bots.github_reviewer import (
+    ChatId,
+    ChartReply,
     Discrepancy,
     GitHubReviewer,
     PRReviewResult,
@@ -29,6 +31,10 @@ from parrot.bots.github_reviewer import (
     WeeklyLLMSummarizationError,
     _ContributorWindowSummary,
     _flatten_adf,
+    _read_only_excludes,
+    _STRUCTURAL_READ_TOOLS,
+    _WIKI_READ_TOOLS,
+    _WIKI_TOOLS_PROMPT,
 )
 from parrot_tools.gittoolkit import (
     ContributorStats,
@@ -56,6 +62,11 @@ class _MinimalReviewer:
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
         self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
         self._reviewed_shas: Dict[Any, str] = {}
+        # Mirrors GitHubReviewer.__init__: an unset management chat falls back
+        # to the public channel, so the management reports never go silent.
+        # A property (not a plain attribute) because tests assign
+        # ``public_channel_id`` after construction.
+        self._management_chat_id: Optional[ChatId] = None
         self._no_ticket_notified: set = set()
         self._wiki_cache = None
         self._wiki_warmup_task = None
@@ -66,6 +77,14 @@ class _MinimalReviewer:
         self._wiki_built_at = None
         self._wiki_context_available = False
         self._llm = None
+
+    @property
+    def management_chat_id(self) -> Optional[ChatId]:
+        return self._management_chat_id or self.public_channel_id
+
+    @management_chat_id.setter
+    def management_chat_id(self, value: Optional[ChatId]) -> None:
+        self._management_chat_id = value
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
@@ -80,7 +99,13 @@ class _MinimalReviewer:
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
+    today_pr = GitHubReviewer.today_pr
+    _format_pr_digest = GitHubReviewer._format_pr_digest
     _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
+    _format_today_prs_digest = GitHubReviewer._format_today_prs_digest
+    _pr_state_label = staticmethod(GitHubReviewer._pr_state_label)
+    # Already bound to GitHubReviewer as a classmethod — assign it as-is.
+    _is_open_pull_request = GitHubReviewer._is_open_pull_request
     report_weekly_activity = GitHubReviewer.report_weekly_activity
     _defer_weekly_report = GitHubReviewer._defer_weekly_report
     _shutdown_weekly_retry = GitHubReviewer._shutdown_weekly_retry
@@ -95,12 +120,44 @@ class _MinimalReviewer:
     _await_wiki_refresh = GitHubReviewer._await_wiki_refresh
     _wiki_review_lease = GitHubReviewer._wiki_review_lease
     _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
+    _document_wiki_tools = GitHubReviewer._document_wiki_tools
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
     _PARTIAL_WEEKLY_NOTICE = GitHubReviewer._PARTIAL_WEEKLY_NOTICE
     _TELEGRAM_MAX_MESSAGE = GitHubReviewer._TELEGRAM_MAX_MESSAGE
     _TELEGRAM_PART_RESERVE = GitHubReviewer._TELEGRAM_PART_RESERVE
     _STALE_TITLE_MAX = GitHubReviewer._STALE_TITLE_MAX
+    _TODAY_PR_HEADING = GitHubReviewer._TODAY_PR_HEADING
+    _TODAY_PR_WINDOW_HOURS = GitHubReviewer._TODAY_PR_WINDOW_HOURS
+    # Jira ticket summary (open / in progress / closed by assignee).
+    report_jira_tickets = GitHubReviewer.report_jira_tickets
+    _collect_ticket_summary = GitHubReviewer._collect_ticket_summary
+    _summarize_tickets = GitHubReviewer._summarize_tickets
+    _format_jira_tickets_digest = GitHubReviewer._format_jira_tickets_digest
+    _format_ticket_counts = GitHubReviewer._format_ticket_counts
+    _ticket_bucket = classmethod(GitHubReviewer._ticket_bucket.__func__)
+    _ticket_assignee = staticmethod(GitHubReviewer._ticket_assignee)
+    _TICKET_RECENT_HOURS = GitHubReviewer._TICKET_RECENT_HOURS
+    _TICKET_WINDOW_DAYS = GitHubReviewer._TICKET_WINDOW_DAYS
+    _TICKET_SUMMARY_FIELDS = GitHubReviewer._TICKET_SUMMARY_FIELDS
+    _TICKET_BUCKETS = GitHubReviewer._TICKET_BUCKETS
+    _TICKET_BUCKET_ORDER = GitHubReviewer._TICKET_BUCKET_ORDER
+    _TICKET_ASSIGNEE_MAX = GitHubReviewer._TICKET_ASSIGNEE_MAX
+    _TICKET_HEADING = GitHubReviewer._TICKET_HEADING
+    # Monthly ticket pie (/monthly_jira_tickets + the 1st-of-month report).
+    monthly_jira_tickets = GitHubReviewer.monthly_jira_tickets
+    report_monthly_jira_tickets = GitHubReviewer.report_monthly_jira_tickets
+    _TELEGRAM_MAX_CAPTION = GitHubReviewer._TELEGRAM_MAX_CAPTION
+    _ticket_pie_slices = classmethod(GitHubReviewer._ticket_pie_slices.__func__)
+    _render_ticket_pie = GitHubReviewer._render_ticket_pie
+    _format_monthly_tickets_text = GitHubReviewer._format_monthly_tickets_text
+    _format_monthly_tickets_digest = GitHubReviewer._format_monthly_tickets_digest
+    _monthly_ticket_headings = GitHubReviewer._monthly_ticket_headings
+    _monthly_ticket_rows = GitHubReviewer._monthly_ticket_rows
+    _build_monthly_ticket_pie = GitHubReviewer._build_monthly_ticket_pie
+    _TICKET_MONTH_DAYS = GitHubReviewer._TICKET_MONTH_DAYS
+    _TICKET_PIE_MAX_SLICES = GitHubReviewer._TICKET_PIE_MAX_SLICES
+    _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
 
 
 class _StubEvent:
@@ -203,6 +260,126 @@ class TestWikiLifecycle:
         reviewer._attach_wiki_toolkits(tmp_path / "clone")
 
         assert toolkit_factory.call_args.kwargs["confine_sources"] is True
+
+
+class TestWikiToolSurface:
+    """The reviewer's wiki surface is read-only and self-documenting."""
+
+    def test_write_tools_are_withheld(self) -> None:
+        """Every mutating LLMWikiToolkit coroutine is excluded, the five reads are not."""
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        excluded = _read_only_excludes(LLMWikiToolkit, _WIKI_READ_TOOLS)
+
+        for write_tool in (
+            "create_page",
+            "update_page",
+            "delete_page",
+            "create_wiki",
+            "delete_wiki",
+            "remember",
+            "ingest_source",
+            "ingest_obsidian_vault",
+            "reingest_source",
+            "rebuild_index",
+            "export_okf",
+        ):
+            assert write_tool in excluded, f"{write_tool} is still exposed to the review LLM"
+        assert not set(_WIKI_READ_TOOLS) & set(excluded)
+
+    def test_keep_lists_name_real_methods(self) -> None:
+        """A typo in a keep-list would silently exclude the tool it means to keep."""
+        from parrot.knowledge.wiki.structural.toolkit import CodeStructuralToolkit
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        for toolkit_cls, keep in (
+            (LLMWikiToolkit, _WIKI_READ_TOOLS),
+            (CodeStructuralToolkit, _STRUCTURAL_READ_TOOLS),
+        ):
+            for name in keep:
+                assert callable(getattr(toolkit_cls, name, None)), f"{toolkit_cls.__name__}.{name} does not exist"
+
+    def test_excludes_are_set_before_registration(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both toolkits carry exclude_tools when they reach _attach_toolkit.
+
+        Tools are generated lazily on the first get_tools(), so the
+        exclusions must be in place before registration, not after.
+        """
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        structural = MagicMock()
+        wiki = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock(return_value=structural))
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock(return_value=wiki))
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        registered = [call.args[0] for call in reviewer._attach_toolkit.call_args_list]
+        assert registered == [structural, wiki]
+        for toolkit in registered:
+            assert isinstance(toolkit.exclude_tools, tuple)
+
+    def test_prompt_documents_the_tools_once_attached(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The section lands on the prompt exactly once, carrying the plane name."""
+        reviewer = _wire_reviewer()
+        reviewer.system_prompt_template = "BASE PROMPT"
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock())
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock())
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        prompt = reviewer.system_prompt_template
+        assert prompt.startswith("BASE PROMPT")
+        assert prompt.count("## Repository knowledge graph") == 1
+        assert 'wiki_name="owner-repo"' in prompt
+        for tool in (
+            "code_symbol_lookup",
+            "code_outline",
+            "code_blast_radius",
+            "wiki_search_compact",
+            "wiki_read_page",
+            "wiki_expand",
+            "wiki_find_related",
+            "wiki_browse_pages",
+        ):
+            assert tool in prompt
+
+    def test_prompt_names_only_registered_tools(self) -> None:
+        """Every ``code_*``/``wiki_*`` name in the prompt is a tool the reviewer keeps."""
+        exposed = {f"code_{name}" for name in _STRUCTURAL_READ_TOOLS}
+        exposed |= {f"wiki_{name}" for name in _WIKI_READ_TOOLS}
+        documented = set(re.findall(r"``((?:code|wiki)_[a-z_]+)\(", _WIKI_TOOLS_PROMPT))
+
+        assert documented, "the prompt documents no tools at all"
+        assert documented <= exposed, f"prompt advertises tools the reviewer does not register: {documented - exposed}"
+
+    def test_prompt_survives_template_substitution(self) -> None:
+        """A stray ``$`` would be eaten by _define_prompt's safe_substitute."""
+        from string import Template
+
+        rendered = _WIKI_TOOLS_PROMPT.format(wiki_name="owner-repo")
+
+        assert Template(rendered).safe_substitute() == rendered
+
+    def test_prompt_extension_never_breaks_the_attach(self) -> None:
+        """A bot without a string prompt template logs and carries on."""
+        reviewer = _wire_reviewer()
+        reviewer.system_prompt_template = None
+
+        reviewer._document_wiki_tools("owner-repo")
+
+        assert reviewer.system_prompt_template is None
+        reviewer.logger.warning.assert_called_once()
 
 
 class TestWikiPromptContext:
@@ -1530,6 +1707,15 @@ class TestReportWeeklyActivity:
         assert out["status"] == "error"
         assert "git_toolkit" in out["reason"]
 
+    async def test_weekly_report_goes_to_the_management_chat(self):
+        """The weekly digest is a management report."""
+        r = self._build_reviewer(management_chat_id="-1009998877")
+
+        await r.report_weekly_activity()
+
+        assert r._sent_messages
+        assert r._sent_messages[-1]["chat_id"] == "-1009998877"
+
     async def test_templated_success_path(self):
         """Happy path with templated rendering returns documented keys."""
         r = self._build_reviewer()
@@ -2066,6 +2252,16 @@ class TestStalePRDigest:
         assert result["announced"] == 3
         assert result["messages_sent"] == 1
 
+    async def test_stale_digest_stays_on_the_public_channel(self) -> None:
+        """The stale-PR nag is not a management report: public channel."""
+        reviewer = self._reviewer(2)
+        reviewer.management_chat_id = "-1009998877"
+
+        await reviewer.report_stale_pull_requests()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "4663754211"
+
     async def test_digest_escapes_user_data(self) -> None:
         reviewer = self._reviewer(1, title="feat: X_y <z> & more")
 
@@ -2106,6 +2302,885 @@ class TestStalePRDigest:
         assert result["announced"] == 0
         assert result["messages_sent"] == 0
         reviewer.logger.warning.assert_called_once()
+
+
+class TestTodayPRReport:
+    """``today_pr()`` digests the last 24h into ONE message, or says nothing."""
+
+    @staticmethod
+    def _reviewer(pulls: List[Dict[str, Any]]) -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = "4663754211"
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(return_value=pulls)
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    @staticmethod
+    def _pr(number: int, *, hours_ago: float, **extra: Any) -> Dict[str, Any]:
+        created = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        pr = {
+            "number": number,
+            "title": f"feat: change {number}",
+            "html_url": f"https://github.com/owner/repo/pull/{number}",
+            "user": {"login": f"dev{number}"},
+            "created_at": created.isoformat().replace("+00:00", "Z"),
+            "state": "open",
+        }
+        pr.update(extra)
+        return pr
+
+    async def test_todays_prs_go_out_as_one_message(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=1.0),
+                self._pr(12, hours_ago=8.5),
+                self._pr(13, hours_ago=23.0),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        assert text.startswith("<b>Review Today's Pull Requests</b> on <code>owner/repo</code>")
+        assert "3 open PRs opened in the last 24h" in text
+        for n in (11, 12, 13):
+            assert f"/pull/{n}" in text
+            assert f"dev{n}" in text
+        assert result["today_count"] == 3
+        assert result["announced"] == 3
+        assert result["messages_sent"] == 1
+        assert result["window_hours"] == 24
+
+    async def test_prs_older_than_the_window_are_excluded(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=2.0), self._pr(9, hours_ago=48.0)])
+
+        result = await reviewer.today_pr()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "/pull/11" in text
+        assert "/pull/9" not in text
+        assert result["today_count"] == 1
+        assert "1 open PR opened in the last 24h" in text
+
+    async def test_closed_and_merged_prs_are_excluded(self) -> None:
+        """Only open PRs are reported — the listing asks for state='open'."""
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=3.0, state="closed", merged_at="2026-10-21T10:00:00Z"),
+                self._pr(12, hours_ago=4.0, state="closed"),
+                self._pr(13, hours_ago=5.0),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        assert reviewer.git_toolkit.list_pull_requests.await_args.kwargs["state"] == "open"
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "/pull/11" not in text
+        assert "/pull/12" not in text
+        assert "/pull/13" in text
+        assert result["today_count"] == 1
+        assert [pr["state"] for pr in result["today"]] == ["open"]
+
+    async def test_only_closed_prs_in_the_window_terminate_silently(self) -> None:
+        """A day whose PRs were all merged leaves nothing to review."""
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=2.0, state="closed", merged_at="2026-10-21T10:00:00Z"),
+                self._pr(12, hours_ago=3.0, state="closed"),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["today_count"] == 0
+        assert result["today"] == []
+
+    async def test_no_recent_pr_terminates_silently(self) -> None:
+        reviewer = self._reviewer([self._pr(9, hours_ago=72.0)])
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["today_count"] == 0
+        assert result["today"] == []
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_not_called()
+
+    async def test_empty_repository_terminates_silently(self) -> None:
+        reviewer = self._reviewer([])
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["today_count"] == 0
+        reviewer.logger.warning.assert_not_called()
+
+    async def test_custom_window_is_honoured(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=5.0), self._pr(12, hours_ago=20.0)])
+
+        result = await reviewer.today_pr(window_hours=6)
+
+        assert result["window_hours"] == 6
+        assert result["today_count"] == 1
+        assert "1 open PR opened in the last 6h" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+
+    async def test_failed_send_names_the_chat_and_announces_nothing(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=1.0)])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.today_pr()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+        fmt, *args = reviewer.logger.warning.call_args.args
+        assert "to chat %s" in fmt
+        assert args[0] == "4663754211"
+
+    async def test_list_failure_is_an_error(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await reviewer.today_pr()
+
+        assert result["status"] == "error"
+        assert "boom" in result["reason"]
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_today_digest_goes_to_the_management_chat(self) -> None:
+        """today_pr is a management report, not a public-channel nag."""
+        reviewer = self._reviewer([self._pr(11, hours_ago=1.0)])
+        reviewer.management_chat_id = "-1009998877"
+
+        result = await reviewer.today_pr()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "-1009998877"
+        assert result["announced"] == 1
+
+    def test_today_pr_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = self._reviewer([])
+        prs = [
+            {
+                "number": n,
+                "title": "x" * 150,
+                "html_url": f"https://github.com/owner/repo/pull/{n}",
+                "user": f"dev{n}",
+                "age_hours": 3.0,
+                "state": "open",
+            }
+            for n in range(1, 61)
+        ]
+
+        messages = reviewer._format_today_prs_digest(prs, 24)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 60
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+
+    def test_today_pr_is_scheduled_daily(self) -> None:
+        """today_pr is a daily report, under its own job name."""
+        marker = getattr(GitHubReviewer.today_pr, "_schedule_report_type", None)
+        assert marker == "daily", "today_pr lost @schedule_daily_report"
+        cfg = GitHubReviewer.today_pr._schedule_config
+        assert cfg["method_name"] == "today_pr"
+        assert cfg["schedule_type"] == "daily"
+
+    def test_every_report_is_on_its_cron(self) -> None:
+        """stale + today_pr are daily, the activity digest is weekly."""
+        assert GitHubReviewer.report_stale_pull_requests._schedule_report_type == "daily"
+        assert GitHubReviewer.report_stale_pull_requests._schedule_config["schedule_type"] == "daily"
+        assert GitHubReviewer.report_weekly_activity._schedule_report_type == "weekly"
+        assert GitHubReviewer.report_weekly_activity._schedule_config["schedule_type"] == "weekly"
+
+
+class TestJiraTicketSummary:
+    """``report_jira_tickets()`` counts a project by assignee in two columns."""
+
+    @staticmethod
+    def _issue(
+        key: str,
+        *,
+        assignee: Optional[str],
+        category: str,
+        hours_ago: float,
+        status_name: str = "Some status",
+    ) -> Dict[str, Any]:
+        updated = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {
+            "key": key,
+            "fields": {
+                "assignee": None if assignee is None else {"displayName": assignee},
+                "status": {"name": status_name, "statusCategory": {"key": category}},
+                # Jira renders the offset without a colon; the summary must
+                # parse that shape, not just GitHub's trailing "Z".
+                "updated": updated.isoformat().replace("+00:00", "+0000"),
+            },
+        }
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    def test_summary_buckets_by_assignee_and_window(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue("NAV-1", assignee="Ana", category="new", hours_ago=2),
+            self._issue("NAV-2", assignee="Ana", category="indeterminate", hours_ago=5),
+            self._issue("NAV-3", assignee="Ana", category="done", hours_ago=100),
+            self._issue("NAV-4", assignee="Ana", category="done", hours_ago=200),
+            self._issue("NAV-5", assignee="Bob", category="new", hours_ago=48),
+        ]
+
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        assert summary["ticket_count"] == 5
+        # Ana leads the 14d column, so she sorts first.
+        ana, bob = summary["assignees"]
+        assert ana["assignee"] == "Ana"
+        assert ana["recent"] == {"open": 1, "in_progress": 1, "closed": 0, "total": 2}
+        assert ana["window"] == {"open": 1, "in_progress": 1, "closed": 2, "total": 4}
+        assert bob["recent"] == {"open": 0, "in_progress": 0, "closed": 0, "total": 0}
+        assert bob["window"]["open"] == 1
+        assert summary["totals"]["recent"]["total"] == 2
+        assert summary["totals"]["window"]["total"] == 5
+
+    def test_unassigned_and_unknown_category_still_counted(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue("NAV-1", assignee=None, category="new", hours_ago=1),
+            # No statusCategory at all: the name decides the bucket.
+            {
+                "key": "NAV-2",
+                "fields": {
+                    "assignee": {"name": "cmartinez"},
+                    "status": {"name": "In Review"},
+                    "updated": datetime.now(timezone.utc).isoformat(),
+                },
+            },
+            # Neither category nor a recognisable name: counts as open.
+            {
+                "key": "NAV-3",
+                "fields": {"assignee": {"name": "cmartinez"}, "status": {"name": "Pending QA"}},
+            },
+        ]
+
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        rows = {entry["assignee"]: entry for entry in summary["assignees"]}
+        assert rows["Unassigned"]["recent"]["open"] == 1
+        assert rows["cmartinez"]["window"] == {"open": 1, "in_progress": 1, "closed": 0, "total": 2}
+        # NAV-3 has no ``updated``: long window only.
+        assert rows["cmartinez"]["recent"] == {"open": 0, "in_progress": 1, "closed": 0, "total": 1}
+
+    async def test_report_sends_one_message_with_both_columns(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-1", assignee="Ana", category="new", hours_ago=2),
+                self._issue("NAV-2", assignee="Ana", category="done", hours_ago=90),
+                self._issue("NAV-3", assignee="Bob", category="indeterminate", hours_ago=3),
+            ]
+        )
+
+        result = await reviewer.report_jira_tickets()
+
+        jql = reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert "project = NAV" in jql
+        assert "updated >= -14d" in jql
+        assert reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["max_results"] is None
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        assert "last 24h" in text
+        assert "last 14d" in text
+        assert "TOTAL" in text
+        assert "<pre>" in text
+        for name in ("Ana", "Bob"):
+            assert name in text
+
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 3
+        assert result["announced"] == 2
+        assert result["messages_sent"] == 1
+        assert result["totals"]["window"]["total"] == 3
+        assert result["totals"]["recent"]["total"] == 2
+
+    async def test_digest_goes_to_the_management_chat(self) -> None:
+        """The ticket summary is a management report."""
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+        reviewer.management_chat_id = "-1009998877"
+
+        await reviewer.report_jira_tickets()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "-1009998877"
+
+    async def test_no_activity_stays_silent(self) -> None:
+        reviewer = self._reviewer([], status="empty")
+
+        result = await reviewer.report_jira_tickets()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 0
+        assert result["assignees"] == []
+        assert result["messages_sent"] == 0
+
+    async def test_error_envelope_is_reported_not_sent(self) -> None:
+        reviewer = self._reviewer([], status="error")
+
+        result = await reviewer.report_jira_tickets()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "error"
+        assert result["reason"] == "boom"
+
+    async def test_search_failure_is_reported(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "jira down"
+        reviewer.logger.error.assert_called_once()
+
+    async def test_without_a_jira_toolkit_it_reports_an_error(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit = None
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result == {"status": "error", "reason": "jira_toolkit not configured"}
+
+    async def test_failed_send_announces_nothing(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_custom_windows_reach_the_jql_and_the_header(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+
+        result = await reviewer.report_jira_tickets(recent_hours=8, window_days=3)
+
+        assert "updated >= -3d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "last 8h" in text
+        assert "last 3d" in text
+        assert result["recent_hours"] == 8
+        assert result["window_days"] == 3
+
+    def test_digest_escapes_assignee_names(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = reviewer._summarize_tickets(
+            [self._issue("NAV-1", assignee="A & <b>B</b>", category="new", hours_ago=1)],
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) == 1
+        text = messages[0][0]
+        assert "A &amp; &lt;b&gt;" in text
+        assert "<b>B</b>" not in text
+
+    def test_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue(f"NAV-{n}", assignee=f"developer-number-{n:03d}", category="new", hours_ago=1)
+            for n in range(1, 201)
+        ]
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 200
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+            assert "part " in text
+        # The TOTAL row rides on the last part only, so it is never doubled.
+        assert sum(text.count("TOTAL") for text, _ in messages) == 1
+
+    def test_table_columns_stay_aligned(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = reviewer._summarize_tickets(
+            [
+                self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1),
+                self._issue("NAV-2", assignee="a-very-long-developer-name", category="done", hours_ago=1),
+            ],
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) == 1
+        body = messages[0][0].split("<pre>", 1)[1].split("</pre>", 1)[0]
+        rows = [line for line in body.splitlines() if line and not line.startswith("-")]
+        assert len({len(line) for line in rows}) == 1
+        # The long name is clamped into the fixed-width first column.
+        assert "…" in body
+
+    def test_report_jira_tickets_fires_at_10am_new_york(self) -> None:
+        """Daily at 10:00 America/New_York, on its own cron job."""
+        cfg = GitHubReviewer.report_jira_tickets._schedule_config
+        assert cfg["method_name"] == "report_jira_tickets"
+        assert cfg["schedule_type"] == "cron"
+        assert cfg["schedule_config"] == {"hour": 10, "minute": 0, "timezone": "America/New_York"}
+        # A cron job must NOT carry the report marker, or
+        # register_bot_schedules() would overwrite its config with the
+        # {AGENT_ID}_DAILY_REPORT env var — dragging it back to UTC.
+        assert not hasattr(GitHubReviewer.report_jira_tickets, "_schedule_report_type")
+
+    def test_report_jira_tickets_trigger_tracks_dst(self) -> None:
+        """10:00 New York is 14:00 UTC in summer and 15:00 UTC in winter."""
+        from zoneinfo import ZoneInfo
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        from parrot.scheduler.sanitize import sanitize_schedule_config
+
+        cfg = GitHubReviewer.report_jira_tickets._schedule_config["schedule_config"]
+        trigger = CronTrigger(**sanitize_schedule_config("cron", cfg))
+        ny = ZoneInfo("America/New_York")
+
+        summer = trigger.get_next_fire_time(None, datetime(2026, 7, 1, 0, 0, tzinfo=ny))
+        winter = trigger.get_next_fire_time(None, datetime(2026, 12, 1, 0, 0, tzinfo=ny))
+
+        assert (summer.hour, summer.minute) == (10, 0)
+        assert (winter.hour, winter.minute) == (10, 0)
+        assert summer.astimezone(timezone.utc).hour == 14
+        assert winter.astimezone(timezone.utc).hour == 15
+
+
+class TestMonthlyTicketPie:
+    """``/monthly_jira_tickets`` — the month's tickets per assignee, as a pie."""
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        return reviewer
+
+    @staticmethod
+    def _tickets(**per_assignee: int) -> List[Dict[str, Any]]:
+        """``Ana=3`` -> three NAV issues assigned to Ana inside the window."""
+        issues: List[Dict[str, Any]] = []
+        for name, count in per_assignee.items():
+            for n in range(count):
+                issues.append(
+                    TestJiraTicketSummary._issue(
+                        f"NAV-{name}-{n}",
+                        assignee=name,
+                        category="new",
+                        hours_ago=48,
+                    )
+                )
+        return issues
+
+    @staticmethod
+    def _png(tmp_path: Path) -> Path:
+        path = tmp_path / "chart_abc123.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return path
+
+    def test_slices_rank_by_volume_and_fold_the_tail(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "assignees": [
+                {"assignee": f"dev-{n:02d}", "window": {"total": 50 - n}}
+                for n in range(12)
+            ]
+        }
+
+        slices = reviewer._ticket_pie_slices(summary)
+
+        assert len(slices) == GitHubReviewer._TICKET_PIE_MAX_SLICES + 1
+        assert slices[0] == ("dev-00", 50)
+        # The three assignees past the cap ride in one wedge, counts summed.
+        assert slices[-1] == ("Others (3)", (50 - 9) + (50 - 10) + (50 - 11))
+        # Folding never loses a ticket.
+        assert sum(count for _, count in slices) == sum(50 - n for n in range(12))
+
+    def test_slices_keep_everyone_under_the_cap_and_drop_the_idle(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "assignees": [
+                {"assignee": "Ana", "window": {"total": 3}},
+                {"assignee": "Bob", "window": {"total": 0}},
+                {"assignee": None, "window": {"total": 1}},
+            ]
+        }
+
+        assert reviewer._ticket_pie_slices(summary) == [("Ana", 3), ("Unassigned", 1)]
+
+    async def test_command_answers_with_the_ranking_and_one_png(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=3, Bob=1))
+        seen: Dict[str, Any] = {}
+
+        async def fake_generate_chart(chart_type: str, title: str, data: Dict[str, Any], **kwargs: Any) -> Path:
+            seen.update(chart_type=chart_type, title=title, data=data, kwargs=kwargs)
+            return self._png(tmp_path)
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", fake_generate_chart)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        # One JQL call, over the month — same shape as the daily digest.
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["max_results"] is None
+        # A pie of each assignee's share, biggest first.
+        assert seen["chart_type"] == "pie"
+        assert seen["data"] == {"labels": ["Ana", "Bob"], "values": [3, 1]}
+        assert seen["kwargs"]["output_format"] == "png"
+        # The reply is returned, not sent: the wrapper delivers it.
+        assert isinstance(reply, ChartReply)
+        assert reply.charts == [
+            {
+                "path": str(tmp_path / "chart_abc123.png"),
+                "title": seen["title"],
+                "chart_type": "pie",
+                "format": "png",
+            }
+        ]
+        assert "last 30 days on NAV" in reply.output
+        assert "Ana" in reply.output and "Bob" in reply.output
+        # Nothing was pushed anywhere: the command needs no bot of its own.
+        assert reviewer._wrapper is None
+
+    async def test_text_fences_the_table_so_names_cannot_break_parsing(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "window_days": 30,
+            "ticket_count": 1,
+            "assignees": [{"assignee": "A & <b>B</b>", "window": {"total": 1}}],
+        }
+
+        text = reviewer._format_monthly_tickets_text(summary, reviewer._ticket_pie_slices(summary))
+
+        # Fenced: the wrapper's Markdown->HTML pass escapes the block, so a
+        # display name with markup can never reach Telegram as entities.
+        assert text.count("```") == 2
+        table = text.split("```")[1]
+        assert "A & <b>B" in table
+        assert "TOTAL" in table
+        assert "100.0%" in table
+
+    async def test_a_chart_that_cannot_be_a_png_still_sends_the_ranking(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No vl-convert-python: the tool writes a Vega-Lite spec instead."""
+        reviewer = self._reviewer(self._tickets(Ana=2))
+        spec = tmp_path / "chart_abc123.json"
+        spec.write_text("{}")
+
+        async def fallback(*_args: Any, **_kwargs: Any) -> Path:
+            return spec
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", fallback)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "Ana" in reply.output
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_failing_renderer_is_contained(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=2))
+
+        async def boom(*_args: Any, **_kwargs: Any) -> Path:
+            raise RuntimeError("vega exploded")
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", boom)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "Ana" in reply.output
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_jira_failure_comes_back_as_a_notice(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "jira down" in reply.output
+        assert "NAV" in reply.output
+
+    async def test_a_quiet_month_says_so_instead_of_an_empty_pie(self) -> None:
+        reviewer = self._reviewer([])
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert reply.output == "No NAV ticket was touched in the last 30 days."
+
+    async def test_window_days_survives_telegram_passing_it_as_a_string(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=1))
+        monkeypatch.setattr(
+            "parrot_tools.chart.generate_chart",
+            AsyncMock(return_value=self._png(tmp_path)),
+        )
+
+        reply = await reviewer.monthly_jira_tickets(window_days="7", unexpected="ignored")
+
+        assert "updated >= -7d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert "last 7 days on NAV" in reply.output
+
+    async def test_an_unusable_window_falls_back_to_the_month(self) -> None:
+        reviewer = self._reviewer([])
+
+        await reviewer.monthly_jira_tickets(window_days="soon")
+
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        reviewer.logger.warning.assert_called_once()
+
+    def test_it_is_exposed_as_a_telegram_command(self) -> None:
+        meta = GitHubReviewer.monthly_jira_tickets._telegram_command
+
+        assert meta["command"] == "monthly_jira_tickets"
+        # Keyword parsing: `/monthly_jira_tickets window_days=60`.
+        assert meta["parse_mode"] == "keyword"
+        assert meta["description"]
+        # On demand only — it must not join the scheduled reports.
+        assert not hasattr(GitHubReviewer.monthly_jira_tickets, "_schedule_config")
+
+
+class TestMonthlyTicketReport:
+    """``report_monthly_jira_tickets()`` — the 1st-of-month send to management."""
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], **attrs: Any) -> _MinimalReviewer:
+        reviewer = TestMonthlyTicketPie._reviewer(issues)
+        reviewer.management_chat_id = "-1002223334444"
+        bot = MagicMock()
+        bot.send_photo = AsyncMock(return_value=None)
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        for name, value in attrs.items():
+            setattr(reviewer, name, value)
+        return reviewer
+
+    @staticmethod
+    def _with_chart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        png = TestMonthlyTicketPie._png(tmp_path)
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", AsyncMock(return_value=png))
+        return png
+
+    async def test_the_pie_goes_to_management_with_the_table_as_its_caption(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        png = self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=3, Bob=1))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        photo = reviewer._wrapper.bot.send_photo.await_args.kwargs
+        assert photo["chat_id"] == "-1002223334444"
+        assert Path(photo["photo"].path) == png
+        assert photo["parse_mode"] == "HTML"
+        # One item in the channel, not two: the digest rides as the caption.
+        assert "<pre>" in photo["caption"] and "Ana" in photo["caption"]
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result == {
+            "status": "ok",
+            "project": "NAV",
+            "window_days": 30,
+            "ticket_count": 4,
+            "wedges": 2,
+            "chart": png.name,
+            "messages_sent": 1,
+        }
+
+    async def test_a_caption_that_would_not_fit_becomes_its_own_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Telegram caps a sendPhoto caption at 1024 characters."""
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2), _TELEGRAM_MAX_CAPTION=10)
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert reviewer._wrapper.bot.send_photo.await_args.kwargs["caption"] is None
+        assert "<pre>" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["messages_sent"] == 2
+
+    async def test_without_a_png_the_digest_still_goes_out(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = tmp_path / "chart_abc123.json"
+        spec.write_text("{}")
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", AsyncMock(return_value=spec))
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        assert "Ana" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["chart"] is None
+        assert result["messages_sent"] == 1
+
+    async def test_a_lost_photo_does_not_take_the_numbers_with_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2))
+        reviewer._wrapper.bot.send_photo = AsyncMock(side_effect=RuntimeError("file too big"))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert "Ana" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["messages_sent"] == 1
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_no_destination_means_nothing_is_sent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both unset: ``management_chat_id`` falls back to the public channel."""
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(
+            TestMonthlyTicketPie._tickets(Ana=2),
+            management_chat_id=None,
+            public_channel_id=None,
+        )
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_quiet_month_stays_silent(self) -> None:
+        reviewer = self._reviewer([])
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 0
+        assert result["messages_sent"] == 0
+
+    async def test_a_jira_failure_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "jira down"
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+
+    def test_digest_is_escaped_html(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "window_days": 30,
+            "ticket_count": 1,
+            "assignees": [{"assignee": "A & <b>B</b>", "window": {"total": 1}}],
+        }
+
+        digest = reviewer._format_monthly_tickets_digest(summary, reviewer._ticket_pie_slices(summary))
+
+        # Sent straight to the Bot API — no wrapper, so it escapes here.
+        assert "A &amp; &lt;b&gt;" in digest
+        assert "<b>B</b>" not in digest
+        assert digest.startswith("<b>Jira tickets by assignee")
+        assert "<pre>" in digest
+
+    def test_it_fires_monthly_at_10am_new_york(self) -> None:
+        cfg = GitHubReviewer.report_monthly_jira_tickets._schedule_config
+
+        assert cfg["method_name"] == "report_monthly_jira_tickets"
+        assert cfg["schedule_type"] == "cron"
+        assert cfg["schedule_config"] == {
+            "day": 1,
+            "hour": 10,
+            "minute": 0,
+            "timezone": "America/New_York",
+        }
+        # Same reason as the daily digest: a report marker would have its
+        # config re-resolved from {AGENT_ID}_DAILY_REPORT and fire in UTC.
+        assert not hasattr(GitHubReviewer.report_monthly_jira_tickets, "_schedule_report_type")
+
+    def test_its_trigger_survives_sanitizing(self) -> None:
+        """``day`` is a supported cron field, so nothing is dropped."""
+        from apscheduler.triggers.cron import CronTrigger
+
+        from parrot.scheduler.sanitize import sanitize_schedule_config
+
+        cfg = GitHubReviewer.report_monthly_jira_tickets._schedule_config["schedule_config"]
+        cleaned = sanitize_schedule_config("cron", cfg)
+
+        # The sanitizer normalizes cron fields to strings; what matters is
+        # that ``day`` survived it at all (an unsupported field is dropped).
+        assert str(cleaned["day"]) == "1"
+        fire = CronTrigger(**cleaned).get_next_fire_time(None, datetime(2026, 1, 15, tzinfo=timezone.utc))
+        assert (fire.day, fire.hour, fire.minute) == (1, 10, 0)
 
 
 class TestWeeklyStatsPending:

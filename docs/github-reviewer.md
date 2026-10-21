@@ -20,6 +20,7 @@ on purpose):
 """Default GitHubReviewer subclass registered with the agent registry."""
 from parrot.bots.github_reviewer import GitHubReviewer
 from parrot.conf import (
+    GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID,
     GITHUB_REVIEW_PUBLIC_CHANNEL_ID,
     GITHUB_REVIEW_REPOSITORY,
     GITHUB_REVIEW_STALE_AFTER_HOURS,
@@ -43,6 +44,7 @@ class DefaultGitHubReviewer(GitHubReviewer):
         )
         kwargs.setdefault("alert_chat_ids", GITHUB_REVIEW_TELEGRAM_CHAT_IDS)
         kwargs.setdefault("public_channel_id", GITHUB_REVIEW_PUBLIC_CHANNEL_ID)
+        kwargs.setdefault("management_chat_id", GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID)
         kwargs.setdefault("webhook_public_url", GITHUB_REVIEW_WEBHOOK_PUBLIC_URL)
         kwargs.setdefault("webhook_secret", GITHUB_REVIEW_WEBHOOK_SECRET)
         kwargs.setdefault("stale_after_hours", GITHUB_REVIEW_STALE_AFTER_HOURS)
@@ -82,7 +84,8 @@ PR opened ──▶ POST /api/v1/hooks/github
         self.ask(prompt, structured_output=PRReviewResult)
 ```
 
-A separate path runs daily, driven by `@schedule_daily_report`:
+A separate path runs daily — two reports on `@schedule_daily_report`, plus
+the Jira ticket summary on its own timezone-aware cron:
 
 ```
 APScheduler tick (HH:MM UTC)
@@ -93,6 +96,29 @@ GitHubReviewer.report_stale_pull_requests()
        ├─ git_toolkit.list_pull_requests(state="open")
        ├─ collect every PR with age > stale_after_hours
        └─ bot.send_message(public_channel_id, one digest with all of them)
+
+GitHubReviewer.today_pr()
+       │
+       ├─ git_toolkit.list_pull_requests(state="open")
+       ├─ collect every still-open PR created < 24h ago
+       └─ nothing collected → silent; otherwise one digest message
+          to management_chat_id
+
+GitHubReviewer.report_jira_tickets()   (own cron: 10:00 America/New_York)
+       │
+       ├─ jira_toolkit.jira_search_issues("project = <JIRA> AND updated >= -14d")
+       ├─ bucket per assignee by statusCategory (open / in progress / closed)
+       ├─ derive the 24h column from each ticket's `updated` (no 2nd call)
+       └─ no activity → silent; otherwise one monospace table message
+          to management_chat_id
+
+GitHubReviewer.report_monthly_jira_tickets()  (own cron: 1st, 10:00 NY)
+       │                                      /monthly_jira_tickets = same,
+       │                                      answered in the asking chat
+       ├─ the same search over 30 days, totals per assignee
+       ├─ top 9 wedges + "Others (n)" → altair pie → PNG
+       └─ no activity → silent; otherwise send_photo (table as caption)
+          to management_chat_id
 ```
 
 ---
@@ -102,7 +128,8 @@ GitHubReviewer.report_stale_pull_requests()
 The agent reads its configuration from environment variables (via
 `navconfig`). All variables are optional but most deployments will want to
 set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
-`GITHUB_REVIEW_TELEGRAM_CHAT_IDS` and `GITHUB_REVIEW_PUBLIC_CHANNEL_ID`.
+`GITHUB_REVIEW_TELEGRAM_CHAT_IDS`, `GITHUB_REVIEW_PUBLIC_CHANNEL_ID` and
+`GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`.
 
 | Variable                                  | Description                                                                 |
 | ----------------------------------------- | --------------------------------------------------------------------------- |
@@ -110,6 +137,7 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 | `GITHUB_REVIEW_REPOSITORY`             | Default `owner/name` watched by the bundled subclass                        |
 | `GITHUB_REVIEW_TELEGRAM_CHAT_IDS`      | Comma-separated chat IDs alerted on discrepancies                           |
 | `GITHUB_REVIEW_PUBLIC_CHANNEL_ID`      | Telegram chat/channel for the daily stale-PR summary                        |
+| `GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`   | Telegram chat/channel for the management reports — `today_pr()`, the weekly activity digest, `report_jira_tickets()` and the monthly ticket pie; falls back to the public channel when unset |
 | `GITHUB_REVIEW_WEBHOOK_PUBLIC_URL`     | Public HTTPS URL of `/api/v1/hooks/github` (enables auto-subscription)      |
 | `GITHUB_REVIEW_WEBHOOK_SECRET`         | Shared secret used to sign and verify webhook deliveries                    |
 | `GITHUB_REVIEW_STALE_AFTER_HOURS`      | Hours an open PR must be unattended before the daily report (default 24)   |
@@ -175,11 +203,42 @@ the model does not report it as nonexistent.
 <cache>/locks/<slug>.lock    cross-process lock (plus an in-process asyncio lock)
 ```
 
-The reviewer's plane is always isolated from the ai-parrot wiki plane, and the
-full wiki tools exposed to the model are confined to the cloned sources.
+The reviewer's plane is always isolated from the ai-parrot wiki plane.
 Private repositories use the same authentication as the rest of the toolkit
 (GitHub App or token); the token is scrubbed from logs. The `git` and
 `wikitoolkit` executables must be available locally.
+
+**Read-only tool surface.** Once a build completes, `_attach_wiki_toolkits()`
+registers exactly eight tools and nothing else:
+
+| Tool | Purpose |
+|---|---|
+| `code_symbol_lookup(query)` | Find a function/class/method by name or qualname |
+| `code_outline(path)` | List a file's symbols before reading it whole |
+| `code_blast_radius(symbol)` | Every symbol that transitively calls/extends/implements it |
+| `wiki_search_compact(wiki_name, query)` | Token-budgeted page stubs for a question |
+| `wiki_read_page(wiki_name, page_id)` | One page in full |
+| `wiki_expand(wiki_name, page_id, rel?)` | The page's graph neighbourhood |
+| `wiki_find_related(wiki_name, page_id, depth?)` | Multi-hop neighbours |
+| `wiki_browse_pages(wiki_name, category?)` | Stubs by category |
+
+`LLMWikiToolkit` publishes about twenty-five more coroutines — ingest,
+create/update/delete page, create/delete wiki, remember, reingest, export,
+rebuild index. All of them are withheld through `exclude_tools`, computed by
+introspection (`_read_only_excludes()`) so a write tool added by a future
+release is excluded by default rather than silently exposed. Note that
+`confine_sources=True` is **not** this guarantee: it only forces
+`ingest_source` to take an http(s) URL.
+
+The same helper narrows `CodeStructuralToolkit`, whose three tools are already
+read-only, for the same future-proofing reason.
+
+**Prompt.** The system prompt describes those eight tools — including the
+`wiki_name` every `wiki_*` call takes and the `file:` / `dir:` / `sym:` page-id
+formats — only once they are actually registered, so a reviewer whose clone or
+build failed is never told about tools it does not have. This section is
+separate from the per-review `=== Codebase context ===` block, which carries
+pre-searched graph results under `GITHUB_REVIEW_WIKI_CONTEXT_TOKENS`.
 
 **Recovery.** A cache entry whose origin URL or branch does not match is
 re-cloned exactly once; a second failure degrades instead of looping. A marker
@@ -294,6 +353,200 @@ Override the run-time per deployment via the `<AGENT_ID>_DAILY_REPORT`
 environment variable, format `HH:MM` (UTC). For the default subclass that
 is `GITHUB_REVIEWER_DAILY_REPORT=09:30`.
 
+### `today_pr(window_hours: int | None = None) -> dict`
+
+Also decorated with `@schedule_daily_report`, so it fires at the same
+`<AGENT_ID>_DAILY_REPORT` time as the stale-PR report, as a separate
+APScheduler job (`auto_<bot>_today_pr`).
+
+Lists **open** PRs only (`state="open"`, double-checked per payload so a
+closed or merged PR can never slip in) and keeps those created less than
+`window_hours` ago — 24h by default. A PR opened and merged the same day
+is therefore *not* reported: the digest is a review queue, not an
+activity log. The survivors go out to the **management channel**
+(`management_chat_id` — `GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`) as a
+**single** Telegram digest opening with `Review Today's Pull Requests`.
+Like the stale digest it only splits when it would exceed Telegram's
+4096-character limit.
+
+**When no open PR was created in the window — or the repo has no PRs at
+all — the method terminates silently**: no Telegram message,
+`today_count: 0`, and an INFO log line.
+
+```python
+{
+    "status": "ok",
+    "repository": "owner/name",
+    "window_hours": 24,
+    "today_count": 3,
+    "announced": 3,       # PRs covered by a successful send
+    "messages_sent": 1,
+    "today": [...],       # number/title/html_url/user/age_hours/state ("open")
+}
+```
+
+### `report_jira_tickets(recent_hours=None, window_days=None) -> dict`
+
+The Jira-side counterpart of `report_stale_pull_requests()`, over the same
+`jira_project` the reviewer already resolves PR tickets against. One JQL
+search — `project = <JIRA_PROJECT> AND updated >= -{window_days}d` — is
+bucketed per assignee into **open / in progress / closed** and reported in
+**two columns**: the last `recent_hours` (24h by default) and the last
+`window_days` (14 days by default). The short column is derived locally from
+each ticket's `updated` stamp, so the whole report costs a single Jira
+round-trip.
+
+Buckets come from Jira's `status.statusCategory.key`
+(`new` / `indeterminate` / `done`), not from status names, so a workflow that
+renamed "In Progress" to "Doing" still reports it as in progress. Jira Server
+instances that omit the category fall back to matching the status name, and an
+unrecognised status counts as open — a ticket is never dropped from the digest.
+
+Scope is **activity, not backlog**: a ticket nobody touched inside
+`window_days` appears in neither column.
+
+The digest is one Telegram message to the **management channel**
+(`management_chat_id` — `GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`), with a
+monospace `<pre>` table:
+
+```
+Jira tickets by assignee on NAV
+8 tickets with activity in the last 14d
+O = open · P = in progress · C = closed
+
+                 last 24h      last 14d
+Assignee          O   P   C     O   P   C
+-----------------------------------------
+Jesus Lara        1   1   1     1   1   3
+Carolina Marti…   1   0   0     1   0   1
+Unassigned        1   0   0     1   0   0
+TOTAL             3   1   1     3   1   4
+```
+
+Rows are sorted by long-window volume; the name column is clamped so the table
+stays aligned. A project with enough assignees to exceed Telegram's
+4096-character limit is split into as few messages as still fit, each with its
+own header and `(part n/m)` marker — the `TOTAL` row rides on the last part
+only. **When no ticket was touched in the window the method terminates
+silently**, like `today_pr()`.
+
+```python
+{
+    "status": "ok",
+    "project": "NAV",
+    "jql": "project = NAV AND updated >= -14d ORDER BY updated DESC",
+    "recent_hours": 24,
+    "window_days": 14,
+    "ticket_count": 8,
+    "assignees": [
+        {
+            "assignee": "Jesus Lara",
+            "recent": {"open": 1, "in_progress": 1, "closed": 1, "total": 3},
+            "window": {"open": 1, "in_progress": 1, "closed": 3, "total": 5},
+        },
+        # ... one row per assignee, sorted by the long-window total
+    ],
+    "totals": {"recent": {...}, "window": {...}},
+    "announced": 3,       # assignee rows covered by a successful send
+    "messages_sent": 1,
+}
+```
+
+Scheduled **daily at 10:00 `America/New_York`** with
+`@schedule(schedule_type=ScheduleType.CRON, hour=10, minute=0,
+timezone="America/New_York")`, so it does **not** read
+`<AGENT_ID>_DAILY_REPORT` and does not share the stale-PR tick. The timezone
+is a zone name, not a fixed offset, so the job tracks DST by itself: 14:00 UTC
+while New York is on EDT, 15:00 UTC on EST. `ScheduleType.DAILY` could not
+express this — it builds a `CronTrigger` with no timezone, which can only fire
+on the scheduler's own (UTC) clock. Change the hour in
+`_TICKET_REPORT_HOUR` / `_TICKET_REPORT_TIMEZONE` (module level in
+`github_reviewer.py`) to move it.
+
+Without a working `jira_toolkit` it returns `{"status": "error", "reason":
+"jira_toolkit not configured"}` and sends nothing.
+
+### `report_monthly_jira_tickets(window_days=None) -> dict`
+
+The same JQL and bucketing as `report_jira_tickets()`, over **30 days**
+instead of 14, delivered as a **pie chart of each assignee's share** of the
+month's ticket activity plus the ranking behind it.
+
+Wedges come from each assignee's long-window total, biggest first; the tail
+past `_TICKET_PIE_MAX_SLICES` (9) is folded into a single `Others (n)` wedge,
+because a pie with forty slivers reads as a colour wheel rather than a report.
+Assignees with no ticket in the window are dropped. Scope is **activity, not
+backlog**, exactly as in the daily digest, and a month with no activity exits
+silently.
+
+The PNG is rendered by `parrot_tools.chart.generate_chart("pie", …,
+output_format="png")` (altair), which needs the optional **`vl-convert-python`**
+dependency (`ai-parrot-tools[charts]`). Without it the chart tool writes a
+Vega-Lite JSON spec, which Telegram cannot display, so the report degrades to
+the text table alone — a missing chart never costs the numbers.
+
+Delivery goes to the **management channel** (`management_chat_id` —
+`GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`). The table rides as the photo's caption
+when it fits Telegram's 1024-character cap, so the channel shows one item
+instead of two; otherwise it follows as its own message. If the photo fails to
+send, the digest still goes out on its own.
+
+```
+Jira tickets by assignee — last 30 days on NAV
+41 tickets with activity, 4 assignee(s)
+
+Ana Pérez              18  43.9%
+Bob Smith              12  29.3%
+Carla Nuñez             7  17.1%
+Unassigned              4   9.8%
+--------------------------------
+TOTAL                  41 100.0%
+```
+
+```python
+{
+    "status": "ok",
+    "project": "NAV",
+    "window_days": 30,
+    "ticket_count": 41,
+    "wedges": 4,                     # slices drawn ("Others" counts as one)
+    "chart": "chart_c84d26f0.png",   # None when PNG export was unavailable
+    "messages_sent": 1,
+}
+```
+
+Scheduled **monthly, on the 1st at 10:00 `America/New_York`** with
+`@schedule(schedule_type=ScheduleType.CRON, day=1, hour=10, minute=0,
+timezone="America/New_York")` — the same timezone-aware cron as the daily
+ticket digest, and for the same reason: there is no monthly report type, and a
+report-marked schedule would have its config re-resolved from
+`<AGENT_ID>_DAILY_REPORT` and fire on the scheduler's UTC clock. Move it with
+`_TICKET_MONTH_REPORT_DAY` / `_TICKET_REPORT_HOUR` / `_TICKET_REPORT_TIMEZONE`.
+
+### `monthly_jira_tickets(window_days=None) -> ChartReply`
+
+The on-demand twin of the report above, exposed to Telegram as
+**`/monthly_jira_tickets`** (`@telegram_command`, keyword parsing — so
+`/monthly_jira_tickets window_days=60` works; Telegram passes arguments as
+strings and the value is coerced, falling back to 30 when unusable). The
+wrapper discovers it at bot startup and publishes it in the command menu; no
+extra configuration is needed.
+
+It **sends nothing itself**. It returns a `ChartReply` — `output` (the ranking
+text) and `charts` (`[{"path", "title", "chart_type", "format"}]`) — which is
+duck-typed to what `parrot.integrations.parser.parse_response()` reads off an
+`AIMessage`. The channel wrapper does the delivery: Telegram as a photo via
+`bot.send_photo`, MS Teams as a card image. That is why the method never needs
+to know which chat asked, and why the same reply works on any channel.
+
+Its text is **Markdown-fenced on purpose**: the wrapper runs it through
+Markdown→HTML, and the fence makes that pass escape the assignee names, so a
+display name like `A & <b>B</b>` cannot reach Telegram as broken entities.
+(The scheduled report talks to the Bot API directly, so it escapes into a
+`<pre>` block itself.)
+
+Jira failures come back as a one-line notice in `output`, not an exception.
+
 ### `GitToolkit.ensure_webhook(webhook_url, repository=None, secret=None, events=None) -> dict`
 
 Public on the toolkit. Used by `post_configure` for auto-subscription but
@@ -328,6 +581,7 @@ class NavigatorReviewer(GitHubReviewer):
         kwargs.setdefault("jira_project", "NAV")
         kwargs.setdefault("alert_chat_ids", GITHUB_REVIEW_TELEGRAM_CHAT_IDS)
         kwargs.setdefault("public_channel_id", GITHUB_REVIEW_PUBLIC_CHANNEL_ID)
+        kwargs.setdefault("management_chat_id", GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID)
         super().__init__(**kwargs)
 ```
 
@@ -373,8 +627,20 @@ share one endpoint and let the `repository` guard inside
   `TelegramAgentWrapper`, and that `alert_chat_ids` is non-empty.
 - **Daily report did not run**: check
   `scheduler_manager.register_bot_schedules(agent)` was called for this
-  agent at startup, and inspect the scheduler logs for the job named
-  `github_reviewer.report_stale_pull_requests`.
+  agent at startup, and inspect the scheduler logs for the jobs named
+  `github_reviewer.report_stale_pull_requests` and
+  `github_reviewer.today_pr` (both daily, same `HH:MM`).
+  `github_reviewer.report_jira_tickets` is a separate cron job and ignores
+  that env var — it fires at 10:00 `America/New_York`.
+- **`today_pr()` sent nothing**: that is its documented behaviour when no
+  *open* PR was created inside the window (a PR opened and already merged
+  does not count) — look for the INFO line *"no open PR created on … in
+  the last 24h; staying silent"*.
+- **`report_jira_tickets()` sent nothing**: either no ticket was touched
+  inside the window (INFO line *"no … ticket touched in the last 14d;
+  staying silent"*) or `jira_toolkit` is `None` — the latter returns
+  `{"status": "error", "reason": "jira_toolkit not configured"}` and is
+  logged at startup by `_build_jira_toolkit()`.
 
 ---
 
@@ -443,8 +709,10 @@ to bound LLM token cost and latency on every review.
 ## Weekly activity report
 
 Every Monday at 09:00 UTC (configurable), the agent posts a contributor
-activity digest to the same Telegram channel used for the daily stale-PR
-report (`GITHUB_REVIEW_PUBLIC_CHANNEL_ID`).
+activity digest to the management channel
+(`GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`, falling back to
+`GITHUB_REVIEW_PUBLIC_CHANNEL_ID` when that is not set) — not to the public
+channel that gets the stale-PR nag.
 
 The digest is produced by `report_weekly_activity()`, decorated with
 `@schedule_weekly_report`.
@@ -541,7 +809,7 @@ GitHubReviewer.report_weekly_activity()
        │            → status="stats_pending", re-run armed, nothing sent
        ├─ _build_weekly_summary(contributors, code_freq, ...)
        ├─ [optional] _llm_summarize_weekly(summary)  ← only if use_llm_summary=True
-       └─ bot.send_message(public_channel_id, html, parse_mode="HTML")
+       └─ bot.send_message(management_chat_id, html, parse_mode="HTML")
 ```
 
 ### Privacy note

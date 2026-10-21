@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import json
 import logging as _stdlib_logging
 import re
@@ -50,6 +51,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Sequence,
     Tuple,
     Union,
 )
@@ -72,7 +74,8 @@ from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 # FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
 from parrot.core.hooks import GitHubWebhookConfig, HookEvent
-from parrot.scheduler import schedule_daily_report, schedule_weekly_report
+from parrot.integrations.telegram import telegram_command
+from parrot.scheduler import ScheduleType, schedule, schedule_daily_report, schedule_weekly_report
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
@@ -84,12 +87,114 @@ from parrot_tools.jiratoolkit import JiraToolkit
 
 ChatId = Union[int, str]
 
+#: Fire time of :meth:`GitHubReviewer.report_jira_tickets` — 10:00 in New
+#: York, as a timezone rather than a UTC offset so it survives DST. Module
+#: level because a decorator argument cannot read an attribute of the class
+#: it is being defined in.
+_TICKET_REPORT_HOUR = 10
+_TICKET_REPORT_MINUTE = 0
+_TICKET_REPORT_TIMEZONE = "America/New_York"
+#: Day of the month :meth:`GitHubReviewer.report_monthly_jira_tickets` fires
+#: on, at the same hour and timezone as the daily digest above.
+_TICKET_MONTH_REPORT_DAY = 1
+
 _WIKI_CONTEXT_HEADER = (
     "=== Codebase context (knowledge graph) ===\n"
     "SNAPSHOT OF BRANCH {branch} AT {built_at} — it does NOT contain this "
     "PR's changes. A symbol introduced by this PR is EXPECTED to be absent "
     "here; never report such a symbol as nonexistent on that basis."
 )
+
+#: The only ``LLMWikiToolkit`` methods the review LLM is given. Every other
+#: public coroutine of that toolkit — ingest, create/update/delete page,
+#: create/delete wiki, remember, reingest, export, rebuild index — is
+#: withheld, so a review can never mutate the plane it reads.
+#: ``confine_sources`` is not a substitute: it only forces ``ingest_source``
+#: to take an http(s) URL, it does not make the toolkit read-only.
+_WIKI_READ_TOOLS: tuple[str, ...] = (
+    "search_compact",
+    "read_page",
+    "expand",
+    "find_related",
+    "browse_pages",
+)
+
+#: Same treatment for the structural plane. All three are already
+#: read-only; naming them keeps anything a future release adds opt-in.
+_STRUCTURAL_READ_TOOLS: tuple[str, ...] = (
+    "symbol_lookup",
+    "outline",
+    "blast_radius",
+)
+
+
+def _read_only_excludes(toolkit_cls: type, keep: Sequence[str]) -> tuple[str, ...]:
+    """Every public coroutine of ``toolkit_cls`` outside ``keep``.
+
+    Derived by introspection instead of hardcoded so the deny-list cannot
+    drift behind the toolkit: a write tool added by a future release is
+    excluded by default rather than silently exposed to the reviewer.
+
+    Args:
+        toolkit_cls: Toolkit class whose tool surface is being narrowed.
+        keep: Unprefixed method names to keep exposed.
+
+    Returns:
+        Names for ``exclude_tools`` (``_generate_tools`` matches on the
+        unprefixed method name).
+    """
+    return tuple(
+        name
+        for name, _ in inspect.getmembers(toolkit_cls, inspect.iscoroutinefunction)
+        if not name.startswith("_") and name not in keep
+    )
+
+
+#: Appended to the system prompt once the wiki tools are really attached,
+#: so a reviewer whose build failed is never told about tools it lacks.
+_WIKI_TOOLS_PROMPT = """
+
+## Repository knowledge graph
+
+You also have a prebuilt knowledge graph of this repository: one page per
+file, directory and symbol, each with a summary and an API outline, linked
+by ``contains`` (directory to child) and ``references`` (import) edges,
+plus a structural plane of call/extend/implement relations between symbols.
+
+It is a snapshot of the BASE branch, so it shows the code the PR changes
+*from* — never the PR's own changes, which only the diff carries. A symbol
+the PR introduces is expected to be absent from it.
+
+Use it to judge blast radius and completeness: who calls the symbol a hunk
+touches, which module a changed file belongs to, whether an acceptance
+criterion is already implemented elsewhere in the repo.
+
+Structural tools (start here for a named function, class or method):
+- ``code_symbol_lookup(query)`` — find a symbol by name or qualname;
+  returns file and line for each hit.
+- ``code_outline(path)`` — list a file's symbols before reading it whole.
+- ``code_blast_radius(symbol)`` — every symbol that transitively calls,
+  extends or implements it. Run this before judging a change to a
+  widely-used function or class.
+
+Graph tools (for a question rather than a name) — pass
+``wiki_name="{wiki_name}"`` to every one of these:
+- ``wiki_search_compact(wiki_name, query)`` — token-budgeted stubs (page
+  id, title, lead sentence, cost of reading the full page).
+- ``wiki_read_page(wiki_name, page_id, max_tokens?)`` — the full body of a
+  stub worth its tokens. Page ids are ``file:path/to/module.py``,
+  ``dir:path/to``, or ``sym:path/to/module.py#Class.method``.
+- ``wiki_expand(wiki_name, page_id, rel?)`` — the page's graph
+  neighbourhood as stubs; ``rel="references"`` for import edges.
+- ``wiki_find_related(wiki_name, page_id, depth?)`` — multi-hop neighbours.
+- ``wiki_browse_pages(wiki_name, category?, search?)`` — stubs by category
+  (``module``, ``document``, ``config``, ``overview``, ``symbol``).
+
+These calls share the same per-review tool budget as the GitHub tools, so
+spend them only when the diff and the codebase context block above cannot
+answer the question. The graph is background context: the diff and the
+acceptance criteria decide the verdict.
+"""
 
 
 def _flatten_adf(node: Any) -> str:
@@ -221,6 +326,24 @@ class WeeklyActivitySummary(BaseModel):
     contributor slices, never from ``code_frequency``."""
 
 
+class ChartReply(BaseModel):
+    """A command reply the channel wrappers deliver as text plus a chart.
+
+    Duck-typed to what ``parrot.integrations.parser.parse_response()``
+    reads off an ``AIMessage``: ``output`` becomes the message text and
+    ``charts`` becomes attachments, so a ``@telegram_command`` method can
+    return one of these and let the wrapper do the sending — Telegram as a
+    photo (``send_photo``), MS Teams as a card image. The command method
+    then never needs to know which chat asked.
+    """
+
+    output: str
+    """Message text. Markdown; fence anything whose alignment matters."""
+    charts: List[Dict[str, Any]] = Field(default_factory=list)
+    """``{"path", "title", "chart_type", "format"}`` entries, one per image.
+    Empty when the chart could not be rendered — the text still goes out."""
+
+
 class WeeklyLLMSummarizationError(RuntimeError):
     """Raised when the LLM summarizer fails; caller falls back to templated output."""
 
@@ -317,6 +440,11 @@ class GitHubReviewer(Agent):
             alert when a discrepancy is found.
         public_channel_id: Telegram chat / channel ID that receives the
             daily summary of stale (>24h) open PRs.
+        management_chat_id: Telegram chat / channel ID that receives the
+            management reports — :meth:`today_pr`,
+            :meth:`report_weekly_activity` and
+            :meth:`report_jira_tickets`. Defaults to ``public_channel_id``
+            so those reports keep arriving when it is not configured.
         webhook_public_url: Public HTTPS URL of the GitHub webhook
             endpoint (e.g. ``https://parrot.example.com/api/v1/hooks/github``).
             When set, :meth:`post_configure` calls
@@ -462,6 +590,7 @@ class GitHubReviewer(Agent):
         jira_project: str = "NAV",
         alert_chat_ids: Optional[List[ChatId]] = None,
         public_channel_id: Optional[ChatId] = None,
+        management_chat_id: Optional[ChatId] = None,
         webhook_public_url: Optional[str] = None,
         webhook_secret: Optional[str] = None,
         stale_after_hours: int = 24,
@@ -484,6 +613,11 @@ class GitHubReviewer(Agent):
         self.jira_project = jira_project
         self.alert_chat_ids: List[ChatId] = list(alert_chat_ids or [])
         self.public_channel_id = public_channel_id
+        # Management reports (today's PRs, weekly activity, Jira tickets) go
+        # here. Falling back to the public channel keeps them delivered on a
+        # deployment that has not split the two destinations yet;
+        # post_configure() warns when that fallback is in effect.
+        self.management_chat_id = management_chat_id or public_channel_id
         self.webhook_public_url = webhook_public_url
         self.webhook_secret = webhook_secret
         self.stale_after_hours = int(stale_after_hours)
@@ -557,6 +691,15 @@ class GitHubReviewer(Agent):
         before the aiohttp router freezes.
         """
         await super().post_configure()
+
+        if self.management_chat_id and self.management_chat_id == self.public_channel_id:
+            self.logger.warning(
+                "GitHubReviewer: no management chat configured "
+                "(GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID); today_pr, the weekly "
+                "activity digest and the Jira ticket summary will go to the "
+                "public channel %s alongside the stale-PR nag.",
+                self.public_channel_id,
+            )
 
         self.git_toolkit = self._build_git_toolkit()
         self._wiki_cache = self._build_wiki_cache()
@@ -757,14 +900,47 @@ class GitHubReviewer(Agent):
                 storage_backend="sqlite",
             )
             wiki = LLMWikiToolkit(None, None, None, wiki_config, store=store, confine_sources=True)
+            # Narrow both toolkits to their read surface. Set before
+            # registration: tools are generated lazily on the first
+            # get_tools(), so the exclusions still apply.
+            structural.exclude_tools = _read_only_excludes(CodeStructuralToolkit, _STRUCTURAL_READ_TOOLS)
+            wiki.exclude_tools = _read_only_excludes(LLMWikiToolkit, _WIKI_READ_TOOLS)
             self._attach_toolkit(structural, "Wiki structural")
             self._attach_toolkit(wiki, "Wiki")
             self._wiki_store = store
             self._wiki_toolkits_attached = True
+            # Only now that the tools exist does the prompt describe them.
+            self._document_wiki_tools(paths.slug)
             if self._llm is not None and hasattr(self._llm, "tool_manager"):
                 self.sync_tools(self._llm)
         except Exception as exc:  # noqa: BLE001 - wiki tools are strictly optional
             self.logger.warning("GitHubReviewer: failed to attach wiki tools: %s", exc, exc_info=True)
+
+    def _document_wiki_tools(self, wiki_name: str) -> None:
+        """Append the knowledge-graph section to the system prompt.
+
+        Called only once the toolkits are really registered, so a reviewer
+        whose clone or build failed is never told about tools it does not
+        have. ``ask()`` re-renders ``system_prompt_template`` on every
+        call, so appending after ``configure()`` still reaches every
+        subsequent review.
+
+        Guarded rather than asserted: a prompt that cannot be extended
+        must not fail an attach that already succeeded — the tools stay
+        usable, they are just undocumented.
+
+        Args:
+            wiki_name: Plane name the LLM must pass to every ``wiki_*`` call.
+        """
+        template = getattr(self, "system_prompt_template", None)
+        if not isinstance(template, str):
+            self.logger.warning(
+                "GitHubReviewer: wiki tools attached but the system prompt could not be "
+                "extended (system_prompt_template is %s); the model will not be told they exist.",
+                type(template).__name__,
+            )
+            return
+        self.system_prompt_template = template + _WIKI_TOOLS_PROMPT.format(wiki_name=wiki_name)
 
     async def _attach_webhook_listener(self) -> None:
         """Hook ``self.handle_hook_event`` into the shared dispatcher."""
@@ -1594,6 +1770,8 @@ class GitHubReviewer(Agent):
     #: Head-room reserved in each chunk for the ``(part n/m)`` marker, which is
     #: only known after the chunking decided how many parts there are.
     _TELEGRAM_PART_RESERVE = 32
+    #: A ``sendPhoto`` caption is capped far lower than a message body.
+    _TELEGRAM_MAX_CAPTION = 1024
     #: Per-entry title clamp, so one novel-length PR title cannot produce an
     #: entry that alone overflows a message.
     _STALE_TITLE_MAX = 150
@@ -1680,8 +1858,8 @@ class GitHubReviewer(Agent):
         return self._format_pr_digest(
             prs,
             heading=self._TODAY_PR_HEADING,
-            subtitle=f"{len(prs)} PR{plural} opened in the last {window_hours}h",
-            detail=lambda pr: f"opened {pr['age_hours']}h ago · {pr['state']}",
+            subtitle=f"{len(prs)} open PR{plural} opened in the last {window_hours}h",
+            detail=lambda pr: f"opened {pr['age_hours']}h ago",
         )
 
     @schedule_daily_report
@@ -1780,17 +1958,22 @@ class GitHubReviewer(Agent):
             return "merged"
         return "closed" if str(pr.get("state") or "open").lower() == "closed" else "open"
 
+    @classmethod
+    def _is_open_pull_request(cls, pr: Dict[str, Any]) -> bool:
+        """Whether a PR payload is still open (not closed, not merged)."""
+        return cls._pr_state_label(pr) == "open"
+
     @schedule_daily_report
     async def today_pr(self, window_hours: Optional[int] = None) -> Dict[str, Any]:
         """Announce every PR opened in the last ``window_hours`` as one message.
 
-        Unlike :meth:`report_stale_pull_requests` this looks at PRs in **any**
-        state (``all``), so a PR opened and merged on the same day still shows
-        up, labelled with its state.
+        Only PRs that are still **open** are reported: one opened and already
+        closed or merged inside the window is left out, because the digest is
+        a review queue, not an activity log.
 
-        When no PR was opened inside the window — or the repo has no PRs at
-        all — the method **terminates silently**: nothing is sent to Telegram
-        and the returned dict carries ``today_count: 0``.
+        When no open PR was created inside the window — or the repo has no PRs
+        at all — the method **terminates silently**: nothing is sent to
+        Telegram and the returned dict carries ``today_count: 0``.
 
         Args:
             window_hours: How far back to look. Defaults to
@@ -1803,14 +1986,14 @@ class GitHubReviewer(Agent):
 
         Scheduled by :func:`schedule_daily_report`, so it fires at the same
         ``{AGENT_ID}_DAILY_REPORT`` time (``HH:MM`` UTC) as the stale-PR
-        report.
+        report, as its own APScheduler job (``auto_<bot>_today_pr``).
         """
         window = self._TODAY_PR_WINDOW_HOURS if window_hours is None else window_hours
         if self.git_toolkit is None:
             return {"status": "error", "reason": "git_toolkit not configured"}
 
         try:
-            pulls = await self.git_toolkit.list_pull_requests(repository=self.repository, state="all", per_page=100)
+            pulls = await self.git_toolkit.list_pull_requests(repository=self.repository, state="open", per_page=100)
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "GitHubReviewer: list_pull_requests failed for %s: %s",
@@ -1823,6 +2006,10 @@ class GitHubReviewer(Agent):
         now = datetime.now(timezone.utc)
         today: List[Dict[str, Any]] = []
         for pr in pulls or []:
+            # Belt and braces: the listing already asked for state="open", but a
+            # closed or merged payload must never reach the digest.
+            if not self._is_open_pull_request(pr):
+                continue
             created_at = self._parse_iso8601(pr.get("created_at"))
             if created_at is None:
                 continue
@@ -1836,7 +2023,7 @@ class GitHubReviewer(Agent):
                     "html_url": pr.get("html_url"),
                     "user": (pr.get("user") or {}).get("login"),
                     "age_hours": round(age_hours, 1),
-                    "state": self._pr_state_label(pr),
+                    "state": "open",
                 }
             )
 
@@ -1850,7 +2037,7 @@ class GitHubReviewer(Agent):
         if not today:
             # Silent exit: an empty digest is noise, so no message goes out.
             self.logger.info(
-                "GitHubReviewer: today's PR report — no PR opened on %s in the last %sh; staying silent.",
+                "GitHubReviewer: today's PR report — no open PR created on %s in the last %sh; staying silent.",
                 self.repository,
                 window,
             )
@@ -1859,11 +2046,11 @@ class GitHubReviewer(Agent):
         sent = 0
         messages_sent = 0
         bot = self._get_telegram_bot()
-        if bot is not None and self.public_channel_id:
+        if bot is not None and self.management_chat_id:
             for text, covered in self._format_today_prs_digest(today, window):
                 try:
                     await bot.send_message(
-                        chat_id=self.public_channel_id,
+                        chat_id=self.management_chat_id,
                         text=text,
                         parse_mode="HTML",
                         disable_web_page_preview=True,
@@ -1873,12 +2060,12 @@ class GitHubReviewer(Agent):
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning(
                         "GitHubReviewer: failed to send today's-PR digest to chat %s: %s",
-                        self.public_channel_id,
+                        self.management_chat_id,
                         exc,
                     )
 
         self.logger.info(
-            "GitHubReviewer: today's PR report — %d PR(s) opened in the last %sh on %s, "
+            "GitHubReviewer: today's PR report — %d open PR(s) created in the last %sh on %s, "
             "%d announced in %d message(s).",
             len(today),
             window,
@@ -1896,6 +2083,814 @@ class GitHubReviewer(Agent):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
+
+    # ------------------------------------------------------------------
+    # Daily Jira ticket summary (open / in progress / closed by assignee)
+    # ------------------------------------------------------------------
+
+    #: Short column of the ticket digest, in hours.
+    _TICKET_RECENT_HOURS = 24
+    #: Long column of the ticket digest, in days. Also the JQL window: the
+    #: 24h column is derived from it, so the report is ONE Jira round-trip.
+    _TICKET_WINDOW_DAYS = 14
+    #: Minimal field set for the summary — counts only, no prose, no ADF.
+    _TICKET_SUMMARY_FIELDS = "key,assignee,status,updated"
+    #: Jira ``status.statusCategory.key`` -> bucket.
+    _TICKET_BUCKETS: Dict[str, str] = {
+        "new": "open",
+        "indeterminate": "in_progress",
+        "done": "closed",
+    }
+    #: Column order of the digest table, and of every counts dict returned.
+    _TICKET_BUCKET_ORDER: Tuple[str, ...] = ("open", "in_progress", "closed")
+    #: Assignee-name clamp, so the fixed-width table stays aligned.
+    _TICKET_ASSIGNEE_MAX = 16
+    #: Opening line of the digest.
+    _TICKET_HEADING = "Jira tickets by assignee"
+    #: Window of the on-demand monthly pie chart, in days.
+    _TICKET_MONTH_DAYS = 30
+    #: Assignees that get a wedge of their own in that pie; the tail is
+    #: folded into one, because 40 slivers read as a colour wheel.
+    _TICKET_PIE_MAX_SLICES = 9
+    #: Label of the folded wedge (the assignee count is appended).
+    _TICKET_PIE_OTHERS = "Others"
+
+    @classmethod
+    def _ticket_bucket(cls, issue: Dict[str, Any]) -> str:
+        """``"open"`` / ``"in_progress"`` / ``"closed"`` for one Jira issue.
+
+        Keys off ``status.statusCategory.key``, not the status name, so the
+        buckets hold for any workflow: a project that renamed "In Progress"
+        to "Doing" still reports it as in progress. Jira Server instances
+        that omit the category fall back to matching the status name, and
+        anything still unrecognised counts as open — a ticket is never
+        dropped from the digest for having an exotic status.
+        """
+        status = ((issue.get("fields") or {}).get("status")) or {}
+        category = str(((status.get("statusCategory") or {}).get("key")) or "").lower()
+        bucket = cls._TICKET_BUCKETS.get(category)
+        if bucket is not None:
+            return bucket
+
+        name = str(status.get("name") or "").lower()
+        if any(word in name for word in ("progress", "doing", "review")):
+            return "in_progress"
+        if any(word in name for word in ("done", "closed", "resolved", "complete")):
+            return "closed"
+        return "open"
+
+    @staticmethod
+    def _ticket_assignee(issue: Dict[str, Any]) -> str:
+        """Display name of an issue's assignee, or ``"Unassigned"``."""
+        assignee = ((issue.get("fields") or {}).get("assignee")) or {}
+        return str(
+            assignee.get("displayName") or assignee.get("name") or assignee.get("emailAddress") or "Unassigned"
+        )
+
+    def _summarize_tickets(
+        self,
+        issues: List[Dict[str, Any]],
+        *,
+        now: datetime,
+        recent_hours: int,
+        window_days: int,
+    ) -> Dict[str, Any]:
+        """Bucket ``issues`` per assignee into the two reported windows.
+
+        The caller already restricted the JQL to the long window, so the
+        24h column is derived here from each issue's ``updated`` stamp
+        rather than costing a second Jira round-trip. An issue whose
+        ``updated`` is missing or unparseable counts in the long window
+        only.
+
+        Args:
+            issues: Raw Jira issue dicts (``{"key": ..., "fields": {...}}``).
+            now: Reference instant, passed in so tests are deterministic.
+            recent_hours: Width of the short column.
+            window_days: Width of the long column (reported back verbatim).
+
+        Returns:
+            ``{"recent_hours", "window_days", "ticket_count", "assignees",
+            "totals"}``. ``assignees`` is a list of
+            ``{"assignee", "recent": {...}, "window": {...}}`` rows sorted
+            by long-window volume (ties broken by name); each counts dict
+            carries the three buckets plus their ``total``.
+        """
+        recent_cutoff = now - timedelta(hours=recent_hours)
+        rows: Dict[str, Dict[str, Counter]] = {}
+        totals: Dict[str, Counter] = {"recent": Counter(), "window": Counter()}
+
+        for issue in issues:
+            bucket = self._ticket_bucket(issue)
+            name = self._ticket_assignee(issue)
+            row = rows.setdefault(name, {"recent": Counter(), "window": Counter()})
+            row["window"][bucket] += 1
+            totals["window"][bucket] += 1
+            # Jira renders offsets as ``+0000`` (no colon), which
+            # fromisoformat() accepts on the 3.11+ this package requires.
+            updated = self._parse_iso8601(((issue.get("fields") or {}).get("updated")))
+            if updated is not None and updated >= recent_cutoff:
+                row["recent"][bucket] += 1
+                totals["recent"][bucket] += 1
+
+        def _counts(counter: Counter) -> Dict[str, int]:
+            data = {bucket: int(counter.get(bucket, 0)) for bucket in self._TICKET_BUCKET_ORDER}
+            data["total"] = sum(data.values())
+            return data
+
+        assignees = [
+            {
+                "assignee": name,
+                "recent": _counts(row["recent"]),
+                "window": _counts(row["window"]),
+            }
+            for name, row in rows.items()
+        ]
+        assignees.sort(key=lambda entry: (-entry["window"]["total"], entry["assignee"].lower()))
+
+        return {
+            "recent_hours": recent_hours,
+            "window_days": window_days,
+            "ticket_count": len(issues),
+            "assignees": assignees,
+            "totals": {"recent": _counts(totals["recent"]), "window": _counts(totals["window"])},
+        }
+
+    def _format_ticket_counts(self, counts: Dict[str, int]) -> str:
+        """Render one window's three buckets as a fixed-width cell group."""
+        return " ".join(f"{counts.get(bucket, 0):>3}" for bucket in self._TICKET_BUCKET_ORDER)
+
+    def _format_jira_tickets_digest(self, summary: Dict[str, Any]) -> List[Tuple[str, int]]:
+        """Render :meth:`_summarize_tickets` output as ONE Telegram message.
+
+        The body is a monospace ``<pre>`` table: one row per assignee, two
+        column groups — the last ``recent_hours`` and the last
+        ``window_days`` — each holding open / in progress / closed. The
+        ``TOTAL`` row closes the table.
+
+        Returns:
+            A list of ``(text, assignee_rows)`` pairs, a single pair in the
+            normal case. A project with enough assignees to blow Telegram's
+            4096-char limit is split into as few messages as still fit,
+            each carrying its own header, table head and ``(part n/m)``
+            marker; the ``TOTAL`` row rides on the last part only, so it is
+            never double-counted. ``assignee_rows`` is how many assignees
+            that message reports, so a caller can attribute a failed send
+            to the rows it would have covered.
+        """
+        recent_hours = int(summary.get("recent_hours") or self._TICKET_RECENT_HOURS)
+        window_days = int(summary.get("window_days") or self._TICKET_WINDOW_DAYS)
+        ticket_count = int(summary.get("ticket_count") or 0)
+        plural = "" if ticket_count == 1 else "s"
+
+        name_w = self._TICKET_ASSIGNEE_MAX
+        recent_label = f"last {recent_hours}h"
+        window_label = f"last {window_days}d"
+        head = (
+            f"{'':<{name_w}}{recent_label:^11}   {window_label:^11}\n"
+            f"{'Assignee':<{name_w}}{'  O   P   C'}   {'  O   P   C'}\n"
+            f"{'-' * (name_w + 25)}"
+        )
+        header = (
+            f"<b>{html.escape(self._TICKET_HEADING)}</b> on "
+            f"<code>{html.escape(str(self.jira_project))}</code>\n"
+            f"{ticket_count} ticket{plural} with activity in the {window_label}\n"
+            "O = open · P = in progress · C = closed\n"
+        )
+
+        def _row(name: str, recent: Dict[str, int], window: Dict[str, int]) -> str:
+            label = name if len(name) <= name_w else name[: name_w - 2].rstrip() + "…"
+            # Pad first, escape after: inside <pre> the rendered width is the
+            # DECODED width, so padding an escaped "&amp;" would misalign it.
+            return (
+                f"\n{html.escape(f'{label:<{name_w}}')}"
+                f"{self._format_ticket_counts(recent)}   {self._format_ticket_counts(window)}"
+            )
+
+        entries = [_row(entry["assignee"], entry["recent"], entry["window"]) for entry in summary.get("assignees") or []]
+        totals = summary.get("totals") or {}
+        total_row = _row("TOTAL", totals.get("recent") or {}, totals.get("window") or {})
+
+        # ``<pre>``/``</pre>`` plus the table head and the TOTAL row are
+        # per-message overhead, so they come off the budget before the
+        # assignee rows are packed into it.
+        fixed = len(header) + len(head) + len(total_row) + len("<pre>\n</pre>") + self._TELEGRAM_PART_RESERVE
+        budget = self._TELEGRAM_MAX_MESSAGE - fixed
+        chunks: List[List[str]] = [[]]
+        used = 0
+        for entry in entries:
+            if chunks[-1] and used + len(entry) > budget:
+                chunks.append([])
+                used = 0
+            chunks[-1].append(entry)
+            used += len(entry)
+
+        total_parts = len(chunks)
+        messages: List[Tuple[str, int]] = []
+        for part, chunk in enumerate(chunks, start=1):
+            marker = f"(part {part}/{total_parts})\n" if total_parts > 1 else ""
+            tail = total_row if part == total_parts else ""
+            body = f"<pre>{head}{''.join(chunk)}{tail}\n</pre>"
+            messages.append((header + marker + body, len(chunk)))
+        return messages
+
+    async def _collect_ticket_summary(self, *, recent_hours: int, window_days: int) -> Dict[str, Any]:
+        """Run the project's ticket JQL once and bucket it per assignee.
+
+        Shared by the two ticket digests — :meth:`report_jira_tickets`
+        (daily table, 14 days) and :meth:`monthly_jira_tickets` (pie chart,
+        30 days) report the same numbers over different windows, so the
+        Jira round-trip, its error handling and the bucketing live here and
+        the callers only render.
+
+        Args:
+            recent_hours: Width of the short column; derived locally from
+                each ticket's ``updated``, never a second Jira call.
+            window_days: Width of the JQL window (``updated >= -{days}d``).
+
+        Returns:
+            On success, ``status: "ok"`` plus ``project``, ``jql``,
+            ``recent_hours``, ``window_days`` merged with
+            :meth:`_summarize_tickets` (``ticket_count``, ``assignees``,
+            ``totals``); ``assignees`` is empty when nothing was touched in
+            the window. On failure, ``status: "error"`` and a ``reason``.
+        """
+        if self.jira_toolkit is None:
+            return {"status": "error", "reason": "jira_toolkit not configured"}
+
+        jql = f"project = {self.jira_project} AND updated >= -{window_days}d ORDER BY updated DESC"
+        base: Dict[str, Any] = {
+            "status": "ok",
+            "project": self.jira_project,
+            "jql": jql,
+            "recent_hours": recent_hours,
+            "window_days": window_days,
+        }
+
+        try:
+            envelope = await self.jira_toolkit.jira_search_issues(
+                jql=jql,
+                # None fetches every page: a partial page would silently
+                # under-count, which is worse than a slower report.
+                max_results=None,
+                fields=self._TICKET_SUMMARY_FIELDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: jira_search_issues failed for project %s: %s",
+                self.jira_project,
+                exc,
+                exc_info=True,
+            )
+            return {**base, "status": "error", "reason": str(exc)}
+
+        envelope = envelope or {}
+        status = envelope.get("status")
+        if status not in ("ok", "empty"):
+            reason = str(envelope.get("message") or "jira_search_issues returned no data")
+            self.logger.error(
+                "GitHubReviewer: Jira ticket summary for %s failed: %s",
+                self.jira_project,
+                reason,
+            )
+            return {**base, "status": "error", "reason": reason}
+
+        issues = ((envelope.get("data") or {}).get("issues")) or []
+        summary = self._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=recent_hours,
+            window_days=window_days,
+        )
+        return {**base, **summary}
+
+    # Daily at 10:00 America/New_York, NOT @schedule_daily_report: the
+    # ``daily`` schedule type builds a ``CronTrigger`` with no timezone, so it
+    # can only fire on the scheduler's own clock (UTC), and its config would
+    # be re-resolved from ``{AGENT_ID}_DAILY_REPORT`` at register time —
+    # sharing the stale-PR digest's run time. ``ScheduleType.CRON`` takes an
+    # explicit timezone and carries no report marker, so this stays at 10:00
+    # New York across DST (14:00 UTC in EDT, 15:00 UTC in EST).
+    @schedule(
+        schedule_type=ScheduleType.CRON,
+        hour=_TICKET_REPORT_HOUR,
+        minute=_TICKET_REPORT_MINUTE,
+        timezone=_TICKET_REPORT_TIMEZONE,
+    )
+    async def report_jira_tickets(
+        self,
+        recent_hours: Optional[int] = None,
+        window_days: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Digest the review project's tickets by assignee and state.
+
+        Counterpart of :meth:`report_stale_pull_requests` on the Jira side:
+        one JQL search over ``self.jira_project`` (the project the reviewer
+        already resolves PR tickets against), bucketed per assignee into
+        open / in progress / closed via each ticket's ``statusCategory``,
+        and reported in two columns — the last ``recent_hours`` and the
+        last ``window_days``.
+
+        Scope is **activity**, not backlog: the JQL is
+        ``updated >= -{window_days}d``, so a ticket nobody has touched in
+        that window does not appear in either column, and the 24h column
+        is the subset of those tickets updated in the last
+        ``recent_hours`` (derived locally — no second Jira call).
+
+        When the project had no activity in the window — or Jira returns
+        nothing — the method **terminates silently** like :meth:`today_pr`:
+        nothing is sent and the returned dict carries ``ticket_count: 0``.
+
+        Args:
+            recent_hours: Width of the short column. Defaults to
+                :attr:`_TICKET_RECENT_HOURS` (24h).
+            window_days: Width of the long column, and of the JQL window.
+                Defaults to :attr:`_TICKET_WINDOW_DAYS` (14 days).
+
+        Returns:
+            A status dict with ``status``, ``project``, ``jql``,
+            ``recent_hours``, ``window_days``, ``ticket_count``,
+            ``assignees``, ``totals``, ``announced`` (assignee rows covered
+            by a successful send) and ``messages_sent``.
+
+        Scheduled daily at 10:00 ``America/New_York`` (DST-aware), on its
+        own cron job rather than the ``{AGENT_ID}_DAILY_REPORT`` tick the
+        other reports share — see the decorator above.
+        """
+        recent = self._TICKET_RECENT_HOURS if recent_hours is None else int(recent_hours)
+        days = self._TICKET_WINDOW_DAYS if window_days is None else int(window_days)
+
+        summary = await self._collect_ticket_summary(recent_hours=recent, window_days=days)
+        if summary["status"] != "ok":
+            return summary
+        base = summary
+
+        if not summary["assignees"]:
+            # Silent exit: an empty table is noise, so no message goes out.
+            self.logger.info(
+                "GitHubReviewer: Jira ticket summary — no %s ticket touched in the last %sd; staying silent.",
+                self.jira_project,
+                days,
+            )
+            return {**base, "announced": 0, "messages_sent": 0}
+
+        sent = 0
+        messages_sent = 0
+        bot = self._get_telegram_bot()
+        if bot is not None and self.management_chat_id:
+            for text, covered in self._format_jira_tickets_digest(summary):
+                try:
+                    await bot.send_message(
+                        chat_id=self.management_chat_id,
+                        text=text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    messages_sent += 1
+                    sent += covered
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "GitHubReviewer: failed to send Jira ticket digest to chat %s: %s",
+                        self.management_chat_id,
+                        exc,
+                    )
+
+        self.logger.info(
+            "GitHubReviewer: Jira ticket summary — %d ticket(s) across %d assignee(s) on %s "
+            "(last %sh / last %sd), %d row(s) announced in %d message(s).",
+            summary["ticket_count"],
+            len(summary["assignees"]),
+            self.jira_project,
+            recent,
+            days,
+            sent,
+            messages_sent,
+        )
+        return {**base, "announced": sent, "messages_sent": messages_sent}
+
+    # ------------------------------------------------------------------
+    # On-demand monthly ticket pie chart (/monthly_jira_tickets)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _ticket_pie_slices(
+        cls,
+        summary: Dict[str, Any],
+        *,
+        max_slices: Optional[int] = None,
+    ) -> List[Tuple[str, int]]:
+        """Wedges for the monthly pie: ``(assignee, tickets)``, biggest first.
+
+        ``summary["assignees"]`` already arrives sorted by long-window
+        volume, so the tail past ``max_slices`` is folded into a single
+        ``Others (n)`` wedge. Assignees with no ticket in the window are
+        dropped: a zero wedge is invisible but still eats a legend row.
+
+        Args:
+            summary: A :meth:`_collect_ticket_summary` result.
+            max_slices: Named wedges to keep. Defaults to
+                :attr:`_TICKET_PIE_MAX_SLICES`; ``0`` keeps every assignee.
+
+        Returns:
+            The wedges, or an empty list when nothing was touched.
+        """
+        limit = cls._TICKET_PIE_MAX_SLICES if max_slices is None else int(max_slices)
+        rows = [
+            (
+                str(entry.get("assignee") or "Unassigned"),
+                int((entry.get("window") or {}).get("total") or 0),
+            )
+            for entry in summary.get("assignees") or []
+        ]
+        rows = [row for row in rows if row[1] > 0]
+        if limit > 0 and len(rows) > limit:
+            head, tail = rows[:limit], rows[limit:]
+            head.append((f"{cls._TICKET_PIE_OTHERS} ({len(tail)})", sum(count for _, count in tail)))
+            return head
+        return rows
+
+    async def _render_ticket_pie(self, slices: List[Tuple[str, int]], *, title: str) -> Optional[Path]:
+        """Render ``slices`` as a PNG pie chart, or ``None`` when it cannot.
+
+        PNG export goes through ``parrot_tools.chart`` (altair), which needs
+        the optional ``vl-convert-python`` dependency; without it the chart
+        tool falls back to writing a Vega-Lite JSON spec, which Telegram
+        cannot show as a photo. Both that fallback and an outright failure
+        return ``None`` so the caller still sends the text ranking — a
+        missing chart must never cost the whole reply.
+
+        Args:
+            slices: ``(label, count)`` wedges from :meth:`_ticket_pie_slices`.
+            title: Chart title, also used as the attachment caption.
+
+        Returns:
+            Path to the rendered PNG, or ``None``.
+        """
+        if not slices:
+            return None
+        # Local import: charts are an optional extra of ai-parrot-tools, and
+        # pulling altair in at module import time would tax every reviewer.
+        from parrot_tools.chart import generate_chart
+
+        try:
+            path = await generate_chart(
+                "pie",
+                title,
+                {
+                    "labels": [label for label, _ in slices],
+                    "values": [count for _, count in slices],
+                },
+                legend_title="Assignee",
+                output_format="png",
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "GitHubReviewer: could not render the %s ticket pie chart: %s",
+                self.jira_project,
+                exc,
+            )
+            return None
+
+        if path is None or path.suffix.lower() != ".png":
+            self.logger.warning(
+                "GitHubReviewer: pie chart export fell back to '%s' — install "
+                "ai-parrot-tools[charts] (vl-convert-python) for PNG; sending text only.",
+                path.suffix.lstrip(".") if path is not None else "nothing",
+            )
+            return None
+        return path
+
+    def _monthly_ticket_headings(self, summary: Dict[str, Any]) -> Tuple[str, str]:
+        """``(title, subtitle)`` for the monthly digest, without any markup.
+
+        Both renderings start from the same two lines so the chat message
+        and the command reply can never describe the same numbers
+        differently; each escapes or decorates them as its format needs.
+        """
+        days = int(summary.get("window_days") or self._TICKET_MONTH_DAYS)
+        ticket_count = int(summary.get("ticket_count") or 0)
+        plural = "" if ticket_count == 1 else "s"
+        return (
+            f"{self._TICKET_HEADING} — last {days} days on {self.jira_project}",
+            f"{ticket_count} ticket{plural} with activity, {len(summary.get('assignees') or [])} assignee(s)",
+        )
+
+    def _monthly_ticket_rows(
+        self,
+        slices: List[Tuple[str, int]],
+    ) -> List[str]:
+        """The pie's own numbers as fixed-width lines, no markup.
+
+        The chart carries the shape, these carry the values — and they are
+        the whole report when PNG export is unavailable. Shared by both
+        renderings so the columns and percentages cannot drift apart; the
+        caller wraps them in a Markdown fence or a ``<pre>`` block, which
+        is also what keeps an ``A & <b>`` display name from reaching
+        Telegram as entities.
+
+        Args:
+            slices: The wedges being drawn, biggest first.
+
+        Returns:
+            One line per wedge, then a rule and a TOTAL line.
+        """
+        drawn = sum(count for _, count in slices)
+        name_w = self._TICKET_ASSIGNEE_MAX + 4  # the folded wedge carries a count
+
+        def _row(label: str, count: int) -> str:
+            clipped = label if len(label) <= name_w else label[: name_w - 2].rstrip() + "…"
+            share = (count * 100 / drawn) if drawn else 0
+            return f"{clipped:<{name_w}}{count:>5}{share:>6.1f}%"
+
+        return [
+            *(_row(label, count) for label, count in slices),
+            "-" * (name_w + 12),
+            _row("TOTAL", drawn),
+        ]
+
+    def _format_monthly_tickets_text(
+        self,
+        summary: Dict[str, Any],
+        slices: List[Tuple[str, int]],
+    ) -> str:
+        """Markdown rendering, for the command reply the wrapper delivers.
+
+        Fenced on purpose: the wrapper runs the text through
+        Markdown→HTML, and the fence makes that pass escape the assignee
+        names instead of letting markup in a display name break Telegram's
+        parser.
+
+        Args:
+            summary: A :meth:`_collect_ticket_summary` result.
+            slices: The wedges being drawn, biggest first.
+
+        Returns:
+            Two header lines plus a fenced table.
+        """
+        title, subtitle = self._monthly_ticket_headings(summary)
+        return f"{title}\n{subtitle}\n\n```\n" + "\n".join(self._monthly_ticket_rows(slices)) + "\n```"
+
+    def _format_monthly_tickets_digest(
+        self,
+        summary: Dict[str, Any],
+        slices: List[Tuple[str, int]],
+    ) -> str:
+        """Telegram-HTML rendering, for the monthly report's own send.
+
+        The scheduled report talks to ``bot.send_photo`` /
+        ``send_message`` directly — no wrapper, so no Markdown pass — and
+        therefore escapes here, like :meth:`_format_jira_tickets_digest`.
+
+        Args:
+            summary: A :meth:`_collect_ticket_summary` result.
+            slices: The wedges being drawn, biggest first.
+
+        Returns:
+            HTML: a bold title, the subtitle, and the table in ``<pre>``.
+        """
+        title, subtitle = self._monthly_ticket_headings(summary)
+        rows = html.escape("\n".join(self._monthly_ticket_rows(slices)))
+        return f"<b>{html.escape(title)}</b>\n{html.escape(subtitle)}\n<pre>\n{rows}\n</pre>"
+
+    async def _build_monthly_ticket_pie(self, *, window_days: int) -> Dict[str, Any]:
+        """Collect the month's tickets, slice them and render the pie.
+
+        The whole body of the monthly digest, minus delivery: the
+        ``@telegram_command`` hands it to the wrapper, the scheduled report
+        sends it to the management channel, and neither duplicates the
+        other's logic.
+
+        Args:
+            window_days: Width of the window, in days.
+
+        Returns:
+            ``{"status": "ok", "summary", "slices", "chart"}`` — ``chart``
+            is the PNG path or ``None`` when export was unavailable;
+            ``{"status": "empty"}`` when nothing was touched in the window;
+            or the ``status: "error"`` dict from
+            :meth:`_collect_ticket_summary`.
+        """
+        summary = await self._collect_ticket_summary(
+            recent_hours=self._TICKET_RECENT_HOURS,
+            window_days=window_days,
+        )
+        if summary["status"] != "ok":
+            return summary
+
+        slices = self._ticket_pie_slices(summary)
+        if not slices:
+            self.logger.info(
+                "GitHubReviewer: monthly ticket pie — no %s ticket touched in the last %sd; staying silent.",
+                self.jira_project,
+                window_days,
+            )
+            return {"status": "empty", "summary": summary, "slices": [], "chart": None}
+
+        title = f"{self._TICKET_HEADING} — last {window_days}d ({self.jira_project})"
+        chart = await self._render_ticket_pie(slices, title=title)
+        self.logger.info(
+            "GitHubReviewer: monthly ticket pie — %d ticket(s) across %d assignee(s) on %s "
+            "(last %sd), %d wedge(s), chart=%s.",
+            int(summary.get("ticket_count") or 0),
+            len(summary.get("assignees") or []),
+            self.jira_project,
+            window_days,
+            len(slices),
+            chart.name if chart is not None else "none",
+        )
+        return {"status": "ok", "summary": summary, "slices": slices, "chart": chart, "title": title}
+
+    @telegram_command(
+        "monthly_jira_tickets",
+        description="Pie chart of the last month's Jira tickets by assignee",
+        parse_mode="keyword",
+    )
+    async def monthly_jira_tickets(
+        self,
+        window_days: Optional[int] = None,
+        **kwargs: Any,
+    ) -> ChartReply:
+        """Answer ``/monthly_jira_tickets`` with a per-assignee pie chart.
+
+        The same JQL and bucketing as :meth:`report_jira_tickets`, over 30
+        days instead of 14, drawn as each assignee's share of the month's
+        ticket activity — scope is activity, not backlog, so a ticket
+        nobody touched this month is in neither the pie nor the table.
+
+        The reply is returned, not sent: the channel wrapper reads
+        :class:`ChartReply` and delivers it (Telegram as a photo with the
+        ranking as its message), so this method never has to know which
+        chat asked. It is therefore equally dispatchable from a schedule or
+        another agent — the caller decides where the chart lands.
+
+        Args:
+            window_days: Width of the window in days, default 30. Telegram
+                passes command arguments as strings
+                (``/monthly_jira_tickets window_days=60``), so the value is
+                coerced; anything unparseable or non-positive falls back to
+                the default.
+
+        Returns:
+            A :class:`ChartReply` with the ranking text and, when PNG
+            export worked, one pie-chart attachment. Jira failures come
+            back as a one-line notice, not an exception.
+        """
+        if kwargs:
+            self.logger.debug(
+                "/monthly_jira_tickets: ignoring unexpected arguments %s",
+                sorted(kwargs),
+            )
+        try:
+            days = self._TICKET_MONTH_DAYS if window_days is None else int(window_days)
+        except (TypeError, ValueError):
+            self.logger.warning(
+                "/monthly_jira_tickets: unparseable window_days=%r; using %s.",
+                window_days,
+                self._TICKET_MONTH_DAYS,
+            )
+            days = self._TICKET_MONTH_DAYS
+        if days <= 0:
+            days = self._TICKET_MONTH_DAYS
+
+        built = await self._build_monthly_ticket_pie(window_days=days)
+        if built["status"] == "error":
+            return ChartReply(
+                output=f"⚠️ Could not read {self.jira_project} tickets: {built.get('reason')}"
+            )
+        if built["status"] == "empty":
+            return ChartReply(
+                output=f"No {self.jira_project} ticket was touched in the last {days} days."
+            )
+
+        chart = built["chart"]
+        charts: List[Dict[str, Any]] = []
+        if chart is not None:
+            charts.append(
+                {
+                    "path": str(chart),
+                    "title": built["title"],
+                    "chart_type": "pie",
+                    "format": "png",
+                }
+            )
+        return ChartReply(
+            output=self._format_monthly_tickets_text(built["summary"], built["slices"]),
+            charts=charts,
+        )
+
+    # Monthly, on the 1st at 10:00 America/New_York — the same timezone-aware
+    # cron as the daily ticket digest (see the note on report_jira_tickets):
+    # ScheduleType.DAILY/WEEKLY carry a report marker whose config is
+    # re-resolved from {AGENT_ID}_DAILY_REPORT at register time and fire on
+    # the scheduler's UTC clock, and there is no monthly report type at all.
+    @schedule(
+        schedule_type=ScheduleType.CRON,
+        day=_TICKET_MONTH_REPORT_DAY,
+        hour=_TICKET_REPORT_HOUR,
+        minute=_TICKET_REPORT_MINUTE,
+        timezone=_TICKET_REPORT_TIMEZONE,
+    )
+    async def report_monthly_jira_tickets(self, window_days: Optional[int] = None) -> Dict[str, Any]:
+        """Send the monthly ticket pie to the management channel.
+
+        The scheduled twin of :meth:`monthly_jira_tickets`: same numbers,
+        same chart, but it delivers them itself — on the 1st of the month
+        to :attr:`management_chat_id` (``GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID``,
+        falling back to the public channel), alongside the other reports
+        people read to follow the project.
+
+        The table rides as the photo's caption when it fits Telegram's
+        1024-character limit, so the chat shows one item instead of two;
+        otherwise the digest goes as its own message. Without a PNG
+        (no ``vl-convert-python``) only that message goes out — a missing
+        chart never costs the report.
+
+        Args:
+            window_days: Width of the window in days; defaults to
+                :attr:`_TICKET_MONTH_DAYS` (30).
+
+        Returns:
+            A status dict with ``status``, ``project``, ``window_days``,
+            ``ticket_count``, ``wedges``, ``chart`` (the PNG's name or
+            ``None``) and ``messages_sent``.
+        """
+        days = self._TICKET_MONTH_DAYS if window_days is None else int(window_days)
+        built = await self._build_monthly_ticket_pie(window_days=days)
+        base: Dict[str, Any] = {
+            "status": built["status"],
+            "project": self.jira_project,
+            "window_days": days,
+        }
+        if built["status"] == "error":
+            return {**base, "reason": built.get("reason")}
+
+        summary = built.get("summary") or {}
+        base = {
+            **base,
+            "status": "ok",
+            "ticket_count": int(summary.get("ticket_count") or 0),
+            "wedges": len(built["slices"]),
+            "chart": built["chart"].name if built["chart"] is not None else None,
+        }
+        if built["status"] == "empty":
+            # Silent exit: an empty pie is noise, like the daily digest's.
+            return {**base, "messages_sent": 0}
+
+        bot = self._get_telegram_bot()
+        if bot is None or not self.management_chat_id:
+            self.logger.warning(
+                "GitHubReviewer: monthly ticket pie ready but no %s to send it to; skipping.",
+                "Telegram bot" if bot is None else "management chat id",
+            )
+            return {**base, "messages_sent": 0}
+
+        digest = self._format_monthly_tickets_digest(summary, built["slices"])
+        chart = built["chart"]
+        caption: Optional[str] = None
+        messages_sent = 0
+        if chart is not None:
+            # The table rides along as the caption when it fits, so the
+            # channel shows one item instead of two.
+            caption = digest if len(digest) <= self._TELEGRAM_MAX_CAPTION else None
+            try:
+                # aiogram lives in ai-parrot-integrations, like the wrapper
+                # that owns this bot — imported here, not at module import.
+                from aiogram.types import FSInputFile
+
+                await bot.send_photo(
+                    chat_id=self.management_chat_id,
+                    photo=FSInputFile(chart),
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+                messages_sent += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send the monthly ticket pie to chat %s: %s",
+                    self.management_chat_id,
+                    exc,
+                )
+                # The numbers are the report; a lost photo must not take
+                # them with it, so the digest goes out on its own below.
+                caption = None
+
+        if caption is None:
+            try:
+                await bot.send_message(
+                    chat_id=self.management_chat_id,
+                    text=digest,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                messages_sent += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send the monthly ticket digest to chat %s: %s",
+                    self.management_chat_id,
+                    exc,
+                )
+
+        return {**base, "messages_sent": messages_sent}
 
     # ------------------------------------------------------------------
     # Weekly activity report helpers (FEAT-180)
@@ -2392,7 +3387,7 @@ class GitHubReviewer(Agent):
             )
             # Post a "no data" message to Telegram if available.
             bot = self._get_telegram_bot()
-            if bot is not None and self.public_channel_id:
+            if bot is not None and self.management_chat_id:
                 no_data_msg = (
                     f"<b>Weekly activity — <code>{html.escape(self.repository)}</code></b>\n\n"
                     "No GitHub stats data is available for this week. GitHub may still be "
@@ -2402,7 +3397,7 @@ class GitHubReviewer(Agent):
                 )
                 try:
                     await bot.send_message(
-                        chat_id=self.public_channel_id,
+                        chat_id=self.management_chat_id,
                         text=no_data_msg,
                         parse_mode="HTML",
                         disable_web_page_preview=True,
@@ -2414,7 +3409,7 @@ class GitHubReviewer(Agent):
                     # trace at all.
                     self.logger.warning(
                         "GitHubReviewer: failed to send weekly no-data notice to chat %s: %s",
-                        self.public_channel_id,
+                        self.management_chat_id,
                         send_exc,
                     )
             return {"status": "error", "reason": str(exc)}
@@ -2436,10 +3431,10 @@ class GitHubReviewer(Agent):
 
         telegram_sent = 0
         bot = self._get_telegram_bot()
-        if bot is not None and self.public_channel_id:
+        if bot is not None and self.management_chat_id:
             try:
                 await bot.send_message(
-                    chat_id=self.public_channel_id,
+                    chat_id=self.management_chat_id,
                     text=text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
@@ -2448,7 +3443,7 @@ class GitHubReviewer(Agent):
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "GitHubReviewer: failed to send weekly report to chat %s: %s",
-                    self.public_channel_id,
+                    self.management_chat_id,
                     exc,
                 )
 

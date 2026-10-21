@@ -759,6 +759,14 @@ JIRA_DEFAULT_REPORTER: str | None = config.get(
     "JIRA_DEFAULT_REPORTER",
     fallback="jesuslarag@gmail.com",
 )
+# Telegram channel (or group) the JiraSpecialist posts its standup digests to —
+# e.g. the single list of developers who did not answer the morning standup,
+# which goes there instead of one DM per manager. Channel ids are negative
+# ("-1001234567890"), so this stays a string and the Telegram client coerces it.
+JIRA_TELEGRAM_PUBLIC_CHANNEL_ID: str | None = config.get(
+    "JIRA_TELEGRAM_PUBLIC_CHANNEL_ID",
+    fallback=None,
+)
 
 # ── GitHub Reviewer Agent ──
 # Comma-separated list of Telegram chat IDs notified when a PR review finds
@@ -773,6 +781,12 @@ for _chat_id in _raw_pr_chat_ids:
 # Telegram chat / channel ID receiving the daily stale-PR summary. Accepts
 # either a numeric chat_id (e.g. -1001234567890) or a public @username.
 GITHUB_REVIEW_PUBLIC_CHANNEL_ID: str | None = config.get("GITHUB_REVIEW_PUBLIC_CHANNEL_ID", fallback=None)
+# Telegram chat / channel ID receiving the MANAGEMENT reports (today's PRs,
+# the weekly activity digest and the Jira ticket summary) — the reports people
+# read to follow the project, as opposed to the stale-PR nag that goes to the
+# public channel above. Same accepted shapes. Unset falls back to
+# GITHUB_REVIEW_PUBLIC_CHANNEL_ID so those reports never go silent.
+GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID: str | None = config.get("GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID", fallback=None)
 # Shared secret used by GitHub to sign webhook deliveries. Required when
 # HMAC verification is enabled on the GitHubWebhookHook.
 GITHUB_REVIEW_WEBHOOK_SECRET: str | None = config.get("GITHUB_REVIEW_WEBHOOK_SECRET", fallback=None)

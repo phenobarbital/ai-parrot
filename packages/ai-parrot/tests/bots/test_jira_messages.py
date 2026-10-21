@@ -7,7 +7,15 @@ import pytest
 from parrot.bots.jira_messages import JIRA_MESSAGES, MessageTemplate, render_message
 from parrot.bots.prompts.language import FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES
 
-SAMPLE = {"ticket_key": "NAV-123", "status": "In Progress", "name": "Ana Pérez", "names": "• Ana\n• Luis", "hours": 2, "count": 3}
+SAMPLE = {
+    "ticket_key": "NAV-123",
+    "status": "In Progress",
+    "name": "Ana Pérez",
+    "names": "• Ana\n• Luis",
+    "hours": 2,
+    "count": 3,
+    "chat_id": "286137732",
+}
 
 
 def _params(message: MessageTemplate) -> dict:
