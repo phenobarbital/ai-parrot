@@ -75,6 +75,26 @@ class GitToolkitError(RuntimeError):
         self.accepted_permissions = accepted_permissions
 
 
+class StatsNotReadyError(GitToolkitError):
+    """Raised when a ``/stats/*`` endpoint keeps answering 202.
+
+    GitHub computes repository statistics lazily: the first request for a cold
+    repo returns ``202 Accepted`` and only *starts* the computation, which can
+    take minutes on a large repository. Exhausting the 202 retries therefore
+    means "not ready yet", not "broken" — a distinct outcome callers should be
+    able to defer on instead of treating as an error. It stays a
+    :class:`GitToolkitError` so existing ``except GitToolkitError`` handlers
+    keep working.
+
+    Attributes:
+        attempts: How many requests were made before giving up.
+    """
+
+    def __init__(self, message: str, *, attempts: Optional[int] = None, url: Optional[str] = None) -> None:
+        super().__init__(message, status_code=202, url=url)
+        self.attempts = attempts
+
+
 class RepositoryCredential(BaseModel):
     """Credentials + defaults for a single named repository in a registry.
 
@@ -1234,9 +1254,7 @@ class GitToolkit(AbstractToolkit):
                 status_code=response.status_code,
                 url=url,
                 api_message=GitToolkit._api_error_message(response),
-                accepted_permissions=(getattr(response, "headers", None) or {}).get(
-                    "x-accepted-github-permissions"
-                ),
+                accepted_permissions=(getattr(response, "headers", None) or {}).get("x-accepted-github-permissions"),
             )
         return response
 
@@ -1267,8 +1285,9 @@ class GitToolkit(AbstractToolkit):
             The ``requests.Response`` with status 200.
 
         Raises:
-            GitToolkitError: If the response is not 200/202, or after
-                exhausting all retries without seeing 200.
+            GitToolkitError: If the response is not 200/202.
+            StatsNotReadyError: After exhausting all retries without seeing
+                200 — the data is still being computed, not unavailable.
         """
         headers = {
             "Authorization": f"Bearer {token}",
@@ -1287,8 +1306,10 @@ class GitToolkit(AbstractToolkit):
                 break
             delay = min(initial_delay * (2**attempt), max_delay)
             time.sleep(delay)
-        raise GitToolkitError(
-            f"GitHub stats call to {url} returned 202 after " f"{max_retries + 1} attempts; giving up."
+        raise StatsNotReadyError(
+            f"GitHub stats call to {url} returned 202 after " f"{max_retries + 1} attempts; giving up.",
+            attempts=max_retries + 1,
+            url=url,
         )
 
     @staticmethod
@@ -2547,6 +2568,7 @@ __all__ = [
     "AddPRCommentInput",
     "SubmitPRReviewInput",
     "GitToolkitError",
+    "StatsNotReadyError",
     # FEAT-180 stats models
     "ContributorWeek",
     "ContributorStats",

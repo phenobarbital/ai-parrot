@@ -461,6 +461,48 @@ Format is `DDD HH:MM` (UTC). Day abbreviations: `MON`, `TUE`, `WED`, `THU`,
 | `GITHUB_REVIEW_SILENT_WEEKS_THRESHOLD` | `3` | Consecutive zero-commit weeks before a contributor is flagged silent |
 | `GITHUB_REVIEW_USE_LLM_SUMMARY` | `false` | Re-phrase numbers as prose via the agent's LLM (templated output is always the source of truth; LLM failures fall back automatically) |
 | `GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS` | `4` | Reserved — not yet wired in v1; planned for future per-threshold window control |
+| `GITHUB_REVIEW_STATS_RETRY_DELAY` | `900` | Seconds to wait before re-running the report when GitHub's stats cache is still cold (see below) |
+| `GITHUB_REVIEW_STATS_RETRY_MAX` | `3` | How many deferred re-runs to attempt before leaving it to the next scheduled run |
+
+### Cold stats cache (`202 Accepted`)
+
+GitHub computes `/stats/*` lazily. The first request for a repository whose
+cache is cold returns `202 Accepted` and only *starts* the computation, which
+on a large repository takes minutes — longer than the toolkit's in-call 202
+budget (`_get_stats_with_polling`, 7 attempts over ~63s). `/stats/contributors`
+usually warms in seconds while `/stats/code_frequency` lags well behind it, so
+a partial 202 is the normal case, not an edge case.
+
+When that budget runs out the toolkit raises `StatsNotReadyError` (a
+`GitToolkitError` subclass, so existing handlers still catch it) and
+`report_weekly_activity()` **defers instead of failing**:
+
+- it logs a warning *without* a traceback — a stack trace here would describe
+  documented GitHub behaviour, not a defect;
+- it returns `status="stats_pending"` with `retry_scheduled`, `retry_in` and
+  `attempt`, and posts **nothing** to Telegram;
+- it arms a single deferred re-run `GITHUB_REVIEW_STATS_RETRY_DELAY` seconds
+  later (never two at once), up to `GITHUB_REVIEW_STATS_RETRY_MAX` times. The
+  attempt that timed out is what warms GitHub's cache, so the deferred run
+  normally gets `200`.
+
+A completed run resets the budget, and `shutdown()` cancels a pending deferral
+so it never outlives the agent.
+
+**Partial digest once the deferrals are spent.** The two stats calls are
+gathered with `return_exceptions=True`, so a pending `code_frequency` no longer
+discards contributor stats that already arrived. When the deferral budget is
+exhausted and the contributor slices are usable, the digest goes out anyway:
+
+- `code_frequency` feeds exactly one figure — the week-over-week **line** delta.
+  The commits delta is summed from the contributor slices, so it stays real.
+- `WeeklyActivitySummary.code_freq_available` is then `False`, the line delta
+  renders as `n/a` instead of `▲ new` (its `prev_total_*` zeros are *unknown*,
+  not measured), both the templated and the LLM output carry a "Partial data"
+  notice, and the result dict reports `partial: true`.
+- Pending **contributor** stats never degrade — they carry the whole digest, so
+  that case still defers and publishes nothing.
+- A non-202 failure of either call is still `status="error"` with its traceback.
 
 ### Sample output (templated)
 
@@ -491,6 +533,8 @@ GitHubReviewer.report_weekly_activity()
        │
        ├─ git_toolkit.get_contributor_stats(repository)
        ├─ git_toolkit.get_code_frequency(repository)
+       │     └─ StatsNotReadyError (persistent 202) → _defer_weekly_report()
+       │            → status="stats_pending", re-run armed, nothing sent
        ├─ _build_weekly_summary(contributors, code_freq, ...)
        ├─ [optional] _llm_summarize_weekly(summary)  ← only if use_llm_summary=True
        └─ bot.send_message(public_channel_id, html, parse_mode="HTML")

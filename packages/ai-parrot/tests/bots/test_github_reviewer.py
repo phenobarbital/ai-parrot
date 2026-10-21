@@ -33,6 +33,7 @@ from parrot.bots.github_reviewer import (
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
+    StatsNotReadyError,
     WeeklyCodeFrequency,
 )
 
@@ -79,6 +80,9 @@ class _MinimalReviewer:
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
+    report_weekly_activity = GitHubReviewer.report_weekly_activity
+    _defer_weekly_report = GitHubReviewer._defer_weekly_report
+    _shutdown_weekly_retry = GitHubReviewer._shutdown_weekly_retry
     # staticmethod(): a bare assignment would rebind it as an instance method.
     _parse_iso8601 = staticmethod(GitHubReviewer._parse_iso8601)
     _get_telegram_bot = GitHubReviewer._get_telegram_bot
@@ -92,6 +96,7 @@ class _MinimalReviewer:
     _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
+    _PARTIAL_WEEKLY_NOTICE = GitHubReviewer._PARTIAL_WEEKLY_NOTICE
 
 
 class _StubEvent:
@@ -1217,6 +1222,35 @@ class TestBuildWeeklySummary:
         with pytest.raises(ValueError, match="Cannot determine reporting window"):
             r._build_weekly_summary([], [], threshold_weeks=3, now=NOW)
 
+    def test_prev_week_slice_marks_code_freq_available(self):
+        """The prev-week code_freq entry is what makes the line delta real."""
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        summary = r._build_weekly_summary(
+            contributors,
+            [_cf(W_CURR, 100, 20), _cf(W_PREV, 50, 10)],
+            threshold_weeks=3,
+            now=NOW,
+        )
+        assert summary.code_freq_available is True
+        assert summary.prev_total_additions == 50
+
+    def test_empty_code_freq_degrades_instead_of_raising(self):
+        """With contributors present, an empty code_freq yields a partial summary.
+
+        The reporting window and every current-week figure come from the
+        contributor slices; only the previous week's line totals are lost.
+        """
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        summary = r._build_weekly_summary(contributors, [], threshold_weeks=3, now=NOW)
+        assert summary.code_freq_available is False
+        assert summary.period_start == W_CURR
+        assert summary.total_commits == 5
+        assert summary.total_additions == 100
+        assert summary.prev_total_commits == 3  # real: summed from contributors
+        assert summary.prev_total_additions == 0  # unknown, not measured
+
 
 # ---------------------------------------------------------------------------
 # TASK-1213: TestFormatWeeklyActivityHtml
@@ -1276,6 +1310,36 @@ class TestFormatWeeklyActivityHtml:
         body = r._format_weekly_activity_html(s)
         # Should not raise; pct output is either "n/a" or "▲ new"
         assert "n/a" in body or "▲ new" in body or "▲" in body
+
+    def test_partial_summary_marks_the_line_delta_unavailable(self):
+        """code_freq_available=False prints 'n/a', never a delta off the zeros."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            prev_total_additions=0,
+            prev_total_deletions=0,
+            code_freq_available=False,
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "removed (n/a)" in body
+        assert "Partial data" in body
+        assert "▲ new" not in body
+        # The commits delta survives: it never came from code_frequency.
+        assert "▲" in body.split("added /")[0]
+
+    def test_complete_summary_carries_no_partial_notice(self):
+        """The notice is absent whenever the prev-week slice was there."""
+        r = _minimal_reviewer()
+        body = r._format_weekly_activity_html(_base_summary())
+        assert "Partial data" not in body
+
+    def test_llm_envelope_carries_the_partial_notice(self):
+        """The prose path flags a degraded digest too, not just the template."""
+        r = _minimal_reviewer()
+        r._wrap_llm_prose_in_html_envelope = GitHubReviewer._wrap_llm_prose_in_html_envelope.__get__(r, type(r))
+        partial = r._wrap_llm_prose_in_html_envelope("prose", _base_summary(code_freq_available=False))
+        complete = r._wrap_llm_prose_in_html_envelope("prose", _base_summary())
+        assert "Partial data" in partial
+        assert "Partial data" not in complete
 
     def test_pct_positive_delta(self):
         """A positive delta shows an upward arrow."""
@@ -1930,9 +1994,7 @@ class TestPublicChannelSendFailureLogging:
             ]
         )
         bot = MagicMock()
-        bot.send_message = AsyncMock(
-            side_effect=RuntimeError("Telegram server says - Bad Request: chat not found")
-        )
+        bot.send_message = AsyncMock(side_effect=RuntimeError("Telegram server says - Bad Request: chat not found"))
         reviewer._wrapper = MagicMock(bot=bot)
         return reviewer
 
@@ -1957,3 +2019,212 @@ class TestPublicChannelSendFailureLogging:
         assert result["stale_count"] == 1
         assert len(result["stale"]) == 1
         assert result["announced"] == 0
+
+
+class TestWeeklyStatsPending:
+    """A persistent 202 from /stats/* defers instead of failing.
+
+    GitHub computes repository stats lazily, so the request that exhausts the
+    toolkit's 202 budget is also the one that starts the computation: the next
+    attempt usually gets 200. Before this, the exhausted budget surfaced as an
+    ERROR with a traceback and the week's report was simply lost.
+    """
+
+    @staticmethod
+    def _reviewer(delay: int = 0, max_retries: int = 3) -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer._weekly_retry_task = None
+        reviewer._weekly_retry_attempt = 0
+        reviewer._stats_retry_delay = delay
+        reviewer._stats_retry_max = max_retries
+        reviewer._wrapper = None
+        exc = StatsNotReadyError(
+            "GitHub stats call to https://api.github.com/repos/o/r/stats/code_frequency "
+            "returned 202 after 7 attempts; giving up.",
+            attempts=7,
+            url="https://api.github.com/repos/o/r/stats/code_frequency",
+        )
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(return_value=[])
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(side_effect=exc)
+        return reviewer
+
+    @staticmethod
+    def _degradable_reviewer(max_retries: int = 1) -> _MinimalReviewer:
+        """Same cold code_frequency, but with usable contributor stats.
+
+        This is the asymmetric 202 measured on a large repo: /stats/contributors
+        answers 200 while /stats/code_frequency is still computing.
+        """
+        reviewer = TestWeeklyStatsPending._reviewer(delay=3600, max_retries=max_retries)
+        reviewer.use_llm_summary = False
+        reviewer.silent_weeks_threshold = 3
+        reviewer.top_n_contributors = 10
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(
+            return_value=[_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        )
+        reviewer._build_weekly_summary = GitHubReviewer._build_weekly_summary.__get__(reviewer, type(reviewer))
+        reviewer._format_weekly_activity_html = GitHubReviewer._format_weekly_activity_html.__get__(
+            reviewer, type(reviewer)
+        )
+        sent: List[Dict[str, Any]] = []
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=lambda **kwargs: sent.append(kwargs))
+        reviewer._wrapper = MagicMock(bot=bot)
+        reviewer._sent = sent
+        return reviewer
+
+    async def test_pending_code_freq_defers_while_budget_remains(self) -> None:
+        """A partial digest is the last resort, not the first move."""
+        reviewer = self._degradable_reviewer(max_retries=3)
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is True
+            assert reviewer._sent == []
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_exhausted_budget_publishes_a_partial_digest(self) -> None:
+        """The contributor stats that did arrive no longer die with the week."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        try:
+            await reviewer.report_weekly_activity()
+            await reviewer._shutdown_weekly_retry()  # drop the armed task
+            reviewer._weekly_retry_attempt = 1  # as if that retry had run
+
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "ok"
+            assert result["partial"] is True
+            assert result["active"] == 1
+            assert result["telegram_sent"] == 1
+            body = reviewer._sent[-1]["text"]
+            assert "removed (n/a)" in body  # no delta invented off the zeros
+            assert "Partial data" in body
+            assert "▲ new" not in body
+            # Expected GitHub behaviour: still no ERROR, still no traceback.
+            reviewer.logger.error.assert_not_called()
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_pending_contributor_stats_never_degrade(self) -> None:
+        """Without contributor slices there is nothing to publish."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(
+            side_effect=StatsNotReadyError(
+                "GitHub stats call to .../stats/contributors returned 202 after 7 attempts; giving up.",
+                attempts=7,
+                url="https://api.github.com/repos/o/r/stats/contributors",
+            )
+        )
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(return_value=[_cf(W_CURR, 100, 20)])
+        reviewer._weekly_retry_attempt = 1  # budget already spent
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is False
+            assert reviewer._sent == []
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_hard_failure_is_still_an_error(self) -> None:
+        """A non-202 failure keeps its ERROR + traceback and publishes nothing."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await reviewer.report_weekly_activity()
+
+        assert result["status"] == "error"
+        assert "boom" in result["reason"]
+        reviewer.logger.error.assert_called_once()
+        assert isinstance(reviewer.logger.error.call_args.kwargs.get("exc_info"), RuntimeError)
+        assert reviewer._sent == []
+
+    async def test_pending_stats_defer_instead_of_erroring(self) -> None:
+        """The outcome is stats_pending with a retry armed, not status=error."""
+        reviewer = self._reviewer(delay=3600)
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is True
+            assert result["attempt"] == 1
+            assert result["attempts"] == 7  # the toolkit's in-call 202 budget
+            # Logged as a warning without a traceback: expected GitHub behaviour.
+            reviewer.logger.error.assert_not_called()
+            reviewer.logger.warning.assert_called_once()
+            assert "exc_info" not in reviewer.logger.warning.call_args.kwargs
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_second_call_does_not_stack_a_retry(self) -> None:
+        """While a deferred run is armed, another cold run reuses it."""
+        reviewer = self._reviewer(delay=3600)
+        try:
+            await reviewer.report_weekly_activity()
+            second = await reviewer.report_weekly_activity()
+
+            assert second["already_armed"] is True
+            assert reviewer._weekly_retry_attempt == 1
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_budget_exhaustion_stops_retrying(self) -> None:
+        """Past the budget it gives up quietly until the next scheduled run."""
+        reviewer = self._reviewer(delay=3600, max_retries=1)
+        try:
+            await reviewer.report_weekly_activity()
+            await reviewer._shutdown_weekly_retry()  # drop the armed task
+            reviewer._weekly_retry_attempt = 1  # as if that retry had run
+
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is False
+            assert reviewer._weekly_retry_attempt == 0  # budget reset for next week
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_shutdown_cancels_the_armed_retry(self) -> None:
+        """A pending deferral must not outlive the agent."""
+        reviewer = self._reviewer(delay=3600)
+        await reviewer.report_weekly_activity()
+        task = reviewer._weekly_retry_task
+        assert task is not None and not task.done()
+
+        await reviewer._shutdown_weekly_retry()
+
+        assert task.cancelled()
+        assert reviewer._weekly_retry_task is None
+
+
+class TestScheduledReportDecorators:
+    """The two report methods must keep carrying their schedule decorator.
+
+    ``register_bot_schedules()`` discovers them by the ``_schedule_report_type``
+    marker that ``@schedule_daily_report`` / ``@schedule_weekly_report`` leave
+    on the wrapper, so losing a decorator silently un-schedules the report —
+    no error anywhere, the job just never runs again. Inserting a helper
+    between a decorator and its function is an easy way to cause exactly that.
+    """
+
+    def test_stale_report_is_scheduled_daily(self) -> None:
+        marker = getattr(GitHubReviewer.report_stale_pull_requests, "_schedule_report_type", None)
+        assert marker == "daily", "report_stale_pull_requests lost @schedule_daily_report"
+        cfg = GitHubReviewer.report_stale_pull_requests._schedule_config
+        assert cfg["method_name"] == "report_stale_pull_requests"
+
+    def test_weekly_report_is_scheduled_weekly(self) -> None:
+        marker = getattr(GitHubReviewer.report_weekly_activity, "_schedule_report_type", None)
+        assert marker == "weekly", "report_weekly_activity lost @schedule_weekly_report"
+        cfg = GitHubReviewer.report_weekly_activity._schedule_config
+        assert cfg["method_name"] == "report_weekly_activity"
+
+    def test_helpers_are_not_scheduled(self) -> None:
+        """A decorator must never land on a plain helper by accident."""
+        for name in ("_defer_weekly_report", "_shutdown_weekly_retry", "_describe_webhook_denial"):
+            attr = getattr(GitHubReviewer, name)
+            assert not hasattr(attr, "_schedule_report_type"), f"{name} is decorated as a report"

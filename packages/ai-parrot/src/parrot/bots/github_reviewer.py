@@ -77,6 +77,7 @@ from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
     GitToolkit,
+    StatsNotReadyError,
     WeeklyCodeFrequency,
 )
 from parrot_tools.jiratoolkit import JiraToolkit
@@ -211,6 +212,13 @@ class WeeklyActivitySummary(BaseModel):
     """Total additions in the previous week (from code_frequency, 0 if missing)."""
     prev_total_deletions: int
     """Total deletions in the previous week (from code_frequency, 0 if missing)."""
+    code_freq_available: bool = True
+    """False when the previous week's ``code_frequency`` slice was missing — a
+    cold ``/stats`` cache (persistent 202) or a repo without that much history.
+    The ``prev_total_additions`` / ``prev_total_deletions`` zeros are then
+    *unknown*, not measured, so renderers must not derive a line delta from
+    them. ``prev_total_commits`` is unaffected: it is summed from the
+    contributor slices, never from ``code_frequency``."""
 
 
 class WeeklyLLMSummarizationError(RuntimeError):
@@ -503,6 +511,13 @@ class GitHubReviewer(Agent):
         self._wiki_cache: Optional[RepoWikiCache] = None
         self._wiki_warmup_task: Optional[asyncio.Task[None]] = None
         self._wiki_refresh_task: Optional[asyncio.Task[Optional[Path]]] = None
+        # Deferred weekly retry (cold GitHub /stats/* cache). Both knobs are
+        # plain attributes rather than constructor kwargs so a test can set
+        # them without widening the already-wide signature.
+        self._weekly_retry_task: Optional[asyncio.Task[None]] = None
+        self._weekly_retry_attempt = 0
+        self._stats_retry_delay = conf.GITHUB_REVIEW_STATS_RETRY_DELAY
+        self._stats_retry_max = conf.GITHUB_REVIEW_STATS_RETRY_MAX
         self._wiki_toolkits_attached = False
         self._wiki_store: Any = None
         self._wiki_branch: Optional[str] = None
@@ -565,11 +580,26 @@ class GitHubReviewer(Agent):
         await self._ensure_webhook_subscription()
 
     async def shutdown(self, **kwargs: Any) -> None:
-        """Stop the owned wiki task before the inherited agent shutdown."""
+        """Stop the owned background tasks before the inherited agent shutdown."""
         try:
             await self._shutdown_wiki_warmup()
+            await self._shutdown_weekly_retry()
         finally:
             await super().shutdown(**kwargs)
+
+    async def _shutdown_weekly_retry(self) -> None:
+        """Cancel and await a pending deferred weekly retry."""
+        task = self._weekly_retry_task
+        self._weekly_retry_task = None
+        self._weekly_retry_attempt = 0
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     def _build_wiki_cache(self) -> Optional[RepoWikiCache]:
         """Build the optional repository wiki cache from reviewer settings."""
@@ -969,8 +999,7 @@ class GitHubReviewer(Agent):
             )
         elif status == "no_permission":
             self.logger.warning(
-                "GitHubReviewer: cannot manage webhooks on %s (%s); "
-                "configure the webhook manually pointing to %s.",
+                "GitHubReviewer: cannot manage webhooks on %s (%s); " "configure the webhook manually pointing to %s.",
                 self.repository,
                 self._describe_webhook_denial(result),
                 self.webhook_public_url,
@@ -1678,6 +1707,8 @@ class GitHubReviewer(Agent):
         Args:
             contributors: Per-contributor weekly stats from :meth:`GitToolkit.get_contributor_stats`.
             code_freq: Repo-wide weekly code frequency from :meth:`GitToolkit.get_code_frequency`.
+                May be empty: the reporting window is then taken from ``contributors``
+                alone and the result carries ``code_freq_available=False``.
             threshold_weeks: Number of consecutive zero-commit weeks to flag a
                 contributor as silent.
             top_n: Maximum number of active contributors in the output (silent list
@@ -1823,7 +1854,15 @@ class GitHubReviewer(Agent):
             prev_total_commits=prev_total_commits,
             prev_total_additions=prev_total_additions,
             prev_total_deletions=prev_total_deletions,
+            code_freq_available=prev_cf is not None,
         )
+
+    _PARTIAL_WEEKLY_NOTICE = (
+        "<i>Partial data: GitHub was still computing this repository's "
+        "<code>code_frequency</code> stats, so week-over-week line totals are omitted.</i>"
+    )
+    """Appended to any digest built with ``code_freq_available=False``, so a
+    degraded report is never mistaken for a complete one."""
 
     def _format_weekly_activity_html(
         self,
@@ -1856,16 +1895,23 @@ class GitHubReviewer(Agent):
             arrow = "▲" if delta > 0 else "▼"
             return f"{arrow} {delta:+.0f}%"
 
+        # Without the previous week's code_frequency slice the prev line totals
+        # are unknown rather than zero, so pct() would read "▲ new" off missing
+        # data. The commits delta stays: it comes from the contributor slices.
+        if summary.code_freq_available:
+            line_delta = pct(
+                summary.total_additions + summary.total_deletions,
+                summary.prev_total_additions + summary.prev_total_deletions,
+            )
+        else:
+            line_delta = "n/a"
+
         lines: List[str] = [
             f"<b>Weekly activity — <code>{repo}</code></b>",
             f"Period: {period}",
             "",
             (f"<b>{summary.total_commits}</b> commits " f"({pct(summary.total_commits, summary.prev_total_commits)})"),
-            (
-                f"{summary.total_additions:,} added / "
-                f"{summary.total_deletions:,} removed "
-                f"({pct(summary.total_additions + summary.total_deletions, summary.prev_total_additions + summary.prev_total_deletions)})"
-            ),
+            (f"{summary.total_additions:,} added / " f"{summary.total_deletions:,} removed " f"({line_delta})"),
         ]
 
         if summary.contributors_active:
@@ -1884,6 +1930,10 @@ class GitHubReviewer(Agent):
                 login = html.escape(c.login)
                 lines.append(f"<code>{login}</code> — silent {c.weeks_silent} weeks")
 
+        if not summary.code_freq_available:
+            lines.append("")
+            lines.append(self._PARTIAL_WEEKLY_NOTICE)
+
         lines.append("")
         lines.append("<i>Posted by the GitHubReviewer agent.</i>")
         return "\n".join(lines)
@@ -1898,7 +1948,10 @@ class GitHubReviewer(Agent):
         "activity, output a short English digest (3-5 short paragraphs total, "
         "~150 words max). Lead with totals, highlight 1-2 notable contributors, "
         "and call out anyone who has gone silent. Do not invent numbers; only "
-        "use values present in the input JSON. Do not include HTML tags or "
+        "use values present in the input JSON. If 'code_freq_available' is "
+        "false, the previous week's line totals are unknown (the zeros are "
+        "placeholders): never compare lines added or removed against the "
+        "previous week in that case. Do not include HTML tags or "
         "markdown bullets. Plain prose only."
     )
 
@@ -1956,15 +2009,91 @@ class GitHubReviewer(Agent):
         """
         repo = html.escape(summary.repository)
         body = html.escape(prose)
+        notice = "" if summary.code_freq_available else f"{self._PARTIAL_WEEKLY_NOTICE}\n\n"
         return (
             f"<b>Weekly activity — <code>{repo}</code></b>\n\n"
             f"{body}\n\n"
+            f"{notice}"
             f"<i>Posted by the GitHubReviewer agent.</i>"
         )
 
     # ------------------------------------------------------------------
     # Weekly activity report orchestrator (FEAT-180, TASK-1215)
     # ------------------------------------------------------------------
+
+    def _defer_weekly_report(self, exc: StatsNotReadyError) -> Dict[str, Any]:
+        """Re-run the weekly report later instead of failing on a cold cache.
+
+        GitHub computes ``/stats/*`` lazily, so the request that times out is
+        also the one that *starts* the computation: a later attempt normally
+        gets 200 for free. This logs a warning without a traceback — a stack
+        trace here would describe documented GitHub behaviour, not a defect —
+        and publishes nothing to Telegram until there is real data.
+
+        Returns:
+            ``status="stats_pending"`` with ``retry_scheduled`` telling the
+            caller whether a deferred run was armed. ``retry_scheduled=False``
+            means the budget is spent and the deferral lane is done — the
+            caller then decides between a partial digest and nothing.
+        """
+        pending: Dict[str, Any] = {
+            "status": "stats_pending",
+            "repository": self.repository,
+            "reason": str(exc),
+            "attempts": exc.attempts,
+        }
+
+        if self._weekly_retry_task is not None and not self._weekly_retry_task.done():
+            # A deferred run is already armed; never stack two.
+            return {**pending, "retry_scheduled": True, "already_armed": True}
+
+        if self._weekly_retry_attempt >= self._stats_retry_max:
+            self.logger.warning(
+                "GitHubReviewer: weekly stats for %s still not ready after %d deferred "
+                "retries; no further deferral.",
+                self.repository,
+                self._weekly_retry_attempt,
+            )
+            self._weekly_retry_attempt = 0
+            return {**pending, "retry_scheduled": False}
+
+        self._weekly_retry_attempt += 1
+        attempt = self._weekly_retry_attempt
+        delay = self._stats_retry_delay
+        self.logger.warning(
+            "GitHubReviewer: weekly stats not ready for %s (%s); retrying in %ds " "(deferred attempt %d/%d).",
+            self.repository,
+            exc,
+            delay,
+            attempt,
+            self._stats_retry_max,
+        )
+
+        async def deferred_run() -> None:
+            await asyncio.sleep(delay)
+            await self.report_weekly_activity()
+
+        task = asyncio.create_task(
+            deferred_run(),
+            name=f"github-reviewer-weekly-retry:{self._repository_lc}",
+        )
+        self._weekly_retry_task = task
+
+        def log_failure(completed: asyncio.Task[None]) -> None:
+            if completed.cancelled():
+                return
+            try:
+                completed.result()
+            except Exception as task_exc:  # noqa: BLE001 - callback must consume failures
+                self.logger.warning(
+                    "GitHubReviewer: deferred weekly retry for %s failed: %s",
+                    self.repository,
+                    task_exc,
+                    exc_info=True,
+                )
+
+        task.add_done_callback(log_failure)
+        return {**pending, "retry_scheduled": True, "retry_in": delay, "attempt": attempt}
 
     @schedule_weekly_report
     async def report_weekly_activity(self) -> Dict[str, Any]:
@@ -1977,25 +2106,64 @@ class GitHubReviewer(Agent):
         Returns:
             A status dict with keys: ``status``, ``repository``,
             ``period_start``, ``period_end``, ``active``, ``silent``,
-            ``rendered_via``, ``telegram_sent``.
+            ``rendered_via``, ``telegram_sent``, ``partial`` (True when
+            ``code_frequency`` never became ready and the digest went out
+            without its week-over-week line totals).
         """
         if self.git_toolkit is None:
             self.logger.warning("GitHubReviewer: weekly activity report skipped — " "git_toolkit not configured.")
             return {"status": "error", "reason": "git_toolkit not configured"}
 
-        try:
-            contributors, code_freq = await asyncio.gather(
-                self.git_toolkit.get_contributor_stats(repository=self.repository),
-                self.git_toolkit.get_code_frequency(repository=self.repository),
-            )
-        except Exception as exc:  # noqa: BLE001
+        # return_exceptions: the two /stats endpoints warm up independently, and
+        # on a large repo an asymmetric 202 is the normal case. A bare gather()
+        # would raise on the pending one and discard the stats that did arrive.
+        results = await asyncio.gather(
+            self.git_toolkit.get_contributor_stats(repository=self.repository),
+            self.git_toolkit.get_code_frequency(repository=self.repository),
+            return_exceptions=True,
+        )
+        contributors, code_freq = results
+
+        # return_exceptions also captures a CancelledError raised inside a call;
+        # shutdown must stay a cancellation, not become status="error".
+        for result in results:
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+
+        # A real failure of either call is still an error, with its traceback.
+        fatal = next(
+            (r for r in results if isinstance(r, BaseException) and not isinstance(r, StatsNotReadyError)),
+            None,
+        )
+        if fatal is not None:
             self.logger.error(
                 "GitHubReviewer: weekly stats fetch failed for %s: %s",
                 self.repository,
-                exc,
-                exc_info=True,
+                fatal,
+                exc_info=fatal,
             )
-            return {"status": "error", "reason": str(exc)}
+            return {"status": "error", "reason": str(fatal)}
+
+        if isinstance(contributors, StatsNotReadyError):
+            # The contributor slices carry the whole digest — there is nothing
+            # to degrade to. Defer: GitHub is computing, this is not a failure.
+            return self._defer_weekly_report(contributors)
+
+        if isinstance(code_freq, StatsNotReadyError):
+            deferred = self._defer_weekly_report(code_freq)
+            if deferred["retry_scheduled"] or not contributors:
+                return deferred
+            # Deferral budget spent and the contributor stats are good: publish
+            # a partial digest instead of losing the week. code_frequency only
+            # feeds the week-over-week line delta, which the renderer then
+            # marks unavailable (issue:5bb826dc1922).
+            self.logger.warning(
+                "GitHubReviewer: publishing a partial weekly digest for %s — "
+                "code_frequency never became ready, so week-over-week line "
+                "totals are omitted.",
+                self.repository,
+            )
+            code_freq = []
 
         try:
             summary = self._build_weekly_summary(
@@ -2075,13 +2243,18 @@ class GitHubReviewer(Agent):
 
         self.logger.info(
             "GitHubReviewer: weekly activity report — repo=%s, active=%d, "
-            "silent=%d, rendered_via=%s, telegram_sent=%d.",
+            "silent=%d, rendered_via=%s, telegram_sent=%d, partial=%s.",
             self.repository,
             len(summary.contributors_active),
             len(summary.contributors_silent),
             rendered_via,
             telegram_sent,
+            not summary.code_freq_available,
         )
+
+        # A completed run clears the deferral budget, so a future cold cache
+        # gets its own full set of retries instead of inheriting this one's.
+        self._weekly_retry_attempt = 0
 
         return {
             "status": "ok",
@@ -2092,6 +2265,7 @@ class GitHubReviewer(Agent):
             "silent": len(summary.contributors_silent),
             "rendered_via": rendered_via,
             "telegram_sent": telegram_sent,
+            "partial": not summary.code_freq_available,
         }
 
 
