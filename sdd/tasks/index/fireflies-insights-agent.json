@@ -44,7 +44,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -52,8 +52,9 @@
       "parallelism_notes": "Root of the watcher chain; touches only wiki/project.py + test_inbox_config.py.",
       "assigned_to": null,
       "started_at": "2026-10-21T23:46:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4564-inbox-config-stability-window.md"
+      "completed_at": "2026-10-21T23:53:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4564-inbox-config-stability-window.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4565",
