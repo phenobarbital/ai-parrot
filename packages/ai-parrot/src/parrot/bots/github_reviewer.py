@@ -1586,7 +1586,7 @@ class GitHubReviewer(Agent):
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Daily stale PR report
+    # PR digests (shared) + daily stale PR report
     # ------------------------------------------------------------------
 
     #: Telegram rejects a ``sendMessage`` payload longer than 4096 characters.
@@ -1597,31 +1597,46 @@ class GitHubReviewer(Agent):
     #: Per-entry title clamp, so one novel-length PR title cannot produce an
     #: entry that alone overflows a message.
     _STALE_TITLE_MAX = 150
+    #: Generic opening line of the :meth:`today_pr` digest.
+    _TODAY_PR_HEADING = "Review Today's Pull Requests"
+    #: Default window of :meth:`today_pr`, in hours.
+    _TODAY_PR_WINDOW_HOURS = 24
 
-    def _format_stale_prs_digest(self, stale: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
-        """Render every stale PR as ONE Telegram HTML digest message.
+    def _format_pr_digest(
+        self,
+        prs: List[Dict[str, Any]],
+        *,
+        heading: str,
+        subtitle: str,
+        detail: Callable[[Dict[str, Any]], str],
+    ) -> List[Tuple[str, int]]:
+        """Render a list of PRs as ONE Telegram HTML digest message.
+
+        Shared by :meth:`_format_stale_prs_digest` and
+        :meth:`_format_today_prs_digest` — every PR report sends a single
+        message, never one per PR.
 
         Args:
-            stale: The stale-PR dicts built by
-                :meth:`report_stale_pull_requests`.
+            prs: PR dicts carrying ``number``, ``title``, ``html_url``,
+                ``user`` and whatever keys ``detail`` reads.
+            heading: Bold first line, rendered as ``<b>{heading}</b> on
+                <code>{repository}</code>``.
+            subtitle: Second line, typically the count and the window.
+            detail: Callback returning the trailing half of a PR's second
+                line (the part after ``by {user} — ``).
 
         Returns:
             A list of ``(text, pr_count)`` pairs — a single pair in the normal
-            case. A repo with enough stale PRs to blow Telegram's 4096-char
-            limit is split into as few messages as still fit, each carrying
-            its own header and a ``(part n/m)`` marker. ``pr_count`` is how
-            many PRs that message announces, so a caller can attribute a
-            failed send to the PRs it would have covered.
+            case. A repo with enough PRs to blow Telegram's 4096-char limit is
+            split into as few messages as still fit, each carrying its own
+            header and a ``(part n/m)`` marker. ``pr_count`` is how many PRs
+            that message announces, so a caller can attribute a failed send to
+            the PRs it would have covered.
         """
-        repo_html = html.escape(self.repository)
-        plural = "" if len(stale) == 1 else "s"
-        header = (
-            f"<b>Stale PR{plural}</b> on <code>{repo_html}</code>\n"
-            f"{len(stale)} open PR{plural} unattended for {self.stale_after_hours}h or more\n"
-        )
+        header = f"<b>{heading}</b> on <code>{html.escape(self.repository)}</code>\n{subtitle}\n"
 
         entries: List[str] = []
-        for idx, pr in enumerate(stale, start=1):
+        for idx, pr in enumerate(prs, start=1):
             title = str(pr.get("title") or "")
             if len(title) > self._STALE_TITLE_MAX:
                 title = title[: self._STALE_TITLE_MAX - 1].rstrip() + "…"
@@ -1630,7 +1645,7 @@ class GitHubReviewer(Agent):
             user = html.escape(str(pr.get("user") or "unknown"))
             number = pr.get("number")
             label = f"#{number} {title}".strip() if number is not None else title
-            entries.append(f'\n{idx}. <a href="{url}">{label}</a>\n' f"    by {user} — open for {pr['age_hours']}h")
+            entries.append(f'\n{idx}. <a href="{url}">{label}</a>\n' f"    by {user} — {detail(pr)}")
 
         budget = self._TELEGRAM_MAX_MESSAGE - len(header) - self._TELEGRAM_PART_RESERVE
         chunks: List[List[str]] = [[]]
@@ -1648,6 +1663,26 @@ class GitHubReviewer(Agent):
             marker = f"(part {part}/{total})\n" if total > 1 else ""
             messages.append((header + marker + "".join(chunk), len(chunk)))
         return messages
+
+    def _format_stale_prs_digest(self, stale: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
+        """Build the daily stale-PR digest (see :meth:`_format_pr_digest`)."""
+        plural = "" if len(stale) == 1 else "s"
+        return self._format_pr_digest(
+            stale,
+            heading=f"Stale PR{plural}",
+            subtitle=f"{len(stale)} open PR{plural} unattended for {self.stale_after_hours}h or more",
+            detail=lambda pr: f"open for {pr['age_hours']}h",
+        )
+
+    def _format_today_prs_digest(self, prs: List[Dict[str, Any]], window_hours: int) -> List[Tuple[str, int]]:
+        """Build the today's-PR digest (see :meth:`_format_pr_digest`)."""
+        plural = "" if len(prs) == 1 else "s"
+        return self._format_pr_digest(
+            prs,
+            heading=self._TODAY_PR_HEADING,
+            subtitle=f"{len(prs)} PR{plural} opened in the last {window_hours}h",
+            detail=lambda pr: f"opened {pr['age_hours']}h ago · {pr['state']}",
+        )
 
     @schedule_daily_report
     async def report_stale_pull_requests(self) -> Dict[str, Any]:
@@ -1733,6 +1768,125 @@ class GitHubReviewer(Agent):
             "messages_sent": messages_sent,
             "stale": stale,
         }
+
+    # ------------------------------------------------------------------
+    # Daily "today's PRs" report
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pr_state_label(pr: Dict[str, Any]) -> str:
+        """``"merged"`` / ``"closed"`` / ``"open"`` for a PR payload."""
+        if pr.get("merged_at"):
+            return "merged"
+        return "closed" if str(pr.get("state") or "open").lower() == "closed" else "open"
+
+    @schedule_daily_report
+    async def today_pr(self, window_hours: Optional[int] = None) -> Dict[str, Any]:
+        """Announce every PR opened in the last ``window_hours`` as one message.
+
+        Unlike :meth:`report_stale_pull_requests` this looks at PRs in **any**
+        state (``all``), so a PR opened and merged on the same day still shows
+        up, labelled with its state.
+
+        When no PR was opened inside the window — or the repo has no PRs at
+        all — the method **terminates silently**: nothing is sent to Telegram
+        and the returned dict carries ``today_count: 0``.
+
+        Args:
+            window_hours: How far back to look. Defaults to
+                :attr:`_TODAY_PR_WINDOW_HOURS` (24h).
+
+        Returns:
+            A status dict with ``status``, ``repository``, ``window_hours``,
+            ``today_count``, ``announced`` (PRs covered by a successful send),
+            ``messages_sent`` and ``today`` (the PR entries).
+
+        Scheduled by :func:`schedule_daily_report`, so it fires at the same
+        ``{AGENT_ID}_DAILY_REPORT`` time (``HH:MM`` UTC) as the stale-PR
+        report.
+        """
+        window = self._TODAY_PR_WINDOW_HOURS if window_hours is None else window_hours
+        if self.git_toolkit is None:
+            return {"status": "error", "reason": "git_toolkit not configured"}
+
+        try:
+            pulls = await self.git_toolkit.list_pull_requests(repository=self.repository, state="all", per_page=100)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: list_pull_requests failed for %s: %s",
+                self.repository,
+                exc,
+                exc_info=True,
+            )
+            return {"status": "error", "reason": str(exc)}
+
+        now = datetime.now(timezone.utc)
+        today: List[Dict[str, Any]] = []
+        for pr in pulls or []:
+            created_at = self._parse_iso8601(pr.get("created_at"))
+            if created_at is None:
+                continue
+            age_hours = (now - created_at).total_seconds() / 3600.0
+            if age_hours > window:
+                continue
+            today.append(
+                {
+                    "number": pr.get("number"),
+                    "title": pr.get("title"),
+                    "html_url": pr.get("html_url"),
+                    "user": (pr.get("user") or {}).get("login"),
+                    "age_hours": round(age_hours, 1),
+                    "state": self._pr_state_label(pr),
+                }
+            )
+
+        base = {
+            "status": "ok",
+            "repository": self.repository,
+            "window_hours": window,
+            "today_count": len(today),
+        }
+
+        if not today:
+            # Silent exit: an empty digest is noise, so no message goes out.
+            self.logger.info(
+                "GitHubReviewer: today's PR report — no PR opened on %s in the last %sh; staying silent.",
+                self.repository,
+                window,
+            )
+            return {**base, "announced": 0, "messages_sent": 0, "today": []}
+
+        sent = 0
+        messages_sent = 0
+        bot = self._get_telegram_bot()
+        if bot is not None and self.public_channel_id:
+            for text, covered in self._format_today_prs_digest(today, window):
+                try:
+                    await bot.send_message(
+                        chat_id=self.public_channel_id,
+                        text=text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    messages_sent += 1
+                    sent += covered
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "GitHubReviewer: failed to send today's-PR digest to chat %s: %s",
+                        self.public_channel_id,
+                        exc,
+                    )
+
+        self.logger.info(
+            "GitHubReviewer: today's PR report — %d PR(s) opened in the last %sh on %s, "
+            "%d announced in %d message(s).",
+            len(today),
+            window,
+            self.repository,
+            sent,
+            messages_sent,
+        )
+        return {**base, "announced": sent, "messages_sent": messages_sent, "today": today}
 
     @staticmethod
     def _parse_iso8601(value: Optional[str]) -> Optional[datetime]:
