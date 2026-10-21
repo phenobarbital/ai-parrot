@@ -143,7 +143,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -151,8 +151,9 @@
       "parallelism_notes": "Root of the agent chain; creates bots/fireflies_insights.py + test_fireflies_insights.py (models only).",
       "assigned_to": null,
       "started_at": "2026-10-21T23:46:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4569-fireflies-insights-models.md"
+      "completed_at": "2026-10-21T23:54:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4569-fireflies-insights-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4570",
