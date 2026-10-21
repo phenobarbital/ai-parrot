@@ -1,0 +1,43 @@
+Fireflies.ai records and summarizes every meeting, but that knowledge dies in
+Fireflies' own UI. Nothing in this repository today turns a meeting into
+**acted-upon work**: the transcripts are not in the LLM-Wiki, nobody is told
+what was decided, and the action items never become Jira tickets.
+
+Three capabilities already exist in isolation and have never been joined:
+
+1. **Fireflies over MCP** — `add_fireflies_mcp_server()` and
+   `sync_fireflies_transcripts(..., include_summary=True)` can fetch both
+   transcripts and Fireflies' own native summary (FEAT-441, merged).
+2. **Autonomous wiki ingestion** — `InboxProcessor` (FEAT-626, merged) ingests
+   every safe document dropped into the configured inbox directory, classifying
+   it against the editorial charter and linking it into the knowledge graph.
+   It is **CLI-only and one-shot**: `wikitoolkit inbox` processes whatever is
+   there when it runs, then exits. Nothing watches the folder.
+3. **Proactive Telegram + Jira from an agent** — `GitHubReviewer` (`bots/github_reviewer.py`)
+   is the mature in-repo pattern: a `TelegramAgentWrapper` injects its bot via
+   `set_wrapper()`, the agent pushes messages to a configured channel, escapes
+   HTML entities, chunks to Telegram's 4096-char limit, and wires `JiraToolkit`
+   in `post_configure()`.
+
+The existing `FirefliesObsidianAgent` (`agents/obsidian.py`) joins only (1) and
+a *file sink*, and it targets an Obsidian vault, not the wiki inbox. It is a
+`BasicAgent`, so it has no skills, no working memory, no Telegram and no Jira.
+
+**Who is affected**: the operator who runs these meetings and currently
+re-reads transcripts by hand to extract decisions, risks and action items, and
+the team that never sees them because they stay in Fireflies.
+
+### Prior art in this repo — and why this is not a duplicate
+
+`FEAT-481 fireflies-wiki-knowledgebase-agent` exists with 16 tasks stuck at
+`in-progress` on the unmerged branch `feat-fireflies-wiki-agent` (66 commits
+ahead of `dev`). It builds a `FirefliesWikiAgent` that compiles meetings into a
+**contract-governed Obsidian vault plus a derived GraphIndex**, per
+`sdd/references/obsidian-wiki-operating-contract.md`. It has no Telegram, no
+Jira, no working memory and no skills, and it does not use the FEAT-626 inbox.
+
+**Decision (user, 2026-10-22)**: this feature is a **new, independent agent**.
+FEAT-481 is left exactly as it is. The two agents are kept apart by their sink:
+FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
+
+---
