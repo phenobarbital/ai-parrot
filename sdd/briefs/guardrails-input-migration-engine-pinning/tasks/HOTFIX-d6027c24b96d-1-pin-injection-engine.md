@@ -384,8 +384,58 @@ A brief closes in place: there is no `active/` → `completed/` move, and no
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Code session (interactive, `/sdd-brief` → manual implementation)
+**Date**: 2026-10-22
+**Notes**: Implemented in commit `c7ad8795e`.
 
-**Deviations from brief**: none | describe if any
+- **New** `packages/ai-parrot/tests/_injection_test_helpers.py` —
+  `mock_pytector_engine(detector)`, the single definition of the wrapper.
+- **`_patched_bot`** now patches `_resolve_injection_engine` (returning the
+  wrapped mock) instead of `_get_shared_injection_detector`, and asserts
+  `_pytector_detector is mock_detector` before returning.
+- **`test_guardrails_prompt_injection.py`** keeps `_mock_pytector_engine` as a
+  one-line alias of the shared helper, so its ~15 call sites are unchanged.
+
+**Both `FILL IN` markers resolved by evidence, not preference:**
+
+1. *Keep or drop the `_get_shared_injection_detector` patch?* **Dropped.**
+   `grep -rn` over `packages/ai-parrot/src/` (excluding `build/`) shows exactly
+   one runtime call site, `prompt_injection.py:548`, inside the pytector branch
+   of the resolution chain — which patching the resolver bypasses entirely. The
+   patch was therefore dead, and leaving a dead patch in place is precisely the
+   trap this issue was about.
+2. *Guard on the no-injection-kwargs path?* **Made conditional.**
+   `_patched_bot` has exactly one call site today (`:76`,
+   `injection_detection=True`), but the helper takes `**kwargs`, so the guard
+   asserts only when the INPUT pipeline actually carries a `prompt_injection`
+   guardrail (`.get(...)` + `getattr(..., "_guardrails", ())`).
+
+**Acceptance criteria — all 7 verified:**
+
+| AC | Evidence |
+|---|---|
+| AC-1 | `test_guardrails_input_migration.py` 15/15 green on this box (which has the cached ONNX graph that exposed the bug); was 8 failed / 7 passed before |
+| AC-2 | Also 15/15 with `PARROT_INJECTION_ONNX_DIR=/nonexistent-onnx-dir HF_HOME=<empty> HF_HUB_OFFLINE=1` |
+| AC-3 | Repointing the patch back at `_get_shared_injection_detector` fails with `AssertionError: injection-engine patch went inert: … (see issue:d6027c24b96d)`, not `AttributeError: 'NoneType'`; file restored afterwards |
+| AC-4 | `git diff -U0 | grep` for the 8 `detect_injection.return_value = (True, 0.99)` lines → no `+`/`-` hits; all 8 byte-identical |
+| AC-5 | `grep -rn "_PytectorInjectionEngine(" packages/ai-parrot/tests/` → only `_injection_test_helpers.py:31` |
+| AC-6 | `test_guardrails_prompt_injection.py` 42/42 still green (57 combined) |
+| AC-7 | `ruff check` clean on all 3 files |
+
+**Side benefit worth noting**: the suite went from **72s to 5.6s**, because it
+no longer resolves and loads a real ONNX graph on every test.
+
+**Deviations from brief**: one, already recorded in this task's "Files to
+Create / Modify" note — the brief's Q&A chose `tests/conftest.py` as the shared
+helper's home, and the helper went to `tests/_injection_test_helpers.py`
+instead. `_patched_bot` is a module-level function and cannot consume a
+conftest fixture, and no test in this repo imports `conftest` by name;
+`_<topic>_test_helpers.py` + `conftest.py:85-87`'s `sys.path` entry is the
+established idiom (`from _crew_test_helpers import DummyAgent`). Intent of the
+decision — one definition, no drifting copy — is preserved.
+
+**Note for the reviewer**: this brief and FEAT-714's PR #1759 both modify
+`packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py` (that PR
+adds a `GuardrailPipeline` import and a `TestMultiThreatAggregation` class near
+the same import block). Expect a small, mechanical conflict in whichever merges
+second.

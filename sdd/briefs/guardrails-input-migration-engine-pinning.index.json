@@ -5,7 +5,7 @@
   "type": "brief",
   "base_branch": "dev",
   "created_at": "2026-10-22",
-  "completed_at": null,
+  "completed_at": "2026-10-22T01:52:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "BRIEF-d6027c24b96d",
       "feature": "guardrails-input-migration-engine-pinning",
       "spec": "sdd/briefs/guardrails-input-migration-engine-pinning.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only task in this brief; no dependencies and no shared state outside its 3 declared test files.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/briefs/guardrails-input-migration-engine-pinning/tasks/HOTFIX-d6027c24b96d-1-pin-injection-engine.md"
+      "assigned_to": "session:interactive",
+      "started_at": "2026-10-22T01:45:00+00:00",
+      "completed_at": "2026-10-22T01:52:00+00:00",
+      "file": "sdd/briefs/guardrails-input-migration-engine-pinning/tasks/HOTFIX-d6027c24b96d-1-pin-injection-engine.md",
+      "verification": "verified"
     }
   ]
 }
