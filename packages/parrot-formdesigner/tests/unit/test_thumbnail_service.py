@@ -60,6 +60,21 @@ class TestThumbnailService:
         assert img.height <= 150
 
     @pytest.mark.asyncio
+    async def test_exif_orientation_is_applied(self, mock_storage, sample_metadata):
+        # Landscape sensor pixels + Orientation=6 (rotate 90° CW) is how a
+        # phone stores a portrait photo; the thumbnail must come out portrait.
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        buf = BytesIO()
+        Image.new("RGB", (800, 600), color="red").save(buf, format="JPEG", exif=exif.tobytes())
+        svc = ThumbnailService(mock_storage, max_width=150, max_height=150)
+        await svc.generate(buf.getvalue(), sample_metadata)
+        stream = mock_storage.put.call_args[0][0]
+        thumb_bytes = b"".join([chunk async for chunk in stream])
+        img = Image.open(BytesIO(thumb_bytes))
+        assert img.height > img.width
+
+    @pytest.mark.asyncio
     async def test_corrupt_image_returns_none(self, mock_storage, sample_metadata):
         svc = ThumbnailService(mock_storage)
         result = await svc.generate(b"not an image", sample_metadata)
