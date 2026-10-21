@@ -1223,3 +1223,4 @@
 {"event_id":"b242ec53b7e9","kind":"issue.claimed","subject":"issue:1752eb466e1e","actor":"agent:sdd-fix","ts":"2026-10-20T23:47:12.642871+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
 {"event_id":"09f23e62d2ea","kind":"task.closed","subject":"task:TASK-4561","actor":"agent:close_task.sh","ts":"2026-10-20T23:57:13.413438+00:00","payload":{"feature":"ledger-service-fixes","verification":"verified"}}
 {"event_id":"68b514cc8b0b","kind":"task.closed","subject":"task:TASK-4562","actor":"agent:close_task.sh","ts":"2026-10-20T23:59:02.990686+00:00","payload":{"feature":"ledger-service-fixes","verification":"verified"}}
+{"event_id":"4c04c25af037","kind":"issue.closed","subject":"issue:1752eb466e1e","actor":"agent:sdd-done","ts":"2026-10-21T00:19:31.059703+00:00","payload":{"reason":"Resolved by FEAT-712 (TASK-4561, TASK-4562), verified by /sdd-done; changed .github/workflows/ci.yml","closed_by":"agent:sdd-done","resolved_by":"task:TASK-4561"}}
