@@ -11,7 +11,7 @@ tags: [fireflies, mcp, wikitoolkit, telegram, insights, agent]
 **Feature ID**: FEAT-715
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft (design research completed)
+**Status**: approved
 **Target version**: next minor
 
 **Input**: `sdd/proposals/fireflies-insights-agent.brainstorm.md` (Recommended Option B; 18/18 open questions resolved)
@@ -888,7 +888,7 @@ Verified against: `3d4df63bf`
 | Wiki page absent at confirmation time | Backlink is best-effort; ticket is created anyway (AC14). |
 | `/agents/` ignore rule change could accidentally un-ignore other agents | AC16 asserts `agents/porygon/**` and a non-whitelisted file in this agent's dir stay ignored. |
 | `github_reviewer.py` anchors drift | Already drifted once (163 lines in the 2026-10-22 merge). `/sdd-task` must re-run `grep -c` per §6's rule. |
-| `watchdog` missing on a normal install (S5) | Lazy import + actionable error naming the extra; AC29. Which packaging route to take is §8 Q1. |
+| `watchdog` missing on a normal install (S5) | Lazy import + actionable error naming the extra; AC29. Route (a) decided — §8 Q1. |
 | The mixin's DB registry path collides with the file-skills path (S6) | `enable_skill_registry = False` + direct `SkillFileToolkit`; AC25. Do **not** modify the shared mixin. |
 | A restart loses pending Telegram approvals (S8) | Approvals expire explicitly via `expires_at`; `created_ticket` is written durably before the reply; AC23/AC24. |
 | Fireflies `limit` is a total across pages, not a page size | Documented in §6; do not treat `limit > 50` as an error. |
@@ -897,7 +897,7 @@ Verified against: `3d4df63bf`
 
 | Package | Purpose | Notes |
 |---|---|---|
-| `watchdog>=4.0` | Filesystem events | **Declared ONLY in the `filesystem-transport-full` extra — NOT in `[project.dependencies]`** (verified at `3d4df63bf`). A normal `pip install ai-parrot` does **not** have it. The brainstorm's C10 ("no new dependency") was wrong; see §8 Q1. |
+| `watchdog>=4.0` | Filesystem events | **Declared ONLY in the `filesystem-transport-full` extra — NOT in `[project.dependencies]`** (verified at `3d4df63bf`). A normal `pip install ai-parrot` does **not** have it. The brainstorm's C10 was wrong. **Decided (§8 Q1, route a): keep it in the extra, import lazily — no manifest change.** |
 | `pydantic` v2 | Insight / watcher models | Repo standard |
 | `click` | `--watch` flag | Already the wiki CLI's framework |
 
@@ -907,15 +907,7 @@ Verified against: `3d4df63bf`
 
 ### Raised by the design-research cross-check
 
-- [ ] **Q1 (S5) — how do we ship `watchdog`?** The brainstorm's C10 claimed "no
-  new dependency"; that is **false**. `watchdog>=4.0` sits only in the
-  `filesystem-transport-full` extra, so a normal `pip install ai-parrot` cannot
-  run the watcher. Three routes: **(a)** keep it an extra, import it lazily, and
-  fail `--watch` with a message naming the extra (smallest install, the watcher
-  is opt-in); **(b)** promote `watchdog` to `[project.dependencies]` (watcher
-  works everywhere, every install gets fatter); **(c)** add a narrow new extra
-  such as `wiki-watch`. The spec is written to **(a)** as a stated assumption
-  (AC29) and must be revised if another route is chosen. — *Owner: Jesus Lara*
+- [x] **Q1 (S5) — how do we ship `watchdog`?** — *Owner: Jesus Lara*: **route (a)**. `watchdog` stays in the existing `filesystem-transport-full` extra; `pyproject.toml` and `uv.lock` are NOT touched. `watcher.py` imports `watchdog` lazily inside `start()`, and `--watch` fails with an actionable message naming the extra (AC29). The base install and the one-shot `wikitoolkit inbox` work without it.
 
 ### Carried forward from the brainstorm
 
