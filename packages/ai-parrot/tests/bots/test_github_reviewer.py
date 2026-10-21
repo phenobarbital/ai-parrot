@@ -100,6 +100,7 @@ class _MinimalReviewer:
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
     today_pr = GitHubReviewer.today_pr
+    _chunk_digest_messages = GitHubReviewer._chunk_digest_messages
     _format_pr_digest = GitHubReviewer._format_pr_digest
     _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
     _format_today_prs_digest = GitHubReviewer._format_today_prs_digest
@@ -158,6 +159,17 @@ class _MinimalReviewer:
     _TICKET_MONTH_DAYS = GitHubReviewer._TICKET_MONTH_DAYS
     _TICKET_PIE_MAX_SLICES = GitHubReviewer._TICKET_PIE_MAX_SLICES
     _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
+    # Resolved/Closed ticket listing (report_resolved_tickets).
+    report_resolved_tickets = GitHubReviewer.report_resolved_tickets
+    _collect_resolved_tickets = GitHubReviewer._collect_resolved_tickets
+    _resolved_ticket_rows = GitHubReviewer._resolved_ticket_rows
+    _format_resolved_tickets_digest = GitHubReviewer._format_resolved_tickets_digest
+    _jira_browse_url = GitHubReviewer._jira_browse_url
+    _RESOLVED_WINDOW_HOURS = GitHubReviewer._RESOLVED_WINDOW_HOURS
+    _RESOLVED_STATUSES = GitHubReviewer._RESOLVED_STATUSES
+    _RESOLVED_FIELDS = GitHubReviewer._RESOLVED_FIELDS
+    _RESOLVED_HEADING = GitHubReviewer._RESOLVED_HEADING
+    _RESOLVED_SUMMARY_MAX = GitHubReviewer._RESOLVED_SUMMARY_MAX
 
 
 class _StubEvent:
@@ -2798,6 +2810,216 @@ class TestJiraTicketSummary:
         assert (winter.hour, winter.minute) == (10, 0)
         assert summer.astimezone(timezone.utc).hour == 14
         assert winter.astimezone(timezone.utc).hour == 15
+
+
+class TestResolvedTicketListing:
+    """``report_resolved_tickets()`` names what crossed the finish line."""
+
+    @staticmethod
+    def _issue(
+        key: str,
+        *,
+        summary: str = "Some work",
+        assignee: Optional[str] = "Ana",
+        status_name: str = "Closed",
+        hours_ago: Optional[float] = 3,
+        resolved_hours_ago: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        fields: Dict[str, Any] = {
+            "summary": summary,
+            "assignee": None if assignee is None else {"displayName": assignee},
+            "status": {"name": status_name, "statusCategory": {"key": "done"}},
+        }
+        if hours_ago is not None:
+            fields["updated"] = (now - timedelta(hours=hours_ago)).isoformat().replace("+00:00", "+0000")
+        if resolved_hours_ago is not None:
+            fields["resolutiondate"] = (
+                (now - timedelta(hours=resolved_hours_ago)).isoformat().replace("+00:00", "+0000")
+            )
+        return {"key": key, "fields": fields}
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.server_url = "https://example.atlassian.net"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_jql_asks_for_the_transition_not_the_state(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1")])
+
+        result = await reviewer.report_resolved_tickets()
+
+        kwargs = reviewer.jira_toolkit.jira_search_issues.await_args.kwargs
+        assert kwargs["jql"] == (
+            'project = NAV AND status CHANGED TO ("Resolved", "Closed") AFTER -24h ORDER BY updated DESC'
+        )
+        # Every page, or a busy day silently loses closures.
+        assert kwargs["max_results"] is None
+        assert kwargs["fields"] == reviewer._RESOLVED_FIELDS
+        assert result["window_hours"] == 24
+
+    async def test_sends_one_message_listing_every_ticket(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-1", summary="Fix the importer", assignee="Ana", hours_ago=2),
+                self._issue("NAV-2", summary="Ship the report", assignee="Bob", status_name="Resolved", hours_ago=9),
+            ]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 2
+        assert (result["announced"], result["messages_sent"]) == (2, 1)
+        bot = reviewer._wrapper.bot
+        assert bot.send_message.await_count == 1
+        kwargs = bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "4663754211"
+        text = kwargs["text"]
+        assert "2 tickets moved to Resolved or Closed in the last 24h" in text
+        # Most recent first, each ticket linked to its own Jira issue.
+        assert text.index("NAV-1") < text.index("NAV-2")
+        assert '<a href="https://example.atlassian.net/browse/NAV-1">NAV-1 Fix the importer</a>' in text
+        assert "Bob — Resolved, 9.0h ago" in text
+
+    async def test_stale_resolutiondate_falls_back_to_updated(self) -> None:
+        """A ticket reopened and re-closed keeps an old ``resolutiondate``."""
+        reviewer = _wire_reviewer()
+        rows = reviewer._resolved_ticket_rows(
+            [
+                self._issue("NAV-1", hours_ago=1, resolved_hours_ago=900),
+                self._issue("NAV-2", hours_ago=20, resolved_hours_ago=19),
+            ],
+            now=datetime.now(timezone.utc),
+            window_hours=24,
+        )
+
+        by_key = {row["key"]: row for row in rows}
+        # 900h ago is outside the window, so the ``updated`` stamp wins.
+        assert by_key["NAV-1"]["hours_ago"] == 1.0
+        # Inside the window, ``resolutiondate`` is the better stamp.
+        assert by_key["NAV-2"]["hours_ago"] == 19.0
+        assert [row["key"] for row in rows] == ["NAV-1", "NAV-2"]
+
+    async def test_unassigned_and_stampless_ticket_still_listed(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-9", assignee=None, hours_ago=None),
+                self._issue("NAV-8", assignee="Ana", hours_ago=4),
+            ]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 2
+        # A ticket with no usable stamp is reported last, never dropped.
+        assert [ticket["key"] for ticket in result["tickets"]] == ["NAV-8", "NAV-9"]
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "Unassigned — Closed, recently" in text
+
+    async def test_no_transitions_stays_silent(self) -> None:
+        reviewer = self._reviewer([], status="empty")
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "ok"
+        assert (result["ticket_count"], result["announced"], result["messages_sent"]) == (0, 0, 0)
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_jira_error_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([], status="error")
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "boom"
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_search_exception_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "error"
+        assert "jira down" in result["reason"]
+
+    async def test_custom_window_is_honoured(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", hours_ago=30)])
+
+        result = await reviewer.report_resolved_tickets(window_hours=48)
+
+        assert "AFTER -48h" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert result["window_hours"] == 48
+        assert "in the last 48h" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+
+    async def test_missing_server_url_keeps_the_ticket_unlinked(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", summary="Fix the importer")])
+        reviewer.jira_toolkit.server_url = None
+
+        await reviewer.report_resolved_tickets()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "<a href=" not in text
+        assert "<b>NAV-1 Fix the importer</b>" in text
+
+    async def test_long_listing_is_split_into_parts(self) -> None:
+        reviewer = self._reviewer(
+            [self._issue(f"NAV-{i}", summary="x" * 110, assignee=f"Dev {i}", hours_ago=i) for i in range(1, 61)]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        bot = reviewer._wrapper.bot
+        assert bot.send_message.await_count > 1
+        assert result["messages_sent"] == bot.send_message.await_count
+        assert result["announced"] == 60
+        for call in bot.send_message.await_args_list:
+            text = call.kwargs["text"]
+            assert len(text) <= reviewer._TELEGRAM_MAX_MESSAGE
+            assert "(part " in text
+
+    async def test_failed_send_does_not_count_as_announced(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1"), self._issue("NAV-2")])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("telegram down"))
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 2
+        assert (result["announced"], result["messages_sent"]) == (0, 0)
+        reviewer.logger.warning.assert_called()
+
+    async def test_without_a_bot_nothing_is_announced(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1")])
+        reviewer._wrapper = None
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 1
+        assert (result["announced"], result["messages_sent"]) == (0, 0)
+        reviewer.logger.warning.assert_called()
+
+    def test_report_is_scheduled_on_a_timezone_aware_cron(self) -> None:
+        """Losing the decorator would silently un-schedule the listing."""
+        cfg = getattr(GitHubReviewer.report_resolved_tickets, "_schedule_config", None)
+        assert cfg is not None, "report_resolved_tickets lost its @schedule decorator"
+        assert cfg["method_name"] == "report_resolved_tickets"
+        # Not a daily/weekly report marker: those fire on the scheduler's
+        # UTC clock and re-resolve their time from {AGENT_ID}_DAILY_REPORT.
+        assert not hasattr(GitHubReviewer.report_resolved_tickets, "_schedule_report_type")
 
 
 class TestMonthlyTicketPie:

@@ -1780,6 +1780,44 @@ class GitHubReviewer(Agent):
     #: Default window of :meth:`today_pr`, in hours.
     _TODAY_PR_WINDOW_HOURS = 24
 
+    def _chunk_digest_messages(self, entries: List[str], *, header: str) -> List[Tuple[str, int]]:
+        """Pack rendered digest entries into as few Telegram messages as fit.
+
+        Shared by every one-entry-per-item digest: the PR reports
+        (:meth:`_format_pr_digest`) and the resolved-ticket listing
+        (:meth:`_format_resolved_tickets_digest`) differ in what an entry
+        says, not in how entries are packed into messages.
+
+        Args:
+            entries: Rendered entries, each already carrying its own leading
+                newline, in the order they should be announced.
+            header: The message's opening lines, repeated on every part.
+
+        Returns:
+            A list of ``(text, entry_count)`` pairs — a single pair in the
+            normal case. Enough entries to blow Telegram's 4096-char limit
+            are split into as few messages as still fit, each carrying its
+            own header and a ``(part n/m)`` marker. ``entry_count`` is how
+            many entries that message announces, so a caller can attribute a
+            failed send to the items it would have covered.
+        """
+        budget = self._TELEGRAM_MAX_MESSAGE - len(header) - self._TELEGRAM_PART_RESERVE
+        chunks: List[List[str]] = [[]]
+        used = 0
+        for entry in entries:
+            if chunks[-1] and used + len(entry) > budget:
+                chunks.append([])
+                used = 0
+            chunks[-1].append(entry)
+            used += len(entry)
+
+        total = len(chunks)
+        messages: List[Tuple[str, int]] = []
+        for part, chunk in enumerate(chunks, start=1):
+            marker = f"(part {part}/{total})\n" if total > 1 else ""
+            messages.append((header + marker + "".join(chunk), len(chunk)))
+        return messages
+
     def _format_pr_digest(
         self,
         prs: List[Dict[str, Any]],
@@ -1825,22 +1863,7 @@ class GitHubReviewer(Agent):
             label = f"#{number} {title}".strip() if number is not None else title
             entries.append(f'\n{idx}. <a href="{url}">{label}</a>\n' f"    by {user} — {detail(pr)}")
 
-        budget = self._TELEGRAM_MAX_MESSAGE - len(header) - self._TELEGRAM_PART_RESERVE
-        chunks: List[List[str]] = [[]]
-        used = 0
-        for entry in entries:
-            if chunks[-1] and used + len(entry) > budget:
-                chunks.append([])
-                used = 0
-            chunks[-1].append(entry)
-            used += len(entry)
-
-        total = len(chunks)
-        messages: List[Tuple[str, int]] = []
-        for part, chunk in enumerate(chunks, start=1):
-            marker = f"(part {part}/{total})\n" if total > 1 else ""
-            messages.append((header + marker + "".join(chunk), len(chunk)))
-        return messages
+        return self._chunk_digest_messages(entries, header=header)
 
     def _format_stale_prs_digest(self, stale: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
         """Build the daily stale-PR digest (see :meth:`_format_pr_digest`)."""
@@ -2467,6 +2490,314 @@ class GitHubReviewer(Agent):
             messages_sent,
         )
         return {**base, "announced": sent, "messages_sent": messages_sent}
+
+    # ------------------------------------------------------------------
+    # Daily list of tickets that moved to Resolved / Closed (last 24h)
+    # ------------------------------------------------------------------
+
+    #: Default window of :meth:`report_resolved_tickets`, in hours.
+    _RESOLVED_WINDOW_HOURS = 24
+    #: Transition targets the report looks for. Status *names*, not
+    #: ``statusCategory`` keys like :attr:`_TICKET_BUCKETS`: both of these
+    #: live in the ``done`` category, and a workflow that has both
+    #: distinguishes them (resolved-but-not-closed is a state people track),
+    #: so the names are what the JQL must ask for. Override in a subclass
+    #: whose project renamed them.
+    _RESOLVED_STATUSES: Tuple[str, ...] = ("Resolved", "Closed")
+    #: Field set of the listing — one line per ticket, so it needs the
+    #: summary and the resolution stamp on top of the digest's counting
+    #: fields.
+    _RESOLVED_FIELDS = "key,summary,assignee,status,updated,resolutiondate"
+    #: Opening line of the listing.
+    _RESOLVED_HEADING = "Tickets resolved or closed"
+    #: Per-entry summary clamp, so one novel-length ticket summary cannot
+    #: produce an entry that alone overflows a message.
+    _RESOLVED_SUMMARY_MAX = 120
+
+    def _jira_browse_url(self, key: str) -> str:
+        """``<instance>/browse/<key>``, or ``""`` when the instance is unknown.
+
+        Read off the live toolkit rather than ``JIRA_INSTANCE`` so the link
+        always points at the Jira the tickets were actually read from. An
+        empty string means "render this ticket as plain text": a report must
+        not lose a ticket over a missing base URL.
+        """
+        base = getattr(self.jira_toolkit, "server_url", None)
+        base = base.rstrip("/") if isinstance(base, str) else ""
+        return f"{base}/browse/{key}" if base else ""
+
+    def _resolved_ticket_rows(
+        self,
+        issues: List[Dict[str, Any]],
+        *,
+        now: datetime,
+        window_hours: int,
+    ) -> List[Dict[str, Any]]:
+        """Project raw Jira issues into the rows the listing renders.
+
+        Args:
+            issues: Raw Jira issue dicts (``{"key": ..., "fields": {...}}``).
+            now: Reference instant, passed in so tests are deterministic.
+            window_hours: Width of the window, used to decide whether a
+                ticket's ``resolutiondate`` belongs to *this* transition.
+
+        Returns:
+            One dict per ticket — ``key``, ``summary``, ``assignee``,
+            ``status``, ``url``, ``moved_at`` (a ``datetime`` or ``None``)
+            and ``hours_ago`` (rounded, or ``None``) — most recently moved
+            first, tickets with no usable stamp last (ties by key).
+        """
+        cutoff = now - timedelta(hours=window_hours)
+        rows: List[Dict[str, Any]] = []
+        for issue in issues:
+            fields = issue.get("fields") or {}
+            # ``resolutiondate`` names the moment far better than
+            # ``updated`` — but a ticket resolved long ago, reopened and
+            # re-closed inside the window keeps the OLD resolution stamp,
+            # and a Closed-without-resolution ticket has none at all. Only
+            # trust it when it falls inside the window the JQL asked about.
+            moved_at = self._parse_iso8601(fields.get("resolutiondate"))
+            if moved_at is None or moved_at < cutoff:
+                moved_at = self._parse_iso8601(fields.get("updated"))
+            key = str(issue.get("key") or "")
+            rows.append(
+                {
+                    "key": key,
+                    "summary": str(fields.get("summary") or ""),
+                    "assignee": self._ticket_assignee(issue),
+                    "status": str(((fields.get("status") or {}).get("name")) or "unknown"),
+                    "url": self._jira_browse_url(key) if key else "",
+                    "moved_at": moved_at,
+                    "hours_ago": (None if moved_at is None else round((now - moved_at).total_seconds() / 3600, 1)),
+                }
+            )
+
+        # ``moved_at`` is optional, so it cannot be the sort key directly:
+        # a stampless ticket sorts into its own group (last), and the rest go
+        # by recency — ascending ``hours_ago`` is most-recent-first.
+        rows.sort(
+            key=lambda row: (
+                row["hours_ago"] is None,
+                row["hours_ago"] if row["hours_ago"] is not None else 0.0,
+                row["key"],
+            )
+        )
+        return rows
+
+    def _format_resolved_tickets_digest(self, payload: Dict[str, Any]) -> List[Tuple[str, int]]:
+        """Render :meth:`_collect_resolved_tickets` output as a Telegram digest.
+
+        One numbered line per ticket — the key and summary as a link to the
+        issue, then the assignee, the status it now sits in and how long ago
+        it got there — chunked by :meth:`_chunk_digest_messages`, so a day
+        with a hundred closures still arrives as a handful of messages
+        rather than a hundred.
+
+        Returns:
+            A list of ``(text, ticket_count)`` pairs (see
+            :meth:`_chunk_digest_messages`).
+        """
+        tickets = payload.get("tickets") or []
+        window_hours = int(payload.get("window_hours") or self._RESOLVED_WINDOW_HOURS)
+        plural = "" if len(tickets) == 1 else "s"
+        targets = " or ".join(self._RESOLVED_STATUSES)
+        header = (
+            f"<b>{html.escape(self._RESOLVED_HEADING)}</b> on "
+            f"<code>{html.escape(str(self.jira_project))}</code>\n"
+            f"{len(tickets)} ticket{plural} moved to {html.escape(targets)} "
+            f"in the last {window_hours}h\n"
+        )
+
+        entries: List[str] = []
+        for idx, ticket in enumerate(tickets, start=1):
+            summary = str(ticket.get("summary") or "")
+            if len(summary) > self._RESOLVED_SUMMARY_MAX:
+                summary = summary[: self._RESOLVED_SUMMARY_MAX - 1].rstrip() + "…"
+            label = html.escape(f"{ticket.get('key')} {summary}".strip())
+            url = str(ticket.get("url") or "")
+            # No base URL (see :meth:`_jira_browse_url`): the ticket still
+            # gets its line, just without the hyperlink.
+            title = f'<a href="{html.escape(url, quote=True)}">{label}</a>' if url else f"<b>{label}</b>"
+            hours_ago = ticket.get("hours_ago")
+            when = "recently" if hours_ago is None else f"{hours_ago}h ago"
+            entries.append(
+                f"\n{idx}. {title}\n"
+                f"    {html.escape(str(ticket.get('assignee') or 'Unassigned'))} — "
+                f"{html.escape(str(ticket.get('status') or 'unknown'))}, {when}"
+            )
+
+        return self._chunk_digest_messages(entries, header=header)
+
+    async def _collect_resolved_tickets(self, *, window_hours: int) -> Dict[str, Any]:
+        """Search the project for tickets that *transitioned* in the window.
+
+        One JQL round-trip on ``status CHANGED TO (...) AFTER -{hours}h``,
+        which is a changelog question, not a state one: a ticket closed
+        three months ago and merely touched today does NOT match, and a
+        ticket that moved to Closed and then back out still does — it did
+        make the transition, and its row reports the status it sits in now.
+
+        Args:
+            window_hours: Width of the changelog window, in hours.
+
+        Returns:
+            On success, ``status: "ok"`` plus ``project``, ``jql``,
+            ``window_hours``, ``ticket_count`` and ``tickets`` (the rows of
+            :meth:`_resolved_ticket_rows`, empty when nothing moved). On
+            failure, ``status: "error"`` and a ``reason``.
+        """
+        if self.jira_toolkit is None:
+            return {"status": "error", "reason": "jira_toolkit not configured"}
+
+        targets = ", ".join(f'"{status}"' for status in self._RESOLVED_STATUSES)
+        jql = (
+            f"project = {self.jira_project} "
+            f"AND status CHANGED TO ({targets}) AFTER -{window_hours}h "
+            "ORDER BY updated DESC"
+        )
+        base: Dict[str, Any] = {
+            "status": "ok",
+            "project": self.jira_project,
+            "jql": jql,
+            "window_hours": window_hours,
+        }
+
+        try:
+            envelope = await self.jira_toolkit.jira_search_issues(
+                jql=jql,
+                # None fetches every page: a partial page would silently
+                # drop closures, and a day's worth can exceed one page.
+                max_results=None,
+                fields=self._RESOLVED_FIELDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: jira_search_issues failed for resolved tickets on %s: %s",
+                self.jira_project,
+                exc,
+                exc_info=True,
+            )
+            return {**base, "status": "error", "reason": str(exc)}
+
+        envelope = envelope or {}
+        if envelope.get("status") not in ("ok", "empty"):
+            reason = str(envelope.get("message") or "jira_search_issues returned no data")
+            self.logger.error(
+                "GitHubReviewer: resolved-ticket listing for %s failed: %s",
+                self.jira_project,
+                reason,
+            )
+            return {**base, "status": "error", "reason": reason}
+
+        issues = ((envelope.get("data") or {}).get("issues")) or []
+        tickets = self._resolved_ticket_rows(
+            issues,
+            now=datetime.now(timezone.utc),
+            window_hours=window_hours,
+        )
+        return {**base, "ticket_count": len(tickets), "tickets": tickets}
+
+    # Daily at 10:00 America/New_York, on the same timezone-aware cron as
+    # the ticket digest above and for the same reasons (see the note on
+    # report_jira_tickets): ScheduleType.DAILY would fire on the
+    # scheduler's UTC clock and share the stale-PR digest's configured time.
+    @schedule(
+        schedule_type=ScheduleType.CRON,
+        hour=_TICKET_REPORT_HOUR,
+        minute=_TICKET_REPORT_MINUTE,
+        timezone=_TICKET_REPORT_TIMEZONE,
+    )
+    async def report_resolved_tickets(self, window_hours: Optional[int] = None) -> Dict[str, Any]:
+        """List the tickets that moved to Resolved or Closed, and send it.
+
+        The named counterpart of :meth:`report_jira_tickets`: that one
+        counts a project by assignee, this one names the tickets that
+        actually crossed the finish line in the last ``window_hours`` —
+        what got done, with a link per ticket — and posts the list to
+        :attr:`management_chat_id` (``GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID``,
+        falling back to the public channel).
+
+        Scope is the **transition**, not the current state: the JQL asks
+        ``status CHANGED TO (Resolved, Closed) AFTER -{window_hours}h``, so
+        a ticket that has sat in Closed for a month is absent however often
+        it was touched, while one that moved to Closed and was reopened the
+        same day is present — it did get resolved, and its row shows the
+        status it sits in now.
+
+        When nothing moved — or Jira returns nothing — the method
+        **terminates silently** like the other digests: no message goes
+        out and the returned dict carries ``ticket_count: 0``.
+
+        Args:
+            window_hours: Width of the window. Defaults to
+                :attr:`_RESOLVED_WINDOW_HOURS` (24h).
+
+        Returns:
+            A status dict with ``status``, ``project``, ``jql``,
+            ``window_hours``, ``ticket_count``, ``tickets``, ``announced``
+            (tickets covered by a successful send) and ``messages_sent``.
+
+        Scheduled daily at 10:00 ``America/New_York`` (DST-aware); it is
+        equally dispatchable on demand, which is what ``/call
+        report_resolved_tickets`` does.
+        """
+        hours = self._RESOLVED_WINDOW_HOURS if window_hours is None else int(window_hours)
+        if hours <= 0:
+            hours = self._RESOLVED_WINDOW_HOURS
+
+        payload = await self._collect_resolved_tickets(window_hours=hours)
+        if payload["status"] != "ok":
+            return payload
+
+        if not payload["tickets"]:
+            # Silent exit: an empty list is noise, like the digests above.
+            self.logger.info(
+                "GitHubReviewer: resolved-ticket listing — no %s ticket moved to %s in the last %sh; staying silent.",
+                self.jira_project,
+                " or ".join(self._RESOLVED_STATUSES),
+                hours,
+            )
+            return {**payload, "announced": 0, "messages_sent": 0}
+
+        sent = 0
+        messages_sent = 0
+        bot = self._get_telegram_bot()
+        if bot is None or not self.management_chat_id:
+            self.logger.warning(
+                "GitHubReviewer: %d resolved ticket(s) to report but no %s to send them to; skipping.",
+                len(payload["tickets"]),
+                "Telegram bot" if bot is None else "management chat id",
+            )
+            return {**payload, "announced": 0, "messages_sent": 0}
+
+        for text, covered in self._format_resolved_tickets_digest(payload):
+            try:
+                await bot.send_message(
+                    chat_id=self.management_chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                messages_sent += 1
+                sent += covered
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send the resolved-ticket listing to chat %s: %s",
+                    self.management_chat_id,
+                    exc,
+                )
+
+        self.logger.info(
+            "GitHubReviewer: resolved-ticket listing — %d %s ticket(s) moved to %s in the last %sh, "
+            "%d announced in %d message(s).",
+            payload["ticket_count"],
+            self.jira_project,
+            " or ".join(self._RESOLVED_STATUSES),
+            hours,
+            sent,
+            messages_sent,
+        )
+        return {**payload, "announced": sent, "messages_sent": messages_sent}
 
     # ------------------------------------------------------------------
     # On-demand monthly ticket pie chart (/monthly_jira_tickets)
