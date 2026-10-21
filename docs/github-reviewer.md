@@ -375,10 +375,26 @@ It runs the same review pipeline as `review_pull_request` (ticket →
 acceptance criteria → diff → wiki-assisted LLM comparison) and then adds a
 **CI gate**, which `review_pull_request` does not have:
 
-| Gate      | Passes when                                                                             |
-| --------- | --------------------------------------------------------------------------------------- |
-| Jira      | the review approved the PR and raised no `blocker`/`major` discrepancy                   |
-| Tests     | the declared checks are green, or at least `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` of the **completed** ones are |
+The **Jira gate decides**; CI is a **second, optional gate**, because "no CI"
+is not "CI failed":
+
+| Gate | Blocks when | Notes |
+| ---- | ----------- | ----- |
+| Jira | the review did not approve, or raised a `blocker`/`major` discrepancy | always decisive |
+| Tests | the declared checks are **failing** below `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` | the only CI state that refuses a PR |
+
+The four CI states are kept apart:
+
+| CI state | Verdict |
+| -------- | ------- |
+| green, or green enough ("all OK or a great part") | passes |
+| **red** below the ratio | **blocks** — draft + comment + notifications |
+| still **running** | `deferred` — the PR is left untouched; evidence arrives in a minute and the next push re-runs the review |
+| **absent or unreadable** (no CI in the repo, an outage, a permission a PAT cannot hold) | passes with a non-blocking note; the approval says *"this approval rests on the ticket comparison alone"* |
+
+Set `GITHUB_REVIEW_REQUIRE_CHECKS=true` to make the evidence mandatory: then
+missing or unreadable CI blocks too. Leave it off and a configuration problem
+can never stall the review flow.
 
 Checks are read from both GitHub APIs — the Checks API (`check-runs`, where
 GitHub Actions reports) and the legacy Commit Status API — because a repo may
@@ -390,7 +406,7 @@ Three outcomes:
 | `status`      | What happens on GitHub                                                      |
 | ------------- | --------------------------------------------------------------------------- |
 | `"approved"`  | `APPROVE` review. Nothing else is touched.                                  |
-| `"deferred"`  | `COMMENT` review. **The PR is left exactly as it is** — no draft, no notification. Happens when checks are still running, or when the CI status could not be read (an outage or a missing token scope is not test evidence, and not the developer's fault). |
+| `"deferred"`  | `COMMENT` review. **The PR is left exactly as it is** — no draft, no notification. Happens only when checks are still **running**; an absent or unreadable CI approves with a note instead (see the gate table above). |
 | `"blocked"`   | The PR is **converted to a draft** (GraphQL `convertPullRequestToDraft`, the only API that can), a comment explains every blocking reason, a `REQUEST_CHANGES` review is submitted, and the assignee is notified. |
 
 Every outcome reports the **ticket comparison** — the AC verdict, the review's
@@ -467,6 +483,11 @@ surfaces as a check run, so querying both would double-count. The fallback
 loses check runs posted by third-party apps (SonarCloud, Codecov…); that is the
 price of a PAT, and the partial picture is disclosed as a non-blocking warning
 on the verdict.
+
+**A missing permission never stalls the review.** If every CI source is
+refused, the reviewer says so in the review body — naming the permission to
+grant — and lets the ticket comparison decide. Reviews keep working while the
+token is being fixed.
 
 Two name traps worth calling out:
 

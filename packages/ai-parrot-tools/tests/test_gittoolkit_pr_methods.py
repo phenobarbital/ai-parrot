@@ -33,6 +33,35 @@ def _toolkit() -> GitToolkit:
     return GitToolkit(default_repository="owner/repo", github_token="fake-token")
 
 
+def _route(**by_fragment):
+    """Build a ``requests.request`` side effect that dispatches on the URL.
+
+    Keys are URL fragments (``check_runs`` -> "/check-runs"), values are
+    responses. Order-independent on purpose: a positional ``side_effect`` list
+    silently breaks when the toolkit gains a call, and the resulting
+    StopIteration inside ``asyncio.to_thread`` HANGS the test instead of
+    failing it.
+    """
+    fragments = {
+        "pulls": "/pulls/",
+        "check_runs": "/check-runs",
+        "workflow_runs": "/actions/runs",
+        "statuses": "/status",
+    }
+    unknown = set(by_fragment) - set(fragments)
+    assert not unknown, f"unknown route(s): {sorted(unknown)}"
+
+    def _dispatch(method, url, **kwargs):
+        # Longest fragment first: "/status" also matches nothing else, but
+        # "/check-runs" must not be shadowed by a looser pattern.
+        for name, fragment in sorted(fragments.items(), key=lambda kv: -len(kv[1])):
+            if fragment in url and name in by_fragment:
+                return by_fragment[name]
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    return _dispatch
+
+
 class TestGetPullRequest:
     def test_returns_json(self):
         toolkit = _toolkit()
@@ -386,39 +415,43 @@ class TestConvertPRToDraft:
 
 
 class TestGetPRChecksPermissionDenials:
-    """The two CI APIs sit behind independent token permissions."""
+    """The CI APIs sit behind independent token permissions."""
 
     _DENIED = {"message": "Resource not accessible by personal access token", "status": "403"}
 
     def test_a_denied_checks_api_does_not_discard_the_commit_statuses(self):
         """403 on check-runs must not throw away what the token CAN read."""
         toolkit = _toolkit()
-        responses = [
-            _make_response(403, json_data=self._DENIED, text="denied"),
-            _make_response(
+        side_effect = _route(
+            check_runs=_make_response(403, json_data=self._DENIED, text="denied"),
+            workflow_runs=_make_response(403, json_data=self._DENIED, text="denied"),
+            statuses=_make_response(
                 200,
                 json_data={"state": "success", "statuses": [{"context": "ci/jenkins", "state": "success"}]},
             ),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+        )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=548, head_sha="d5fda5e"))
 
         assert result["available"] is True
-        assert result["denied"] == ["check_runs"]
+        assert result["answered"] == ["commit_statuses"]
+        assert result["denied"] == ["check_runs", "workflow_runs"]
         assert result["success"] == 1
-        assert "'Checks' (Read-only)" in result["reason"]
+        # Checks may be SUGGESTED for a GitHub App, but never as a PAT row.
+        assert "GitHub Apps only" in result["reason"]
+        assert "'Checks' (Read-only) [checks=read] on the fine-grained PAT" not in result["reason"]
         assert "classic PAT" in result["reason"]
 
     def test_a_denied_status_api_keeps_the_check_runs(self):
         toolkit = _toolkit()
-        responses = [
-            _make_response(
+        side_effect = _route(
+            check_runs=_make_response(
                 200,
                 json_data={"check_runs": [{"name": "pytest", "status": "completed", "conclusion": "success"}]},
             ),
-            _make_response(403, json_data=self._DENIED, text="denied"),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+            statuses=_make_response(403, json_data=self._DENIED, text="denied"),
+        )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
 
         assert result["available"] is True
@@ -426,30 +459,31 @@ class TestGetPRChecksPermissionDenials:
         assert result["success"] == 1
         assert "'Commit statuses' (Read-only)" in result["reason"]
 
-    def test_both_denied_reports_unavailable(self):
-        """Both refused means "we do not know" — never "green"."""
+    def test_every_source_denied_reports_unavailable(self):
+        """Nothing readable means "we do not know" — never "green"."""
         toolkit = _toolkit()
-        responses = [
-            _make_response(403, json_data=self._DENIED, text="denied"),
-            _make_response(403, json_data=self._DENIED, text="denied"),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+        denied = _make_response(403, json_data=self._DENIED, text="denied")
+        side_effect = _route(check_runs=denied, workflow_runs=denied, statuses=denied)
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
 
         assert result["available"] is False
-        assert result["denied"] == ["check_runs", "commit_statuses"]
+        assert result["answered"] == []
+        assert result["denied"] == ["check_runs", "workflow_runs", "commit_statuses"]
         assert result["total"] == 0
 
     def test_404_is_tolerated_like_403(self):
         """A fine-grained PAT hides an inaccessible resource behind 404 too."""
         toolkit = _toolkit()
-        responses = [
-            _make_response(404, json_data={"message": "Not Found"}, text="nf"),
-            _make_response(200, json_data={"state": "pending", "statuses": []}),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+        side_effect = _route(
+            check_runs=_make_response(404, json_data={"message": "Not Found"}, text="nf"),
+            workflow_runs=_make_response(200, json_data={"workflow_runs": []}),
+            statuses=_make_response(200, json_data={"state": "pending", "statuses": []}),
+        )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
         assert result["denied"] == ["check_runs"]
+        assert result["answered"] == ["workflow_runs", "commit_statuses"]
         assert result["available"] is True
 
     def test_other_http_errors_still_raise(self):
@@ -464,54 +498,66 @@ class TestGetPRChecksPermissionDenials:
 
 
 class TestDenialReasonUsesGitHubsOwnHeader:
-    """GitHub names the permission it wants — quote it, do not guess.
+    """GitHub names the permission it wants — quote it, do not guess."""
 
-    "Actions" is the permission an operator reaches for and the one that does
-    NOT cover check runs, so the message has to be authoritative.
-    """
+    _DENIED = {"message": "Resource not accessible by personal access token"}
 
     def test_the_accepted_permissions_header_is_preferred(self):
         toolkit = _toolkit()
-        responses = [
-            _make_response(
+        side_effect = _route(
+            check_runs=_make_response(
                 403,
-                json_data={"message": "Resource not accessible by personal access token"},
+                json_data=self._DENIED,
                 text="denied",
                 headers={"x-accepted-github-permissions": "checks=read"},
             ),
-            _make_response(
+            workflow_runs=_make_response(
                 403,
-                json_data={"message": "Resource not accessible by personal access token"},
+                json_data=self._DENIED,
+                text="denied",
+                headers={"x-accepted-github-permissions": "actions=read"},
+            ),
+            statuses=_make_response(
+                403,
+                json_data=self._DENIED,
                 text="denied",
                 headers={"x-accepted-github-permissions": "statuses=read"},
             ),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+        )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=548, head_sha="s"))
 
-        assert result["denied_permissions"] == {"check_runs": "checks=read", "commit_statuses": "statuses=read"}
+        assert result["denied_permissions"] == {
+            "check_runs": "checks=read",
+            "workflow_runs": "actions=read",
+            "commit_statuses": "statuses=read",
+        }
         reason = result["reason"]
         assert "checks=read" in reason
+        assert "actions=read" in reason
         assert "statuses=read" in reason
         # The UI labels, because the settings page does not say "statuses".
-        assert "'Checks' (Read-only)" in reason
+        assert "'Actions' (Read-only)" in reason
         assert "'Commit statuses' (Read-only)" in reason
-        assert "approve the change" in reason
+        assert "owner's approval" in reason
 
     def test_falls_back_to_the_static_map_without_the_header(self):
         toolkit = _toolkit()
-        responses = [
-            _make_response(403, json_data={"message": "nope"}, text="denied"),
-            _make_response(200, json_data={"state": "pending", "statuses": []}),
-        ]
-        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+        side_effect = _route(
+            check_runs=_make_response(403, json_data={"message": "nope"}, text="denied"),
+            workflow_runs=_make_response(403, json_data={"message": "nope"}, text="denied"),
+            statuses=_make_response(200, json_data={"state": "pending", "statuses": []}),
+        )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=side_effect):
             result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
         assert result["denied_permissions"] == {}
-        assert "'Checks' (Read-only)" in result["reason"]
+        # Falls back to the static map: actions=read for the workflow endpoint.
+        assert "'Actions' (Read-only) [actions=read]" in result["reason"]
 
     def test_describe_permission_maps_api_names_to_ui_labels(self):
         assert GitToolkit._describe_permission("checks=read") == "'Checks' (Read-only)"
         assert GitToolkit._describe_permission("statuses=read") == "'Commit statuses' (Read-only)"
+        assert GitToolkit._describe_permission("actions=read") == "'Actions' (Read-only)"
         assert GitToolkit._describe_permission("pull_requests=write") == "'Pull requests' (Read and write)"
         multi = GitToolkit._describe_permission("pull_requests=read; contents=read")
         assert multi == "'Pull requests' (Read-only), 'Contents' (Read-only)"
