@@ -78,6 +78,10 @@ class _MinimalReviewer:
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
+    report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
+    # staticmethod(): a bare assignment would rebind it as an instance method.
+    _parse_iso8601 = staticmethod(GitHubReviewer._parse_iso8601)
+    _get_telegram_bot = GitHubReviewer._get_telegram_bot
     _build_wiki_cache = GitHubReviewer._build_wiki_cache
     _schedule_wiki_warmup = GitHubReviewer._schedule_wiki_warmup
     _shutdown_wiki_warmup = GitHubReviewer._shutdown_wiki_warmup
@@ -1895,3 +1899,61 @@ class TestIntegrationToolAssistedReview:
         # comparison: 0 >= 0 is True but max_review_tool_calls == 0 so the
         # guard `and self.max_review_tool_calls > 0` prevents the log).
         r.logger.warning.assert_not_called()
+
+
+class TestPublicChannelSendFailureLogging:
+    """A failed public-channel send must name the chat it was aimed at.
+
+    Regression for issue:7d1aeb70b417: the three ``public_channel_id`` send
+    paths logged the exception without the destination, so four identical
+    "chat not found" lines gave the operator no way to tell which of the two
+    configured destinations (``alert_chat_ids`` vs ``public_channel_id``) was
+    broken, nor which id was attempted.
+    """
+
+    @staticmethod
+    def _stale_reviewer(chat_id: str = "4663754211") -> _MinimalReviewer:
+        """A reviewer with one stale PR and a Telegram bot that refuses sends."""
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = chat_id
+        old = datetime.now(timezone.utc) - timedelta(hours=72)
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(
+            return_value=[
+                {
+                    "number": 7,
+                    "title": "feat: something",
+                    "html_url": "https://github.com/owner/repo/pull/7",
+                    "user": {"login": "someone"},
+                    "created_at": old.isoformat().replace("+00:00", "Z"),
+                }
+            ]
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(
+            side_effect=RuntimeError("Telegram server says - Bad Request: chat not found")
+        )
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_stale_alert_failure_names_the_chat_id(self) -> None:
+        """The warning carries public_channel_id, not just the exception."""
+        reviewer = self._stale_reviewer()
+
+        await reviewer.report_stale_pull_requests()
+
+        reviewer.logger.warning.assert_called_once()
+        fmt, *args = reviewer.logger.warning.call_args.args
+        assert "to chat %s" in fmt
+        assert args[0] == "4663754211"
+        assert "chat not found" in str(args[1])
+
+    async def test_stale_alert_failure_does_not_count_as_announced(self) -> None:
+        """A refused send leaves the stale PR unannounced in the summary."""
+        reviewer = self._stale_reviewer()
+
+        result = await reviewer.report_stale_pull_requests()
+
+        assert result["stale_count"] == 1
+        assert len(result["stale"]) == 1
+        assert result["announced"] == 0
