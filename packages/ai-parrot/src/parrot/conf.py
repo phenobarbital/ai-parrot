@@ -823,9 +823,11 @@ try:
     GITHUB_REVIEW_MIN_CHECK_PASS_RATIO: float = float(config.get("GITHUB_REVIEW_MIN_CHECK_PASS_RATIO", fallback=0.8))
 except (TypeError, ValueError):
     GITHUB_REVIEW_MIN_CHECK_PASS_RATIO = 0.8
-# When true, a PR whose head commit declares NO checks at all is refused
-# (drafted) instead of merely warned about. Default false, so a repository
-# without CI is not blocked wholesale — flip it on once CI is mandatory.
+# Makes test evidence mandatory for /review_pr. CI is an OPTIONAL gate by
+# default: only a FAILING pipeline refuses a PR, while one that is absent or
+# unreadable (no checks on the commit, an outage, or a permission a
+# fine-grained PAT cannot hold) is a non-blocking warning — "no CI" is not
+# "CI failed". Set this true and missing evidence blocks (drafts) too.
 GITHUB_REVIEW_REQUIRE_CHECKS: bool = config.getboolean("GITHUB_REVIEW_REQUIRE_CHECKS", fallback=False)
 
 # Number of past weeks to consider when computing "silent contributors".
