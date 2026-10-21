@@ -98,8 +98,12 @@ FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
   and is reachable by `JiraToolkit(templates_dir=…)` / `JIRA_TEMPLATES_DIR`.
 - **C9** Async-first, `aiohttp` only, Pydantic v2 models, `self.logger`, no
   `print`, no LangChain — `.claude/rules/codebase-conventions.md` applies.
-- **C10** No new third-party dependency: `watchdog>=4.0` is already declared in
-  `packages/ai-parrot/pyproject.toml`.
+- **C10** ~~No new third-party dependency: `watchdog>=4.0` is already declared in
+  `packages/ai-parrot/pyproject.toml`.~~ **CORRECTED 2026-10-22 (FEAT-715 spec,
+  design-research S5):** `watchdog>=4.0` is declared **only** in the
+  `filesystem-transport-full` optional extra, NOT in `[project.dependencies]`,
+  so a normal `pip install ai-parrot` does not have it. How to ship it is open
+  in the spec as §8 Q1.
 - **C11** The inbox holds the sole whole-run writer lock (`InboxLockBusy`). The
   watcher must serialize runs and must never ingest a half-written file. Safety
   is **uniform**: every candidate passes the same size+mtime stability window
