@@ -4686,3 +4686,53 @@ class TestDeferredReviewReportsTheComparison:
         )
         reply = await r.review_pr("42")
         assert reply.count("[MINOR] AC4") == 1
+
+
+class TestWorkflowRunSourcedVerdict:
+    """The payoff of the Actions fallback: a real verdict on a PAT.
+
+    A fine-grained PAT cannot hold `checks`, so on an Actions-only repository
+    the entire CI picture arrives as workflow runs. The gate must treat that
+    as ordinary test evidence.
+    """
+
+    def _raw(self, *, success: int, failure: int = 0, pending: int = 0) -> Dict[str, Any]:
+        entries: List[Dict[str, Any]] = []
+        entries += [{"name": "tests", "state": "success", "source": "workflow_run"} for _ in range(success)]
+        entries += [{"name": "tests", "state": "failure", "source": "workflow_run"} for _ in range(failure)]
+        entries += [{"name": "build", "state": "pending", "source": "workflow_run"} for _ in range(pending)]
+        return {
+            "checks": entries,
+            "total": len(entries),
+            "success": success,
+            "failure": failure,
+            "pending": pending,
+            "available": True,
+            "answered": ["workflow_runs"],
+            "denied": ["check_runs"],
+            "reason": "check_runs needs [checks=read], which GitHub does NOT offer to fine-grained PATs",
+        }
+
+    async def test_green_workflow_runs_approve_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+        # The partial picture is disclosed, not hidden.
+        assert any("part of the CI picture is missing" in w for w in out["verdict"]["warnings"])
+
+    async def test_failing_workflow_runs_block_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=0, failure=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        r.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+        assert any("failing" in reason for reason in out["verdict"]["reasons"])
+
+    async def test_a_workflow_sourced_picture_is_not_treated_as_unknown(self) -> None:
+        """`denied` is non-empty, but evidence exists — do not defer on it."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(self._raw(success=3))
+        verdict = r._merge_verdict(
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
+        )
+        assert (verdict.mergeable, verdict.defer) == (True, False)

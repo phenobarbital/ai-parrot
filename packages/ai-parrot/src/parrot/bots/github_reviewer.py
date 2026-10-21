@@ -2648,10 +2648,7 @@ class GitHubReviewer(Agent):
                 comment). Left off for Telegram, which escapes HTML instead.
         """
         if not checks.available:
-            return (
-                f"the CI status could not be read ({checks.reason or 'unknown error'}), so the test "
-                f"evidence could not be verified"
-            )
+            return f"the CI status could not be read ({checks.reason or 'unknown error'})"
         if checks.denied and not checks.declared:
             return f"no CI check was visible to this token — {checks.reason}"
         names = [f"`{name}`" if code else name for name in checks.running[:20]]

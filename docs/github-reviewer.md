@@ -444,10 +444,46 @@ pushing, and marking it ready for review (or by running `/review_pr` again).
 reviewer already uses to submit reviews. Reading CI needs **two independent**
 permissions, because the two APIs are separate:
 
-| API | Fine-grained PAT permission | Classic PAT |
-| --- | --------------------------- | ----------- |
-| `check-runs` (GitHub Actions and most CI apps) | **Checks** → Read-only | `repo` |
-| `commits/{sha}/status` (Travis, Jenkins, custom scripts) | **Commit statuses** → Read-only | `repo` |
+`get_pr_checks` reads **three** sources, each behind its own permission:
+
+| Source | Endpoint | Needs | Fine-grained PAT row | Classic PAT |
+| ------ | -------- | ----- | -------------------- | ----------- |
+| Check runs (Actions + every CI app) | `commits/{sha}/check-runs` | `checks=read` | **not available** — see below | `repo` |
+| Workflow runs (Actions only) | `actions/runs?head_sha=` | `actions=read` | **Actions** → Read-only | `repo` |
+| Commit statuses (Jenkins, Travis, scripts) | `commits/{sha}/status` | `statuses=read` | **Commit statuses** → Read-only | `repo` |
+
+> **A fine-grained PAT can never read check runs.** GitHub disabled the
+> `checks` permission for PATs — only GitHub Apps can hold it — even though the
+> Checks API docs still list fine-grained tokens as supported
+> ([community discussion 129512](https://github.com/orgs/community/discussions/129512)).
+> So `checks=read` in the 403's `x-accepted-github-permissions` header names a
+> row that **does not exist in the token UI**, and the reviewer says so instead
+> of sending an operator hunting for it.
+
+Because of that, the Checks API is only *attempted*: when it is refused, the
+reviewer falls back to **workflow runs**, which is the one Actions source a PAT
+can read. Workflow runs are queried only in that case — every workflow run also
+surfaces as a check run, so querying both would double-count. The fallback
+loses check runs posted by third-party apps (SonarCloud, Codecov…); that is the
+price of a PAT, and the partial picture is disclosed as a non-blocking warning
+on the verdict.
+
+Two name traps worth calling out:
+
+- **Actions ≠ Workflows.** The **Workflows** permission only allows *committing*
+  files under `.github/workflows`. Reading runs is **Actions**.
+- The API says `statuses`, the UI row is **Commit statuses**.
+
+Pick one of these three setups:
+
+| Setup | Sees check runs from third-party apps? | Notes |
+| ----- | -------------------------------------- | ----- |
+| Fine-grained PAT + **Actions** + **Commit statuses** (read) | No | Simplest; covers Actions pipelines and legacy statuses |
+| Classic PAT with `repo` | Yes | Broadest privileges |
+| GitHub App with **Checks** (read) | Yes | Already supported — `GitToolkit(auth_type="github_app", app_id=…, installation_id=…, private_key=…)` |
+
+On an org-owned repository, changing a fine-grained PAT's permissions may also
+need an organization owner to approve it before it takes effect.
 
 A 403/404 on one of them does **not** discard the other: the denial is listed
 in `denied`, explained in `reason` (naming the missing permission), and the

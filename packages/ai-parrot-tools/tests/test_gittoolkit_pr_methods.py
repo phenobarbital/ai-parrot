@@ -2,6 +2,7 @@
 
 Network calls are mocked at ``requests.request`` so the tests stay hermetic.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,9 +13,7 @@ import pytest
 from parrot_tools.gittoolkit import GitToolkit, GitToolkitError
 
 
-def _make_response(
-    status_code: int = 200, json_data=None, text: str = "", headers=None
-):
+def _make_response(status_code: int = 200, json_data=None, text: str = "", headers=None):
     class _Resp:
         def __init__(self):
             self.status_code = status_code
@@ -52,13 +51,9 @@ class TestListPullRequests:
         toolkit = _toolkit()
         with patch(
             "parrot_tools.gittoolkit.requests.request",
-            return_value=_make_response(
-                200, json_data=[{"number": 1}, {"number": 2}]
-            ),
+            return_value=_make_response(200, json_data=[{"number": 1}, {"number": 2}]),
         ) as mocked:
-            result = asyncio.run(
-                toolkit.list_pull_requests(state="open", per_page=50)
-            )
+            result = asyncio.run(toolkit.list_pull_requests(state="open", per_page=50))
         assert len(result) == 2
         assert mocked.call_args.kwargs["params"] == {
             "state": "open",
@@ -83,9 +78,7 @@ class TestGetPullRequestDiff:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(200, text=diff),
         ):
-            result = asyncio.run(
-                toolkit.get_pull_request_diff(pr_number=7, max_bytes=100)
-            )
+            result = asyncio.run(toolkit.get_pull_request_diff(pr_number=7, max_bytes=100))
         assert result["truncated"] is True
         assert len(result["diff"]) == 100
 
@@ -96,9 +89,7 @@ class TestGetPullRequestDiff:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(200, text=diff),
         ):
-            result = asyncio.run(
-                toolkit.get_pull_request_diff(pr_number=7, max_bytes=10_000)
-            )
+            result = asyncio.run(toolkit.get_pull_request_diff(pr_number=7, max_bytes=10_000))
         assert result["truncated"] is False
         assert result["diff"] == diff
 
@@ -113,11 +104,7 @@ class TestSubmitPRReview:
                 json_data={"id": 5, "state": "CHANGES_REQUESTED", "html_url": "u"},
             ),
         ) as mocked:
-            result = asyncio.run(
-                toolkit.submit_pr_review(
-                    pr_number=12, event="REQUEST_CHANGES", body="nope"
-                )
-            )
+            result = asyncio.run(toolkit.submit_pr_review(pr_number=12, event="REQUEST_CHANGES", body="nope"))
         assert result == {"id": 5, "state": "CHANGES_REQUESTED", "html_url": "u"}
         assert mocked.call_args.kwargs["json"] == {
             "event": "REQUEST_CHANGES",
@@ -131,9 +118,7 @@ class TestAddPRComment:
         toolkit = _toolkit()
         with patch(
             "parrot_tools.gittoolkit.requests.request",
-            return_value=_make_response(
-                201, json_data={"id": 99, "html_url": "u"}
-            ),
+            return_value=_make_response(201, json_data={"id": 99, "html_url": "u"}),
         ) as mocked:
             asyncio.run(toolkit.add_pr_comment(pr_number=3, body="hi"))
         assert "/issues/3/comments" in mocked.call_args.args[1]
@@ -153,14 +138,8 @@ class TestEnsureWebhook:
                 return _make_response(201, json_data={"id": 1})
             raise AssertionError(f"Unexpected call: {method} {url}")
 
-        with patch(
-            "parrot_tools.gittoolkit.requests.request", side_effect=fake_request
-        ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(
-                    webhook_url="https://example.com/hook", secret="sss"
-                )
-            )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=fake_request):
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook", secret="sss"))
         assert result["status"] == "created"
 
     def test_returns_already_exists_when_present(self):
@@ -175,9 +154,7 @@ class TestEnsureWebhook:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(200, json_data=existing),
         ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
-            )
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook"))
         assert result["status"] == "already_exists"
         assert result["hook"]["id"] == 7
 
@@ -187,9 +164,7 @@ class TestEnsureWebhook:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(403, text="Forbidden"),
         ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
-            )
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook"))
         assert result["status"] == "no_permission"
         assert result["operation"] == "list"
         assert result["status_code"] == 403
@@ -203,16 +178,10 @@ class TestEnsureWebhook:
             text="{}",
             headers={"x-accepted-github-permissions": "repository_hooks=write"},
         )
-        with patch(
-            "parrot_tools.gittoolkit.requests.request", return_value=denial
-        ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
-            )
+        with patch("parrot_tools.gittoolkit.requests.request", return_value=denial):
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook"))
         assert result["status"] == "no_permission"
-        assert result["api_message"] == (
-            "Resource not accessible by personal access token"
-        )
+        assert result["api_message"] == ("Resource not accessible by personal access token")
         assert result["required_permission"] == "repository_hooks=write"
 
     def test_non_permission_status_is_error(self):
@@ -222,9 +191,7 @@ class TestEnsureWebhook:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(500, text="boom"),
         ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
-            )
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook"))
         assert result["status"] == "error"
         assert result["status_code"] == 500
 
@@ -236,12 +203,8 @@ class TestEnsureWebhook:
                 return _make_response(200, json_data=[])
             return _make_response(403, text="Forbidden")
 
-        with patch(
-            "parrot_tools.gittoolkit.requests.request", side_effect=fake_request
-        ):
-            result = asyncio.run(
-                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
-            )
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=fake_request):
+            result = asyncio.run(toolkit.ensure_webhook(webhook_url="https://example.com/hook"))
         assert result["status"] == "no_permission"
         assert result["operation"] == "create"
 
@@ -498,3 +461,158 @@ class TestGetPRChecksPermissionDenials:
         ):
             with pytest.raises(GitToolkitError, match="500"):
                 asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
+
+
+class TestDenialReasonUsesGitHubsOwnHeader:
+    """GitHub names the permission it wants — quote it, do not guess.
+
+    "Actions" is the permission an operator reaches for and the one that does
+    NOT cover check runs, so the message has to be authoritative.
+    """
+
+    def test_the_accepted_permissions_header_is_preferred(self):
+        toolkit = _toolkit()
+        responses = [
+            _make_response(
+                403,
+                json_data={"message": "Resource not accessible by personal access token"},
+                text="denied",
+                headers={"x-accepted-github-permissions": "checks=read"},
+            ),
+            _make_response(
+                403,
+                json_data={"message": "Resource not accessible by personal access token"},
+                text="denied",
+                headers={"x-accepted-github-permissions": "statuses=read"},
+            ),
+        ]
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+            result = asyncio.run(toolkit.get_pr_checks(pr_number=548, head_sha="s"))
+
+        assert result["denied_permissions"] == {"check_runs": "checks=read", "commit_statuses": "statuses=read"}
+        reason = result["reason"]
+        assert "checks=read" in reason
+        assert "statuses=read" in reason
+        # The UI labels, because the settings page does not say "statuses".
+        assert "'Checks' (Read-only)" in reason
+        assert "'Commit statuses' (Read-only)" in reason
+        assert "approve the change" in reason
+
+    def test_falls_back_to_the_static_map_without_the_header(self):
+        toolkit = _toolkit()
+        responses = [
+            _make_response(403, json_data={"message": "nope"}, text="denied"),
+            _make_response(200, json_data={"state": "pending", "statuses": []}),
+        ]
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+            result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
+        assert result["denied_permissions"] == {}
+        assert "'Checks' (Read-only)" in result["reason"]
+
+    def test_describe_permission_maps_api_names_to_ui_labels(self):
+        assert GitToolkit._describe_permission("checks=read") == "'Checks' (Read-only)"
+        assert GitToolkit._describe_permission("statuses=read") == "'Commit statuses' (Read-only)"
+        assert GitToolkit._describe_permission("pull_requests=write") == "'Pull requests' (Read and write)"
+        multi = GitToolkit._describe_permission("pull_requests=read; contents=read")
+        assert multi == "'Pull requests' (Read-only), 'Contents' (Read-only)"
+        # An unknown permission is passed through rather than dropped.
+        assert GitToolkit._describe_permission("brand_new=read") == "'brand_new' (Read-only)"
+        assert GitToolkit._describe_permission("") == ""
+
+
+class TestWorkflowRunFallback:
+    """A fine-grained PAT can never read check runs — workflow runs stand in.
+
+    GitHub does not offer the `checks` permission to fine-grained PATs at all
+    (GitHub Apps only), so `actions=read` is the only way such a token can see
+    an Actions pipeline. See community discussion 129512.
+    """
+
+    _DENIED = {"message": "Resource not accessible by personal access token"}
+    _CHECKS_HDR = {"x-accepted-github-permissions": "checks=read"}
+    _WORKFLOWS = {
+        "total_count": 2,
+        "workflow_runs": [
+            {"name": "tests", "status": "completed", "conclusion": "success", "html_url": "w1"},
+            {"name": "lint", "status": "in_progress", "conclusion": None, "html_url": "w2"},
+        ],
+    }
+
+    def test_workflow_runs_substitute_for_denied_check_runs(self):
+        toolkit = _toolkit()
+        responses = [
+            _make_response(403, json_data=self._DENIED, text="d", headers=self._CHECKS_HDR),
+            _make_response(200, json_data=self._WORKFLOWS),
+            _make_response(200, json_data={"state": "pending", "statuses": []}),
+        ]
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses) as mocked:
+            result = asyncio.run(toolkit.get_pr_checks(pr_number=548, head_sha="abc"))
+
+        assert result["available"] is True
+        assert result["answered"] == ["workflow_runs", "commit_statuses"]
+        assert result["denied"] == ["check_runs"]
+        assert (result["success"], result["pending"]) == (1, 1)
+        assert {c["source"] for c in result["checks"]} == {"workflow_run"}
+        assert [c["name"] for c in result["checks"]] == ["tests", "lint"]
+        # The fallback filters by head SHA, not the whole repo history.
+        wf_call = mocked.call_args_list[1]
+        assert "/actions/runs" in wf_call.args[1]
+        assert wf_call.kwargs["params"]["head_sha"] == "abc"
+
+    def test_workflow_runs_are_not_queried_when_check_runs_worked(self):
+        """Every workflow run also surfaces as a check run — no double count."""
+        toolkit = _toolkit()
+        responses = [
+            _make_response(
+                200,
+                json_data={"check_runs": [{"name": "tests", "status": "completed", "conclusion": "success"}]},
+            ),
+            _make_response(200, json_data={"state": "success", "statuses": []}),
+        ]
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses) as mocked:
+            result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
+
+        assert mocked.call_count == 2
+        assert "/actions/runs" not in str(mocked.call_args_list)
+        assert result["answered"] == ["check_runs", "commit_statuses"]
+        assert result["total"] == 1
+
+    def test_all_three_denied_is_unreadable(self):
+        toolkit = _toolkit()
+        responses = [
+            _make_response(403, json_data=self._DENIED, text="d", headers=self._CHECKS_HDR),
+            _make_response(
+                403,
+                json_data=self._DENIED,
+                text="d",
+                headers={"x-accepted-github-permissions": "actions=read"},
+            ),
+            _make_response(
+                403,
+                json_data=self._DENIED,
+                text="d",
+                headers={"x-accepted-github-permissions": "statuses=read"},
+            ),
+        ]
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=responses):
+            result = asyncio.run(toolkit.get_pr_checks(pr_number=1, head_sha="s"))
+
+        assert result["available"] is False
+        assert result["answered"] == []
+        assert result["denied"] == ["check_runs", "workflow_runs", "commit_statuses"]
+        assert "'Actions' (Read-only) [actions=read]" in result["reason"]
+
+    def test_the_reason_never_tells_an_operator_to_grant_checks(self):
+        """ "Grant Checks on the PAT" sends them hunting for a nonexistent row."""
+        reason = GitToolkit._denial_reason(["check_runs"], {"check_runs": "checks=read"})
+        assert "does NOT offer to fine-grained PATs" in reason
+        assert "GitHub Apps only" in reason
+        assert "'Actions' (Read-only) so workflow runs stand in" in reason
+        assert "classic PAT with the 'repo' scope" in reason
+        # It must NOT read as "grant 'Checks' (Read-only) on the fine-grained PAT".
+        assert "'Checks' (Read-only) [checks=read] on the fine-grained PAT" not in reason
+
+    def test_a_grantable_denial_still_mentions_org_approval(self):
+        reason = GitToolkit._denial_reason(["commit_statuses"], {"commit_statuses": "statuses=read"})
+        assert "'Commit statuses' (Read-only)" in reason
+        assert "owner's approval" in reason
