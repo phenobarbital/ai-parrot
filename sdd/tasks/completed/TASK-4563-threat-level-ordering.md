@@ -615,10 +615,8 @@ by the two-key evidence rule (`/sdd-fix` §6).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5); implemented by seat gpt-5.6-terra (codex), attempt 2 (attempt_uid 93e03bec4e7c4b46814d3037c410916b)
+**Date**: 2026-10-22
+**Notes**: Added `THREAT_LEVEL_ORDER` + `max_threat_level()` in `security/prompt_injection.py` (never raises); used at `SecurityEventLogger.log_injection_attempt` and in the builtin guardrail; re-exported from `parrot.security`; stale NOTE replaced with a comment naming `issue:a6abf12a2027`; tests added. Merge-tier validation: 50 passed. AC-4 grep returns nothing. Review recorded: coder-review:ddb24bdc3efbe45d8afc8c4b (0 fix commits). Closed via close_task.sh (finalize_task not used: no tool available to mint a review EvidenceRef). Black reformatted quote style in `security/__init__.py` `__all__` (cosmetic churn).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
