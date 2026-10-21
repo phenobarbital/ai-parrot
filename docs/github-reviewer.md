@@ -375,10 +375,32 @@ It runs the same review pipeline as `review_pull_request` (ticket →
 acceptance criteria → diff → wiki-assisted LLM comparison) and then adds a
 **CI gate**, which `review_pull_request` does not have:
 
-| Gate      | Passes when                                                                             |
-| --------- | --------------------------------------------------------------------------------------- |
-| Jira      | the review approved the PR and raised no `blocker`/`major` discrepancy                   |
-| Tests     | the declared checks are green, or at least `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` of the **completed** ones are |
+The **Jira gate decides**; CI is a **second, optional gate**, because "no CI"
+is not "CI failed":
+
+| Gate | Blocks when | Notes |
+| ---- | ----------- | ----- |
+| Jira | the review did not approve, or raised a `blocker`/`major` discrepancy | always decisive |
+| Tests | the declared checks are **failing** below `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` | the only CI state that refuses a PR |
+
+The four CI states are kept apart:
+
+| CI state | Verdict |
+| -------- | ------- |
+| green, or green enough ("all OK or a great part") | passes |
+| **red** below the ratio | **blocks** — draft + comment + notifications |
+| still **running** | `deferred` — the PR is left untouched; evidence arrives in a minute and the next push re-runs the review |
+| **absent or unreadable** (no CI in the repo, nothing run for this commit, an outage, a permission a PAT cannot hold) | passes with a non-blocking note; the approval says *"this approval rests on the ticket comparison alone"* |
+
+The note distinguishes the two ways "no evidence" happens, because they have
+different fixes: when a source answered and was empty it reads *"no CI run or
+status exists for this commit (read: workflow_runs, commit_statuses)"*; only
+when nothing could be read at all does it blame a permission. `answered` on the
+`get_pr_checks` payload is what keeps the two apart.
+
+Set `GITHUB_REVIEW_REQUIRE_CHECKS=true` to make the evidence mandatory: then
+missing or unreadable CI blocks too. Leave it off and a configuration problem
+can never stall the review flow.
 
 Checks are read from both GitHub APIs — the Checks API (`check-runs`, where
 GitHub Actions reports) and the legacy Commit Status API — because a repo may
@@ -390,8 +412,33 @@ Three outcomes:
 | `status`      | What happens on GitHub                                                      |
 | ------------- | --------------------------------------------------------------------------- |
 | `"approved"`  | `APPROVE` review. Nothing else is touched.                                  |
-| `"deferred"`  | `COMMENT` review explaining the wait. **The PR is left exactly as it is** — no draft, no notification. Happens when checks are still running, or when the CI status could not be read at all (an outage or a missing token scope is not test evidence, and not the developer's fault). |
+| `"deferred"`  | `COMMENT` review. **The PR is left exactly as it is** — no draft, no notification. Happens only when checks are still **running**; an absent or unreadable CI approves with a note instead (see the gate table above). |
 | `"blocked"`   | The PR is **converted to a draft** (GraphQL `convertPullRequestToDraft`, the only API that can), a comment explains every blocking reason, a `REQUEST_CHANGES` review is submitted, and the assignee is notified. |
+
+Every outcome reports the **ticket comparison** — the AC verdict, the review's
+prose summary and each finding with its severity — not only the merge decision.
+A deferred review leads with it, because that half of the work did finish:
+
+```markdown
+## Automated review — verdict deferred (NAV-10333)
+
+### Comparison against the ticket
+
+**Every acceptance criterion is addressed by this PR.**
+
+Adds POST /v2/visits and its serializer; AC1-AC3 are covered by the new tests.
+
+**Findings**
+- **[MINOR] AC4 — audit log** — the new endpoint does not write an audit entry
+
+### Why the verdict is deferred
+
+No CI check was visible to this token — check_runs denied (needs 'Checks' …),
+so the merge verdict is deferred rather than guessed. The PR was left exactly
+as it is — neither approved nor converted to a draft.
+
+**CI: no checks declared on the head commit (and check_runs denied to this token)**
+```
 
 A blocked PR produces three notifications, each independent so one failure
 cannot swallow the others:
@@ -419,10 +466,51 @@ pushing, and marking it ready for review (or by running `/review_pr` again).
 reviewer already uses to submit reviews. Reading CI needs **two independent**
 permissions, because the two APIs are separate:
 
-| API | Fine-grained PAT permission | Classic PAT |
-| --- | --------------------------- | ----------- |
-| `check-runs` (GitHub Actions and most CI apps) | **Checks** → Read-only | `repo` |
-| `commits/{sha}/status` (Travis, Jenkins, custom scripts) | **Commit statuses** → Read-only | `repo` |
+`get_pr_checks` reads **three** sources, each behind its own permission:
+
+| Source | Endpoint | Needs | Fine-grained PAT row | Classic PAT |
+| ------ | -------- | ----- | -------------------- | ----------- |
+| Check runs (Actions + every CI app) | `commits/{sha}/check-runs` | `checks=read` | **not available** — see below | `repo` |
+| Workflow runs (Actions only) | `actions/runs?head_sha=` | `actions=read` | **Actions** → Read-only | `repo` |
+| Commit statuses (Jenkins, Travis, scripts) | `commits/{sha}/status` | `statuses=read` | **Commit statuses** → Read-only | `repo` |
+
+> **A fine-grained PAT can never read check runs.** GitHub disabled the
+> `checks` permission for PATs — only GitHub Apps can hold it — even though the
+> Checks API docs still list fine-grained tokens as supported
+> ([community discussion 129512](https://github.com/orgs/community/discussions/129512)).
+> So `checks=read` in the 403's `x-accepted-github-permissions` header names a
+> row that **does not exist in the token UI**, and the reviewer says so instead
+> of sending an operator hunting for it.
+
+Because of that, the Checks API is only *attempted*: when it is refused, the
+reviewer falls back to **workflow runs**, which is the one Actions source a PAT
+can read. Workflow runs are queried only in that case — every workflow run also
+surfaces as a check run, so querying both would double-count. The fallback
+loses check runs posted by third-party apps (SonarCloud, Codecov…); that is the
+price of a PAT, and the partial picture is disclosed as a non-blocking warning
+on the verdict.
+
+**A missing permission never stalls the review.** If every CI source is
+refused, the reviewer says so in the review body — naming the permission to
+grant — and lets the ticket comparison decide. Reviews keep working while the
+token is being fixed.
+
+Two name traps worth calling out:
+
+- **Actions ≠ Workflows.** The **Workflows** permission only allows *committing*
+  files under `.github/workflows`. Reading runs is **Actions**.
+- The API says `statuses`, the UI row is **Commit statuses**.
+
+Pick one of these three setups:
+
+| Setup | Sees check runs from third-party apps? | Notes |
+| ----- | -------------------------------------- | ----- |
+| Fine-grained PAT + **Actions** + **Commit statuses** (read) | No | Simplest; covers Actions pipelines and legacy statuses |
+| Classic PAT with `repo` | Yes | Broadest privileges |
+| GitHub App with **Checks** (read) | Yes | Already supported — `GitToolkit(auth_type="github_app", app_id=…, installation_id=…, private_key=…)` |
+
+On an org-owned repository, changing a fine-grained PAT's permissions may also
+need an organization owner to approve it before it takes effect.
 
 A 403/404 on one of them does **not** discard the other: the denial is listed
 in `denied`, explained in `reason` (naming the missing permission), and the

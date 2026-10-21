@@ -307,10 +307,14 @@ class PRChecksSummary(BaseModel):
     """How many declared checks look like a test suite (name heuristic). Used
     only for wording and for ``require_checks``; the gate itself scores every
     check equally, because a failing lint job also blocks a merge."""
+    answered: List[str] = Field(default_factory=list)
+    """Which CI sources actually replied (``check_runs`` / ``workflow_runs`` /
+    ``commit_statuses``). Needed to tell "nobody could look" from "we looked
+    and this commit has no CI", which read identically before."""
     denied: List[str] = Field(default_factory=list)
-    """Which CI endpoints the token was refused (``check_runs`` /
-    ``commit_statuses``). Non-empty with ``available`` True means the picture
-    is partial: one API answered and the other was denied."""
+    """Which CI endpoints the token was refused. Non-empty with ``available``
+    True means the picture is partial: a source answered and another was
+    denied."""
     reason: Optional[str] = None
     """Why the picture is unavailable or incomplete — names the missing token
     permission when GitHub refused a CI read."""
@@ -528,10 +532,13 @@ class GitHubReviewer(Agent):
             be green for :meth:`review_pr` to approve it — "all OK, or a
             great part of them". Clamped to ``[0, 1]``; defaults to
             ``GITHUB_REVIEW_MIN_CHECK_PASS_RATIO`` (0.8).
-        require_checks: When True, a PR whose head commit declares no checks
-            at all is refused instead of merely warned about. Defaults to
-            ``GITHUB_REVIEW_REQUIRE_CHECKS`` (False), so a repository
-            without CI is not blocked wholesale.
+        require_checks: Makes test evidence mandatory. By default CI is an
+            OPTIONAL gate — only a FAILING pipeline refuses a PR, while one
+            that is absent or unreadable is a non-blocking warning, because
+            "no CI" is not "CI failed". Turn this on and missing evidence
+            (no checks declared, or a CI nobody could read) becomes a
+            blocking reason too. Defaults to
+            ``GITHUB_REVIEW_REQUIRE_CHECKS`` (False).
         google_api_key: Google credential this agent bills its LLM traffic
             to, so reviewer usage can be metered and rotated apart from the
             process-wide key. Defaults to
@@ -702,6 +709,13 @@ class GitHubReviewer(Agent):
         # here. Falling back to the public channel keeps them delivered on a
         # deployment that has not split the two destinations yet;
         # post_configure() warns when that fallback is in effect.
+        #
+        # The configured value is kept beside the resolved one because the
+        # resolution is lossy: ``management_chat_id`` ends up equal to the
+        # public channel both when nothing was configured AND when
+        # GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID deliberately names that same
+        # chat, and only the first of those is worth warning about.
+        self.configured_management_chat_id: Optional[ChatId] = management_chat_id or None
         self.management_chat_id = management_chat_id or public_channel_id
         self.webhook_public_url = webhook_public_url
         self.webhook_secret = webhook_secret
@@ -852,6 +866,19 @@ class GitHubReviewer(Agent):
     # Wiring
     # ------------------------------------------------------------------
 
+    @property
+    def management_chat_is_fallback(self) -> bool:
+        """``True`` when the management reports ride on the public channel.
+
+        That is, when no ``GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`` was
+        configured and :attr:`management_chat_id` resolved to
+        :attr:`public_channel_id` instead. A management chat explicitly
+        pointed at that same chat is *configured*, not a fallback — the
+        resolved value is identical in both cases, which is why
+        :attr:`configured_management_chat_id` is kept.
+        """
+        return not self.configured_management_chat_id and bool(self.management_chat_id)
+
     def set_wrapper(self, wrapper) -> None:
         """Called by :class:`TelegramAgentWrapper` so the agent can push
         proactive messages over the Telegram Bot it shares with the wrapper.
@@ -873,13 +900,22 @@ class GitHubReviewer(Agent):
         """
         await super().post_configure()
 
-        if self.management_chat_id and self.management_chat_id == self.public_channel_id:
+        if self.management_chat_is_fallback:
             self.logger.warning(
                 "GitHubReviewer: no management chat configured "
-                "(GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID); today_pr, the weekly "
-                "activity digest and the Jira ticket summary will go to the "
-                "public channel %s alongside the stale-PR nag.",
+                "(GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID); the management reports "
+                "will go to the public channel %s alongside the stale-PR nag.",
                 self.public_channel_id,
+            )
+        elif self.management_chat_id == self.public_channel_id:
+            # Configured, and pointed at the public channel on purpose: say so
+            # once at INFO, so one chat receiving everything does not read as
+            # the misconfiguration above.
+            self.logger.info(
+                "GitHubReviewer: GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID names the same chat as "
+                "GITHUB_REVIEW_PUBLIC_CHANNEL_ID, so the management reports and the stale-PR "
+                "nag both go to chat %s.",
+                self.management_chat_id,
             )
 
         self.git_toolkit = self._build_git_toolkit()
@@ -2055,6 +2091,7 @@ class GitHubReviewer(Agent):
         if raw.get("available") is False:
             return PRChecksSummary(
                 available=False,
+                answered=[str(name) for name in (raw.get("answered") or [])],
                 denied=denied,
                 reason=raw.get("reason") or "CI could not be read",
             )
@@ -2074,6 +2111,7 @@ class GitHubReviewer(Agent):
             failing=[str(c.get("name") or "?") for c in checks if c.get("state") == "failure"],
             running=[str(c.get("name") or "?") for c in checks if c.get("state") == "pending"],
             test_checks=sum(1 for c in checks if cls._TEST_CHECK_RE.search(str(c.get("name") or ""))),
+            answered=[str(name) for name in (raw.get("answered") or [])],
             denied=denied,
             reason=raw.get("reason"),
         )
@@ -2106,17 +2144,23 @@ class GitHubReviewer(Agent):
     def _merge_verdict(self, result: PRReviewResult, checks: PRChecksSummary) -> MergeVerdict:
         """Decide whether a reviewed PR may stay mergeable.
 
-        Two independent gates, both of which must pass:
+        The **Jira gate decides**: the review must approve the PR and raise no
+        blocker/major discrepancy against the acceptance criteria.
 
-        1. **Jira** — the review approved it and raised no blocker/major
-           discrepancy against the ticket's acceptance criteria.
-        2. **Tests** — the declared checks are green, or green enough
-           (:attr:`min_check_pass_ratio`, "all OK or a great part").
+        CI is a **second, optional gate** — "no CI" is not "CI failed", so the
+        four states of the test evidence are kept apart and only one of them
+        blocks:
 
-        A pipeline still running — or a CI status GitHub would not hand over —
-        produces ``defer``: the PR is left exactly as it is, because approving
-        it would claim test evidence nobody saw, and drafting it would punish a
-        developer for an outage or a missing token scope.
+        * **red** (failing below :attr:`min_check_pass_ratio`) → blocks. This
+          is the only case where CI refuses a PR.
+        * **green, or green enough** ("all OK or a great part") → passes.
+        * **imminent** (checks still running) → ``defer``: the PR is left
+          exactly as it is, because the evidence arrives in a minute and the
+          next push re-runs the review anyway.
+        * **absent or unreadable** (no CI in the repo, an outage, or a
+          permission a fine-grained PAT cannot hold) → a non-blocking warning;
+          the Jira gate decides alone. Set :attr:`require_checks` to make
+          missing evidence blocking instead.
         """
         reasons: List[str] = []
         warnings: List[str] = []
@@ -2130,22 +2174,32 @@ class GitHubReviewer(Agent):
             else:
                 warnings.append(line)
 
-        unknown_ci = False
+        # "imminent" (defer) vs "missing" (warn, unless require_checks): a
+        # pipeline that has not finished yet is nothing like a pipeline nobody
+        # can see.
+        imminent_ci = False
+        missing_ci = False
         if not checks.available:
             warnings.append(
                 f"CI status could not be read ({checks.reason or 'unknown error'}); tests were not verified"
             )
-            unknown_ci = True
+            missing_ci = True
         elif not checks.declared:
-            if checks.denied:
-                # Zero checks because an endpoint was refused is NOT "this repo
-                # has no CI": the evidence may exist and simply be invisible to
-                # this token, so the verdict is unknown, never a free pass.
+            if checks.denied and checks.answered:
+                # The readable sources answered and were EMPTY. Blaming the
+                # denied one would send an operator chasing a permission when
+                # the commit simply has no pipeline — but the denial still
+                # means third-party app checks could be hidden, so say both.
+                warnings.append(
+                    f"no CI run or status exists for this commit "
+                    f"(read: {', '.join(checks.answered)}); {', '.join(checks.denied)} could not be read, "
+                    f"so checks posted by other apps may be hidden — {checks.reason}"
+                )
+            elif checks.denied:
                 warnings.append(f"no CI check was visible to this token — {checks.reason}")
-                unknown_ci = True
             else:
-                message = "the head commit declares no CI checks, so no test evidence could be verified"
-                (reasons if self.require_checks else warnings).append(message)
+                warnings.append("the head commit declares no CI checks, so no test evidence could be verified")
+            missing_ci = True
         else:
             if checks.failure and checks.pass_ratio < self.min_check_pass_ratio:
                 names = ", ".join(checks.failing[:10]) or "unnamed checks"
@@ -2167,28 +2221,63 @@ class GitHubReviewer(Agent):
                 # test evidence here, just possibly not all of it.
                 warnings.append(f"part of the CI picture is missing — {checks.reason}")
             if checks.pending:
-                unknown_ci = True
+                imminent_ci = True
 
-        # Unknown test evidence defers rather than approves: a pipeline still
-        # running, a CI status GitHub refused to hand over, or checks hidden
-        # behind a missing permission is not a pass. Either way it only defers
-        # when nothing else already disqualifies the PR — a blocker finding is
-        # reason enough to draft it now.
-        defer = bool(unknown_ci and not reasons)
+        if missing_ci and self.require_checks:
+            # Explicit opt-in: this deployment treats CI evidence as mandatory,
+            # so its absence is a refusal rather than a note.
+            reasons.append(
+                "no verifiable test evidence for this commit, and require_checks is on "
+                "(GITHUB_REVIEW_REQUIRE_CHECKS)"
+            )
+
+        # Only an imminent verdict defers, and only when nothing else already
+        # disqualifies the PR — a blocker finding is reason enough to draft it
+        # now, whatever CI is doing.
+        defer = bool(imminent_ci and not reasons)
         return MergeVerdict(mergeable=not reasons and not defer, defer=defer, reasons=reasons, warnings=warnings)
 
     def _format_checks_line(self, checks: PRChecksSummary) -> str:
-        """One-line CI summary shared by the comment and the Telegram alerts."""
+        """One-line CI summary shared by the comment and the Telegram alerts.
+
+        Deliberately short and quantitative. The *why* of an unreadable or
+        invisible CI is a long, actionable paragraph (which permission to
+        grant, on which token), and it belongs in the notes exactly once —
+        repeating it inside this line printed it three times in one message.
+        """
         if not checks.available:
-            return f"CI: unreadable ({checks.reason or 'unknown error'})"
+            return "CI: could not be read — tests were not verified (see the notes)"
         if not checks.declared:
-            suffix = f" (and {', '.join(checks.denied)} denied to this token)" if checks.denied else ""
-            return f"CI: no checks declared on the head commit{suffix}"
+            if checks.denied and checks.answered:
+                return f"CI: nothing reported for this commit ({', '.join(checks.denied)} not readable)"
+            if checks.denied:
+                return f"CI: no check visible to this token ({', '.join(checks.denied)} denied)"
+            return "CI: no checks declared on the head commit"
         partial = f", {', '.join(checks.denied)} denied" if checks.denied else ""
         return (
             f"CI: {checks.success} passed, {checks.failure} failed, {checks.pending} running "
             f"({checks.pass_ratio:.0%} of completed green{partial})"
         )
+
+    def _format_ci_footer(self, checks: PRChecksSummary, verdict: MergeVerdict) -> str:
+        """Append the CI picture (and any non-blocking notes) to a review body.
+
+        Added by the strict gate only — :meth:`_format_review_body` is shared
+        with the webhook path, which never reads CI. An approval that could not
+        verify the tests has to say so in the review itself, not only in the
+        agent's logs: CI is an optional gate, not an invisible one.
+        """
+        lines: List[str] = ["", "", "---", "", f"**{self._format_checks_line(checks)}**"]
+        if not checks.available or not checks.declared:
+            lines.append("")
+            lines.append(
+                "This approval rests on the ticket comparison alone — no test evidence could be "
+                "verified for this commit."
+            )
+        if verdict.warnings:
+            lines.extend(["", "**Non-blocking notes**"])
+            lines.extend(f"- {warning}" for warning in verdict.warnings)
+        return "\n".join(lines)
 
     def _format_block_comment(
         self,
@@ -2426,10 +2515,12 @@ class GitHubReviewer(Agent):
 
         The same review pipeline as :meth:`review_pull_request` — ticket
         lookup, diff, wiki-assisted LLM comparison against the acceptance
-        criteria — plus the CI gate and the consequences:
+        criteria — plus an optional CI gate and the consequences:
 
-        * **mergeable** → an ``APPROVE`` review.
-        * **deferred** (checks still running) → a ``COMMENT`` review; the PR
+        * **mergeable** → an ``APPROVE`` review, whose footer discloses the CI
+          picture (including "no test evidence could be verified", when the
+          checks were absent or unreadable — that warns, it does not refuse).
+        * **deferred** (checks still RUNNING) → a ``COMMENT`` review; the PR
           is left untouched.
         * **not mergeable** → the PR is converted to a draft, a comment
           explains why, and the assignee is notified privately and in the
@@ -2525,7 +2616,7 @@ class GitHubReviewer(Agent):
                 repo,
                 int(pr_number),
                 "APPROVE",
-                self._format_review_body(payload, ticket_key, result),
+                self._format_review_body(payload, ticket_key, result) + self._format_ci_footer(checks, verdict),
                 outcome,
             )
             self.logger.info("GitHubReviewer: %s#%s approved by the strict gate.", repo, pr_number)
@@ -2619,10 +2710,7 @@ class GitHubReviewer(Agent):
                 comment). Left off for Telegram, which escapes HTML instead.
         """
         if not checks.available:
-            return (
-                f"the CI status could not be read ({checks.reason or 'unknown error'}), so the test "
-                f"evidence could not be verified"
-            )
+            return f"the CI status could not be read ({checks.reason or 'unknown error'})"
         if checks.denied and not checks.declared:
             return f"no CI check was visible to this token — {checks.reason}"
         names = [f"`{name}`" if code else name for name in checks.running[:20]]
@@ -2692,9 +2780,15 @@ class GitHubReviewer(Agent):
         """Answer ``/review_pr <pull request link>``.
 
         Runs the full gate on demand: code review against the Jira ticket and
-        its acceptance criteria, plus the CI/test check. A PR that complies is
-        approved; one that does not is converted to a draft, commented on, and
-        its assignee is pinged privately and in the public channel.
+        its acceptance criteria, plus an optional CI/test check. A PR that
+        complies is approved; one that does not is converted to a draft,
+        commented on, and its assignee is pinged privately and in the public
+        channel.
+
+        CI only refuses a PR when it FAILS. A pipeline that is absent or
+        unreadable is reported as a non-blocking note and the ticket
+        comparison decides alone (see :attr:`require_checks` to make the
+        evidence mandatory); a pipeline still running defers the verdict.
 
         Args:
             target: The PR to review — a GitHub PR URL,
@@ -2758,10 +2852,17 @@ class GitHubReviewer(Agent):
         verdict = outcome.get("verdict") or {}
         checks = PRChecksSummary.model_validate(outcome.get("checks") or {})
         summary = str(outcome.get("summary") or "").strip()
-        findings = outcome.get("discrepancies") or []
+        # Rendered exactly as _merge_verdict phrases a minor finding, so the
+        # "Non-blocking" section below can drop the ones already listed here
+        # instead of repeating them verbatim.
+        finding_lines = [
+            f"[{str(f.get('severity', '?')).upper()}] {f.get('criterion')} — {f.get('issue')}"
+            for f in (outcome.get("discrepancies") or [])
+        ]
         lines: List[str] = []
         if status == "approved":
-            lines.append(f"✅ {head}\n\nMeets `{ticket}` and its acceptance criteria. Approved.")
+            unverified = "" if (checks.available and checks.declared) else " — tests not verified"
+            lines.append(f"✅ {head}\n\nMeets `{ticket}` and its acceptance criteria. Approved{unverified}.")
             if summary:
                 lines.extend(["", summary])
         elif status == "deferred":
@@ -2774,13 +2875,10 @@ class GitHubReviewer(Agent):
             lines.append(f"⏳ {head}\n\nThe ticket comparison finished — {verdict_line}.")
             if summary:
                 lines.extend(["", summary])
-            if findings:
+            if finding_lines:
                 lines.append("")
                 lines.append("*Findings*")
-                lines.extend(
-                    f"- [{str(f.get('severity', '?')).upper()}] {f.get('criterion')} — {f.get('issue')}"
-                    for f in findings[:10]
-                )
+                lines.extend(f"- {line}" for line in finding_lines[:10])
             lines.extend(
                 [
                     "",
@@ -2812,7 +2910,8 @@ class GitHubReviewer(Agent):
 
         lines.append("")
         lines.append(self._format_checks_line(checks))
-        warnings = verdict.get("warnings") or []
+        already_listed = set(finding_lines)
+        warnings = [w for w in (verdict.get("warnings") or []) if w not in already_listed]
         if warnings:
             lines.append("")
             lines.append("*Non-blocking*")

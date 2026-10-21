@@ -86,6 +86,10 @@ class _MinimalReviewer:
         self._llm = None
 
     @property
+    def configured_management_chat_id(self) -> Optional[ChatId]:
+        return self._management_chat_id or None
+
+    @property
     def management_chat_id(self) -> Optional[ChatId]:
         return self._management_chat_id or self.public_channel_id
 
@@ -107,6 +111,7 @@ class _MinimalReviewer:
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
     today_pr = GitHubReviewer.today_pr
+    management_chat_is_fallback = GitHubReviewer.management_chat_is_fallback
     _chunk_digest_messages = GitHubReviewer._chunk_digest_messages
     _format_pr_digest = GitHubReviewer._format_pr_digest
     _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
@@ -181,6 +186,8 @@ class _MinimalReviewer:
     _format_command_reply = GitHubReviewer._format_command_reply
     _format_blocked_message = GitHubReviewer._format_blocked_message
     _deferral_cause = staticmethod(GitHubReviewer._deferral_cause)
+    _format_findings_section = GitHubReviewer._format_findings_section
+    _format_ci_footer = GitHubReviewer._format_ci_footer
     _notify_blocked_pr = GitHubReviewer._notify_blocked_pr
     _resolve_assignee = GitHubReviewer._resolve_assignee
     _roster = GitHubReviewer._roster
@@ -2842,6 +2849,48 @@ class TestJiraTicketSummary:
         assert winter.astimezone(timezone.utc).hour == 15
 
 
+class TestManagementChatFallback:
+    """Only an *unconfigured* management chat is a fallback.
+
+    ``__init__`` resolves ``management_chat_id or public_channel_id``, so the
+    resolved id equals the public channel both when nothing was configured
+    and when GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID deliberately names that same
+    chat. post_configure() used to warn "no management chat configured" for
+    the second case too, on a deployment where both env vars hold the same
+    chat id.
+    """
+
+    def test_unset_management_chat_is_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+
+        assert reviewer.management_chat_id == "-4788340010"
+        assert reviewer.management_chat_is_fallback is True
+
+    def test_same_chat_configured_on_purpose_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-4788340010"
+
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_separate_management_chat_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-1009999999"
+
+        assert reviewer.management_chat_id == "-1009999999"
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_no_chat_at_all_is_not_reported_as_a_fallback(self) -> None:
+        """Nothing to fall back *to* is a different problem, reported elsewhere."""
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = None
+
+        assert reviewer.management_chat_id is None
+        assert reviewer.management_chat_is_fallback is False
+
+
 class TestResolvedTicketListing:
     """``report_resolved_tickets()`` names what crossed the finish line."""
 
@@ -3901,26 +3950,41 @@ class TestMergeVerdict:
         )
         assert (verdict.mergeable, verdict.defer) == (False, False)
 
-    def test_unreadable_ci_defers_rather_than_approving(self) -> None:
-        """An outage or a missing scope is not test evidence — and not a fault."""
+    def test_unreadable_ci_warns_without_blocking_or_deferring(self) -> None:
+        """ "No CI" is not "CI failed" — an outage must not stall the flow.
+
+        The ticket comparison is the gate that decides; an outage, or a
+        permission a fine-grained PAT cannot hold, is reported and stepped over.
+        """
         r = _wire_reviewer()
         verdict = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
-        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert verdict.reasons == []
         assert any("could not be read" in warning for warning in verdict.warnings)
 
     def test_absent_checks_warn_by_default(self) -> None:
         r = _wire_reviewer()
         verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
-        assert verdict.mergeable is True
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert any("no CI checks" in warning for warning in verdict.warnings)
 
-    def test_absent_checks_block_when_checks_are_required(self) -> None:
+    def test_missing_evidence_blocks_only_when_explicitly_required(self) -> None:
+        """``require_checks`` is the opt-in that makes CI mandatory."""
         r = _wire_reviewer()
         r.require_checks = True
-        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
-        assert verdict.mergeable is False
-        assert any("no CI checks" in reason for reason in verdict.reasons)
+        absent = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        unreadable = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
+        for verdict in (absent, unreadable):
+            assert verdict.mergeable is False
+            assert verdict.defer is False
+            assert any("require_checks" in reason for reason in verdict.reasons)
+
+    def test_a_failing_pipeline_is_the_only_ci_refusal(self) -> None:
+        """The one CI state that refuses a PR on its own."""
+        r = _wire_reviewer()
+        red = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=0, failure=3)))
+        assert (red.mergeable, red.defer) == (False, False)
+        assert any("failing" in reason for reason in red.reasons)
 
 
 class TestAssigneeResolution:
@@ -4139,14 +4203,36 @@ class TestStrictReviewPullRequest:
         assert "deferred" in call["body"]
         assert r._wrapper.bot.send_message.await_count == 0
 
-    async def test_unreadable_checks_defer_and_say_why(self) -> None:
+    async def test_unreadable_checks_approve_but_disclose(self) -> None:
+        """CI is optional: an unreadable pipeline cannot stall the flow.
+
+        The approval must still SAY that no test evidence was verified —
+        optional is not invisible.
+        """
         r = _wire_strict(approve=True, checks_error=RuntimeError("403 no checks:read"))
         out = await r.strict_review_pull_request(dict(_PAYLOAD))
-        assert out["status"] == "deferred"
-        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
-        assert "could not be read" in body
-        assert "403" in body
+        assert out["status"] == "approved"
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "could not be read" in call["body"]
+        assert "403" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
         r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_an_absent_pipeline_approves_with_a_note(self) -> None:
+        r = _wire_strict(approve=True, checks_raw={"checks": [], "total": 0})
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "no checks declared" in body
+        assert "Non-blocking notes" in body
+
+    async def test_a_green_pipeline_needs_no_disclaimer(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "3 passed, 0 failed" in body
+        assert "no test evidence could be verified" not in body
 
     async def test_a_pr_without_a_ticket_gets_the_missing_ticket_comment(self) -> None:
         r = _wire_strict()
@@ -4431,12 +4517,12 @@ class TestCIPermissionDenials:
         assert summary.denied == ["check_runs"]
         assert summary.success == 1
 
-    def test_zero_visible_checks_behind_a_denial_defers(self) -> None:
-        """The regression this class exists for.
+    def test_zero_visible_checks_behind_a_denial_do_not_stall_the_flow(self) -> None:
+        """A denial leaves NO evidence, which is not the same as a failure.
 
         An Actions-only repo whose ``check-runs`` endpoint is denied reports
-        zero checks. That is NOT "this repo has no CI" — the evidence exists
-        and is invisible — so the verdict must defer instead of approving.
+        zero checks. The reviewer says so and lets the ticket comparison
+        decide, instead of deferring every PR behind a token scope.
         """
         r = _wire_reviewer()
         checks = GitHubReviewer._summarize_checks(
@@ -4444,21 +4530,21 @@ class TestCIPermissionDenials:
         )
         assert checks.declared is False
         verdict = r._merge_verdict(self._approved(), checks)
-        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert verdict.reasons == []
-        assert any("not visible to this token" in w or "visible to this token" in w for w in verdict.warnings)
+        assert any("visible to this token" in w for w in verdict.warnings)
         assert any("'Checks' (Read-only)" in w for w in verdict.warnings)
 
-    def test_require_checks_does_not_turn_a_denial_into_a_blocker(self) -> None:
-        """Requiring CI must not punish a developer for a missing token scope."""
+    def test_require_checks_turns_a_denial_into_a_blocker(self) -> None:
+        """The opt-in for deployments that treat CI evidence as mandatory."""
         r = _wire_reviewer()
         r.require_checks = True
         checks = GitHubReviewer._summarize_checks(
             {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
         )
         verdict = r._merge_verdict(self._approved(), checks)
-        assert (verdict.mergeable, verdict.defer) == (False, True)
-        assert verdict.reasons == []
+        assert (verdict.mergeable, verdict.defer) == (False, False)
+        assert any("require_checks" in reason for reason in verdict.reasons)
 
     def test_a_partial_picture_still_approves_but_says_so(self) -> None:
         r = _wire_reviewer()
@@ -4484,6 +4570,49 @@ class TestCIPermissionDenials:
         assert (verdict.mergeable, verdict.defer) == (True, False)
         assert any("no CI checks" in w for w in verdict.warnings)
 
+    def test_an_empty_but_readable_ci_is_not_blamed_on_the_permission(self) -> None:
+        """Live case: Actions + statuses answered, and this commit has no run.
+
+        Saying "not visible to this token" there sends an operator chasing a
+        permission that is already granted. The denial still matters (checks
+        from other apps could be hidden), so the note says both things.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": ["workflow_runs", "commit_statuses"],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        note = "\n".join(verdict.warnings)
+        assert "no CI run or status exists for this commit" in note
+        assert "read: workflow_runs, commit_statuses" in note
+        assert "may be hidden" in note
+        assert "not visible to this token" not in note
+        assert r._format_checks_line(checks) == "CI: nothing reported for this commit (check_runs not readable)"
+
+    def test_nothing_answered_still_reads_as_invisible(self) -> None:
+        """With no source answering, the permission IS the story."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": [],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert any("visible to this token" in w for w in r._merge_verdict(self._approved(), checks).warnings)
+        assert r._format_checks_line(checks) == "CI: no check visible to this token (check_runs denied)"
+
     def test_the_checks_line_names_the_denial(self) -> None:
         r = _wire_reviewer()
         empty = GitHubReviewer._summarize_checks(
@@ -4499,11 +4628,22 @@ class TestCIPermissionDenials:
                 "reason": self._REASON,
             }
         )
-        assert "check_runs denied to this token" in r._format_checks_line(empty)
+        # Short and quantitative: the long "grant X on the PAT" advice belongs
+        # in the notes, once, not inside every CI line.
+        empty_line = r._format_checks_line(empty)
+        assert empty_line == "CI: no check visible to this token (check_runs denied)"
+        assert "Read-only" not in empty_line
         assert "check_runs denied" in r._format_checks_line(partial)
+        assert r._format_checks_line(PRChecksSummary(available=False, reason=self._REASON)) == (
+            "CI: could not be read — tests were not verified (see the notes)"
+        )
 
-    async def test_the_deferred_comment_names_the_missing_permission(self) -> None:
-        """The operator must read the fix in the PR, not only in the logs."""
+    async def test_the_approval_names_the_missing_permission(self) -> None:
+        """The operator must read the fix in the PR, not only in the logs.
+
+        The PR is approved on its ticket comparison, and the review's footer
+        carries the unverifiable-CI note plus the permission to grant.
+        """
         r = _wire_strict(
             approve=True,
             checks_raw={
@@ -4515,8 +4655,186 @@ class TestCIPermissionDenials:
             },
         )
         out = await r.strict_review_pull_request(dict(_PAYLOAD))
-        assert out["status"] == "deferred"
+        assert out["status"] == "approved"
         r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "'Checks' (Read-only)" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
+
+
+class TestDeferredReviewReportsTheComparison:
+    """A deferred verdict must still report what the review found.
+
+    The ticket comparison DID finish; only the CI verdict is unknown. An
+    earlier version printed nothing but the CI cause, which threw away the
+    valuable half of the review.
+    """
+
+    async def test_the_comment_leads_with_the_acceptance_criteria(self) -> None:
+        r = _wire_strict(
+            approve=True,
+            discrepancies=[Discrepancy(criterion="AC3", issue="no docstring on the new tool", severity="minor")],
+            checks_raw=_checks(success=1, pending=2),
+        )
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests; matches AC1 and AC2.",
+                approve=True,
+            )
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
         body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
-        assert "'Checks' (Read-only)" in body
-        assert "neither approved" in body
+
+        # The comparison, not just the CI excuse.
+        assert "### Comparison against the ticket" in body
+        assert "Every acceptance criterion is addressed" in body
+        assert "matches AC1 and AC2" in body
+        assert "[MINOR] AC3" in body
+        # And then why there is no verdict yet.
+        assert "### Why the verdict is deferred" in body
+        assert "still running" in body
+        assert "neither approved nor converted to a draft" in body
+        # The comparison section comes first.
+        assert body.index("Comparison against the ticket") < body.index("Why the verdict is deferred")
+
+    async def test_the_comment_says_so_when_nothing_was_found(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "No discrepancy was found" in body
+
+    def test_the_cause_keeps_ci_capitalized(self) -> None:
+        """``str.capitalize()`` would print "Ci status could not be read".
+
+        Driven straight through the formatter: the strict path no longer
+        defers on an unreadable CI (it warns), but the body must still render
+        correctly for any summary handed to it.
+        """
+        r = _wire_reviewer()
+        body = r._format_deferred_body(
+            dict(_PAYLOAD),
+            "NAV-1",
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True),
+            PRChecksSummary(available=False, reason="403 denied"),
+        )
+        assert "The CI status could not be read" in body
+        assert "Ci status" not in body
+
+    async def test_the_telegram_reply_carries_the_verdict_and_findings(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=2))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests.",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-10333",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.startswith("⏳")
+        assert "meets" in reply
+        assert "Adds the endpoint and its tests." in reply
+        assert "[MINOR] AC3" in reply
+        assert "No merge verdict yet" in reply
+
+    async def test_a_failed_review_is_reported_as_unconfirmed(self) -> None:
+        """``approve=False`` with no blocker: say the criteria are unconfirmed."""
+        r = _wire_reviewer()
+        unconfirmed = PRReviewResult(
+            jira_key="NAV-1",
+            discrepancies=[],
+            summary="LLM review failed: timeout",
+            approve=False,
+        )
+        section = "\n".join(r._format_findings_section(unconfirmed))
+        assert "did not confirm" in section
+        assert "LLM review failed: timeout" in section
+
+    async def test_a_finding_is_not_repeated_under_non_blocking(self) -> None:
+        """A minor finding is both a finding and a warning — print it once."""
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-1",
+                discrepancies=[Discrepancy(criterion="AC4", issue="no audit entry", severity="minor")],
+                summary="s",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "t",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.count("[MINOR] AC4") == 1
+
+
+class TestWorkflowRunSourcedVerdict:
+    """The payoff of the Actions fallback: a real verdict on a PAT.
+
+    A fine-grained PAT cannot hold `checks`, so on an Actions-only repository
+    the entire CI picture arrives as workflow runs. The gate must treat that
+    as ordinary test evidence.
+    """
+
+    def _raw(self, *, success: int, failure: int = 0, pending: int = 0) -> Dict[str, Any]:
+        entries: List[Dict[str, Any]] = []
+        entries += [{"name": "tests", "state": "success", "source": "workflow_run"} for _ in range(success)]
+        entries += [{"name": "tests", "state": "failure", "source": "workflow_run"} for _ in range(failure)]
+        entries += [{"name": "build", "state": "pending", "source": "workflow_run"} for _ in range(pending)]
+        return {
+            "checks": entries,
+            "total": len(entries),
+            "success": success,
+            "failure": failure,
+            "pending": pending,
+            "available": True,
+            "answered": ["workflow_runs"],
+            "denied": ["check_runs"],
+            "reason": "check_runs needs [checks=read], which GitHub does NOT offer to fine-grained PATs",
+        }
+
+    async def test_green_workflow_runs_approve_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+        # The partial picture is disclosed, not hidden.
+        assert any("part of the CI picture is missing" in w for w in out["verdict"]["warnings"])
+
+    async def test_failing_workflow_runs_block_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=0, failure=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        r.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+        assert any("failing" in reason for reason in out["verdict"]["reasons"])
+
+    async def test_a_workflow_sourced_picture_is_not_treated_as_unknown(self) -> None:
+        """`denied` is non-empty, but evidence exists — do not defer on it."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(self._raw(success=3))
+        verdict = r._merge_verdict(
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
+        )
+        assert (verdict.mergeable, verdict.defer) == (True, False)

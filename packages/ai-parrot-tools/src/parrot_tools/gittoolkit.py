@@ -25,6 +25,7 @@ import base64
 import datetime as _dt
 from datetime import datetime, timezone
 import os
+import re
 import shutil
 import threading
 import time
@@ -1957,6 +1958,9 @@ class GitToolkit(AbstractToolkit):
 
         checks: List[Dict[str, Any]] = []
         denied: List[str] = []
+        answered: List[str] = []
+        # endpoint -> GitHub's own ``x-accepted-github-permissions`` answer.
+        accepted: Dict[str, str] = {}
 
         # GitHub Checks API — what GitHub Actions, and most CI apps, report to.
         # A token may be allowed one of the two APIs and not the other (the
@@ -1970,7 +1974,11 @@ class GitToolkit(AbstractToolkit):
             if exc.status_code not in (403, 404):
                 raise
             denied.append("check_runs")
+            if exc.accepted_permissions:
+                accepted["check_runs"] = str(exc.accepted_permissions)
             runs = {}
+        else:
+            answered.append("check_runs")
         for run in runs.get("check_runs") or []:
             checks.append(
                 {
@@ -1983,6 +1991,47 @@ class GitToolkit(AbstractToolkit):
                 }
             )
 
+        # Actions workflow runs — the substitute when the Checks API is
+        # refused, which is the NORMAL case for a fine-grained PAT: GitHub does
+        # not offer them the `checks` permission at all (GitHub Apps only), so
+        # `actions=read` is the only way such a token can see an Actions
+        # pipeline. Queried only when check-runs failed, because every workflow
+        # run also surfaces as a check run and would otherwise be counted twice.
+        if "check_runs" in denied:
+            wf_url = f"https://api.github.com/repos/{repo}/actions/runs"
+            try:
+                workflows = (
+                    self._request(
+                        "GET",
+                        wf_url,
+                        token,
+                        expected=200,
+                        params={"head_sha": sha, "per_page": 100},
+                    ).json()
+                    or {}
+                )
+            except GitToolkitError as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+                denied.append("workflow_runs")
+                if exc.accepted_permissions:
+                    accepted["workflow_runs"] = str(exc.accepted_permissions)
+                workflows = {}
+            else:
+                answered.append("workflow_runs")
+            for wf in workflows.get("workflow_runs") or []:
+                wf = wf or {}
+                checks.append(
+                    {
+                        "name": str(wf.get("name") or wf.get("display_title") or ""),
+                        "status": wf.get("status"),
+                        "conclusion": wf.get("conclusion"),
+                        "state": self._classify_check(wf.get("status"), wf.get("conclusion")),
+                        "url": wf.get("html_url"),
+                        "source": "workflow_run",
+                    }
+                )
+
         # Legacy Commit Status API — older integrations (Travis, Jenkins
         # webhooks, custom scripts) only ever write here, so a repo can have
         # a fully green pipeline and an empty check-runs list.
@@ -1993,7 +2042,11 @@ class GitToolkit(AbstractToolkit):
             if exc.status_code not in (403, 404):
                 raise
             denied.append("commit_statuses")
+            if exc.accepted_permissions:
+                accepted["commit_statuses"] = str(exc.accepted_permissions)
             combined = {}
+        else:
+            answered.append("commit_statuses")
         for st in combined.get("statuses") or []:
             state = str((st or {}).get("state") or "").lower()
             checks.append(
@@ -2010,9 +2063,9 @@ class GitToolkit(AbstractToolkit):
             )
 
         counts = Counter(c["state"] for c in checks)
-        # Readable only if at least one of the two APIs answered. Both denied
-        # means "we do not know", which must never be mistaken for "green".
-        available = len(denied) < 2
+        # Readable if ANY of the three sources answered. Nothing answering means
+        # "we do not know", which must never be mistaken for "green".
+        available = bool(answered)
         return {
             "repository": repo,
             "pr_number": pr_number,
@@ -2024,25 +2077,90 @@ class GitToolkit(AbstractToolkit):
             "pending": counts.get("pending", 0),
             "combined_state": combined.get("state"),
             "available": available,
+            "answered": answered,
             "denied": denied,
-            "reason": self._denial_reason(denied) if denied else None,
+            "denied_permissions": accepted,
+            "reason": self._denial_reason(denied, accepted) if denied else None,
         }
 
-    #: Fine-grained-PAT permission behind each endpoint, for the operator-facing
-    #: message. A classic PAT's ``repo`` scope covers both.
-    _CHECK_PERMISSIONS = {
-        "check_runs": "'Checks' (Read-only)",
-        "commit_statuses": "'Commit statuses' (Read-only)",
+    #: API permission name -> the label the fine-grained-PAT UI shows for it.
+    #: Needed because GitHub answers ``checks=read`` while the settings page
+    #: calls it "Checks", and ``statuses=read`` is listed as "Commit statuses"
+    #: — an operator searching the UI for "statuses" or "Actions" finds the
+    #: wrong row otherwise.
+    _PERMISSION_LABELS = {
+        "actions": "Actions",
+        "checks": "Checks",
+        "contents": "Contents",
+        "issues": "Issues",
+        "metadata": "Metadata",
+        "pull_requests": "Pull requests",
+        "statuses": "Commit statuses",
+        "workflows": "Workflows",
     }
+    #: Fallback when GitHub sends no ``x-accepted-github-permissions`` header.
+    _CHECK_PERMISSIONS = {
+        "check_runs": "checks=read",
+        "commit_statuses": "statuses=read",
+        "workflow_runs": "actions=read",
+    }
+    #: Permissions a fine-grained PAT can NEVER hold, whatever the endpoint's
+    #: own docs claim. GitHub disabled `checks` for PATs — only GitHub Apps can
+    #: read the Checks API — so telling an operator to "grant Checks" sends
+    #: them hunting for a row that does not exist in the token UI.
+    #: See https://github.com/orgs/community/discussions/129512
+    _APP_ONLY_PERMISSIONS = frozenset({"checks"})
 
     @classmethod
-    def _denial_reason(cls, denied: List[str]) -> str:
-        """Name the missing token permission(s) behind a 403/404 on CI reads."""
-        needed = ", ".join(cls._CHECK_PERMISSIONS[name] for name in denied if name in cls._CHECK_PERMISSIONS)
-        endpoints = " and ".join(denied)
+    def _describe_permission(cls, accepted: str) -> str:
+        """Turn ``"checks=read; contents=read"`` into UI-findable labels."""
+        labels: List[str] = []
+        for part in re.split(r"[;,]", accepted or ""):
+            part = part.strip()
+            if not part:
+                continue
+            name, _, level = part.partition("=")
+            label = cls._PERMISSION_LABELS.get(name.strip(), name.strip())
+            access = "Read-only" if (level.strip() or "read") == "read" else "Read and write"
+            labels.append(f"'{label}' ({access})")
+        return ", ".join(labels)
+
+    @classmethod
+    def _denial_reason(cls, denied: List[str], accepted: Optional[Dict[str, str]] = None) -> str:
+        """Explain each refused CI read in terms the operator can act on.
+
+        Prefers GitHub's own ``x-accepted-github-permissions`` header over any
+        static mapping: it is authoritative and survives API changes. But the
+        header alone is a trap — it answers ``checks=read`` for check runs, and
+        that permission cannot be granted to a fine-grained PAT at all, so the
+        advice has to say what to do INSTEAD of naming a row that is not in the
+        token UI.
+        """
+        accepted = accepted or {}
+        parts: List[str] = []
+        grantable = False
+        for name in denied:
+            raw = accepted.get(name) or cls._CHECK_PERMISSIONS.get(name, "")
+            slugs = {part.partition("=")[0].strip() for part in re.split(r"[;,]", raw or "") if part.strip()}
+            described = cls._describe_permission(raw)
+            if slugs & cls._APP_ONLY_PERMISSIONS:
+                parts.append(
+                    f"{name} needs [{raw}], which GitHub does NOT offer to fine-grained PATs "
+                    f"(GitHub Apps only) — grant 'Actions' (Read-only) so workflow runs stand in, "
+                    f"or use a classic PAT with the 'repo' scope, or a GitHub App with "
+                    f"'Checks' (Read-only)"
+                )
+            elif described:
+                grantable = True
+                parts.append(f"{name} needs {described} [{raw}] on the fine-grained PAT")
+            else:
+                parts.append(f"{name} denied")
+        reason = "; ".join(parts)
+        if grantable:
+            reason += " — on an org-owned repository that change may also need an owner's approval"
         # Phrased to nest inside a caller's sentence, so it must not repeat
         # "for this token" — the caller has already said whose token it is.
-        return f"{endpoints} denied (needs {needed} on a fine-grained PAT, or a classic PAT with the 'repo' scope)"
+        return reason
 
     @tool_schema(GetPRChecksInput)
     async def get_pr_checks(
