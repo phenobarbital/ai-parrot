@@ -80,6 +80,7 @@ class _MinimalReviewer:
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
+    _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
     report_weekly_activity = GitHubReviewer.report_weekly_activity
     _defer_weekly_report = GitHubReviewer._defer_weekly_report
     _shutdown_weekly_retry = GitHubReviewer._shutdown_weekly_retry
@@ -97,6 +98,9 @@ class _MinimalReviewer:
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
     _PARTIAL_WEEKLY_NOTICE = GitHubReviewer._PARTIAL_WEEKLY_NOTICE
+    _TELEGRAM_MAX_MESSAGE = GitHubReviewer._TELEGRAM_MAX_MESSAGE
+    _TELEGRAM_PART_RESERVE = GitHubReviewer._TELEGRAM_PART_RESERVE
+    _STALE_TITLE_MAX = GitHubReviewer._STALE_TITLE_MAX
 
 
 class _StubEvent:
@@ -2019,6 +2023,89 @@ class TestPublicChannelSendFailureLogging:
         assert result["stale_count"] == 1
         assert len(result["stale"]) == 1
         assert result["announced"] == 0
+
+
+class TestStalePRDigest:
+    """All stale PRs go out as ONE Telegram message, not one per PR."""
+
+    @staticmethod
+    def _reviewer(count: int, *, title: str = "feat: something") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = "4663754211"
+        old = datetime.now(timezone.utc) - timedelta(hours=72)
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(
+            return_value=[
+                {
+                    "number": n,
+                    "title": f"{title} #{n}",
+                    "html_url": f"https://github.com/owner/repo/pull/{n}",
+                    "user": {"login": f"dev{n}"},
+                    "created_at": old.isoformat().replace("+00:00", "Z"),
+                }
+                for n in range(1, count + 1)
+            ]
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_many_stale_prs_send_one_message(self) -> None:
+        reviewer = self._reviewer(3)
+
+        result = await reviewer.report_stale_pull_requests()
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        for n in (1, 2, 3):
+            assert f"/pull/{n}" in text
+            assert f"dev{n}" in text
+        assert result["stale_count"] == 3
+        assert result["announced"] == 3
+        assert result["messages_sent"] == 1
+
+    async def test_digest_escapes_user_data(self) -> None:
+        reviewer = self._reviewer(1, title="feat: X_y <z> & more")
+
+        await reviewer.report_stale_pull_requests()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "&lt;z&gt; &amp; more" in text
+        assert "<z>" not in text
+
+    def test_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = self._reviewer(1)
+        stale = [
+            {
+                "number": n,
+                "title": "x" * 150,
+                "html_url": f"https://github.com/owner/repo/pull/{n}",
+                "user": {"login": f"dev{n}"},
+                "age_hours": 72.0,
+            }
+            for n in range(1, 61)
+        ]
+
+        messages = reviewer._format_stale_prs_digest(stale)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 60
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+            assert "part " in text
+
+    async def test_failed_digest_announces_nothing(self) -> None:
+        """One refused send leaves every PR in it unannounced."""
+        reviewer = self._reviewer(3)
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.report_stale_pull_requests()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
 
 
 class TestWeeklyStatsPending:

@@ -357,7 +357,7 @@ class GitHubReviewer(Agent):
         or OpenAI model.
     """
 
-    model = "gemini-3.5-flash"
+    model = "gemini-3.7-flash"
 
     # aiohttp app keys. The dispatcher fans out to every listener so multiple
     # GitHubReviewer subclasses (one per repo) can share a single endpoint;
@@ -1589,14 +1589,76 @@ class GitHubReviewer(Agent):
     # Daily stale PR report
     # ------------------------------------------------------------------
 
+    #: Telegram rejects a ``sendMessage`` payload longer than 4096 characters.
+    _TELEGRAM_MAX_MESSAGE = 4096
+    #: Head-room reserved in each chunk for the ``(part n/m)`` marker, which is
+    #: only known after the chunking decided how many parts there are.
+    _TELEGRAM_PART_RESERVE = 32
+    #: Per-entry title clamp, so one novel-length PR title cannot produce an
+    #: entry that alone overflows a message.
+    _STALE_TITLE_MAX = 150
+
+    def _format_stale_prs_digest(self, stale: List[Dict[str, Any]]) -> List[Tuple[str, int]]:
+        """Render every stale PR as ONE Telegram HTML digest message.
+
+        Args:
+            stale: The stale-PR dicts built by
+                :meth:`report_stale_pull_requests`.
+
+        Returns:
+            A list of ``(text, pr_count)`` pairs — a single pair in the normal
+            case. A repo with enough stale PRs to blow Telegram's 4096-char
+            limit is split into as few messages as still fit, each carrying
+            its own header and a ``(part n/m)`` marker. ``pr_count`` is how
+            many PRs that message announces, so a caller can attribute a
+            failed send to the PRs it would have covered.
+        """
+        repo_html = html.escape(self.repository)
+        plural = "" if len(stale) == 1 else "s"
+        header = (
+            f"<b>Stale PR{plural}</b> on <code>{repo_html}</code>\n"
+            f"{len(stale)} open PR{plural} unattended for {self.stale_after_hours}h or more\n"
+        )
+
+        entries: List[str] = []
+        for idx, pr in enumerate(stale, start=1):
+            title = str(pr.get("title") or "")
+            if len(title) > self._STALE_TITLE_MAX:
+                title = title[: self._STALE_TITLE_MAX - 1].rstrip() + "…"
+            title = html.escape(title)
+            url = html.escape(str(pr.get("html_url") or ""), quote=True)
+            user = html.escape(str(pr.get("user") or "unknown"))
+            number = pr.get("number")
+            label = f"#{number} {title}".strip() if number is not None else title
+            entries.append(f'\n{idx}. <a href="{url}">{label}</a>\n' f"    by {user} — open for {pr['age_hours']}h")
+
+        budget = self._TELEGRAM_MAX_MESSAGE - len(header) - self._TELEGRAM_PART_RESERVE
+        chunks: List[List[str]] = [[]]
+        used = 0
+        for entry in entries:
+            if chunks[-1] and used + len(entry) > budget:
+                chunks.append([])
+                used = 0
+            chunks[-1].append(entry)
+            used += len(entry)
+
+        total = len(chunks)
+        messages: List[Tuple[str, int]] = []
+        for part, chunk in enumerate(chunks, start=1):
+            marker = f"(part {part}/{total})\n" if total > 1 else ""
+            messages.append((header + marker + "".join(chunk), len(chunk)))
+        return messages
+
     @schedule_daily_report
     async def report_stale_pull_requests(self) -> Dict[str, Any]:
         """Scan open PRs on the configured repo and announce stale ones.
 
         A PR is "stale" when its ``created_at`` is older than
-        :attr:`stale_after_hours` (defaults to 24h). For every stale PR a
-        message is sent to :attr:`public_channel_id`. Returns a small dict
-        with counts (useful for tests and scheduler logs).
+        :attr:`stale_after_hours` (defaults to 24h). All stale PRs are
+        announced to :attr:`public_channel_id` in a SINGLE digest message
+        (split into as few messages as fit only when the digest would
+        exceed Telegram's 4096-char limit). Returns a small dict with
+        counts (useful for tests and scheduler logs).
 
         Scheduled by :func:`schedule_daily_report`; override the run time
         per deployment via ``{AGENT_ID}_DAILY_REPORT`` env var (``HH:MM`` UTC).
@@ -1634,19 +1696,11 @@ class GitHubReviewer(Agent):
                 )
 
         sent = 0
+        messages_sent = 0
         if stale:
             bot = self._get_telegram_bot()
             if bot is not None and self.public_channel_id:
-                repo_html = html.escape(self.repository)
-                for pr in stale:
-                    title = html.escape(str(pr.get("title") or ""))
-                    url = html.escape(str(pr.get("html_url") or ""), quote=True)
-                    user = html.escape(str(pr.get("user") or "unknown"))
-                    text = (
-                        f"<b>Stale PR</b> on <code>{repo_html}</code>\n"
-                        f'<a href="{url}">{title}</a> — '
-                        f"by {user}, open for {pr['age_hours']}h"
-                    )
+                for text, covered in self._format_stale_prs_digest(stale):
                     try:
                         await bot.send_message(
                             chat_id=self.public_channel_id,
@@ -1654,19 +1708,21 @@ class GitHubReviewer(Agent):
                             parse_mode="HTML",
                             disable_web_page_preview=True,
                         )
-                        sent += 1
+                        messages_sent += 1
+                        sent += covered
                     except Exception as exc:  # noqa: BLE001
                         self.logger.warning(
-                            "GitHubReviewer: failed to send stale-PR alert to chat %s: %s",
+                            "GitHubReviewer: failed to send stale-PR digest to chat %s: %s",
                             self.public_channel_id,
                             exc,
                         )
 
         self.logger.info(
-            "GitHubReviewer: daily report — %d open PR(s), %d stale, %d announced.",
+            "GitHubReviewer: daily report — %d open PR(s), %d stale, %d announced in %d message(s).",
             len(pulls or []),
             len(stale),
             sent,
+            messages_sent,
         )
         return {
             "status": "ok",
@@ -1674,6 +1730,7 @@ class GitHubReviewer(Agent):
             "open_count": len(pulls or []),
             "stale_count": len(stale),
             "announced": sent,
+            "messages_sent": messages_sent,
             "stale": stale,
         }
 

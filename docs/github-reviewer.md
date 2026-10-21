@@ -91,8 +91,8 @@ APScheduler tick (HH:MM UTC)
 GitHubReviewer.report_stale_pull_requests()
        │
        ├─ git_toolkit.list_pull_requests(state="open")
-       └─ for each PR with age > stale_after_hours:
-              bot.send_message(public_channel_id, formatted)
+       ├─ collect every PR with age > stale_after_hours
+       └─ bot.send_message(public_channel_id, one digest with all of them)
 ```
 
 ---
@@ -272,8 +272,11 @@ Return values:
 
 Decorated with `@schedule_daily_report`. Lists every open PR on
 `self.repository`, computes the age from `created_at`, and announces
-each PR older than `stale_after_hours` to `public_channel_id` via
-Telegram. Returns counts:
+every PR older than `stale_after_hours` to `public_channel_id` as a
+**single** Telegram digest message (numbered list, one line per PR).
+The digest is split into as few messages as still fit only when it
+would exceed Telegram's 4096-character limit, in which case each part
+carries its own header and a `(part n/m)` marker. Returns counts:
 
 ```python
 {
@@ -281,7 +284,8 @@ Telegram. Returns counts:
     "repository": "owner/name",
     "open_count": 17,
     "stale_count": 4,
-    "announced": 4,
+    "announced": 4,       # stale PRs covered by a successful send
+    "messages_sent": 1,   # Telegram messages it took
     "stale": [...],
 }
 ```
