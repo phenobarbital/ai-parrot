@@ -191,11 +191,51 @@ def fetch_hub_graph(model_id: str, graph_path_in_repo: str, output_dir: Path) ->
     shutil.copy2(source, graph_path)
     logger.info("fetched %s -> %s", graph_path_in_repo, graph_path)
 
-    sidecar = Path(source).with_name(Path(source).name + "_data")
-    if sidecar.exists():
-        shutil.copy2(sidecar, graph_path.with_name(graph_path.name + "_data"))
-        logger.info("fetched external-data sidecar %s", sidecar.name)
+    # A published graph may keep its weights in external-data files.
+    # `hf_hub_download` fetched only the graph, so probing the local cache
+    # for a conventionally-named sidecar would silently miss them and
+    # report success on an unloadable graph. Ask the graph itself which
+    # files it references, then download each one by name.
+    for relative in _external_data_files(graph_path):
+        target = graph_path.parent / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        repo_path = f"{Path(graph_path_in_repo).parent / relative}".lstrip("./")
+        try:
+            fetched = hf_hub_download(model_id, repo_path)
+        except Exception as exc:  # noqa: BLE001 - CLI boundary, re-raised uniformly
+            raise RuntimeError(
+                f"Graph {graph_path_in_repo!r} references external data "
+                f"{relative!r}, but {repo_path!r} could not be fetched from "
+                f"{model_id!r}: {exc}"
+            ) from exc
+        shutil.copy2(fetched, target)
+        logger.info("fetched external-data file %s -> %s", repo_path, target)
     return graph_path
+
+
+def _external_data_files(graph_path: Path) -> list[str]:
+    """Return the external-data filenames *graph_path* references.
+
+    Reads the graph without materialising its weights, so it works on a
+    graph whose external data is not present yet.
+
+    Args:
+        graph_path: Path to a local ``.onnx`` graph.
+
+    Returns:
+        Relative filenames the graph expects beside it, de-duplicated and
+        in first-seen order. Empty when the graph is self-contained.
+    """
+    import onnx
+
+    model = onnx.load(str(graph_path), load_external_data=False)
+    names: list[str] = []
+    for initializer in model.graph.initializer:
+        if initializer.HasField("data_location") and initializer.data_location == onnx.TensorProto.EXTERNAL:
+            for entry in initializer.external_data:
+                if entry.key == "location" and entry.value not in names:
+                    names.append(entry.value)
+    return names
 
 
 def copy_tokenizer_and_config(model_id: str, output_dir: Path) -> None:

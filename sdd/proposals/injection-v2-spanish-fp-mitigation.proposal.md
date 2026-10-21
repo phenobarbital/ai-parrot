@@ -8,11 +8,15 @@ base_branch: dev
 
 # Proposal: Mitigate the Prompt-Injection Classifier's Spanish False-Positive Regression
 
-**Date**: 2026-08-21 (v0.1) · **Revised**: 2026-10-21 (v0.4 — accepted)
+**Date**: 2026-08-21 (v0.1) · **Revised**: 2026-10-21 (v0.5 — accepted,
+post-review)
 **Author**: Jesús Lara (drafted with Claude Code, filed as a mandatory
 follow-up of FEAT-439)
-**Status**: **accepted** (2026-10-21) — evaluation closed, ready for
-`/sdd-spec`. See "Accepted scope" below.
+**Status**: **accepted** (2026-10-21) — evaluation closed, corrected
+against an adversarial `codex` review, ready for `/sdd-spec`. See
+"Accepted scope" below.
+**Blocking prerequisite**: `issue:a6abf12a2027` (guardrail fails open on
+multi-threat text) must land before direction 5.
 
 > Filed per FEAT-439 spec §5 acceptance criterion: v2 was approved for
 > shipping ONLY with this follow-up ticket in hand.
@@ -66,7 +70,7 @@ directions. Audited against `dev`@15d77efe4:
 | 0. Measure wolf-defender on the shared corpus | **Done 2026-10-21** — `results-wolf/`, see below |
 | 1. Threshold retune (global or per-locale) | **Open, now with a target.** `injection_probability_threshold: float = 0.98` unchanged (`bots/guardrails/builtin/prompt_injection.py:689`). `GuardrailContext` (`bots/guardrails/base.py:80-86`) still carries no language/locale field, so a *per-locale* threshold still needs plumbing — but a **global** retune now has evidence |
 | 2. Corpus expansion | Open. Still 16 Spanish benign samples |
-| 3. Multilingual eval as a standing gate | **Done 2026-10-21** (minimal form) — see "The gate that was missing" |
+| 3. Multilingual eval as a standing gate | **Reporting done 2026-10-21**; the **gate is not** — the per-language table is emitted, but nothing *fails* on a regression. See "The gate that was missing" |
 | 4. Harden the fallback path | Open — the regression still lives there, see Problem |
 | 5. Explicit "do nothing" decision | Not taken; superseded by the measurements below |
 | 6. Input normalization *(new in v0.4)* | **Open, measured.** No `unicodedata`/NFKC call exists in either injection module; adding one recovers 2/2 of wolf-defender's remaining obfuscated misses at zero FP cost |
@@ -126,9 +130,15 @@ All numbers below are the 96-sample corpus, `clf-onnx` tier, threshold
 > report identical quality for v2.
 
 Cost, same runs, `clf-onnx`: wolf-defender p50 **15.94 ms** / p95 32.73 /
-RSS 1584.6 MB, versus DeBERTa v2 p50 34.79 ms / p95 61.57 / RSS 1850.8 MB.
-So wolf-defender is cheaper *and* FP-free — the recall gap is the only
-cost, and §4.2 says most of it is self-inflicted.
+**load-time RSS delta** 1584.6 MB, versus DeBERTa v2 p50 34.79 ms / p95
+61.57 / load-time RSS delta 1850.8 MB. Note those are *deltas*, not peak
+process memory: **peak RSS is 2070.7 MB for wolf-defender against
+2044.7 MB for v2**, i.e. essentially equal and marginally *worse* for
+wolf-defender. The supported claim is **faster inference at a lower
+incremental load cost**, not a smaller process.
+
+So wolf-defender is cheaper on latency *and* FP-free — the recall gap is
+the only quality cost, and §4.2 says most of it is self-inflicted.
 
 ### Verdict delta, backend held constant
 
@@ -224,8 +234,25 @@ normalization step.
 The four attacks that survive `wolf @0.8 ∪ regex-normalized` are **all
 `attack_paraphrase`** (1 EN, 3 ES: samples 72, 78, 82, 85) — semantic
 restatements with no lexical trigger and wolf-defender scores of 0.0038
-to 0.1991. That is the residual Spanish gap, and it is a model-capability
-limit: neither a threshold nor a normalizer reaches it.
+to 0.1991. That is the residual Spanish gap.
+
+It is **not** a hard capability ceiling, and an earlier draft of this
+proposal overstated it as one. wolf-defender does score these samples
+above zero, so a low enough threshold reaches them — at a specificity
+cost that is the whole reason not to:
+
+| wolf threshold | overall recall | benign FP |
+|---|---|---|
+| 0.8 (proposed) | 44/50 | **0/46** |
+| 0.10 | 48/50 | 4/46 |
+| 0.02 | 49/50 | 4/46 |
+| 0.003 | 50/50 | 5/46 |
+
+The defensible claim is narrower: **at the proposed operating point, and
+with the normalization tested here, these four are missed** — and buying
+them back costs the false-positive freedom that motivated the whole
+proposal. Whether a different model closes them without that trade is
+an open question, not a settled limit.
 
 ### The gate that was missing
 
@@ -279,17 +306,42 @@ minimal form now ships:
    warm-up wired into bot construction), and/or make step 3's DeBERTa
    fallback opt-in rather than automatic. This improves no model's Spanish
    behaviour — it reduces how often the bad one is the one that runs.
-5. **Input normalization before scoring (new in v0.4).** NFKC-fold and
-   collapse single-character spacing before any tier scores the text.
-   Measured above: +2/10 obfuscated recall, +3/50 regex recall, zero new
-   false positives, stdlib-only. What a spec must settle: whether the
-   normalized text is scanned *in addition to* the raw text or *instead
-   of* it (normalization is lossy — an attacker could in principle
-   smuggle a payload that only exists post-fold); where it sits
-   (`PromptInjectionDetector.sanitize` affects every caller,
-   `strip_framework_patterns` only the guardrail path); and whether the
-   sanitized text handed downstream is the folded one or the original
-   (it should be the original — this is a *detection* aid, not a rewrite).
+5. **Input normalization before *regex* scoring (new in v0.4).** NFKC-fold
+   and join runs of single characters separated by single spaces, then
+   scan with the existing pattern set. Measured above: +2/10 obfuscated
+   recall, +3/50 regex recall, zero new false positives, stdlib-only.
+
+   **Scope limit — measured arrangement only.** The 46/50 figure combines
+   *stored raw-input classifier scores* with *newly computed
+   normalized-input regex scores*. There are **no normalized-input
+   classifier scores**; feeding folded text to wolf-defender is an
+   unmeasured change that could add detections *and* false positives, so
+   it is not accepted here. Extending normalization to the ML tier
+   requires its own benchmark run first.
+
+   What a spec must settle:
+   - The normalized text is scanned **in addition to** the raw text, never
+     instead of it: normalization is lossy, and a payload that exists only
+     post-fold must not become the only thing examined.
+   - **Prerequisite — threat aggregation.** Two scans produce two threat
+     lists, and concatenating them makes a multi-entry `threats` the
+     normal case. Today that path raises `TypeError` and **fails open**
+     (`issue:a6abf12a2027`); it must be fixed and covered by a test
+     *before* a second scan is added, or this direction makes detection
+     strictly worse.
+   - **The exact algorithm**, because plain whitespace collapsing does
+     *not* reconstruct `I g n o r e` — the single-character-run join is
+     what does, and it must preserve real word boundaries.
+   - **Ordering against `strip_framework_patterns`.** NFKC can fold
+     compatibility characters into `<user_context>`-like markup that the
+     framework allowlist then strips; normalizing before or after
+     stripping gives different results on hostile input, and both orders
+     need a test.
+   - **Offsets and downstream text.** Match positions computed on folded
+     text do not map onto the original, and the regex path currently
+     forwards `sanitize(..., strict=True)`'s *rewritten* text
+     (`builtin/prompt_injection.py:794`) — so "hand the original
+     downstream" is an explicit behaviour change, not the status quo.
 
 ## Accepted scope (2026-10-21)
 
@@ -304,19 +356,79 @@ wins, 4 is the unfixed original regression, 2 is the evidence constraint:
    mechanism that let 0.98 go stale through a model swap. A per-locale
    threshold is **out of scope** — Open Question 1 showed the locale
    signal does not exist.
-2. **Direction 5 — input normalization**, scanning normalized text *in
-   addition to* raw, never replacing the text handed downstream.
+
+   **A per-model default is necessary but not sufficient.** `AbstractBot`
+   declares `injection_probability_threshold: float = 0.98`
+   (`bots/abstract.py:288`) and forwards that value *explicitly* into the
+   guardrail config (`bots/abstract.py:695`, `guardrails/config.py:91`),
+   so every existing bot would keep overriding a new per-model default
+   with the stale 0.98. The spec must therefore distinguish **unset** from
+   **deliberately overridden**, keep genuine overrides intact, and key the
+   default off the **engine that actually resolved** — not off a
+   repository name, since `PARROT_INJECTION_ONNX_DIR` and cached pytector
+   snapshots identify models by path.
+2. **Direction 5 — input normalization for the regex tier**, scanning
+   normalized text *in addition to* raw. Gated on the threat-aggregation
+   fix (`issue:a6abf12a2027`) landing first. Normalizing the **classifier**
+   tier's input is explicitly **not** in this scope — unmeasured.
 3. **Direction 4 — harden the fallback path.** Required: this is the only
    item that addresses the regression the proposal was originally filed
-   for, which still lives on the cold-start path (§4.1).
-4. **Direction 2 — corpus expansion**, enough Spanish attack samples to
-   make the 0.8 number more than a 12-sample estimate. The spec must not
-   present 0.8 as validated beyond this corpus.
+   for, which still lives on the cold-start path (§4.1). Two constraints
+   the evidence imposes:
+   - **Do not simply make DeBERTa opt-in.** If wolf-defender is absent and
+     DeBERTa is disabled, the next tier is regex, which on this corpus
+     detects **12/50 attacks and 0/12 Spanish attacks** (15/50 and still
+     0/12 with normalization). Trading the Spanish FP problem for a tier
+     that catches *no* Spanish attacks is a worse outcome, not a fix. The
+     spec must define whether a missing graph blocks readiness, degrades
+     with an explicit acknowledgement, or hard-fails — not just flip a
+     flag.
+   - **Warm-up after construction does not retrofit live guardrails.**
+     Each instance caches its engine at `builtin/prompt_injection.py:722`,
+     while `warmup_injection_model()` reassigns the module-level
+     singleton; and it logs-and-continues on failure, marking warm-up done
+     anyway (`:948`). Provisioning needs a readiness contract and a way to
+     verify *which* model is live, not a best-effort call.
+4. **Direction 2 — corpus expansion.** Enough Spanish **attack** samples
+   to make the 0.8 number more than a 12-sample estimate — and, equally,
+   **more benign samples in both languages**. Lowering the threshold and
+   adding a second scan both move false-positive risk, and 0 FP across 16
+   benign Spanish samples does not establish production specificity.
+   Include benign inputs that are *normalization-sensitive* (legitimate
+   full-width/compatibility characters, spaced-out text, framework-wrapper
+   lookalikes), and hold out a validation split. The spec must not present
+   0.8 as validated beyond this corpus.
 
-**Explicitly not accepted**: a per-locale threshold (no signal); tier
-composition as a recall mitigation (measured at zero benefit); base64 or
-other payload decoding; rolling back the wolf-defender default; the
-event-loop blocking fix (its own feature).
+**Explicitly not accepted**: a per-locale threshold (no signal);
+**raw**-regex composition as a recall mitigation (measured at zero
+benefit — but note that the accepted 46/50 target *is* a composition of
+the ML tier with the **normalized** regex tier, which is accepted);
+normalized input to the classifier (unmeasured); base64 or other payload
+decoding; rolling back the wolf-defender default; the event-loop blocking
+fix (its own feature).
+
+### Reproducing the evidence
+
+Everything above comes from the committed `results*.json` per-sample score
+arrays, aligned by corpus index, plus the current detector source — no
+model was re-run for v0.4/v0.5. Corpus token lengths (max 51, mean 20.9,
+cited under the three-model table) are the wolf-defender tokenizer's, and
+reproduce with:
+
+```bash
+python -c "import sys; sys.path.insert(0,'.');
+from benchmarks.injection_guardrail_latency import corpus as C
+from transformers import AutoTokenizer
+t=AutoTokenizer.from_pretrained('patronus-studio/wolf-defender-prompt-injection-small')
+n=[len(t(x)['input_ids']) for x in C.build_eval_set()[0]]
+print(max(n), sum(n)/len(n))"
+```
+
+One boundary caveat for anyone re-deriving these counts: the benchmark
+treats `score >= threshold` as positive (`metrics.py:118`) while
+production uses strict `score > threshold`
+(`builtin/prompt_injection.py:779`). It changes none of the counts
+reported here, but the spec should settle the comparison explicitly.
 
 ## Non-Goals (for this proposal's eventual spec)
 
@@ -362,9 +474,12 @@ event-loop blocking fix (its own feature).
   The construction-time log line names the resolved engine — is it
   collected anywhere?
 - [ ] Do the 4 surviving `attack_paraphrase` misses (3 ES, 1 EN) justify a
-  second opinion from a different model, or are they the accepted ceiling
-  of a 140 MB multilingual classifier? They are the whole residual
-  Spanish gap.
+  second opinion from a different model, or are they an accepted operating
+  cost? They are the whole residual Spanish gap, and they *are* reachable
+  by threshold (48/50 at 0.10) at a false-positive price the proposal
+  rejects. (Model size, for the record: wolf-defender's fp32 graph is
+  **~560 MB**, per `builtin/prompt_injection.py:27` — an earlier draft's
+  "140 MB" was unsupported.)
 - [ ] Should `compare_models.py` be folded into the harness or retired?
   Its 25-sample / threshold-0.5 basis is what made the wolf-defender
   decision non-comparable with this proposal's evidence in the first place.
@@ -379,3 +494,4 @@ event-loop blocking fix (its own feature).
 | 0.2 | 2026-10-21 | Jesús Lara + Claude Code | State audit against `dev`@15d77efe4: recorded that `d01676fb3` (wolf-defender default) did NOT resolve this proposal and that no candidate direction was implemented; rewrote Problem around the step-3 cold-start fallback; documented that the wolf-defender and 96-sample measurements were not comparable; flagged the 18.8%→43.8% figure as hand-derived; added directions 0 and 4; answered Open Question 1 |
 | 0.3 | 2026-10-21 | Jesús Lara + Claude Code | Closed direction 0 (ran wolf-defender on the 96-sample corpus → `results-wolf/`, delta vs v2 with backend held constant) and direction 3 in minimal form (language-tagged corpus, `per_language` metric in both harness paths, report §4, `compare_runs` delta section, `export.py --from-hub-graph`); retrofitted the per-language table onto all three stored runs, making v0.1's hand-derived 18.8%/43.8% tool-emitted and exactly reproduced. New finding: wolf-defender removes the Spanish FP regression entirely (0/16) but the 0.98 threshold, tuned for DeBERTa, now costs 14pp overall and 25pp Spanish *recall* for no FP benefit — threshold retune promoted to the primary direction with a measured target of ~0.8 |
 | 0.4 | 2026-10-21 | Jesús Lara + Claude Code | **Accepted.** Closed the last two measurable Open Questions from the committed per-sample scores (no model re-run): tier composition adds **zero** recall over wolf-defender alone (regex rescues 0 of 13 misses at 0.98, 0 of 6 at 0.8) and imports one EN false positive — so the "regex covers the obfuscation gap" premise is false; NFKC + single-char-space collapsing instead takes both of wolf-defender's residual obfuscated misses from regex 0.00 to **1.00**, lifting the regex tier 12/50 → 15/50 recall at an unchanged 1/46 FP. New direction 5 (input normalization). `wolf @0.8 ∪ regex-on-normalized` = **46/50 recall, 10/10 obfuscated, 1/46 FP** — DeBERTa v2's recall without its 7/16 Spanish false positives. Answered the per-model-threshold question (yes). Added "Accepted scope": directions 1 → 5 → 4 → 2, with per-locale thresholds, composition and payload decoding explicitly out |
+| 0.5 | 2026-10-21 | Jesús Lara + Claude Code | Corrections from an adversarial `codex` review, which independently recomputed every table from the committed per-sample scores (all reconciled) and found five claims to fix: (a) the accepted scope excluded the very composition the 46/50 target relies on — now stated as *raw*-regex composition excluded, ML ∪ **normalized** regex accepted; (b) direction 5 said "before any tier", but no normalized-input *classifier* scores exist — narrowed to the regex tier, with ML normalization explicitly unmeasured and out of scope; (c) the residual 4 paraphrase misses were called a model-capability limit, but wolf @0.10 reaches 48/50 (at 4/46 FP) — rewritten as an operating-point cost; (d) 1584.6/1850.8 MB are load-time RSS *deltas*, not peak — peak is 2070.7 (wolf) vs 2044.7 (v2), so wolf is marginally worse on peak memory; (e) "140 MB classifier" was unsupported — the fp32 graph is ~560 MB. Added spec constraints the review surfaced in production code: `AbstractBot` forwards 0.98 explicitly so a per-model default alone cannot retune existing bots; warm-up reassigns the module singleton, not live guardrail instances, and marks itself done on failure; making DeBERTa opt-in drops to a regex floor catching **0/12** Spanish attacks; normalization needs an explicit algorithm, ordering against `strip_framework_patterns`, and offset/downstream-text semantics; benchmark `>=` vs production `>`. Opened `issue:a6abf12a2027` — `max()` over unordered `ThreatLevel` raises `TypeError` on any 2-threat text and the pipeline's default `on_error="fail_open"` then lets the injection through (reproduced); it is a prerequisite for direction 5, which would make multi-threat lists routine. Rejected one finding: the 51-token/20.9-mean corpus figures reproduce exactly — documented the command instead |
