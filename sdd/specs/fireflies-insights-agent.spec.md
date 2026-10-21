@@ -543,6 +543,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/wiki/inbox/test_watcher_integration.py
 - packages/ai-parrot/tests/bots/test_fireflies_insights.py
 - packages/ai-parrot/tests/bots/test_fireflies_insights_integration.py
+- packages/ai-parrot/tests/bots/test_fireflies_insights_assets.py
 markers: none
 
 ### Test Data / Fixtures
