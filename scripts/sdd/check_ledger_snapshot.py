@@ -98,8 +98,7 @@ def read_base_snapshot(base_ref: str, path: Path) -> str | None:
     resolved = _git(["rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}"])
     if resolved.returncode != 0:
         raise RuntimeError(
-            f"cannot resolve base ref {base_ref!r}. In CI, fetch it first "
-            f"(git fetch --depth=50 origin <branch>)."
+            f"cannot resolve base ref {base_ref!r}. In CI, fetch it first " f"(git fetch --depth=50 origin <branch>)."
         )
     shown = _git(["show", f"{base_ref}:{path.as_posix()}"])
     if shown.returncode != 0:
