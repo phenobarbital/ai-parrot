@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from navconfig.logging import logging
 
 
+logger = logging.getLogger(__name__)
+
+
 class ThreatLevel(Enum):
     """Severity levels for detected threats."""
     LOW = "low"
@@ -48,7 +51,11 @@ def _coerce_threat_level(value: Any, default: ThreatLevel) -> ThreatLevel:
         try:
             return ThreatLevel(value.strip().lower())
         except ValueError:
-            return default
+            pass
+    # Ranking an unknown level as *default* is deliberate (never outrank a
+    # real threat), but a detector emitting one is a payload bug: say so at
+    # debug level rather than swallowing it silently.
+    logger.debug("Unrecognized threat level %r; ranking it as %s.", value, default)
     return default
 
 
