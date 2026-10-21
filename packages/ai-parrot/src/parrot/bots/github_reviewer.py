@@ -576,6 +576,10 @@ class GitHubReviewer(Agent):
     # the multi-tenant guard in handle_hook_event keeps deliveries on-topic.
     WEBHOOK_APP_KEY: str = "github_review_hook"
     WEBHOOK_LISTENERS_KEY: str = "github_review_hook_listeners"
+    #: In-flight review tasks spawned by the dispatcher. Kept on the app so the
+    #: cleanup handler — and tests — can await them instead of leaving a review
+    #: half-done when the process goes away.
+    WEBHOOK_TASKS_KEY: str = "github_review_hook_tasks"
     _WEBHOOK_STARTED_KEY: str = "github_review_hook_started"
 
     @classmethod
@@ -602,6 +606,17 @@ class GitHubReviewer(Agent):
         :meth:`post_configure`, and the dispatcher fans every delivery
         out to all listeners. ``handle_hook_event`` already filters by
         ``payload.repository``, so cross-repo noise is dropped per agent.
+
+        **The dispatcher answers first and reviews afterwards.** GitHub
+        abandons a delivery after about 10 seconds, while a real review
+        (ticket + diff + LLM) takes a minute — 66s measured on a live PR — so
+        the listeners run in a background task and the route replies ``202``
+        at once. Without that, every delivery is recorded as failed even when
+        the review succeeded, and GitHub retries a SHA whose review is already
+        running. In-flight reviews are tracked in
+        ``app[WEBHOOK_TASKS_KEY]`` and awaited by an ``on_cleanup`` handler
+        (:meth:`drain_webhook_reviews`), so a shutdown does not kill a review
+        halfway through.
 
         **Auth integration**: GitHub signs deliveries with HMAC-SHA256
         (verified by :class:`GitHubWebhookHook`), not with Bearer tokens.
@@ -637,7 +652,9 @@ class GitHubReviewer(Agent):
         listeners: List[Callable[[HookEvent], Awaitable[None]]] = []
         dispatch_logger = _stdlib_logging.getLogger(f"parrot.hooks.{name}.dispatch")
 
-        async def _dispatch(event: HookEvent) -> None:
+        pending: set[asyncio.Task[None]] = set()
+
+        async def _run_listeners(event: HookEvent) -> None:
             # Fan out to every registered listener; one listener raising
             # must not block the others from getting the event.
             for listener in list(listeners):
@@ -652,6 +669,35 @@ class GitHubReviewer(Agent):
                         exc_info=True,
                     )
 
+        def _task_done(task: asyncio.Task[None]) -> None:
+            pending.discard(task)
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc is not None:
+                dispatch_logger.error("Review task %s crashed: %s", task.get_name(), exc, exc_info=exc)
+
+        async def _dispatch(event: HookEvent) -> None:
+            """Answer GitHub immediately and review in the background.
+
+            GitHub abandons a webhook delivery after about 10 seconds, while a
+            real review (ticket + diff + LLM) takes a minute — measured at 66s
+            on a live PR. Awaiting the listeners here made every delivery read
+            as failed even when the review succeeded, and invited GitHub to
+            retry a delivery whose review was already running.
+            """
+            task = asyncio.create_task(
+                _run_listeners(event),
+                name=f"{name}:{getattr(event, 'event_type', 'unknown')}",
+            )
+            pending.add(task)
+            task.add_done_callback(_task_done)
+
+        async def _drain_on_cleanup(_app: Any) -> None:
+            waited = await cls.drain_webhook_reviews(_app)
+            if waited:
+                dispatch_logger.info("Drained %d in-flight review(s) on shutdown.", waited)
+
         hook = GitHubWebhookHook(
             config=GitHubWebhookConfig(
                 name=name,
@@ -664,8 +710,30 @@ class GitHubReviewer(Agent):
 
         app[cls.WEBHOOK_APP_KEY] = hook
         app[cls.WEBHOOK_LISTENERS_KEY] = listeners
+        app[cls.WEBHOOK_TASKS_KEY] = pending
         app[cls._WEBHOOK_STARTED_KEY] = False
+        app.on_cleanup.append(_drain_on_cleanup)
         return hook
+
+    @classmethod
+    async def drain_webhook_reviews(cls, app: Any) -> int:
+        """Await every review still running from a webhook delivery.
+
+        Registered on ``app.on_cleanup`` by :meth:`setup_webhook_route`, so a
+        shutdown does not kill a review mid-flight; also the seam tests use to
+        wait for a dispatch they deliberately did not await.
+
+        Returns:
+            How many in-flight reviews it waited for.
+        """
+        pending = app.get(cls.WEBHOOK_TASKS_KEY) or set()
+        if not pending:
+            return 0
+        waited = len(pending)
+        # return_exceptions: a crashing listener is already logged by the
+        # dispatcher's done callback and must not break the shutdown path.
+        await asyncio.gather(*list(pending), return_exceptions=True)
+        return waited
 
     def __init__(
         self,

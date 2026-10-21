@@ -42,10 +42,13 @@ from parrot.bots.guardrails.builtin import prompt_injection as pi_module
 from parrot.bots.guardrails.builtin.prompt_injection import PromptInjectionGuardrail
 from parrot.bots.guardrails.pipeline import GuardrailPipeline
 
+from _injection_test_helpers import mock_pytector_engine  # shared test infrastructure
 
-def _mock_pytector_engine(detector):
-    """Wrap *detector* as a resolved pytector engine for `_resolve_injection_engine` patches."""
-    return pi_module._PytectorInjectionEngine(detector, model_id="mock-pytector")
+
+# Shared with test_guardrails_input_migration.py (issue:d6027c24b96d): one
+# definition, so the two suites cannot drift. The private alias is kept because
+# this file calls it by that name in ~15 places.
+_mock_pytector_engine = mock_pytector_engine
 
 
 @pytest.fixture

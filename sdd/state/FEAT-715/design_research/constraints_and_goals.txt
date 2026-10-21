@@ -1,0 +1,61 @@
+- **C1** The agent lives in `parrot.bots` (core `ai-parrot`), following the
+  `GitHubReviewer` precedent of a core bot that imports
+  `parrot.integrations.telegram` and `parrot_tools.jiratoolkit`.
+- **C2** It must be an `Agent` (not `BasicAgent`) composed with
+  `SkillRegistryMixin`, so skills can be defined for it.
+- **C3** Skills are **file-based**: `skill_paths` + `SkillFileToolkit`, versioned
+  on disk, rooted at `agents/fireflies_insights/skills/` under `AGENTS_DIR` —
+  the convention already used by `agents/porygon/`, `agents/flex_dashboard/`,
+  `agents/odoo_agent/` and `agents/security_advisor/`. **Not** `.agent/skills/`,
+  which is the SDD tooling's own tree. No DB skill registry in this feature.
+  Because `/agents/` is git-ignored wholesale, this feature must also land the
+  `.gitignore` whitelist that makes the directory committable — see C14.
+- **C4** `WorkingMemoryToolkit` must be wired so intermediate per-meeting
+  artifacts survive within a run and are addressable by the LLM.
+- **C5** Insights are generated from the **transcript + summary the agent holds
+  in memory**, never by waiting on or polling the wiki ingestion. The two paths
+  are independent; a failed ingest must not suppress insights, and vice versa.
+- **C6** A **real filesystem watcher** ingests what lands in the inbox folder,
+  regardless of who put it there. It is built **inside this feature**, and ships
+  in two shapes from one implementation: a startable/stoppable service object,
+  and a `wikitoolkit inbox --watch` mode that runs it standalone.
+- **C7** Telegram delivery is **per meeting, to one configured channel**,
+  mirroring `GitHubReviewer.public_channel_id`. HTML entity escaping and the
+  4096-char chunking rule are non-negotiable — Telegram answers 400 otherwise.
+- **C8** Jira tickets are created **only after explicit human confirmation over
+  Telegram**. The agent never opens a ticket on its own initiative. A confirmed
+  insight is rendered through a **dedicated JiraToolkit template** (FEAT-637
+  template support), not by assembling fields ad hoc, and the ticket gets a
+  **best-effort backlink** to the meeting's wiki page when ingestion has already
+  produced one — omitted silently when it has not. A **base template ships with
+  the agent** at `agents/fireflies_insights/templates/`, committed to the repo,
+  and is reachable by `JiraToolkit(templates_dir=…)` / `JIRA_TEMPLATES_DIR`.
+- **C9** Async-first, `aiohttp` only, Pydantic v2 models, `self.logger`, no
+  `print`, no LangChain — `.claude/rules/codebase-conventions.md` applies.
+- **C10** No new third-party dependency: `watchdog>=4.0` is already declared in
+  `packages/ai-parrot/pyproject.toml`.
+- **C11** The inbox holds the sole whole-run writer lock (`InboxLockBusy`). The
+  watcher must serialize runs and must never ingest a half-written file. Safety
+  is **uniform**: every candidate passes the same size+mtime stability window
+  regardless of its producer, so there is one code path to test. The agent still
+  writes atomically (temp + rename) — belt and braces, not an exemption. Default
+  window: **two consecutive polls ~1.5 s apart with identical size and mtime
+  (≈3 s total)**, exposed as a new `InboxConfig` field so slow sources can raise
+  it.
+- **C12** The agent runs on a **schedule and on demand**: a periodic sync like
+  `FirefliesObsidianAgent` (designed for ~8 h), plus a `@telegram_command` that
+  forces a run — the `GitHubReviewer` pattern.
+- **C13** Processed-meeting state reuses **`MeetingRegistry`** (FEAT-472,
+  merged); the agent does not invent its own dedup store.
+- **C14** The agent's committable assets are made trackable by **editing
+  `.gitignore`**, not by `git add -f`. The existing blanket `/agents/` rule
+  becomes `/agents/*` (git refuses to re-include anything under an excluded
+  *directory*, so the rule must ignore the children instead), followed by a
+  narrow whitelist for this agent's `skills/` and `templates/` only. Every other
+  agent, and every non-whitelisted file inside this agent's own directory, stays
+  ignored. The exact rule block is in Code Context and was verified empirically.
+- **C15** `InboxConfig.stage_git` stays **configuration-driven**: the watcher
+  neither forces nor overrides it. Operators who do not want a long-running
+  watcher staging files into their wiki repo set it to `false` themselves.
+
+---
