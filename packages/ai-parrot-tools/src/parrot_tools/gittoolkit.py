@@ -42,7 +42,37 @@ from .toolkit import AbstractToolkit
 
 
 class GitToolkitError(RuntimeError):
-    """Raised when the toolkit cannot satisfy a request."""
+    """Raised when the toolkit cannot satisfy a request.
+
+    When the failure came from a GitHub API call the exception also carries the
+    HTTP context, so callers can branch on :attr:`status_code` instead of
+    sniffing the message, and can surface GitHub's own explanation to the
+    operator. ``str(exc)`` is unchanged, which keeps older callers working.
+
+    Attributes:
+        status_code: HTTP status returned by GitHub, or ``None`` for failures
+            raised before/without a request (e.g. unresolved repository).
+        url: The API URL that failed.
+        api_message: GitHub's own ``message`` field from the error body.
+        accepted_permissions: The ``x-accepted-github-permissions`` response
+            header, which names the fine-grained permission the endpoint wants
+            (e.g. ``repository_hooks=write``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        url: Optional[str] = None,
+        api_message: Optional[str] = None,
+        accepted_permissions: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
+        self.api_message = api_message
+        self.accepted_permissions = accepted_permissions
 
 
 class RepositoryCredential(BaseModel):
@@ -1168,6 +1198,23 @@ class GitToolkit(AbstractToolkit):
         return _GitHubContext(repository=conn.repository, base_branch=branch, token=conn.token())
 
     @staticmethod
+    def _api_error_message(response: requests.Response) -> Optional[str]:
+        """Return GitHub's own ``message`` for a failed call, when present.
+
+        GitHub error bodies are JSON with a human-readable ``message`` ("Resource
+        not accessible by personal access token", "Bad credentials", ...), which
+        is far more actionable than the raw body. Non-JSON bodies yield ``None``.
+        """
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001 — HTML/empty error bodies are common
+            return None
+        if isinstance(payload, dict):
+            message = payload.get("message")
+            return str(message) if message else None
+        return None
+
+    @staticmethod
     def _request(
         method: str,
         url: str,
@@ -1183,7 +1230,13 @@ class GitToolkit(AbstractToolkit):
         response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         if response.status_code != expected:
             raise GitToolkitError(
-                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}"
+                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}",
+                status_code=response.status_code,
+                url=url,
+                api_message=GitToolkit._api_error_message(response),
+                accepted_permissions=(getattr(response, "headers", None) or {}).get(
+                    "x-accepted-github-permissions"
+                ),
             )
         return response
 
@@ -1814,6 +1867,27 @@ class GitToolkit(AbstractToolkit):
 
         return await asyncio.to_thread(self._submit_pr_review_sync, repository, pr_number, event, body)
 
+    @staticmethod
+    def _webhook_failure(exc: GitToolkitError, *, operation: str) -> Dict[str, Any]:
+        """Translate a failed ``/hooks`` call into an ``ensure_webhook`` result.
+
+        403 and 404 both mean "this token cannot manage hooks here" — the
+        permission is missing, or the repository is invisible to it — and keep
+        the ``no_permission`` status callers already branch on. Anything else is
+        a plain error. The HTTP context rides along so the operator reads
+        GitHub's own explanation instead of a guess about which scope is
+        missing.
+        """
+        status = "no_permission" if exc.status_code in (403, 404) else "error"
+        return {
+            "status": status,
+            "message": str(exc),
+            "operation": operation,
+            "status_code": exc.status_code,
+            "api_message": exc.api_message,
+            "required_permission": exc.accepted_permissions,
+        }
+
     def _ensure_webhook_sync(
         self,
         repository: Optional[str],
@@ -1824,7 +1898,10 @@ class GitToolkit(AbstractToolkit):
         """Idempotently register a GitHub webhook for ``webhook_url``.
 
         Returns a dict with ``status`` in {created, already_exists, no_permission, error}
-        plus the hook payload when available.
+        plus the hook payload when available. Failures also carry ``operation``
+        (``list``/``create``), ``status_code``, GitHub's own ``api_message`` and
+        ``required_permission`` (the ``x-accepted-github-permissions`` header),
+        so callers can report the real cause instead of assuming a scope.
         """
         conn = self._resolve_connection(repository)
         repo, token = conn.repository, conn.token()
@@ -1832,10 +1909,7 @@ class GitToolkit(AbstractToolkit):
         try:
             response = self._request("GET", list_url, token, expected=200)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="list")
 
         for hook in response.json() or []:
             cfg = (hook or {}).get("config") or {}
@@ -1858,10 +1932,7 @@ class GitToolkit(AbstractToolkit):
         try:
             create = self._request("POST", list_url, token, expected=201, json=payload)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="create")
         return {"status": "created", "hook": create.json()}
 
     async def ensure_webhook(
@@ -1873,9 +1944,13 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Ensure a GitHub webhook pointing at ``webhook_url`` exists on the repo.
 
-        Idempotent. Falls back gracefully when the token lacks
-        ``admin:repo_hook`` (status ``"no_permission"``) so callers can run in
-        hybrid mode (auto when allowed, manual otherwise).
+        Idempotent. Falls back gracefully when GitHub refuses the hooks
+        endpoint (status ``"no_permission"``) so callers can run in hybrid mode
+        (auto when allowed, manual otherwise). That refusal is not always a
+        missing scope: repository webhooks require the **admin** role on the
+        repo, and a fine-grained token can never exceed its owner's role, so
+        the result also carries ``status_code``, ``api_message`` and
+        ``required_permission`` for the operator-facing log.
         """
 
         return await asyncio.to_thread(

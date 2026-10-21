@@ -907,6 +907,35 @@ class GitHubReviewer(Agent):
             toolkit_kwargs["token"] = token
         return JiraToolkit(**toolkit_kwargs)
 
+    @staticmethod
+    def _describe_webhook_denial(result: Dict[str, Any]) -> str:
+        """Explain, in operator terms, why GitHub refused the hooks endpoint.
+
+        The old message blamed a missing ``admin:repo_hook`` scope, which sent
+        debugging down the wrong path: the usual cause is the *role*, since
+        repository webhooks need **admin** on the repo and a fine-grained token
+        cannot grant more than its owner holds. ``ensure_webhook`` now returns
+        the HTTP status, GitHub's own ``message`` and the
+        ``x-accepted-github-permissions`` header; any of them can be missing
+        (non-JSON body, pre-request failure), so each part is optional and the
+        raw message is the last resort.
+        """
+        parts: List[str] = []
+        status_code = result.get("status_code")
+        if status_code:
+            parts.append(f"HTTP {status_code}")
+        api_message = result.get("api_message")
+        if api_message:
+            parts.append(str(api_message))
+        required = result.get("required_permission")
+        if required:
+            parts.append(f"endpoint wants {required}")
+        if status_code == 403:
+            parts.append("repository webhooks also require the admin role on the repo")
+        if not parts:
+            return str(result.get("message") or "no detail returned by GitHub")
+        return "; ".join(parts)
+
     async def _ensure_webhook_subscription(self) -> None:
         """Hybrid auto-subscription. No-op when ``webhook_public_url`` is unset."""
         if not self.webhook_public_url or self.git_toolkit is None:
@@ -940,8 +969,10 @@ class GitHubReviewer(Agent):
             )
         elif status == "no_permission":
             self.logger.warning(
-                "GitHubReviewer: token lacks admin:repo_hook on %s; " "configure the webhook manually pointing to %s.",
+                "GitHubReviewer: cannot manage webhooks on %s (%s); "
+                "configure the webhook manually pointing to %s.",
                 self.repository,
+                self._describe_webhook_denial(result),
                 self.webhook_public_url,
             )
         else:
@@ -1597,7 +1628,8 @@ class GitHubReviewer(Agent):
                         sent += 1
                     except Exception as exc:  # noqa: BLE001
                         self.logger.warning(
-                            "GitHubReviewer: failed to send stale-PR alert: %s",
+                            "GitHubReviewer: failed to send stale-PR alert to chat %s: %s",
+                            self.public_channel_id,
                             exc,
                         )
 
@@ -1996,8 +2028,16 @@ class GitHubReviewer(Agent):
                         parse_mode="HTML",
                         disable_web_page_preview=True,
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as send_exc:  # noqa: BLE001
+                    # Delivery failure is non-fatal here (the caller already
+                    # returns status=error for the missing stats), but it must
+                    # not be silent: this was the one send path that left no
+                    # trace at all.
+                    self.logger.warning(
+                        "GitHubReviewer: failed to send weekly no-data notice to chat %s: %s",
+                        self.public_channel_id,
+                        send_exc,
+                    )
             return {"status": "error", "reason": str(exc)}
 
         rendered_via = "templated"
@@ -2028,7 +2068,8 @@ class GitHubReviewer(Agent):
                 telegram_sent = 1
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "GitHubReviewer: failed to send weekly report: %s",
+                    "GitHubReviewer: failed to send weekly report to chat %s: %s",
+                    self.public_channel_id,
                     exc,
                 )
 

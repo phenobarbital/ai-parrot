@@ -1,5 +1,11 @@
 -- WARNING: Initial setup DDL only. DO NOT run against production.
--- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom.
+-- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom,
+-- or run sdd/migrations/ai-bots-homologate-botmodel.sql (idempotent, covers every column).
+--
+-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (44 columns).
+-- Columns dropped from the model live only in their fold migrations:
+--   model_name/temperature/max_tokens/top_k/top_p -> FEAT-fold-legacy-llm-columns.sql
+--   embedding_model                               -> FEAT-fold-embedding-model-into-vector-store-config.sql
 DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
 
 -- Create the unified AI bots table
@@ -25,14 +31,11 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     system_prompt_template TEXT,
     human_prompt_template TEXT,
     pre_instructions JSONB DEFAULT '[]'::JSONB,
+    prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB,
 
-    -- LLM configuration
+    -- LLM configuration. model_config is the canonical home for every tuning key
+    -- (model / model_name, temperature, max_tokens, top_k, top_p).
     llm VARCHAR DEFAULT 'google',
-    model_name VARCHAR DEFAULT 'gemini-3.1-flash-lite-preview',
-    temperature FLOAT DEFAULT 0.1 CHECK (temperature >= 0 AND temperature <= 2),
-    max_tokens INTEGER DEFAULT 1024 CHECK (max_tokens > 0),
-    top_k INTEGER DEFAULT 41 CHECK (top_k > 0),
-    top_p FLOAT DEFAULT 0.9 CHECK (top_p >= 0 AND top_p <= 1),
     model_config JSONB DEFAULT '{}'::JSONB,
 
     -- Tool and agent configuration
@@ -40,14 +43,20 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     auto_tool_detection BOOLEAN DEFAULT TRUE,
     tool_threshold FLOAT DEFAULT 0.7 CHECK (tool_threshold >= 0 AND tool_threshold <= 1),
     tools JSONB DEFAULT '[]'::JSONB,
+    toolkit_config JSONB DEFAULT '{}'::JSONB,
+    mcp_servers JSONB DEFAULT '[]'::JSONB,
     operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),
+
+    -- Knowledge base
+    use_kb BOOLEAN DEFAULT FALSE,
+    kb JSONB,
+    custom_kbs JSONB,
 
     -- Vector store and retrieval configuration
     use_vector BOOLEAN DEFAULT FALSE,
     vector_store_config JSONB DEFAULT '{}'::JSONB,
     reranker_config        JSONB DEFAULT '{}'::JSONB,
     parent_searcher_config JSONB DEFAULT '{}'::JSONB,
-    embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}'::JSONB,
     context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
     context_score_threshold FLOAT DEFAULT 0.7 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
 
@@ -57,10 +66,13 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     max_context_turns INTEGER DEFAULT 5 CHECK (max_context_turns > 0),
     use_conversation_history BOOLEAN DEFAULT TRUE,
 
+    -- Advanced: bot class
+    bot_class VARCHAR,
+
     -- Security and permissions
     permissions JSONB DEFAULT '{}'::JSONB,
 
-    -- Metadata
+    -- Metadata (language: NULL means "mirror the user" — FEAT-638, no DEFAULT)
     language VARCHAR(10),
     disclaimer TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -172,7 +184,7 @@ SELECT
     tools_enabled,
     use_vector,
     llm,
-    model_name,
+    model_config->>'model' AS model_name,
     created_at,
     updated_at
 FROM navigator.ai_bots
@@ -217,3 +229,22 @@ CREATE INDEX IF NOT EXISTS idx_ai_bots_reranker_config
 
 CREATE INDEX IF NOT EXISTS idx_ai_bots_parent_searcher_config
     ON navigator.ai_bots USING GIN (parent_searcher_config);
+
+-- Columns added after the original release (idempotent — see
+-- sdd/migrations/ai-bots-homologate-botmodel.sql for the runnable migration)
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS use_kb        BOOLEAN DEFAULT FALSE;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS kb            JSONB;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS custom_kbs    JSONB;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS bot_class     VARCHAR;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS timezone      VARCHAR(75) DEFAULT 'UTC';
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS avatar        TEXT;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS disclaimer    TEXT;

@@ -12,14 +12,19 @@ import pytest
 from parrot_tools.gittoolkit import GitToolkit, GitToolkitError
 
 
-def _make_response(status_code: int = 200, json_data=None, text: str = ""):
+def _make_response(
+    status_code: int = 200, json_data=None, text: str = "", headers=None
+):
     class _Resp:
         def __init__(self):
             self.status_code = status_code
             self._json = json_data
             self.text = text
+            self.headers = headers or {}
 
         def json(self):
+            if self._json is None:
+                raise ValueError("no json body")
             return self._json
 
     return _Resp()
@@ -186,6 +191,42 @@ class TestEnsureWebhook:
                 toolkit.ensure_webhook(webhook_url="https://example.com/hook")
             )
         assert result["status"] == "no_permission"
+        assert result["operation"] == "list"
+        assert result["status_code"] == 403
+
+    def test_no_permission_carries_github_context(self):
+        """A 403 on the list call surfaces GitHub's message and the header."""
+        toolkit = _toolkit()
+        denial = _make_response(
+            403,
+            json_data={"message": "Resource not accessible by personal access token"},
+            text="{}",
+            headers={"x-accepted-github-permissions": "repository_hooks=write"},
+        )
+        with patch(
+            "parrot_tools.gittoolkit.requests.request", return_value=denial
+        ):
+            result = asyncio.run(
+                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
+            )
+        assert result["status"] == "no_permission"
+        assert result["api_message"] == (
+            "Resource not accessible by personal access token"
+        )
+        assert result["required_permission"] == "repository_hooks=write"
+
+    def test_non_permission_status_is_error(self):
+        """A 500 is an error, not a permission problem, even on /hooks."""
+        toolkit = _toolkit()
+        with patch(
+            "parrot_tools.gittoolkit.requests.request",
+            return_value=_make_response(500, text="boom"),
+        ):
+            result = asyncio.run(
+                toolkit.ensure_webhook(webhook_url="https://example.com/hook")
+            )
+        assert result["status"] == "error"
+        assert result["status_code"] == 500
 
     def test_handles_no_permission_on_create(self):
         toolkit = _toolkit()
@@ -202,6 +243,7 @@ class TestEnsureWebhook:
                 toolkit.ensure_webhook(webhook_url="https://example.com/hook")
             )
         assert result["status"] == "no_permission"
+        assert result["operation"] == "create"
 
 
 class TestResolveHelpers:

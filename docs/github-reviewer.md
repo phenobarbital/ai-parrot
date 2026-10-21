@@ -106,7 +106,7 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 
 | Variable                                  | Description                                                                 |
 | ----------------------------------------- | --------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`                            | PAT with `repo` scope (and `admin:repo_hook` if you want auto-subscription) |
+| `GITHUB_TOKEN`                            | PAT with `repo` scope; auto-subscription also needs hook write (`admin:repo_hook` classic / `repository_hooks=write` fine-grained) **and the admin role on the repo** |
 | `GITHUB_REVIEW_REPOSITORY`             | Default `owner/name` watched by the bundled subclass                        |
 | `GITHUB_REVIEW_TELEGRAM_CHAT_IDS`      | Comma-separated chat IDs alerted on discrepancies                           |
 | `GITHUB_REVIEW_PUBLIC_CHANNEL_ID`      | Telegram chat/channel for the daily stale-PR summary                        |
@@ -214,11 +214,14 @@ subprocess environment, so the token is never written to `.git/config`
 There are two ways to register the webhook on the repository:
 
 1. **Automatic (recommended).** Set `GITHUB_REVIEW_WEBHOOK_PUBLIC_URL`
-   and use a PAT with `admin:repo_hook`. On startup `post_configure()`
-   calls `GitToolkit.ensure_webhook()`. The call is idempotent: if a hook
-   with the same URL already exists it is reused.
+   and use a token that can write repository hooks. On startup
+   `post_configure()` calls `GitToolkit.ensure_webhook()`. The call is
+   idempotent: if a hook with the same URL already exists it is reused.
+   Note that the permission is not enough on its own — GitHub requires the
+   **admin** role on the repository for `/hooks`, and a fine-grained token
+   never exceeds the role its owner holds.
 2. **Manual.** Leave `GITHUB_REVIEW_WEBHOOK_PUBLIC_URL` unset (or use a
-   PAT that lacks `admin:repo_hook` — the call falls back gracefully) and
+   token that cannot write hooks — the call falls back gracefully) and
    configure the webhook in GitHub UI:
    - Payload URL: `https://<your-host>/api/v1/hooks/github`
    - Content type: `application/json`
@@ -293,6 +296,17 @@ Public on the toolkit. Used by `post_configure` for auto-subscription but
 also callable from your own scripts. Status values: `"created"`,
 `"already_exists"`, `"no_permission"`, `"error"`.
 
+Failure results (`no_permission`, `error`) also carry the HTTP context of
+the refused call, so a caller can log the real cause instead of guessing:
+
+| Key                   | Meaning                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `operation`           | `"list"` or `"create"` — which `/hooks` call failed            |
+| `status_code`         | HTTP status returned by GitHub (`None` if no request was made)  |
+| `api_message`         | GitHub's own `message` field, e.g. *Resource not accessible…*   |
+| `required_permission` | The `x-accepted-github-permissions` header, e.g. `repository_hooks=write` |
+| `message`             | Full raw error string (unchanged, always present)              |
+
 ---
 
 ## Watching multiple repositories
@@ -325,8 +339,22 @@ share one endpoint and let the `repository` guard inside
 - **HTTP 401 from `/api/v1/hooks/github`**: signature mismatch. Check that
   `GITHUB_REVIEW_WEBHOOK_SECRET` matches the secret configured in the
   GitHub UI. The hook uses `X-Hub-Signature-256` (HMAC-SHA256).
-- **`status="no_permission"` in startup logs**: the PAT lacks
-  `admin:repo_hook`. Either upgrade the token or fall back to manual setup.
+- **`status="no_permission"` in startup logs**: GitHub refused `/hooks`.
+  The log line now quotes the status, GitHub's own message and the
+  `x-accepted-github-permissions` header, e.g. *HTTP 403; Resource not
+  accessible by personal access token; endpoint wants
+  `repository_hooks=write`*. Two distinct causes produce it:
+  - **Missing permission** — grant hook write (classic `admin:repo_hook`,
+    or fine-grained *Repository permissions → Webhooks: Read & Write*; the
+    identically named *Organization permissions → Webhooks* does **not**
+    count). On an org that reviews token grants, a permission added to an
+    existing token stays *pending approval* while the already-approved ones
+    keep working, which looks exactly like this.
+  - **Missing role** — `/hooks` requires **admin** on the repository, and a
+    fine-grained token cannot grant more than its owner holds. Check
+    `GET /repos/<owner>/<repo>` → `permissions.admin`; if it is `false`, no
+    token setting will fix it, so either raise the user's role or fall back
+    to manual setup.
 - **`status="no_ticket"`**: the PR body / title did not include a
   `<JIRA_PROJECT>-\d+` reference. Educate authors or change
   `jira_project=` for the agent.

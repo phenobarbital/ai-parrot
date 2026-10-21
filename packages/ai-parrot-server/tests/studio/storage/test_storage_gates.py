@@ -132,14 +132,130 @@ def _bots_source_at(rev: str) -> str:
         return _git("show", f"{rev}:{LEGACY_BOTS_PY}")
 
 
-# FEAT-638 sanctioned delta: the `language` column drops its DEFAULT 'en'. Applied to the
-# merge-base copy only, so AC17 still catches any OTHER change to the ai_bots DDL.
+# Sanctioned deltas: reviewed changes to the frozen ai_bots DDL. Applied to the merge-base
+# copy only, so AC17 still catches any OTHER change to it.
+#
+# FEAT-638: the `language` column drops its DEFAULT 'en'.
 _FEAT638_LANGUAGE_DEFAULT = re.compile(r"(language\s+VARCHAR\(10\))\s+DEFAULT\s+'en',")
+
+# BotModel homologation (2026-10-21): the documented CREATE TABLE had drifted from the 44
+# fields BotModel declares — it still carried the folded model_name / temperature /
+# max_tokens / top_k / top_p / embedding_model columns and was missing prompt_config,
+# toolkit_config, mcp_servers, use_kb / kb / custom_kbs and bot_class, so a strict row
+# hydration failed with `column "toolkit_config" does not exist`. Each entry is
+# (merge-base text, reviewed text); an entry whose old side is gone (already merged) is
+# a no-op.
+_SANCTIONED_REWRITES: tuple[tuple[str, str], ...] = (
+    (
+        "-- WARNING: Initial setup DDL only. DO NOT run against production.\n"
+        "-- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom.\n"
+        "DROP TABLE IF EXISTS navigator.ai_bots CASCADE;\n",
+        "-- WARNING: Initial setup DDL only. DO NOT run against production.\n"
+        "-- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom,\n"
+        "-- or run sdd/migrations/ai-bots-homologate-botmodel.sql (idempotent, covers every column).\n"
+        "--\n"
+        "-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (44 columns).\n"
+        "-- Columns dropped from the model live only in their fold migrations:\n"
+        "--   model_name/temperature/max_tokens/top_k/top_p -> FEAT-fold-legacy-llm-columns.sql\n"
+        "--   embedding_model                               -> FEAT-fold-embedding-model-into-vector-store-config.sql\n"
+        "DROP TABLE IF EXISTS navigator.ai_bots CASCADE;\n",
+    ),
+    (
+        "    pre_instructions JSONB DEFAULT '[]'::JSONB,\n"
+        "\n"
+        "    -- LLM configuration\n"
+        "    llm VARCHAR DEFAULT 'google',\n"
+        "    model_name VARCHAR DEFAULT 'gemini-3.1-flash-lite-preview',\n"
+        "    temperature FLOAT DEFAULT 0.1 CHECK (temperature >= 0 AND temperature <= 2),\n"
+        "    max_tokens INTEGER DEFAULT 1024 CHECK (max_tokens > 0),\n"
+        "    top_k INTEGER DEFAULT 41 CHECK (top_k > 0),\n"
+        "    top_p FLOAT DEFAULT 0.9 CHECK (top_p >= 0 AND top_p <= 1),\n"
+        "    model_config JSONB DEFAULT '{}'::JSONB,\n",
+        "    pre_instructions JSONB DEFAULT '[]'::JSONB,\n"
+        "    prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB,\n"
+        "\n"
+        "    -- LLM configuration. model_config is the canonical home for every tuning key\n"
+        "    -- (model / model_name, temperature, max_tokens, top_k, top_p).\n"
+        "    llm VARCHAR DEFAULT 'google',\n"
+        "    model_config JSONB DEFAULT '{}'::JSONB,\n",
+    ),
+    (
+        "    tools JSONB DEFAULT '[]'::JSONB,\n"
+        "    operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),\n"
+        "\n"
+        "    -- Vector store and retrieval configuration\n",
+        "    tools JSONB DEFAULT '[]'::JSONB,\n"
+        "    toolkit_config JSONB DEFAULT '{}'::JSONB,\n"
+        "    mcp_servers JSONB DEFAULT '[]'::JSONB,\n"
+        "    operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),\n"
+        "\n"
+        "    -- Knowledge base\n"
+        "    use_kb BOOLEAN DEFAULT FALSE,\n"
+        "    kb JSONB,\n"
+        "    custom_kbs JSONB,\n"
+        "\n"
+        "    -- Vector store and retrieval configuration\n",
+    ),
+    (
+        "    parent_searcher_config JSONB DEFAULT '{}'::JSONB,\n"
+        '    embedding_model JSONB DEFAULT \'{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}\'::JSONB,\n'
+        "    context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),\n",
+        "    parent_searcher_config JSONB DEFAULT '{}'::JSONB,\n"
+        "    context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),\n",
+    ),
+    (
+        "\n" "    -- Security and permissions\n",
+        "\n" "    -- Advanced: bot class\n" "    bot_class VARCHAR,\n" "\n" "    -- Security and permissions\n",
+    ),
+    (
+        "\n" "    -- Metadata\n" "    language VARCHAR(10),\n",
+        "\n"
+        '    -- Metadata (language: NULL means "mirror the user" — FEAT-638, no DEFAULT)\n'
+        "    language VARCHAR(10),\n",
+    ),
+    (
+        "    llm,\n" "    model_name,\n" "    created_at,\n",
+        "    llm,\n" "    model_config->>'model' AS model_name,\n" "    created_at,\n",
+    ),
+    (
+        "    ON navigator.ai_bots USING GIN (parent_searcher_config);\n",
+        "    ON navigator.ai_bots USING GIN (parent_searcher_config);\n"
+        "\n"
+        "-- Columns added after the original release (idempotent — see\n"
+        "-- sdd/migrations/ai-bots-homologate-botmodel.sql for the runnable migration)\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS use_kb        BOOLEAN DEFAULT FALSE;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS kb            JSONB;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS custom_kbs    JSONB;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS bot_class     VARCHAR;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS timezone      VARCHAR(75) DEFAULT 'UTC';\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS avatar        TEXT;\n"
+        "ALTER TABLE navigator.ai_bots\n"
+        "    ADD COLUMN IF NOT EXISTS disclaimer    TEXT;\n",
+    ),
+    (
+        "        tools JSONB DEFAULT '[]'::JSONB,\n" "        operation_mode VARCHAR DEFAULT 'adaptive',\n",
+        "        tools JSONB DEFAULT '[]'::JSONB,\n"
+        "        toolkit_config JSONB DEFAULT '{}'::JSONB,\n"
+        "        mcp_servers JSONB DEFAULT '[]'::JSONB,\n"
+        "        operation_mode VARCHAR DEFAULT 'adaptive',\n",
+    ),
+)
 
 
 def _with_sanctioned_deltas(source: str) -> str:
     """Apply sanctioned DDL deltas to a merge-base copy before AC17 compares it."""
-    return _FEAT638_LANGUAGE_DEFAULT.sub(r"\1,", source)
+    source = _FEAT638_LANGUAGE_DEFAULT.sub(r"\1,", source)
+    for old, new in _SANCTIONED_REWRITES:
+        source = source.replace(old, new)
+    return source
 
 
 def _ai_bots_ddl(source: str) -> str:
