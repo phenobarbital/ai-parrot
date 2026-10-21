@@ -702,6 +702,13 @@ class GitHubReviewer(Agent):
         # here. Falling back to the public channel keeps them delivered on a
         # deployment that has not split the two destinations yet;
         # post_configure() warns when that fallback is in effect.
+        #
+        # The configured value is kept beside the resolved one because the
+        # resolution is lossy: ``management_chat_id`` ends up equal to the
+        # public channel both when nothing was configured AND when
+        # GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID deliberately names that same
+        # chat, and only the first of those is worth warning about.
+        self.configured_management_chat_id: Optional[ChatId] = management_chat_id or None
         self.management_chat_id = management_chat_id or public_channel_id
         self.webhook_public_url = webhook_public_url
         self.webhook_secret = webhook_secret
@@ -852,6 +859,19 @@ class GitHubReviewer(Agent):
     # Wiring
     # ------------------------------------------------------------------
 
+    @property
+    def management_chat_is_fallback(self) -> bool:
+        """``True`` when the management reports ride on the public channel.
+
+        That is, when no ``GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID`` was
+        configured and :attr:`management_chat_id` resolved to
+        :attr:`public_channel_id` instead. A management chat explicitly
+        pointed at that same chat is *configured*, not a fallback — the
+        resolved value is identical in both cases, which is why
+        :attr:`configured_management_chat_id` is kept.
+        """
+        return not self.configured_management_chat_id and bool(self.management_chat_id)
+
     def set_wrapper(self, wrapper) -> None:
         """Called by :class:`TelegramAgentWrapper` so the agent can push
         proactive messages over the Telegram Bot it shares with the wrapper.
@@ -873,13 +893,22 @@ class GitHubReviewer(Agent):
         """
         await super().post_configure()
 
-        if self.management_chat_id and self.management_chat_id == self.public_channel_id:
+        if self.management_chat_is_fallback:
             self.logger.warning(
                 "GitHubReviewer: no management chat configured "
-                "(GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID); today_pr, the weekly "
-                "activity digest and the Jira ticket summary will go to the "
-                "public channel %s alongside the stale-PR nag.",
+                "(GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID); the management reports "
+                "will go to the public channel %s alongside the stale-PR nag.",
                 self.public_channel_id,
+            )
+        elif self.management_chat_id == self.public_channel_id:
+            # Configured, and pointed at the public channel on purpose: say so
+            # once at INFO, so one chat receiving everything does not read as
+            # the misconfiguration above.
+            self.logger.info(
+                "GitHubReviewer: GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID names the same chat as "
+                "GITHUB_REVIEW_PUBLIC_CHANNEL_ID, so the management reports and the stale-PR "
+                "nag both go to chat %s.",
+                self.management_chat_id,
             )
 
         self.git_toolkit = self._build_git_toolkit()

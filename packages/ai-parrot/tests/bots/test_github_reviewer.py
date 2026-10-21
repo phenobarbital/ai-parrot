@@ -86,6 +86,10 @@ class _MinimalReviewer:
         self._llm = None
 
     @property
+    def configured_management_chat_id(self) -> Optional[ChatId]:
+        return self._management_chat_id or None
+
+    @property
     def management_chat_id(self) -> Optional[ChatId]:
         return self._management_chat_id or self.public_channel_id
 
@@ -107,6 +111,7 @@ class _MinimalReviewer:
     handle_hook_event = GitHubReviewer.handle_hook_event
     report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
     today_pr = GitHubReviewer.today_pr
+    management_chat_is_fallback = GitHubReviewer.management_chat_is_fallback
     _chunk_digest_messages = GitHubReviewer._chunk_digest_messages
     _format_pr_digest = GitHubReviewer._format_pr_digest
     _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
@@ -2841,6 +2846,48 @@ class TestJiraTicketSummary:
         assert (winter.hour, winter.minute) == (10, 0)
         assert summer.astimezone(timezone.utc).hour == 14
         assert winter.astimezone(timezone.utc).hour == 15
+
+
+class TestManagementChatFallback:
+    """Only an *unconfigured* management chat is a fallback.
+
+    ``__init__`` resolves ``management_chat_id or public_channel_id``, so the
+    resolved id equals the public channel both when nothing was configured
+    and when GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID deliberately names that same
+    chat. post_configure() used to warn "no management chat configured" for
+    the second case too, on a deployment where both env vars hold the same
+    chat id.
+    """
+
+    def test_unset_management_chat_is_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+
+        assert reviewer.management_chat_id == "-4788340010"
+        assert reviewer.management_chat_is_fallback is True
+
+    def test_same_chat_configured_on_purpose_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-4788340010"
+
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_separate_management_chat_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-1009999999"
+
+        assert reviewer.management_chat_id == "-1009999999"
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_no_chat_at_all_is_not_reported_as_a_fallback(self) -> None:
+        """Nothing to fall back *to* is a different problem, reported elsewhere."""
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = None
+
+        assert reviewer.management_chat_id is None
+        assert reviewer.management_chat_is_fallback is False
 
 
 class TestResolvedTicketListing:
