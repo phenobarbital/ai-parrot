@@ -1,0 +1,73 @@
+## Recommendation
+
+**Option B.** The accounting layer is small enough to own and specific enough that no generic engine will enforce its invariants. Owning the compiler gives three things the alternatives cannot:
+
+1. **Completeness as a load-time error.** The one failure mode finance cares about — an account silently missing from a bucket — becomes impossible to ship: the model does not load.
+2. **Determinism as a contract, not a hope.** We control the AST and pin sqlglot; the SQL hash is reproducible across machines and months, which is what the AuditLedger needs.
+3. **Independence from the engine decision.** Legal's answer on AGPL and BSL's Ibis pin stop being blockers (FEAT-704 is in fact paused on the AGPL migration as of 2026-10-21); when the generic layer lands, this model lowers into it as filtered + derived metrics, so finance metrics appear in the same catalog without rewriting them.
+
+What we trade: a second (tiny) compiler and no joins in v1. Option D stays available as a materialisation mode; Option A becomes the lowering path.
+
+---
+
+### Option B: Dedicated accounting compiler — YAML → Pydantic IR → sqlglot AST → single-scan SQL; DuckDB over Arrow for DataFrames — *recommended*
+
+A small package (`parrot.semantic.accounting` → `packages/ai-parrot-semantic/src/parrot/semantic/accounting/`; this feature creates the satellite skeleton — see Open Questions) with four parts:
+
+1. **Model** (`model.py`) — Pydantic v2, frozen, hashable:
+   - `ChartOfAccounts`: source (`table` or `dataframe`), `account_key`, **`amount_sign: by_nature | signed`** (required, no default — resolved 2026-10-21), `nature` column or per-account map (`debit | credit`, required only with `by_nature`), optional `parent_key` for hierarchy, `amount`, `posting_date`, `entity`/`dimension` columns.
+   - `AccountSet`: explicit `accounts: [...]`, or selector (`prefix`, `range`, `tag`, `parent`) plus `except`; optional `valid_from` / `valid_to`. Selectors are **resolved at compile time** against the loaded chart of accounts and materialised to an explicit sorted list; the SQL always carries a literal `IN (...)`. The model hash therefore changes when the chart of accounts changes, which is the desired behaviour.
+   - `Metric`: `expr` string over sets and other metrics, `description`, `dimensions` allowed, optional `unit`.
+   - `Assertion`: `expr == expr` pairs evaluated as validation queries (e.g. `revenue - total_expenses == net_income`).
+   - `Model`: `name`, `version`, `tenant`, `chart_of_accounts`, `sets`, `metrics`, `assertions`, `excluded` (accounts deliberately outside every set, with a `reason`).
+
+2. **Parser** (`grammar.py`) — a Pratt parser (~100 lines) for the metric expression language:
+   ```
+   expr   := term (("+" | "-") term)*
+   term   := factor (("*" | "/") factor)*
+   factor := "sum" "(" SET ")" | METRIC | NUMBER | "(" expr ")" | "-" factor
+   ```
+   Produces a typed AST (`Sum(set)`, `Ref(metric)`, `Num`, `BinOp`). No other node kinds exist.
+
+3. **Compiler** (`compiler.py`) — three passes:
+   - *Resolve*: selectors → explicit account lists (with `valid_from/valid_to` filtered by the requested period); detect empty sets, dangling refs, metric cycles (topological sort), **completeness** (every account in the chart is in ≥ 1 set or in `excluded`).
+   - *Inline*: each requested metric is expanded to a tree over `Sum(set)` leaves; shared sets are deduplicated.
+   - *Emit*: one `SELECT` over the journal table with one column per distinct set — `SUM(CASE WHEN account_id IN (...) THEN amount * sign END) AS set_<name>` — grouped by the requested grain, wrapped in an outer `SELECT` that computes the metric arithmetic over the set columns. Built with `sqlglot.exp` nodes, rendered with `sql(dialect=...)`. A composite metric is **N `CASE` columns and one expression**, never N subqueries; this is fast in DuckDB and readable by finance.
+   - Output: `CompiledMetricQuery(sql: str, dialect: str, sql_hash: str, model_hash: str, lineage: Lineage, assertions: list[CompiledMetricQuery])`.
+
+4. **Execution** (`runtime.py`, behind the optional extra):
+   - `DatabaseToolkit` path: `compile(..., dialect=toolkit.dialect)` → existing execution (`asyncpg` etc.), result + `CompiledMetricQuery` metadata to the accounting audit ledger (`AccountingAuditEntry`).
+   - `DatasetManager` path: `DuckDBRunner` registers the DataFrame via `con.register(name, arrow_table)` (polars `to_arrow()`, pandas via `pyarrow.Table.from_pandas`) and executes the same `sql` compiled with `dialect="duckdb"`. One `DuckDBPyConnection` per worker thread (`root.cursor()`), `asyncio.to_thread` for execution — the connection is not thread-safe (research note).
+
+Tool surface (separate named tools, per the "multi-purpose tools fail" principle): `finance_list_metrics`, `finance_explain_metric` (formula + resolved accounts + assertions touching it), `finance_query_metric(metric, grain, filters, period)` returning rows **and** lineage, `finance_validate_model` (CLI/MCP, runs completeness + assertions against live data).
+
+✅ **Pros:**
+- All accounting invariants live in one place and are enforced at load time; the SQL shape is fully under our control, so byte-level determinism is a real contract.
+- Independent of the generic engine decision; can later be *lowered* into BSL/sidemantic (Option A becomes an export, not a dependency).
+- Single scan + `CASE` columns: trivial to read, trivial to explain, fast in DuckDB and Postgres alike.
+- Lineage is a by-product of the resolve pass — no extra work to answer "which accounts made this number".
+- Tiny grammar ⇒ tiny attack surface; no SQL from the model author either (sets are data, not expressions).
+
+❌ **Cons:**
+- A second compiler next to the generic one; both emit SQL through sqlglot but the models are different objects. Mitigated by keeping this one deliberately small and by the planned lowering.
+- No joins in v1: the journal must already carry the dimensions (entity, product line, cost center) or a pre-joined view must be pointed at. Acceptable for GL fact tables; a `dimension_source` join is a v2 item.
+- Natural calendar only in v1. Cumulative YTD/QTD/MTD over that calendar **is** in v1 (client requirement, 2026-10-21); fiscal calendars, consolidation and multi-currency are non-goals.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `sqlglot` | AST construction + dialect rendering | core declares `sqlglot>=20.0`; the satellite pins `>=30.1,<31` (FEAT-704's pin) and the per-dialect golden tests guard rendering changes — they would break the byte-level contract |
+| `duckdb` | in-process engine for DataFrames | MIT; not a dependency anywhere today (verified 2026-10-21); optional extra `duckdb` (`duckdb>=1.0`) of `ai-parrot-semantic`, the same extra FEAT-704 declares |
+| `pyarrow` | zero-copy registration | already a core dependency (`pyarrow>=25.0`, `packages/ai-parrot/pyproject.toml`) |
+| `pydantic` v2 | model + IR | in stack |
+
+🔗 **Existing Code to Reuse:**
+- `bots/database/toolkits/sql.py::SQLToolkit` — `_SQLGLOT_DIALECT_MAP`, `validate_query`, execution; the compiled SQL goes through the same positive allowlist guard as free SQL (defence in depth).
+- `bots/database/models.py::TableMetadata` — to validate that `account_key`, `amount`, `posting_date` columns exist before compiling (schema plane later).
+- `parrot.security.audit_ledger` — reuse the signers (`AbstractKMSSigner`, `LocalHMACSigner`) and the async `storage(json_str)` contract for a new signed `AccountingAuditEntry`. `AuditLedgerEntry` itself is credential-shaped (`user_id`, `channel`, `tool`, `provider`, `key_fingerprint`) and is **not** extended (same decision FEAT-704 took for its own ledger).
+- `DatasetManager` catalog + PBAC filtering (`parrot/tools/dataset_manager/`; catalog shape ⚠️ VERIFY in spec) — metrics registered as catalog entries with `kind="accounting_metric"`.
+- `parrot.interfaces.*` lazy-loading pattern (`faiss _try_create_faiss_store`) for the DuckDB runner.
+
+---
