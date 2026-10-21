@@ -57,6 +57,7 @@ from .models import FireContext, JobDefinition, RunState, utcnow
 from .runstate import MemoryRunState, PostgresRunState, RedisRunState, RunStateStore, truncate
 from .sanitize import (
     SchedulerConfigError,
+    clean_bool,
     clean_int,
     clean_method_name,
     clean_misfire_grace_time,
@@ -1409,14 +1410,26 @@ class SchedulerManager:
         return app
 
     async def on_startup(self, app: web.Application, conn: Callable[..., Any]) -> None:
-        """Set the application pool and start the base scheduler without bot scanning."""
+        """Set the application pool and start the base scheduler without bot scanning.
+
+        ``SCHEDULER_REDIS`` (default ``True``) governs the Redis attachment: the ``redis`` jobstore, the
+        ``RedisRunState`` client and the ``RedisFireCoordinator``. Multi-worker deployments must leave it on —
+        coordination is what keeps workers from double-firing. A single-worker or dev install that only uses
+        ``backend="db"`` schedules can set it false and run without Redis at all (ledger 152e8ab53c60).
+        """
         self.logger.info("Starting scheduler")
         try:
             self._pool = conn
         except Exception as exc:
             self.logger.error("Failed to get database connection pool: %s", exc)
             self._pool = app["agentdb"]
-        await self.start_headless(use_redis=True, register_listeners=True)
+        use_redis = clean_bool(nav_config.get("SCHEDULER_REDIS"), default=True)
+        if not use_redis:
+            self.logger.warning(
+                "SCHEDULER_REDIS is disabled: no Redis jobstore, run state or fire coordination. "
+                "Single-worker deployments only — concurrent workers would double-fire every schedule."
+            )
+        await self.start_headless(use_redis=use_redis, register_listeners=True)
         self.logger.info("Scheduler started successfully")
 
     async def on_shutdown(self, app: web.Application, conn: Callable[..., Any]) -> None:

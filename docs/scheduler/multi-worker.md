@@ -22,6 +22,23 @@ Redis; `SCHEDULER_COORDINATION=none` applies only when no Redis jobstore is
 attached. A single-process deployment without a Redis jobstore may use
 `none`.
 
+### Running the aiohttp server without Redis
+
+`SCHEDULER_REDIS` governs the whole Redis attachment on the aiohttp startup
+path — the `redis` jobstore, the `RedisRunState` client, and the forced
+`RedisFireCoordinator`. It defaults to `true`, so existing deployments are
+unchanged.
+
+Set `SCHEDULER_REDIS=false` only for a **single worker** (a dev box, or an
+install whose schedules are all `backend="db"`). The scheduler then starts
+with the in-memory `default` jobstore and a `NullFireCoordinator`, and fires
+without claiming a lock. With it left at `true` and Redis unreachable, every
+fire — `db` schedules included — is skipped and stamped
+`last_status='lock_unavailable'`, because the coordinator cannot claim.
+
+Two or more workers must keep `SCHEDULER_REDIS=true`: without a shared
+coordinator each worker fires every schedule independently.
+
 Every Redis key is namespaced by the manager's `registered_name` (which
 defaults to `scheduler_manager`). Jobstore keys, run-state hashes, and fire
 coordination keys use the `parrot:scheduler:{registered_name}:` prefix, so
@@ -29,6 +46,7 @@ separate managers do not claim one another's fires.
 
 | Key | Purpose | Default |
 | --- | --- | --- |
+| `SCHEDULER_REDIS` | Attach Redis on the aiohttp startup path: jobstore, run state and fire coordinator | `true` |
 | `SCHEDULER_COORDINATION` | `redis` or `none` fire coordination mode | `none`, unless a Redis jobstore is attached |
 | `SCHEDULER_REDIS_DB` | Redis database used by the scheduler jobstore and coordinator | Redis client's configured database |
 | `SCHEDULER_FIRE_LOCK_TTL` | Seconds before a scheduled-fire claim expires | `86400` |
