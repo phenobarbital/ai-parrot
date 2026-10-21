@@ -181,6 +181,7 @@ class _MinimalReviewer:
     _format_command_reply = GitHubReviewer._format_command_reply
     _format_blocked_message = GitHubReviewer._format_blocked_message
     _deferral_cause = staticmethod(GitHubReviewer._deferral_cause)
+    _format_findings_section = GitHubReviewer._format_findings_section
     _notify_blocked_pr = GitHubReviewer._notify_blocked_pr
     _resolve_assignee = GitHubReviewer._resolve_assignee
     _roster = GitHubReviewer._roster
@@ -4520,3 +4521,121 @@ class TestCIPermissionDenials:
         body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
         assert "'Checks' (Read-only)" in body
         assert "neither approved" in body
+
+
+class TestDeferredReviewReportsTheComparison:
+    """A deferred verdict must still report what the review found.
+
+    The ticket comparison DID finish; only the CI verdict is unknown. An
+    earlier version printed nothing but the CI cause, which threw away the
+    valuable half of the review.
+    """
+
+    async def test_the_comment_leads_with_the_acceptance_criteria(self) -> None:
+        r = _wire_strict(
+            approve=True,
+            discrepancies=[Discrepancy(criterion="AC3", issue="no docstring on the new tool", severity="minor")],
+            checks_raw=_checks(success=1, pending=2),
+        )
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests; matches AC1 and AC2.",
+                approve=True,
+            )
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+
+        # The comparison, not just the CI excuse.
+        assert "### Comparison against the ticket" in body
+        assert "Every acceptance criterion is addressed" in body
+        assert "matches AC1 and AC2" in body
+        assert "[MINOR] AC3" in body
+        # And then why there is no verdict yet.
+        assert "### Why the verdict is deferred" in body
+        assert "still running" in body
+        assert "neither approved nor converted to a draft" in body
+        # The comparison section comes first.
+        assert body.index("Comparison against the ticket") < body.index("Why the verdict is deferred")
+
+    async def test_the_comment_says_so_when_nothing_was_found(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "No discrepancy was found" in body
+
+    async def test_the_cause_keeps_ci_capitalized(self) -> None:
+        """``str.capitalize()`` would print "Ci status could not be read"."""
+        r = _wire_strict(approve=True, checks_error=RuntimeError("403 denied"))
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "The CI status could not be read" in body
+        assert "Ci status" not in body
+
+    async def test_the_telegram_reply_carries_the_verdict_and_findings(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=2))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests.",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-10333",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.startswith("⏳")
+        assert "meets" in reply
+        assert "Adds the endpoint and its tests." in reply
+        assert "[MINOR] AC3" in reply
+        assert "No merge verdict yet" in reply
+
+    async def test_a_failed_review_is_reported_as_unconfirmed(self) -> None:
+        """``approve=False`` with no blocker: say the criteria are unconfirmed."""
+        r = _wire_reviewer()
+        unconfirmed = PRReviewResult(
+            jira_key="NAV-1",
+            discrepancies=[],
+            summary="LLM review failed: timeout",
+            approve=False,
+        )
+        section = "\n".join(r._format_findings_section(unconfirmed))
+        assert "did not confirm" in section
+        assert "LLM review failed: timeout" in section
+
+    async def test_a_finding_is_not_repeated_under_non_blocking(self) -> None:
+        """A minor finding is both a finding and a warning — print it once."""
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-1",
+                discrepancies=[Discrepancy(criterion="AC4", issue="no audit entry", severity="minor")],
+                summary="s",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "t",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.count("[MINOR] AC4") == 1

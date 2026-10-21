@@ -390,8 +390,33 @@ Three outcomes:
 | `status`      | What happens on GitHub                                                      |
 | ------------- | --------------------------------------------------------------------------- |
 | `"approved"`  | `APPROVE` review. Nothing else is touched.                                  |
-| `"deferred"`  | `COMMENT` review explaining the wait. **The PR is left exactly as it is** — no draft, no notification. Happens when checks are still running, or when the CI status could not be read at all (an outage or a missing token scope is not test evidence, and not the developer's fault). |
+| `"deferred"`  | `COMMENT` review. **The PR is left exactly as it is** — no draft, no notification. Happens when checks are still running, or when the CI status could not be read (an outage or a missing token scope is not test evidence, and not the developer's fault). |
 | `"blocked"`   | The PR is **converted to a draft** (GraphQL `convertPullRequestToDraft`, the only API that can), a comment explains every blocking reason, a `REQUEST_CHANGES` review is submitted, and the assignee is notified. |
+
+Every outcome reports the **ticket comparison** — the AC verdict, the review's
+prose summary and each finding with its severity — not only the merge decision.
+A deferred review leads with it, because that half of the work did finish:
+
+```markdown
+## Automated review — verdict deferred (NAV-10333)
+
+### Comparison against the ticket
+
+**Every acceptance criterion is addressed by this PR.**
+
+Adds POST /v2/visits and its serializer; AC1-AC3 are covered by the new tests.
+
+**Findings**
+- **[MINOR] AC4 — audit log** — the new endpoint does not write an audit entry
+
+### Why the verdict is deferred
+
+No CI check was visible to this token — check_runs denied (needs 'Checks' …),
+so the merge verdict is deferred rather than guessed. The PR was left exactly
+as it is — neither approved nor converted to a draft.
+
+**CI: no checks declared on the head commit (and check_runs denied to this token)**
+```
 
 A blocked PR produces three notifications, each independent so one failure
 cannot swallow the others:

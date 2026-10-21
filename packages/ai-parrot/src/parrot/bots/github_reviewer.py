@@ -2758,7 +2758,13 @@ class GitHubReviewer(Agent):
         verdict = outcome.get("verdict") or {}
         checks = PRChecksSummary.model_validate(outcome.get("checks") or {})
         summary = str(outcome.get("summary") or "").strip()
-        findings = outcome.get("discrepancies") or []
+        # Rendered exactly as _merge_verdict phrases a minor finding, so the
+        # "Non-blocking" section below can drop the ones already listed here
+        # instead of repeating them verbatim.
+        finding_lines = [
+            f"[{str(f.get('severity', '?')).upper()}] {f.get('criterion')} — {f.get('issue')}"
+            for f in (outcome.get("discrepancies") or [])
+        ]
         lines: List[str] = []
         if status == "approved":
             lines.append(f"✅ {head}\n\nMeets `{ticket}` and its acceptance criteria. Approved.")
@@ -2774,13 +2780,10 @@ class GitHubReviewer(Agent):
             lines.append(f"⏳ {head}\n\nThe ticket comparison finished — {verdict_line}.")
             if summary:
                 lines.extend(["", summary])
-            if findings:
+            if finding_lines:
                 lines.append("")
                 lines.append("*Findings*")
-                lines.extend(
-                    f"- [{str(f.get('severity', '?')).upper()}] {f.get('criterion')} — {f.get('issue')}"
-                    for f in findings[:10]
-                )
+                lines.extend(f"- {line}" for line in finding_lines[:10])
             lines.extend(
                 [
                     "",
@@ -2812,7 +2815,8 @@ class GitHubReviewer(Agent):
 
         lines.append("")
         lines.append(self._format_checks_line(checks))
-        warnings = verdict.get("warnings") or []
+        already_listed = set(finding_lines)
+        warnings = [w for w in (verdict.get("warnings") or []) if w not in already_listed]
         if warnings:
             lines.append("")
             lines.append("*Non-blocking*")
