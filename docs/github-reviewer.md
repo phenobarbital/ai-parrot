@@ -322,6 +322,26 @@ Only `pull_request` deliveries with action `opened`, `reopened` or
 
 ---
 
+## Webhook delivery is answered immediately
+
+`setup_webhook_route()`'s dispatcher spawns the review in a background task
+and lets the route reply `202` at once, instead of awaiting the listeners.
+
+GitHub abandons a webhook delivery after about **10 seconds**. A real review
+takes far longer — **66s measured** on a live PR (ticket fetch + diff +
+wiki-assisted LLM comparison). Awaiting the review inside the request made
+GitHub record every delivery as failed even when the review was published, and
+invited a retry of a SHA whose review was already running.
+
+In-flight reviews live in `app[GitHubReviewer.WEBHOOK_TASKS_KEY]` and are
+awaited by an `on_cleanup` handler, so stopping the server does not kill a
+review halfway through. `await GitHubReviewer.drain_webhook_reviews(app)`
+returns how many it waited for — the seam tests use to wait for a dispatch
+they deliberately did not await.
+
+A listener that raises is logged by the dispatcher inside the task (and again
+by the task's done callback if it escapes), never silently dropped.
+
 ## Public methods
 
 ### `handle_hook_event(event: HookEvent) -> dict | None`

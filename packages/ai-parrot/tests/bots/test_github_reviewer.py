@@ -1244,6 +1244,8 @@ class TestSetupWebhookRoute:
         event = MagicMock()
         event.event_type = "github.pr_opened"
         await hook._callback(event)
+        # The dispatcher only SPAWNS the review now, so wait for it.
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
 
         assert received == ["a:github.pr_opened", "b:github.pr_opened"]
 
@@ -1268,7 +1270,97 @@ class TestSetupWebhookRoute:
         event.event_type = "github.pr_opened"
         # Must NOT raise.
         await hook._callback(event)
+        await GitHubReviewer.drain_webhook_reviews(app)
         assert survived == ["ok"]
+
+    async def test_dispatch_answers_before_the_review_finishes(self):
+        """GitHub gives a delivery ~10s; a real review took 66s.
+
+        So the dispatcher must return while the listener is still working —
+        otherwise every delivery is recorded as failed even when the review
+        succeeds, and GitHub retries a SHA that is already being reviewed.
+        """
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+        finished: List[str] = []
+
+        async def slow_review(event):
+            started.set()
+            await release.wait()
+            finished.append("done")
+
+        listeners.append(slow_review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        await hook._callback(event)  # returns immediately -> the 202
+
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert finished == []  # still mid-review while GitHub already has its answer
+        assert len(app[GitHubReviewer.WEBHOOK_TASKS_KEY]) == 1
+
+        release.set()
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
+        assert finished == ["done"]
+        # The task set empties itself, so a long-lived app does not leak tasks.
+        assert app[GitHubReviewer.WEBHOOK_TASKS_KEY] == set()
+
+    async def test_in_flight_reviews_are_drained_on_cleanup(self):
+        """A shutdown must not kill a review halfway through."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        finished: List[str] = []
+
+        async def review(event):
+            await asyncio.sleep(0.05)
+            finished.append("done")
+
+        listeners.append(review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_synchronize"
+        await hook._callback(event)
+        assert finished == []
+
+        # aiohttp only sends on_cleanup once the app is frozen, which is what
+        # a real server does on startup.
+        app.freeze()
+        await app.cleanup()
+        assert finished == ["done"]
+
+    async def test_a_crashing_review_is_logged_not_swallowed(self, caplog: pytest.LogCaptureFixture):
+        """A listener error is logged by the dispatcher, inside the task."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        app[GitHubReviewer.WEBHOOK_LISTENERS_KEY].append(AsyncMock(side_effect=RuntimeError("boom")))
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        with caplog.at_level("ERROR"):
+            await hook._callback(event)
+            await GitHubReviewer.drain_webhook_reviews(app)
+        assert "boom" in caplog.text
+
+    async def test_draining_nothing_is_a_noop(self):
+        from aiohttp import web
+
+        app = web.Application()
+        GitHubReviewer.setup_webhook_route(app)
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 0
+        # Also safe on an app that never registered the route.
+        assert await GitHubReviewer.drain_webhook_reviews(web.Application()) == 0
 
 
 # ---------------------------------------------------------------------------
