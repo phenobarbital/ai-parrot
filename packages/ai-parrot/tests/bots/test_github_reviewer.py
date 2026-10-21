@@ -187,6 +187,7 @@ class _MinimalReviewer:
     _format_blocked_message = GitHubReviewer._format_blocked_message
     _deferral_cause = staticmethod(GitHubReviewer._deferral_cause)
     _format_findings_section = GitHubReviewer._format_findings_section
+    _format_ci_footer = GitHubReviewer._format_ci_footer
     _notify_blocked_pr = GitHubReviewer._notify_blocked_pr
     _resolve_assignee = GitHubReviewer._resolve_assignee
     _roster = GitHubReviewer._roster
@@ -1243,6 +1244,8 @@ class TestSetupWebhookRoute:
         event = MagicMock()
         event.event_type = "github.pr_opened"
         await hook._callback(event)
+        # The dispatcher only SPAWNS the review now, so wait for it.
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
 
         assert received == ["a:github.pr_opened", "b:github.pr_opened"]
 
@@ -1267,7 +1270,97 @@ class TestSetupWebhookRoute:
         event.event_type = "github.pr_opened"
         # Must NOT raise.
         await hook._callback(event)
+        await GitHubReviewer.drain_webhook_reviews(app)
         assert survived == ["ok"]
+
+    async def test_dispatch_answers_before_the_review_finishes(self):
+        """GitHub gives a delivery ~10s; a real review took 66s.
+
+        So the dispatcher must return while the listener is still working —
+        otherwise every delivery is recorded as failed even when the review
+        succeeds, and GitHub retries a SHA that is already being reviewed.
+        """
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+        finished: List[str] = []
+
+        async def slow_review(event):
+            started.set()
+            await release.wait()
+            finished.append("done")
+
+        listeners.append(slow_review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        await hook._callback(event)  # returns immediately -> the 202
+
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert finished == []  # still mid-review while GitHub already has its answer
+        assert len(app[GitHubReviewer.WEBHOOK_TASKS_KEY]) == 1
+
+        release.set()
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
+        assert finished == ["done"]
+        # The task set empties itself, so a long-lived app does not leak tasks.
+        assert app[GitHubReviewer.WEBHOOK_TASKS_KEY] == set()
+
+    async def test_in_flight_reviews_are_drained_on_cleanup(self):
+        """A shutdown must not kill a review halfway through."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        finished: List[str] = []
+
+        async def review(event):
+            await asyncio.sleep(0.05)
+            finished.append("done")
+
+        listeners.append(review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_synchronize"
+        await hook._callback(event)
+        assert finished == []
+
+        # aiohttp only sends on_cleanup once the app is frozen, which is what
+        # a real server does on startup.
+        app.freeze()
+        await app.cleanup()
+        assert finished == ["done"]
+
+    async def test_a_crashing_review_is_logged_not_swallowed(self, caplog: pytest.LogCaptureFixture):
+        """A listener error is logged by the dispatcher, inside the task."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        app[GitHubReviewer.WEBHOOK_LISTENERS_KEY].append(AsyncMock(side_effect=RuntimeError("boom")))
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        with caplog.at_level("ERROR"):
+            await hook._callback(event)
+            await GitHubReviewer.drain_webhook_reviews(app)
+        assert "boom" in caplog.text
+
+    async def test_draining_nothing_is_a_noop(self):
+        from aiohttp import web
+
+        app = web.Application()
+        GitHubReviewer.setup_webhook_route(app)
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 0
+        # Also safe on an app that never registered the route.
+        assert await GitHubReviewer.drain_webhook_reviews(web.Application()) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -3949,26 +4042,41 @@ class TestMergeVerdict:
         )
         assert (verdict.mergeable, verdict.defer) == (False, False)
 
-    def test_unreadable_ci_defers_rather_than_approving(self) -> None:
-        """An outage or a missing scope is not test evidence — and not a fault."""
+    def test_unreadable_ci_warns_without_blocking_or_deferring(self) -> None:
+        """ "No CI" is not "CI failed" — an outage must not stall the flow.
+
+        The ticket comparison is the gate that decides; an outage, or a
+        permission a fine-grained PAT cannot hold, is reported and stepped over.
+        """
         r = _wire_reviewer()
         verdict = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
-        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert verdict.reasons == []
         assert any("could not be read" in warning for warning in verdict.warnings)
 
     def test_absent_checks_warn_by_default(self) -> None:
         r = _wire_reviewer()
         verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
-        assert verdict.mergeable is True
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert any("no CI checks" in warning for warning in verdict.warnings)
 
-    def test_absent_checks_block_when_checks_are_required(self) -> None:
+    def test_missing_evidence_blocks_only_when_explicitly_required(self) -> None:
+        """``require_checks`` is the opt-in that makes CI mandatory."""
         r = _wire_reviewer()
         r.require_checks = True
-        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
-        assert verdict.mergeable is False
-        assert any("no CI checks" in reason for reason in verdict.reasons)
+        absent = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        unreadable = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
+        for verdict in (absent, unreadable):
+            assert verdict.mergeable is False
+            assert verdict.defer is False
+            assert any("require_checks" in reason for reason in verdict.reasons)
+
+    def test_a_failing_pipeline_is_the_only_ci_refusal(self) -> None:
+        """The one CI state that refuses a PR on its own."""
+        r = _wire_reviewer()
+        red = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=0, failure=3)))
+        assert (red.mergeable, red.defer) == (False, False)
+        assert any("failing" in reason for reason in red.reasons)
 
 
 class TestAssigneeResolution:
@@ -4187,14 +4295,36 @@ class TestStrictReviewPullRequest:
         assert "deferred" in call["body"]
         assert r._wrapper.bot.send_message.await_count == 0
 
-    async def test_unreadable_checks_defer_and_say_why(self) -> None:
+    async def test_unreadable_checks_approve_but_disclose(self) -> None:
+        """CI is optional: an unreadable pipeline cannot stall the flow.
+
+        The approval must still SAY that no test evidence was verified —
+        optional is not invisible.
+        """
         r = _wire_strict(approve=True, checks_error=RuntimeError("403 no checks:read"))
         out = await r.strict_review_pull_request(dict(_PAYLOAD))
-        assert out["status"] == "deferred"
-        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
-        assert "could not be read" in body
-        assert "403" in body
+        assert out["status"] == "approved"
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "could not be read" in call["body"]
+        assert "403" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
         r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_an_absent_pipeline_approves_with_a_note(self) -> None:
+        r = _wire_strict(approve=True, checks_raw={"checks": [], "total": 0})
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "no checks declared" in body
+        assert "Non-blocking notes" in body
+
+    async def test_a_green_pipeline_needs_no_disclaimer(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "3 passed, 0 failed" in body
+        assert "no test evidence could be verified" not in body
 
     async def test_a_pr_without_a_ticket_gets_the_missing_ticket_comment(self) -> None:
         r = _wire_strict()
@@ -4479,12 +4609,12 @@ class TestCIPermissionDenials:
         assert summary.denied == ["check_runs"]
         assert summary.success == 1
 
-    def test_zero_visible_checks_behind_a_denial_defers(self) -> None:
-        """The regression this class exists for.
+    def test_zero_visible_checks_behind_a_denial_do_not_stall_the_flow(self) -> None:
+        """A denial leaves NO evidence, which is not the same as a failure.
 
         An Actions-only repo whose ``check-runs`` endpoint is denied reports
-        zero checks. That is NOT "this repo has no CI" — the evidence exists
-        and is invisible — so the verdict must defer instead of approving.
+        zero checks. The reviewer says so and lets the ticket comparison
+        decide, instead of deferring every PR behind a token scope.
         """
         r = _wire_reviewer()
         checks = GitHubReviewer._summarize_checks(
@@ -4492,21 +4622,21 @@ class TestCIPermissionDenials:
         )
         assert checks.declared is False
         verdict = r._merge_verdict(self._approved(), checks)
-        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
         assert verdict.reasons == []
-        assert any("not visible to this token" in w or "visible to this token" in w for w in verdict.warnings)
+        assert any("visible to this token" in w for w in verdict.warnings)
         assert any("'Checks' (Read-only)" in w for w in verdict.warnings)
 
-    def test_require_checks_does_not_turn_a_denial_into_a_blocker(self) -> None:
-        """Requiring CI must not punish a developer for a missing token scope."""
+    def test_require_checks_turns_a_denial_into_a_blocker(self) -> None:
+        """The opt-in for deployments that treat CI evidence as mandatory."""
         r = _wire_reviewer()
         r.require_checks = True
         checks = GitHubReviewer._summarize_checks(
             {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
         )
         verdict = r._merge_verdict(self._approved(), checks)
-        assert (verdict.mergeable, verdict.defer) == (False, True)
-        assert verdict.reasons == []
+        assert (verdict.mergeable, verdict.defer) == (False, False)
+        assert any("require_checks" in reason for reason in verdict.reasons)
 
     def test_a_partial_picture_still_approves_but_says_so(self) -> None:
         r = _wire_reviewer()
@@ -4532,6 +4662,49 @@ class TestCIPermissionDenials:
         assert (verdict.mergeable, verdict.defer) == (True, False)
         assert any("no CI checks" in w for w in verdict.warnings)
 
+    def test_an_empty_but_readable_ci_is_not_blamed_on_the_permission(self) -> None:
+        """Live case: Actions + statuses answered, and this commit has no run.
+
+        Saying "not visible to this token" there sends an operator chasing a
+        permission that is already granted. The denial still matters (checks
+        from other apps could be hidden), so the note says both things.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": ["workflow_runs", "commit_statuses"],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        note = "\n".join(verdict.warnings)
+        assert "no CI run or status exists for this commit" in note
+        assert "read: workflow_runs, commit_statuses" in note
+        assert "may be hidden" in note
+        assert "not visible to this token" not in note
+        assert r._format_checks_line(checks) == "CI: nothing reported for this commit (check_runs not readable)"
+
+    def test_nothing_answered_still_reads_as_invisible(self) -> None:
+        """With no source answering, the permission IS the story."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": [],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert any("visible to this token" in w for w in r._merge_verdict(self._approved(), checks).warnings)
+        assert r._format_checks_line(checks) == "CI: no check visible to this token (check_runs denied)"
+
     def test_the_checks_line_names_the_denial(self) -> None:
         r = _wire_reviewer()
         empty = GitHubReviewer._summarize_checks(
@@ -4547,11 +4720,22 @@ class TestCIPermissionDenials:
                 "reason": self._REASON,
             }
         )
-        assert "check_runs denied to this token" in r._format_checks_line(empty)
+        # Short and quantitative: the long "grant X on the PAT" advice belongs
+        # in the notes, once, not inside every CI line.
+        empty_line = r._format_checks_line(empty)
+        assert empty_line == "CI: no check visible to this token (check_runs denied)"
+        assert "Read-only" not in empty_line
         assert "check_runs denied" in r._format_checks_line(partial)
+        assert r._format_checks_line(PRChecksSummary(available=False, reason=self._REASON)) == (
+            "CI: could not be read — tests were not verified (see the notes)"
+        )
 
-    async def test_the_deferred_comment_names_the_missing_permission(self) -> None:
-        """The operator must read the fix in the PR, not only in the logs."""
+    async def test_the_approval_names_the_missing_permission(self) -> None:
+        """The operator must read the fix in the PR, not only in the logs.
+
+        The PR is approved on its ticket comparison, and the review's footer
+        carries the unverifiable-CI note plus the permission to grant.
+        """
         r = _wire_strict(
             approve=True,
             checks_raw={
@@ -4563,11 +4747,12 @@ class TestCIPermissionDenials:
             },
         )
         out = await r.strict_review_pull_request(dict(_PAYLOAD))
-        assert out["status"] == "deferred"
+        assert out["status"] == "approved"
         r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
-        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
-        assert "'Checks' (Read-only)" in body
-        assert "neither approved" in body
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "'Checks' (Read-only)" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
 
 
 class TestDeferredReviewReportsTheComparison:
@@ -4615,11 +4800,20 @@ class TestDeferredReviewReportsTheComparison:
         body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
         assert "No discrepancy was found" in body
 
-    async def test_the_cause_keeps_ci_capitalized(self) -> None:
-        """``str.capitalize()`` would print "Ci status could not be read"."""
-        r = _wire_strict(approve=True, checks_error=RuntimeError("403 denied"))
-        await r.strict_review_pull_request(dict(_PAYLOAD))
-        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+    def test_the_cause_keeps_ci_capitalized(self) -> None:
+        """``str.capitalize()`` would print "Ci status could not be read".
+
+        Driven straight through the formatter: the strict path no longer
+        defers on an unreadable CI (it warns), but the body must still render
+        correctly for any summary handed to it.
+        """
+        r = _wire_reviewer()
+        body = r._format_deferred_body(
+            dict(_PAYLOAD),
+            "NAV-1",
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True),
+            PRChecksSummary(available=False, reason="403 denied"),
+        )
         assert "The CI status could not be read" in body
         assert "Ci status" not in body
 
