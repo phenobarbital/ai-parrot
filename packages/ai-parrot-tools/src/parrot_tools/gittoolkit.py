@@ -28,6 +28,7 @@ import os
 import shutil
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -381,6 +382,26 @@ class SubmitPRReviewInput(BaseModel):
         description="Review event to record on the pull request."
     )
     body: str = Field(description="Review body in Markdown (required for REQUEST_CHANGES).")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
+class GetPRChecksInput(BaseModel):
+    """Input payload for ``get_pr_checks``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
+class ConvertPRToDraftInput(BaseModel):
+    """Input payload for ``convert_pr_to_draft``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
     repository: Optional[str] = Field(
         default=None,
         description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
@@ -1887,6 +1908,240 @@ class GitToolkit(AbstractToolkit):
         """Submit a pull-request review (approve, request-changes or comment)."""
 
         return await asyncio.to_thread(self._submit_pr_review_sync, repository, pr_number, event, body)
+
+    #: Check-run / commit-status conclusions that count as a pass.
+    _CHECK_SUCCESS = frozenset({"success", "neutral", "skipped"})
+    #: Conclusions that count as a hard failure.
+    _CHECK_FAILURE = frozenset({"failure", "timed_out", "action_required", "startup_failure", "stale", "error"})
+
+    @classmethod
+    def _classify_check(cls, status: Optional[str], conclusion: Optional[str]) -> str:
+        """Map a check run / commit status onto ``success|failure|pending``.
+
+        GitHub reports a check run's lifecycle in ``status`` and its outcome in
+        ``conclusion``: while it runs the conclusion is ``None``, so the
+        lifecycle decides. ``neutral`` and ``skipped`` are deliberately counted
+        as passes — a skipped job is not a broken one. ``cancelled`` is treated
+        as pending-unknown rather than a failure, because a cancelled run is
+        most often a superseded push, not a red test.
+        """
+        state = (status or "").lower()
+        verdict = (conclusion or "").lower()
+        if state in ("queued", "in_progress", "pending", "waiting", "requested") and not verdict:
+            return "pending"
+        if verdict in cls._CHECK_FAILURE:
+            return "failure"
+        if verdict in cls._CHECK_SUCCESS:
+            return "success"
+        return "pending"
+
+    def _get_pr_checks_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        head_sha: Optional[str],
+    ) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        sha = head_sha
+        if not sha:
+            pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+            pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+            sha = ((pr_data.get("head") or {}).get("sha")) or ""
+        if not sha:
+            raise GitToolkitError(
+                f"Cannot resolve the head SHA of {repo}#{pr_number}; check runs are unavailable.",
+                url=f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+            )
+
+        checks: List[Dict[str, Any]] = []
+        denied: List[str] = []
+
+        # GitHub Checks API — what GitHub Actions, and most CI apps, report to.
+        # A token may be allowed one of the two APIs and not the other (the
+        # fine-grained "Checks" and "Commit statuses" permissions are
+        # independent), so a denial on either is tolerated and reported rather
+        # than losing the evidence the token CAN read.
+        runs_url = f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs"
+        try:
+            runs = self._request("GET", runs_url, token, expected=200, params={"per_page": 100}).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("check_runs")
+            runs = {}
+        for run in runs.get("check_runs") or []:
+            checks.append(
+                {
+                    "name": str((run or {}).get("name") or ""),
+                    "status": (run or {}).get("status"),
+                    "conclusion": (run or {}).get("conclusion"),
+                    "state": self._classify_check((run or {}).get("status"), (run or {}).get("conclusion")),
+                    "url": (run or {}).get("html_url"),
+                    "source": "check_run",
+                }
+            )
+
+        # Legacy Commit Status API — older integrations (Travis, Jenkins
+        # webhooks, custom scripts) only ever write here, so a repo can have
+        # a fully green pipeline and an empty check-runs list.
+        status_url = f"https://api.github.com/repos/{repo}/commits/{sha}/status"
+        try:
+            combined = self._request("GET", status_url, token, expected=200).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("commit_statuses")
+            combined = {}
+        for st in combined.get("statuses") or []:
+            state = str((st or {}).get("state") or "").lower()
+            checks.append(
+                {
+                    "name": str((st or {}).get("context") or ""),
+                    "status": state,
+                    "conclusion": state,
+                    "state": (
+                        "success" if state == "success" else ("failure" if state in ("failure", "error") else "pending")
+                    ),
+                    "url": (st or {}).get("target_url"),
+                    "source": "commit_status",
+                }
+            )
+
+        counts = Counter(c["state"] for c in checks)
+        # Readable only if at least one of the two APIs answered. Both denied
+        # means "we do not know", which must never be mistaken for "green".
+        available = len(denied) < 2
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "head_sha": sha,
+            "checks": checks,
+            "total": len(checks),
+            "success": counts.get("success", 0),
+            "failure": counts.get("failure", 0),
+            "pending": counts.get("pending", 0),
+            "combined_state": combined.get("state"),
+            "available": available,
+            "denied": denied,
+            "reason": self._denial_reason(denied) if denied else None,
+        }
+
+    #: Fine-grained-PAT permission behind each endpoint, for the operator-facing
+    #: message. A classic PAT's ``repo`` scope covers both.
+    _CHECK_PERMISSIONS = {
+        "check_runs": "'Checks' (Read-only)",
+        "commit_statuses": "'Commit statuses' (Read-only)",
+    }
+
+    @classmethod
+    def _denial_reason(cls, denied: List[str]) -> str:
+        """Name the missing token permission(s) behind a 403/404 on CI reads."""
+        needed = ", ".join(cls._CHECK_PERMISSIONS[name] for name in denied if name in cls._CHECK_PERMISSIONS)
+        endpoints = " and ".join(denied)
+        # Phrased to nest inside a caller's sentence, so it must not repeat
+        # "for this token" — the caller has already said whose token it is.
+        return f"{endpoints} denied (needs {needed} on a fine-grained PAT, or a classic PAT with the 'repo' scope)"
+
+    @tool_schema(GetPRChecksInput)
+    async def get_pr_checks(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+        head_sha: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return the CI checks reported for a pull request's head commit.
+
+        Merges the Checks API (``check-runs``) with the legacy Commit Status
+        API, because a repository may use either or both, and normalizes every
+        entry to ``state`` in ``success|failure|pending`` alongside the raw
+        GitHub fields. ``head_sha`` skips the extra PR lookup when the caller
+        already knows it.
+
+        The two APIs sit behind independent token permissions, so a 403/404 on
+        one does not discard the other: the denial is listed in ``denied`` and
+        explained in ``reason``, and ``available`` is False only when BOTH were
+        refused — "we do not know" must never read as "green".
+        """
+
+        return await asyncio.to_thread(self._get_pr_checks_sync, repository, pr_number, head_sha)
+
+    _CONVERT_TO_DRAFT_MUTATION = (
+        "mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) "
+        "{ pullRequest { number isDraft } } }"
+    )
+
+    def _convert_pr_to_draft_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+        if pr_data.get("draft"):
+            return {
+                "status": "already_draft",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": True,
+            }
+        node_id = pr_data.get("node_id")
+        if not node_id:
+            raise GitToolkitError(
+                f"GitHub did not return a node_id for {repo}#{pr_number}; cannot convert it to draft.",
+                url=pr_url,
+            )
+        if (pr_data.get("state") or "").lower() != "open":
+            return {
+                "status": "not_open",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": False,
+                "message": f"{repo}#{pr_number} is {pr_data.get('state')}; only an open PR can become a draft.",
+            }
+
+        # REST cannot flip the draft flag — PATCH /pulls ignores it. The
+        # GraphQL mutation is the only supported path, and it answers 200 with
+        # an ``errors`` array instead of an HTTP error code.
+        response = self._request(
+            "POST",
+            "https://api.github.com/graphql",
+            token,
+            expected=200,
+            json={"query": self._CONVERT_TO_DRAFT_MUTATION, "variables": {"id": node_id}},
+        )
+        body = response.json() or {}
+        errors = body.get("errors") or []
+        if errors:
+            message = "; ".join(str((e or {}).get("message") or e) for e in errors)
+            raise GitToolkitError(
+                f"GraphQL convertPullRequestToDraft failed for {repo}#{pr_number}: {message}",
+                url="https://api.github.com/graphql",
+                api_message=message,
+            )
+        pull = (((body.get("data") or {}).get("convertPullRequestToDraft") or {}).get("pullRequest")) or {}
+        return {
+            "status": "converted",
+            "repository": repo,
+            "pr_number": pr_number,
+            "is_draft": bool(pull.get("isDraft", True)),
+        }
+
+    @tool_schema(ConvertPRToDraftInput)
+    async def convert_pr_to_draft(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Convert an open pull request into a draft so it cannot be merged.
+
+        Returns ``status`` in ``converted|already_draft|not_open``. Needs the
+        GraphQL mutation (REST has no writable ``draft`` field), so the token
+        must carry the same ``pull_requests: write`` permission used to submit
+        reviews.
+        """
+
+        return await asyncio.to_thread(self._convert_pr_to_draft_sync, repository, pr_number)
 
     @staticmethod
     def _webhook_failure(exc: GitToolkitError, *, operation: str) -> Dict[str, Any]:

@@ -141,6 +141,9 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 | `GITHUB_REVIEW_WEBHOOK_PUBLIC_URL`     | Public HTTPS URL of `/api/v1/hooks/github` (enables auto-subscription)      |
 | `GITHUB_REVIEW_WEBHOOK_SECRET`         | Shared secret used to sign and verify webhook deliveries                    |
 | `GITHUB_REVIEW_STALE_AFTER_HOURS`      | Hours an open PR must be unattended before the daily report (default 24)   |
+| `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO`   | Share of a PR's **completed** CI checks that must be green for `/review_pr` to approve it (default `0.8`) |
+| `GITHUB_REVIEW_REQUIRE_CHECKS`         | Refuse a PR whose head commit declares **no** checks at all, instead of only warning (default `false`) |
+| `GITHUB_REVIEW_GOOGLE_API_KEY`         | Google credential the reviewer bills its LLM traffic to; unset falls back to `GOOGLE_API_KEY` |
 | `JIRA_INSTANCE` / `JIRA_USERNAME` / …    | Jira credentials (same vars consumed by `JiraSpecialist`)                  |
 | `JIRA_ACCEPTANCE_CRITERIA_FIELD`          | Custom field id for acceptance criteria (default `customfield_10100`)       |
 | `GITHUB_REVIEWER_DAILY_REPORT`         | Run-time of the daily stale-PR report, format `HH:MM` UTC (default `08:00`) |
@@ -152,6 +155,33 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 | `GITHUB_REVIEW_BUILD_TIMEOUT`          | Wiki build timeout in seconds; default `900`                                |
 | `GITHUB_REVIEW_WIKI_CONTEXT_TOKENS`    | Token budget of the injected context block; default `4000`                  |
 | `GITHUB_REVIEW_WIKI_WAIT`              | Max seconds a delivery waits for the wiki refresh before reviewing without fresh context; default `120` |
+
+### Its own Google API key
+
+The reviewer runs on Gemini (`gemini-3.7-flash` by default) and would
+otherwise bill the process-wide `GOOGLE_API_KEY`, which makes its usage
+impossible to meter or rotate apart from every other agent in the same
+process. Set `GITHUB_REVIEW_GOOGLE_API_KEY` to give it a key of its own:
+
+```bash
+GITHUB_REVIEW_GOOGLE_API_KEY=AIza...reviewer
+```
+
+Resolution order, applied once in `__init__` (before `configure()` builds the
+client):
+
+1. the constructor's `google_api_key=` argument;
+2. `GITHUB_REVIEW_GOOGLE_API_KEY`;
+3. nothing is injected — the Google client resolves `GOOGLE_API_KEY` itself,
+   exactly as it did before this knob existed.
+
+The key is injected into the agent's `llm_kwargs` as `api_key`, into a **new**
+dict so it never leaks into a caller-supplied or persisted configuration, and
+its value is never logged. Three cases leave the agent untouched: an LLM that
+is not a Google provider (logged as a warning — the key is configured but
+cannot apply), a caller that already passed `api_key`, `credentials_file`,
+`credentials` or `vertexai`, and `vertexai=true` deployments, which
+authenticate through service-account credentials rather than an API key.
 
 `integrations_bots.yaml` exposes the agent over Telegram:
 
@@ -326,6 +356,93 @@ Return values:
 | `"no_ticket"`         | PR did not reference a `<JIRA_PROJECT>-\d+` key.         |
 | `"ticket_not_found"`  | Jira returned a non-`ok` envelope.                       |
 | `"error"`             | Internal precondition failed (e.g. missing PR number).   |
+
+### `review_pr(target: str) -> str` — Telegram command `/review_pr`
+
+On-demand strict gate, exposed as a Telegram command (not a schedule):
+
+```
+/review_pr https://github.com/owner/repo/pull/123
+/review_pr owner/repo#123
+/review_pr 123                  # the configured repository
+```
+
+Declared with `parse_mode="raw"`, so a pasted URL arrives intact — keyword
+parsing would mangle it. The reply goes to whoever asked; the consequences
+below land on GitHub and Telegram.
+
+It runs the same review pipeline as `review_pull_request` (ticket →
+acceptance criteria → diff → wiki-assisted LLM comparison) and then adds a
+**CI gate**, which `review_pull_request` does not have:
+
+| Gate      | Passes when                                                                             |
+| --------- | --------------------------------------------------------------------------------------- |
+| Jira      | the review approved the PR and raised no `blocker`/`major` discrepancy                   |
+| Tests     | the declared checks are green, or at least `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` of the **completed** ones are |
+
+Checks are read from both GitHub APIs — the Checks API (`check-runs`, where
+GitHub Actions reports) and the legacy Commit Status API — because a repo may
+use either. Checks still running are counted but excluded from the ratio, so a
+half-finished pipeline does not read as half-failing.
+
+Three outcomes:
+
+| `status`      | What happens on GitHub                                                      |
+| ------------- | --------------------------------------------------------------------------- |
+| `"approved"`  | `APPROVE` review. Nothing else is touched.                                  |
+| `"deferred"`  | `COMMENT` review explaining the wait. **The PR is left exactly as it is** — no draft, no notification. Happens when checks are still running, or when the CI status could not be read at all (an outage or a missing token scope is not test evidence, and not the developer's fault). |
+| `"blocked"`   | The PR is **converted to a draft** (GraphQL `convertPullRequestToDraft`, the only API that can), a comment explains every blocking reason, a `REQUEST_CHANGES` review is submitted, and the assignee is notified. |
+
+A blocked PR produces three notifications, each independent so one failure
+cannot swallow the others:
+
+1. **Private DM** to the Jira assignee — resolved against `conf.JIRA_USERS` by
+   e-mail (`jira_username` / `username`), Jira `accountId`
+   (`jira_account_id` / `id`) or display name (`name`). No roster match → no
+   DM, logged at INFO.
+2. **Public channel** (`GITHUB_REVIEW_PUBLIC_CHANNEL_ID`), mentioning the
+   assignee. The mention is a real `@username` when the roster entry carries
+   `telegram_username`, otherwise a `tg://user?id=…` link — which notifies the
+   person in a group exactly like an `@mention` and is the only way to mention
+   someone whose Telegram username is unknown.
+3. The PR comment itself `@`-pings the PR's **GitHub** author.
+
+`"no_ticket"`, `"ticket_not_found"` and `"error"` behave as in
+`review_pull_request`; a PR that is not open is refused before any review runs.
+
+The webhook path deliberately keeps its gentler behaviour —
+`review_pull_request` never drafts a PR — so the two do not share
+orchestration, only helpers. A drafted PR is cleared by fixing the reasons,
+pushing, and marking it ready for review (or by running `/review_pr` again).
+
+**Permissions**: converting to draft needs the same `pull_requests: write` the
+reviewer already uses to submit reviews. Reading CI needs **two independent**
+permissions, because the two APIs are separate:
+
+| API | Fine-grained PAT permission | Classic PAT |
+| --- | --------------------------- | ----------- |
+| `check-runs` (GitHub Actions and most CI apps) | **Checks** → Read-only | `repo` |
+| `commits/{sha}/status` (Travis, Jenkins, custom scripts) | **Commit statuses** → Read-only | `repo` |
+
+A 403/404 on one of them does **not** discard the other: the denial is listed
+in `denied`, explained in `reason` (naming the missing permission), and the
+verdict only becomes "unknown" when the evidence really is. Three cases:
+
+- **One API denied, the other has checks** → the verdict proceeds on the
+  partial picture, with a non-blocking warning saying part of it is missing.
+- **One API denied and nothing else visible** → `deferred`. Zero visible checks
+  behind a denial is *not* "this repo has no CI": the evidence may exist and
+  simply be invisible, so the PR is never approved and never drafted on it.
+  `GITHUB_REVIEW_REQUIRE_CHECKS` does not turn this into a blocker either — a
+  missing token scope is not the developer's fault.
+- **Both denied** → `deferred`, same reasoning.
+
+A 500 (an outage, not a permission answer) still raises and is reported as
+"CI status could not be read".
+
+So a fine-grained PAT without **Checks** on an Actions-only repository defers
+every verdict, and the PR comment names the exact permission to grant. That is
+the designed signal, not a silent pass.
 
 ### `report_stale_pull_requests() -> dict`
 

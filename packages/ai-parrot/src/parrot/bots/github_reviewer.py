@@ -268,6 +268,61 @@ class PRReviewResult(BaseModel):
     )
 
 
+class PRChecksSummary(BaseModel):
+    """Normalized CI picture of a pull request's head commit.
+
+    Produced by :meth:`GitHubReviewer._summarize_checks` from the raw
+    ``get_pr_checks`` payload, so the gate reasons about counts rather than
+    about GitHub's two overlapping status APIs.
+    """
+
+    available: bool = True
+    """False when GitHub could not be asked at all (no toolkit, API error).
+    Distinguishes "no checks" from "we don't know", which the gate treats
+    very differently."""
+    declared: bool = False
+    """True when the head commit has at least one check run or commit status."""
+    total: int = 0
+    success: int = 0
+    failure: int = 0
+    pending: int = 0
+    pass_ratio: float = 0.0
+    """``success / (success + failure)`` — checks still running are excluded,
+    so a half-finished pipeline cannot dilute the ratio. 0.0 when nothing has
+    completed yet."""
+    failing: List[str] = Field(default_factory=list)
+    """Names of the failing checks, for the PR comment and the alerts."""
+    running: List[str] = Field(default_factory=list)
+    """Names of the checks still in flight."""
+    test_checks: int = 0
+    """How many declared checks look like a test suite (name heuristic). Used
+    only for wording and for ``require_checks``; the gate itself scores every
+    check equally, because a failing lint job also blocks a merge."""
+    denied: List[str] = Field(default_factory=list)
+    """Which CI endpoints the token was refused (``check_runs`` /
+    ``commit_statuses``). Non-empty with ``available`` True means the picture
+    is partial: one API answered and the other was denied."""
+    reason: Optional[str] = None
+    """Why the picture is unavailable or incomplete — names the missing token
+    permission when GitHub refused a CI read."""
+
+
+class MergeVerdict(BaseModel):
+    """Outcome of the strict gate: may this PR stay mergeable?"""
+
+    mergeable: bool
+    """True only when the review approved it AND the CI gate passed."""
+    defer: bool = False
+    """True when the verdict cannot be reached yet because checks are still
+    running. The PR is neither approved nor drafted — the next push, or the
+    next manual call, decides."""
+    reasons: List[str] = Field(default_factory=list)
+    """Human-readable blocking reasons, in the order they are reported. Empty
+    when ``mergeable`` is True."""
+    warnings: List[str] = Field(default_factory=list)
+    """Non-blocking observations (minor findings, missing CI, unreadable CI)."""
+
+
 # ---------------------------------------------------------------------------
 # Weekly activity report models (FEAT-180)
 # ---------------------------------------------------------------------------
@@ -460,6 +515,19 @@ class GitHubReviewer(Agent):
             and acceptance criteria text before they are spliced into the
             LLM prompt. Prevents one oversized ticket from blowing the
             context window. Defaults to ``20_000``.
+        min_check_pass_ratio: Share of a PR's COMPLETED CI checks that must
+            be green for :meth:`review_pr` to approve it — "all OK, or a
+            great part of them". Clamped to ``[0, 1]``; defaults to
+            ``GITHUB_REVIEW_MIN_CHECK_PASS_RATIO`` (0.8).
+        require_checks: When True, a PR whose head commit declares no checks
+            at all is refused instead of merely warned about. Defaults to
+            ``GITHUB_REVIEW_REQUIRE_CHECKS`` (False), so a repository
+            without CI is not blocked wholesale.
+        google_api_key: Google credential this agent bills its LLM traffic
+            to, so reviewer usage can be metered and rotated apart from the
+            process-wide key. Defaults to
+            ``GITHUB_REVIEW_GOOGLE_API_KEY``; when neither is set the
+            Google client falls back to ``GOOGLE_API_KEY`` as before.
 
     Notes:
         Jira **per-user OAuth2 3LO** is unsupported by this agent: webhook
@@ -600,6 +668,9 @@ class GitHubReviewer(Agent):
         top_n_contributors: int = 10,
         use_llm_summary: bool = False,
         max_review_tool_calls: Optional[int] = None,
+        min_check_pass_ratio: Optional[float] = None,
+        require_checks: Optional[bool] = None,
+        google_api_key: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
@@ -607,6 +678,11 @@ class GitHubReviewer(Agent):
         kwargs.setdefault("prompt_caching", True)  # FEAT-181
 
         super().__init__(**kwargs)
+
+        # Bill this agent's Google traffic to its own credential. Must run
+        # after super().__init__() (which builds ``_llm_kwargs``) and before
+        # configure() (which reads them to construct the client).
+        self._apply_google_api_key(google_api_key)
 
         self.repository = repository
         self._repository_lc = repository.lower()
@@ -637,6 +713,24 @@ class GitHubReviewer(Agent):
 
         self._ac_field_id: str = config.get("JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100")
         self._jira_fields: str = ",".join(sorted({"summary", "description", "status", self._ac_field_id}))
+        # The strict gate also needs the assignee, to find who to notify when
+        # it drafts a PR; the webhook path does not, so it keeps the narrower
+        # field list and the cheaper Jira response.
+        self._jira_strict_fields: str = ",".join(
+            sorted({"summary", "description", "status", "assignee", self._ac_field_id})
+        )
+
+        # /review_pr gate. A ratio outside [0, 1] is operator error, not a
+        # reason to approve everything or nothing, so it is clamped.
+        ratio = conf.GITHUB_REVIEW_MIN_CHECK_PASS_RATIO if min_check_pass_ratio is None else min_check_pass_ratio
+        try:
+            ratio = float(ratio)
+        except (TypeError, ValueError):
+            ratio = conf.GITHUB_REVIEW_MIN_CHECK_PASS_RATIO
+        self.min_check_pass_ratio: float = min(1.0, max(0.0, ratio))
+        self.require_checks: bool = bool(
+            conf.GITHUB_REVIEW_REQUIRE_CHECKS if require_checks is None else require_checks
+        )
 
         self._ticket_key_regex = re.compile(rf"\b{re.escape(self.jira_project)}-\d+\b")
 
@@ -666,6 +760,84 @@ class GitHubReviewer(Agent):
         # (not per-SHA) — pushing more commits without adding the ticket
         # must not spam the conversation. Cleared on process restart.
         self._no_ticket_notified: set[Tuple[str, int]] = set()
+
+    # ------------------------------------------------------------------
+    # Credentials
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_google_api_key(explicit: Optional[str] = None) -> Optional[str]:
+        """Resolve the Google credential this agent should use for its LLM.
+
+        Priority: the constructor's ``google_api_key=`` argument >
+        :data:`parrot.conf.GITHUB_REVIEW_GOOGLE_API_KEY` > ``None``.
+
+        Read through the ``conf`` module object rather than a from-import so
+        a monkeypatched value is honoured.
+
+        Args:
+            explicit: The constructor's ``google_api_key=`` argument.
+
+        Returns:
+            The credential to inject, or ``None`` meaning "inject nothing" —
+            the Google client then resolves ``GOOGLE_API_KEY`` itself, exactly
+            as it did before this knob existed. The value is never logged.
+        """
+        if explicit:
+            return explicit
+        return getattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", None) or None
+
+    def _apply_google_api_key(self, explicit: Optional[str] = None) -> bool:
+        """Point this agent's Google client at the reviewer's own credential.
+
+        Rebinds ``self._llm_kwargs`` to a NEW dict instead of mutating it: the
+        existing dict may be the very object the caller passed as
+        ``llm_kwargs=`` (or that a stored agent row holds), and mutating it
+        would leak the credential into a shared, possibly persisted mapping.
+
+        Call after ``super().__init__()``, which builds ``_llm_kwargs``, and
+        before ``configure()``, which reads them to construct the client.
+
+        No-ops — leaving the client's own ``GOOGLE_API_KEY`` fallback in place
+        — when no dedicated key is configured, when the agent's LLM is not
+        Google, or when the caller already brought a credential of their own
+        (``api_key`` / ``credentials_file`` / ``credentials`` / ``vertexai``).
+
+        Args:
+            explicit: The constructor's ``google_api_key=`` argument.
+
+        Returns:
+            ``True`` when the key was injected, ``False`` otherwise.
+        """
+        key = self._resolve_google_api_key(explicit)
+        if not key:
+            self.logger.debug(
+                "GITHUB_REVIEW_GOOGLE_API_KEY is not set; the reviewer's Google client falls back to GOOGLE_API_KEY."
+            )
+            return False
+
+        # Lazy import: ``parrot.bots.flows`` pulls the whole orchestration
+        # stack, which this module otherwise never needs.
+        from parrot.bots.flows.crew.credentials import (  # noqa: PLC0415 — FEAT-523 lazy import
+            has_explicit_google_credential,
+            is_google_llm,
+        )
+
+        if not is_google_llm(getattr(self, "_llm_raw", None), getattr(self, "_default_llm", "google")):
+            self.logger.warning(
+                "A GitHub Reviewer Google key is configured, but this agent's LLM is not a Google provider; "
+                "ignoring it."
+            )
+            return False
+
+        llm_kwargs = getattr(self, "_llm_kwargs", None) or {}
+        if has_explicit_google_credential(llm_kwargs):
+            self.logger.debug("Agent already carries an explicit Google credential; the reviewer key is ignored.")
+            return False
+
+        self._llm_kwargs = {**llm_kwargs, "api_key": key}
+        self.logger.debug("Using the dedicated GitHub Reviewer Google API key for this agent's LLM.")
+        return True
 
     # ------------------------------------------------------------------
     # Wiring
@@ -1412,7 +1584,20 @@ class GitHubReviewer(Agent):
             f"_Posted by the GitHubReviewer agent._"
         )
 
-    async def _fetch_ticket(self, ticket_key: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_ticket(
+        self,
+        ticket_key: str,
+        *,
+        fields: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a Jira issue, or ``None`` when it cannot be read.
+
+        Args:
+            ticket_key: The issue key, e.g. ``NAV-123``.
+            fields: Comma-separated Jira field list. Defaults to
+                :attr:`_jira_fields`; the strict gate passes
+                :attr:`_jira_strict_fields`, which also carries the assignee.
+        """
         if self.jira_toolkit is None:
             self.logger.warning(
                 "GitHubReviewer: jira_toolkit unavailable; cannot fetch %s",
@@ -1422,7 +1607,7 @@ class GitHubReviewer(Agent):
         try:
             envelope = await self.jira_toolkit.jira_get_issue(
                 issue=ticket_key,
-                fields=self._jira_fields,
+                fields=fields or self._jira_fields,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
@@ -1759,6 +1944,813 @@ class GitHubReviewer(Agent):
             "",
             summary,
         ]
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Strict on-demand review (/review_pr)
+    # ------------------------------------------------------------------
+
+    #: Heuristic for "this check is a test suite" — only shapes the wording of
+    #: the comment and feeds ``require_checks``; the gate scores every check.
+    _TEST_CHECK_RE = re.compile(r"test|pytest|spec|unit|e2e|coverage", re.IGNORECASE)
+    #: ``https://github.com/owner/repo/pull/123`` (trailing path/query ignored).
+    _PR_URL_RE = re.compile(
+        r"^(?:https?://)?(?:www\.)?github\.com/(?P<repo>[\w.-]+/[\w.-]+)/pull/(?P<number>\d+)",
+        re.IGNORECASE,
+    )
+    #: ``owner/repo#123`` or ``owner/repo/pull/123`` without a scheme.
+    _PR_SLUG_RE = re.compile(r"^(?P<repo>[\w.-]+/[\w.-]+?)(?:#|/pull/)(?P<number>\d+)$")
+    #: A bare ``#123`` / ``123`` — resolved against the configured repository.
+    _PR_NUMBER_RE = re.compile(r"^#?(?P<number>\d+)$")
+
+    @classmethod
+    def _parse_pr_target(cls, text: str) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+        """Resolve a user-typed PR reference to ``(repository, number, error)``.
+
+        Accepts a full PR URL, ``owner/repo#123``, ``owner/repo/pull/123`` or a
+        bare number (which uses the configured repository). Everything after
+        the first whitespace is ignored, so a pasted URL followed by a comment
+        still parses.
+
+        Returns:
+            ``(repo, number, None)`` on success — ``repo`` is ``None`` when the
+            caller must fall back to :attr:`repository` — or
+            ``(None, None, message)`` with an operator-facing explanation.
+        """
+        raw = (text or "").strip()
+        if not raw:
+            return (None, None, "no pull request given")
+        token = raw.split()[0].strip().rstrip(".,;")
+
+        match = cls._PR_URL_RE.match(token)
+        if match:
+            return (match.group("repo"), int(match.group("number")), None)
+        match = cls._PR_SLUG_RE.match(token)
+        if match:
+            return (match.group("repo"), int(match.group("number")), None)
+        match = cls._PR_NUMBER_RE.match(token)
+        if match:
+            return (None, int(match.group("number")), None)
+        # A repository link with no PR number is the most likely mistake, so
+        # name it instead of printing the generic usage line.
+        if re.match(r"^(?:https?://)?(?:www\.)?github\.com/[\w.-]+/[\w.-]+/?$", token, re.IGNORECASE):
+            return (None, None, "that is a repository link, not a pull request link")
+        return (None, None, f"could not read a pull request from {token!r}")
+
+    async def _fetch_pr_payload(self, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
+        """Build the review payload for a PR from the GitHub API.
+
+        Returns the same shape the webhook delivers (so the review pipeline is
+        fed identically either way), plus ``draft`` and ``state``, or ``None``
+        when the PR could not be read.
+        """
+        if self.git_toolkit is None:
+            return None
+        try:
+            pr = await self.git_toolkit.get_pull_request(pr_number=pr_number, repository=repo)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: cannot read %s#%s: %s",
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
+            )
+            return None
+        pr = pr or {}
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "pr_title": pr.get("title") or "",
+            "pr_body": pr.get("body") or "",
+            "pr_url": pr.get("html_url") or "",
+            "head_sha": ((pr.get("head") or {}).get("sha")) or "",
+            "author": ((pr.get("user") or {}).get("login")) or "",
+            "draft": bool(pr.get("draft")),
+            "state": pr.get("state") or "",
+        }
+
+    @classmethod
+    def _summarize_checks(cls, raw: Optional[Dict[str, Any]]) -> PRChecksSummary:
+        """Fold a ``get_pr_checks`` payload into a :class:`PRChecksSummary`.
+
+        Pure: every count comes from the payload, nothing is fetched. Checks
+        still running are counted but excluded from ``pass_ratio``, so a
+        pipeline that is half green and half pending does not read as 50%.
+        """
+        if not raw:
+            return PRChecksSummary(available=False, reason="no CI data returned")
+        denied = [str(name) for name in (raw.get("denied") or [])]
+        # The toolkit decides availability: it knows whether BOTH CI APIs were
+        # refused (unknown) or only one (partial, still usable).
+        if raw.get("available") is False:
+            return PRChecksSummary(
+                available=False,
+                denied=denied,
+                reason=raw.get("reason") or "CI could not be read",
+            )
+        checks = raw.get("checks") or []
+        success = int(raw.get("success") or 0)
+        failure = int(raw.get("failure") or 0)
+        pending = int(raw.get("pending") or 0)
+        completed = success + failure
+        return PRChecksSummary(
+            available=True,
+            declared=bool(checks),
+            total=int(raw.get("total") or len(checks)),
+            success=success,
+            failure=failure,
+            pending=pending,
+            pass_ratio=(success / completed) if completed else 0.0,
+            failing=[str(c.get("name") or "?") for c in checks if c.get("state") == "failure"],
+            running=[str(c.get("name") or "?") for c in checks if c.get("state") == "pending"],
+            test_checks=sum(1 for c in checks if cls._TEST_CHECK_RE.search(str(c.get("name") or ""))),
+            denied=denied,
+            reason=raw.get("reason"),
+        )
+
+    async def _fetch_checks(self, repo: str, pr_number: int, head_sha: str = "") -> PRChecksSummary:
+        """Read the PR's CI checks, never raising.
+
+        An unreadable CI is reported as ``available=False`` rather than as a
+        green or a red pipeline: the gate must not approve a PR because the
+        checks endpoint happened to 500, nor draft it for the same reason.
+        """
+        if self.git_toolkit is None:
+            return PRChecksSummary(available=False, reason="git_toolkit is not configured")
+        try:
+            raw = await self.git_toolkit.get_pr_checks(
+                pr_number=pr_number,
+                repository=repo,
+                head_sha=head_sha or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "GitHubReviewer: cannot read checks for %s#%s: %s",
+                repo,
+                pr_number,
+                exc,
+            )
+            return PRChecksSummary(available=False, reason=str(exc))
+        return self._summarize_checks(raw)
+
+    def _merge_verdict(self, result: PRReviewResult, checks: PRChecksSummary) -> MergeVerdict:
+        """Decide whether a reviewed PR may stay mergeable.
+
+        Two independent gates, both of which must pass:
+
+        1. **Jira** — the review approved it and raised no blocker/major
+           discrepancy against the ticket's acceptance criteria.
+        2. **Tests** — the declared checks are green, or green enough
+           (:attr:`min_check_pass_ratio`, "all OK or a great part").
+
+        A pipeline still running — or a CI status GitHub would not hand over —
+        produces ``defer``: the PR is left exactly as it is, because approving
+        it would claim test evidence nobody saw, and drafting it would punish a
+        developer for an outage or a missing token scope.
+        """
+        reasons: List[str] = []
+        warnings: List[str] = []
+
+        if not result.approve:
+            reasons.append(result.summary.strip() or "the review did not confirm the acceptance criteria are met")
+        for d in result.discrepancies:
+            line = f"[{d.severity.upper()}] {d.criterion} — {d.issue}"
+            if d.severity in ("blocker", "major"):
+                reasons.append(line)
+            else:
+                warnings.append(line)
+
+        unknown_ci = False
+        if not checks.available:
+            warnings.append(
+                f"CI status could not be read ({checks.reason or 'unknown error'}); tests were not verified"
+            )
+            unknown_ci = True
+        elif not checks.declared:
+            if checks.denied:
+                # Zero checks because an endpoint was refused is NOT "this repo
+                # has no CI": the evidence may exist and simply be invisible to
+                # this token, so the verdict is unknown, never a free pass.
+                warnings.append(f"no CI check was visible to this token — {checks.reason}")
+                unknown_ci = True
+            else:
+                message = "the head commit declares no CI checks, so no test evidence could be verified"
+                (reasons if self.require_checks else warnings).append(message)
+        else:
+            if checks.failure and checks.pass_ratio < self.min_check_pass_ratio:
+                names = ", ".join(checks.failing[:10]) or "unnamed checks"
+                reasons.append(
+                    f"{checks.failure} of {checks.success + checks.failure} completed checks are failing "
+                    f"({checks.pass_ratio:.0%} green, {self.min_check_pass_ratio:.0%} required): {names}"
+                )
+            elif checks.failure:
+                names = ", ".join(checks.failing[:10]) or "unnamed checks"
+                warnings.append(
+                    f"{checks.failure} check(s) are failing but {checks.pass_ratio:.0%} of the completed checks are "
+                    f"green, at or above the {self.min_check_pass_ratio:.0%} bar: {names}"
+                )
+            if not checks.test_checks:
+                warnings.append("none of the declared checks looks like a test suite")
+            if checks.denied:
+                # One API answered, the other was refused: say so, because the
+                # verdict rests on a partial picture. Not deferred — there IS
+                # test evidence here, just possibly not all of it.
+                warnings.append(f"part of the CI picture is missing — {checks.reason}")
+            if checks.pending:
+                unknown_ci = True
+
+        # Unknown test evidence defers rather than approves: a pipeline still
+        # running, a CI status GitHub refused to hand over, or checks hidden
+        # behind a missing permission is not a pass. Either way it only defers
+        # when nothing else already disqualifies the PR — a blocker finding is
+        # reason enough to draft it now.
+        defer = bool(unknown_ci and not reasons)
+        return MergeVerdict(mergeable=not reasons and not defer, defer=defer, reasons=reasons, warnings=warnings)
+
+    def _format_checks_line(self, checks: PRChecksSummary) -> str:
+        """One-line CI summary shared by the comment and the Telegram alerts."""
+        if not checks.available:
+            return f"CI: unreadable ({checks.reason or 'unknown error'})"
+        if not checks.declared:
+            suffix = f" (and {', '.join(checks.denied)} denied to this token)" if checks.denied else ""
+            return f"CI: no checks declared on the head commit{suffix}"
+        partial = f", {', '.join(checks.denied)} denied" if checks.denied else ""
+        return (
+            f"CI: {checks.success} passed, {checks.failure} failed, {checks.pending} running "
+            f"({checks.pass_ratio:.0%} of completed green{partial})"
+        )
+
+    def _format_block_comment(
+        self,
+        payload: Dict[str, Any],
+        ticket_key: str,
+        result: PRReviewResult,
+        checks: PRChecksSummary,
+        verdict: MergeVerdict,
+    ) -> str:
+        """Render the PR comment that explains why the PR is not mergeable.
+
+        GitHub-flavored Markdown, so no entity escaping — unlike the Telegram
+        messages built below.
+        """
+        author = payload.get("author")
+        salutation = f"@{author} " if author else ""
+        lines: List[str] = [
+            f"## Automated review — not mergeable ({ticket_key})",
+            "",
+            f"{salutation}this pull request was converted to **draft** because it does not yet satisfy "
+            f"what `{ticket_key}` asks for. The reasons are below; fix them, push, and mark the PR "
+            f"ready for review (or run the reviewer again) to clear this.",
+            "",
+            "### Why this is blocked",
+        ]
+        lines.extend(f"{i}. {reason}" for i, reason in enumerate(verdict.reasons, start=1))
+        lines.extend(["", f"**{self._format_checks_line(checks)}**"])
+        if checks.failing:
+            lines.append("")
+            lines.append("Failing checks: " + ", ".join(f"`{name}`" for name in checks.failing[:20]))
+        if verdict.warnings:
+            lines.extend(["", "### Also worth fixing (non-blocking)"])
+            lines.extend(f"- {warning}" for warning in verdict.warnings)
+        if result.summary:
+            lines.extend(["", "### Review summary", "", result.summary])
+        lines.extend(
+            [
+                "",
+                f"Linked Jira ticket: {ticket_key}",
+                "",
+                "_Posted by the GitHubReviewer agent._",
+            ]
+        )
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Assignee resolution + alerts for a blocked PR
+    # ------------------------------------------------------------------
+
+    def _roster(self) -> List[Dict[str, Any]]:
+        """The configured Jira↔Telegram roster (:data:`parrot.conf.JIRA_USERS`).
+
+        Read through the module so a test can monkeypatch ``conf.JIRA_USERS``,
+        and defensively filtered to dicts — one malformed entry must not break
+        the notification path of a real review.
+        """
+        raw = getattr(conf, "JIRA_USERS", None) or []
+        return [entry for entry in raw if isinstance(entry, dict)]
+
+    def _resolve_assignee(self, ticket: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Find the roster entry for a ticket's assignee, or ``None``.
+
+        Matches on every identifier the two sides can share — Jira's
+        ``emailAddress`` against ``jira_username``/``username``, its
+        ``accountId`` against ``jira_account_id``/``id``, and ``displayName``
+        against ``name`` — because JIRA_USERS entries are hand-written and
+        rarely carry all three.
+        """
+        assignee = (((ticket or {}).get("fields") or {}).get("assignee")) or {}
+        if not assignee:
+            return None
+        account_id = str(assignee.get("accountId") or "").strip().lower()
+        email = str(assignee.get("emailAddress") or "").strip().lower()
+        display = str(assignee.get("displayName") or "").strip().lower()
+        for entry in self._roster():
+            emails = {
+                str(entry.get("jira_username") or "").strip().lower(),
+                str(entry.get("username") or "").strip().lower(),
+            }
+            accounts = {
+                str(entry.get("jira_account_id") or "").strip().lower(),
+                str(entry.get("id") or "").strip().lower(),
+            }
+            names = {str(entry.get("name") or "").strip().lower()}
+            if (email and email in emails) or (account_id and account_id in accounts) or (display and display in names):
+                return entry
+        return None
+
+    @staticmethod
+    def _telegram_mention(entry: Dict[str, Any]) -> str:
+        """Render a Telegram HTML mention for a roster entry.
+
+        Prefers a real ``@username`` when the entry declares one; otherwise
+        falls back to a ``tg://user?id=`` link, which notifies the user in a
+        group exactly like an @mention does and is the only way to mention
+        someone whose Telegram username is unknown.
+        """
+        name = html.escape(str(entry.get("name") or "developer"))
+        username = str(entry.get("telegram_username") or "").strip().lstrip("@")
+        if username:
+            return f"@{html.escape(username)}"
+        chat_id = str(entry.get("telegram_chat_id") or "").strip()
+        if chat_id:
+            return f'<a href="tg://user?id={html.escape(chat_id, quote=True)}">@{name}</a>'
+        return f"@{name}"
+
+    def _format_blocked_message(
+        self,
+        payload: Dict[str, Any],
+        ticket_key: str,
+        checks: PRChecksSummary,
+        verdict: MergeVerdict,
+        *,
+        mention: Optional[str] = None,
+    ) -> str:
+        """Telegram HTML for a blocked PR — private DM or public channel.
+
+        ``mention`` is prepended for the channel copy so the assignee is
+        pinged there too. Every interpolated value is ``html.escape``-d: a PR
+        title like ``feat: X_y <z>`` otherwise makes Telegram answer 400.
+        """
+        repo = html.escape(str(payload.get("repository") or ""))
+        title = html.escape(str(payload.get("pr_title") or ""))
+        url = html.escape(str(payload.get("pr_url") or ""), quote=True)
+        number = html.escape(str(payload.get("pr_number") or ""))
+        lines: List[str] = []
+        if mention:
+            lines.append(f"{mention} — your pull request was marked as <b>draft</b>")
+        else:
+            lines.append("<b>Your pull request was marked as draft</b>")
+        lines.extend(
+            [
+                f"Repo: <code>{repo}</code>",
+                f'PR: <a href="{url}">#{number} {title}</a>',
+                f"Ticket: <code>{html.escape(ticket_key)}</code>",
+                html.escape(self._format_checks_line(checks)),
+                "",
+                "<b>Why</b>",
+            ]
+        )
+        lines.extend(f"{i}. {html.escape(reason)}" for i, reason in enumerate(verdict.reasons, start=1))
+        lines.extend(
+            [
+                "",
+                "Fix these, push, and mark the PR ready for review — the full explanation is in a comment on the PR.",
+            ]
+        )
+        return "\n".join(lines)
+
+    async def _notify_blocked_pr(
+        self,
+        payload: Dict[str, Any],
+        ticket_key: str,
+        checks: PRChecksSummary,
+        verdict: MergeVerdict,
+        ticket: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Tell the assignee and the public channel that a PR was drafted.
+
+        Three deliveries, each independent so one failure cannot swallow the
+        others: a private DM to the assignee (when the ticket's assignee maps
+        to a roster entry), and one message to
+        :attr:`public_channel_id` that mentions them.
+
+        Returns a report with ``assignee``, ``dm`` and ``channel`` keys.
+        """
+        report: Dict[str, Any] = {"assignee": None, "dm": {"sent": False}, "channel": {"sent": False}}
+        bot = self._get_telegram_bot()
+        if bot is None:
+            report["reason"] = "no telegram wrapper"
+            return report
+
+        entry = self._resolve_assignee(ticket)
+        mention: Optional[str] = None
+        if entry is not None:
+            report["assignee"] = entry.get("name") or entry.get("jira_username")
+            mention = self._telegram_mention(entry)
+            chat_id = entry.get("telegram_chat_id")
+            if chat_id:
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=self._format_blocked_message(payload, ticket_key, checks, verdict),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    report["dm"] = {"sent": True, "chat_id": chat_id}
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "GitHubReviewer: could not DM %s (chat %s) about %s#%s: %s",
+                        report["assignee"],
+                        chat_id,
+                        payload.get("repository"),
+                        payload.get("pr_number"),
+                        exc,
+                    )
+                    report["dm"] = {"sent": False, "chat_id": chat_id, "error": str(exc)}
+            else:
+                report["dm"] = {"sent": False, "reason": "roster entry has no telegram_chat_id"}
+        else:
+            self.logger.info(
+                "GitHubReviewer: %s has no JIRA_USERS entry for its assignee; no private notice sent.",
+                ticket_key,
+            )
+            report["dm"] = {"sent": False, "reason": "assignee not in JIRA_USERS"}
+
+        if not self.public_channel_id:
+            report["channel"] = {"sent": False, "reason": "no public channel configured"}
+            return report
+        try:
+            await bot.send_message(
+                chat_id=self.public_channel_id,
+                text=self._format_blocked_message(payload, ticket_key, checks, verdict, mention=mention),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            report["channel"] = {"sent": True, "chat_id": self.public_channel_id}
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "GitHubReviewer: could not post the draft notice for %s#%s to channel %s: %s",
+                payload.get("repository"),
+                payload.get("pr_number"),
+                self.public_channel_id,
+                exc,
+            )
+            report["channel"] = {"sent": False, "chat_id": self.public_channel_id, "error": str(exc)}
+        return report
+
+    # ------------------------------------------------------------------
+    # The gate itself
+    # ------------------------------------------------------------------
+
+    async def strict_review_pull_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Review a PR and enforce the verdict on GitHub.
+
+        The same review pipeline as :meth:`review_pull_request` — ticket
+        lookup, diff, wiki-assisted LLM comparison against the acceptance
+        criteria — plus the CI gate and the consequences:
+
+        * **mergeable** → an ``APPROVE`` review.
+        * **deferred** (checks still running) → a ``COMMENT`` review; the PR
+          is left untouched.
+        * **not mergeable** → the PR is converted to a draft, a comment
+          explains why, and the assignee is notified privately and in the
+          public channel.
+
+        The webhook path deliberately keeps its own, gentler orchestration
+        (:meth:`review_pull_request` never drafts a PR), so this method does
+        not reuse it; both share every underlying helper.
+
+        Args:
+            payload: Review payload — ``repository``, ``pr_number``,
+                ``pr_title``, ``pr_body``, ``pr_url``, ``head_sha``,
+                ``author``.
+
+        Returns:
+            ``{"status": ..., ...}`` where ``status`` is ``approved``,
+            ``deferred``, ``blocked``, ``no_ticket``, ``ticket_not_found`` or
+            ``error``.
+        """
+        pr_number = payload.get("pr_number")
+        if pr_number is None:
+            return {"status": "error", "reason": "missing pr_number"}
+        repo = payload.get("repository") or self.repository
+
+        ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
+        if not ticket_key:
+            outcome: Dict[str, Any] = {"status": "no_ticket", "repository": repo, "pr_number": pr_number}
+            comment = await self._notify_missing_ticket(repo=repo, pr_number=pr_number, payload=payload)
+            if comment is not None:
+                outcome["comment"] = comment
+            return outcome
+
+        wiki_refresh = self._start_wiki_refresh(repo)
+        ticket = await self._fetch_ticket(ticket_key, fields=self._jira_strict_fields)
+        if ticket is None:
+            await self._await_wiki_refresh(wiki_refresh)
+            return {
+                "status": "ticket_not_found",
+                "repository": repo,
+                "pr_number": pr_number,
+                "jira_key": ticket_key,
+            }
+
+        diff_text, diff_truncated, diff_available = await self._fetch_diff(repo, pr_number)
+        checks = await self._fetch_checks(repo, int(pr_number), str(payload.get("head_sha") or ""))
+        await self._await_wiki_refresh(wiki_refresh)
+
+        async with self._wiki_review_lease() as wiki_leased:
+            result = await self._ask_llm_for_review(
+                payload=payload,
+                ticket_key=ticket_key,
+                ticket=ticket,
+                diff_text=diff_text,
+                diff_truncated=diff_truncated,
+                diff_available=diff_available,
+                use_wiki=wiki_leased,
+            )
+
+        verdict = self._merge_verdict(result, checks)
+        outcome = {
+            "status": "approved" if verdict.mergeable else ("deferred" if verdict.defer else "blocked"),
+            "repository": repo,
+            "pr_number": pr_number,
+            "jira_key": ticket_key,
+            "approve": result.approve,
+            "discrepancies": [d.model_dump() for d in result.discrepancies],
+            "summary": result.summary,
+            "checks": checks.model_dump(),
+            "verdict": verdict.model_dump(),
+        }
+        if self.git_toolkit is None:
+            outcome["review_error"] = "git_toolkit is not configured"
+            return outcome
+
+        if verdict.defer:
+            await self._submit_review(
+                repo,
+                int(pr_number),
+                "COMMENT",
+                self._format_deferred_body(payload, ticket_key, checks),
+                outcome,
+            )
+            self.logger.info(
+                "GitHubReviewer: %s#%s deferred — %d check(s) still running.",
+                repo,
+                pr_number,
+                checks.pending,
+            )
+            return outcome
+
+        if verdict.mergeable:
+            await self._submit_review(
+                repo,
+                int(pr_number),
+                "APPROVE",
+                self._format_review_body(payload, ticket_key, result),
+                outcome,
+            )
+            self.logger.info("GitHubReviewer: %s#%s approved by the strict gate.", repo, pr_number)
+            return outcome
+
+        # Blocked: draft first, so the PR stops being mergeable before anyone
+        # reads the explanation.
+        try:
+            outcome["draft"] = await self.git_toolkit.convert_pr_to_draft(pr_number=int(pr_number), repository=repo)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: could not convert %s#%s to draft: %s",
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
+            )
+            outcome["draft_error"] = str(exc)
+
+        body = self._format_block_comment(payload, ticket_key, result, checks, verdict)
+        try:
+            outcome["comment"] = await self.git_toolkit.add_pr_comment(
+                pr_number=int(pr_number),
+                body=body,
+                repository=repo,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: could not comment on %s#%s: %s",
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
+            )
+            outcome["comment_error"] = str(exc)
+
+        await self._submit_review(repo, int(pr_number), "REQUEST_CHANGES", body, outcome)
+        outcome["alerts"] = await self._notify_blocked_pr(payload, ticket_key, checks, verdict, ticket)
+        self.logger.info(
+            "GitHubReviewer: %s#%s blocked — %d reason(s), draft=%s, assignee=%s.",
+            repo,
+            pr_number,
+            len(verdict.reasons),
+            (outcome.get("draft") or {}).get("status", "error"),
+            (outcome.get("alerts") or {}).get("assignee"),
+        )
+        return outcome
+
+    async def _submit_review(
+        self,
+        repo: str,
+        pr_number: int,
+        event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        body: str,
+        outcome: Dict[str, Any],
+    ) -> None:
+        """Submit a review, recording the result (or the error) in ``outcome``."""
+        try:
+            outcome["review"] = await self.git_toolkit.submit_pr_review(
+                pr_number=pr_number,
+                event=event,
+                body=body,
+                repository=repo,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: failed to submit %s review on %s#%s: %s",
+                event,
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
+            )
+            outcome["review_error"] = str(exc)
+
+    @staticmethod
+    def _deferral_cause(checks: PRChecksSummary, *, code: bool = False) -> str:
+        """Explain, in one clause, why the test evidence is unknown.
+
+        Three distinct causes, which must not be confused — reporting "0 checks
+        are still running" for a permission denial tells the operator nothing:
+
+        * neither CI API could be read;
+        * an API was refused and nothing else was visible (the evidence may
+          well exist, just not for this token);
+        * the pipeline is genuinely still running.
+
+        Args:
+            checks: The CI picture to explain.
+            code: Wrap check names in backticks (Markdown targets: the PR
+                comment). Left off for Telegram, which escapes HTML instead.
+        """
+        if not checks.available:
+            return (
+                f"the CI status could not be read ({checks.reason or 'unknown error'}), so the test "
+                f"evidence could not be verified"
+            )
+        if checks.denied and not checks.declared:
+            return f"no CI check was visible to this token — {checks.reason}"
+        names = [f"`{name}`" if code else name for name in checks.running[:20]]
+        running = ", ".join(names) or "unnamed checks"
+        return f"{checks.pending} check(s) are still running ({running})"
+
+    def _format_deferred_body(
+        self,
+        payload: Dict[str, Any],
+        ticket_key: str,
+        checks: PRChecksSummary,
+    ) -> str:
+        """Render the COMMENT review left when the test evidence is unknown."""
+        cause = self._deferral_cause(checks, code=True)
+        return (
+            f"## Automated review — verdict deferred ({ticket_key})\n\n"
+            f"The comparison against `{ticket_key}` is done, but {cause}, so the verdict is "
+            f"deferred rather than guessed. The PR was left exactly as it is — neither approved "
+            f"nor converted to a draft.\n\n"
+            f"Re-run the reviewer once CI settles — or push a commit and the webhook will do it "
+            f"for you.\n\n"
+            f"_Posted by the GitHubReviewer agent._"
+        )
+
+    @telegram_command(
+        "review_pr",
+        description="Review a PR against its Jira ticket and draft it if it does not comply",
+        parse_mode="raw",
+    )
+    async def review_pr(self, target: str = "", **kwargs: Any) -> str:
+        """Answer ``/review_pr <pull request link>``.
+
+        Runs the full gate on demand: code review against the Jira ticket and
+        its acceptance criteria, plus the CI/test check. A PR that complies is
+        approved; one that does not is converted to a draft, commented on, and
+        its assignee is pinged privately and in the public channel.
+
+        Args:
+            target: The PR to review — a GitHub PR URL,
+                ``owner/repo#123``, or a bare ``123`` for the configured
+                repository. Telegram hands the whole argument string through
+                (``parse_mode="raw"``) so a pasted URL survives intact.
+
+        Returns:
+            A Markdown summary of the verdict, which the channel wrapper
+            delivers to whoever asked. Failures come back as a one-line
+            notice, never as an exception.
+        """
+        if kwargs:
+            self.logger.debug("/review_pr: ignoring unexpected arguments %s", sorted(kwargs))
+
+        repo, pr_number, error = self._parse_pr_target(target)
+        if error or pr_number is None:
+            return (
+                f"⚠️ {error or 'no pull request given'}.\n\n"
+                f"Usage: `/review_pr https://github.com/{self.repository}/pull/123` "
+                f"— a `{self.repository}#123` slug or a bare `123` also work."
+            )
+        repo = repo or self.repository
+        if self.git_toolkit is None:
+            return "⚠️ GitHub is not configured on this agent, so no PR can be reviewed."
+
+        payload = await self._fetch_pr_payload(repo, pr_number)
+        if payload is None:
+            return f"⚠️ Could not read `{repo}#{pr_number}` from GitHub. Check the link and the agent's access."
+        if payload.get("draft"):
+            self.logger.info("GitHubReviewer: /review_pr on %s#%s, which is already a draft.", repo, pr_number)
+        if (payload.get("state") or "").lower() != "open":
+            return f"⚠️ `{repo}#{pr_number}` is {payload.get('state') or 'not open'}; only an open PR is reviewed."
+
+        outcome = await self.strict_review_pull_request(payload)
+        return self._format_command_reply(repo, pr_number, payload, outcome)
+
+    def _format_command_reply(
+        self,
+        repo: str,
+        pr_number: int,
+        payload: Dict[str, Any],
+        outcome: Dict[str, Any],
+    ) -> str:
+        """Render the ``/review_pr`` reply for the person who asked."""
+        status = outcome.get("status")
+        title = str(payload.get("pr_title") or "").strip()
+        head = f"`{repo}#{pr_number}`" + (f" — {title}" if title else "")
+        ticket = outcome.get("jira_key")
+
+        if status == "no_ticket":
+            return (
+                f"🤷 {head}\n\nNo `{self.jira_project}-<number>` ticket is referenced in the title or body, "
+                f"so there is nothing to compare the PR against. I left a comment on the PR saying so."
+            )
+        if status == "ticket_not_found":
+            return f"⚠️ {head}\n\nThe PR references `{ticket}`, but that ticket could not be read from Jira."
+        if status == "error":
+            return f"⚠️ {head}\n\nThe review could not run: {outcome.get('reason') or 'unknown error'}."
+
+        verdict = outcome.get("verdict") or {}
+        checks = PRChecksSummary.model_validate(outcome.get("checks") or {})
+        lines: List[str] = []
+        if status == "approved":
+            lines.append(f"✅ {head}\n\nMeets `{ticket}` and its acceptance criteria. Approved.")
+        elif status == "deferred":
+            cause = self._deferral_cause(checks)
+            lines.append(
+                f"⏳ {head}\n\nThe comparison against `{ticket}` is done, but {cause}, so I left a "
+                f"comment instead of a verdict and changed nothing on the PR."
+            )
+        else:
+            draft = (outcome.get("draft") or {}).get("status")
+            drafted = {
+                "converted": "converted to **draft**",
+                "already_draft": "already a draft",
+                "not_open": "not open, so the draft flag was left alone",
+            }.get(draft, "**not** converted to draft (the API call failed)")
+            lines.append(f"🚫 {head}\n\nDoes not comply with `{ticket}` — {drafted}.")
+            reasons = verdict.get("reasons") or []
+            if reasons:
+                lines.append("")
+                lines.append("*Blocking reasons*")
+                lines.extend(f"{i}. {reason}" for i, reason in enumerate(reasons[:10], start=1))
+            alerts = outcome.get("alerts") or {}
+            assignee = alerts.get("assignee")
+            notified = []
+            if (alerts.get("dm") or {}).get("sent"):
+                notified.append(f"DM to {assignee}")
+            if (alerts.get("channel") or {}).get("sent"):
+                notified.append("the public channel")
+            lines.append("")
+            lines.append("Notified: " + (", ".join(notified) if notified else "nobody (see the logs)"))
+
+        lines.append("")
+        lines.append(self._format_checks_line(checks))
+        warnings = verdict.get("warnings") or []
+        if warnings:
+            lines.append("")
+            lines.append("*Non-blocking*")
+            lines.extend(f"- {warning}" for warning in warnings[:10])
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -2166,9 +3158,7 @@ class GitHubReviewer(Agent):
     def _ticket_assignee(issue: Dict[str, Any]) -> str:
         """Display name of an issue's assignee, or ``"Unassigned"``."""
         assignee = ((issue.get("fields") or {}).get("assignee")) or {}
-        return str(
-            assignee.get("displayName") or assignee.get("name") or assignee.get("emailAddress") or "Unassigned"
-        )
+        return str(assignee.get("displayName") or assignee.get("name") or assignee.get("emailAddress") or "Unassigned")
 
     def _summarize_tickets(
         self,
@@ -2290,7 +3280,9 @@ class GitHubReviewer(Agent):
                 f"{self._format_ticket_counts(recent)}   {self._format_ticket_counts(window)}"
             )
 
-        entries = [_row(entry["assignee"], entry["recent"], entry["window"]) for entry in summary.get("assignees") or []]
+        entries = [
+            _row(entry["assignee"], entry["recent"], entry["window"]) for entry in summary.get("assignees") or []
+        ]
         totals = summary.get("totals") or {}
         total_row = _row("TOTAL", totals.get("recent") or {}, totals.get("window") or {})
 
@@ -3099,13 +4091,9 @@ class GitHubReviewer(Agent):
 
         built = await self._build_monthly_ticket_pie(window_days=days)
         if built["status"] == "error":
-            return ChartReply(
-                output=f"⚠️ Could not read {self.jira_project} tickets: {built.get('reason')}"
-            )
+            return ChartReply(output=f"⚠️ Could not read {self.jira_project} tickets: {built.get('reason')}")
         if built["status"] == "empty":
-            return ChartReply(
-                output=f"No {self.jira_project} ticket was touched in the last {days} days."
-            )
+            return ChartReply(output=f"No {self.jira_project} ticket was touched in the last {days} days.")
 
         chart = built["chart"]
         charts: List[Dict[str, Any]] = []

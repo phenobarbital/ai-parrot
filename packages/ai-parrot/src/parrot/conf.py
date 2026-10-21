@@ -809,6 +809,24 @@ GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint("GITHUB_REVIEW_MAX_DIFF_BYTES"
 # spliced into the LLM prompt. Prevents a single oversized ticket from
 # blowing the model's context window.
 GITHUB_REVIEW_MAX_TICKET_BYTES: int = config.getint("GITHUB_REVIEW_MAX_TICKET_BYTES", fallback=20_000)
+# Dedicated Google credential for the GitHub Reviewer agent, so its traffic
+# can be metered and rotated apart from the process-wide GOOGLE_API_KEY.
+# Unset -> the agent's Google client falls back to GOOGLE_API_KEY as before.
+GITHUB_REVIEW_GOOGLE_API_KEY: str | None = config.get("GITHUB_REVIEW_GOOGLE_API_KEY", fallback=None)
+
+# ── /review_pr — on-demand strict PR gate ──
+# Share of a PR's CI checks that must be green for the reviewer to approve it
+# ("all OK, or a great part of them"). Checks still running are excluded from
+# the ratio: a pending pipeline defers the verdict instead of failing it.
+# navconfig exposes no getfloat(), and a typo in the env must not kill startup.
+try:
+    GITHUB_REVIEW_MIN_CHECK_PASS_RATIO: float = float(config.get("GITHUB_REVIEW_MIN_CHECK_PASS_RATIO", fallback=0.8))
+except (TypeError, ValueError):
+    GITHUB_REVIEW_MIN_CHECK_PASS_RATIO = 0.8
+# When true, a PR whose head commit declares NO checks at all is refused
+# (drafted) instead of merely warned about. Default false, so a repository
+# without CI is not blocked wholesale — flip it on once CI is mandatory.
+GITHUB_REVIEW_REQUIRE_CHECKS: bool = config.getboolean("GITHUB_REVIEW_REQUIRE_CHECKS", fallback=False)
 
 # Number of past weeks to consider when computing "silent contributors".
 GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS: int = config.getint("GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS", fallback=4)

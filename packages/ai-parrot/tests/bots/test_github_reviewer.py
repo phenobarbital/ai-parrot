@@ -26,6 +26,8 @@ from parrot.bots.github_reviewer import (
     ChartReply,
     Discrepancy,
     GitHubReviewer,
+    MergeVerdict,
+    PRChecksSummary,
     PRReviewResult,
     WeeklyActivitySummary,
     WeeklyLLMSummarizationError,
@@ -60,7 +62,12 @@ class _MinimalReviewer:
         self.max_ticket_bytes = max_ticket_bytes
         self._ac_field_id = ac_field_id
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
+        self._jira_strict_fields = ",".join(sorted({"summary", "description", "status", "assignee", ac_field_id}))
         self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
+        # /review_pr gate knobs — mirror GitHubReviewer.__init__ defaults.
+        self.min_check_pass_ratio = 0.8
+        self.require_checks = False
+        self.public_channel_id: Optional[ChatId] = None
         self._reviewed_shas: Dict[Any, str] = {}
         # Mirrors GitHubReviewer.__init__: an unset management chat falls back
         # to the public channel, so the management reports never go silent.
@@ -159,6 +166,29 @@ class _MinimalReviewer:
     _TICKET_MONTH_DAYS = GitHubReviewer._TICKET_MONTH_DAYS
     _TICKET_PIE_MAX_SLICES = GitHubReviewer._TICKET_PIE_MAX_SLICES
     _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
+    # Strict on-demand gate (/review_pr).
+    review_pr = GitHubReviewer.review_pr
+    strict_review_pull_request = GitHubReviewer.strict_review_pull_request
+    _parse_pr_target = classmethod(GitHubReviewer._parse_pr_target.__func__)
+    _summarize_checks = classmethod(GitHubReviewer._summarize_checks.__func__)
+    _fetch_pr_payload = GitHubReviewer._fetch_pr_payload
+    _fetch_checks = GitHubReviewer._fetch_checks
+    _merge_verdict = GitHubReviewer._merge_verdict
+    _submit_review = GitHubReviewer._submit_review
+    _format_checks_line = GitHubReviewer._format_checks_line
+    _format_block_comment = GitHubReviewer._format_block_comment
+    _format_deferred_body = GitHubReviewer._format_deferred_body
+    _format_command_reply = GitHubReviewer._format_command_reply
+    _format_blocked_message = GitHubReviewer._format_blocked_message
+    _deferral_cause = staticmethod(GitHubReviewer._deferral_cause)
+    _notify_blocked_pr = GitHubReviewer._notify_blocked_pr
+    _resolve_assignee = GitHubReviewer._resolve_assignee
+    _roster = GitHubReviewer._roster
+    _telegram_mention = staticmethod(GitHubReviewer._telegram_mention)
+    _TEST_CHECK_RE = GitHubReviewer._TEST_CHECK_RE
+    _PR_URL_RE = GitHubReviewer._PR_URL_RE
+    _PR_SLUG_RE = GitHubReviewer._PR_SLUG_RE
+    _PR_NUMBER_RE = GitHubReviewer._PR_NUMBER_RE
     # Resolved/Closed ticket listing (report_resolved_tickets).
     report_resolved_tickets = GitHubReviewer.report_resolved_tickets
     _collect_resolved_tickets = GitHubReviewer._collect_resolved_tickets
@@ -3084,12 +3114,7 @@ class TestMonthlyTicketPie:
 
     def test_slices_rank_by_volume_and_fold_the_tail(self) -> None:
         reviewer = _wire_reviewer()
-        summary = {
-            "assignees": [
-                {"assignee": f"dev-{n:02d}", "window": {"total": 50 - n}}
-                for n in range(12)
-            ]
-        }
+        summary = {"assignees": [{"assignee": f"dev-{n:02d}", "window": {"total": 50 - n}} for n in range(12)]}
 
         slices = reviewer._ticket_pie_slices(summary)
 
@@ -3185,9 +3210,7 @@ class TestMonthlyTicketPie:
         assert "Ana" in reply.output
         reviewer.logger.warning.assert_called_once()
 
-    async def test_a_failing_renderer_is_contained(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_a_failing_renderer_is_contained(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reviewer = self._reviewer(self._tickets(Ana=2))
 
         async def boom(*_args: Any, **_kwargs: Any) -> Path:
@@ -3340,9 +3363,7 @@ class TestMonthlyTicketReport:
         assert result["messages_sent"] == 1
         reviewer.logger.warning.assert_called_once()
 
-    async def test_no_destination_means_nothing_is_sent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_no_destination_means_nothing_is_sent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Both unset: ``management_chat_id`` falls back to the public channel."""
         self._with_chart(tmp_path, monkeypatch)
         reviewer = self._reviewer(
@@ -3633,3 +3654,869 @@ class TestScheduledReportDecorators:
         for name in ("_defer_weekly_report", "_shutdown_weekly_retry", "_describe_webhook_denial"):
             attr = getattr(GitHubReviewer, name)
             assert not hasattr(attr, "_schedule_report_type"), f"{name} is decorated as a report"
+
+
+# ---------------------------------------------------------------------------
+# /review_pr — strict on-demand gate (code review + Jira + CI, then enforce)
+# ---------------------------------------------------------------------------
+
+
+_ROSTER = [
+    {
+        "id": "35",
+        "name": "Jesus Lara",
+        "jira_username": "jesuslarag@gmail.com",
+        "telegram_chat_id": "286137732",
+        "username": "jlara@trocglobal.com",
+    }
+]
+
+
+def _checks(
+    *,
+    success: int = 2,
+    failure: int = 0,
+    pending: int = 0,
+    names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Build a raw ``get_pr_checks`` payload with the given state counts."""
+    entries: List[Dict[str, Any]] = []
+    pool = list(names or [])
+
+    def _name(default: str) -> str:
+        return pool.pop(0) if pool else default
+
+    for _ in range(success):
+        entries.append({"name": _name("pytest"), "state": "success"})
+    for _ in range(failure):
+        entries.append({"name": _name("e2e tests"), "state": "failure"})
+    for _ in range(pending):
+        entries.append({"name": _name("build"), "state": "pending"})
+    return {
+        "repository": "owner/repo",
+        "pr_number": 42,
+        "head_sha": "sha",
+        "checks": entries,
+        "total": len(entries),
+        "success": success,
+        "failure": failure,
+        "pending": pending,
+    }
+
+
+def _ticket(assignee: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {"summary": "S", "description": "D"}
+    if assignee is not None:
+        fields["assignee"] = assignee
+    return {"fields": fields}
+
+
+def _wire_strict(
+    *,
+    approve: bool = True,
+    discrepancies: Optional[List[Discrepancy]] = None,
+    checks_raw: Optional[Dict[str, Any]] = None,
+    checks_error: Optional[Exception] = None,
+    assignee: Optional[Dict[str, Any]] = None,
+    ticket: Any = "default",
+) -> Any:
+    """A reviewer wired for the strict path: ticket, diff, LLM, CI and bot."""
+    r = _wire_reviewer()
+    r.public_channel_id = "-1009999"
+    resolved = _ticket(assignee) if ticket == "default" else ticket
+    r._fetch_ticket = AsyncMock(return_value=resolved)
+    r._fetch_diff = AsyncMock(return_value=("diff", False, True))
+    r._ask_llm_for_review = AsyncMock(
+        return_value=PRReviewResult(
+            jira_key="NAV-1",
+            discrepancies=list(discrepancies or []),
+            summary="reviewed",
+            approve=approve,
+        )
+    )
+    if checks_error is not None:
+        r.git_toolkit.get_pr_checks = AsyncMock(side_effect=checks_error)
+    else:
+        r.git_toolkit.get_pr_checks = AsyncMock(return_value=checks_raw if checks_raw is not None else _checks())
+    r.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1, "state": "APPROVED"})
+    r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 7, "html_url": "u"})
+    r.git_toolkit.convert_pr_to_draft = AsyncMock(
+        return_value={"status": "converted", "pr_number": 42, "is_draft": True}
+    )
+    bot = MagicMock()
+    bot.send_message = AsyncMock()
+    r._wrapper = MagicMock()
+    r._wrapper.bot = bot
+    return r
+
+
+_PAYLOAD = {
+    "repository": "owner/repo",
+    "pr_number": 42,
+    "pr_title": "feat: thing",
+    "pr_body": "Implements NAV-1",
+    "pr_url": "https://github.com/owner/repo/pull/42",
+    "head_sha": "sha",
+    "author": "octocat",
+    "draft": False,
+    "state": "open",
+}
+
+
+class TestParsePRTarget:
+    """``/review_pr`` must accept whatever shape the PR arrives in."""
+
+    def test_accepts_url_slug_and_bare_number(self) -> None:
+        assert GitHubReviewer._parse_pr_target("https://github.com/owner/repo/pull/42") == ("owner/repo", 42, None)
+        assert GitHubReviewer._parse_pr_target("http://www.github.com/o/r/pull/7/files") == ("o/r", 7, None)
+        assert GitHubReviewer._parse_pr_target("owner/repo#13") == ("owner/repo", 13, None)
+        assert GitHubReviewer._parse_pr_target("owner/repo/pull/13") == ("owner/repo", 13, None)
+        # A bare number leaves the repository to the caller's default.
+        assert GitHubReviewer._parse_pr_target("#99") == (None, 99, None)
+        assert GitHubReviewer._parse_pr_target("99") == (None, 99, None)
+
+    def test_ignores_trailing_prose_and_punctuation(self) -> None:
+        assert GitHubReviewer._parse_pr_target("https://github.com/o/r/pull/5 please review") == ("o/r", 5, None)
+        assert GitHubReviewer._parse_pr_target("  owner/repo#8,  ") == ("owner/repo", 8, None)
+
+    def test_names_the_repository_link_mistake(self) -> None:
+        """A repo link is the likeliest typo, so it gets its own message."""
+        repo, number, error = GitHubReviewer._parse_pr_target("https://github.com/owner/repo")
+        assert (repo, number) == (None, None)
+        assert "repository link" in str(error)
+
+    def test_rejects_junk_and_emptiness(self) -> None:
+        assert GitHubReviewer._parse_pr_target("")[2] == "no pull request given"
+        assert "could not read a pull request" in str(GitHubReviewer._parse_pr_target("hola")[2])
+
+
+class TestSummarizeChecks:
+    def test_counts_states_and_excludes_pending_from_the_ratio(self) -> None:
+        """A half-finished pipeline must not read as half-failing."""
+        summary = GitHubReviewer._summarize_checks(_checks(success=2, failure=1, pending=1))
+        assert (summary.success, summary.failure, summary.pending) == (2, 1, 1)
+        # 2 of the 3 COMPLETED checks are green — the pending one is excluded.
+        assert summary.pass_ratio == pytest.approx(2 / 3)
+        assert summary.failing == ["e2e tests"]
+        assert summary.running == ["build"]
+        assert summary.declared is True
+
+    def test_distinguishes_absent_checks_from_unreadable_ones(self) -> None:
+        absent = GitHubReviewer._summarize_checks({"checks": [], "total": 0})
+        assert (absent.available, absent.declared) == (True, False)
+        unreadable = GitHubReviewer._summarize_checks(None)
+        assert (unreadable.available, unreadable.declared) == (False, False)
+        assert unreadable.reason
+
+    def test_recognizes_test_shaped_check_names(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            _checks(success=3, names=["pytest unit", "build docker", "e2e-suite"])
+        )
+        assert summary.test_checks == 2
+
+    async def test_fetch_checks_never_raises(self) -> None:
+        r = _wire_reviewer()
+        r.git_toolkit.get_pr_checks = AsyncMock(side_effect=RuntimeError("403 no checks:read"))
+        summary = await r._fetch_checks("owner/repo", 42, "sha")
+        assert summary.available is False
+        assert "403" in str(summary.reason)
+        r.logger.warning.assert_called_once()
+
+    async def test_fetch_checks_without_a_toolkit(self) -> None:
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        summary = await r._fetch_checks("owner/repo", 42)
+        assert summary.available is False
+        assert "git_toolkit" in str(summary.reason)
+
+
+class TestMergeVerdict:
+    """The gate: Jira compliance AND test evidence, both required."""
+
+    def _result(self, approve: bool, *discrepancies: Discrepancy) -> PRReviewResult:
+        return PRReviewResult(jira_key="NAV-1", discrepancies=list(discrepancies), summary="s", approve=approve)
+
+    def test_green_and_compliant_is_mergeable(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is True
+        assert verdict.defer is False
+        assert verdict.reasons == []
+
+    def test_a_blocker_finding_blocks_even_with_green_ci(self) -> None:
+        r = _wire_reviewer()
+        blocker = Discrepancy(criterion="AC2", issue="endpoint missing", severity="blocker")
+        verdict = r._merge_verdict(self._result(False, blocker), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is False
+        assert any("AC2" in reason for reason in verdict.reasons)
+
+    def test_a_minor_finding_is_only_a_warning(self) -> None:
+        r = _wire_reviewer()
+        minor = Discrepancy(criterion="AC9", issue="typo in a docstring", severity="minor")
+        verdict = r._merge_verdict(self._result(True, minor), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is True
+        assert any("AC9" in warning for warning in verdict.warnings)
+
+    def test_failing_ci_below_the_ratio_blocks(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=1, failure=3)),
+        )
+        assert verdict.mergeable is False
+        assert any("failing" in reason for reason in verdict.reasons)
+
+    def test_mostly_green_ci_is_tolerated(self) -> None:
+        """ "All OK — or a great part of them": 8/10 green clears a 0.8 bar."""
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=8, failure=2)),
+        )
+        assert verdict.mergeable is True
+        assert any("at or above" in warning for warning in verdict.warnings)
+
+    def test_the_ratio_is_configurable(self) -> None:
+        r = _wire_reviewer()
+        r.min_check_pass_ratio = 1.0
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=9, failure=1)),
+        )
+        assert verdict.mergeable is False
+
+    def test_running_checks_defer_the_verdict(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=1, pending=2)))
+        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert verdict.reasons == []
+
+    def test_running_checks_do_not_defer_an_already_blocked_pr(self) -> None:
+        """A blocker is reason enough to draft the PR now, CI or no CI."""
+        r = _wire_reviewer()
+        blocker = Discrepancy(criterion="AC1", issue="not implemented", severity="blocker")
+        verdict = r._merge_verdict(
+            self._result(False, blocker),
+            GitHubReviewer._summarize_checks(_checks(success=0, pending=4)),
+        )
+        assert (verdict.mergeable, verdict.defer) == (False, False)
+
+    def test_unreadable_ci_defers_rather_than_approving(self) -> None:
+        """An outage or a missing scope is not test evidence — and not a fault."""
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
+        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert verdict.reasons == []
+        assert any("could not be read" in warning for warning in verdict.warnings)
+
+    def test_absent_checks_warn_by_default(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        assert verdict.mergeable is True
+        assert any("no CI checks" in warning for warning in verdict.warnings)
+
+    def test_absent_checks_block_when_checks_are_required(self) -> None:
+        r = _wire_reviewer()
+        r.require_checks = True
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        assert verdict.mergeable is False
+        assert any("no CI checks" in reason for reason in verdict.reasons)
+
+
+class TestAssigneeResolution:
+    def test_matches_on_email_account_id_or_display_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        by_email = r._resolve_assignee(_ticket({"emailAddress": "JesusLaraG@gmail.com"}))
+        by_account = r._resolve_assignee(_ticket({"accountId": "35"}))
+        by_name = r._resolve_assignee(_ticket({"displayName": "jesus lara"}))
+        assert by_email is not None and by_email["name"] == "Jesus Lara"
+        assert by_account is by_email
+        assert by_name is by_email
+
+    def test_unknown_or_absent_assignee_resolves_to_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        assert r._resolve_assignee(_ticket({"emailAddress": "stranger@example.com"})) is None
+        assert r._resolve_assignee(_ticket()) is None
+        assert r._resolve_assignee(None) is None
+
+    def test_malformed_roster_entries_are_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """One bad entry must not break the notification path of a real review."""
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", ["not-a-dict", None, *_ROSTER])
+        found = r._resolve_assignee(_ticket({"emailAddress": "jesuslarag@gmail.com"}))
+        assert found is not None and found["telegram_chat_id"] == "286137732"
+
+    def test_mention_prefers_a_username_and_falls_back_to_a_tg_link(self) -> None:
+        assert GitHubReviewer._telegram_mention({"name": "A", "telegram_username": "@ada"}) == "@ada"
+        link = GitHubReviewer._telegram_mention({"name": "Ada L", "telegram_chat_id": "123"})
+        assert link == '<a href="tg://user?id=123">@Ada L</a>'
+        # Neither id nor username: still renders something mention-shaped.
+        assert GitHubReviewer._telegram_mention({"name": "Ada"}) == "@Ada"
+
+
+class TestBlockedPRNotifications:
+    def test_message_escapes_user_data(self) -> None:
+        r = _wire_reviewer()
+        payload = {**_PAYLOAD, "pr_title": "feat: X_y <z> & more"}
+        verdict = MergeVerdict(mergeable=False, reasons=["AC1 <broken> & unmet"])
+        text = r._format_blocked_message(payload, "NAV-1", PRChecksSummary(available=False), verdict)
+        assert "&lt;z&gt; &amp; more" in text
+        assert "&lt;broken&gt; &amp; unmet" in text
+        assert "<z>" not in text
+
+    def test_channel_copy_carries_the_mention_and_the_dm_does_not(self) -> None:
+        r = _wire_reviewer()
+        verdict = MergeVerdict(mergeable=False, reasons=["nope"])
+        checks = GitHubReviewer._summarize_checks(_checks(success=1, failure=1))
+        dm = r._format_blocked_message(_PAYLOAD, "NAV-1", checks, verdict)
+        channel = r._format_blocked_message(_PAYLOAD, "NAV-1", checks, verdict, mention="@ada")
+        assert dm.startswith("<b>Your pull request")
+        assert channel.startswith("@ada — your pull request")
+        assert "1 passed, 1 failed" in dm
+
+    async def test_dm_and_channel_both_go_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        verdict = MergeVerdict(mergeable=False, reasons=["AC1 unmet"])
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(available=True, declared=True, success=1),
+            verdict,
+            _ticket({"emailAddress": "jesuslarag@gmail.com"}),
+        )
+        bot = r._wrapper.bot
+        assert report["assignee"] == "Jesus Lara"
+        assert report["dm"] == {"sent": True, "chat_id": "286137732"}
+        assert report["channel"]["sent"] is True
+        assert bot.send_message.await_count == 2
+        dm_call, channel_call = bot.send_message.await_args_list
+        assert dm_call.kwargs["chat_id"] == "286137732"
+        assert channel_call.kwargs["chat_id"] == "-1009999"
+        assert "tg://user?id=286137732" in channel_call.kwargs["text"]
+
+    async def test_assignee_outside_the_roster_still_reaches_the_channel(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(),
+            MergeVerdict(mergeable=False, reasons=["x"]),
+            _ticket({"emailAddress": "stranger@example.com"}),
+        )
+        assert report["assignee"] is None
+        assert report["dm"] == {"sent": False, "reason": "assignee not in JIRA_USERS"}
+        assert report["channel"]["sent"] is True
+        # Exactly one send: the channel copy, with no mention to render.
+        assert r._wrapper.bot.send_message.await_count == 1
+
+    async def test_a_failed_dm_does_not_stop_the_channel_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+
+        async def _send(chat_id: Any, **kwargs: Any) -> None:
+            if str(chat_id) == "286137732":
+                raise RuntimeError("bot was blocked by the user")
+
+        r._wrapper.bot.send_message = AsyncMock(side_effect=_send)
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(),
+            MergeVerdict(mergeable=False, reasons=["x"]),
+            _ticket({"emailAddress": "jesuslarag@gmail.com"}),
+        )
+        assert report["dm"]["sent"] is False
+        assert "blocked" in report["dm"]["error"]
+        assert report["channel"]["sent"] is True
+
+    async def test_a_failed_channel_send_names_the_chat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        r._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["channel"] == {"sent": False, "chat_id": "-1009999", "error": "chat not found"}
+        logged = str(r.logger.warning.call_args)
+        assert "-1009999" in logged
+
+    async def test_no_channel_configured_is_reported_not_crashed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        r.public_channel_id = None
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["channel"] == {"sent": False, "reason": "no public channel configured"}
+
+    async def test_without_a_telegram_wrapper_nothing_is_sent(self) -> None:
+        r = _wire_strict()
+        r._wrapper = None
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["reason"] == "no telegram wrapper"
+        assert report["dm"]["sent"] is False
+
+
+class TestStrictReviewPullRequest:
+    """The enforcement path: approve, defer, or draft + comment + notify."""
+
+    async def test_compliant_pr_is_approved_and_never_drafted(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        r.git_toolkit.add_pr_comment.assert_not_awaited()
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+    async def test_strict_path_asks_jira_for_the_assignee(self) -> None:
+        """The webhook path does not need the assignee; this one does."""
+        r = _wire_strict()
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert "assignee" in r._fetch_ticket.await_args.kwargs["fields"]
+
+    async def test_noncompliant_pr_is_drafted_commented_and_announced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        blocker = Discrepancy(criterion="AC2", issue="endpoint missing", severity="blocker")
+        r = _wire_strict(
+            approve=False,
+            discrepancies=[blocker],
+            checks_raw=_checks(success=1, failure=2),
+            assignee={"emailAddress": "jesuslarag@gmail.com"},
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+
+        assert out["status"] == "blocked"
+        assert out["draft"]["status"] == "converted"
+        r.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+        body = r.git_toolkit.add_pr_comment.await_args.kwargs["body"]
+        assert "not mergeable" in body
+        assert "AC2" in body
+        assert "@octocat" in body  # the PR author is pinged on GitHub
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "REQUEST_CHANGES"
+        assert out["alerts"]["dm"]["sent"] is True
+        assert out["alerts"]["channel"]["sent"] is True
+
+    async def test_the_draft_call_precedes_the_comment(self) -> None:
+        """The PR must stop being mergeable before anyone reads the reason."""
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        order: List[str] = []
+        r.git_toolkit.convert_pr_to_draft = AsyncMock(
+            side_effect=lambda **kw: order.append("draft") or {"status": "converted"}
+        )
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=lambda **kw: order.append("comment") or {"id": 1})
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert order == ["draft", "comment"]
+
+    async def test_a_failed_draft_conversion_still_comments_and_notifies(self) -> None:
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit.convert_pr_to_draft = AsyncMock(side_effect=RuntimeError("422 not permitted"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        assert "422" in out["draft_error"]
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        assert out["alerts"]["channel"]["sent"] is True
+
+    async def test_a_failed_comment_is_recorded_without_losing_the_draft(self) -> None:
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("503"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["draft"]["status"] == "converted"
+        assert out["comment_error"] == "503"
+
+    async def test_running_checks_leave_the_pr_untouched(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "COMMENT"
+        assert "deferred" in call["body"]
+        assert r._wrapper.bot.send_message.await_count == 0
+
+    async def test_unreadable_checks_defer_and_say_why(self) -> None:
+        r = _wire_strict(approve=True, checks_error=RuntimeError("403 no checks:read"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "could not be read" in body
+        assert "403" in body
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_a_pr_without_a_ticket_gets_the_missing_ticket_comment(self) -> None:
+        r = _wire_strict()
+        r._notify_missing_ticket = AsyncMock(return_value={"id": 3})
+        out = await r.strict_review_pull_request({**_PAYLOAD, "pr_body": "no key here", "pr_title": "chore"})
+        assert out["status"] == "no_ticket"
+        assert out["comment"] == {"id": 3}
+        r._ask_llm_for_review.assert_not_awaited()
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_an_unreadable_ticket_stops_before_touching_github(self) -> None:
+        r = _wire_strict(ticket=None)
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "ticket_not_found"
+        assert out["jira_key"] == "NAV-1"
+        r._ask_llm_for_review.assert_not_awaited()
+        r.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    async def test_a_missing_pr_number_is_an_error(self) -> None:
+        r = _wire_strict()
+        out = await r.strict_review_pull_request({"repository": "owner/repo"})
+        assert out == {"status": "error", "reason": "missing pr_number"}
+
+    async def test_without_github_the_verdict_is_still_computed(self) -> None:
+        """No toolkit: report the verdict instead of pretending to enforce it."""
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit = None
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        assert out["review_error"] == "git_toolkit is not configured"
+        assert out["verdict"]["reasons"]
+
+
+class TestReviewPRCommand:
+    async def test_is_registered_as_a_raw_telegram_command(self) -> None:
+        """``raw`` keeps a pasted URL intact — keyword parsing would mangle it."""
+        meta = GitHubReviewer.review_pr._telegram_command
+        assert meta["command"] == "review_pr"
+        assert meta["parse_mode"] == "raw"
+        assert meta["description"]
+
+    async def test_a_repository_link_gets_usage_help(self) -> None:
+        r = _wire_strict()
+        reply = await r.review_pr("https://github.com/owner/repo")
+        assert "repository link" in reply
+        assert "Usage:" in reply
+        r.git_toolkit.get_pull_request.assert_not_called()
+
+    async def test_an_empty_argument_gets_usage_help(self) -> None:
+        r = _wire_strict()
+        assert "Usage:" in await r.review_pr("")
+
+    async def test_without_github_configured_it_says_so(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit = None
+        assert "not configured" in await r.review_pr("42")
+
+    async def test_an_unreadable_pr_is_reported(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(side_effect=RuntimeError("404"))
+        reply = await r.review_pr("https://github.com/owner/repo/pull/42")
+        assert "Could not read" in reply
+        assert "owner/repo#42" in reply
+
+    async def test_a_closed_pr_is_refused_before_any_review(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={"title": "t", "state": "closed", "head": {"sha": "s"}, "user": {"login": "o"}}
+        )
+        reply = await r.review_pr("42")
+        assert "closed" in reply
+        r._ask_llm_for_review.assert_not_awaited()
+
+    async def test_a_bare_number_uses_the_configured_repository(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "t",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        await r.review_pr("42")
+        assert r.git_toolkit.get_pull_request.await_args.kwargs["repository"] == "owner/repo"
+
+    async def test_the_blocked_reply_lists_reasons_and_who_was_told(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict(
+            approve=False,
+            discrepancies=[Discrepancy(criterion="AC2", issue="missing", severity="blocker")],
+            checks_raw=_checks(success=0, failure=2),
+            assignee={"emailAddress": "jesuslarag@gmail.com"},
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "https://github.com/owner/repo/pull/42",
+                "head": {"sha": "s"},
+                "user": {"login": "octocat"},
+            }
+        )
+        reply = await r.review_pr("https://github.com/owner/repo/pull/42")
+        assert reply.startswith("🚫")
+        assert "converted to **draft**" in reply
+        assert "AC2" in reply
+        assert "DM to Jesus Lara" in reply
+        assert "the public channel" in reply
+        assert "0 passed, 2 failed" in reply
+
+    async def test_the_approved_reply_is_short_and_green(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.startswith("✅")
+        assert "Approved" in reply
+        assert "3 passed, 0 failed" in reply
+
+    async def test_a_ticketless_pr_reply_explains_the_skip(self) -> None:
+        r = _wire_strict()
+        r._notify_missing_ticket = AsyncMock(return_value={"id": 1})
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "chore: tidy",
+                "body": "",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert "NAV-<number>" in reply
+        assert "left a comment" in reply
+
+
+# ---------------------------------------------------------------------------
+# Dedicated Google credential (GITHUB_REVIEW_GOOGLE_API_KEY)
+# ---------------------------------------------------------------------------
+
+
+class _CredentialStub:
+    """Agent stand-in carrying only what ``_apply_google_api_key`` reads."""
+
+    # The real resolver — the method under test dispatches through ``self``
+    # so a subclass can override it.
+    _resolve_google_api_key = staticmethod(GitHubReviewer._resolve_google_api_key)
+
+    def __init__(self, llm: Any = None, llm_kwargs: Optional[Dict[str, Any]] = None) -> None:
+        self._llm_raw = llm
+        self._default_llm = "google"
+        self._llm_kwargs: Dict[str, Any] = {"temperature": 0.1} if llm_kwargs is None else llm_kwargs
+        self.logger = MagicMock()
+
+
+def _apply(stub: _CredentialStub, explicit: Optional[str] = None) -> bool:
+    return GitHubReviewer._apply_google_api_key(stub, explicit)
+
+
+class TestGoogleApiKeyResolution:
+    """The reviewer bills its LLM traffic to its own Google credential."""
+
+    def test_explicit_argument_wins_over_the_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "from-env", raising=False)
+        assert GitHubReviewer._resolve_google_api_key("explicit") == "explicit"
+
+    def test_the_dedicated_env_var_is_used_when_no_argument_is_given(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        assert GitHubReviewer._resolve_google_api_key() == "reviewer-key"
+
+    def test_an_unset_key_resolves_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", None, raising=False)
+        assert GitHubReviewer._resolve_google_api_key() is None
+
+    def test_an_empty_key_resolves_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "", raising=False)
+        assert GitHubReviewer._resolve_google_api_key() is None
+
+    def test_the_key_is_injected_into_the_llm_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub()
+        assert _apply(stub) is True
+        assert stub._llm_kwargs["api_key"] == "reviewer-key"
+        # The other LLM settings survive the rebind.
+        assert stub._llm_kwargs["temperature"] == 0.1
+
+    def test_injection_does_not_mutate_the_callers_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        shared: Dict[str, Any] = {"temperature": 0.1}
+        stub = _CredentialStub(llm_kwargs=shared)
+        assert _apply(stub) is True
+        assert "api_key" not in shared
+
+    def test_an_unset_key_falls_back_to_the_clients_google_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Nothing is injected, so the Google client resolves GOOGLE_API_KEY itself."""
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", None, raising=False)
+        stub = _CredentialStub()
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+
+    def test_an_explicit_caller_credential_is_never_overridden(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm_kwargs={"api_key": "caller-key"})
+        assert _apply(stub) is False
+        assert stub._llm_kwargs["api_key"] == "caller-key"
+
+    def test_vertexai_agents_keep_their_own_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm_kwargs={"vertexai": True})
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+
+    def test_a_non_google_llm_is_left_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm="openai:gpt-5")
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+        assert stub.logger.warning.called
+
+    def test_a_google_llm_string_is_recognised(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm="google:gemini-3.7-flash")
+        assert _apply(stub) is True
+        assert stub._llm_kwargs["api_key"] == "reviewer-key"
+
+    def test_the_key_value_is_never_logged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "s3cr3t-key", raising=False)
+        stub = _CredentialStub()
+        _apply(stub)
+        logged = " ".join(str(call) for call in stub.logger.mock_calls)
+        assert "s3cr3t-key" not in logged
+
+
+class TestCIPermissionDenials:
+    """A token that cannot see the checks must never produce a free pass.
+
+    Reproduces the live 403 on ``/check-runs`` ("Resource not accessible by
+    personal access token") that a fine-grained PAT without the *Checks*
+    permission returns.
+    """
+
+    _REASON = (
+        "check_runs denied (needs 'Checks' (Read-only) on a fine-grained PAT, or a classic PAT with the 'repo' scope)"
+    )
+
+    def _approved(self) -> PRReviewResult:
+        return PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True)
+
+    def test_summarize_honours_the_payloads_own_availability(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            {"available": False, "denied": ["check_runs", "commit_statuses"], "reason": "both refused"}
+        )
+        assert summary.available is False
+        assert summary.denied == ["check_runs", "commit_statuses"]
+        assert summary.reason == "both refused"
+
+    def test_summarize_keeps_a_partial_picture_usable(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "ci/jenkins", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert (summary.available, summary.declared) == (True, True)
+        assert summary.denied == ["check_runs"]
+        assert summary.success == 1
+
+    def test_zero_visible_checks_behind_a_denial_defers(self) -> None:
+        """The regression this class exists for.
+
+        An Actions-only repo whose ``check-runs`` endpoint is denied reports
+        zero checks. That is NOT "this repo has no CI" — the evidence exists
+        and is invisible — so the verdict must defer instead of approving.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        assert checks.declared is False
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert verdict.reasons == []
+        assert any("not visible to this token" in w or "visible to this token" in w for w in verdict.warnings)
+        assert any("'Checks' (Read-only)" in w for w in verdict.warnings)
+
+    def test_require_checks_does_not_turn_a_denial_into_a_blocker(self) -> None:
+        """Requiring CI must not punish a developer for a missing token scope."""
+        r = _wire_reviewer()
+        r.require_checks = True
+        checks = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert verdict.reasons == []
+
+    def test_a_partial_picture_still_approves_but_says_so(self) -> None:
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "pytest", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["commit_statuses"],
+                "reason": "commit_statuses denied (needs 'Commit statuses' (Read-only) on a fine-grained PAT)",
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert any("part of the CI picture is missing" in w for w in verdict.warnings)
+
+    def test_genuinely_absent_ci_is_unaffected(self) -> None:
+        """Nothing denied + nothing declared keeps the old warn-only behaviour."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks({"checks": [], "total": 0})
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert any("no CI checks" in w for w in verdict.warnings)
+
+    def test_the_checks_line_names_the_denial(self) -> None:
+        r = _wire_reviewer()
+        empty = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        partial = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "pytest", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert "check_runs denied to this token" in r._format_checks_line(empty)
+        assert "check_runs denied" in r._format_checks_line(partial)
+
+    async def test_the_deferred_comment_names_the_missing_permission(self) -> None:
+        """The operator must read the fix in the PR, not only in the logs."""
+        r = _wire_strict(
+            approve=True,
+            checks_raw={
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            },
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "'Checks' (Read-only)" in body
+        assert "neither approved" in body
