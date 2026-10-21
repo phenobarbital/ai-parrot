@@ -12,7 +12,7 @@ tags: [fireflies, mcp, wikitoolkit, telegram, insights, agent]
 **Author**: Jesus Lara
 **Status**: accepted
 **Recommended Option**: Option B
-**Open questions**: all resolved 2026-10-22 (see Open Questions)
+**Open questions**: 18 of 18 resolved 2026-10-22 — none open (see Open Questions)
 
 ---
 
@@ -74,6 +74,8 @@ FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
   the convention already used by `agents/porygon/`, `agents/flex_dashboard/`,
   `agents/odoo_agent/` and `agents/security_advisor/`. **Not** `.agent/skills/`,
   which is the SDD tooling's own tree. No DB skill registry in this feature.
+  Because `/agents/` is git-ignored wholesale, this feature must also land the
+  `.gitignore` whitelist that makes the directory committable — see C14.
 - **C4** `WorkingMemoryToolkit` must be wired so intermediate per-meeting
   artifacts survive within a run and are addressable by the LLM.
 - **C5** Insights are generated from the **transcript + summary the agent holds
@@ -91,7 +93,9 @@ FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
   insight is rendered through a **dedicated JiraToolkit template** (FEAT-637
   template support), not by assembling fields ad hoc, and the ticket gets a
   **best-effort backlink** to the meeting's wiki page when ingestion has already
-  produced one — omitted silently when it has not.
+  produced one — omitted silently when it has not. A **base template ships with
+  the agent** at `agents/fireflies_insights/templates/`, committed to the repo,
+  and is reachable by `JiraToolkit(templates_dir=…)` / `JIRA_TEMPLATES_DIR`.
 - **C9** Async-first, `aiohttp` only, Pydantic v2 models, `self.logger`, no
   `print`, no LangChain — `.claude/rules/codebase-conventions.md` applies.
 - **C10** No new third-party dependency: `watchdog>=4.0` is already declared in
@@ -100,12 +104,25 @@ FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
   watcher must serialize runs and must never ingest a half-written file. Safety
   is **uniform**: every candidate passes the same size+mtime stability window
   regardless of its producer, so there is one code path to test. The agent still
-  writes atomically (temp + rename) — belt and braces, not an exemption.
+  writes atomically (temp + rename) — belt and braces, not an exemption. Default
+  window: **two consecutive polls ~1.5 s apart with identical size and mtime
+  (≈3 s total)**, exposed as a new `InboxConfig` field so slow sources can raise
+  it.
 - **C12** The agent runs on a **schedule and on demand**: a periodic sync like
   `FirefliesObsidianAgent` (designed for ~8 h), plus a `@telegram_command` that
   forces a run — the `GitHubReviewer` pattern.
 - **C13** Processed-meeting state reuses **`MeetingRegistry`** (FEAT-472,
   merged); the agent does not invent its own dedup store.
+- **C14** The agent's committable assets are made trackable by **editing
+  `.gitignore`**, not by `git add -f`. The existing blanket `/agents/` rule
+  becomes `/agents/*` (git refuses to re-include anything under an excluded
+  *directory*, so the rule must ignore the children instead), followed by a
+  narrow whitelist for this agent's `skills/` and `templates/` only. Every other
+  agent, and every non-whitelisted file inside this agent's own directory, stays
+  ignored. The exact rule block is in Code Context and was verified empirically.
+- **C15** `InboxConfig.stage_git` stays **configuration-driven**: the watcher
+  neither forces nor overrides it. Operators who do not want a long-running
+  watcher staging files into their wiki repo set it to `false` themselves.
 
 ---
 
@@ -393,7 +410,8 @@ than substitutive.
 
 ### Modified Capabilities
 - `wikitoolkit-new-ingestion` (FEAT-626): gains the `--watch` mode and a
-  reusable runtime builder seam; the one-shot path is unchanged.
+  stability-window setting on `InboxConfig`; the one-shot path is unchanged, and
+  the runtime builder it needs is already public (no seam work).
 
 ---
 
@@ -412,6 +430,10 @@ than substitutive.
 | `parrot/skills/` | depends on | `SkillRegistryMixin` + `skill_paths` + `SkillFileToolkit` |
 | `parrot/mcp/integration.py` | depends on | `add_fireflies_mcp_server()` consumed as-is |
 | `packages/ai-parrot/pyproject.toml` | none | `watchdog>=4.0` already declared — no new dependency |
+| `.gitignore` | modifies | `/agents/` → `/agents/*` plus a narrow whitelist for this agent's `skills/` and `templates/` (C14). Verified not to un-ignore any other agent. |
+| `parrot/knowledge/wiki/project.py` | modifies | `InboxConfig` gains the stability-window field (C11); `stage_git` untouched (C15) |
+| `agents/fireflies_insights/templates/` | creates | Base Jira template for a confirmed insight, committed to the repo |
+| `agents/fireflies_insights/skills/` | creates | File-based skills for the agent, committed to the repo |
 | `docs/wiki/inbox.md` | modifies | Document the watch mode alongside the one-shot run |
 | FEAT-481 `feat-fireflies-wiki-agent` | **no change** | Left untouched by explicit decision; different sink (Obsidian vault vs. wiki inbox) |
 
@@ -517,6 +539,37 @@ def validate_inbox_paths(root: Path, inbox: Path, archive: Path, markdown: Path)
 # packages/ai-parrot/src/parrot/knowledge/wiki/charter.py:404
 def load_charter(path: Path) -> Charter: ...
 
+# .gitignore — VERIFIED STATE AT dev (cdba878f2)
+#   :274  templates/                       <- would catch any agent templates/ dir
+#   :297  /agents/                         <- ignores the WHOLE agents tree
+# `git check-ignore -v agents/fireflies_insights/templates/x.j2` answers
+# ".gitignore:297:/agents/", so BOTH the skills/ and templates/ dirs of a NEW
+# agent are untracked today. The in-file comment above :297 confirms this is
+# deliberate: "only NEW agent files are ignored again". Evidence: of the four
+# agents with a skills/ dir on disk, only flex_dashboard (12 files) and
+# odoo_agent (4) are tracked; porygon and security_advisor have 0 tracked files.
+#
+# A plain negation does NOT work — git cannot re-include a path under an
+# excluded DIRECTORY. The rule must ignore the children instead. This exact
+# block was tested in a scratch repo and produces the intended result:
+#
+#   /agents/*
+#   !/agents/fireflies_insights/
+#   /agents/fireflies_insights/*
+#   !/agents/fireflies_insights/skills/
+#   !/agents/fireflies_insights/skills/**
+#   !/agents/fireflies_insights/templates/
+#   !/agents/fireflies_insights/templates/**
+#
+# Verified outcomes of that block:
+#   tracked  -> agents/fireflies_insights/skills/**, agents/fireflies_insights/templates/**
+#   ignored  -> agents/porygon/**            (matched by /agents/*)
+#   ignored  -> agents/fireflies_insights/secret_runtime.json
+#                                            (matched by /agents/fireflies_insights/*)
+# i.e. it is a narrow whitelist, not a blanket un-ignore.
+# Precedent for this style of exception already exists at .gitignore:275-280
+# (three packages/* templates/ directories).
+
 # packages/ai-parrot/src/parrot/knowledge/wiki/runtime.py — PUBLIC, click-free builders.
 # Docstring: "kept separate from command-line concerns so async servers can construct
 # the charter triage and ingest services without importing CLI code or starting a
@@ -589,6 +642,12 @@ class MeetingRecord(BaseModel): ...                           # meeting_registry
     # Defaults resolved in __init__ (jiratoolkit.py:945-946):
     #   self.default_project    = JIRA_DEFAULT_PROJECT    (fallback "NAV")
     #   self.default_issue_type = JIRA_DEFAULT_ISSUE_TYPE (fallback "Task")
+    # Template dir resolution (jiratoolkit.py:889, 964-971):
+    #   templates_dir: Optional[Union[str, Path]] = None   <- __init__ kwarg
+    #   _tpl_dir = templates_dir or _cfg("JIRA_TEMPLATES_DIR")
+    #   a non-directory is WARNED about and ignored, not raised
+    #   self.templates_dir stays None when neither is set, and
+    #   jira_list_templates reports {"has_templates_dir": bool}  (:3255)
 
 # packages/ai-parrot/src/parrot/bots/github_reviewer.py:491
 class GitHubReviewer(Agent):
@@ -733,8 +792,13 @@ open for `/sdd-spec` to settle with real numbers.
 - [x] Where this agent's skills live — *Owner: Jesus Lara*: `agents/fireflies_insights/skills/` under `AGENTS_DIR`, the convention already used by `agents/porygon/`, `agents/flex_dashboard/`, `agents/odoo_agent/` and `agents/security_advisor/`. Not `.agent/skills/`, which holds the SDD tooling's own skills.
 - [x] Processed-meeting state — *Owner: Jesus Lara*: **reuse `MeetingRegistry`** (FEAT-472, merged). Verified not to be Obsidian-coupled at construction; the vault-bound verbs are simply unused.
 
-### Raised during resolution — for `/sdd-spec`
+### Raised during resolution — also resolved
 
-- [ ] **What stability window, concretely?** "Uniform size+mtime" is decided; the number is not. It must cover a slow network copy of a large PDF without making the agent's own atomically-renamed files wait pointlessly. Needs a measured default and an `InboxConfig` knob. — *Owner: Jesus Lara*
-- [ ] **`InboxConfig.stage_git` defaults to `True`**, so every archived and projected file is `git add`-ed. That is sane for a human running `wikitoolkit inbox` occasionally; under a watcher running continuously it silently grows the index of whatever repo the wiki project lives in. Does the watcher force `stage_git=False`, leave it to config, or is auto-staging actually wanted here? — *Owner: Jesus Lara*
-- [ ] **The Jira template does not exist yet.** Its name, location and parameter set (summary, description, labels, meeting id, owner, due date) have to be defined as part of this feature, since C8 now depends on it. — *Owner: Jesus Lara*
+- [x] **What stability window, concretely?** — *Owner: Jesus Lara*: two consecutive polls ~1.5 s apart with identical size and mtime (≈3 s total), exposed as a new `InboxConfig` field so slow sources can raise it. Not adaptive-by-size: that would be a heuristic on top of a heuristic and harder to test deterministically.
+- [x] **`InboxConfig.stage_git` defaults to `True`** — *Owner: Jesus Lara*: left to **configuration**. The watcher neither forces nor overrides it; an operator who does not want a continuously-running watcher staging files into the wiki repo sets `stage_git: false`. This must be called out in `docs/wiki/inbox.md`, because the default was chosen for occasional manual runs, not for a daemon.
+- [x] **The Jira template does not exist yet** — *Owner: Jesus Lara*: ship a **base template** in `agents/fireflies_insights/templates/`, committed to the repo and reachable via `JiraToolkit(templates_dir=…)` / `JIRA_TEMPLATES_DIR`. Its parameter set is spec work.
+- [x] **`/agents/` is git-ignored wholesale** (discovered while answering the above, and it retroactively affects the skills decision too) — *Owner: Jesus Lara*: fix `.gitignore` rather than `git add -f`. See C14 and the verified rule block in Code Context.
+
+**Nothing is left open.** The remaining detail work — the Jira template's exact
+parameter set, the `InboxConfig` field name, and the acceptance criteria for the
+stability window — is spec work for `/sdd-spec`, not an unresolved decision.
