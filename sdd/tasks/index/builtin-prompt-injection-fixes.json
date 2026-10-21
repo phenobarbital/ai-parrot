@@ -33,18 +33,18 @@
     {
       "id": "TASK-4563",
       "slug": "threat-level-ordering",
-      "title": "Total ordering for ThreatLevel — close the multi-threat fail-open",
+      "title": "Total ordering for ThreatLevel \u2014 close the multi-threat fail-open",
       "feature_id": "FEAT-714",
       "feature": "builtin-prompt-injection-fixes",
       "spec": "sdd/specs/builtin-prompt-injection-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only task in this feature; no dependencies and no shared state outside its 5 declared files.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-22T01:35:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4563-threat-level-ordering.md"
     }
