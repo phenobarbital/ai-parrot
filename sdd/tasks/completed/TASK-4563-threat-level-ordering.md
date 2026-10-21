@@ -615,8 +615,59 @@ by the two-key evidence rule (`/sdd-fix` §6).
 
 ## Completion Note
 
-**Completed by**: sdd-worker (Claude Sonnet 5.5); implemented by seat gpt-5.6-terra (codex), attempt 2 (attempt_uid 93e03bec4e7c4b46814d3037c410916b)
-**Date**: 2026-10-22
-**Notes**: Added `THREAT_LEVEL_ORDER` + `max_threat_level()` in `security/prompt_injection.py` (never raises); used at `SecurityEventLogger.log_injection_attempt` and in the builtin guardrail; re-exported from `parrot.security`; stale NOTE replaced with a comment naming `issue:a6abf12a2027`; tests added. Merge-tier validation: 50 passed. AC-4 grep returns nothing. Review recorded: coder-review:ddb24bdc3efbe45d8afc8c4b (0 fix commits). Closed via close_task.sh (finalize_task not used: no tool available to mint a review EvidenceRef). Black reformatted quote style in `security/__init__.py` `__all__` (cosmetic churn).
+*(Agent fills this in when done)*
 
-**Deviations from spec**: none
+**Completed by**: agent:sdd-fix (Claude Code session, `/sdd-fix issue:a6abf12a2027`)
+**Date**: 2026-10-22
+**Notes**: Implemented as blueprinted, in commit `94a516c3e`.
+
+- Added `THREAT_LEVEL_ORDER` + `max_threat_level()` (plus a small
+  `_coerce_threat_level` helper) above `PromptInjectionException` in
+  `security/prompt_injection.py`; re-exported both from `parrot.security`.
+- Routed both aggregation sites through it (`security/prompt_injection.py:312`,
+  `builtin/prompt_injection.py:819`) and replaced the stale
+  "latent TypeError … preserved intentionally" NOTE with one naming
+  `issue:a6abf12a2027`.
+- Tests: 9 in the new `tests/unit/test_security_threat_level_order.py`,
+  4 appended as `TestMultiThreatAggregation` in
+  `tests/unit/test_guardrails_prompt_injection.py`. Both Validation Commands
+  pass (9 passed / 45 passed). `ruff check` clean on all 5 files.
+
+**Fail-open closed — measured, not assumed.** With the bare `max()` restored
+at runtime (`patch.object(pi, 'max_threat_level', old_max)`) against the real
+guardrail + pipeline:
+
+| | `fail_open` pipeline | `check()` (`block_on_threat=True`) |
+|---|---|---|
+| pre-fix | `blocked=False`, content **byte-identical to the injection** | `TypeError: '>' not supported between instances of 'ThreatLevel' and 'ThreatLevel'` |
+| post-fix | `blocked=False`, content **wrapped** (`<potentially_unsafe_input …`) | `BLOCK` / `prompt_injection_detected` / `{'threats_detected': 2}` |
+
+All 8 acceptance criteria verified, AC-4 included (`grep` for a bare `max()`
+over `threats` across `packages/*/src/` returns nothing).
+
+**Design choice worth flagging for review**: an unknown or unparseable
+`level` ranks as `default` (lowest), not as CRITICAL. Rationale is in the
+task's Key Constraints — it matches the existing `.get('level',
+ThreatLevel.LOW)` default in the same module, and ranking a malformed
+detector payload as CRITICAL would turn any shape drift into a blanket
+block. String levels ARE coerced (case-insensitively), so a third-party
+detector emitting `'critical'` still blocks.
+
+**Neighbouring-suite sweep**: `test_guardrails_input_migration.py` has 8
+failures, **pre-existing** — reproduced identically on unfixed
+`dev@b35379119`. They drive the guardrail through `_pytector_detector`,
+which the ctor sets to `None` whenever the engine resolves to ONNX, so the
+suite is environment-dependent. Filed as `issue:d6027c24b96d`; not touched
+here (out of scope).
+
+**Worktree note**: `pytest` needs
+`PYTHONPATH=packages/ai-parrot/src` plus the Cython
+`parrot/utils/types.cpython-312-*.so` and `parrot/utils/parsers/toml…so`
+copied in from the main checkout — they are build artifacts that exist only
+there, and `import parrot.utils` fails without them.
+
+**Deviations from spec**: none. Spec Modules 1 and 2 were implemented as the
+single task the spec's decomposition called for; the only addition beyond the
+blueprint is the private `_coerce_threat_level` helper, which is the
+blueprint's `# FILL IN` coercion rule extracted into a named function for
+testability.

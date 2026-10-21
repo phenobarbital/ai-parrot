@@ -29,6 +29,29 @@ THREAT_LEVEL_ORDER: Dict[ThreatLevel, int] = {
 }
 
 
+def _coerce_threat_level(value: Any, default: ThreatLevel) -> ThreatLevel:
+    """Coerce a threat dict's ``level`` to a :class:`ThreatLevel`.
+
+    Args:
+        value: A :class:`ThreatLevel`, or the string value of one
+            (case-insensitively, e.g. ``"HIGH"``), as emitted by detectors
+            that do not import this module.
+        default: Level to fall back to when ``value`` names nothing known.
+
+    Returns:
+        The matching :class:`ThreatLevel`, or ``default``. Never raises —
+        an unrecognized level must not outrank a real one.
+    """
+    if isinstance(value, ThreatLevel):
+        return value
+    if isinstance(value, str):
+        try:
+            return ThreatLevel(value.strip().lower())
+        except ValueError:
+            return default
+    return default
+
+
 def max_threat_level(
     threats: List[Dict[str, Any]],
     default: ThreatLevel = ThreatLevel.LOW,
@@ -50,26 +73,15 @@ def max_threat_level(
         this runs on a fail-open guardrail path, where an exception means
         the threat is silently dropped.
     """
-    try:
-        max_level = default
-        max_rank = THREAT_LEVEL_ORDER.get(default, 0)
-        for threat in threats:
-            try:
-                level = threat.get("level", default)
-                if isinstance(level, str):
-                    level = ThreatLevel(level.lower())
-                if not isinstance(level, ThreatLevel):
-                    level = default
-                rank = THREAT_LEVEL_ORDER.get(level, max_rank)
-            except Exception:  # noqa: BLE001 - malformed detector payloads must not fail open
-                level = default
-                rank = max_rank
-            if rank > max_rank:
-                max_level = level
-                max_rank = rank
-        return max_level
-    except Exception:  # noqa: BLE001 - this helper must not raise on a guardrail path
-        return default
+    highest = default
+    for threat in threats or ():
+        level = _coerce_threat_level(
+            threat.get('level') if isinstance(threat, dict) else None,
+            default,
+        )
+        if THREAT_LEVEL_ORDER.get(level, -1) > THREAT_LEVEL_ORDER.get(highest, -1):
+            highest = level
+    return highest
 
 
 class PromptInjectionException(Exception):
