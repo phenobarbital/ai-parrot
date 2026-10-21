@@ -12,9 +12,16 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 TEMPLATE_DIR = REPO / "agents" / "fireflies_insights" / "templates"
 PARAMS = {
-    "meeting_title": "Weekly sync", "meeting_date": "2026-10-22", "meeting_id": "01KZ",
-    "action_title": "Ship the importer", "owner": None, "due_date": None,
-    "evidence": "Ana: I will ship it", "decisions": ["Go"], "risks": [], "wiki_url": None,
+    "meeting_title": "Weekly sync",
+    "meeting_date": "2026-10-22",
+    "meeting_id": "01KZ",
+    "action_title": "Ship the importer",
+    "owner": None,
+    "due_date": None,
+    "evidence": "Ana: I will ship it",
+    "decisions": ["Go"],
+    "risks": [],
+    "wiki_url": None,
 }
 
 
@@ -25,8 +32,12 @@ def _ignored(repo: Path, rel: str) -> bool:
 def test_gitignore_whitelists_only_this_agent(tmp_path: Path) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     shutil.copy(REPO / ".gitignore", tmp_path / ".gitignore")
-    for rel in ("agents/fireflies_insights/skills/s/SKILL.md", "agents/fireflies_insights/templates/x.j2",
-                "agents/fireflies_insights/secret_runtime.json", "agents/porygon/skills/x.md"):
+    for rel in (
+        "agents/fireflies_insights/skills/s/SKILL.md",
+        "agents/fireflies_insights/templates/x.j2",
+        "agents/fireflies_insights/secret_runtime.json",
+        "agents/porygon/skills/x.md",
+    ):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_text("x")
     assert not _ignored(tmp_path, "agents/fireflies_insights/skills/s/SKILL.md")
