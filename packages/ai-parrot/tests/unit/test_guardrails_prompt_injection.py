@@ -153,6 +153,7 @@ class TestPromptInjectionGuardrail:
         FEAT-439 (TASK-2310): extended to also guard `onnxruntime` — the
         ONNX engine's import boundary is exactly as lazy as pytector's.
         """
+        import os
         import subprocess
         import sys
 
@@ -163,8 +164,15 @@ class TestPromptInjectionGuardrail:
             "assert 'onnxruntime' not in sys.modules, 'onnxruntime loaded eagerly'; "
             "print('OK')"
         )
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
         result = subprocess.run(
-            [sys.executable, "-c", code], capture_output=True, text=True, timeout=60, check=False
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=environment,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "OK" in result.stdout
