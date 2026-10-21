@@ -10,8 +10,9 @@ tags: [fireflies, mcp, wikitoolkit, telegram, insights, agent]
 
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option B
+**Open questions**: all resolved 2026-10-22 (see Open Questions)
 
 ---
 
@@ -69,25 +70,42 @@ FEAT-481 writes an Obsidian vault, this one writes the wiki inbox directory.
 - **C2** It must be an `Agent` (not `BasicAgent`) composed with
   `SkillRegistryMixin`, so skills can be defined for it.
 - **C3** Skills are **file-based**: `skill_paths` + `SkillFileToolkit`, versioned
-  on disk. No DB skill registry in this feature.
+  on disk, rooted at `agents/fireflies_insights/skills/` under `AGENTS_DIR` —
+  the convention already used by `agents/porygon/`, `agents/flex_dashboard/`,
+  `agents/odoo_agent/` and `agents/security_advisor/`. **Not** `.agent/skills/`,
+  which is the SDD tooling's own tree. No DB skill registry in this feature.
 - **C4** `WorkingMemoryToolkit` must be wired so intermediate per-meeting
   artifacts survive within a run and are addressable by the LLM.
 - **C5** Insights are generated from the **transcript + summary the agent holds
   in memory**, never by waiting on or polling the wiki ingestion. The two paths
   are independent; a failed ingest must not suppress insights, and vice versa.
 - **C6** A **real filesystem watcher** ingests what lands in the inbox folder,
-  regardless of who put it there. It is built **inside this feature**.
+  regardless of who put it there. It is built **inside this feature**, and ships
+  in two shapes from one implementation: a startable/stoppable service object,
+  and a `wikitoolkit inbox --watch` mode that runs it standalone.
 - **C7** Telegram delivery is **per meeting, to one configured channel**,
   mirroring `GitHubReviewer.public_channel_id`. HTML entity escaping and the
   4096-char chunking rule are non-negotiable — Telegram answers 400 otherwise.
 - **C8** Jira tickets are created **only after explicit human confirmation over
-  Telegram**. The agent never opens a ticket on its own initiative.
+  Telegram**. The agent never opens a ticket on its own initiative. A confirmed
+  insight is rendered through a **dedicated JiraToolkit template** (FEAT-637
+  template support), not by assembling fields ad hoc, and the ticket gets a
+  **best-effort backlink** to the meeting's wiki page when ingestion has already
+  produced one — omitted silently when it has not.
 - **C9** Async-first, `aiohttp` only, Pydantic v2 models, `self.logger`, no
   `print`, no LangChain — `.claude/rules/codebase-conventions.md` applies.
 - **C10** No new third-party dependency: `watchdog>=4.0` is already declared in
   `packages/ai-parrot/pyproject.toml`.
 - **C11** The inbox holds the sole whole-run writer lock (`InboxLockBusy`). The
-  watcher must serialize runs and must never ingest a half-written file.
+  watcher must serialize runs and must never ingest a half-written file. Safety
+  is **uniform**: every candidate passes the same size+mtime stability window
+  regardless of its producer, so there is one code path to test. The agent still
+  writes atomically (temp + rename) — belt and braces, not an exemption.
+- **C12** The agent runs on a **schedule and on demand**: a periodic sync like
+  `FirefliesObsidianAgent` (designed for ~8 h), plus a `@telegram_command` that
+  forces a run — the `GitHubReviewer` pattern.
+- **C13** Processed-meeting state reuses **`MeetingRegistry`** (FEAT-472,
+  merged); the agent does not invent its own dedup store.
 
 ---
 
@@ -137,10 +155,14 @@ Two clearly separated pieces, both delivered by this feature:
    A `watchdog` observer over the configured inbox directory, debounced and
    quiescence-gated (a file is only a candidate once its size and mtime have
    been stable for N seconds), that coalesces bursts into a **single serialized
-   `InboxProcessor.run()`**, reusing the CLI's existing runtime builder rather
-   than re-assembling the ~13 bound services of `InboxRuntime` by hand. It is
-   source-agnostic: Fireflies, a scanned PDF or a manual drop are all the same.
-   It is exposed both as an awaitable service object and as a
+   `InboxProcessor.run()`**, built on the **already-public, click-free**
+   `parrot.knowledge.wiki.runtime.build_ingest_runtime()` rather than
+   re-assembling the 14 bound services of `InboxRuntime` by hand. That module
+   exists precisely so "async servers can construct the charter triage and
+   ingest services without importing CLI code or starting a nested event loop",
+   so **no CLI refactor is needed**. The watcher is source-agnostic: Fireflies,
+   a scanned PDF or a manual drop are all the same. It ships in two shapes from
+   one implementation — a startable/stoppable service object, and a
    `wikitoolkit inbox --watch` CLI mode.
 
 2. **`FirefliesInsightsAgent`** — a `SkillRegistryMixin` + `Agent` in
@@ -165,6 +187,8 @@ any agent.
 - Atomic writes + quiescence gate + serialized runs directly answer C11.
 - Closes a real gap already filed in the work ledger (`f7477bd7bba4` asks for
   the inbox to be reachable beyond the CLI).
+- The reusable seam it needs (`runtime.build_ingest_runtime`) **already exists
+  and is public**, so the wiki-side cost is one new module plus a CLI flag.
 
 ❌ **Cons:**
 - Two modules in two packages' trees instead of one class — more surface to
@@ -172,8 +196,8 @@ any agent.
 - The watcher's quiescence heuristic is genuinely tricky: too short and it
   ingests a partial file, too long and ingestion feels laggy. Needs its own
   acceptance criteria.
-- Requires deciding and documenting how the watcher is run in production
-  (managed agent task vs. standalone process) — see Open Questions.
+- The `--watch` flag still touches `knowledge/wiki/cli.py`, the one file this
+  feature shares with other in-flight wiki work.
 
 📊 **Effort:** Medium–High
 
@@ -186,7 +210,9 @@ any agent.
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/knowledge/wiki/inbox/processor.py` — `InboxProcessor.run()`, `InboxLockBusy`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` — `_build_ingest_runtime()`, the `inbox` command
+- `packages/ai-parrot/src/parrot/knowledge/wiki/runtime.py` — `build_ingest_runtime()`, `build_novelty_scorer()`, `build_triage_adapters()` (public, click-free)
+- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` — the `inbox` command, extended with `--watch`
+- `packages/ai-parrot/src/parrot/agents/meeting_registry.py` — `MeetingRegistry` id-keyed dedup, watermark and fingerprints
 - `packages/ai-parrot/src/parrot/agents/obsidian.py` — Fireflies MCP fetch, `include_summary`, response parsing
 - `packages/ai-parrot/src/parrot/bots/github_reviewer.py` — `set_wrapper()`, `_get_telegram_bot()`, HTML escaping, 4096-char chunking, `@telegram_command`, `post_configure()` toolkit wiring
 - `packages/ai-parrot/src/parrot/skills/mixin.py` — `SkillRegistryMixin`
@@ -278,15 +304,18 @@ than substitutive.
   taken, risks and blockers raised, and action items with their owner where the
   transcript names one.
 - Each message offers an explicit way to escalate: replying/confirming turns a
-  chosen insight into a Jira ticket. **Nothing reaches Jira without that
-  confirmation.** The agent answers with the created ticket key and URL.
+  chosen insight into a Jira ticket, rendered through a dedicated JiraToolkit
+  template so every meeting ticket looks the same. **Nothing reaches Jira
+  without that confirmation.** The agent answers with the created ticket key and
+  URL, and — when the wiki has already ingested that meeting — a link to its
+  wiki page.
 - Meanwhile and independently, the meeting document appears in the LLM-Wiki,
   classified and linked by the existing inbox pipeline, and becomes queryable
   via `wikitoolkit query`. The operator does nothing to make this happen —
   the watcher sees the file land and ingests it.
 - Dropping any other supported document into the same folder by hand ingests it
   too; the watcher is not Fireflies-specific.
-- Skills placed in the configured skills directory show up to the agent via
+- Skills placed in `agents/fireflies_insights/skills/` show up to the agent via
   `list_skill_commands` and can be invoked with their `/trigger`, so the
   operator can teach it house-specific insight formats without a code change.
 
@@ -296,15 +325,19 @@ than substitutive.
 
 1. The agent lazily initializes the Fireflies MCP server, resolving the API key
    from an explicit argument, then `FIREFLIES_API_KEY` via navconfig.
-2. It fetches transcripts with the summary included, and consults its own
-   processed-meeting state so an already-handled meeting is never re-fetched.
+2. It fetches transcripts with the summary included, and consults
+   **`MeetingRegistry`** (FEAT-472) so an already-handled meeting is never
+   re-fetched: `suggest_from_date()` supplies the watermark, `lookup()` /
+   `classify()` the id-keyed gate, and `record_synced()` / `mark_analyzed()` /
+   `mark_wiki_ingested()` record the outcome.
 3. Each meeting is rendered to a single document and written **atomically** into
    the inbox directory — write to a temp name, then rename — so the watcher can
    never observe a partially written file.
 4. The `InboxWatcher`, running independently, debounces the filesystem events,
-   waits for each candidate to go quiescent, and coalesces the burst into one
-   serialized `InboxProcessor.run()`, which holds the whole-run writer lock.
-   Its per-run `InboxRunReport` is logged, not awaited by the agent.
+   holds **every** candidate behind the same size+mtime stability window
+   regardless of producer, and coalesces the burst into one serialized
+   `InboxProcessor.run()`, which holds the whole-run writer lock. Its per-run
+   `InboxRunReport` is logged, not awaited by the agent.
 
 **Insight path (agent-local), independent of the above:**
 
@@ -317,8 +350,11 @@ than substitutive.
 7. The insight set is rendered to Telegram HTML — every interpolation escaped —
    and chunked under the 4096-char limit before being pushed to the configured
    channel through the bot the `TelegramAgentWrapper` injected via `set_wrapper()`.
-8. A human confirmation over Telegram triggers `JiraToolkit` to create the
-   ticket, and the agent replies with the resulting key.
+8. A human confirmation over Telegram triggers `JiraToolkit.jira_create_issue()`
+   with the meeting template and its params; project and issue type still fall
+   back to `JIRA_DEFAULT_PROJECT` / `JIRA_DEFAULT_ISSUE_TYPE`. The agent then
+   looks for the meeting's wiki page and, if ingestion has already produced one,
+   adds the backlink; otherwise it skips it silently. It replies with the key.
 
 ### Edge Cases & Error Handling
 
@@ -338,6 +374,9 @@ than substitutive.
 | No Telegram wrapper attached | Return a structured "no telegram wrapper" result, exactly as `_notify_telegram_alert` does — never raise into the run. |
 | Jira unavailable at confirmation time | Report the failure in-channel with the insight preserved, so the human can retry; never silently drop a confirmed escalation. |
 | Duplicate confirmation for one insight | Idempotent: return the existing ticket key rather than opening a second ticket. |
+| Wiki page not yet ingested at confirmation time | Ticket is created **without** the backlink, silently. The backlink is best-effort by design (C8) and never delays or blocks the ticket. |
+| `MeetingRegistry` DB unavailable | It degrades itself to `available = False` after one WARNING and returns neutral values instead of raising; the agent falls back to its own title-based skip for that run, exactly as FEAT-472 specifies. |
+| `InboxConfig.stage_git` is `True` (the default) | Every archived and projected file is `git add`-ed. Under a long-running watcher this silently grows the index of whatever repo the wiki project lives in — see Open Questions. |
 
 ---
 
@@ -364,7 +403,9 @@ than substitutive.
 |---|---|---|
 | `parrot/bots/` | extends | New `fireflies_insights.py`; new class only, no change to existing bots |
 | `parrot/knowledge/wiki/inbox/` | extends | New `watcher.py`; `processor.py` untouched |
-| `parrot/knowledge/wiki/cli.py` | modifies | `--watch` flag on the existing `inbox` command; `_build_ingest_runtime` promoted to a reusable seam |
+| `parrot/knowledge/wiki/cli.py` | modifies | `--watch` flag on the existing `inbox` command — nothing else |
+| `parrot/knowledge/wiki/runtime.py` | depends on | `build_ingest_runtime()` consumed as-is; already public and click-free, no promotion needed |
+| `parrot/agents/meeting_registry.py` | depends on | `MeetingRegistry` consumed as-is for processed-meeting state (C13) |
 | `parrot/integrations/telegram` | depends on | Consumes `telegram_command` and the wrapper-injected bot; no change to the integration |
 | `parrot_tools/jiratoolkit.py` | depends on | Consumed as-is for ticket creation |
 | `parrot/tools/working_memory/` | depends on | `WorkingMemoryToolkit` wired into the agent |
@@ -476,6 +517,79 @@ def validate_inbox_paths(root: Path, inbox: Path, archive: Path, markdown: Path)
 # packages/ai-parrot/src/parrot/knowledge/wiki/charter.py:404
 def load_charter(path: Path) -> Charter: ...
 
+# packages/ai-parrot/src/parrot/knowledge/wiki/runtime.py — PUBLIC, click-free builders.
+# Docstring: "kept separate from command-line concerns so async servers can construct
+# the charter triage and ingest services without importing CLI code or starting a
+# nested event loop."  __all__ = [WikiRuntimeError, persistence_for_project,
+# build_triage_adapters, build_novelty_scorer, build_ingest_runtime]  # runtime.py:26-31
+def build_ingest_runtime(                                     # runtime.py:170
+    root: Path, config: WikiProjectConfig, store: BaseWikiStore,
+    sources: SourceCollectionManager, charter: "Charter", charter_path: Path, *,
+    lightweight_model: str, model: str, novelty_scorer: Any,
+    adapters: tuple[Any, Any, str, bool] | None = None, fetch_timeout: float = 30.0,
+) -> "InboxRuntime": ...
+def build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any, str, bool]: ...  # runtime.py:90
+async def build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWikiStore) -> Any: ...  # runtime.py:113
+class WikiRuntimeError(RuntimeError): ...                     # runtime.py:86
+# NOTE: cli.py:5290 `_build_ingest_runtime` is only a click-flavoured wrapper that
+# resolves model ids, calls the three builders above and re-raises as ClickException.
+# The watcher calls runtime.py directly. Do NOT refactor or export the CLI helper.
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:286
+class InboxConfig(BaseModel):
+    dir: str = "inbox"                                        # :289
+    archive_dir: str = f"{PARROT_DIR}/archive"                # :290
+    rejected_subdir: str = "rejected"                         # :293 single segment, no separators or '..'
+    markdown_dir: str | None = None                           # :294 defaults to <storage_dir>/inbox
+    date_format: str = "%Y-%m-%d"                             # :297
+    stage_git: bool = True                                    # :298 — stages archived+projected files in git
+    max_candidates: int = 20                                  # :299 ge=1, le=100
+    lock_timeout: float = 30.0                                # :300 ge=0.0
+
+# packages/ai-parrot/src/parrot/agents/meeting_registry.py:167
+class MeetingRegistry:
+    """Meeting-shaped async facade over SourceCollectionManager.
+    Constructor takes NO Obsidian toolkit — it is backed by registry_dir/wiki.db
+    and registry_dir/sources, the same path the wiki toolkit opens.
+    Degraded mode: on sqlite3.Error/OSError it logs ONE warning, sets
+    available=False, and every verb returns a neutral value instead of raising."""
+    def __init__(self, registry_dir: Path, *, manager: SourceCollectionManager | None = None) -> None: ...  # :184
+    @property
+    def available(self) -> bool: ...                          # :228
+    async def lookup(self, fireflies_id: str) -> MeetingRecord | None: ...        # :236
+    async def classify(self, ...) -> Classified: ...                              # :253
+    async def pending_analysis(self) -> list[MeetingRecord]: ...                  # :324
+    async def suggest_from_date(self, *, overlap_days: int) -> str | None: ...    # :370
+    async def record_synced(self, ...) -> ...: ...                                # :430
+    async def mark_analyzed(self, fireflies_id: str, fingerprint: str) -> None: ...   # :526
+    async def mark_analysis_failed(self, fireflies_id: str, error: str) -> None: ...  # :545
+    async def mark_wiki_ingested(self, *, at: str | None = None) -> int: ...      # :560
+    async def forget(self, fireflies_id: str, *, reject: bool = False) -> bool: ...   # :585
+    # Vault-coupled verbs this feature does NOT use:
+    #   unique_slug(..., vault_path=)  :397 | backfill_from_vault  :616
+    #   merge_duplicates :738 | repair_path :851 | _vault_root(toolkit: ObsidianToolkit) :1066
+def normalise_transcript(text: str) -> str: ...               # meeting_registry.py:69
+def fingerprint(text: str) -> str: ...                        # meeting_registry.py:91
+class MeetingRecord(BaseModel): ...                           # meeting_registry.py:110
+
+# packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:2608
+    async def jira_create_issue(
+        self, project: Optional[str] = None, summary: str = "",
+        issuetype: Optional[str] = None, description: Optional[str] = None,
+        assignee: Optional[str] = None, priority: Optional[str] = None,
+        labels: Optional[List[str]] = None, components: Optional[List[str]] = None,
+        due_date: Optional[str] = None, parent: Optional[str] = None,
+        original_estimate: Optional[str] = None, fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None, template_params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]: ...
+    async def jira_create_issue_link(                         # jiratoolkit.py:4375
+        self, inward_issue: str, outward_issue: str,
+        link_type: str = "Relates", comment: Optional[str] = None,
+    ) -> Dict[str, Any]: ...
+    # Defaults resolved in __init__ (jiratoolkit.py:945-946):
+    #   self.default_project    = JIRA_DEFAULT_PROJECT    (fallback "NAV")
+    #   self.default_issue_type = JIRA_DEFAULT_ISSUE_TYPE (fallback "Task")
+
 # packages/ai-parrot/src/parrot/bots/github_reviewer.py:491
 class GitHubReviewer(Agent):
     def set_wrapper(self, wrapper) -> None: ...                 # :875 — TelegramAgentWrapper injects its bot
@@ -570,13 +684,17 @@ from parrot.registry import register_agent                                      
 - ~~`wiki_inbox` MCP tool~~ — does not exist: no `wiki_inbox` symbol anywhere under `packages/ai-parrot/src/parrot/`, and there is no `knowledge/wiki/mcp/` package. Ledger issue `f7477bd7bba4` asks for it; it is **not** a prerequisite of this feature.
 - ~~`FirefliesObsidianAgent` as a base class for this agent~~ — it is a `BasicAgent` with no skills, no working memory, no Telegram and no Jira. It is a **reference**, not a parent.
 - ~~a Fireflies toolkit under `parrot_tools/`~~ — Fireflies is reached only over MCP (`sdd/state/FEAT-263/findings/F010-workiq-fireflies.md`).
+- ~~a need to promote `cli.py:_build_ingest_runtime` into a public seam~~ — the public seam **already exists** as `parrot.knowledge.wiki.runtime.build_ingest_runtime`. An earlier draft of this brainstorm said otherwise; it was wrong.
+- ~~`MeetingRegistry` requiring an `ObsidianToolkit`~~ — its constructor takes `registry_dir` and an optional `SourceCollectionManager` only. Only `unique_slug`, `backfill_from_vault`, `merge_duplicates`, `repair_path` and `_vault_root` touch a vault, and none of them is used here.
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: good. Three natural lanes with almost no file
-  overlap — (L1) `knowledge/wiki/inbox/watcher.py` + the `--watch` CLI flag;
+- **Internal parallelism**: good, and better than the first draft assumed now
+  that the wiki-side seam turned out to be public already. Three natural lanes
+  with almost no file overlap — (L1) `knowledge/wiki/inbox/watcher.py` + the
+  `--watch` CLI flag (no CLI refactor);
   (L2) the agent's Fireflies-fetch and atomic inbox-drop half; (L3) the
   insight → Telegram → Jira half plus the skills/working-memory wiring. L1 is
   fully independent of L2/L3. L2 and L3 share the agent module, so they
@@ -596,6 +714,10 @@ from parrot.registry import register_agent                                      
 
 ## Open Questions
 
+All questions raised during discovery are resolved. The three added at the
+bottom were **discovered while resolving the others** and are deliberately left
+open for `/sdd-spec` to settle with real numbers.
+
 - [x] Flow type and base branch — *Owner: Jesus Lara*: `type: feature`, `base_branch: dev`.
 - [x] What to do about the unmerged FEAT-481 agent — *Owner: Jesus Lara*: build a new independent agent; leave FEAT-481 exactly as it is.
 - [x] How the inbox ingestion is triggered — *Owner: Jesus Lara*: a real filesystem watcher, built inside this feature.
@@ -603,9 +725,16 @@ from parrot.registry import register_agent                                      
 - [x] Telegram cadence and destination — *Owner: Jesus Lara*: one message per meeting, to a single configured channel (the `public_channel_id` pattern).
 - [x] How Jira tickets are created — *Owner: Jesus Lara*: only on explicit human confirmation over Telegram.
 - [x] Skill backend — *Owner: Jesus Lara*: file-based (`skill_paths` + `SkillFileToolkit`); no DB skill registry in this feature.
-- [ ] How is the watcher run in production — as a background task the agent manages, as a standalone `wikitoolkit inbox --watch` process, or both? Affects deployment docs and the restart story. — *Owner: Jesus Lara*
-- [ ] What triggers an agent run — a scheduler/cron like `FirefliesObsidianAgent`, a `@telegram_command` on demand, or both? Assumed **both** (scheduled by default, with an on-demand command), mirroring `GitHubReviewer`. — *Owner: Jesus Lara*
-- [ ] What quiescence window makes a dropped file safe to ingest, and is a size+mtime stability check sufficient, or should the watcher require an explicit sidecar/marker file for large documents? — *Owner: Jesus Lara*
-- [ ] Which Jira project, issue type and field mapping does a confirmed insight become? Does the ticket link back to the wiki page id once ingestion has produced one? — *Owner: Jesus Lara*
-- [ ] Where do this agent's skills live on disk — `.agent/skills/` (repo-versioned, shared with the SDD tooling) or an agent-owned directory under `AGENTS_DIR`? — *Owner: Jesus Lara*
-- [ ] Does the agent keep its own processed-meeting state, or should it reuse `MeetingRegistry` (`parrot/agents/meeting_registry.py`, FEAT-472, merged)? Reuse looks right but was not verified against this feature's needs. — *Owner: Jesus Lara*
+- [x] How is the watcher run in production — *Owner: Jesus Lara*: **both**, from one implementation — a startable/stoppable service object the agent may manage, plus a `wikitoolkit inbox --watch` mode that runs it standalone.
+- [x] What triggers an agent run — *Owner: Jesus Lara*: **both** — a periodic scheduled sync plus an on-demand `@telegram_command`, mirroring `GitHubReviewer`.
+- [x] Quiescence strategy — *Owner: Jesus Lara*: a **uniform** size+mtime stability window for every candidate regardless of producer, so there is one code path to test. The agent still writes atomically (temp + rename) as defence in depth, not as an exemption from the window. No sidecar marker file.
+- [x] Jira field mapping — *Owner: Jesus Lara*: a **dedicated JiraToolkit template** (FEAT-637 template support) rather than ad-hoc field assembly; `project` / `issuetype` still fall back to `JIRA_DEFAULT_PROJECT` / `JIRA_DEFAULT_ISSUE_TYPE`.
+- [x] Wiki backlink on the ticket — *Owner: Jesus Lara*: **best-effort** — added when the meeting's wiki page already exists at confirmation time, silently omitted when it does not. It never delays or blocks ticket creation (C5/C8).
+- [x] Where this agent's skills live — *Owner: Jesus Lara*: `agents/fireflies_insights/skills/` under `AGENTS_DIR`, the convention already used by `agents/porygon/`, `agents/flex_dashboard/`, `agents/odoo_agent/` and `agents/security_advisor/`. Not `.agent/skills/`, which holds the SDD tooling's own skills.
+- [x] Processed-meeting state — *Owner: Jesus Lara*: **reuse `MeetingRegistry`** (FEAT-472, merged). Verified not to be Obsidian-coupled at construction; the vault-bound verbs are simply unused.
+
+### Raised during resolution — for `/sdd-spec`
+
+- [ ] **What stability window, concretely?** "Uniform size+mtime" is decided; the number is not. It must cover a slow network copy of a large PDF without making the agent's own atomically-renamed files wait pointlessly. Needs a measured default and an `InboxConfig` knob. — *Owner: Jesus Lara*
+- [ ] **`InboxConfig.stage_git` defaults to `True`**, so every archived and projected file is `git add`-ed. That is sane for a human running `wikitoolkit inbox` occasionally; under a watcher running continuously it silently grows the index of whatever repo the wiki project lives in. Does the watcher force `stage_git=False`, leave it to config, or is auto-staging actually wanted here? — *Owner: Jesus Lara*
+- [ ] **The Jira template does not exist yet.** Its name, location and parameter set (summary, description, labels, meeting id, owner, due date) have to be defined as part of this feature, since C8 now depends on it. — *Owner: Jesus Lara*
