@@ -8,7 +8,7 @@ base_branch: dev
 
 **Date**: 2026-10-20
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: exploration — Open Questions resolved 2026-10-21
+**Status**: accepted (2026-10-21; Open Questions resolved the same day)
 **Recommended Option**: B
 **Related**: `claude/semantic-layer.research.md` (generic semantic layer candidates, 2026-10-14); `claude/schema-plane.brainstorm.md` (SQL metadata plane)
 **Inspiration**: dbt MetricFlow (derived metrics, filtered measures), Cube (`filters:` on measures), ledger-style compile-time validation
