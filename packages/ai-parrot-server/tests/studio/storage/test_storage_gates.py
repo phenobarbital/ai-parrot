@@ -143,8 +143,8 @@ _FEAT638_LANGUAGE_DEFAULT = re.compile(r"(language\s+VARCHAR\(10\))\s+DEFAULT\s+
 # max_tokens / top_k / top_p / embedding_model columns and was missing prompt_config,
 # toolkit_config, mcp_servers, use_kb / kb / custom_kbs and bot_class, so a strict row
 # hydration failed with `column "toolkit_config" does not exist`. Each entry is
-# (merge-base text, reviewed text); an entry whose old side is gone (already merged) is
-# a no-op.
+# (merge-base text, reviewed text); an entry whose result is already in the merge-base copy
+# (change merged) is skipped, so the gate stays idempotent across the merge.
 _SANCTIONED_REWRITES: tuple[tuple[str, str], ...] = (
     (
         "-- WARNING: Initial setup DDL only. DO NOT run against production.\n"
@@ -254,7 +254,8 @@ def _with_sanctioned_deltas(source: str) -> str:
     """Apply sanctioned DDL deltas to a merge-base copy before AC17 compares it."""
     source = _FEAT638_LANGUAGE_DEFAULT.sub(r"\1,", source)
     for old, new in _SANCTIONED_REWRITES:
-        source = source.replace(old, new)
+        if new not in source:  # a rewrite whose result is already there has been merged
+            source = source.replace(old, new)
     return source
 
 

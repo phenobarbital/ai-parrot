@@ -22,17 +22,26 @@ import pytest
 from parrot import conf
 from parrot.bots import github_reviewer
 from parrot.bots.github_reviewer import (
+    ChatId,
+    ChartReply,
     Discrepancy,
     GitHubReviewer,
+    MergeVerdict,
+    PRChecksSummary,
     PRReviewResult,
     WeeklyActivitySummary,
     WeeklyLLMSummarizationError,
     _ContributorWindowSummary,
     _flatten_adf,
+    _read_only_excludes,
+    _STRUCTURAL_READ_TOOLS,
+    _WIKI_READ_TOOLS,
+    _WIKI_TOOLS_PROMPT,
 )
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
+    StatsNotReadyError,
     WeeklyCodeFrequency,
 )
 
@@ -53,8 +62,18 @@ class _MinimalReviewer:
         self.max_ticket_bytes = max_ticket_bytes
         self._ac_field_id = ac_field_id
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
+        self._jira_strict_fields = ",".join(sorted({"summary", "description", "status", "assignee", ac_field_id}))
         self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
+        # /review_pr gate knobs — mirror GitHubReviewer.__init__ defaults.
+        self.min_check_pass_ratio = 0.8
+        self.require_checks = False
+        self.public_channel_id: Optional[ChatId] = None
         self._reviewed_shas: Dict[Any, str] = {}
+        # Mirrors GitHubReviewer.__init__: an unset management chat falls back
+        # to the public channel, so the management reports never go silent.
+        # A property (not a plain attribute) because tests assign
+        # ``public_channel_id`` after construction.
+        self._management_chat_id: Optional[ChatId] = None
         self._no_ticket_notified: set = set()
         self._wiki_cache = None
         self._wiki_warmup_task = None
@@ -65,6 +84,18 @@ class _MinimalReviewer:
         self._wiki_built_at = None
         self._wiki_context_available = False
         self._llm = None
+
+    @property
+    def configured_management_chat_id(self) -> Optional[ChatId]:
+        return self._management_chat_id or None
+
+    @property
+    def management_chat_id(self) -> Optional[ChatId]:
+        return self._management_chat_id or self.public_channel_id
+
+    @management_chat_id.setter
+    def management_chat_id(self, value: Optional[ChatId]) -> None:
+        self._management_chat_id = value
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
@@ -78,6 +109,22 @@ class _MinimalReviewer:
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
+    report_stale_pull_requests = GitHubReviewer.report_stale_pull_requests
+    today_pr = GitHubReviewer.today_pr
+    management_chat_is_fallback = GitHubReviewer.management_chat_is_fallback
+    _chunk_digest_messages = GitHubReviewer._chunk_digest_messages
+    _format_pr_digest = GitHubReviewer._format_pr_digest
+    _format_stale_prs_digest = GitHubReviewer._format_stale_prs_digest
+    _format_today_prs_digest = GitHubReviewer._format_today_prs_digest
+    _pr_state_label = staticmethod(GitHubReviewer._pr_state_label)
+    # Already bound to GitHubReviewer as a classmethod — assign it as-is.
+    _is_open_pull_request = GitHubReviewer._is_open_pull_request
+    report_weekly_activity = GitHubReviewer.report_weekly_activity
+    _defer_weekly_report = GitHubReviewer._defer_weekly_report
+    _shutdown_weekly_retry = GitHubReviewer._shutdown_weekly_retry
+    # staticmethod(): a bare assignment would rebind it as an instance method.
+    _parse_iso8601 = staticmethod(GitHubReviewer._parse_iso8601)
+    _get_telegram_bot = GitHubReviewer._get_telegram_bot
     _build_wiki_cache = GitHubReviewer._build_wiki_cache
     _schedule_wiki_warmup = GitHubReviewer._schedule_wiki_warmup
     _shutdown_wiki_warmup = GitHubReviewer._shutdown_wiki_warmup
@@ -86,8 +133,80 @@ class _MinimalReviewer:
     _await_wiki_refresh = GitHubReviewer._await_wiki_refresh
     _wiki_review_lease = GitHubReviewer._wiki_review_lease
     _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
+    _document_wiki_tools = GitHubReviewer._document_wiki_tools
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
+    _PARTIAL_WEEKLY_NOTICE = GitHubReviewer._PARTIAL_WEEKLY_NOTICE
+    _TELEGRAM_MAX_MESSAGE = GitHubReviewer._TELEGRAM_MAX_MESSAGE
+    _TELEGRAM_PART_RESERVE = GitHubReviewer._TELEGRAM_PART_RESERVE
+    _STALE_TITLE_MAX = GitHubReviewer._STALE_TITLE_MAX
+    _TODAY_PR_HEADING = GitHubReviewer._TODAY_PR_HEADING
+    _TODAY_PR_WINDOW_HOURS = GitHubReviewer._TODAY_PR_WINDOW_HOURS
+    # Jira ticket summary (open / in progress / closed by assignee).
+    report_jira_tickets = GitHubReviewer.report_jira_tickets
+    _collect_ticket_summary = GitHubReviewer._collect_ticket_summary
+    _summarize_tickets = GitHubReviewer._summarize_tickets
+    _format_jira_tickets_digest = GitHubReviewer._format_jira_tickets_digest
+    _format_ticket_counts = GitHubReviewer._format_ticket_counts
+    _ticket_bucket = classmethod(GitHubReviewer._ticket_bucket.__func__)
+    _ticket_assignee = staticmethod(GitHubReviewer._ticket_assignee)
+    _TICKET_RECENT_HOURS = GitHubReviewer._TICKET_RECENT_HOURS
+    _TICKET_WINDOW_DAYS = GitHubReviewer._TICKET_WINDOW_DAYS
+    _TICKET_SUMMARY_FIELDS = GitHubReviewer._TICKET_SUMMARY_FIELDS
+    _TICKET_BUCKETS = GitHubReviewer._TICKET_BUCKETS
+    _TICKET_BUCKET_ORDER = GitHubReviewer._TICKET_BUCKET_ORDER
+    _TICKET_ASSIGNEE_MAX = GitHubReviewer._TICKET_ASSIGNEE_MAX
+    _TICKET_HEADING = GitHubReviewer._TICKET_HEADING
+    # Monthly ticket pie (/monthly_jira_tickets + the 1st-of-month report).
+    monthly_jira_tickets = GitHubReviewer.monthly_jira_tickets
+    report_monthly_jira_tickets = GitHubReviewer.report_monthly_jira_tickets
+    _TELEGRAM_MAX_CAPTION = GitHubReviewer._TELEGRAM_MAX_CAPTION
+    _ticket_pie_slices = classmethod(GitHubReviewer._ticket_pie_slices.__func__)
+    _render_ticket_pie = GitHubReviewer._render_ticket_pie
+    _format_monthly_tickets_text = GitHubReviewer._format_monthly_tickets_text
+    _format_monthly_tickets_digest = GitHubReviewer._format_monthly_tickets_digest
+    _monthly_ticket_headings = GitHubReviewer._monthly_ticket_headings
+    _monthly_ticket_rows = GitHubReviewer._monthly_ticket_rows
+    _build_monthly_ticket_pie = GitHubReviewer._build_monthly_ticket_pie
+    _TICKET_MONTH_DAYS = GitHubReviewer._TICKET_MONTH_DAYS
+    _TICKET_PIE_MAX_SLICES = GitHubReviewer._TICKET_PIE_MAX_SLICES
+    _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
+    # Strict on-demand gate (/review_pr).
+    review_pr = GitHubReviewer.review_pr
+    strict_review_pull_request = GitHubReviewer.strict_review_pull_request
+    _parse_pr_target = classmethod(GitHubReviewer._parse_pr_target.__func__)
+    _summarize_checks = classmethod(GitHubReviewer._summarize_checks.__func__)
+    _fetch_pr_payload = GitHubReviewer._fetch_pr_payload
+    _fetch_checks = GitHubReviewer._fetch_checks
+    _merge_verdict = GitHubReviewer._merge_verdict
+    _submit_review = GitHubReviewer._submit_review
+    _format_checks_line = GitHubReviewer._format_checks_line
+    _format_block_comment = GitHubReviewer._format_block_comment
+    _format_deferred_body = GitHubReviewer._format_deferred_body
+    _format_command_reply = GitHubReviewer._format_command_reply
+    _format_blocked_message = GitHubReviewer._format_blocked_message
+    _deferral_cause = staticmethod(GitHubReviewer._deferral_cause)
+    _format_findings_section = GitHubReviewer._format_findings_section
+    _format_ci_footer = GitHubReviewer._format_ci_footer
+    _notify_blocked_pr = GitHubReviewer._notify_blocked_pr
+    _resolve_assignee = GitHubReviewer._resolve_assignee
+    _roster = GitHubReviewer._roster
+    _telegram_mention = staticmethod(GitHubReviewer._telegram_mention)
+    _TEST_CHECK_RE = GitHubReviewer._TEST_CHECK_RE
+    _PR_URL_RE = GitHubReviewer._PR_URL_RE
+    _PR_SLUG_RE = GitHubReviewer._PR_SLUG_RE
+    _PR_NUMBER_RE = GitHubReviewer._PR_NUMBER_RE
+    # Resolved/Closed ticket listing (report_resolved_tickets).
+    report_resolved_tickets = GitHubReviewer.report_resolved_tickets
+    _collect_resolved_tickets = GitHubReviewer._collect_resolved_tickets
+    _resolved_ticket_rows = GitHubReviewer._resolved_ticket_rows
+    _format_resolved_tickets_digest = GitHubReviewer._format_resolved_tickets_digest
+    _jira_browse_url = GitHubReviewer._jira_browse_url
+    _RESOLVED_WINDOW_HOURS = GitHubReviewer._RESOLVED_WINDOW_HOURS
+    _RESOLVED_STATUSES = GitHubReviewer._RESOLVED_STATUSES
+    _RESOLVED_FIELDS = GitHubReviewer._RESOLVED_FIELDS
+    _RESOLVED_HEADING = GitHubReviewer._RESOLVED_HEADING
+    _RESOLVED_SUMMARY_MAX = GitHubReviewer._RESOLVED_SUMMARY_MAX
 
 
 class _StubEvent:
@@ -190,6 +309,126 @@ class TestWikiLifecycle:
         reviewer._attach_wiki_toolkits(tmp_path / "clone")
 
         assert toolkit_factory.call_args.kwargs["confine_sources"] is True
+
+
+class TestWikiToolSurface:
+    """The reviewer's wiki surface is read-only and self-documenting."""
+
+    def test_write_tools_are_withheld(self) -> None:
+        """Every mutating LLMWikiToolkit coroutine is excluded, the five reads are not."""
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        excluded = _read_only_excludes(LLMWikiToolkit, _WIKI_READ_TOOLS)
+
+        for write_tool in (
+            "create_page",
+            "update_page",
+            "delete_page",
+            "create_wiki",
+            "delete_wiki",
+            "remember",
+            "ingest_source",
+            "ingest_obsidian_vault",
+            "reingest_source",
+            "rebuild_index",
+            "export_okf",
+        ):
+            assert write_tool in excluded, f"{write_tool} is still exposed to the review LLM"
+        assert not set(_WIKI_READ_TOOLS) & set(excluded)
+
+    def test_keep_lists_name_real_methods(self) -> None:
+        """A typo in a keep-list would silently exclude the tool it means to keep."""
+        from parrot.knowledge.wiki.structural.toolkit import CodeStructuralToolkit
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        for toolkit_cls, keep in (
+            (LLMWikiToolkit, _WIKI_READ_TOOLS),
+            (CodeStructuralToolkit, _STRUCTURAL_READ_TOOLS),
+        ):
+            for name in keep:
+                assert callable(getattr(toolkit_cls, name, None)), f"{toolkit_cls.__name__}.{name} does not exist"
+
+    def test_excludes_are_set_before_registration(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both toolkits carry exclude_tools when they reach _attach_toolkit.
+
+        Tools are generated lazily on the first get_tools(), so the
+        exclusions must be in place before registration, not after.
+        """
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        structural = MagicMock()
+        wiki = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock(return_value=structural))
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock(return_value=wiki))
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        registered = [call.args[0] for call in reviewer._attach_toolkit.call_args_list]
+        assert registered == [structural, wiki]
+        for toolkit in registered:
+            assert isinstance(toolkit.exclude_tools, tuple)
+
+    def test_prompt_documents_the_tools_once_attached(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The section lands on the prompt exactly once, carrying the plane name."""
+        reviewer = _wire_reviewer()
+        reviewer.system_prompt_template = "BASE PROMPT"
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock())
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock())
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        prompt = reviewer.system_prompt_template
+        assert prompt.startswith("BASE PROMPT")
+        assert prompt.count("## Repository knowledge graph") == 1
+        assert 'wiki_name="owner-repo"' in prompt
+        for tool in (
+            "code_symbol_lookup",
+            "code_outline",
+            "code_blast_radius",
+            "wiki_search_compact",
+            "wiki_read_page",
+            "wiki_expand",
+            "wiki_find_related",
+            "wiki_browse_pages",
+        ):
+            assert tool in prompt
+
+    def test_prompt_names_only_registered_tools(self) -> None:
+        """Every ``code_*``/``wiki_*`` name in the prompt is a tool the reviewer keeps."""
+        exposed = {f"code_{name}" for name in _STRUCTURAL_READ_TOOLS}
+        exposed |= {f"wiki_{name}" for name in _WIKI_READ_TOOLS}
+        documented = set(re.findall(r"``((?:code|wiki)_[a-z_]+)\(", _WIKI_TOOLS_PROMPT))
+
+        assert documented, "the prompt documents no tools at all"
+        assert documented <= exposed, f"prompt advertises tools the reviewer does not register: {documented - exposed}"
+
+    def test_prompt_survives_template_substitution(self) -> None:
+        """A stray ``$`` would be eaten by _define_prompt's safe_substitute."""
+        from string import Template
+
+        rendered = _WIKI_TOOLS_PROMPT.format(wiki_name="owner-repo")
+
+        assert Template(rendered).safe_substitute() == rendered
+
+    def test_prompt_extension_never_breaks_the_attach(self) -> None:
+        """A bot without a string prompt template logs and carries on."""
+        reviewer = _wire_reviewer()
+        reviewer.system_prompt_template = None
+
+        reviewer._document_wiki_tools("owner-repo")
+
+        assert reviewer.system_prompt_template is None
+        reviewer.logger.warning.assert_called_once()
 
 
 class TestWikiPromptContext:
@@ -1005,6 +1244,8 @@ class TestSetupWebhookRoute:
         event = MagicMock()
         event.event_type = "github.pr_opened"
         await hook._callback(event)
+        # The dispatcher only SPAWNS the review now, so wait for it.
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
 
         assert received == ["a:github.pr_opened", "b:github.pr_opened"]
 
@@ -1029,7 +1270,97 @@ class TestSetupWebhookRoute:
         event.event_type = "github.pr_opened"
         # Must NOT raise.
         await hook._callback(event)
+        await GitHubReviewer.drain_webhook_reviews(app)
         assert survived == ["ok"]
+
+    async def test_dispatch_answers_before_the_review_finishes(self):
+        """GitHub gives a delivery ~10s; a real review took 66s.
+
+        So the dispatcher must return while the listener is still working —
+        otherwise every delivery is recorded as failed even when the review
+        succeeds, and GitHub retries a SHA that is already being reviewed.
+        """
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+        finished: List[str] = []
+
+        async def slow_review(event):
+            started.set()
+            await release.wait()
+            finished.append("done")
+
+        listeners.append(slow_review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        await hook._callback(event)  # returns immediately -> the 202
+
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert finished == []  # still mid-review while GitHub already has its answer
+        assert len(app[GitHubReviewer.WEBHOOK_TASKS_KEY]) == 1
+
+        release.set()
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 1
+        assert finished == ["done"]
+        # The task set empties itself, so a long-lived app does not leak tasks.
+        assert app[GitHubReviewer.WEBHOOK_TASKS_KEY] == set()
+
+    async def test_in_flight_reviews_are_drained_on_cleanup(self):
+        """A shutdown must not kill a review halfway through."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        finished: List[str] = []
+
+        async def review(event):
+            await asyncio.sleep(0.05)
+            finished.append("done")
+
+        listeners.append(review)
+
+        event = MagicMock()
+        event.event_type = "github.pr_synchronize"
+        await hook._callback(event)
+        assert finished == []
+
+        # aiohttp only sends on_cleanup once the app is frozen, which is what
+        # a real server does on startup.
+        app.freeze()
+        await app.cleanup()
+        assert finished == ["done"]
+
+    async def test_a_crashing_review_is_logged_not_swallowed(self, caplog: pytest.LogCaptureFixture):
+        """A listener error is logged by the dispatcher, inside the task."""
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        app[GitHubReviewer.WEBHOOK_LISTENERS_KEY].append(AsyncMock(side_effect=RuntimeError("boom")))
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        with caplog.at_level("ERROR"):
+            await hook._callback(event)
+            await GitHubReviewer.drain_webhook_reviews(app)
+        assert "boom" in caplog.text
+
+    async def test_draining_nothing_is_a_noop(self):
+        from aiohttp import web
+
+        app = web.Application()
+        GitHubReviewer.setup_webhook_route(app)
+        assert await GitHubReviewer.drain_webhook_reviews(app) == 0
+        # Also safe on an app that never registered the route.
+        assert await GitHubReviewer.drain_webhook_reviews(web.Application()) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1213,6 +1544,35 @@ class TestBuildWeeklySummary:
         with pytest.raises(ValueError, match="Cannot determine reporting window"):
             r._build_weekly_summary([], [], threshold_weeks=3, now=NOW)
 
+    def test_prev_week_slice_marks_code_freq_available(self):
+        """The prev-week code_freq entry is what makes the line delta real."""
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        summary = r._build_weekly_summary(
+            contributors,
+            [_cf(W_CURR, 100, 20), _cf(W_PREV, 50, 10)],
+            threshold_weeks=3,
+            now=NOW,
+        )
+        assert summary.code_freq_available is True
+        assert summary.prev_total_additions == 50
+
+    def test_empty_code_freq_degrades_instead_of_raising(self):
+        """With contributors present, an empty code_freq yields a partial summary.
+
+        The reporting window and every current-week figure come from the
+        contributor slices; only the previous week's line totals are lost.
+        """
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        summary = r._build_weekly_summary(contributors, [], threshold_weeks=3, now=NOW)
+        assert summary.code_freq_available is False
+        assert summary.period_start == W_CURR
+        assert summary.total_commits == 5
+        assert summary.total_additions == 100
+        assert summary.prev_total_commits == 3  # real: summed from contributors
+        assert summary.prev_total_additions == 0  # unknown, not measured
+
 
 # ---------------------------------------------------------------------------
 # TASK-1213: TestFormatWeeklyActivityHtml
@@ -1272,6 +1632,36 @@ class TestFormatWeeklyActivityHtml:
         body = r._format_weekly_activity_html(s)
         # Should not raise; pct output is either "n/a" or "▲ new"
         assert "n/a" in body or "▲ new" in body or "▲" in body
+
+    def test_partial_summary_marks_the_line_delta_unavailable(self):
+        """code_freq_available=False prints 'n/a', never a delta off the zeros."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            prev_total_additions=0,
+            prev_total_deletions=0,
+            code_freq_available=False,
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "removed (n/a)" in body
+        assert "Partial data" in body
+        assert "▲ new" not in body
+        # The commits delta survives: it never came from code_frequency.
+        assert "▲" in body.split("added /")[0]
+
+    def test_complete_summary_carries_no_partial_notice(self):
+        """The notice is absent whenever the prev-week slice was there."""
+        r = _minimal_reviewer()
+        body = r._format_weekly_activity_html(_base_summary())
+        assert "Partial data" not in body
+
+    def test_llm_envelope_carries_the_partial_notice(self):
+        """The prose path flags a degraded digest too, not just the template."""
+        r = _minimal_reviewer()
+        r._wrap_llm_prose_in_html_envelope = GitHubReviewer._wrap_llm_prose_in_html_envelope.__get__(r, type(r))
+        partial = r._wrap_llm_prose_in_html_envelope("prose", _base_summary(code_freq_available=False))
+        complete = r._wrap_llm_prose_in_html_envelope("prose", _base_summary())
+        assert "Partial data" in partial
+        assert "Partial data" not in complete
 
     def test_pct_positive_delta(self):
         """A positive delta shows an upward arrow."""
@@ -1457,6 +1847,15 @@ class TestReportWeeklyActivity:
         out = await r.report_weekly_activity()
         assert out["status"] == "error"
         assert "git_toolkit" in out["reason"]
+
+    async def test_weekly_report_goes_to_the_management_chat(self):
+        """The weekly digest is a management report."""
+        r = self._build_reviewer(management_chat_id="-1009998877")
+
+        await r.report_weekly_activity()
+
+        assert r._sent_messages
+        assert r._sent_messages[-1]["chat_id"] == "-1009998877"
 
     async def test_templated_success_path(self):
         """Happy path with templated rendering returns documented keys."""
@@ -1895,3 +2294,2639 @@ class TestIntegrationToolAssistedReview:
         # comparison: 0 >= 0 is True but max_review_tool_calls == 0 so the
         # guard `and self.max_review_tool_calls > 0` prevents the log).
         r.logger.warning.assert_not_called()
+
+
+class TestPublicChannelSendFailureLogging:
+    """A failed public-channel send must name the chat it was aimed at.
+
+    Regression for issue:7d1aeb70b417: the three ``public_channel_id`` send
+    paths logged the exception without the destination, so four identical
+    "chat not found" lines gave the operator no way to tell which of the two
+    configured destinations (``alert_chat_ids`` vs ``public_channel_id``) was
+    broken, nor which id was attempted.
+    """
+
+    @staticmethod
+    def _stale_reviewer(chat_id: str = "4663754211") -> _MinimalReviewer:
+        """A reviewer with one stale PR and a Telegram bot that refuses sends."""
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = chat_id
+        old = datetime.now(timezone.utc) - timedelta(hours=72)
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(
+            return_value=[
+                {
+                    "number": 7,
+                    "title": "feat: something",
+                    "html_url": "https://github.com/owner/repo/pull/7",
+                    "user": {"login": "someone"},
+                    "created_at": old.isoformat().replace("+00:00", "Z"),
+                }
+            ]
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=RuntimeError("Telegram server says - Bad Request: chat not found"))
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_stale_alert_failure_names_the_chat_id(self) -> None:
+        """The warning carries public_channel_id, not just the exception."""
+        reviewer = self._stale_reviewer()
+
+        await reviewer.report_stale_pull_requests()
+
+        reviewer.logger.warning.assert_called_once()
+        fmt, *args = reviewer.logger.warning.call_args.args
+        assert "to chat %s" in fmt
+        assert args[0] == "4663754211"
+        assert "chat not found" in str(args[1])
+
+    async def test_stale_alert_failure_does_not_count_as_announced(self) -> None:
+        """A refused send leaves the stale PR unannounced in the summary."""
+        reviewer = self._stale_reviewer()
+
+        result = await reviewer.report_stale_pull_requests()
+
+        assert result["stale_count"] == 1
+        assert len(result["stale"]) == 1
+        assert result["announced"] == 0
+
+
+class TestStalePRDigest:
+    """All stale PRs go out as ONE Telegram message, not one per PR."""
+
+    @staticmethod
+    def _reviewer(count: int, *, title: str = "feat: something") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = "4663754211"
+        old = datetime.now(timezone.utc) - timedelta(hours=72)
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(
+            return_value=[
+                {
+                    "number": n,
+                    "title": f"{title} #{n}",
+                    "html_url": f"https://github.com/owner/repo/pull/{n}",
+                    "user": {"login": f"dev{n}"},
+                    "created_at": old.isoformat().replace("+00:00", "Z"),
+                }
+                for n in range(1, count + 1)
+            ]
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_many_stale_prs_send_one_message(self) -> None:
+        reviewer = self._reviewer(3)
+
+        result = await reviewer.report_stale_pull_requests()
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        for n in (1, 2, 3):
+            assert f"/pull/{n}" in text
+            assert f"dev{n}" in text
+        assert result["stale_count"] == 3
+        assert result["announced"] == 3
+        assert result["messages_sent"] == 1
+
+    async def test_stale_digest_stays_on_the_public_channel(self) -> None:
+        """The stale-PR nag is not a management report: public channel."""
+        reviewer = self._reviewer(2)
+        reviewer.management_chat_id = "-1009998877"
+
+        await reviewer.report_stale_pull_requests()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "4663754211"
+
+    async def test_digest_escapes_user_data(self) -> None:
+        reviewer = self._reviewer(1, title="feat: X_y <z> & more")
+
+        await reviewer.report_stale_pull_requests()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "&lt;z&gt; &amp; more" in text
+        assert "<z>" not in text
+
+    def test_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = self._reviewer(1)
+        stale = [
+            {
+                "number": n,
+                "title": "x" * 150,
+                "html_url": f"https://github.com/owner/repo/pull/{n}",
+                "user": {"login": f"dev{n}"},
+                "age_hours": 72.0,
+            }
+            for n in range(1, 61)
+        ]
+
+        messages = reviewer._format_stale_prs_digest(stale)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 60
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+            assert "part " in text
+
+    async def test_failed_digest_announces_nothing(self) -> None:
+        """One refused send leaves every PR in it unannounced."""
+        reviewer = self._reviewer(3)
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.report_stale_pull_requests()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+
+
+class TestTodayPRReport:
+    """``today_pr()`` digests the last 24h into ONE message, or says nothing."""
+
+    @staticmethod
+    def _reviewer(pulls: List[Dict[str, Any]]) -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.stale_after_hours = 24
+        reviewer.public_channel_id = "4663754211"
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(return_value=pulls)
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    @staticmethod
+    def _pr(number: int, *, hours_ago: float, **extra: Any) -> Dict[str, Any]:
+        created = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        pr = {
+            "number": number,
+            "title": f"feat: change {number}",
+            "html_url": f"https://github.com/owner/repo/pull/{number}",
+            "user": {"login": f"dev{number}"},
+            "created_at": created.isoformat().replace("+00:00", "Z"),
+            "state": "open",
+        }
+        pr.update(extra)
+        return pr
+
+    async def test_todays_prs_go_out_as_one_message(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=1.0),
+                self._pr(12, hours_ago=8.5),
+                self._pr(13, hours_ago=23.0),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        assert text.startswith("<b>Review Today's Pull Requests</b> on <code>owner/repo</code>")
+        assert "3 open PRs opened in the last 24h" in text
+        for n in (11, 12, 13):
+            assert f"/pull/{n}" in text
+            assert f"dev{n}" in text
+        assert result["today_count"] == 3
+        assert result["announced"] == 3
+        assert result["messages_sent"] == 1
+        assert result["window_hours"] == 24
+
+    async def test_prs_older_than_the_window_are_excluded(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=2.0), self._pr(9, hours_ago=48.0)])
+
+        result = await reviewer.today_pr()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "/pull/11" in text
+        assert "/pull/9" not in text
+        assert result["today_count"] == 1
+        assert "1 open PR opened in the last 24h" in text
+
+    async def test_closed_and_merged_prs_are_excluded(self) -> None:
+        """Only open PRs are reported — the listing asks for state='open'."""
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=3.0, state="closed", merged_at="2026-10-21T10:00:00Z"),
+                self._pr(12, hours_ago=4.0, state="closed"),
+                self._pr(13, hours_ago=5.0),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        assert reviewer.git_toolkit.list_pull_requests.await_args.kwargs["state"] == "open"
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "/pull/11" not in text
+        assert "/pull/12" not in text
+        assert "/pull/13" in text
+        assert result["today_count"] == 1
+        assert [pr["state"] for pr in result["today"]] == ["open"]
+
+    async def test_only_closed_prs_in_the_window_terminate_silently(self) -> None:
+        """A day whose PRs were all merged leaves nothing to review."""
+        reviewer = self._reviewer(
+            [
+                self._pr(11, hours_ago=2.0, state="closed", merged_at="2026-10-21T10:00:00Z"),
+                self._pr(12, hours_ago=3.0, state="closed"),
+            ]
+        )
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["today_count"] == 0
+        assert result["today"] == []
+
+    async def test_no_recent_pr_terminates_silently(self) -> None:
+        reviewer = self._reviewer([self._pr(9, hours_ago=72.0)])
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["today_count"] == 0
+        assert result["today"] == []
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_not_called()
+
+    async def test_empty_repository_terminates_silently(self) -> None:
+        reviewer = self._reviewer([])
+
+        result = await reviewer.today_pr()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["today_count"] == 0
+        reviewer.logger.warning.assert_not_called()
+
+    async def test_custom_window_is_honoured(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=5.0), self._pr(12, hours_ago=20.0)])
+
+        result = await reviewer.today_pr(window_hours=6)
+
+        assert result["window_hours"] == 6
+        assert result["today_count"] == 1
+        assert "1 open PR opened in the last 6h" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+
+    async def test_failed_send_names_the_chat_and_announces_nothing(self) -> None:
+        reviewer = self._reviewer([self._pr(11, hours_ago=1.0)])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.today_pr()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+        fmt, *args = reviewer.logger.warning.call_args.args
+        assert "to chat %s" in fmt
+        assert args[0] == "4663754211"
+
+    async def test_list_failure_is_an_error(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.git_toolkit.list_pull_requests = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await reviewer.today_pr()
+
+        assert result["status"] == "error"
+        assert "boom" in result["reason"]
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_today_digest_goes_to_the_management_chat(self) -> None:
+        """today_pr is a management report, not a public-channel nag."""
+        reviewer = self._reviewer([self._pr(11, hours_ago=1.0)])
+        reviewer.management_chat_id = "-1009998877"
+
+        result = await reviewer.today_pr()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "-1009998877"
+        assert result["announced"] == 1
+
+    def test_today_pr_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = self._reviewer([])
+        prs = [
+            {
+                "number": n,
+                "title": "x" * 150,
+                "html_url": f"https://github.com/owner/repo/pull/{n}",
+                "user": f"dev{n}",
+                "age_hours": 3.0,
+                "state": "open",
+            }
+            for n in range(1, 61)
+        ]
+
+        messages = reviewer._format_today_prs_digest(prs, 24)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 60
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+
+    def test_today_pr_is_scheduled_daily(self) -> None:
+        """today_pr is a daily report, under its own job name."""
+        marker = getattr(GitHubReviewer.today_pr, "_schedule_report_type", None)
+        assert marker == "daily", "today_pr lost @schedule_daily_report"
+        cfg = GitHubReviewer.today_pr._schedule_config
+        assert cfg["method_name"] == "today_pr"
+        assert cfg["schedule_type"] == "daily"
+
+    def test_every_report_is_on_its_cron(self) -> None:
+        """stale + today_pr are daily, the activity digest is weekly."""
+        assert GitHubReviewer.report_stale_pull_requests._schedule_report_type == "daily"
+        assert GitHubReviewer.report_stale_pull_requests._schedule_config["schedule_type"] == "daily"
+        assert GitHubReviewer.report_weekly_activity._schedule_report_type == "weekly"
+        assert GitHubReviewer.report_weekly_activity._schedule_config["schedule_type"] == "weekly"
+
+
+class TestJiraTicketSummary:
+    """``report_jira_tickets()`` counts a project by assignee in two columns."""
+
+    @staticmethod
+    def _issue(
+        key: str,
+        *,
+        assignee: Optional[str],
+        category: str,
+        hours_ago: float,
+        status_name: str = "Some status",
+    ) -> Dict[str, Any]:
+        updated = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {
+            "key": key,
+            "fields": {
+                "assignee": None if assignee is None else {"displayName": assignee},
+                "status": {"name": status_name, "statusCategory": {"key": category}},
+                # Jira renders the offset without a colon; the summary must
+                # parse that shape, not just GitHub's trailing "Z".
+                "updated": updated.isoformat().replace("+00:00", "+0000"),
+            },
+        }
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    def test_summary_buckets_by_assignee_and_window(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue("NAV-1", assignee="Ana", category="new", hours_ago=2),
+            self._issue("NAV-2", assignee="Ana", category="indeterminate", hours_ago=5),
+            self._issue("NAV-3", assignee="Ana", category="done", hours_ago=100),
+            self._issue("NAV-4", assignee="Ana", category="done", hours_ago=200),
+            self._issue("NAV-5", assignee="Bob", category="new", hours_ago=48),
+        ]
+
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        assert summary["ticket_count"] == 5
+        # Ana leads the 14d column, so she sorts first.
+        ana, bob = summary["assignees"]
+        assert ana["assignee"] == "Ana"
+        assert ana["recent"] == {"open": 1, "in_progress": 1, "closed": 0, "total": 2}
+        assert ana["window"] == {"open": 1, "in_progress": 1, "closed": 2, "total": 4}
+        assert bob["recent"] == {"open": 0, "in_progress": 0, "closed": 0, "total": 0}
+        assert bob["window"]["open"] == 1
+        assert summary["totals"]["recent"]["total"] == 2
+        assert summary["totals"]["window"]["total"] == 5
+
+    def test_unassigned_and_unknown_category_still_counted(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue("NAV-1", assignee=None, category="new", hours_ago=1),
+            # No statusCategory at all: the name decides the bucket.
+            {
+                "key": "NAV-2",
+                "fields": {
+                    "assignee": {"name": "cmartinez"},
+                    "status": {"name": "In Review"},
+                    "updated": datetime.now(timezone.utc).isoformat(),
+                },
+            },
+            # Neither category nor a recognisable name: counts as open.
+            {
+                "key": "NAV-3",
+                "fields": {"assignee": {"name": "cmartinez"}, "status": {"name": "Pending QA"}},
+            },
+        ]
+
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        rows = {entry["assignee"]: entry for entry in summary["assignees"]}
+        assert rows["Unassigned"]["recent"]["open"] == 1
+        assert rows["cmartinez"]["window"] == {"open": 1, "in_progress": 1, "closed": 0, "total": 2}
+        # NAV-3 has no ``updated``: long window only.
+        assert rows["cmartinez"]["recent"] == {"open": 0, "in_progress": 1, "closed": 0, "total": 1}
+
+    async def test_report_sends_one_message_with_both_columns(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-1", assignee="Ana", category="new", hours_ago=2),
+                self._issue("NAV-2", assignee="Ana", category="done", hours_ago=90),
+                self._issue("NAV-3", assignee="Bob", category="indeterminate", hours_ago=3),
+            ]
+        )
+
+        result = await reviewer.report_jira_tickets()
+
+        jql = reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert "project = NAV" in jql
+        assert "updated >= -14d" in jql
+        assert reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["max_results"] is None
+
+        bot = reviewer._wrapper.bot
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs["text"]
+        assert "last 24h" in text
+        assert "last 14d" in text
+        assert "TOTAL" in text
+        assert "<pre>" in text
+        for name in ("Ana", "Bob"):
+            assert name in text
+
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 3
+        assert result["announced"] == 2
+        assert result["messages_sent"] == 1
+        assert result["totals"]["window"]["total"] == 3
+        assert result["totals"]["recent"]["total"] == 2
+
+    async def test_digest_goes_to_the_management_chat(self) -> None:
+        """The ticket summary is a management report."""
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+        reviewer.management_chat_id = "-1009998877"
+
+        await reviewer.report_jira_tickets()
+
+        kwargs = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "-1009998877"
+
+    async def test_no_activity_stays_silent(self) -> None:
+        reviewer = self._reviewer([], status="empty")
+
+        result = await reviewer.report_jira_tickets()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 0
+        assert result["assignees"] == []
+        assert result["messages_sent"] == 0
+
+    async def test_error_envelope_is_reported_not_sent(self) -> None:
+        reviewer = self._reviewer([], status="error")
+
+        result = await reviewer.report_jira_tickets()
+
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "error"
+        assert result["reason"] == "boom"
+
+    async def test_search_failure_is_reported(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "jira down"
+        reviewer.logger.error.assert_called_once()
+
+    async def test_without_a_jira_toolkit_it_reports_an_error(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit = None
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result == {"status": "error", "reason": "jira_toolkit not configured"}
+
+    async def test_failed_send_announces_nothing(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+
+        result = await reviewer.report_jira_tickets()
+
+        assert result["announced"] == 0
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_custom_windows_reach_the_jql_and_the_header(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1)])
+
+        result = await reviewer.report_jira_tickets(recent_hours=8, window_days=3)
+
+        assert "updated >= -3d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "last 8h" in text
+        assert "last 3d" in text
+        assert result["recent_hours"] == 8
+        assert result["window_days"] == 3
+
+    def test_digest_escapes_assignee_names(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = reviewer._summarize_tickets(
+            [self._issue("NAV-1", assignee="A & <b>B</b>", category="new", hours_ago=1)],
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) == 1
+        text = messages[0][0]
+        assert "A &amp; &lt;b&gt;" in text
+        assert "<b>B</b>" not in text
+
+    def test_digest_splits_when_over_the_telegram_limit(self) -> None:
+        reviewer = _wire_reviewer()
+        issues = [
+            self._issue(f"NAV-{n}", assignee=f"developer-number-{n:03d}", category="new", hours_ago=1)
+            for n in range(1, 201)
+        ]
+        summary = reviewer._summarize_tickets(
+            issues,
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) > 1
+        assert sum(covered for _, covered in messages) == 200
+        for text, _ in messages:
+            assert len(text) <= GitHubReviewer._TELEGRAM_MAX_MESSAGE
+            assert "part " in text
+        # The TOTAL row rides on the last part only, so it is never doubled.
+        assert sum(text.count("TOTAL") for text, _ in messages) == 1
+
+    def test_table_columns_stay_aligned(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = reviewer._summarize_tickets(
+            [
+                self._issue("NAV-1", assignee="Ana", category="new", hours_ago=1),
+                self._issue("NAV-2", assignee="a-very-long-developer-name", category="done", hours_ago=1),
+            ],
+            now=datetime.now(timezone.utc),
+            recent_hours=24,
+            window_days=14,
+        )
+
+        messages = reviewer._format_jira_tickets_digest(summary)
+
+        assert len(messages) == 1
+        body = messages[0][0].split("<pre>", 1)[1].split("</pre>", 1)[0]
+        rows = [line for line in body.splitlines() if line and not line.startswith("-")]
+        assert len({len(line) for line in rows}) == 1
+        # The long name is clamped into the fixed-width first column.
+        assert "…" in body
+
+    def test_report_jira_tickets_fires_at_10am_new_york(self) -> None:
+        """Daily at 10:00 America/New_York, on its own cron job."""
+        cfg = GitHubReviewer.report_jira_tickets._schedule_config
+        assert cfg["method_name"] == "report_jira_tickets"
+        assert cfg["schedule_type"] == "cron"
+        assert cfg["schedule_config"] == {"hour": 10, "minute": 0, "timezone": "America/New_York"}
+        # A cron job must NOT carry the report marker, or
+        # register_bot_schedules() would overwrite its config with the
+        # {AGENT_ID}_DAILY_REPORT env var — dragging it back to UTC.
+        assert not hasattr(GitHubReviewer.report_jira_tickets, "_schedule_report_type")
+
+    def test_report_jira_tickets_trigger_tracks_dst(self) -> None:
+        """10:00 New York is 14:00 UTC in summer and 15:00 UTC in winter."""
+        from zoneinfo import ZoneInfo
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        from parrot.scheduler.sanitize import sanitize_schedule_config
+
+        cfg = GitHubReviewer.report_jira_tickets._schedule_config["schedule_config"]
+        trigger = CronTrigger(**sanitize_schedule_config("cron", cfg))
+        ny = ZoneInfo("America/New_York")
+
+        summer = trigger.get_next_fire_time(None, datetime(2026, 7, 1, 0, 0, tzinfo=ny))
+        winter = trigger.get_next_fire_time(None, datetime(2026, 12, 1, 0, 0, tzinfo=ny))
+
+        assert (summer.hour, summer.minute) == (10, 0)
+        assert (winter.hour, winter.minute) == (10, 0)
+        assert summer.astimezone(timezone.utc).hour == 14
+        assert winter.astimezone(timezone.utc).hour == 15
+
+
+class TestManagementChatFallback:
+    """Only an *unconfigured* management chat is a fallback.
+
+    ``__init__`` resolves ``management_chat_id or public_channel_id``, so the
+    resolved id equals the public channel both when nothing was configured
+    and when GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID deliberately names that same
+    chat. post_configure() used to warn "no management chat configured" for
+    the second case too, on a deployment where both env vars hold the same
+    chat id.
+    """
+
+    def test_unset_management_chat_is_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+
+        assert reviewer.management_chat_id == "-4788340010"
+        assert reviewer.management_chat_is_fallback is True
+
+    def test_same_chat_configured_on_purpose_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-4788340010"
+
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_separate_management_chat_is_not_a_fallback(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer.management_chat_id = "-1009999999"
+
+        assert reviewer.management_chat_id == "-1009999999"
+        assert reviewer.management_chat_is_fallback is False
+
+    def test_no_chat_at_all_is_not_reported_as_a_fallback(self) -> None:
+        """Nothing to fall back *to* is a different problem, reported elsewhere."""
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = None
+
+        assert reviewer.management_chat_id is None
+        assert reviewer.management_chat_is_fallback is False
+
+
+class TestResolvedTicketListing:
+    """``report_resolved_tickets()`` names what crossed the finish line."""
+
+    @staticmethod
+    def _issue(
+        key: str,
+        *,
+        summary: str = "Some work",
+        assignee: Optional[str] = "Ana",
+        status_name: str = "Closed",
+        hours_ago: Optional[float] = 3,
+        resolved_hours_ago: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        fields: Dict[str, Any] = {
+            "summary": summary,
+            "assignee": None if assignee is None else {"displayName": assignee},
+            "status": {"name": status_name, "statusCategory": {"key": "done"}},
+        }
+        if hours_ago is not None:
+            fields["updated"] = (now - timedelta(hours=hours_ago)).isoformat().replace("+00:00", "+0000")
+        if resolved_hours_ago is not None:
+            fields["resolutiondate"] = (
+                (now - timedelta(hours=resolved_hours_ago)).isoformat().replace("+00:00", "+0000")
+            )
+        return {"key": key, "fields": fields}
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.server_url = "https://example.atlassian.net"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        bot = MagicMock()
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        return reviewer
+
+    async def test_jql_asks_for_the_transition_not_the_state(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1")])
+
+        result = await reviewer.report_resolved_tickets()
+
+        kwargs = reviewer.jira_toolkit.jira_search_issues.await_args.kwargs
+        assert kwargs["jql"] == (
+            'project = NAV AND status CHANGED TO ("Resolved", "Closed") AFTER -24h ORDER BY updated DESC'
+        )
+        # Every page, or a busy day silently loses closures.
+        assert kwargs["max_results"] is None
+        assert kwargs["fields"] == reviewer._RESOLVED_FIELDS
+        assert result["window_hours"] == 24
+
+    async def test_sends_one_message_listing_every_ticket(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-1", summary="Fix the importer", assignee="Ana", hours_ago=2),
+                self._issue("NAV-2", summary="Ship the report", assignee="Bob", status_name="Resolved", hours_ago=9),
+            ]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 2
+        assert (result["announced"], result["messages_sent"]) == (2, 1)
+        bot = reviewer._wrapper.bot
+        assert bot.send_message.await_count == 1
+        kwargs = bot.send_message.await_args.kwargs
+        assert kwargs["chat_id"] == "4663754211"
+        text = kwargs["text"]
+        assert "2 tickets moved to Resolved or Closed in the last 24h" in text
+        # Most recent first, each ticket linked to its own Jira issue.
+        assert text.index("NAV-1") < text.index("NAV-2")
+        assert '<a href="https://example.atlassian.net/browse/NAV-1">NAV-1 Fix the importer</a>' in text
+        assert "Bob — Resolved, 9.0h ago" in text
+
+    async def test_stale_resolutiondate_falls_back_to_updated(self) -> None:
+        """A ticket reopened and re-closed keeps an old ``resolutiondate``."""
+        reviewer = _wire_reviewer()
+        rows = reviewer._resolved_ticket_rows(
+            [
+                self._issue("NAV-1", hours_ago=1, resolved_hours_ago=900),
+                self._issue("NAV-2", hours_ago=20, resolved_hours_ago=19),
+            ],
+            now=datetime.now(timezone.utc),
+            window_hours=24,
+        )
+
+        by_key = {row["key"]: row for row in rows}
+        # 900h ago is outside the window, so the ``updated`` stamp wins.
+        assert by_key["NAV-1"]["hours_ago"] == 1.0
+        # Inside the window, ``resolutiondate`` is the better stamp.
+        assert by_key["NAV-2"]["hours_ago"] == 19.0
+        assert [row["key"] for row in rows] == ["NAV-1", "NAV-2"]
+
+    async def test_unassigned_and_stampless_ticket_still_listed(self) -> None:
+        reviewer = self._reviewer(
+            [
+                self._issue("NAV-9", assignee=None, hours_ago=None),
+                self._issue("NAV-8", assignee="Ana", hours_ago=4),
+            ]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 2
+        # A ticket with no usable stamp is reported last, never dropped.
+        assert result["tickets"] == ["NAV-8", "NAV-9"]
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "Unassigned — Closed, recently" in text
+
+    async def test_returned_dict_is_printable_telemetry(self) -> None:
+        """``/call`` echoes the return value through legacy Markdown.
+
+        A summary carrying ``_`` or ``*`` broke that parse, so the status
+        dict reports keys and counts — no prose, no datetimes (which are
+        not JSON-serialisable either). The digest itself goes out as HTML
+        and is unaffected.
+        """
+        reviewer = self._reviewer([self._issue("NAV-1", summary="Fix snake_case *and* `ticks`")])
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["tickets"] == ["NAV-1"]
+        rendered = str(result)
+        for breaker in ("snake_case", "*and*", "`ticks`", "datetime"):
+            assert breaker not in rendered
+        # The prose did reach Telegram — in the HTML digest, where it is safe.
+        sent = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert sent["parse_mode"] == "HTML"
+        assert "Fix snake_case *and* `ticks`" in sent["text"]
+
+    async def test_no_transitions_stays_silent(self) -> None:
+        reviewer = self._reviewer([], status="empty")
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "ok"
+        assert (result["ticket_count"], result["announced"], result["messages_sent"]) == (0, 0, 0)
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_jira_error_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([], status="error")
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "boom"
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+
+    async def test_search_exception_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["status"] == "error"
+        assert "jira down" in result["reason"]
+
+    async def test_custom_window_is_honoured(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", hours_ago=30)])
+
+        result = await reviewer.report_resolved_tickets(window_hours=48)
+
+        assert "AFTER -48h" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert result["window_hours"] == 48
+        assert "in the last 48h" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+
+    async def test_missing_server_url_keeps_the_ticket_unlinked(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1", summary="Fix the importer")])
+        reviewer.jira_toolkit.server_url = None
+
+        await reviewer.report_resolved_tickets()
+
+        text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert "<a href=" not in text
+        assert "<b>NAV-1 Fix the importer</b>" in text
+
+    async def test_long_listing_is_split_into_parts(self) -> None:
+        reviewer = self._reviewer(
+            [self._issue(f"NAV-{i}", summary="x" * 110, assignee=f"Dev {i}", hours_ago=i) for i in range(1, 61)]
+        )
+
+        result = await reviewer.report_resolved_tickets()
+
+        bot = reviewer._wrapper.bot
+        assert bot.send_message.await_count > 1
+        assert result["messages_sent"] == bot.send_message.await_count
+        assert result["announced"] == 60
+        for call in bot.send_message.await_args_list:
+            text = call.kwargs["text"]
+            assert len(text) <= reviewer._TELEGRAM_MAX_MESSAGE
+            assert "(part " in text
+
+    async def test_failed_send_does_not_count_as_announced(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1"), self._issue("NAV-2")])
+        reviewer._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("telegram down"))
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 2
+        assert (result["announced"], result["messages_sent"]) == (0, 0)
+        reviewer.logger.warning.assert_called()
+
+    async def test_without_a_bot_nothing_is_announced(self) -> None:
+        reviewer = self._reviewer([self._issue("NAV-1")])
+        reviewer._wrapper = None
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["ticket_count"] == 1
+        assert (result["announced"], result["messages_sent"]) == (0, 0)
+        reviewer.logger.warning.assert_called()
+
+    def test_report_is_scheduled_on_a_timezone_aware_cron(self) -> None:
+        """Losing the decorator would silently un-schedule the listing."""
+        cfg = getattr(GitHubReviewer.report_resolved_tickets, "_schedule_config", None)
+        assert cfg is not None, "report_resolved_tickets lost its @schedule decorator"
+        assert cfg["method_name"] == "report_resolved_tickets"
+        # Not a daily/weekly report marker: those fire on the scheduler's
+        # UTC clock and re-resolve their time from {AGENT_ID}_DAILY_REPORT.
+        assert not hasattr(GitHubReviewer.report_resolved_tickets, "_schedule_report_type")
+
+
+class TestMonthlyTicketPie:
+    """``/monthly_jira_tickets`` — the month's tickets per assignee, as a pie."""
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], *, status: str = "ok") -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "4663754211"
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(
+            return_value={
+                "status": status,
+                "data": {"total": len(issues), "issues": issues},
+                "query": "project = NAV",
+                "message": "" if status != "error" else "boom",
+            }
+        )
+        return reviewer
+
+    @staticmethod
+    def _tickets(**per_assignee: int) -> List[Dict[str, Any]]:
+        """``Ana=3`` -> three NAV issues assigned to Ana inside the window."""
+        issues: List[Dict[str, Any]] = []
+        for name, count in per_assignee.items():
+            for n in range(count):
+                issues.append(
+                    TestJiraTicketSummary._issue(
+                        f"NAV-{name}-{n}",
+                        assignee=name,
+                        category="new",
+                        hours_ago=48,
+                    )
+                )
+        return issues
+
+    @staticmethod
+    def _png(tmp_path: Path) -> Path:
+        path = tmp_path / "chart_abc123.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return path
+
+    def test_slices_rank_by_volume_and_fold_the_tail(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {"assignees": [{"assignee": f"dev-{n:02d}", "window": {"total": 50 - n}} for n in range(12)]}
+
+        slices = reviewer._ticket_pie_slices(summary)
+
+        assert len(slices) == GitHubReviewer._TICKET_PIE_MAX_SLICES + 1
+        assert slices[0] == ("dev-00", 50)
+        # The three assignees past the cap ride in one wedge, counts summed.
+        assert slices[-1] == ("Others (3)", (50 - 9) + (50 - 10) + (50 - 11))
+        # Folding never loses a ticket.
+        assert sum(count for _, count in slices) == sum(50 - n for n in range(12))
+
+    def test_slices_keep_everyone_under_the_cap_and_drop_the_idle(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "assignees": [
+                {"assignee": "Ana", "window": {"total": 3}},
+                {"assignee": "Bob", "window": {"total": 0}},
+                {"assignee": None, "window": {"total": 1}},
+            ]
+        }
+
+        assert reviewer._ticket_pie_slices(summary) == [("Ana", 3), ("Unassigned", 1)]
+
+    async def test_command_answers_with_the_ranking_and_one_png(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=3, Bob=1))
+        seen: Dict[str, Any] = {}
+
+        async def fake_generate_chart(chart_type: str, title: str, data: Dict[str, Any], **kwargs: Any) -> Path:
+            seen.update(chart_type=chart_type, title=title, data=data, kwargs=kwargs)
+            return self._png(tmp_path)
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", fake_generate_chart)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        # One JQL call, over the month — same shape as the daily digest.
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["max_results"] is None
+        # A pie of each assignee's share, biggest first.
+        assert seen["chart_type"] == "pie"
+        assert seen["data"] == {"labels": ["Ana", "Bob"], "values": [3, 1]}
+        assert seen["kwargs"]["output_format"] == "png"
+        # The reply is returned, not sent: the wrapper delivers it.
+        assert isinstance(reply, ChartReply)
+        assert reply.charts == [
+            {
+                "path": str(tmp_path / "chart_abc123.png"),
+                "title": seen["title"],
+                "chart_type": "pie",
+                "format": "png",
+            }
+        ]
+        assert "last 30 days on NAV" in reply.output
+        assert "Ana" in reply.output and "Bob" in reply.output
+        # Nothing was pushed anywhere: the command needs no bot of its own.
+        assert reviewer._wrapper is None
+
+    async def test_text_fences_the_table_so_names_cannot_break_parsing(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "window_days": 30,
+            "ticket_count": 1,
+            "assignees": [{"assignee": "A & <b>B</b>", "window": {"total": 1}}],
+        }
+
+        text = reviewer._format_monthly_tickets_text(summary, reviewer._ticket_pie_slices(summary))
+
+        # Fenced: the wrapper's Markdown->HTML pass escapes the block, so a
+        # display name with markup can never reach Telegram as entities.
+        assert text.count("```") == 2
+        table = text.split("```")[1]
+        assert "A & <b>B" in table
+        assert "TOTAL" in table
+        assert "100.0%" in table
+
+    async def test_a_chart_that_cannot_be_a_png_still_sends_the_ranking(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No vl-convert-python: the tool writes a Vega-Lite spec instead."""
+        reviewer = self._reviewer(self._tickets(Ana=2))
+        spec = tmp_path / "chart_abc123.json"
+        spec.write_text("{}")
+
+        async def fallback(*_args: Any, **_kwargs: Any) -> Path:
+            return spec
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", fallback)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "Ana" in reply.output
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_failing_renderer_is_contained(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=2))
+
+        async def boom(*_args: Any, **_kwargs: Any) -> Path:
+            raise RuntimeError("vega exploded")
+
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", boom)
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "Ana" in reply.output
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_jira_failure_comes_back_as_a_notice(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert "jira down" in reply.output
+        assert "NAV" in reply.output
+
+    async def test_a_quiet_month_says_so_instead_of_an_empty_pie(self) -> None:
+        reviewer = self._reviewer([])
+
+        reply = await reviewer.monthly_jira_tickets()
+
+        assert reply.charts == []
+        assert reply.output == "No NAV ticket was touched in the last 30 days."
+
+    async def test_window_days_survives_telegram_passing_it_as_a_string(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reviewer = self._reviewer(self._tickets(Ana=1))
+        monkeypatch.setattr(
+            "parrot_tools.chart.generate_chart",
+            AsyncMock(return_value=self._png(tmp_path)),
+        )
+
+        reply = await reviewer.monthly_jira_tickets(window_days="7", unexpected="ignored")
+
+        assert "updated >= -7d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        assert "last 7 days on NAV" in reply.output
+
+    async def test_an_unusable_window_falls_back_to_the_month(self) -> None:
+        reviewer = self._reviewer([])
+
+        await reviewer.monthly_jira_tickets(window_days="soon")
+
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        reviewer.logger.warning.assert_called_once()
+
+    def test_it_is_exposed_as_a_telegram_command(self) -> None:
+        meta = GitHubReviewer.monthly_jira_tickets._telegram_command
+
+        assert meta["command"] == "monthly_jira_tickets"
+        # Keyword parsing: `/monthly_jira_tickets window_days=60`.
+        assert meta["parse_mode"] == "keyword"
+        assert meta["description"]
+        # On demand only — it must not join the scheduled reports.
+        assert not hasattr(GitHubReviewer.monthly_jira_tickets, "_schedule_config")
+
+
+class TestMonthlyTicketReport:
+    """``report_monthly_jira_tickets()`` — the 1st-of-month send to management."""
+
+    @classmethod
+    def _reviewer(cls, issues: List[Dict[str, Any]], **attrs: Any) -> _MinimalReviewer:
+        reviewer = TestMonthlyTicketPie._reviewer(issues)
+        reviewer.management_chat_id = "-1002223334444"
+        bot = MagicMock()
+        bot.send_photo = AsyncMock(return_value=None)
+        bot.send_message = AsyncMock(return_value=None)
+        reviewer._wrapper = MagicMock(bot=bot)
+        for name, value in attrs.items():
+            setattr(reviewer, name, value)
+        return reviewer
+
+    @staticmethod
+    def _with_chart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        png = TestMonthlyTicketPie._png(tmp_path)
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", AsyncMock(return_value=png))
+        return png
+
+    async def test_the_pie_goes_to_management_with_the_table_as_its_caption(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        png = self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=3, Bob=1))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert "updated >= -30d" in reviewer.jira_toolkit.jira_search_issues.await_args.kwargs["jql"]
+        photo = reviewer._wrapper.bot.send_photo.await_args.kwargs
+        assert photo["chat_id"] == "-1002223334444"
+        assert Path(photo["photo"].path) == png
+        assert photo["parse_mode"] == "HTML"
+        # One item in the channel, not two: the digest rides as the caption.
+        assert "<pre>" in photo["caption"] and "Ana" in photo["caption"]
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result == {
+            "status": "ok",
+            "project": "NAV",
+            "window_days": 30,
+            "ticket_count": 4,
+            "wedges": 2,
+            "chart": png.name,
+            "messages_sent": 1,
+        }
+
+    async def test_a_caption_that_would_not_fit_becomes_its_own_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Telegram caps a sendPhoto caption at 1024 characters."""
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2), _TELEGRAM_MAX_CAPTION=10)
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert reviewer._wrapper.bot.send_photo.await_args.kwargs["caption"] is None
+        assert "<pre>" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["messages_sent"] == 2
+
+    async def test_without_a_png_the_digest_still_goes_out(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = tmp_path / "chart_abc123.json"
+        spec.write_text("{}")
+        monkeypatch.setattr("parrot_tools.chart.generate_chart", AsyncMock(return_value=spec))
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        assert "Ana" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["chart"] is None
+        assert result["messages_sent"] == 1
+
+    async def test_a_lost_photo_does_not_take_the_numbers_with_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(TestMonthlyTicketPie._tickets(Ana=2))
+        reviewer._wrapper.bot.send_photo = AsyncMock(side_effect=RuntimeError("file too big"))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert "Ana" in reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
+        assert result["messages_sent"] == 1
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_no_destination_means_nothing_is_sent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both unset: ``management_chat_id`` falls back to the public channel."""
+        self._with_chart(tmp_path, monkeypatch)
+        reviewer = self._reviewer(
+            TestMonthlyTicketPie._tickets(Ana=2),
+            management_chat_id=None,
+            public_channel_id=None,
+        )
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["messages_sent"] == 0
+        reviewer.logger.warning.assert_called_once()
+
+    async def test_a_quiet_month_stays_silent(self) -> None:
+        reviewer = self._reviewer([])
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+        reviewer._wrapper.bot.send_message.assert_not_awaited()
+        assert result["status"] == "ok"
+        assert result["ticket_count"] == 0
+        assert result["messages_sent"] == 0
+
+    async def test_a_jira_failure_is_reported_not_raised(self) -> None:
+        reviewer = self._reviewer([])
+        reviewer.jira_toolkit.jira_search_issues = AsyncMock(side_effect=RuntimeError("jira down"))
+
+        result = await reviewer.report_monthly_jira_tickets()
+
+        assert result["status"] == "error"
+        assert result["reason"] == "jira down"
+        reviewer._wrapper.bot.send_photo.assert_not_awaited()
+
+    def test_digest_is_escaped_html(self) -> None:
+        reviewer = _wire_reviewer()
+        summary = {
+            "window_days": 30,
+            "ticket_count": 1,
+            "assignees": [{"assignee": "A & <b>B</b>", "window": {"total": 1}}],
+        }
+
+        digest = reviewer._format_monthly_tickets_digest(summary, reviewer._ticket_pie_slices(summary))
+
+        # Sent straight to the Bot API — no wrapper, so it escapes here.
+        assert "A &amp; &lt;b&gt;" in digest
+        assert "<b>B</b>" not in digest
+        assert digest.startswith("<b>Jira tickets by assignee")
+        assert "<pre>" in digest
+
+    def test_it_fires_monthly_at_10am_new_york(self) -> None:
+        cfg = GitHubReviewer.report_monthly_jira_tickets._schedule_config
+
+        assert cfg["method_name"] == "report_monthly_jira_tickets"
+        assert cfg["schedule_type"] == "cron"
+        assert cfg["schedule_config"] == {
+            "day": 1,
+            "hour": 10,
+            "minute": 0,
+            "timezone": "America/New_York",
+        }
+        # Same reason as the daily digest: a report marker would have its
+        # config re-resolved from {AGENT_ID}_DAILY_REPORT and fire in UTC.
+        assert not hasattr(GitHubReviewer.report_monthly_jira_tickets, "_schedule_report_type")
+
+    def test_its_trigger_survives_sanitizing(self) -> None:
+        """``day`` is a supported cron field, so nothing is dropped."""
+        from apscheduler.triggers.cron import CronTrigger
+
+        from parrot.scheduler.sanitize import sanitize_schedule_config
+
+        cfg = GitHubReviewer.report_monthly_jira_tickets._schedule_config["schedule_config"]
+        cleaned = sanitize_schedule_config("cron", cfg)
+
+        # The sanitizer normalizes cron fields to strings; what matters is
+        # that ``day`` survived it at all (an unsupported field is dropped).
+        assert str(cleaned["day"]) == "1"
+        fire = CronTrigger(**cleaned).get_next_fire_time(None, datetime(2026, 1, 15, tzinfo=timezone.utc))
+        assert (fire.day, fire.hour, fire.minute) == (1, 10, 0)
+
+
+class TestWeeklyStatsPending:
+    """A persistent 202 from /stats/* defers instead of failing.
+
+    GitHub computes repository stats lazily, so the request that exhausts the
+    toolkit's 202 budget is also the one that starts the computation: the next
+    attempt usually gets 200. Before this, the exhausted budget surfaced as an
+    ERROR with a traceback and the week's report was simply lost.
+    """
+
+    @staticmethod
+    def _reviewer(delay: int = 0, max_retries: int = 3) -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer.public_channel_id = "-4788340010"
+        reviewer._weekly_retry_task = None
+        reviewer._weekly_retry_attempt = 0
+        reviewer._stats_retry_delay = delay
+        reviewer._stats_retry_max = max_retries
+        reviewer._wrapper = None
+        exc = StatsNotReadyError(
+            "GitHub stats call to https://api.github.com/repos/o/r/stats/code_frequency "
+            "returned 202 after 7 attempts; giving up.",
+            attempts=7,
+            url="https://api.github.com/repos/o/r/stats/code_frequency",
+        )
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(return_value=[])
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(side_effect=exc)
+        return reviewer
+
+    @staticmethod
+    def _degradable_reviewer(max_retries: int = 1) -> _MinimalReviewer:
+        """Same cold code_frequency, but with usable contributor stats.
+
+        This is the asymmetric 202 measured on a large repo: /stats/contributors
+        answers 200 while /stats/code_frequency is still computing.
+        """
+        reviewer = TestWeeklyStatsPending._reviewer(delay=3600, max_retries=max_retries)
+        reviewer.use_llm_summary = False
+        reviewer.silent_weeks_threshold = 3
+        reviewer.top_n_contributors = 10
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(
+            return_value=[_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+        )
+        reviewer._build_weekly_summary = GitHubReviewer._build_weekly_summary.__get__(reviewer, type(reviewer))
+        reviewer._format_weekly_activity_html = GitHubReviewer._format_weekly_activity_html.__get__(
+            reviewer, type(reviewer)
+        )
+        sent: List[Dict[str, Any]] = []
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=lambda **kwargs: sent.append(kwargs))
+        reviewer._wrapper = MagicMock(bot=bot)
+        reviewer._sent = sent
+        return reviewer
+
+    async def test_pending_code_freq_defers_while_budget_remains(self) -> None:
+        """A partial digest is the last resort, not the first move."""
+        reviewer = self._degradable_reviewer(max_retries=3)
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is True
+            assert reviewer._sent == []
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_exhausted_budget_publishes_a_partial_digest(self) -> None:
+        """The contributor stats that did arrive no longer die with the week."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        try:
+            await reviewer.report_weekly_activity()
+            await reviewer._shutdown_weekly_retry()  # drop the armed task
+            reviewer._weekly_retry_attempt = 1  # as if that retry had run
+
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "ok"
+            assert result["partial"] is True
+            assert result["active"] == 1
+            assert result["telegram_sent"] == 1
+            body = reviewer._sent[-1]["text"]
+            assert "removed (n/a)" in body  # no delta invented off the zeros
+            assert "Partial data" in body
+            assert "▲ new" not in body
+            # Expected GitHub behaviour: still no ERROR, still no traceback.
+            reviewer.logger.error.assert_not_called()
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_pending_contributor_stats_never_degrade(self) -> None:
+        """Without contributor slices there is nothing to publish."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        reviewer.git_toolkit.get_contributor_stats = AsyncMock(
+            side_effect=StatsNotReadyError(
+                "GitHub stats call to .../stats/contributors returned 202 after 7 attempts; giving up.",
+                attempts=7,
+                url="https://api.github.com/repos/o/r/stats/contributors",
+            )
+        )
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(return_value=[_cf(W_CURR, 100, 20)])
+        reviewer._weekly_retry_attempt = 1  # budget already spent
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is False
+            assert reviewer._sent == []
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_hard_failure_is_still_an_error(self) -> None:
+        """A non-202 failure keeps its ERROR + traceback and publishes nothing."""
+        reviewer = self._degradable_reviewer(max_retries=1)
+        reviewer.git_toolkit.get_code_frequency = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await reviewer.report_weekly_activity()
+
+        assert result["status"] == "error"
+        assert "boom" in result["reason"]
+        reviewer.logger.error.assert_called_once()
+        assert isinstance(reviewer.logger.error.call_args.kwargs.get("exc_info"), RuntimeError)
+        assert reviewer._sent == []
+
+    async def test_pending_stats_defer_instead_of_erroring(self) -> None:
+        """The outcome is stats_pending with a retry armed, not status=error."""
+        reviewer = self._reviewer(delay=3600)
+        try:
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is True
+            assert result["attempt"] == 1
+            assert result["attempts"] == 7  # the toolkit's in-call 202 budget
+            # Logged as a warning without a traceback: expected GitHub behaviour.
+            reviewer.logger.error.assert_not_called()
+            reviewer.logger.warning.assert_called_once()
+            assert "exc_info" not in reviewer.logger.warning.call_args.kwargs
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_second_call_does_not_stack_a_retry(self) -> None:
+        """While a deferred run is armed, another cold run reuses it."""
+        reviewer = self._reviewer(delay=3600)
+        try:
+            await reviewer.report_weekly_activity()
+            second = await reviewer.report_weekly_activity()
+
+            assert second["already_armed"] is True
+            assert reviewer._weekly_retry_attempt == 1
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_budget_exhaustion_stops_retrying(self) -> None:
+        """Past the budget it gives up quietly until the next scheduled run."""
+        reviewer = self._reviewer(delay=3600, max_retries=1)
+        try:
+            await reviewer.report_weekly_activity()
+            await reviewer._shutdown_weekly_retry()  # drop the armed task
+            reviewer._weekly_retry_attempt = 1  # as if that retry had run
+
+            result = await reviewer.report_weekly_activity()
+
+            assert result["status"] == "stats_pending"
+            assert result["retry_scheduled"] is False
+            assert reviewer._weekly_retry_attempt == 0  # budget reset for next week
+        finally:
+            await reviewer._shutdown_weekly_retry()
+
+    async def test_shutdown_cancels_the_armed_retry(self) -> None:
+        """A pending deferral must not outlive the agent."""
+        reviewer = self._reviewer(delay=3600)
+        await reviewer.report_weekly_activity()
+        task = reviewer._weekly_retry_task
+        assert task is not None and not task.done()
+
+        await reviewer._shutdown_weekly_retry()
+
+        assert task.cancelled()
+        assert reviewer._weekly_retry_task is None
+
+
+class TestScheduledReportDecorators:
+    """The two report methods must keep carrying their schedule decorator.
+
+    ``register_bot_schedules()`` discovers them by the ``_schedule_report_type``
+    marker that ``@schedule_daily_report`` / ``@schedule_weekly_report`` leave
+    on the wrapper, so losing a decorator silently un-schedules the report —
+    no error anywhere, the job just never runs again. Inserting a helper
+    between a decorator and its function is an easy way to cause exactly that.
+    """
+
+    def test_stale_report_is_scheduled_daily(self) -> None:
+        marker = getattr(GitHubReviewer.report_stale_pull_requests, "_schedule_report_type", None)
+        assert marker == "daily", "report_stale_pull_requests lost @schedule_daily_report"
+        cfg = GitHubReviewer.report_stale_pull_requests._schedule_config
+        assert cfg["method_name"] == "report_stale_pull_requests"
+
+    def test_weekly_report_is_scheduled_weekly(self) -> None:
+        marker = getattr(GitHubReviewer.report_weekly_activity, "_schedule_report_type", None)
+        assert marker == "weekly", "report_weekly_activity lost @schedule_weekly_report"
+        cfg = GitHubReviewer.report_weekly_activity._schedule_config
+        assert cfg["method_name"] == "report_weekly_activity"
+
+    def test_helpers_are_not_scheduled(self) -> None:
+        """A decorator must never land on a plain helper by accident."""
+        for name in ("_defer_weekly_report", "_shutdown_weekly_retry", "_describe_webhook_denial"):
+            attr = getattr(GitHubReviewer, name)
+            assert not hasattr(attr, "_schedule_report_type"), f"{name} is decorated as a report"
+
+
+# ---------------------------------------------------------------------------
+# /review_pr — strict on-demand gate (code review + Jira + CI, then enforce)
+# ---------------------------------------------------------------------------
+
+
+_ROSTER = [
+    {
+        "id": "35",
+        "name": "Jesus Lara",
+        "jira_username": "jesuslarag@gmail.com",
+        "telegram_chat_id": "286137732",
+        "username": "jlara@trocglobal.com",
+    }
+]
+
+
+def _checks(
+    *,
+    success: int = 2,
+    failure: int = 0,
+    pending: int = 0,
+    names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Build a raw ``get_pr_checks`` payload with the given state counts."""
+    entries: List[Dict[str, Any]] = []
+    pool = list(names or [])
+
+    def _name(default: str) -> str:
+        return pool.pop(0) if pool else default
+
+    for _ in range(success):
+        entries.append({"name": _name("pytest"), "state": "success"})
+    for _ in range(failure):
+        entries.append({"name": _name("e2e tests"), "state": "failure"})
+    for _ in range(pending):
+        entries.append({"name": _name("build"), "state": "pending"})
+    return {
+        "repository": "owner/repo",
+        "pr_number": 42,
+        "head_sha": "sha",
+        "checks": entries,
+        "total": len(entries),
+        "success": success,
+        "failure": failure,
+        "pending": pending,
+    }
+
+
+def _ticket(assignee: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {"summary": "S", "description": "D"}
+    if assignee is not None:
+        fields["assignee"] = assignee
+    return {"fields": fields}
+
+
+def _wire_strict(
+    *,
+    approve: bool = True,
+    discrepancies: Optional[List[Discrepancy]] = None,
+    checks_raw: Optional[Dict[str, Any]] = None,
+    checks_error: Optional[Exception] = None,
+    assignee: Optional[Dict[str, Any]] = None,
+    ticket: Any = "default",
+) -> Any:
+    """A reviewer wired for the strict path: ticket, diff, LLM, CI and bot."""
+    r = _wire_reviewer()
+    r.public_channel_id = "-1009999"
+    resolved = _ticket(assignee) if ticket == "default" else ticket
+    r._fetch_ticket = AsyncMock(return_value=resolved)
+    r._fetch_diff = AsyncMock(return_value=("diff", False, True))
+    r._ask_llm_for_review = AsyncMock(
+        return_value=PRReviewResult(
+            jira_key="NAV-1",
+            discrepancies=list(discrepancies or []),
+            summary="reviewed",
+            approve=approve,
+        )
+    )
+    if checks_error is not None:
+        r.git_toolkit.get_pr_checks = AsyncMock(side_effect=checks_error)
+    else:
+        r.git_toolkit.get_pr_checks = AsyncMock(return_value=checks_raw if checks_raw is not None else _checks())
+    r.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1, "state": "APPROVED"})
+    r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 7, "html_url": "u"})
+    r.git_toolkit.convert_pr_to_draft = AsyncMock(
+        return_value={"status": "converted", "pr_number": 42, "is_draft": True}
+    )
+    bot = MagicMock()
+    bot.send_message = AsyncMock()
+    r._wrapper = MagicMock()
+    r._wrapper.bot = bot
+    return r
+
+
+_PAYLOAD = {
+    "repository": "owner/repo",
+    "pr_number": 42,
+    "pr_title": "feat: thing",
+    "pr_body": "Implements NAV-1",
+    "pr_url": "https://github.com/owner/repo/pull/42",
+    "head_sha": "sha",
+    "author": "octocat",
+    "draft": False,
+    "state": "open",
+}
+
+
+class TestParsePRTarget:
+    """``/review_pr`` must accept whatever shape the PR arrives in."""
+
+    def test_accepts_url_slug_and_bare_number(self) -> None:
+        assert GitHubReviewer._parse_pr_target("https://github.com/owner/repo/pull/42") == ("owner/repo", 42, None)
+        assert GitHubReviewer._parse_pr_target("http://www.github.com/o/r/pull/7/files") == ("o/r", 7, None)
+        assert GitHubReviewer._parse_pr_target("owner/repo#13") == ("owner/repo", 13, None)
+        assert GitHubReviewer._parse_pr_target("owner/repo/pull/13") == ("owner/repo", 13, None)
+        # A bare number leaves the repository to the caller's default.
+        assert GitHubReviewer._parse_pr_target("#99") == (None, 99, None)
+        assert GitHubReviewer._parse_pr_target("99") == (None, 99, None)
+
+    def test_ignores_trailing_prose_and_punctuation(self) -> None:
+        assert GitHubReviewer._parse_pr_target("https://github.com/o/r/pull/5 please review") == ("o/r", 5, None)
+        assert GitHubReviewer._parse_pr_target("  owner/repo#8,  ") == ("owner/repo", 8, None)
+
+    def test_names_the_repository_link_mistake(self) -> None:
+        """A repo link is the likeliest typo, so it gets its own message."""
+        repo, number, error = GitHubReviewer._parse_pr_target("https://github.com/owner/repo")
+        assert (repo, number) == (None, None)
+        assert "repository link" in str(error)
+
+    def test_rejects_junk_and_emptiness(self) -> None:
+        assert GitHubReviewer._parse_pr_target("")[2] == "no pull request given"
+        assert "could not read a pull request" in str(GitHubReviewer._parse_pr_target("hola")[2])
+
+
+class TestSummarizeChecks:
+    def test_counts_states_and_excludes_pending_from_the_ratio(self) -> None:
+        """A half-finished pipeline must not read as half-failing."""
+        summary = GitHubReviewer._summarize_checks(_checks(success=2, failure=1, pending=1))
+        assert (summary.success, summary.failure, summary.pending) == (2, 1, 1)
+        # 2 of the 3 COMPLETED checks are green — the pending one is excluded.
+        assert summary.pass_ratio == pytest.approx(2 / 3)
+        assert summary.failing == ["e2e tests"]
+        assert summary.running == ["build"]
+        assert summary.declared is True
+
+    def test_distinguishes_absent_checks_from_unreadable_ones(self) -> None:
+        absent = GitHubReviewer._summarize_checks({"checks": [], "total": 0})
+        assert (absent.available, absent.declared) == (True, False)
+        unreadable = GitHubReviewer._summarize_checks(None)
+        assert (unreadable.available, unreadable.declared) == (False, False)
+        assert unreadable.reason
+
+    def test_recognizes_test_shaped_check_names(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            _checks(success=3, names=["pytest unit", "build docker", "e2e-suite"])
+        )
+        assert summary.test_checks == 2
+
+    async def test_fetch_checks_never_raises(self) -> None:
+        r = _wire_reviewer()
+        r.git_toolkit.get_pr_checks = AsyncMock(side_effect=RuntimeError("403 no checks:read"))
+        summary = await r._fetch_checks("owner/repo", 42, "sha")
+        assert summary.available is False
+        assert "403" in str(summary.reason)
+        r.logger.warning.assert_called_once()
+
+    async def test_fetch_checks_without_a_toolkit(self) -> None:
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        summary = await r._fetch_checks("owner/repo", 42)
+        assert summary.available is False
+        assert "git_toolkit" in str(summary.reason)
+
+
+class TestMergeVerdict:
+    """The gate: Jira compliance AND test evidence, both required."""
+
+    def _result(self, approve: bool, *discrepancies: Discrepancy) -> PRReviewResult:
+        return PRReviewResult(jira_key="NAV-1", discrepancies=list(discrepancies), summary="s", approve=approve)
+
+    def test_green_and_compliant_is_mergeable(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is True
+        assert verdict.defer is False
+        assert verdict.reasons == []
+
+    def test_a_blocker_finding_blocks_even_with_green_ci(self) -> None:
+        r = _wire_reviewer()
+        blocker = Discrepancy(criterion="AC2", issue="endpoint missing", severity="blocker")
+        verdict = r._merge_verdict(self._result(False, blocker), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is False
+        assert any("AC2" in reason for reason in verdict.reasons)
+
+    def test_a_minor_finding_is_only_a_warning(self) -> None:
+        r = _wire_reviewer()
+        minor = Discrepancy(criterion="AC9", issue="typo in a docstring", severity="minor")
+        verdict = r._merge_verdict(self._result(True, minor), GitHubReviewer._summarize_checks(_checks(success=3)))
+        assert verdict.mergeable is True
+        assert any("AC9" in warning for warning in verdict.warnings)
+
+    def test_failing_ci_below_the_ratio_blocks(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=1, failure=3)),
+        )
+        assert verdict.mergeable is False
+        assert any("failing" in reason for reason in verdict.reasons)
+
+    def test_mostly_green_ci_is_tolerated(self) -> None:
+        """ "All OK — or a great part of them": 8/10 green clears a 0.8 bar."""
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=8, failure=2)),
+        )
+        assert verdict.mergeable is True
+        assert any("at or above" in warning for warning in verdict.warnings)
+
+    def test_the_ratio_is_configurable(self) -> None:
+        r = _wire_reviewer()
+        r.min_check_pass_ratio = 1.0
+        verdict = r._merge_verdict(
+            self._result(True),
+            GitHubReviewer._summarize_checks(_checks(success=9, failure=1)),
+        )
+        assert verdict.mergeable is False
+
+    def test_running_checks_defer_the_verdict(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=1, pending=2)))
+        assert (verdict.mergeable, verdict.defer) == (False, True)
+        assert verdict.reasons == []
+
+    def test_running_checks_do_not_defer_an_already_blocked_pr(self) -> None:
+        """A blocker is reason enough to draft the PR now, CI or no CI."""
+        r = _wire_reviewer()
+        blocker = Discrepancy(criterion="AC1", issue="not implemented", severity="blocker")
+        verdict = r._merge_verdict(
+            self._result(False, blocker),
+            GitHubReviewer._summarize_checks(_checks(success=0, pending=4)),
+        )
+        assert (verdict.mergeable, verdict.defer) == (False, False)
+
+    def test_unreadable_ci_warns_without_blocking_or_deferring(self) -> None:
+        """ "No CI" is not "CI failed" — an outage must not stall the flow.
+
+        The ticket comparison is the gate that decides; an outage, or a
+        permission a fine-grained PAT cannot hold, is reported and stepped over.
+        """
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert verdict.reasons == []
+        assert any("could not be read" in warning for warning in verdict.warnings)
+
+    def test_absent_checks_warn_by_default(self) -> None:
+        r = _wire_reviewer()
+        verdict = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert any("no CI checks" in warning for warning in verdict.warnings)
+
+    def test_missing_evidence_blocks_only_when_explicitly_required(self) -> None:
+        """``require_checks`` is the opt-in that makes CI mandatory."""
+        r = _wire_reviewer()
+        r.require_checks = True
+        absent = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks({"checks": [], "total": 0}))
+        unreadable = r._merge_verdict(self._result(True), PRChecksSummary(available=False, reason="403"))
+        for verdict in (absent, unreadable):
+            assert verdict.mergeable is False
+            assert verdict.defer is False
+            assert any("require_checks" in reason for reason in verdict.reasons)
+
+    def test_a_failing_pipeline_is_the_only_ci_refusal(self) -> None:
+        """The one CI state that refuses a PR on its own."""
+        r = _wire_reviewer()
+        red = r._merge_verdict(self._result(True), GitHubReviewer._summarize_checks(_checks(success=0, failure=3)))
+        assert (red.mergeable, red.defer) == (False, False)
+        assert any("failing" in reason for reason in red.reasons)
+
+
+class TestAssigneeResolution:
+    def test_matches_on_email_account_id_or_display_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        by_email = r._resolve_assignee(_ticket({"emailAddress": "JesusLaraG@gmail.com"}))
+        by_account = r._resolve_assignee(_ticket({"accountId": "35"}))
+        by_name = r._resolve_assignee(_ticket({"displayName": "jesus lara"}))
+        assert by_email is not None and by_email["name"] == "Jesus Lara"
+        assert by_account is by_email
+        assert by_name is by_email
+
+    def test_unknown_or_absent_assignee_resolves_to_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        assert r._resolve_assignee(_ticket({"emailAddress": "stranger@example.com"})) is None
+        assert r._resolve_assignee(_ticket()) is None
+        assert r._resolve_assignee(None) is None
+
+    def test_malformed_roster_entries_are_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """One bad entry must not break the notification path of a real review."""
+        r = _wire_reviewer()
+        monkeypatch.setattr(conf, "JIRA_USERS", ["not-a-dict", None, *_ROSTER])
+        found = r._resolve_assignee(_ticket({"emailAddress": "jesuslarag@gmail.com"}))
+        assert found is not None and found["telegram_chat_id"] == "286137732"
+
+    def test_mention_prefers_a_username_and_falls_back_to_a_tg_link(self) -> None:
+        assert GitHubReviewer._telegram_mention({"name": "A", "telegram_username": "@ada"}) == "@ada"
+        link = GitHubReviewer._telegram_mention({"name": "Ada L", "telegram_chat_id": "123"})
+        assert link == '<a href="tg://user?id=123">@Ada L</a>'
+        # Neither id nor username: still renders something mention-shaped.
+        assert GitHubReviewer._telegram_mention({"name": "Ada"}) == "@Ada"
+
+
+class TestBlockedPRNotifications:
+    def test_message_escapes_user_data(self) -> None:
+        r = _wire_reviewer()
+        payload = {**_PAYLOAD, "pr_title": "feat: X_y <z> & more"}
+        verdict = MergeVerdict(mergeable=False, reasons=["AC1 <broken> & unmet"])
+        text = r._format_blocked_message(payload, "NAV-1", PRChecksSummary(available=False), verdict)
+        assert "&lt;z&gt; &amp; more" in text
+        assert "&lt;broken&gt; &amp; unmet" in text
+        assert "<z>" not in text
+
+    def test_channel_copy_carries_the_mention_and_the_dm_does_not(self) -> None:
+        r = _wire_reviewer()
+        verdict = MergeVerdict(mergeable=False, reasons=["nope"])
+        checks = GitHubReviewer._summarize_checks(_checks(success=1, failure=1))
+        dm = r._format_blocked_message(_PAYLOAD, "NAV-1", checks, verdict)
+        channel = r._format_blocked_message(_PAYLOAD, "NAV-1", checks, verdict, mention="@ada")
+        assert dm.startswith("<b>Your pull request")
+        assert channel.startswith("@ada — your pull request")
+        assert "1 passed, 1 failed" in dm
+
+    async def test_dm_and_channel_both_go_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        verdict = MergeVerdict(mergeable=False, reasons=["AC1 unmet"])
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(available=True, declared=True, success=1),
+            verdict,
+            _ticket({"emailAddress": "jesuslarag@gmail.com"}),
+        )
+        bot = r._wrapper.bot
+        assert report["assignee"] == "Jesus Lara"
+        assert report["dm"] == {"sent": True, "chat_id": "286137732"}
+        assert report["channel"]["sent"] is True
+        assert bot.send_message.await_count == 2
+        dm_call, channel_call = bot.send_message.await_args_list
+        assert dm_call.kwargs["chat_id"] == "286137732"
+        assert channel_call.kwargs["chat_id"] == "-1009999"
+        assert "tg://user?id=286137732" in channel_call.kwargs["text"]
+
+    async def test_assignee_outside_the_roster_still_reaches_the_channel(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(),
+            MergeVerdict(mergeable=False, reasons=["x"]),
+            _ticket({"emailAddress": "stranger@example.com"}),
+        )
+        assert report["assignee"] is None
+        assert report["dm"] == {"sent": False, "reason": "assignee not in JIRA_USERS"}
+        assert report["channel"]["sent"] is True
+        # Exactly one send: the channel copy, with no mention to render.
+        assert r._wrapper.bot.send_message.await_count == 1
+
+    async def test_a_failed_dm_does_not_stop_the_channel_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+
+        async def _send(chat_id: Any, **kwargs: Any) -> None:
+            if str(chat_id) == "286137732":
+                raise RuntimeError("bot was blocked by the user")
+
+        r._wrapper.bot.send_message = AsyncMock(side_effect=_send)
+        report = await r._notify_blocked_pr(
+            _PAYLOAD,
+            "NAV-1",
+            PRChecksSummary(),
+            MergeVerdict(mergeable=False, reasons=["x"]),
+            _ticket({"emailAddress": "jesuslarag@gmail.com"}),
+        )
+        assert report["dm"]["sent"] is False
+        assert "blocked" in report["dm"]["error"]
+        assert report["channel"]["sent"] is True
+
+    async def test_a_failed_channel_send_names_the_chat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        r._wrapper.bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["channel"] == {"sent": False, "chat_id": "-1009999", "error": "chat not found"}
+        logged = str(r.logger.warning.call_args)
+        assert "-1009999" in logged
+
+    async def test_no_channel_configured_is_reported_not_crashed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict()
+        r.public_channel_id = None
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["channel"] == {"sent": False, "reason": "no public channel configured"}
+
+    async def test_without_a_telegram_wrapper_nothing_is_sent(self) -> None:
+        r = _wire_strict()
+        r._wrapper = None
+        report = await r._notify_blocked_pr(
+            _PAYLOAD, "NAV-1", PRChecksSummary(), MergeVerdict(mergeable=False, reasons=["x"]), _ticket()
+        )
+        assert report["reason"] == "no telegram wrapper"
+        assert report["dm"]["sent"] is False
+
+
+class TestStrictReviewPullRequest:
+    """The enforcement path: approve, defer, or draft + comment + notify."""
+
+    async def test_compliant_pr_is_approved_and_never_drafted(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        r.git_toolkit.add_pr_comment.assert_not_awaited()
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+    async def test_strict_path_asks_jira_for_the_assignee(self) -> None:
+        """The webhook path does not need the assignee; this one does."""
+        r = _wire_strict()
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert "assignee" in r._fetch_ticket.await_args.kwargs["fields"]
+
+    async def test_noncompliant_pr_is_drafted_commented_and_announced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        blocker = Discrepancy(criterion="AC2", issue="endpoint missing", severity="blocker")
+        r = _wire_strict(
+            approve=False,
+            discrepancies=[blocker],
+            checks_raw=_checks(success=1, failure=2),
+            assignee={"emailAddress": "jesuslarag@gmail.com"},
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+
+        assert out["status"] == "blocked"
+        assert out["draft"]["status"] == "converted"
+        r.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+        body = r.git_toolkit.add_pr_comment.await_args.kwargs["body"]
+        assert "not mergeable" in body
+        assert "AC2" in body
+        assert "@octocat" in body  # the PR author is pinged on GitHub
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "REQUEST_CHANGES"
+        assert out["alerts"]["dm"]["sent"] is True
+        assert out["alerts"]["channel"]["sent"] is True
+
+    async def test_the_draft_call_precedes_the_comment(self) -> None:
+        """The PR must stop being mergeable before anyone reads the reason."""
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        order: List[str] = []
+        r.git_toolkit.convert_pr_to_draft = AsyncMock(
+            side_effect=lambda **kw: order.append("draft") or {"status": "converted"}
+        )
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=lambda **kw: order.append("comment") or {"id": 1})
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert order == ["draft", "comment"]
+
+    async def test_a_failed_draft_conversion_still_comments_and_notifies(self) -> None:
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit.convert_pr_to_draft = AsyncMock(side_effect=RuntimeError("422 not permitted"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        assert "422" in out["draft_error"]
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        assert out["alerts"]["channel"]["sent"] is True
+
+    async def test_a_failed_comment_is_recorded_without_losing_the_draft(self) -> None:
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("503"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["draft"]["status"] == "converted"
+        assert out["comment_error"] == "503"
+
+    async def test_running_checks_leave_the_pr_untouched(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "COMMENT"
+        assert "deferred" in call["body"]
+        assert r._wrapper.bot.send_message.await_count == 0
+
+    async def test_unreadable_checks_approve_but_disclose(self) -> None:
+        """CI is optional: an unreadable pipeline cannot stall the flow.
+
+        The approval must still SAY that no test evidence was verified —
+        optional is not invisible.
+        """
+        r = _wire_strict(approve=True, checks_error=RuntimeError("403 no checks:read"))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "could not be read" in call["body"]
+        assert "403" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_an_absent_pipeline_approves_with_a_note(self) -> None:
+        r = _wire_strict(approve=True, checks_raw={"checks": [], "total": 0})
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "no checks declared" in body
+        assert "Non-blocking notes" in body
+
+    async def test_a_green_pipeline_needs_no_disclaimer(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        await r.strict_review_pull_request(dict(_PAYLOAD))
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "3 passed, 0 failed" in body
+        assert "no test evidence could be verified" not in body
+
+    async def test_a_pr_without_a_ticket_gets_the_missing_ticket_comment(self) -> None:
+        r = _wire_strict()
+        r._notify_missing_ticket = AsyncMock(return_value={"id": 3})
+        out = await r.strict_review_pull_request({**_PAYLOAD, "pr_body": "no key here", "pr_title": "chore"})
+        assert out["status"] == "no_ticket"
+        assert out["comment"] == {"id": 3}
+        r._ask_llm_for_review.assert_not_awaited()
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+    async def test_an_unreadable_ticket_stops_before_touching_github(self) -> None:
+        r = _wire_strict(ticket=None)
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "ticket_not_found"
+        assert out["jira_key"] == "NAV-1"
+        r._ask_llm_for_review.assert_not_awaited()
+        r.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    async def test_a_missing_pr_number_is_an_error(self) -> None:
+        r = _wire_strict()
+        out = await r.strict_review_pull_request({"repository": "owner/repo"})
+        assert out == {"status": "error", "reason": "missing pr_number"}
+
+    async def test_without_github_the_verdict_is_still_computed(self) -> None:
+        """No toolkit: report the verdict instead of pretending to enforce it."""
+        r = _wire_strict(approve=False, checks_raw=_checks(success=0, failure=2))
+        r.git_toolkit = None
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        assert out["review_error"] == "git_toolkit is not configured"
+        assert out["verdict"]["reasons"]
+
+
+class TestReviewPRCommand:
+    async def test_is_registered_as_a_raw_telegram_command(self) -> None:
+        """``raw`` keeps a pasted URL intact — keyword parsing would mangle it."""
+        meta = GitHubReviewer.review_pr._telegram_command
+        assert meta["command"] == "review_pr"
+        assert meta["parse_mode"] == "raw"
+        assert meta["description"]
+
+    async def test_a_repository_link_gets_usage_help(self) -> None:
+        r = _wire_strict()
+        reply = await r.review_pr("https://github.com/owner/repo")
+        assert "repository link" in reply
+        assert "Usage:" in reply
+        r.git_toolkit.get_pull_request.assert_not_called()
+
+    async def test_an_empty_argument_gets_usage_help(self) -> None:
+        r = _wire_strict()
+        assert "Usage:" in await r.review_pr("")
+
+    async def test_without_github_configured_it_says_so(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit = None
+        assert "not configured" in await r.review_pr("42")
+
+    async def test_an_unreadable_pr_is_reported(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(side_effect=RuntimeError("404"))
+        reply = await r.review_pr("https://github.com/owner/repo/pull/42")
+        assert "Could not read" in reply
+        assert "owner/repo#42" in reply
+
+    async def test_a_closed_pr_is_refused_before_any_review(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={"title": "t", "state": "closed", "head": {"sha": "s"}, "user": {"login": "o"}}
+        )
+        reply = await r.review_pr("42")
+        assert "closed" in reply
+        r._ask_llm_for_review.assert_not_awaited()
+
+    async def test_a_bare_number_uses_the_configured_repository(self) -> None:
+        r = _wire_strict()
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "t",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        await r.review_pr("42")
+        assert r.git_toolkit.get_pull_request.await_args.kwargs["repository"] == "owner/repo"
+
+    async def test_the_blocked_reply_lists_reasons_and_who_was_told(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "JIRA_USERS", _ROSTER)
+        r = _wire_strict(
+            approve=False,
+            discrepancies=[Discrepancy(criterion="AC2", issue="missing", severity="blocker")],
+            checks_raw=_checks(success=0, failure=2),
+            assignee={"emailAddress": "jesuslarag@gmail.com"},
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "https://github.com/owner/repo/pull/42",
+                "head": {"sha": "s"},
+                "user": {"login": "octocat"},
+            }
+        )
+        reply = await r.review_pr("https://github.com/owner/repo/pull/42")
+        assert reply.startswith("🚫")
+        assert "converted to **draft**" in reply
+        assert "AC2" in reply
+        assert "DM to Jesus Lara" in reply
+        assert "the public channel" in reply
+        assert "0 passed, 2 failed" in reply
+
+    async def test_the_approved_reply_is_short_and_green(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=3))
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.startswith("✅")
+        assert "Approved" in reply
+        assert "3 passed, 0 failed" in reply
+
+    async def test_a_ticketless_pr_reply_explains_the_skip(self) -> None:
+        r = _wire_strict()
+        r._notify_missing_ticket = AsyncMock(return_value={"id": 1})
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "chore: tidy",
+                "body": "",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert "NAV-<number>" in reply
+        assert "left a comment" in reply
+
+
+# ---------------------------------------------------------------------------
+# Dedicated Google credential (GITHUB_REVIEW_GOOGLE_API_KEY)
+# ---------------------------------------------------------------------------
+
+
+class _CredentialStub:
+    """Agent stand-in carrying only what ``_apply_google_api_key`` reads."""
+
+    # The real resolver — the method under test dispatches through ``self``
+    # so a subclass can override it.
+    _resolve_google_api_key = staticmethod(GitHubReviewer._resolve_google_api_key)
+
+    def __init__(self, llm: Any = None, llm_kwargs: Optional[Dict[str, Any]] = None) -> None:
+        self._llm_raw = llm
+        self._default_llm = "google"
+        self._llm_kwargs: Dict[str, Any] = {"temperature": 0.1} if llm_kwargs is None else llm_kwargs
+        self.logger = MagicMock()
+
+
+def _apply(stub: _CredentialStub, explicit: Optional[str] = None) -> bool:
+    return GitHubReviewer._apply_google_api_key(stub, explicit)
+
+
+class TestGoogleApiKeyResolution:
+    """The reviewer bills its LLM traffic to its own Google credential."""
+
+    def test_explicit_argument_wins_over_the_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "from-env", raising=False)
+        assert GitHubReviewer._resolve_google_api_key("explicit") == "explicit"
+
+    def test_the_dedicated_env_var_is_used_when_no_argument_is_given(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        assert GitHubReviewer._resolve_google_api_key() == "reviewer-key"
+
+    def test_an_unset_key_resolves_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", None, raising=False)
+        assert GitHubReviewer._resolve_google_api_key() is None
+
+    def test_an_empty_key_resolves_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "", raising=False)
+        assert GitHubReviewer._resolve_google_api_key() is None
+
+    def test_the_key_is_injected_into_the_llm_kwargs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub()
+        assert _apply(stub) is True
+        assert stub._llm_kwargs["api_key"] == "reviewer-key"
+        # The other LLM settings survive the rebind.
+        assert stub._llm_kwargs["temperature"] == 0.1
+
+    def test_injection_does_not_mutate_the_callers_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        shared: Dict[str, Any] = {"temperature": 0.1}
+        stub = _CredentialStub(llm_kwargs=shared)
+        assert _apply(stub) is True
+        assert "api_key" not in shared
+
+    def test_an_unset_key_falls_back_to_the_clients_google_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Nothing is injected, so the Google client resolves GOOGLE_API_KEY itself."""
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", None, raising=False)
+        stub = _CredentialStub()
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+
+    def test_an_explicit_caller_credential_is_never_overridden(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm_kwargs={"api_key": "caller-key"})
+        assert _apply(stub) is False
+        assert stub._llm_kwargs["api_key"] == "caller-key"
+
+    def test_vertexai_agents_keep_their_own_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm_kwargs={"vertexai": True})
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+
+    def test_a_non_google_llm_is_left_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm="openai:gpt-5")
+        assert _apply(stub) is False
+        assert "api_key" not in stub._llm_kwargs
+        assert stub.logger.warning.called
+
+    def test_a_google_llm_string_is_recognised(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "reviewer-key", raising=False)
+        stub = _CredentialStub(llm="google:gemini-3.7-flash")
+        assert _apply(stub) is True
+        assert stub._llm_kwargs["api_key"] == "reviewer-key"
+
+    def test_the_key_value_is_never_logged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_GOOGLE_API_KEY", "s3cr3t-key", raising=False)
+        stub = _CredentialStub()
+        _apply(stub)
+        logged = " ".join(str(call) for call in stub.logger.mock_calls)
+        assert "s3cr3t-key" not in logged
+
+
+class TestCIPermissionDenials:
+    """A token that cannot see the checks must never produce a free pass.
+
+    Reproduces the live 403 on ``/check-runs`` ("Resource not accessible by
+    personal access token") that a fine-grained PAT without the *Checks*
+    permission returns.
+    """
+
+    _REASON = (
+        "check_runs denied (needs 'Checks' (Read-only) on a fine-grained PAT, or a classic PAT with the 'repo' scope)"
+    )
+
+    def _approved(self) -> PRReviewResult:
+        return PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True)
+
+    def test_summarize_honours_the_payloads_own_availability(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            {"available": False, "denied": ["check_runs", "commit_statuses"], "reason": "both refused"}
+        )
+        assert summary.available is False
+        assert summary.denied == ["check_runs", "commit_statuses"]
+        assert summary.reason == "both refused"
+
+    def test_summarize_keeps_a_partial_picture_usable(self) -> None:
+        summary = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "ci/jenkins", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert (summary.available, summary.declared) == (True, True)
+        assert summary.denied == ["check_runs"]
+        assert summary.success == 1
+
+    def test_zero_visible_checks_behind_a_denial_do_not_stall_the_flow(self) -> None:
+        """A denial leaves NO evidence, which is not the same as a failure.
+
+        An Actions-only repo whose ``check-runs`` endpoint is denied reports
+        zero checks. The reviewer says so and lets the ticket comparison
+        decide, instead of deferring every PR behind a token scope.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        assert checks.declared is False
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert verdict.reasons == []
+        assert any("visible to this token" in w for w in verdict.warnings)
+        assert any("'Checks' (Read-only)" in w for w in verdict.warnings)
+
+    def test_require_checks_turns_a_denial_into_a_blocker(self) -> None:
+        """The opt-in for deployments that treat CI evidence as mandatory."""
+        r = _wire_reviewer()
+        r.require_checks = True
+        checks = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (False, False)
+        assert any("require_checks" in reason for reason in verdict.reasons)
+
+    def test_a_partial_picture_still_approves_but_says_so(self) -> None:
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "pytest", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["commit_statuses"],
+                "reason": "commit_statuses denied (needs 'Commit statuses' (Read-only) on a fine-grained PAT)",
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert any("part of the CI picture is missing" in w for w in verdict.warnings)
+
+    def test_genuinely_absent_ci_is_unaffected(self) -> None:
+        """Nothing denied + nothing declared keeps the old warn-only behaviour."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks({"checks": [], "total": 0})
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        assert any("no CI checks" in w for w in verdict.warnings)
+
+    def test_an_empty_but_readable_ci_is_not_blamed_on_the_permission(self) -> None:
+        """Live case: Actions + statuses answered, and this commit has no run.
+
+        Saying "not visible to this token" there sends an operator chasing a
+        permission that is already granted. The denial still matters (checks
+        from other apps could be hidden), so the note says both things.
+        """
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": ["workflow_runs", "commit_statuses"],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        verdict = r._merge_verdict(self._approved(), checks)
+        assert (verdict.mergeable, verdict.defer) == (True, False)
+        note = "\n".join(verdict.warnings)
+        assert "no CI run or status exists for this commit" in note
+        assert "read: workflow_runs, commit_statuses" in note
+        assert "may be hidden" in note
+        assert "not visible to this token" not in note
+        assert r._format_checks_line(checks) == "CI: nothing reported for this commit (check_runs not readable)"
+
+    def test_nothing_answered_still_reads_as_invisible(self) -> None:
+        """With no source answering, the permission IS the story."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(
+            {
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "answered": [],
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        assert any("visible to this token" in w for w in r._merge_verdict(self._approved(), checks).warnings)
+        assert r._format_checks_line(checks) == "CI: no check visible to this token (check_runs denied)"
+
+    def test_the_checks_line_names_the_denial(self) -> None:
+        r = _wire_reviewer()
+        empty = GitHubReviewer._summarize_checks(
+            {"checks": [], "total": 0, "available": True, "denied": ["check_runs"], "reason": self._REASON}
+        )
+        partial = GitHubReviewer._summarize_checks(
+            {
+                "checks": [{"name": "pytest", "state": "success"}],
+                "total": 1,
+                "success": 1,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            }
+        )
+        # Short and quantitative: the long "grant X on the PAT" advice belongs
+        # in the notes, once, not inside every CI line.
+        empty_line = r._format_checks_line(empty)
+        assert empty_line == "CI: no check visible to this token (check_runs denied)"
+        assert "Read-only" not in empty_line
+        assert "check_runs denied" in r._format_checks_line(partial)
+        assert r._format_checks_line(PRChecksSummary(available=False, reason=self._REASON)) == (
+            "CI: could not be read — tests were not verified (see the notes)"
+        )
+
+    async def test_the_approval_names_the_missing_permission(self) -> None:
+        """The operator must read the fix in the PR, not only in the logs.
+
+        The PR is approved on its ticket comparison, and the review's footer
+        carries the unverifiable-CI note plus the permission to grant.
+        """
+        r = _wire_strict(
+            approve=True,
+            checks_raw={
+                "checks": [],
+                "total": 0,
+                "available": True,
+                "denied": ["check_runs"],
+                "reason": self._REASON,
+            },
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        r.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+        call = r.git_toolkit.submit_pr_review.await_args.kwargs
+        assert call["event"] == "APPROVE"
+        assert "'Checks' (Read-only)" in call["body"]
+        assert "no test evidence could be verified" in call["body"]
+
+
+class TestDeferredReviewReportsTheComparison:
+    """A deferred verdict must still report what the review found.
+
+    The ticket comparison DID finish; only the CI verdict is unknown. An
+    earlier version printed nothing but the CI cause, which threw away the
+    valuable half of the review.
+    """
+
+    async def test_the_comment_leads_with_the_acceptance_criteria(self) -> None:
+        r = _wire_strict(
+            approve=True,
+            discrepancies=[Discrepancy(criterion="AC3", issue="no docstring on the new tool", severity="minor")],
+            checks_raw=_checks(success=1, pending=2),
+        )
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests; matches AC1 and AC2.",
+                approve=True,
+            )
+        )
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+
+        # The comparison, not just the CI excuse.
+        assert "### Comparison against the ticket" in body
+        assert "Every acceptance criterion is addressed" in body
+        assert "matches AC1 and AC2" in body
+        assert "[MINOR] AC3" in body
+        # And then why there is no verdict yet.
+        assert "### Why the verdict is deferred" in body
+        assert "still running" in body
+        assert "neither approved nor converted to a draft" in body
+        # The comparison section comes first.
+        assert body.index("Comparison against the ticket") < body.index("Why the verdict is deferred")
+
+    async def test_the_comment_says_so_when_nothing_was_found(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "deferred"
+        body = r.git_toolkit.submit_pr_review.await_args.kwargs["body"]
+        assert "No discrepancy was found" in body
+
+    def test_the_cause_keeps_ci_capitalized(self) -> None:
+        """``str.capitalize()`` would print "Ci status could not be read".
+
+        Driven straight through the formatter: the strict path no longer
+        defers on an unreadable CI (it warns), but the body must still render
+        correctly for any summary handed to it.
+        """
+        r = _wire_reviewer()
+        body = r._format_deferred_body(
+            dict(_PAYLOAD),
+            "NAV-1",
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True),
+            PRChecksSummary(available=False, reason="403 denied"),
+        )
+        assert "The CI status could not be read" in body
+        assert "Ci status" not in body
+
+    async def test_the_telegram_reply_carries_the_verdict_and_findings(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=2))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-10333",
+                discrepancies=[Discrepancy(criterion="AC3", issue="no docstring", severity="minor")],
+                summary="Adds the endpoint and its tests.",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "feat: thing",
+                "body": "Implements NAV-10333",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.startswith("⏳")
+        assert "meets" in reply
+        assert "Adds the endpoint and its tests." in reply
+        assert "[MINOR] AC3" in reply
+        assert "No merge verdict yet" in reply
+
+    async def test_a_failed_review_is_reported_as_unconfirmed(self) -> None:
+        """``approve=False`` with no blocker: say the criteria are unconfirmed."""
+        r = _wire_reviewer()
+        unconfirmed = PRReviewResult(
+            jira_key="NAV-1",
+            discrepancies=[],
+            summary="LLM review failed: timeout",
+            approve=False,
+        )
+        section = "\n".join(r._format_findings_section(unconfirmed))
+        assert "did not confirm" in section
+        assert "LLM review failed: timeout" in section
+
+    async def test_a_finding_is_not_repeated_under_non_blocking(self) -> None:
+        """A minor finding is both a finding and a warning — print it once."""
+        r = _wire_strict(approve=True, checks_raw=_checks(success=1, pending=1))
+        r._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(
+                jira_key="NAV-1",
+                discrepancies=[Discrepancy(criterion="AC4", issue="no audit entry", severity="minor")],
+                summary="s",
+                approve=True,
+            )
+        )
+        r.git_toolkit.get_pull_request = AsyncMock(
+            return_value={
+                "title": "t",
+                "body": "Implements NAV-1",
+                "state": "open",
+                "html_url": "u",
+                "head": {"sha": "s"},
+                "user": {"login": "o"},
+            }
+        )
+        reply = await r.review_pr("42")
+        assert reply.count("[MINOR] AC4") == 1
+
+
+class TestWorkflowRunSourcedVerdict:
+    """The payoff of the Actions fallback: a real verdict on a PAT.
+
+    A fine-grained PAT cannot hold `checks`, so on an Actions-only repository
+    the entire CI picture arrives as workflow runs. The gate must treat that
+    as ordinary test evidence.
+    """
+
+    def _raw(self, *, success: int, failure: int = 0, pending: int = 0) -> Dict[str, Any]:
+        entries: List[Dict[str, Any]] = []
+        entries += [{"name": "tests", "state": "success", "source": "workflow_run"} for _ in range(success)]
+        entries += [{"name": "tests", "state": "failure", "source": "workflow_run"} for _ in range(failure)]
+        entries += [{"name": "build", "state": "pending", "source": "workflow_run"} for _ in range(pending)]
+        return {
+            "checks": entries,
+            "total": len(entries),
+            "success": success,
+            "failure": failure,
+            "pending": pending,
+            "available": True,
+            "answered": ["workflow_runs"],
+            "denied": ["check_runs"],
+            "reason": "check_runs needs [checks=read], which GitHub does NOT offer to fine-grained PATs",
+        }
+
+    async def test_green_workflow_runs_approve_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "approved"
+        assert r.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+        # The partial picture is disclosed, not hidden.
+        assert any("part of the CI picture is missing" in w for w in out["verdict"]["warnings"])
+
+    async def test_failing_workflow_runs_block_the_pr(self) -> None:
+        r = _wire_strict(approve=True, checks_raw=self._raw(success=0, failure=2))
+        out = await r.strict_review_pull_request(dict(_PAYLOAD))
+        assert out["status"] == "blocked"
+        r.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+        assert any("failing" in reason for reason in out["verdict"]["reasons"])
+
+    async def test_a_workflow_sourced_picture_is_not_treated_as_unknown(self) -> None:
+        """`denied` is non-empty, but evidence exists — do not defer on it."""
+        r = _wire_reviewer()
+        checks = GitHubReviewer._summarize_checks(self._raw(success=3))
+        verdict = r._merge_verdict(
+            PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
+        )
+        assert (verdict.mergeable, verdict.defer) == (True, False)

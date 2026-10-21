@@ -151,30 +151,41 @@ class ToolkitResolver:
         """Class-name → entry-key aliases so legacy YAML naming a toolkit by class resolves to its slug.
 
         Only non-host entries get an alias: host slugs are namespaced by ``HOST_TOOL_PREFIX`` and a
-        class-name alias would bypass that namespace. A real slug always shadows an alias, and an
-        alias claimed by two different entries is dropped as ambiguous.
+        class-name alias would bypass that namespace. A real slug always shadows an alias. When
+        several slugs claim one alias, the alias survives on the first claimant as long as every
+        claimant resolves to the same class target (the same toolkit registered under two slugs);
+        only genuinely different targets drop it as ambiguous.
         """
         aliases: dict[str, str] = {}
-        ambiguous: set[str] = set()
+        targets: dict[str, str] = {}  # alias -> resolved class target of its current claimant
+        conflicts: dict[str, dict[str, str]] = {}  # alias -> {entry key: target} of every claimant
         for key, entry in entries.items():
             if entry.is_host:
                 continue
             if entry.dotted_path is not None:
-                class_name = entry.dotted_path.rsplit(".", 1)[-1]
+                target = entry.dotted_path
             else:
                 cls = self._classes.get(key)
-                class_name = cls.__name__ if cls else None
-            if not class_name:
+                target = f"{cls.__module__}.{cls.__qualname__}" if cls else None
+            if not target:
                 continue
-            alias = class_name.lower()
+            alias = target.rsplit(".", 1)[-1].lower()
             if alias in entries:
                 continue
-            if alias in aliases and aliases[alias] != key:
-                ambiguous.add(alias)
+            if alias in targets:
+                if targets[alias] == target:
+                    continue  # same class under another slug — the first claimant keeps the alias
+                conflicts.setdefault(alias, {aliases[alias]: targets[alias]})[key] = target
                 continue
             aliases[alias] = key
-        for alias in ambiguous:
-            logger.warning("Toolkit class-name alias %r claimed by several slugs; dropped as ambiguous", alias)
+            targets[alias] = target
+        for alias, claimants in conflicts.items():
+            logger.warning(
+                "Toolkit class-name alias %r claimed by several slugs with different classes (%s); "
+                "dropped as ambiguous",
+                alias,
+                ", ".join(f"{slug} -> {target}" for slug, target in claimants.items()),
+            )
             aliases.pop(alias, None)
         return aliases
 

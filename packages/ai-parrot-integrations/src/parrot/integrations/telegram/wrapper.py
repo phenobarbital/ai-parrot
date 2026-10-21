@@ -2504,7 +2504,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Format and send result using parsed response
             parsed = self._parse_response(result)
-            await self._send_parsed_response(message, parsed, prefix=f"✅ *{method_name}* result:\n\n")
+            # The method name goes in a code span, not in ``*bold*``: a name
+            # like ``report_resolved_tickets`` is two italic markers to
+            # Markdown v1, which swallows the underscores (see
+            # :meth:`_parse_response`). The prefix is prepended verbatim, so
+            # it has to be written in the mode it will be sent in.
+            label = f"<code>{method_name}</code>" if self.config.use_html else f"`{method_name}`"
+            await self._send_parsed_response(message, parsed, prefix=f"✅ {label} result:\n\n")
 
         except Exception as e:
             typing_task.cancel()
@@ -3603,8 +3609,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     self.logger.debug("Could not delete temp file %s: %s", tmp_path, exc)
 
     def _parse_response(self, response: Any) -> ParsedResponse:
-        """Parse agent response into structured content."""
-        return parse_response(response)
+        """Parse agent response into structured content.
+
+        A raw ``dict``/``list``/``tuple`` result — what ``/call`` and the
+        agent's report methods return — is rendered as a **code block**
+        rather than as prose. Telegram's legacy Markdown parser reads the
+        ``_`` in a key like ``window_hours`` as an italic marker: an odd
+        number of them makes the API reject the whole message
+        ("Bad Request: can't parse entities: Can't find end of the entity
+        starting at byte offset N") and an even number silently eats the
+        underscores, so ``ticket_count`` arrives as ``ticketcount``. A code
+        block is inert in both parse modes and keeps the payload readable.
+
+        ``default=str`` so a payload holding a ``datetime`` (or any other
+        non-JSON value) still renders instead of raising.
+        """
+        parsed = parse_response(response)
+        if isinstance(response, (dict, list, tuple)) and not parsed.has_code:
+            try:
+                parsed.code = json.dumps(response, indent=2, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):  # pragma: no cover — defensive
+                parsed.code = repr(response)
+            parsed.code_language = "json"
+            parsed.text = ""
+        return parsed
 
     def _extract_response_text(self, response: Any) -> str:
         """Extract text content from agent response (backward compatibility)."""

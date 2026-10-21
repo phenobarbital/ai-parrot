@@ -60,6 +60,15 @@ JIRA_MESSAGES: Final[dict[str, dict[str, MessageTemplate]]] = {
             "They may need help prioritizing.",
             frozenset({"hours", "names"}),
         ),
+        "standup_command_done": MessageTemplate("✅ *${name}*, your morning standup is done.", frozenset({"name"})),
+        "standup_command_failed": MessageTemplate(
+            "⚠️ *${name}*, your morning standup could not be completed. Please try again in a moment.",
+            frozenset({"name"}),
+        ),
+        "standup_not_in_roster": MessageTemplate(
+            "🤷 This chat (${chat_id}) is not in the standup roster. " "Ask an admin to add you to the developer list.",
+            frozenset({"chat_id"}),
+        ),
     },
     "es": {
         "standup_greeting": MessageTemplate(
@@ -85,6 +94,16 @@ JIRA_MESSAGES: Final[dict[str, dict[str, MessageTemplate]]] = {
             "${names}\n\n"
             "Puede que necesiten ayuda con priorización.",
             frozenset({"hours", "names"}),
+        ),
+        "standup_command_done": MessageTemplate("✅ *${name}*, tu morning standup está listo.", frozenset({"name"})),
+        "standup_command_failed": MessageTemplate(
+            "⚠️ *${name}*, no se pudo completar tu morning standup. Inténtalo de nuevo en un momento.",
+            frozenset({"name"}),
+        ),
+        "standup_not_in_roster": MessageTemplate(
+            "🤷 Este chat (${chat_id}) no está en la lista de standup. "
+            "Pide a un administrador que te agregue a la lista de developers.",
+            frozenset({"chat_id"}),
         ),
     },
 }
