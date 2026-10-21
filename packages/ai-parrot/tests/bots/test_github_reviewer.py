@@ -2926,9 +2926,30 @@ class TestResolvedTicketListing:
 
         assert result["ticket_count"] == 2
         # A ticket with no usable stamp is reported last, never dropped.
-        assert [ticket["key"] for ticket in result["tickets"]] == ["NAV-8", "NAV-9"]
+        assert result["tickets"] == ["NAV-8", "NAV-9"]
         text = reviewer._wrapper.bot.send_message.await_args.kwargs["text"]
         assert "Unassigned — Closed, recently" in text
+
+    async def test_returned_dict_is_printable_telemetry(self) -> None:
+        """``/call`` echoes the return value through legacy Markdown.
+
+        A summary carrying ``_`` or ``*`` broke that parse, so the status
+        dict reports keys and counts — no prose, no datetimes (which are
+        not JSON-serialisable either). The digest itself goes out as HTML
+        and is unaffected.
+        """
+        reviewer = self._reviewer([self._issue("NAV-1", summary="Fix snake_case *and* `ticks`")])
+
+        result = await reviewer.report_resolved_tickets()
+
+        assert result["tickets"] == ["NAV-1"]
+        rendered = str(result)
+        for breaker in ("snake_case", "*and*", "`ticks`", "datetime"):
+            assert breaker not in rendered
+        # The prose did reach Telegram — in the HTML digest, where it is safe.
+        sent = reviewer._wrapper.bot.send_message.await_args.kwargs
+        assert sent["parse_mode"] == "HTML"
+        assert "Fix snake_case *and* `ticks`" in sent["text"]
 
     async def test_no_transitions_stays_silent(self) -> None:
         reviewer = self._reviewer([], status="empty")

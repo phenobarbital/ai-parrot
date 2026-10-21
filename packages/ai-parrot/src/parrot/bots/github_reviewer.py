@@ -2734,8 +2734,17 @@ class GitHubReviewer(Agent):
 
         Returns:
             A status dict with ``status``, ``project``, ``jql``,
-            ``window_hours``, ``ticket_count``, ``tickets``, ``announced``
-            (tickets covered by a successful send) and ``messages_sent``.
+            ``window_hours``, ``ticket_count``, ``tickets`` (bare keys),
+            ``announced`` (tickets covered by a successful send) and
+            ``messages_sent``.
+
+            ``tickets`` carries keys rather than the rendered rows on
+            purpose: ``/call <method>`` echoes a method's return value back
+            into the chat through Telegram's *legacy Markdown* parser, which
+            a ticket summary holding ``_`` or ``*`` breaks (the digest
+            itself is sent as HTML and is unaffected). Telemetry stays
+            printable; :meth:`_collect_resolved_tickets` is where a caller
+            that wants the full rows goes.
 
         Scheduled daily at 10:00 ``America/New_York`` (DST-aware); it is
         equally dispatchable on demand, which is what ``/call
@@ -2749,7 +2758,12 @@ class GitHubReviewer(Agent):
         if payload["status"] != "ok":
             return payload
 
-        if not payload["tickets"]:
+        # The rows feed the digest; the status dict gets their keys (see the
+        # docstring's Returns section for why it carries no prose).
+        rows: List[Dict[str, Any]] = payload["tickets"]
+        base = {**payload, "tickets": [str(row["key"]) for row in rows]}
+
+        if not rows:
             # Silent exit: an empty list is noise, like the digests above.
             self.logger.info(
                 "GitHubReviewer: resolved-ticket listing — no %s ticket moved to %s in the last %sh; staying silent.",
@@ -2757,7 +2771,7 @@ class GitHubReviewer(Agent):
                 " or ".join(self._RESOLVED_STATUSES),
                 hours,
             )
-            return {**payload, "announced": 0, "messages_sent": 0}
+            return {**base, "announced": 0, "messages_sent": 0}
 
         sent = 0
         messages_sent = 0
@@ -2765,10 +2779,10 @@ class GitHubReviewer(Agent):
         if bot is None or not self.management_chat_id:
             self.logger.warning(
                 "GitHubReviewer: %d resolved ticket(s) to report but no %s to send them to; skipping.",
-                len(payload["tickets"]),
+                len(rows),
                 "Telegram bot" if bot is None else "management chat id",
             )
-            return {**payload, "announced": 0, "messages_sent": 0}
+            return {**base, "announced": 0, "messages_sent": 0}
 
         for text, covered in self._format_resolved_tickets_digest(payload):
             try:
@@ -2797,7 +2811,7 @@ class GitHubReviewer(Agent):
             sent,
             messages_sent,
         )
-        return {**payload, "announced": sent, "messages_sent": messages_sent}
+        return {**base, "announced": sent, "messages_sent": messages_sent}
 
     # ------------------------------------------------------------------
     # On-demand monthly ticket pie chart (/monthly_jira_tickets)
