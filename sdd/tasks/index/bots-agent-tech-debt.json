@@ -81,7 +81,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -91,8 +91,9 @@
       "parallelism_notes": "needs AbstractBot.configure_is_noop from TASK-4616 (bots/abstract.py) and shares tests/bots/test_configure_override_guards.py with TASK-4617, so it is serialized behind TASK-4617 (which transitively covers TASK-4616)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4618-pre-super-configure-guards.md"
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4618-pre-super-configure-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4619",
@@ -101,7 +102,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -111,8 +112,9 @@
       "parallelism_notes": "file-overlap only: both this task and TASK-4617 modify bots/agent.py, so the lower id runs first; no symbol dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4619-speech-report-empty-speakers-guard.md"
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4619-speech-report-empty-speakers-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4620",
