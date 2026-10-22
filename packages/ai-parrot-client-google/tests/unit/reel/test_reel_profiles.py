@@ -20,7 +20,6 @@ from parrot.clients.google.reel.profiles import (
     select_generation_duration,
 )
 
-
 @pytest.fixture
 def registry() -> VideoProfileRegistry:
     return VideoProfileRegistry.default()
@@ -164,6 +163,7 @@ class TestVideoRequestValidation:
 
 
 class TestLiteExclusions:
+
     def test_lite_never_gains_4k(self, veo_registry):
         profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         assert "4k" not in profile.resolutions
@@ -232,6 +232,7 @@ class TestLiteExclusions:
 
 
 class TestPersonGenerationValues:
+
     def test_all_veo_profiles_have_lowercase_person_generation_values(self, veo_registry):
         for model_id in (
             "veo-3.1-generate-preview",
