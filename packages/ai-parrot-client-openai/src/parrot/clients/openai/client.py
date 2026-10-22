@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI
     from PIL import Image
 from ...models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
+from ...models.responses import InvokeResult
 from ...exceptions import InvokeError
 from .models import (
     OpenAIModel,
@@ -512,7 +513,7 @@ class OpenAIClient(OpenAIBaseClient):
             except BadRequestError as exc:
                 # 2.6.0 returns 400 unknown_parameter for fields like "response", "modalities", etc.
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", dict)()
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -542,7 +543,7 @@ class OpenAIClient(OpenAIBaseClient):
                 last_exc = exc
             except BadRequestError as exc:
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", dict)()
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -863,7 +864,7 @@ class OpenAIClient(OpenAIBaseClient):
             args["background"] = True
 
         # -------- ROUTING: Responses-only vs Chat -----------
-        use_responses = False
+        use_responses = self._is_responses_model(model_str)
         resp_format = self._build_response_format_from(output_config) if output_config else None
         _used_fallback = False
         _original_model = model_str
@@ -1162,7 +1163,7 @@ class OpenAIClient(OpenAIBaseClient):
         # Build the OpenAI response_format payload (dict) once
         resp_format = self._build_response_format_from(output_config) if output_config else None
 
-        use_responses = False
+        use_responses = self._is_responses_model(model_str)
         assistant_content = ""
 
         if use_responses:
