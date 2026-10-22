@@ -35,6 +35,7 @@ _BOOTSTRAPPED: bool = False
 _LOCK = threading.Lock()
 _SUBSCRIBER: Optional[object] = None
 _SUBSCRIPTION_IDS: list[str] = []
+_SHUTDOWN_TASKS: set = set()  # strong refs so a scheduled fan-out close is not garbage-collected
 # Guards the atexit flush hook so it is registered at most once per process.
 _ATEXIT_REGISTERED: bool = False
 
@@ -224,7 +225,9 @@ def shutdown_usage_recording() -> None:
         except RuntimeError:
             asyncio.run(shutdown_event_fanout())
         else:
-            asyncio.ensure_future(shutdown_event_fanout())  # noqa: RUF006
+            _task = asyncio.ensure_future(shutdown_event_fanout())
+            _SHUTDOWN_TASKS.add(_task)
+            _task.add_done_callback(_SHUTDOWN_TASKS.discard)
     except Exception:  # noqa: BLE001 — shutdown must never raise
         logger.debug("Error closing event fan-out bus.", exc_info=True)
 
