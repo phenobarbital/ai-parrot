@@ -180,7 +180,9 @@ Two appended tests (above).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+
+Native sonnet; merged by engine; test_double_configure.py 7 passed.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

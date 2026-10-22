@@ -246,7 +246,9 @@ One new test (above).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+
+Delivered by gpt-5.6-terra (attempt 3); engine validation timed out; worker merged and ran test_jira_specialist_reconfigure/test_jira_standup: pass.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
