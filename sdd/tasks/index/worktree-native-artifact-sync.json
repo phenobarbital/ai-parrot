@@ -182,7 +182,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -190,8 +190,9 @@
       "parallelism_notes": "no code dependency: documents the flags, env vars and build commands the spec already fixes; touches only the five docs and its own new test file",
       "assigned_to": null,
       "started_at": "2026-10-22T15:07:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4612-worktree-native-sync-docs.md"
+      "completed_at": "2026-10-22T15:13:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4612-worktree-native-sync-docs.md",
+      "verification": "verified"
     }
   ]
 }
