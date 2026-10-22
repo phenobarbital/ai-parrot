@@ -61,7 +61,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,8 +71,9 @@
       "parallelism_notes": "reads the [tool.parrot.worktree] table TASK-4605 writes to pyproject.toml (load_manifest's first test parses it)",
       "assigned_to": null,
       "started_at": "2026-10-22T15:07:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4606-native-artifacts-models-loader.md"
+      "completed_at": "2026-10-22T15:12:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4606-native-artifacts-models-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4607",
