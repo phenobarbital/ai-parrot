@@ -50,7 +50,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,9 @@
       "parallelism_notes": "No dependencies: touches core/llm_validation.py and core/__init__.py, which no other task in this feature modifies.",
       "assigned_to": null,
       "started_at": "2026-10-22T20:09:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4623-llm-validation-policy-and-classifier.md"
+      "completed_at": "2026-10-22T20:15:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4623-llm-validation-policy-and-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4624",
