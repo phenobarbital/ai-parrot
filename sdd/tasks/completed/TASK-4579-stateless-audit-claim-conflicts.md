@@ -499,8 +499,34 @@ the shared `.venv` is editable-installed against the main checkout, so a bare
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5 (`/sdd-fix issue:fe3480881432`, SDD lane)
+**Date**: 2026-10-22
+**Notes**: `audit()` now resolves `dict(await self._all_issues())` and forwards it
+to `_shared_log_audit(issues)`, which stays blocking (it runs under
+`asyncio.to_thread` and cannot await). The committed files are read once:
+`committed_events` feeds both the existing id-set drift keys and `live_claims()`,
+so `read_shared_event_ids` is no longer imported there and the five pre-existing
+keys keep their names, order and values. `cli.py` prints `  claim conflicts: N`
+only when non-zero.
 
-**Deviations from spec**:
+Four new service tests (`test_audit_counts_claim_conflicts` — which deliberately
+never calls `import_shared_log`, the AC4 statelessness proof;
+`..._ignores_superseded`; `..._zero_when_claimants_agree`;
+`test_audit_preserves_existing_shared_log_keys` for AC5) plus
+`test_cli_audit_prints_claim_conflicts` covering both output directions.
+
+Verified as a genuine red test: with `live_claims(committed_events)` temporarily
+replaced by an unfiltered claim list, `test_audit_claim_conflicts_ignores_superseded`
+fails `assert 1 == 0` while the other audit tests still pass — so the audit path
+really does depend on the shared predicate (AC7), not just on the new key existing.
+
+Evidence: targeted run (`test_ledger_shared_log.py`,
+`test_ledger_shared_log_service.py`, `test_cli_ledger_shared_log.py`) → 27 passed;
+the whole `tests/knowledge/wiki/` suite → **2079 passed, 11 skipped** in 150.93s;
+`ruff check` and `black --check --line-length 120` clean on all six files the
+feature touched (all six were clean on `origin/dev` too, so the lint backlog did
+not grow).
+
+**Deviations from spec**: none. One mechanical note: `black` rewrapped three new
+test signatures in `test_ledger_shared_log_service.py` (one collapsed to a single
+line, one gained a trailing comma) — formatting only, no behavioural change.

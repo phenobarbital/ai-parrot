@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T00:50:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -57,7 +57,7 @@
       "feature_id": "FEAT-717",
       "feature": "fixgroup-c2982b4864f3",
       "spec": "sdd/specs/fixgroup-c2982b4864f3.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -67,8 +67,9 @@
       "parallelism_notes": "Imports live_claims from TASK-4578 (packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py) in _shared_log_audit, and both tasks modify tests/knowledge/wiki/test_ledger_shared_log_service.py.",
       "assigned_to": null,
       "started_at": "2026-10-22T00:44:48.328124+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4579-stateless-audit-claim-conflicts.md"
+      "completed_at": "2026-10-22T00:50:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4579-stateless-audit-claim-conflicts.md",
+      "verification": "verified"
     }
   ]
 }
