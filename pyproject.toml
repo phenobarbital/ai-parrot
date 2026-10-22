@@ -21,6 +21,7 @@ dependencies = [
     "ai-parrot-server",
     "ai-parrot-advisors",
     "navrules",
+    "parrot-formdesigner",
 ]
 
 [project.optional-dependencies]
@@ -227,7 +228,6 @@ constraint-dependencies = [
 ]
 
 [tool.uv.sources]
-ai-parrot = { workspace = true }
 ai-parrot-tools = { workspace = true }
 ai-parrot-loaders = { workspace = true }
 ai-parrot-embeddings = { workspace = true }
@@ -238,6 +238,8 @@ ai-parrot-advisors = { workspace = true }
 ai-parrot-server = { workspace = true }
 ai-parrot-openlit-bridge = { workspace = true }
 navrules = { workspace = true }
+ai-parrot = { workspace = true }
+parrot-formdesigner = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }
 
