@@ -1,23 +1,16 @@
 """Compatibility re-exports for tenant helpers now owned by ``core``."""
 
 from ..core.tenant import (  # noqa: F401
-    Any,
-    Awaitable,
-    Callable,
     _EXPECTED_HINT,
     _Handler,
     _authorize,
     _get_programs,
     _is_superuser,
-    annotations,
     assert_body_tenant_matches,
     declared_tenant,
     enforce_membership_unless_public,
     logger,
-    logging,
     requires_tenant,
-    web,
-    wraps,
 )
 from ..core.tenant_errors import (  # noqa: F401
     TenantConflictError,
