@@ -150,4 +150,47 @@ ruff check packages/ai-parrot/src/parrot/observability/bootstrap.py \
 
 ## Completion Note
 
-_To be filled on completion._
+**Status**: done (verified) — 2026-10-22
+
+Implemented as specified. `ensure_observability_bootstrapped()` now catches a
+failing `setup_event_fanout()` inside the lock, caches it in `_FANOUT_ERROR` /
+`_FANOUT_ERROR_TB`, still runs `_do_bootstrap()`, sets `_BOOTSTRAPPED = True`,
+and re-raises. Both the fast path and the post-lock path re-raise the cached
+exception via `.with_traceback(_FANOUT_ERROR_TB)`.
+
+**Decision recorded**: of the two options `issue:bd94e0afa8e6` offered —
+"fail once at process startup" or "degrade with a warning" — this takes the
+first. The caller still sees a raise on every construction, because a durable
+fan-out misconfiguration is a deployment error that must not be silently
+tolerated; what is now *once* is the setup attempt, the ERROR log, and the
+collateral damage to the local observability layer. In production the
+`EventEmitterMixin` hook site swallows the raise at DEBUG anyway (spec NG2), so
+the practical behaviour is: one ERROR record, a working local observability
+layer, and no durable bus.
+
+**Spec NG4 answered** (the issue's unverified second question — "whether setup
+does blocking Redis I/O in the sync bootstrap"): **no**. `setup_event_fanout()`
+constructs `EventBus(...)`, whose `__init__` only builds a `BusCore` and leaves
+`_started = False`; the Redis connection is established lazily on first
+publish. `_validate_bus()` reads attributes, `attach_bus()` and
+`registry.subscribe()` are in-process. The only filesystem touch is outbox-path
+resolution. The sync bootstrap performs no network I/O.
+
+**Tests**: `test_fanout_setup_failure_logs_error_and_raises` rewritten (it
+asserted the superseded `_BOOTSTRAPPED is False` and named this issue as the
+reason); `test_fanout_failure_is_cached_and_not_retried` and
+`test_reset_clears_cached_fanout_error` added.
+
+```
+PYTHONPATH=packages/ai-parrot/src python -m pytest \
+  packages/ai-parrot/tests/unit/observability/ -q -p no:randomly
+→ 1 failed, 256 passed
+```
+The single failure is `test_attributes.py::test_every_shipped_client_name_is_mapped`,
+reproduced identically on a clean `dev` checkout — pre-existing and unrelated.
+The four files of the feature's test contract are green (37 passed).
+`ruff check` clean; `black --line-length 120` applied (it also reflowed one
+`assert any(...)` TASK-4614 had left, same file, same feature).
+
+**Ambiguity / follow-up**: none. Both of the issue's open questions are
+answered above.

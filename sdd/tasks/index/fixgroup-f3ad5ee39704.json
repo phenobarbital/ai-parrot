@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T16:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T16:34:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -77,7 +77,7 @@
       "feature_id": "FEAT-725",
       "feature": "fixgroup-f3ad5ee39704",
       "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -87,9 +87,9 @@
       "parallelism_notes": "Rewrites the same hunk of bootstrap.py and the same test that TASK-4614 just added; strictly after it.",
       "assigned_to": null,
       "started_at": "2026-10-22T16:31:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4615-fanout-failure-fail-once.md",
-      "verification": null
+      "completed_at": "2026-10-22T16:34:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4615-fanout-failure-fail-once.md",
+      "verification": "verified"
     }
   ]
 }
