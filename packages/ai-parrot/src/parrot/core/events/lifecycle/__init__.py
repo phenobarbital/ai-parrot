@@ -21,7 +21,7 @@ from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
 from navigator_eventbus.lifecycle.registry import EventRegistry, AsyncSubscriber
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
 from navigator_eventbus.lifecycle.provider import EventProvider
-from navigator_eventbus.lifecycle.mixin import EventEmitterMixin
+from navigator_eventbus.lifecycle.mixin import EventEmitterMixin, set_bootstrap_hook
 from parrot.core.events.lifecycle.turn_scope import TURN_SCOPE, turn_scope, in_turn_scope  # FEAT-573 M3
 
 # Concrete events — STAY local (ai-parrot's own taxonomy)
@@ -104,3 +104,28 @@ __all__ = [
     "OpenTelemetrySubscriber",
     "WebhookSubscriber",
 ]
+
+
+def _observability_bootstrap_hook() -> None:
+    """Run ai-parrot's env-driven observability auto-boot.
+
+    Installed process-wide via :func:`set_bootstrap_hook` so that
+    ``EventEmitterMixin._init_events()`` boots observability on the first
+    bot/client/tool construction, as it did before FEAT-313 extracted the
+    mixin to ``navigator_eventbus`` (the deleted ``mixin.py`` hard-imported
+    the bootstrap at that point).
+
+    The import is deferred to call time on purpose: ``parrot.observability``
+    imports subscribers that import this very module, so a module-level
+    import would be circular. ``ensure_observability_bootstrapped`` is itself
+    idempotent, which the hook contract requires — the hook runs on *every*
+    ``_init_events()`` call, not just the first.
+    """
+    from parrot.observability.bootstrap import ensure_observability_bootstrapped  # noqa: PLC0415
+
+    ensure_observability_bootstrapped()
+
+
+# FEAT-725: re-arm the auto-boot that b1388892f (TASK-1828) silently dropped
+# when it deleted ai-parrot's own EventEmitterMixin.
+set_bootstrap_hook(_observability_bootstrap_hook)

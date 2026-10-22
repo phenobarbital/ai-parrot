@@ -324,10 +324,13 @@ what the pollution broke. Run them together as well as individually.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 2 (attempt 1 retried by the engine)
+**Date**: 2026-10-22
+**Notes**: Both autouse `_seed_builtin` fixtures now snapshot `_REGISTRY` and restore it on teardown
+(`test_form_controls_contract.py`, `test_form_controls_endpoint.py`); the four metadata keys
+(`supported_operators/effects/operations`, `value_shape`) were added to both `expected_keys` sets;
+`form_controls_response_schema.json` regenerated; new `tests/unit/controls/test_registry_isolation.py`
+(2 tests). No `src/` change. Merge-tier validation: 24 passed (log artifact 76f25b0c545b).
+Review: no corrections needed (coder-review recorded).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Confirm test_control_registry_capabilities.py was NOT edited, and give the new failure count.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Closed with `close_task.sh` (no durable review EvidenceRef for `finalize_task`).

@@ -300,10 +300,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) — seat: sonnet (native), 1 attempt
+**Date**: 2026-10-22
+**Notes**: baseline.py delegates to sync_native_artifacts(autobuild=False); main_checkout_root now defined once in native_artifacts.py. Subagent could not run tests in its sub-worktree (no .so there); orchestrator ran test_baseline.py in the feature worktree: 7 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
@@ -266,3 +268,57 @@ def test_shutdown_observability_swallows_errors(monkeypatch) -> None:
     boot.shutdown_observability()  # must not raise
 
     assert usage_called["n"] == 1
+
+
+def test_bootstrap_failure_logs_at_error(monkeypatch, caplog) -> None:
+    """A failing _do_bootstrap() is loud (ERROR) but never breaks construction.
+
+    FEAT-725 AC4: the navigator-eventbus hook site that calls the bootstrap
+    logs at DEBUG, so this record is the only signal an operator gets.
+    """
+
+    def _boom() -> None:
+        raise RuntimeError("bootstrap exploded")
+
+    monkeypatch.delenv("PARROT_EVENT_FANOUT_ENABLED", raising=False)
+    monkeypatch.setattr(boot, "_do_bootstrap", _boom)
+    monkeypatch.setattr(boot, "_BOOTSTRAPPED", False)
+
+    with caplog.at_level(logging.ERROR, logger="parrot.observability.bootstrap"):
+        boot.ensure_observability_bootstrapped()  # must NOT raise
+
+    assert any(
+        record.levelno == logging.ERROR
+        and "Observability auto-boot failed" in record.getMessage()
+        for record in caplog.records
+    )
+    assert boot._BOOTSTRAPPED is True
+
+
+def test_fanout_setup_failure_logs_error_and_raises(monkeypatch, caplog) -> None:
+    """A failing setup_event_fanout() is logged at ERROR and still propagates.
+
+    FEAT-725 AC5 / NG1: the raise and the un-set ``_BOOTSTRAPPED`` are
+    deliberate — fail-once caching is issue:bd94e0afa8e6, not this change.
+    """
+    from parrot.observability import fanout
+
+    def _boom(bus=None) -> None:
+        raise RuntimeError("bad fan-out config")
+
+    monkeypatch.setenv("PARROT_EVENT_FANOUT_ENABLED", "true")
+    # The bootstrap imports setup_event_fanout lazily, INSIDE the function, so
+    # the patch must land on the fanout module, not on ``boot``.
+    monkeypatch.setattr(fanout, "setup_event_fanout", _boom)
+    monkeypatch.setattr(boot, "_BOOTSTRAPPED", False)
+
+    with caplog.at_level(logging.ERROR, logger="parrot.observability.bootstrap"):
+        with pytest.raises(RuntimeError, match="bad fan-out config"):
+            boot.ensure_observability_bootstrapped()
+
+    assert any(
+        record.levelno == logging.ERROR
+        and "Durable event fan-out setup failed" in record.getMessage()
+        for record in caplog.records
+    )
+    assert boot._BOOTSTRAPPED is False

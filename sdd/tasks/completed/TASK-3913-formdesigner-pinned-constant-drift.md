@@ -58,7 +58,7 @@ decision requires editing `examples/forms/form_server.py`; the snippets gap
 | `packages/parrot-formdesigner/tests/unit/test_core_models.py` | MODIFY | derive the `FieldType` count |
 | `packages/parrot-formdesigner/tests/unit/test_controls_registry.py` | MODIFY | derive the control count |
 | `packages/parrot-formdesigner/tests/test_edit_toolkit.py` | MODIFY | derive the tool count + name set |
-| `packages/parrot-formdesigner/tests/integration/test_msteams_import_compat.py` | MODIFY | resolve the line budget |
+| `examples/forms/form_server.py` | MODIFY | PRODUCT trim: back under 50 non-empty lines (spec rev 0.4 decision). `test_msteams_import_compat.py` is NOT edited |
 
 ---
 
@@ -116,7 +116,7 @@ version = {attr = "parrot_formdesigner.version.__version__"}  # line 80
     {"path": "packages/parrot-formdesigner/tests/unit/test_core_models.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_controls_registry.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/test_edit_toolkit.py", "action": "MODIFY"},
-    {"path": "packages/parrot-formdesigner/tests/integration/test_msteams_import_compat.py", "action": "MODIFY"}
+    {"path": "examples/forms/form_server.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/parrot-formdesigner/src/parrot_formdesigner/core/types.py#FieldType",
@@ -151,10 +151,13 @@ version = {attr = "parrot_formdesigner.version.__version__"}  # line 80
 ### The 50-line budget (`test_msteams_import_compat.py:50`)
 This one is a judgement call, not a derivation. `examples/forms/form_server.py`
 is 60 non-empty lines against a `< 50` acceptance criterion from an earlier
-spec. Decide ONE of:
-  - the example grew legitimately → raise the budget and say why in the docstring; or
-  - the example accreted → shrink it back under the budget.
-Record the choice and the reason in the Completion Note. Do not delete the test.
+spec. **DECIDED (spec rev 0.4 §2 "F4 outlier"): the product moves, the test does not.**
+Trim `examples/forms/form_server.py` from 60 back under 50 non-empty lines
+(`< 50` is a real acceptance criterion from the MSTeams spec — the example
+drifted). Do NOT edit `test_msteams_import_compat.py` and do NOT raise the
+budget. Keep the example a working, readable demo: drop only redundant
+comments/blank scaffolding or collapse repetition; remove no functionality the
+test's other assertions rely on. Record what you trimmed in the Completion Note.
 
 ---
 
@@ -165,7 +168,7 @@ Record the choice and the reason in the Completion Note. Do not delete the test.
 2. Rewrite the two version assertions as the metadata invariant — *why*: a release bump must never turn the suite red again.
 3. Replace both `== 32` pins with the one-control-per-FieldType relationship — *why*: that is the invariant the counts were standing in for.
 4. Derive the toolkit count and name set from the toolkit — *why*: same reason; adding a tool should not need a test edit.
-5. Decide the 50-line budget and record the reason — *why*: it is the only item here that is a real product judgement.
+5. Trim `examples/forms/form_server.py` under 50 non-empty lines (decision already made in spec rev 0.4) and record what was trimmed — *why*: the `< 50` budget is a live acceptance criterion; the example drifted.
 6. Update each stale docstring — *why*: the prose counts are as misleading as the assertions were.
 
 ### `packages/parrot-formdesigner/tests/unit/test_version_and_docs.py` (MODIFY)
@@ -216,17 +219,16 @@ spot-checks stay because they encode which specific types must never be dropped.
 **Why**: `==` on a name set makes every new tool a test failure; `<=` keeps the
 guarantee that the required tools exist without freezing the whole surface.
 
-### `packages/parrot-formdesigner/tests/integration/test_msteams_import_compat.py` (MODIFY)
+### `examples/forms/form_server.py` (MODIFY — product trim)
 ```python
 # occurrences: 1 (verified: grep -c 'expected < 50' tests/integration/test_msteams_import_compat.py)
 # tests/integration/test_msteams_import_compat.py:45-50 — the example is 60
 # non-empty lines against a `< 50` budget.
-# FILL IN: pick ONE — raise the budget with the reason in the docstring, or
-# shrink examples/forms/form_server.py back under it — bounded by the
-# Implementation Notes decision and recorded in the Completion Note.
+# FILL IN: shrink examples/forms/form_server.py to < 50 non-empty lines
+# (measure with: grep -c . examples/forms/form_server.py). The decision is made;
+# the test file is NOT edited. Record what was trimmed in the Completion Note.
 ```
-**Why**: this is the one item here that is a product judgement rather than a
-derivation, so it is called out explicitly instead of being silently relaxed.
+**Why**: the one F4 edit that is not a test edit — the example is the thing that drifted, so it is the example that moves.
 
 ### FILL IN checklist
 - [ ] `test_version_and_docs.py:11` — metadata invariant; bounded by AC8
@@ -234,7 +236,7 @@ derivation, so it is called out explicitly instead of being silently relaxed.
 - [ ] `test_core_models.py:246` — enum uniqueness; bounded by AC8
 - [ ] `test_controls_registry.py:180` — set equality, spot-checks kept; bounded by AC8
 - [ ] `test_edit_toolkit.py:608` + name set — derived / subset; bounded by AC8
-- [ ] `test_msteams_import_compat.py:50` — budget decision + recorded reason
+- [ ] `examples/forms/form_server.py` — trimmed under 50 non-empty lines; `test_msteams_import_compat.py` untouched
 - [ ] 4 stale docstrings updated
 
 ---
@@ -245,7 +247,7 @@ derivation, so it is called out explicitly instead of being silently relaxed.
 - [ ] **AC8** The diff introduces no new hardcoded version string or count literal in an equality assertion (verify by grepping the diff).
 - [ ] The membership spot-checks at `test_controls_registry.py:184-187` are preserved.
 - [ ] Every edited test's docstring matches what it now asserts.
-- [ ] The 50-line budget decision is recorded in the Completion Note with its reason.
+- [ ] `examples/forms/form_server.py` is < 50 non-empty lines and the Completion Note records what was trimmed; `test_msteams_import_compat.py` is unmodified.
 - [ ] **AC7** `ruff check` clean on every changed file.
 
 ---
@@ -288,10 +290,20 @@ breaking the property.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 2
+**Date**: 2026-10-22
+**Notes**: Six pins now derive from the source of truth: both version tests assert
+`__version__ == importlib.metadata.version("parrot-formdesigner")` and PEP 440 validity;
+`len(FieldType)==32` -> enum-uniqueness check; `len(controls)==32` -> one control per `FieldType`
+(spot-checks kept); toolkit count -> non-empty, uniquely named; frozen 15-name set -> subset check.
+No new numeric/version literal in an equality assertion. 50-line budget: per spec rev 0.4 the product
+moved — `examples/forms/form_server.py` trimmed from 60 to 27 non-empty lines (comments/docstring prose
+only; `setup_form_routes` usage preserved); `test_msteams_import_compat.py` NOT edited.
+Environment caveat: the shared venv's `parrot_formdesigner.egg-info` reports 1.2.3 while `version.py`
+is 1.2.4, so the two version tests are red locally until the package is re-installed; verified green
+(103 passed) against a throwaway dist-info reporting 1.2.4. Full `parrot-formdesigner` suite after
+TASK-3910..3913: 3864 passed, 3 failed (all TASK-3914's cluster). The task file was stale vs spec rev 0.4
+(it said "pick ONE" for the budget and omitted form_server.py), which caused two empty deliveries on
+attempt 1 of the first run; corrected in bc3ff3653 and re-dispatched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: The 50-line budget decision + reason; new `parrot-formdesigner` failure count.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

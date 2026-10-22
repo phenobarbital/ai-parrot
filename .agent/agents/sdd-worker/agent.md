@@ -205,6 +205,15 @@ WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
 cd "$WORKTREE_PATH"
 ```
 
+The command also copies the declared native build artifacts into the worktree —
+the declaration lives in the root `pyproject.toml` under `[tool.parrot.worktree]`;
+`parrot.utils.types` and the other compiled extensions are gitignored, so without this
+step `import parrot.utils` fails inside the tree (FEAT-722). It builds a missing one
+automatically and prints a `warning:` line on **stderr** if it could not; only then run
+the build yourself (`cd packages/ai-parrot && python setup.py build_ext --inplace`, or
+`make -C packages/navrules build-rust-wheel`). Never hand-copy `.so` files, and never
+`maturin develop` — it rewrites the shared `.venv`.
+
 For a hotfix (`type: hotfix` in the per-spec index header) pass
 `--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
 the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a

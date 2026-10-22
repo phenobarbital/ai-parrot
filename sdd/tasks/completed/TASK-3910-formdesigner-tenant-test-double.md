@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-3908
+**Depends-on**: none
 **Assigned-to**: unassigned
 
 ---
@@ -42,8 +42,10 @@ This is a **test-only** fix. `FormAPIHandler._get_tenant()`
 - Apply the same stub to `test_form_uid_integration.py`'s own separate
   `_make_request()` (`:43`).
 - `test_feat300_review_fixes.py` imports `_make_request` from
-  `test_api_feat300` — confirm it inherits the fix and needs no change beyond
-  TASK-3908's import rewrite.
+  `test_api_feat300` — confirm it inherits the fix and needs NO change. Its
+  `from tests.unit.test_api_feat300 import …` line stays exactly as it is
+  (the collection-identity rewrite was split out to `issue:45cf6a054e06` /
+  FEAT-720; do NOT rewrite it here).
 
 **NOT in scope**: changing any `src/` file; the registry/snippet gaps
 (TASK-3911); pinned-constant drift (TASK-3912); the controls contract fixture
@@ -198,11 +200,12 @@ gap — it is the source of the three
 # occurrences: 1 (verified: grep -c 'from tests.unit.test_api_feat300 import' tests/unit/test_feat300_review_fixes.py)
 # This module imports `_make_request` from test_api_feat300 (line 32), so it
 # inherits the fix automatically.
-# FILL IN: after TASK-3908 rewrites this import line, re-run the module and
-# change nothing else unless a failure remains — bounded by AC1.
+# FILL IN: leave the import line untouched; re-run the module and change
+# nothing else unless a failure remains — bounded by AC1.
 ```
-**Why**: the import at `:32` is one of the 24 sites TASK-3908 rewrites, which is
-why this task depends on it. No independent fix should be invented here.
+**Why**: the module inherits the fix through its `_make_request` import. The
+import-path rewrite is out of scope (split to FEAT-720); no independent fix
+should be invented here.
 
 ### FILL IN checklist
 - [ ] `test_api_feat300.py` — repoint the 6 `_tenant_request` call sites; bounded by AC1
@@ -242,7 +245,7 @@ wrong, it belongs to another cluster (TASK-3912 owns stale-constant tests).
 1. **Work in the feature worktree** — never on `dev`
    (`python -m scripts.sdd.ensure_worktree --slug tests-test-wheel-layout-tech-debt --feature-id FEAT-618`)
 2. **Read the spec** §3 Module 3 and §2's failure taxonomy row **F1**.
-3. **Check dependencies** — TASK-3908 must be `"done"` in `sdd/tasks/index/tests-test-wheel-layout-tech-debt.json`.
+3. **Check dependencies** — none (TASK-3908 was retired in spec rev 0.4; its work moved to FEAT-720).
 4. **Verify the Codebase Contract** — re-confirm `test_api_feat300.py:125/173/193` and `handlers.py:270`.
 5. **Update status** in the per-spec index → `"in-progress"`.
 6. **Implement** from the blueprint; complete every `# FILL IN:`.
@@ -255,10 +258,13 @@ wrong, it belongs to another cluster (TASK-3912 owns stale-constant tests).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1, 135s
+**Date**: 2026-10-22
+**Notes**: `_tenant_request()` folded into `_make_request()` (tenant stubbed via `req.get`) in
+`test_api_feat300.py`; wrapper deleted and its 6 call sites repointed; the independent double in
+`test_form_uid_integration.py` got the same stub; `test_feat300_review_fixes.py` untouched
+(inherits the fix). No `src/` change. Merge-tier validation: 50 passed (log artifact 8bcf6ca8ec8e).
+Review: no corrections needed (coder-review:7a7dddba95ddd03caf4d7958). Closed with `close_task.sh`
+because the review step produced no durable EvidenceRef for `finalize_task`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: New `parrot-formdesigner` failure count after this task (was 40).
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. TASK-3908 dependency removed earlier (spec rev 0.4).

@@ -160,6 +160,9 @@ def _make_request(
     session_obj = {"session": {"programs": programs}}
     req.session = session_obj
     req.__contains__ = lambda self, key: False  # no "session" key item access
+    # FormAPIHandler._get_tenant() reads request.get("tenant"), which the
+    # mocked requests bypassing @requires_tenant must provide explicitly.
+    req.get = lambda key, default=None: tenant if key == "tenant" else default
 
     # Body
     if body is not None:
@@ -167,26 +170,6 @@ def _make_request(
     else:
         req.json = AsyncMock(side_effect=ValueError("no body"))
 
-    return req
-
-
-def _tenant_request(*, tenant: str = "t1", **kwargs) -> MagicMock:
-    """``_make_request()``, patched with the FEAT-421 ``request["tenant"]``.
-
-    ``_make_request()`` predates FEAT-421 and only stubs the legacy
-    session-derived ``programs`` list; ``FormAPIHandler._get_tenant()`` now
-    resolves via ``declared_tenant(request)``, which reads
-    ``request.get("tenant")`` — set by the real ``@requires_tenant``
-    decorator in production, which these mocked-request unit tests bypass
-    entirely. Without this patch, a ``MagicMock(spec=web.Request)``'s
-    inherited ``.get()`` returns a fresh (truthy) ``MagicMock`` for any key,
-    so every handler call silently resolves to a nonsense tenant instead of
-    ``"t1"``. Scoped to the FEAT-433 tests that need a real round-trip
-    through the registry — not applied to the shared ``_make_request()``
-    used by pre-existing tests elsewhere in this file (out of scope).
-    """
-    req = _make_request(tenant=tenant, **kwargs)
-    req.get = lambda key, default=None: tenant if key == "tenant" else default
     return req
 
 
@@ -478,13 +461,13 @@ class TestListVersions:
         await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
 
         handler = _make_handler(registry)
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
+        await handler.publish_form(_make_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
 
         live = await registry.get(form.form_uid, tenant="t1")
         edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
         await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
 
-        req = _tenant_request(method="GET", form_uid=form.form_uid)
+        req = _make_request(method="GET", form_uid=form.form_uid)
         resp = await handler.list_versions(req)
 
         assert resp.status == 200
@@ -509,15 +492,15 @@ class TestListVersions:
         await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
 
         handler = _make_handler(registry)
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
+        await handler.publish_form(_make_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
 
         live = await registry.get(form.form_uid, tenant="t1")
         edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
         await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
 
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.1
+        await handler.publish_form(_make_request(method="POST", form_uid=form.form_uid))  # promotes 1.1
 
-        req = _tenant_request(method="GET", form_uid=form.form_uid)
+        req = _make_request(method="GET", form_uid=form.form_uid)
         resp = await handler.list_versions(req)
         body = json.loads(resp.body)
         by_version = {v["version"]: v for v in body["versions"]}

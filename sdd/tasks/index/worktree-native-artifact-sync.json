@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T15:01:36+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T15:34:50+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -42,16 +42,17 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits the root pyproject.toml and packages/navrules/rust/Cargo.lock — a shared dependency manifest and a lockfile, i.e. state outside this task's own module files",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4605-native-artifact-declaration.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:09:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4605-native-artifact-declaration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4606",
@@ -60,7 +61,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -69,9 +70,10 @@
       "parallel": true,
       "parallelism_notes": "reads the [tool.parrot.worktree] table TASK-4605 writes to pyproject.toml (load_manifest's first test parses it)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4606-native-artifacts-models-loader.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:12:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4606-native-artifacts-models-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4607",
@@ -80,7 +82,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -89,9 +91,10 @@
       "parallel": true,
       "parallelism_notes": "imports NativeGroup/NativeManifest/MissingArtifact/NativeSyncReport, load_manifest and env_flag_disabled from native_artifacts.py, which TASK-4606 creates (same file)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4607-native-artifacts-copy-engine.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:18:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4607-native-artifacts-copy-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4608",
@@ -100,7 +103,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -109,9 +112,10 @@
       "parallel": true,
       "parallelism_notes": "calls missing_artifacts and extends sync_native_artifacts, both written by TASK-4607 in native_artifacts.py (same file)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4608-native-artifact-autobuild.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:27:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4608-native-artifact-autobuild.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4609",
@@ -120,7 +124,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -129,9 +133,10 @@
       "parallel": true,
       "parallelism_notes": "calls sync_native_artifacts with the autobuild parameter TASK-4608 adds (scripts/sdd/ensure_worktree.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4609-ensure-worktree-native-sync.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:34:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4609-ensure-worktree-native-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4610",
@@ -140,7 +145,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -149,9 +154,10 @@
       "parallel": true,
       "parallelism_notes": "calls sync_native_artifacts(autobuild default) + main_checkout_root from TASK-4608/4607 (worktree_manager.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4610-subworktree-native-sync.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:34:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4610-subworktree-native-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4611",
@@ -160,7 +166,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,9 +175,10 @@
       "parallel": true,
       "parallelism_notes": "passes autobuild=False to sync_native_artifacts (parameter added by TASK-4608) and imports main_checkout_root from native_artifacts (test_scope/baseline.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4611-baseline-uses-shared-sync.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:34:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4611-baseline-uses-shared-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4612",
@@ -180,16 +187,17 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no code dependency: documents the flags, env vars and build commands the spec already fixes; touches only the five docs and its own new test file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4612-worktree-native-sync-docs.md"
+      "started_at": "2026-10-22T15:07:19+00:00",
+      "completed_at": "2026-10-22T15:13:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4612-worktree-native-sync-docs.md",
+      "verification": "verified"
     }
   ]
 }
