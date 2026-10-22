@@ -159,4 +159,4 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented by an sdd-coder seat; merged manually by the orchestrator because engine task-tier validation was unavailable (attempt had no execution_id). Task tests re-run green in the sub-worktree. TASK-4582: orchestrator removed a duplicated `generate` body left by the coder (fix commit 4b7c7f4c).
+*(Agent fills this in when done)* — NOTE: a first implementation was reverted from this branch because the spec forbids merging before 2026-12-11. Re-apply on or after that date.

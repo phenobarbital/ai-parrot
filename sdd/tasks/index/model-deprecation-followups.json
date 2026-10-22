@@ -55,7 +55,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies — first task of the video lane; owns reel/profiles.py",
+      "parallelism_notes": "no dependencies \u2014 first task of the video lane; owns reel/profiles.py",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
       "completed_at": "2026-10-22T12:26:01+00:00",
@@ -65,7 +65,7 @@
     {
       "id": "TASK-4582",
       "slug": "omni-multi-output",
-      "title": "OmniClipAdapter.generate_many — N videos in one Interactions request",
+      "title": "OmniClipAdapter.generate_many \u2014 N videos in one Interactions request",
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
@@ -86,7 +86,7 @@
     {
       "id": "TASK-4583",
       "slug": "registry-routed-video-facade",
-      "title": "Registry-routed video_generation / generate_videos façade",
+      "title": "Registry-routed video_generation / generate_videos fa\u00e7ade",
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
@@ -138,7 +138,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies — first task of the computer-use lane; owns toolkit.py/backend.py",
+      "parallelism_notes": "no dependencies \u2014 first task of the computer-use lane; owns toolkit.py/backend.py",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
       "completed_at": "2026-10-22T12:26:01+00:00",
@@ -199,7 +199,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "independent lane — only touches openai_backend.py and its test",
+      "parallelism_notes": "independent lane \u2014 only touches openai_backend.py and its test",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
       "completed_at": "2026-10-22T12:26:01+00:00",
@@ -213,17 +213,16 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "independent lane — only touches openai/client.py; DATE-GATED: do not merge before 2026-12-11",
+      "parallelism_notes": "independent lane \u2014 only touches openai/client.py; DATE-GATED: do not merge before 2026-12-11",
       "assigned_to": null,
-      "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": "2026-10-22T12:44:12+00:00",
-      "file": "sdd/tasks/completed/TASK-4589-openai-o3-nano-cleanup.md",
-      "verification": "verified"
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4589-openai-o3-nano-cleanup.md"
     }
   ]
 }
