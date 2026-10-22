@@ -60,6 +60,15 @@ shutdowns: the `gpt-5-nano` `max_tokens` exception and `o3`/`o3-pro` in
   backward-compatible signal.
 - Transcription keeps segments/timestamps **when the model provides them**; otherwise it
   degrades to text-only and logs it. `TranscriptionResult` shape does not change.
+  *Live probe 2026-10-22:* `gpt-transcribe` supports **only `json` and `text`**
+  (`verbose_json`/`srt` → 400 `unsupported_value`); `timestamp_granularities[]` is silently
+  ignored; there are **no segments**. The `json` shape is
+  `{"text", "languages": [{"code": "en"}], "usage": {"type": "duration", "seconds": 5}}`
+  (ISO code list, integer billed seconds). Since `TranscriptionResult` has no segments
+  field today, nothing downstream loses data.
+- Computer use on `gemini-3.8-flash` uses a **new action vocabulary** (live probe, below);
+  the existing `_COMPUTER_USE_PREDEFINED_MAP` / `_adapt_computer_use_args` only know the
+  2.5-preview names, so a per-model action adapter is required, not just an opt-in flag.
 - Hard cuts are acceptable (no external consumers); no deprecation shims.
 - aiohttp only; no new third-party dependencies expected.
 
@@ -107,7 +116,11 @@ extension, negative prompt, seed, number of videos), so unsupported options fail
 `/mediagen` and `VideoGenerationPrompt` stop hard-coding a model and take the registry
 default for the client's surface.
 
-Computer use: add an explicit client-level opt-in (`computer_use: bool` / presence of the
+Computer use: add a second action vocabulary for `gemini-3.8-flash` (see Code Context →
+"Live probe: computer-use actions"): `click`/`move`/`type`/`scroll`/`hotkey`/`wait`/
+`navigate`/`go_back`/`drag_and_drop`, every call carrying an extra `intent` string that the
+toolkit must accept or the adapter must strip. `type` has **no coordinates** (it types into
+the focused element), unlike `type_text_at`. Add an explicit client-level opt-in (`computer_use: bool` / presence of the
 existing `_computer_use_config`) that `ComputerAgent` sets in `configure()`;
 `_is_computer_use_model()` becomes `_computer_use_enabled(model)`, which returns true when
 the opt-in is set *or* the model is a legacy computer-use id. `ComputerAgent`'s default
@@ -207,11 +220,17 @@ until the Vertex Veo profiles are enabled. Callers who need them get a precise
   any provider call. `/mediagen` with `action=video` and no `model` uses the same default.
   Return type stays `AIMessage` (videos as media paths).
 - **Computer use.** `ComputerAgent()` works again, defaulting to `gemini-3.8-flash`. Plain
-  `GoogleGenAIClient` calls on `gemini-3.8-flash` are unaffected (no computer-use tool).
-- **Transcription.** The OpenAI backend defaults to `gpt-transcribe`. `TranscriptionResult`
-  keeps `text`/`language`/`duration_seconds`. When the model returns no language or duration,
-  they come from the request hint or a local audio measurement, and a debug log notes the
-  degradation. `model="whisper-1"` keeps working until its shutdown.
+  `GoogleGenAIClient` calls on `gemini-3.8-flash` are unaffected (no computer-use tool;
+  probe: a plain 3.8-flash call with no tool answers normally). The 3.8 actions are
+  translated to the `ComputerInteractionToolkit` methods, and `intent` goes to the log /
+  safety prompt instead of the toolkit.
+- **Video batches.** `number_of_videos > 1` is forwarded to Omni as one request (Omni
+  returns several videos per request); all returned clips become `AIMessage` media.
+- **Transcription.** The OpenAI backend defaults to `gpt-transcribe` with
+  `response_format=json`. `TranscriptionResult.language` ← `languages[0].code` (falls back
+  to the request hint, then `"en"`); `duration_seconds` ← `usage.seconds` (integer, billed;
+  a local measurement is optional precision). whisper keeps `verbose_json`, whose `language`
+  is a *name* (`"english"`), not an ISO code. The backend should normalise both to ISO 639-1. `model="whisper-1"` keeps working until its shutdown.
 - **OpenAI clean-ups.** After 2026-12-11, `o3`/`o3-pro` are no longer special-cased as
   Responses-only, and the `gpt-5-nano` `max_tokens` exception is removed.
 
@@ -237,16 +256,23 @@ until the Vertex Veo profiles are enabled. Callers who need them get a precise
 
 ### Edge Cases & Error Handling
 
-- `number_of_videos > 1`: loop `generate_video_clip` per video, or reject on profiles
-  without multi-output. Decided in the spec (open question).
+- `number_of_videos > 1`: Omni returns multiple videos per request, so a single Omni call
+  carries the count. The profile needs a `max_outputs`-style field, and `generate_video_clip`
+  (one clip today) needs a multi-output path or a sibling.
 - `VideoGenerationPrompt.resolution` defaults to `"720p"`, which Omni would reject; the
   default must become `None` (or be ignored when the profile has no resolutions).
 - `include_audio=False` on Omni (`native_audio="always"`): maps to the existing
   `audio_mode` handling (separate-track stripping), not a provider flag.
 - Vertex client with no explicit model: `default_video_model("vertex")` returns a disabled
   profile, so the call fails with `MODEL_DISABLED`. That is correct while the Q5 gate holds.
-- Computer-use opt-in set but no `_computer_use_config`: the existing `_build_tools` error
-  path (logged, no tool) stays; the spec should decide whether to raise instead.
+- Computer-use opt-in set but no `_computer_use_config`: **raise** a configuration error
+  (decided), replacing the current log-and-continue in `_build_tools`.
+- A 3.8 action that is not in the adapter table (vocabulary may grow): raise a clear
+  "unsupported computer-use action" error back to the model as the function response,
+  never silently skip.
+- Note: during the probe `gemini-2.5-computer-use-preview-10-2025` answered **503 "high
+  demand"** rather than 404, so the endpoint may still route despite the documented 2026-07-28
+  shutdown. Do not rely on it; keep legacy-name detection only as a compatibility signal.
 - Transcription model that rejects `verbose_json`: never send it to that model (table-driven),
   so there is no 400-and-retry loop.
 
@@ -384,6 +410,36 @@ from parrot.voice.transcriber import OpenAIWhisperBackend
 - `GoogleModel.GEMINI_3_8_FLASH` → `"gemini-3.8-flash"`
 - `OpenAIWhisperBackend` is re-exported by `parrot/integrations/msteams/voice/__init__.py` and used by `voice/transcriber/transcriber.py:98`
 
+#### Live probe: computer-use actions (`gemini-3.8-flash`, REST `computerUse.environment=ENVIRONMENT_BROWSER`, 2026-10-22)
+```text
+navigate      {"url": "https://www.google.com", "intent": "..."}
+click         {"x": 500, "y": 445, "intent": "..."}                 # was click_at
+type          {"text": "weather Madrid", "press_enter": false, "intent": "..."}   # no x/y (was type_text_at)
+scroll        {"x": 500, "y": 500, "direction": "down", "magnitude_in_pixels": 500, "intent": "..."}
+hotkey        {"keys": ["Control", "c"], "intent": "..."}           # was key_combination
+move          {"x": 500, "y": 538, "intent": "..."}                 # was hover_at
+go_back       {"intent": "..."}
+wait          {"seconds": 5, "intent": "..."}                       # was wait_5_seconds
+drag_and_drop {"start_x": 500, "start_y": 539, "end_x": 0, "end_y": 0, "intent": "..."}
+# Combined computerUse + functionDeclarations in one request: accepted.
+# Legacy gemini-3-flash-preview still emits open_web_browser (old vocabulary).
+```
+
+#### Live probe: OpenAI transcription (2026-10-22)
+```text
+gpt-transcribe  verbose_json → 400 unsupported_value ("Use 'json' or 'text'")
+gpt-transcribe  srt          → 400 unsupported_value
+gpt-transcribe  json         → {"text": "...", "languages": [{"code": "en"}], "usage": {"type": "duration", "seconds": 5}}
+gpt-transcribe  text         → plain text
+whisper-1       verbose_json → {"task", "language": "english", "duration": 4.97, "text", "segments": [...], "usage"}
+```
+
+#### Existing computer-use action map (client.py, `_COMPUTER_USE_PREDEFINED_MAP`, ~line 254)
+`open_web_browser, wait_5_seconds, go_back, go_forward, search, navigate, click_at, hover_at,
+type_text_at, key_combination, scroll_document, scroll_at, drag_and_drop` → `computer_*`
+toolkit names. `_adapt_computer_use_args` (~line 1802) only fixes `wait_5_seconds` and
+`key_combination`.
+
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`GoogleModel.VEO_3_1` / `VEO_3_1_FAST` / `VEO_3_1_LITE` / `IMAGEN_4`~~ — removed in the sweep
 - ~~`GoogleGenAIClient.computer_use` attribute / `_computer_use_enabled`~~ — not yet; only `_computer_use_config` and `_computer_use_safety_handler` exist
@@ -395,7 +451,8 @@ from parrot.voice.transcriber import OpenAIWhisperBackend
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: three independent tracks with disjoint files: (1) video —
+- **Internal parallelism**: three independent tracks (the computer-use track grew: it now
+  includes a 3.8 action adapter) with disjoint files: (1) video —
   generation.py, reel/profiles.py, mediagen.py, models/generation.py; (2) computer use —
   google/client.py, computer/agent.py; (3) transcription + OpenAI clean-ups —
   openai_backend.py, openai/client.py.
@@ -410,10 +467,11 @@ from parrot.voice.transcriber import OpenAIWhisperBackend
 
 ## Open Questions
 
-- [ ] Does `gemini-omni-1.1-flash` support more than one output per request, or must `number_of_videos > 1` loop / be rejected? — *Owner: Jesus*
-- [ ] Which `response_format` values and response fields (language, duration, segments) does `gpt-transcribe` return? Needs a live probe before the spec freezes the format table. — *Owner: Jesus*
-- [ ] Does `gemini-3.8-flash` honour `types.ComputerUse` with the same predefined function set (`click_at`, `type_text_at`, …) as the 2.5 preview? Needs a live probe. — *Owner: Jesus*
-- [ ] If computer-use opt-in is set but `_computer_use_config` is missing, should the client raise instead of logging? — *Owner: Jesus*
+- [x] Does `gemini-omni-1.1-flash` support more than one output per request? — *Owner: Jesus*: yes; forward `number_of_videos` in one request.
+- [x] Which `response_format` values / fields does `gpt-transcribe` return? — *Owner: Jesus*: live probe 2026-10-22: only `json`/`text`; json = `text`, `languages[].code`, `usage.seconds`; no segments; `timestamp_granularities` ignored.
+- [x] Does `gemini-3.8-flash` use the 2.5-preview predefined action set? — *Owner: Jesus*: live probe 2026-10-22: **no** — new vocabulary `click`/`move`/`type`/`scroll`/`hotkey`/`wait`/`navigate`/`go_back`/`drag_and_drop`, each with an `intent` arg (see Code Context).
+- [x] Opt-in set but `_computer_use_config` missing — *Owner: Jesus*: raise.
+- [ ] Does the 3.8 vocabulary include actions not seen in the probe (e.g. `go_forward`, `search`, `open_web_browser`, `key_down`)? Enumerate in the spec via the SDK/docs or more probes. — *Owner: spec author*
 - [x] Vertex Veo GA profiles — *Owner: Jesus*: leave the §8 Q5 gate closed; out of scope.
 - [x] Dead Developer-API Veo profiles — *Owner: Jesus*: remove them; Omni becomes the `gemini_developer` default.
 - [x] Unsupported options on Omni — *Owner: Jesus*: reject via validation before any paid call.
