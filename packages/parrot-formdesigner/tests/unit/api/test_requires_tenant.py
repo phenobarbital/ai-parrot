@@ -132,7 +132,7 @@ class TestNoForbiddenReferences:
     def test_module_does_not_reference_removed_concepts(self):
         import inspect
 
-        from parrot_formdesigner.api import tenant as tenant_module
+        from parrot_formdesigner.core import tenant as tenant_module
 
         source = inspect.getsource(tenant_module)
         assert "tenant_context" not in source
