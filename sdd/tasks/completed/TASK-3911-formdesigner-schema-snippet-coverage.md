@@ -217,10 +217,16 @@ failure belongs to TASK-3913 (pinned constants); do not fix it here.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat glm (nova, zai.glm-4.7-flash), attempt 2
+**Date**: 2026-10-22
+**Notes**: Added the 11 missing `_FIELD_SCHEMA_SNIPPETS` entries to `tools/field_helpers.py`
+(search, masked, color_picker, emoji, cron, tree_select, signature_pad, place, ai_capture, audio,
+credit_card). `tests/unit/test_field_helpers.py`: 7 passed. Merge-tier run: 479 passed / 6 failed,
+all 6 in the pre-existing baseline owned by TASK-3912/3913/3914 (edit_toolkit x2, controls_registry x2,
+field_type_enum_total_count, test_shortcut_equals_explicit). Review: the seat's attempts edited
+`pyproject.toml`/`uv.lock` (fidelity_violation twice); reverted by the orchestrator in fix commit
+72ab1d5e65cf. feedback coder-feedback:dcf6e9faaf840e1a65044312, review coder-review:67c47f5773aa01a9eba5998e.
+Engine task-tier validation was unavailable for this retried attempt ("no execution_id"), so the
+branch was merged with `git merge --no-ff` and verified manually; closed with `close_task.sh`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: The 11 snippets added, and the new `parrot-formdesigner` failure count (was 40).
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in product code.
