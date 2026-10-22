@@ -437,7 +437,14 @@ class SubmissionPipeline:
                 plausibility=plausibility,
                 validation=result,
             )
-        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked, ImplausibleSubmission, PlausibilityRateLimited):
+        except (
+            FormEventAbort,
+            ValidationFailed,
+            SubmitSinkError,
+            PlausibilityBlocked,
+            ImplausibleSubmission,
+            PlausibilityRateLimited,
+        ):
             raise
         except Exception as exc:
             user_message: str | None = None
