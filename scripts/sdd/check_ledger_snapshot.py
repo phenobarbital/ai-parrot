@@ -15,6 +15,15 @@ A status transition (``open`` -> ``closed``) is normal traffic and passes. Only
 the *disappearance* of a row whose base status is ``open`` or ``claimed`` is
 fatal; dropping a ``closed`` row is legal compaction. Intentional removals carry
 a ``Ledger-Removal: issue:<id>`` trailer on a commit in ``base..HEAD``.
+
+The comparison is made against the **merge base** of the base ref and ``HEAD``,
+never the base ref's tip. The tip moves: a row appended to ``dev`` after a branch
+forked is absent from that branch's snapshot without the branch ever having
+removed it, and comparing against the tip reported it as a removal (CI run
+39696105212 failed PR #1756 that way, over ``issue:bc57e4a79adb``, which
+``a915bd971`` had added to ``dev`` three minutes after the run started). The
+merge base is the only ref that answers the question the guard actually asks:
+what did *this branch* drop?
 """
 
 from __future__ import annotations
@@ -79,11 +88,43 @@ def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], capture_output=True, text=True, check=False)
 
 
+def resolve_comparison_base(base_ref: str) -> str:
+    """Return the merge-base commit of ``base_ref`` and ``HEAD``.
+
+    Args:
+        base_ref: Ref the branch is measured against, e.g. ``origin/dev``.
+
+    Returns:
+        The full sha of the fork point, which is what the snapshot is compared at.
+
+    Raises:
+        RuntimeError: If ``base_ref`` cannot be resolved, or if it shares no history
+            with ``HEAD``. The usual cause of the latter is a clone too shallow for
+            the two histories to meet; that must fail the gate rather than pass it,
+            for the same reason an unresolvable base ref does.
+    """
+    resolved = _git(["rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}"])
+    if resolved.returncode != 0:
+        raise RuntimeError(
+            f"cannot resolve base ref {base_ref!r}. In CI, fetch it first " f"(git fetch origin <branch>)."
+        )
+    merge_base = _git(["merge-base", base_ref, "HEAD"])
+    commit = merge_base.stdout.strip()
+    if merge_base.returncode != 0 or not commit:
+        raise RuntimeError(
+            f"no merge base between {base_ref!r} and HEAD. The clone is probably too "
+            f"shallow for the two histories to meet — check out with 'fetch-depth: 0' "
+            f"and fetch the base ref without --depth."
+        )
+    return commit
+
+
 def read_base_snapshot(base_ref: str, path: Path) -> str | None:
     """Return the snapshot text at ``base_ref``, or ``None`` when absent there.
 
     Args:
-        base_ref: Ref to read the snapshot from, e.g. ``origin/dev``.
+        base_ref: Ref or commit to read the snapshot from — in practice the merge
+            base returned by :func:`resolve_comparison_base`.
         path: Repo-relative path of the snapshot.
 
     Returns:
@@ -98,7 +139,7 @@ def read_base_snapshot(base_ref: str, path: Path) -> str | None:
     resolved = _git(["rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}"])
     if resolved.returncode != 0:
         raise RuntimeError(
-            f"cannot resolve base ref {base_ref!r}. In CI, fetch it first " f"(git fetch --depth=50 origin <branch>)."
+            f"cannot resolve base ref {base_ref!r}. In CI, fetch it first " f"(git fetch origin <branch>)."
         )
     shown = _git(["show", f"{base_ref}:{path.as_posix()}"])
     if shown.returncode != 0:
@@ -176,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        base_text = read_base_snapshot(args.base_ref, args.snapshot)
+        base_commit = resolve_comparison_base(args.base_ref)
+        base_text = read_base_snapshot(base_commit, args.snapshot)
     except RuntimeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -191,16 +233,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: malformed snapshot at {args.base_ref}: {error}", file=sys.stderr)
         return 1
 
-    allowed = set(args.allow) | allowed_removals(args.base_ref)
+    allowed = set(args.allow) | allowed_removals(base_commit)
     violations = find_violations(base, head, allowed)
 
     if not violations:
-        print(f"ok: {len(base)} rows at {args.base_ref}, {len(head)} at HEAD; no open/claimed issue removed.")
+        print(
+            f"ok: {len(base)} rows at the {args.base_ref} merge base {base_commit[:9]}, "
+            f"{len(head)} at HEAD; no open/claimed issue removed."
+        )
         return 0
 
     print(
-        f"error: {len(violations)} issue(s) that are open or claimed at {args.base_ref} "
-        f"were removed from {args.snapshot}:",
+        f"error: {len(violations)} issue(s) that are open or claimed at the {args.base_ref} "
+        f"merge base {base_commit[:9]} were removed from {args.snapshot}:",
         file=sys.stderr,
     )
     for row in violations:
