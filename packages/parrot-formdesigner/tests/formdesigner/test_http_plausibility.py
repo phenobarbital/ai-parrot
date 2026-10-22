@@ -58,7 +58,11 @@ def _request(body: dict) -> MagicMock:
     req.query.get = MagicMock(return_value="")
     req.__contains__ = lambda self, key: False
     req.json = AsyncMock(return_value=body)
-    req.get = MagicMock(side_effect=lambda key, default=None: _TENANT if key == "tenant" else default)
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: (
+            _TENANT if key == "tenant" else ({"id": "user-1"} if key == "session" else default)
+        )
+    )
     req.session = {"session": {"programs": [_TENANT]}}
     return req
 

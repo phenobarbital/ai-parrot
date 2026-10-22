@@ -28,8 +28,13 @@ def _request(*, session: dict | None = None, remote: str = "203.0.113.7", header
     req.query = MagicMock()
     req.query.get = MagicMock(return_value="")
     req.json = MagicMock(return_value={})
-    req.get = MagicMock(side_effect=lambda key, default=None: "test-tenant" if key == "tenant" else default)
-    req.session = session or {}
+    # Production shape: navigator-auth always sets request["session"]; it is None for anonymous callers.
+    req.session = session
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: (
+            "test-tenant" if key == "tenant" else (req.session if key == "session" else default)
+        )
+    )
     req.remote = remote
     req.headers = headers or {}
 

@@ -1189,7 +1189,8 @@ class FormAPIHandler:
         if isinstance(body, dict) and body.pop("llm_validation", None) is True:
             llm_opt_in = True
         opt_in_skipped: str | None = None
-        has_session = "session" in request or getattr(request, "session", None) is not None
+        # navigator-auth stores None under request["session"] for anonymous callers, so key presence proves nothing.
+        has_session = request.get("session") is not None
         if llm_opt_in and not has_session:
             llm_opt_in = False
             opt_in_skipped = "unauthenticated_opt_in"

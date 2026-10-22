@@ -75,10 +75,13 @@ def _request(body: dict, *, authenticated: bool = False) -> MagicMock:
     request = MagicMock(spec=web.Request)
     request.match_info = {"form_uid": _FORM_UID}
     request.query.get.side_effect = lambda key, default="": default
-    request.__contains__.side_effect = lambda key: authenticated and key == "session"
-    request.__getitem__.side_effect = lambda key: {"id": "user-1"} if key == "session" else None
+    # Production shape: request["session"] is always present, and None for anonymous callers.
+    request.__contains__.side_effect = lambda key: key == "session"
+    request.__getitem__.side_effect = lambda key: {"id": "user-1"} if authenticated and key == "session" else None
     request.remote = "192.0.2.10"
-    request.get.side_effect = lambda key, default=None: _TENANT if key == "tenant" else default
+    request.get.side_effect = lambda key, default=None: (
+        _TENANT if key == "tenant" else ({"id": "user-1"} if authenticated and key == "session" else default)
+    )
     request.json = AsyncMock(return_value=body)
     return request
 

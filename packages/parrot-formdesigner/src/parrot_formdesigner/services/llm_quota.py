@@ -118,10 +118,10 @@ class LLMQuota:
         # Session id first, then forwarded-for (guarded), then request.remote,
         # then the literal "anonymous" when everything is None
         session_id: str | None = None
-        if "session" in request:
-            _sid = request["session"].get("id")
+        session = request.get("session")  # navigator-auth sets this to None for anonymous callers
+        if session is not None:
+            _sid = session.get("id")
             session_id = str(_sid) if _sid else None
-            self.logger.debug("Session ID from request: %s", session_id)
 
         if session_id is not None:
             return session_id

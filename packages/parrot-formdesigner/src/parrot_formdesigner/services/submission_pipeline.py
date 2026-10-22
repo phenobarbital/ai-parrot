@@ -270,7 +270,8 @@ class SubmissionPipeline:
             ctx = dict(context or {})
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
-                if plausibility_ack:
+                review_policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+                if plausibility_ack and review_policy == "review" and implausible_fields(plausibility):
                     ctx["llm_validation"]["acknowledged"] = True
             submission = FormSubmission(
                 submission_id=submission_id or str(uuid.uuid4()),
