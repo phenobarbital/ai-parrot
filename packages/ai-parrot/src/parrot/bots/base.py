@@ -603,6 +603,9 @@ class BaseBot(AbstractBot):
                             duration_ms=_conv_duration_ms,
                             source_type="agent",
                             source_name=self.name,
+                            tenant=current_tenant.get(),
+                            user_id=current_user_id.get(),
+                            session_id=current_session_id.get(),
                         )
                     )
                     # return the response Object:
@@ -624,6 +627,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -641,6 +647,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -1782,6 +1791,9 @@ class BaseBot(AbstractBot):
                         output_tokens=getattr(_usage, "completion_tokens", None) if _usage else None,
                         source_type="agent",
                         source_name=self.name,
+                        tenant=current_tenant.get(),
+                        user_id=current_user_id.get(),
+                        session_id=current_session_id.get(),
                     )
                 )
                 return response
@@ -1800,6 +1812,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             self.status = AgentStatus.FAILED
@@ -1819,6 +1834,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             self.status = AgentStatus.FAILED
@@ -2273,6 +2291,9 @@ class BaseBot(AbstractBot):
                             duration_ms=_stream_duration_ms,
                             source_type="agent",
                             source_name=self.name,
+                            tenant=current_tenant.get(),
+                            user_id=current_user_id.get(),
+                            session_id=current_session_id.get(),
                         )
                     )
                     yield ai_message
@@ -2291,6 +2312,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -2308,6 +2332,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
