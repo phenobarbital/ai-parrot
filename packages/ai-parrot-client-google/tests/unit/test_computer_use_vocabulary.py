@@ -41,9 +41,7 @@ def test_v38_drag_and_drop_and_hotkey_args():
         {"start_x": 1, "start_y": 2, "end_x": 3, "end_y": 4, "intent": "i"},
         "v3_8",
     )
-    hotkey = GoogleGenAIClient._adapt_computer_use_args(
-        "hotkey", {"keys": ["control", "c"], "intent": "i"}, "v3_8"
-    )
+    hotkey = GoogleGenAIClient._adapt_computer_use_args("hotkey", {"keys": ["control", "c"], "intent": "i"}, "v3_8")
 
     assert drag == {"x": 1, "y": 2, "destination_x": 3, "destination_y": 4}
     assert hotkey == {"keys": "control,c"}

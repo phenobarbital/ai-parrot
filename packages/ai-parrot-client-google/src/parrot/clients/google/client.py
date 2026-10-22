@@ -1310,8 +1310,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             config = getattr(self, "_computer_use_config", None)
             if config is None and self.computer_use:
                 raise ValueError(
-                    "computer_use is enabled but _computer_use_config is not set "
-                    "(configure ComputerAgent first)."
+                    "computer_use is enabled but _computer_use_config is not set " "(configure ComputerAgent first)."
                 )
             excluded = []
             if config is not None:
@@ -1833,9 +1832,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
 
     @staticmethod
-    def _adapt_computer_use_args(
-        native_name: str, args: Dict[str, Any], vocabulary: str = "legacy"
-    ) -> Dict[str, Any]:
+    def _adapt_computer_use_args(native_name: str, args: Dict[str, Any], vocabulary: str = "legacy") -> Dict[str, Any]:
         """Adapt native computer-use call args to the toolkit method signature.
 
         Most predefined actions map 1:1 (coordinates are already 0-1000
