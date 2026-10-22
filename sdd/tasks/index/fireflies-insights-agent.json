@@ -126,7 +126,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -136,8 +136,9 @@
       "parallelism_notes": "imports InboxWatcher re-exported by TASK-4566 (inbox/__init__.py); creates its own test file only.",
       "assigned_to": null,
       "started_at": "2026-10-21T23:46:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4568-inbox-watcher-integration-test.md"
+      "completed_at": "2026-10-22T00:32:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4568-inbox-watcher-integration-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4569",
