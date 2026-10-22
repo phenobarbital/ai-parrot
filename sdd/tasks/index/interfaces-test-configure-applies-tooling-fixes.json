@@ -37,14 +37,14 @@
       "feature_id": "FEAT-727",
       "feature": "interfaces-test-configure-applies-tooling-fixes",
       "spec": "sdd/specs/interfaces-test-configure-applies-tooling-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task; owns packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py exclusively, no shared state outside it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-22T17:40:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4622-repair-configure-applies-tooling-test.md"
     }
