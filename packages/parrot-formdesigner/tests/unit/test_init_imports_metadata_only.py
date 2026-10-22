@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import importlib
 import sys
+from importlib.metadata import version as dist_version
 
 import pytest
-
+from packaging.version import Version
 
 # Modules that the metadata-only test must drop from sys.modules to verify
 # that ``import parrot_formdesigner`` reloads cleanly without pulling them.
@@ -86,11 +87,12 @@ def test_setup_form_routes_no_longer_exported(monkeypatch):
     assert not hasattr(pkg, "setup_form_routes")
 
 
-def test_metadata_attributes_exposed(monkeypatch):
-    """Top-level still exposes version metadata."""
+def test_metadata_attributes_exposed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Top-level exposes valid PEP 440 metadata matching the distribution."""
     monkeypatch.delitem(sys.modules, "parrot_formdesigner", raising=False)
     pkg = importlib.import_module("parrot_formdesigner")
-    assert pkg.__version__ == "0.3.0"
+    assert pkg.__version__ == dist_version("parrot-formdesigner")
+    assert str(Version(pkg.__version__)) == pkg.__version__
     assert pkg.__title__ == "parrot-formdesigner"
     assert hasattr(pkg, "__author__")
     assert hasattr(pkg, "__license__")

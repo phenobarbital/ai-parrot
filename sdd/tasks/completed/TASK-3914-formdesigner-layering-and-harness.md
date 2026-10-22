@@ -49,8 +49,8 @@ the double must be made to look like a real unique violation.
 
 ## Scope
 
-- **F5a**: locate the `ui → api` import edge and break it, so
-  `import parrot_formdesigner.ui` no longer pulls `parrot_formdesigner.api`.
+- **F5a**: move the shared tenant layer to `core/` (see the DECIDED design note
+  below) so `import parrot_formdesigner.ui` no longer pulls `parrot_formdesigner.api`.
 - **F5b**: make the venue test's fake exception satisfy `is_unique_violation()`.
   Do not relax the production detector.
 - **F5c**: root-cause `test_shortcut_equals_explicit` and fix the correct side,
@@ -65,13 +65,24 @@ cluster (TASK-3910 / 3911 / 3912 / 3913).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/__init__.py` | MODIFY | break the transitive `api` import (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/core/tenant_errors.py` | CREATE | the three tenant error classes, moved verbatim from `api/errors.py` (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/core/tenant.py` | CREATE | the tenant decorator/helpers, moved verbatim from `api/tenant.py`; imports errors from `.tenant_errors` (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/errors.py` | MODIFY | becomes a re-export of `core.tenant_errors` — same class objects (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/tenant.py` | MODIFY | becomes a re-export of `core.tenant` — every public AND underscore name it defined (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/routes.py` | MODIFY | `from ..core.tenant import requires_tenant` (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/telegram.py` | MODIFY | `from ..core.tenant import declared_tenant` (F5a) |
+| `packages/parrot-formdesigner/tests/unit/api/test_requires_tenant.py` | MODIFY | `TestNoForbiddenReferences` must inspect `core.tenant` (where the code now lives), not the re-export shim |
 | `packages/parrot-formdesigner/tests/unit/test_venue_service.py` | MODIFY | fix the unique-violation double (F5b) |
 | `packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py` | MODIFY | fix after root-causing (F5c) |
 
-> The exact `ui/` file carrying the offending import is **not** pre-identified —
-> step 1 of the blueprint locates it. If it is not `ui/__init__.py`, correct this
-> table in the task file before implementing.
+> **F5a design DECIDED (orchestrator, after the first attempt failed).** The
+> `ui → api` edges are `ui/routes.py:27` (`requires_tenant`, a decorator applied
+> at definition time — it cannot be deferred) and `ui/telegram.py:15`
+> (`declared_tenant`). Any import of `parrot_formdesigner.api.*` runs
+> `api/__init__`, so a deferred import or a sibling module under `api/` does not
+> cut the edge. The shared tenant layer moves to a layer-neutral location
+> (`core/`) and `api/tenant.py` / `api/errors.py` re-export it, so every existing
+> `api` importer and test keeps working with the SAME objects.
 
 ---
 
@@ -132,7 +143,13 @@ def test_importing_ui_does_not_pull_api():       # line 9
 {
   "schema_version": 1,
   "targets": [
-    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/ui/__init__.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/tenant_errors.py", "action": "CREATE"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/tenant.py", "action": "CREATE"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/errors.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/tenant.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/ui/routes.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/ui/telegram.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/tests/unit/api/test_requires_tenant.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_venue_service.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py", "action": "MODIFY"}
   ],
@@ -151,9 +168,20 @@ def test_importing_ui_does_not_pull_api():       # line 9
 - **F5a is the only product change in this task.** Breaking an import edge can
   change what is registered at import time — run the `ui/` and `api/` test
   directories, not just the one failing test.
-- Prefer a function-local (deferred) import or a shared-module extraction over
-  deleting a re-export that callers depend on. Check who imports the symbol
-  before moving it.
+- **F5a is a shared-module extraction, NOT a deferred import.** A deferred
+  `from ..api.tenant import ...` inside a method (the first attempt) leaves
+  `test_ui_imports` red, because `ui/routes.py:27` imports `requires_tenant` at
+  module level and it is used as a decorator. Do not use function-local imports.
+- Move code **verbatim** (git will show a rename-with-edits). Change only
+  import lines and module docstrings. No behaviour change, no renames.
+- `api/errors.py` and `api/tenant.py` must stay importable with every name they
+  exposed before, including `_get_programs`, `_is_superuser`, `_authorize`,
+  `_Handler`, `_EXPECTED_HINT` and `logger` in `api/tenant.py` — re-export them
+  explicitly (and list public ones in `__all__`). The classes/functions must be
+  the *same objects* (`api.errors.TenantForbiddenError is core.tenant_errors.TenantForbiddenError`)
+  so `except`/`pytest.raises` across both import paths keep working.
+- `core/tenant.py` and `core/tenant_errors.py` must import nothing from
+  `parrot_formdesigner.api`, `parrot_formdesigner.ui` or `parrot_formdesigner.handlers`.
 - **F5b must not touch `_db_utils.py`.** Loosening `is_unique_violation` to
   match `"unique violation"` would make the production detector fire on
   arbitrary error text — the opposite of what this feature is for.
@@ -174,8 +202,8 @@ def test_importing_ui_does_not_pull_api():       # line 9
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Locate the `ui → api` edge — *why*: the fix is unknowable until the actual import chain is known.
-2. Break it with the least invasive change — *why*: `ui/` and `api/` are both mounted in production; a careless move changes registration order.
+1. Re-confirm the edges (`grep -n "from \.\.api" packages/parrot-formdesigner/src/parrot_formdesigner/ui/*.py` → `routes.py:27`, `telegram.py:15`) — *why*: the design below assumes exactly these two.
+2. Create `core/tenant_errors.py` and `core/tenant.py` (verbatim moves), turn `api/errors.py` / `api/tenant.py` into re-exports, repoint `ui/routes.py` and `ui/telegram.py` to `..core.tenant`, repoint `TestNoForbiddenReferences` to `core.tenant` — *why*: it is the only change that removes the import-time edge without altering behaviour.
 3. Fix the venue double — *why*: the product detector is correct and must stay strict.
 4. Root-cause and fix F5c — *why*: it is the only failure in the feature with no diagnosis yet.
 
@@ -203,20 +231,45 @@ PY
 exact module first is what makes the fix a one-line deferral instead of a
 refactor.
 
-### `packages/parrot-formdesigner/src/parrot_formdesigner/ui/<module>.py` (MODIFY)
+### F5a — shared tenant layer (CREATE ×2, MODIFY ×5)
 ```python
-# FILL IN: break the transitive import of parrot_formdesigner.api found in step 1
-# — bounded by test_ui_imports.py:9 (ui must be independently mountable) and by
-# the constraint that no public name exported from ui/ disappears.
-# Preferred shapes, in order:
-#   1. move the `from ..api import X` inside the function that uses it (deferred import)
-#   2. extract the shared symbol into a module that neither ui/ nor api/ owns
-#   3. only if neither works: re-export via a lazy module __getattr__
-# Correct the "Files to Create / Modify" table above if the module is not ui/__init__.py.
+# core/tenant_errors.py  — verbatim body of api/errors.py (3 classes + json/aiohttp imports)
+#   TenantNotDeclaredError, TenantForbiddenError, TenantConflictError
+# core/tenant.py         — verbatim body of api/tenant.py, with
+#   `from .tenant_errors import TenantConflictError, TenantForbiddenError, TenantNotDeclaredError`
+#   (replaces `from .errors import ...`). Exposes requires_tenant, declared_tenant,
+#   enforce_membership_unless_public, assert_body_tenant_matches, and the private helpers.
+
+# api/errors.py  (after)
+from ..core.tenant_errors import (  # noqa: F401
+    TenantConflictError, TenantForbiddenError, TenantNotDeclaredError,
+)
+__all__ = ["TenantNotDeclaredError", "TenantForbiddenError", "TenantConflictError"]
+
+# api/tenant.py  (after)  — keep a short docstring pointing at core/tenant.py
+from ..core.tenant import (  # noqa: F401
+    _EXPECTED_HINT, _Handler, _authorize, _get_programs, _is_superuser, logger,
+    assert_body_tenant_matches, declared_tenant,
+    enforce_membership_unless_public, requires_tenant,
+)
+from ..core.tenant_errors import (  # noqa: F401  (api/handlers.py & tests import these from here)
+    TenantConflictError, TenantForbiddenError, TenantNotDeclaredError,
+)
+__all__ = ["requires_tenant", "declared_tenant", "enforce_membership_unless_public",
+           "assert_body_tenant_matches", "TenantConflictError", "TenantForbiddenError",
+           "TenantNotDeclaredError"]
+# FILL IN: if api/tenant.py defines or exposes any other module-level name not
+# listed above, re-export it too (diff `dir()` of the module before/after).
+
+# ui/routes.py:27     from ..core.tenant import requires_tenant
+# ui/telegram.py:15   from ..core.tenant import declared_tenant     (leave the call sites as they were)
+# tests/unit/api/test_requires_tenant.py:135  `from parrot_formdesigner.core import tenant as tenant_module`
+#   — the source-inspection test must read the module that now holds the code.
 ```
-**Why**: a deferred import removes the import-time edge while keeping the call
-site working, which is why it is tried first. Deleting the import outright would
-break whatever uses the symbol at runtime.
+**Why**: `ui` must not import `parrot_formdesigner.api.*` at all (that runs
+`api/__init__`). Both `api` and `ui` already depend on `core`, so the shared
+tenant layer belongs there. Re-exporting from `api/` keeps ~10 importers and the
+tenant test modules untouched.
 
 ### `packages/parrot-formdesigner/tests/unit/test_venue_service.py` (MODIFY)
 ```python
@@ -250,10 +303,9 @@ double makes it a real test of `create_location`'s error mapping.
 task fixes the *diagnosis* first and the code second.
 
 ### FILL IN checklist
-- [ ] `ui/<module>.py` — break the `api` import edge; bounded by `test_ui_imports.py:9`
+- [ ] F5a — `core/tenant_errors.py`, `core/tenant.py` created; `api/errors.py`, `api/tenant.py` re-export; `ui/routes.py`, `ui/telegram.py` repointed; `TestNoForbiddenReferences` repointed; bounded by `test_ui_imports.py:9`
 - [ ] `test_venue_service.py:252` — faithful unique-violation double; bounded by `_db_utils.py:14-20`
 - [ ] `test_deterministic_integration.py` — root cause stated, correct side fixed; bounded by AC6
-- [ ] "Files to Create / Modify" table corrected if the `ui/` module differs
 
 ---
 
@@ -262,8 +314,9 @@ task fixes the *diagnosis* first and the code second.
 - [ ] `test_importing_ui_does_not_pull_api` passes — `import parrot_formdesigner.ui` pulls no `parrot_formdesigner.api` module.
 - [ ] `test_duplicate_location_raises` passes **without modifying** `services/_db_utils.py` or `services/venue_service.py`.
 - [ ] `test_shortcut_equals_explicit` passes, with its root cause stated in the Completion Note.
-- [ ] The `ui/` and `api/` test directories show no new failures from the import change.
-- [ ] **AC6** No product behaviour changed to satisfy a stale test; the only product change is the F5a import edge.
+- [ ] The whole `packages/parrot-formdesigner/tests` tree shows no new failures from the move — in particular `tests/unit/api/` (tenant tests), `tests/unit/ui/`, and every module importing `parrot_formdesigner.api.errors` / `.api.tenant`.
+- [ ] `api.errors.TenantForbiddenError is core.tenant_errors.TenantForbiddenError` (same objects; `dir()` of `api.tenant` is a superset of what it exposed before).
+- [ ] **AC6** No product behaviour changed to satisfy a stale test; the only product change is the verbatim F5a move of the tenant layer.
 - [ ] **AC7** `ruff check` clean on every changed file.
 
 ---
@@ -274,6 +327,7 @@ task fixes the *diagnosis* first and the code second.
 - `pytest packages/parrot-formdesigner/tests/unit/test_venue_service.py -q`
 - `pytest packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py -q`
 - `pytest packages/parrot-formdesigner/tests/unit/test_init_imports_metadata_only.py -q`
+- `pytest packages/parrot-formdesigner/tests/unit/api packages/parrot-formdesigner/tests/unit/ui -q`
 
 ---
 
@@ -303,10 +357,25 @@ once its double is faithful.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seats gpt-5.6-terra / gpt-5.6-sol (codex), 3 attempts in the second execution
+**Date**: 2026-10-22
+**Notes**:
+- **F5a (product)**: the `ui -> api` edges were `ui/routes.py:27` (`requires_tenant`, a decorator
+  applied at definition time) and `ui/telegram.py:15` (`declared_tenant`) — not `ui/__init__.py`. The first
+  attempt (minimax) deferred the import in `telegram.py` only, which left `test_ui_imports` red; parked at
+  branch `held/TASK-3914-first-attempt`. Design decided by the orchestrator: the tenant layer moved verbatim
+  to `core/tenant.py` + `core/tenant_errors.py`; `api/tenant.py` / `api/errors.py` re-export the same
+  objects. `ui/` now imports from `..core.tenant`. `TestNoForbiddenReferences` inspects `core.tenant`.
+- **F5b (test)**: `test_duplicate_location_raises` now raises an error with real Postgres wording
+  (`duplicate key value violates unique constraint`); `is_unique_violation()` untouched — the product was
+  correct, the double was not a unique violation.
+- **F5c (test side moved)**: `test_shortcut_equals_explicit` compared full `model_dump()`s, but
+  `form_uid` / `section_uid` / `field_uid` are auto-generated UUIDs that differ between two instances by
+  design; the test now excludes them and compares the semantic content. No product change.
+- Result: full `parrot-formdesigner` suite 3867 passed / 0 failed (was 40 failures). Task-tier engine gate
+  was red only on the stale venv dist metadata (1.2.3 vs source 1.2.4), verified green against a
+  throwaway dist-info. Review fix f83da3845 dropped stdlib names re-exported from `api/tenant.py`
+  (caused by an over-literal instruction in the task, not a model defect — no feedback filed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: The `ui → api` edge that was cut; the F5c root cause; new failure count.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: F5a file list differs from the original task table (corrected and recorded in
+spec §3 Module 7). Closed with `close_task.sh` (no durable review EvidenceRef for `finalize_task`).
