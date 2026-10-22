@@ -559,7 +559,9 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                 errors.append(f"{self.public_channel_id}: {exc}")
         return {"sent": sent, "errors": errors, "chat_id": self.public_channel_id}
 
-    @telegram_command("fireflies_ticket", description="Create a Jira ticket from a reported action item", parse_mode="raw")
+    @telegram_command(
+        "fireflies_ticket", description="Create a Jira ticket from a reported action item", parse_mode="raw"
+    )
     async def cmd_create_ticket(self, text: str = "") -> str:
         """Create one Jira ticket only after an authorized human confirmation."""
         insight_id = text.strip()

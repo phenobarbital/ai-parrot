@@ -21,7 +21,6 @@ from parrot.bots.fireflies_insights import (
 from parrot.bots.agent import Agent
 from parrot.integrations.telegram.context import telegram_chat_scope
 
-
 def _bare_agent() -> FirefliesInsightsAgent:
     """Return an uninitialized agent with just enough state for isolated methods."""
     agent = FirefliesInsightsAgent.__new__(FirefliesInsightsAgent)
@@ -581,7 +580,9 @@ async def test_expired_approval_is_refused(tmp_path: Path, monkeypatch: pytest.M
     agent = _bare_agent()
     approval = await _register_ticket(agent)
     state = agent._load_state()
-    state["approvals"][approval.insight_id]["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    state["approvals"][approval.insight_id]["expires_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=1)
+    ).isoformat()
     agent._save_state(state)
 
     with telegram_chat_scope("reporting"):
