@@ -1,6 +1,7 @@
 """Unit tests for the FEAT-715 FirefliesInsightsAgent data contracts and core."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,7 +19,7 @@ from parrot.bots.fireflies_insights import (
     PendingApproval,
 )
 from parrot.bots.agent import Agent
-
+from parrot.integrations.telegram.context import telegram_chat_scope
 
 def _bare_agent() -> FirefliesInsightsAgent:
     """Return an uninitialized agent with just enough state for isolated methods."""
@@ -494,11 +495,14 @@ async def test_bad_llm_output_is_reported_not_sent(tmp_path: Path, monkeypatch: 
 
 
 @pytest.mark.asyncio
-async def test_notify_send_failure_names_chat_id(caplog: pytest.LogCaptureFixture) -> None:
+async def test_notify_send_failure_names_chat_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     class FailingBot:
         async def send_message(self, **kwargs: object) -> None:
             raise RuntimeError("telegram unavailable")
 
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
     agent = _bare_agent()
     agent.public_channel_id = "-100123"
     agent.set_wrapper(SimpleNamespace(bot=FailingBot()))
@@ -509,3 +513,133 @@ async def test_notify_send_failure_names_chat_id(caplog: pytest.LogCaptureFixtur
 
     assert result == {"sent": 0, "errors": ["-100123: telegram unavailable"], "chat_id": "-100123"}
     assert "send to chat -100123 failed" in caplog.text
+
+
+def _ticket_insights() -> MeetingInsights:
+    """Build one action item suitable for confirmation tests."""
+    return MeetingInsights(
+        meeting_id="meeting-1",
+        meeting_title="Weekly sync",
+        meeting_date="2026-10-22",
+        decisions=["Ship the release"],
+        risks=["Review delay"],
+        action_items=[ActionItem(title="Ship <release>", owner="Ana", evidence="Ana: ship it")],
+    )
+
+
+async def _register_ticket(agent: FirefliesInsightsAgent) -> PendingApproval:
+    """Store one approval and return it for a command test."""
+    return (await agent._register_approvals(_ticket_insights(), "reporting"))[0]
+
+
+@pytest.mark.asyncio
+async def test_ticket_requires_known_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    assert await _bare_agent().cmd_create_ticket("unknown") == "Unknown insight id: unknown"
+
+
+@pytest.mark.asyncio
+async def test_replayed_confirmation_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeJira:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def jira_create_issue(self, **kwargs: object) -> dict[str, object]:
+            self.calls += 1
+            return {"ok": True, "key": "PROJ-1"}
+
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    agent.wiki_root = None
+    agent.jira_toolkit = FakeJira()
+    approval = await _register_ticket(agent)
+
+    with telegram_chat_scope("reporting"):
+        first = await agent.cmd_create_ticket(approval.insight_id)
+        replay = await agent.cmd_create_ticket(approval.insight_id)
+
+    assert (first, replay) == ("Created PROJ-1", "Already created: PROJ-1")
+    assert agent.jira_toolkit.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_foreign_chat_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    approval = await _register_ticket(agent)
+
+    with telegram_chat_scope("other"):
+        result = await agent.cmd_create_ticket(approval.insight_id)
+
+    assert result == "Confirmation refused: not the reporting chat"
+
+
+@pytest.mark.asyncio
+async def test_expired_approval_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    approval = await _register_ticket(agent)
+    state = agent._load_state()
+    state["approvals"][approval.insight_id]["expires_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=1)
+    ).isoformat()
+    agent._save_state(state)
+
+    with telegram_chat_scope("reporting"):
+        result = await agent.cmd_create_ticket(approval.insight_id)
+
+    assert result == "Confirmation expired"
+
+
+@pytest.mark.asyncio
+async def test_failed_jira_call_does_not_mark_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FailedJira:
+        async def jira_create_issue(self, **kwargs: object) -> dict[str, object]:
+            return {"ok": False, "error": "Jira unavailable"}
+
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    agent.wiki_root = None
+    agent.jira_toolkit = FailedJira()
+    approval = await _register_ticket(agent)
+
+    with telegram_chat_scope("reporting"):
+        result = await agent.cmd_create_ticket(approval.insight_id)
+
+    assert result == "Jira ticket creation failed: Jira unavailable"
+    assert agent._load_state()["approvals"][approval.insight_id]["created_ticket"] is None
+
+
+@pytest.mark.asyncio
+async def test_ticket_without_wiki_page_omits_backlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class CapturingJira:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, object] | None = None
+
+        async def jira_create_issue(self, **kwargs: object) -> dict[str, object]:
+            self.kwargs = kwargs
+            return {"ok": True, "key": "PROJ-2"}
+
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    agent.wiki_root = None
+    jira = CapturingJira()
+    agent.jira_toolkit = jira
+
+    result = await agent._create_ticket(_ticket_insights(), _ticket_insights().action_items[0])
+
+    assert result["ok"] is True
+    assert jira.kwargs is not None
+    assert jira.kwargs["template"] == "fireflies/action_item"
+    assert jira.kwargs["template_params"]["wiki_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_insight_ids_are_stable_across_reports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+
+    first = await _register_ticket(agent)
+    second = (await agent._register_approvals(_ticket_insights(), "reporting"))[0]
+
+    assert first.insight_id == second.insight_id

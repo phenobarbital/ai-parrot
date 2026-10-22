@@ -7,9 +7,12 @@ insight path. The agent class is added by later tasks of the same feature.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
+import json
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +25,9 @@ from parrot.agents.obsidian import FirefliesObsidianAgent
 from parrot.bots.agent import Agent
 from parrot.conf import AGENTS_DIR
 from parrot.integrations.telegram import telegram_command
+from parrot.integrations.telegram.context import get_current_telegram_chat_id
 from parrot.knowledge.wiki.project import find_project_root, load_effective_config
+from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.models.responses import InvokeResult
 from parrot.registry import register_agent
 from parrot.skills.mixin import SkillRegistryMixin
@@ -109,6 +114,8 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         "You extract decisions, risks/blockers and action items from a meeting. "
         "Quote evidence verbatim from the transcript. Never invent owners or dates."
     )
+    APPROVAL_TTL = timedelta(hours=72)
+    JIRA_TEMPLATE = "fireflies/action_item"
 
     #: S6 — never build the DB-backed registry at AGENTS_DIR/{agent_id}/skills.
     enable_skill_registry: bool = False
@@ -464,6 +471,62 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         """Return the wrapper's aiogram bot, or ``None``."""
         return getattr(self._wrapper, "bot", None) if self._wrapper is not None else None
 
+    @property
+    def _state_path(self) -> Path:
+        """Return the durable Fireflies insight approval state location."""
+        return Path(FIREFLIES_REGISTRY_DIR).expanduser() / "fireflies_insights_state.json"
+
+    def _load_state(self) -> dict[str, Any]:
+        """Load approvals and insights, treating absent or corrupt state as empty."""
+        try:
+            with self._state_path.open(encoding="utf-8") as state_file:
+                state = json.load(state_file)
+            if not isinstance(state, dict):
+                raise ValueError("state root is not an object")
+            state.setdefault("approvals", {})
+            state.setdefault("insights", {})
+            return state
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+            if not isinstance(exc, FileNotFoundError):
+                self.logger.warning("FirefliesInsights: corrupt approval state ignored: %s", exc)
+            return {"approvals": {}, "insights": {}}
+
+    def _save_state(self, state: dict[str, Any]) -> None:
+        """Atomically persist approvals and insights to the registry directory."""
+        path = self._state_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.parent / f".{path.name}.tmp"
+        temporary.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
+        os.replace(temporary, path)
+
+    async def _register_approvals(self, insights: MeetingInsights, chat_id: str) -> list[PendingApproval]:
+        """Persist stable, chat-bound approvals for every reported action item."""
+        state = await asyncio.to_thread(self._load_state)
+        approvals = state.setdefault("approvals", {})
+        state.setdefault("insights", {})[insights.meeting_id] = insights.model_dump(mode="json")
+        registered: list[PendingApproval] = []
+        expires_at = (datetime.now(timezone.utc) + self.APPROVAL_TTL).isoformat()
+        for index, item in enumerate(insights.action_items):
+            insight_id = hashlib.sha256(f"{insights.meeting_id}:{index}:{item.title}".encode()).hexdigest()[:12]
+            existing = approvals.get(insight_id)
+            if existing is not None:
+                approval = PendingApproval.model_validate(existing)
+                if approval.created_ticket:
+                    registered.append(approval)
+                    continue
+            approval = PendingApproval(
+                insight_id=insight_id,
+                fireflies_id=insights.meeting_id,
+                action_index=index,
+                chat_id=str(chat_id),
+                expires_at=expires_at,
+                created_ticket=approval.created_ticket if existing is not None else None,
+            )
+            approvals[insight_id] = approval.model_dump(mode="json")
+            registered.append(approval)
+        await asyncio.to_thread(self._save_state, state)
+        return registered
+
     async def notify_insights(self, insights: MeetingInsights) -> dict[str, Any]:
         """Send insights to the public channel without propagating send failures."""
         bot = self._get_telegram_bot()
@@ -472,6 +535,14 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         if not self.public_channel_id:
             return {"sent": 0, "reason": "no public_channel_id configured"}
         text = self._format_insights_message(insights)
+        approvals = await self._register_approvals(insights, str(self.public_channel_id))
+        if approvals:
+            lines = [
+                f"/fireflies_ticket {approval.insight_id} — "
+                f"{html.escape(insights.action_items[approval.action_index].title)}"
+                for approval in approvals
+            ]
+            text = text + "\n\n<b>Open a Jira ticket</b>\n" + "\n".join(lines)
         sent = 0
         errors = []
         for chunk in self._chunk_message(text):
@@ -487,6 +558,100 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                 self.logger.warning("FirefliesInsights: send to chat %s failed: %s", self.public_channel_id, exc)
                 errors.append(f"{self.public_channel_id}: {exc}")
         return {"sent": sent, "errors": errors, "chat_id": self.public_channel_id}
+
+    @telegram_command(
+        "fireflies_ticket", description="Create a Jira ticket from a reported action item", parse_mode="raw"
+    )
+    async def cmd_create_ticket(self, text: str = "") -> str:
+        """Create one Jira ticket only after an authorized human confirmation."""
+        insight_id = text.strip()
+        state = await asyncio.to_thread(self._load_state)
+        raw = state.get("approvals", {}).get(insight_id)
+        if raw is None:
+            return f"Unknown insight id: {insight_id or '(none)'}"
+        approval = PendingApproval.model_validate(raw)
+        if approval.created_ticket:
+            return f"Already created: {approval.created_ticket}"
+        chat_id = get_current_telegram_chat_id()
+        now = datetime.now(timezone.utc)
+        try:
+            expired = datetime.fromisoformat(approval.expires_at) <= now
+        except ValueError:
+            expired = True
+        if not await self._authorize(approval, chat_id, None):
+            if expired:
+                return "Confirmation expired"
+            return "Confirmation refused: not the reporting chat"
+        try:
+            insights = MeetingInsights.model_validate(state["insights"][approval.fireflies_id])
+            item = insights.action_items[approval.action_index]
+        except (IndexError, KeyError, TypeError, ValueError):
+            return "Insight details are no longer available"
+        result = await self._create_ticket(insights, item)
+        if not result.get("ok"):
+            return f"Jira ticket creation failed: {result.get('error', 'unknown error')}"
+        ticket_key = result.get("key")
+        if not ticket_key:
+            return "Jira ticket creation failed: Jira returned no ticket key"
+        approval.created_ticket = str(ticket_key)
+        state["approvals"][insight_id] = approval.model_dump(mode="json")
+        await asyncio.to_thread(self._save_state, state)
+        return f"Created {ticket_key}"
+
+    async def _authorize(self, approval: PendingApproval, chat_id: str | None, user_id: str | None) -> bool:
+        """Require the reporting chat, an unexpired approval, and a known-user match."""
+        try:
+            expires_at = datetime.fromisoformat(approval.expires_at)
+        except ValueError:
+            return False
+        if str(chat_id) != approval.chat_id or expires_at <= datetime.now(timezone.utc):
+            return False
+        return not (approval.user_id and user_id and approval.user_id != user_id)
+
+    async def _create_ticket(self, insights: MeetingInsights, item: ActionItem) -> dict[str, Any]:
+        """Create an action-item issue through the configured Jira template."""
+        if self.jira_toolkit is None:
+            return {"ok": False, "error": "Jira is not configured"}
+        params = {
+            "meeting_title": insights.meeting_title,
+            "meeting_date": insights.meeting_date,
+            "meeting_id": insights.meeting_id,
+            "action_title": item.title,
+            "owner": item.owner,
+            "due_date": item.due_date,
+            "evidence": item.evidence,
+            "decisions": insights.decisions,
+            "risks": insights.risks,
+            "wiki_url": await self._wiki_backlink(insights.meeting_id),
+        }
+        return await self.jira_toolkit.jira_create_issue(
+            summary=f"[{insights.meeting_title}] {item.title}"[:250],
+            template=self.JIRA_TEMPLATE,
+            template_params=params,
+            labels=["fireflies", f"meeting-{insights.meeting_id}"],
+        )
+
+    async def _wiki_backlink(self, fireflies_id: str) -> str | None:
+        """Return a best-effort wiki source link for a Fireflies meeting."""
+        try:
+            wiki_root = self.wiki_root
+            if wiki_root is None:
+                return None
+            wiki_config = load_effective_config(wiki_root).config
+            if wiki_config.backend not in {"sqlite", "json"}:
+                return None
+            storage = wiki_config.storage_path(wiki_root)
+            sources = SourceCollectionManager(
+                storage / "sources",
+                db_path=storage / "wiki.db",
+                backend=wiki_config.backend,
+                busy_timeout=wiki_config.sqlite_busy_timeout,
+            )
+            entry = await asyncio.to_thread(sources.find_by_external_id, f"fireflies:{fireflies_id}")
+            return entry.source_uri if entry is not None else None
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("FirefliesInsights: backlink for %s unavailable: %s", fireflies_id, exc)
+            return None
 
     @telegram_command("fireflies_sync", description="Fetch and report the latest meetings", parse_mode="raw")
     async def cmd_sync(self, text: str = "") -> str:
