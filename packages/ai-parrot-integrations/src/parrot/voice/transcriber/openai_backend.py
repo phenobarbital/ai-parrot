@@ -24,11 +24,31 @@ _RESPONSE_FORMATS: Dict[str, str] = {"whisper-1": "verbose_json"}
 
 # Whisper verbose_json returns the language NAME; map it to ISO 639-1.
 _LANGUAGE_NAMES: Dict[str, str] = {
-    "english": "en", "spanish": "es", "french": "fr", "german": "de", "italian": "it",
-    "portuguese": "pt", "dutch": "nl", "russian": "ru", "chinese": "zh", "japanese": "ja",
-    "korean": "ko", "arabic": "ar", "hindi": "hi", "turkish": "tr", "polish": "pl",
-    "ukrainian": "uk", "catalan": "ca", "swedish": "sv", "danish": "da", "norwegian": "no",
-    "finnish": "fi", "greek": "el", "hebrew": "he", "czech": "cs", "romanian": "ro",
+    "english": "en",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "dutch": "nl",
+    "russian": "ru",
+    "chinese": "zh",
+    "japanese": "ja",
+    "korean": "ko",
+    "arabic": "ar",
+    "hindi": "hi",
+    "turkish": "tr",
+    "polish": "pl",
+    "ukrainian": "uk",
+    "catalan": "ca",
+    "swedish": "sv",
+    "danish": "da",
+    "norwegian": "no",
+    "finnish": "fi",
+    "greek": "el",
+    "hebrew": "he",
+    "czech": "cs",
+    "romanian": "ro",
 }
 
 
@@ -246,9 +266,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                     processing_time_ms,
                 )
 
-                text, lang, duration = self._parse_result(
-                    self.model, result_json, language
-                )
+                text, lang, duration = self._parse_result(self.model, result_json, language)
                 return TranscriptionResult(
                     text=text,
                     language=lang,
@@ -278,9 +296,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
             self._session = None
 
     @staticmethod
-    def _parse_result(
-        model: str, payload: dict, language_hint: Optional[str]
-    ) -> tuple[str, str, float]:
+    def _parse_result(model: str, payload: dict, language_hint: Optional[str]) -> tuple[str, str, float]:
         """Return (text, iso_language, duration_seconds).
 
         Handles whisper ``verbose_json`` (language name, ``duration``) and

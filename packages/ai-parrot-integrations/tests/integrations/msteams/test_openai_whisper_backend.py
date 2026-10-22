@@ -404,14 +404,20 @@ GPT_TRANSCRIBE_JSON = {
     "usage": {"type": "duration", "seconds": 5},
 }
 WHISPER_VERBOSE = {
-    "task": "transcribe", "language": "english", "duration": 4.97,
-    "text": "Hello!", "segments": [],
+    "task": "transcribe",
+    "language": "english",
+    "duration": 4.97,
+    "text": "Hello!",
+    "segments": [],
 }
 
 
 def test_gpt_transcribe_json_parsing():
     assert OpenAIWhisperBackend._parse_result("gpt-transcribe", GPT_TRANSCRIBE_JSON, None) == (
-        GPT_TRANSCRIBE_JSON["text"], "en", 5.0)
+        GPT_TRANSCRIBE_JSON["text"],
+        "en",
+        5.0,
+    )
 
 
 def test_whisper_language_iso():
