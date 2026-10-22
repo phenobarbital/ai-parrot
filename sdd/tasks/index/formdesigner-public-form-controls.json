@@ -118,7 +118,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -129,8 +129,9 @@
       "parallelism_notes": "reads SubmitOutcome.created_at added by TASK-4632; modifies api/handlers.py and api/routes.py after TASK-4634 (same files, anchors on its tenant_scoped_submissions lines).",
       "assigned_to": null,
       "started_at": "2026-10-22T23:35:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4635-on-submitted-callback.md"
+      "completed_at": "2026-10-22T23:58:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4635-on-submitted-callback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4636",
