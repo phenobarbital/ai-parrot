@@ -266,10 +266,42 @@ evidence from step 4, captured into
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: Claude Opus 5.5 (interactive session, `/sdd-fix issue:1c7d47068c4d`)
+**Date**: 2026-10-22
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented exactly as the blueprint specified; the single `FILL IN` (the loop
+body) was completed. All 7 acceptance criteria met — evidence appended to
+`artifacts/logs/feat-723-retraction-evidence.md`:
+
+- AC-2/AC-3/AC-5 — an unknown id prints `Could not retract … (unknown or already
+  retracted)` and exits `1`; with two unknown ids **both** are reported under a
+  single exit, which is the one behavioural difference from the `ledger_unclaim`
+  template this was modelled on.
+- AC-4 — `wikitoolkit ledger retract-feedback --help` registers the command with
+  `--reason` (required) and `--actor`, and it appears in `ledger --help`.
+- AC-6 — `ruff check` and `black --check --line-length 120` clean.
+- AC-7 — `test_cli_remote_push.py` 8 passed (imports `parrot.knowledge.wiki.cli`
+  and drives it via `CliRunner`, so it gates import + Click wiring);
+  `test_feedback.py` 24 passed.
+
+**AC-1 (the success path) was deliberately not exercised against the live
+ledger.** Retracting a real id appends a real tombstone to shared state that
+cannot be undone (the log is append-only), so every CLI probe used a
+deliberately fake id and `.parrot/ledger/events.jsonl`'s sha256 was confirmed
+byte-identical before and after. The `True` branch is covered by TASK-4603's
+`test_retracted_feedback_is_dropped_from_replay` against a `tmp_path` store.
+
+Two contract corrections made while implementing, both recorded in the task
+file before coding:
+
+1. The task's original Validation Commands cited
+   `tests/sdd_scripts/test_wiki_cli_smoke.py`, which **does not exist**. Replaced
+   with `packages/ai-parrot/tests/knowledge/wiki/test_cli_remote_push.py`, verified
+   green on this base. (A non-existent operand would have warned as
+   `validation-path-unknown` in `check_task_graph`.)
+2. `CoderFeedbackStore.from_root` requires `root`, unlike
+   `LedgerService.from_root(root: Path | None = None)` which the neighbouring
+   commands call bare — hence `Path.cwd()`.
+
+**Deviations from spec**: none.
