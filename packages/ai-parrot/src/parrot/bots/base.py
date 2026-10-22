@@ -45,6 +45,20 @@ def _get_infographic_result_class() -> Optional[type]:
         return None
 
 
+def _resolve_call_tenant(tenant: Optional[str], ctx: Any) -> Optional[str]:
+    """Resolve the tenant bound for a bot invocation.
+
+    Explicit call input takes precedence over the request context. Returning
+    ``None`` tells callers to preserve an enclosing tenant binding.
+    """
+    if tenant is not None:
+        return tenant
+    ctx_kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None
+    if isinstance(ctx_kwargs, dict):
+        return ctx_kwargs.get("tenant")
+    return None
+
+
 # FEAT-176: Lifecycle Events
 # FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
 # via the parrot.core.events.lifecycle re-export facade.
@@ -62,6 +76,7 @@ from parrot.observability.context import (
     current_agent_name,
     current_memory_key_id,
     current_session_id,
+    current_tenant,
     current_user_id,
 )
 
@@ -1099,6 +1114,7 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        _generic_tenant_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1115,6 +1131,9 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _call_tenant = _resolve_call_tenant(tenant, ctx)
+            if _call_tenant is not None:
+                _generic_tenant_token = current_tenant.set(_call_tenant)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
@@ -1811,6 +1830,8 @@ class BaseBot(AbstractBot):
             _exit = getattr(self, "_exit_skill_tenant", None)
             if _exit is not None and _tenant_token is not None:
                 _exit(_tenant_token)
+            if _generic_tenant_token is not None:
+                current_tenant.reset(_generic_tenant_token)
             exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
@@ -1862,6 +1883,7 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        _generic_tenant_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1871,6 +1893,9 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _call_tenant = _resolve_call_tenant(tenant, ctx)
+            if _call_tenant is not None:
+                _generic_tenant_token = current_tenant.set(_call_tenant)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
@@ -2292,6 +2317,8 @@ class BaseBot(AbstractBot):
             _exit = getattr(self, "_exit_skill_tenant", None)
             if _exit is not None and _tenant_token is not None:
                 _exit(_tenant_token)
+            if _generic_tenant_token is not None:
+                current_tenant.reset(_generic_tenant_token)
             exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self._current_trace_context = None
