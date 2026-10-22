@@ -69,7 +69,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,8 +79,9 @@
       "parallelism_notes": "depends on TASK-4581: reads VideoModelProfile.max_outputs_per_request (reel/profiles.py)",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4582-omni-multi-output.md"
+      "completed_at": "2026-10-22T12:44:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4582-omni-multi-output.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4583",
@@ -149,7 +150,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -159,8 +160,9 @@
       "parallelism_notes": "depends on TASK-4585: the v3_8 `type` action maps to computer_type_text created there (parrot_tools/computer/toolkit.py)",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4586-computer-use-optin-vocabularies.md"
+      "completed_at": "2026-10-22T12:44:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4586-computer-use-optin-vocabularies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4587",
@@ -208,7 +210,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -216,8 +218,9 @@
       "parallelism_notes": "independent lane — only touches openai/client.py; DATE-GATED: do not merge before 2026-12-11",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4589-openai-o3-nano-cleanup.md"
+      "completed_at": "2026-10-22T12:44:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4589-openai-o3-nano-cleanup.md",
+      "verification": "verified"
     }
   ]
 }
