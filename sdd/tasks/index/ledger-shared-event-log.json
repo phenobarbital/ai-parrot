@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T00:00:00Z",
-  "completed_at": "2026-10-16T01:36:01+00:00",
+  "completed_at": "2026-10-22T12:12:11+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -96,7 +96,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -106,8 +106,9 @@
       "parallelism_notes": "hardens code created by TASK-4405/4406/4408; serialized after TASK-4408 (rotation must exist); before TASK-4409 (docs)",
       "assigned_to": null,
       "started_at": "2026-10-22T12:02:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4416-shared-log-hardening.md"
+      "completed_at": "2026-10-22T12:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4416-shared-log-hardening.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4409",
