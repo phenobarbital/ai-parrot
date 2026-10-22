@@ -82,9 +82,9 @@ class TestEquivalence:
                 }
             },
         }
-        assert shortcut_form.model_dump(
+        assert shortcut_form.model_dump(exclude=generated_identities) == explicit_form.model_dump(
             exclude=generated_identities
-        ) == explicit_form.model_dump(exclude=generated_identities)
+        )
 
 
 class TestEndToEnd:

@@ -186,9 +186,7 @@ def declared_tenant(request: web.Request) -> str:
     return str(tenant)
 
 
-def enforce_membership_unless_public(
-    request: web.Request, form: Any, tenant: str
-) -> None:
+def enforce_membership_unless_public(request: web.Request, form: Any, tenant: str) -> None:
     """Close the authorization gap on shared public/private routes.
 
     ``requires_tenant(public=True)`` skips membership authorization at the
