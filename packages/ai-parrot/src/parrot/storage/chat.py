@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from navconfig.logging import logging
 
 from ..memory.render import render_history
-from .models import ChatMessage, Conversation, MessageRole, ToolCall, Source
+from .models import ChatMessage, MessageRole, ToolCall, Source
 
 # Default limits
 HOT_TTL_HOURS = 48
@@ -191,6 +191,7 @@ class ChatStorage:
                     tools_used=[tc.name for tc in tool_call_objs],
                     timestamp=now,
                     metadata={
+                        **(metadata or {}),
                         "output_mode": output_mode,
                         "model": model,
                         "provider": provider,
