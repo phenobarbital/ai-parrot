@@ -1,4 +1,5 @@
 """FEAT-710 TASK-4551 — hot tier keeps caller metadata."""
+
 import pytest
 
 from parrot.storage.chat import ChatStorage
