@@ -10,7 +10,7 @@ tags: [tools, agents, lifecycle, idempotency, toolkits]
 **Feature ID**: FEAT-721
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.5
 
 ---
