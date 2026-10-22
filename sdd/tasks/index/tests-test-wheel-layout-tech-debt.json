@@ -115,7 +115,7 @@
       "feature_id": "FEAT-618",
       "feature": "tests-test-wheel-layout-tech-debt",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -123,8 +123,9 @@
       "parallelism_notes": "Independent: parrot_formdesigner/ui/, tests/unit/test_venue_service.py and tests/unit/test_deterministic_integration.py are touched by no other task.",
       "assigned_to": null,
       "started_at": "2026-10-22T14:21:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3914-formdesigner-layering-and-harness.md"
+      "completed_at": "2026-10-22T15:25:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3914-formdesigner-layering-and-harness.md",
+      "verification": "verified"
     }
   ]
 }

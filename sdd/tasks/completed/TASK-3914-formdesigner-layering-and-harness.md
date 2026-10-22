@@ -357,10 +357,25 @@ once its double is faithful.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seats gpt-5.6-terra / gpt-5.6-sol (codex), 3 attempts in the second execution
+**Date**: 2026-10-22
+**Notes**:
+- **F5a (product)**: the `ui -> api` edges were `ui/routes.py:27` (`requires_tenant`, a decorator
+  applied at definition time) and `ui/telegram.py:15` (`declared_tenant`) — not `ui/__init__.py`. The first
+  attempt (minimax) deferred the import in `telegram.py` only, which left `test_ui_imports` red; parked at
+  branch `held/TASK-3914-first-attempt`. Design decided by the orchestrator: the tenant layer moved verbatim
+  to `core/tenant.py` + `core/tenant_errors.py`; `api/tenant.py` / `api/errors.py` re-export the same
+  objects. `ui/` now imports from `..core.tenant`. `TestNoForbiddenReferences` inspects `core.tenant`.
+- **F5b (test)**: `test_duplicate_location_raises` now raises an error with real Postgres wording
+  (`duplicate key value violates unique constraint`); `is_unique_violation()` untouched — the product was
+  correct, the double was not a unique violation.
+- **F5c (test side moved)**: `test_shortcut_equals_explicit` compared full `model_dump()`s, but
+  `form_uid` / `section_uid` / `field_uid` are auto-generated UUIDs that differ between two instances by
+  design; the test now excludes them and compares the semantic content. No product change.
+- Result: full `parrot-formdesigner` suite 3867 passed / 0 failed (was 40 failures). Task-tier engine gate
+  was red only on the stale venv dist metadata (1.2.3 vs source 1.2.4), verified green against a
+  throwaway dist-info. Review fix f83da3845 dropped stdlib names re-exported from `api/tenant.py`
+  (caused by an over-literal instruction in the task, not a model defect — no feedback filed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: The `ui → api` edge that was cut; the F5c root cause; new failure count.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: F5a file list differs from the original task table (corrected and recorded in
+spec §3 Module 7). Closed with `close_task.sh` (no durable review EvidenceRef for `finalize_task`).
