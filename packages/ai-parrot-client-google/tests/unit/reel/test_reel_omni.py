@@ -420,7 +420,7 @@ class TestStartingFrameAndDeadline:
 
 
 class TestGenerateMany:
-    async def test_omni_generate_many_single_request(self, profile, downloader, tmp_path):
+    async def test_omni_generate_many_distinct_requests(self, profile, downloader, tmp_path):
         video = _video_content(data=base64.b64encode(b"FAKEVIDEO").decode("ascii"))
         create = AsyncMock(return_value=_interaction(output_video=video))
         client = _fake_client(create=create)
@@ -437,7 +437,8 @@ class TestGenerateMany:
         )
 
         assert len(clips) == 2
-        assert client.aio.interactions.create.await_count == 1
+        assert client.aio.interactions.create.await_count == 2
+        assert len({c.local_path for c in clips}) == 2
 
     async def test_omni_generate_many_over_cap(self, profile, downloader, tmp_path):
         with pytest.raises(ReelValidationError):

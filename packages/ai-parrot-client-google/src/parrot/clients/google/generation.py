@@ -934,7 +934,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         reference_image: Optional[Union[str, Path, Image.Image]] = None,
         generate_image_first: bool = False,
         image_prompt: Optional[str] = None,
-        duration: int = 8,
+        duration: Optional[int] = None,
         resolution: Optional[str] = None,
         person_generation: str = "allow_adult",
         include_audio: bool = True,
@@ -958,7 +958,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             prompt_text = vin.prompt
             # kwargs supplied explicitly override VideoGenInput fields
             negative_prompt = negative_prompt if negative_prompt is not None else vin.negative_prompt
-            duration = duration if duration != 8 else vin.duration
+            # VideoGenInput.duration defaults to 8 (a Veo value), so 8 there means "unset".
+            duration = duration if duration is not None else (vin.duration if vin.duration != 8 else None)
             aspect_ratio = aspect_ratio if aspect_ratio != AspectRatio.RATIO_16_9 else vin.aspect_ratio
             resolution = resolution if resolution is not None else vin.resolution
             person_generation = person_generation if person_generation != "allow_adult" else vin.person_generation
@@ -991,9 +992,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         model_id = getattr(model, "value", model) or registry.default_video_model(api_surface)
         profile = registry.resolve(model_id, api_surface)
 
-        # A default duration of 8 means "provider default". A structured
-        # VideoGenInput duration is retained by the unpacking block above.
-        duration_seconds = duration if duration != 8 else None
+        # ``duration`` None means "provider default"; an explicit value (8 included)
+        # is validated against the profile and rejected when unsupported (Omni).
+        duration_seconds = duration
         options = VideoRequestOptions(
             resolution=resolution.value if isinstance(resolution, VideoResolution) else resolution,
             duration_seconds=duration_seconds,
@@ -1031,7 +1032,26 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             starting_frame = Path(reference_image)
 
         deadline = time.monotonic() + _reel_scene_deadline_seconds()
+        from .reel.errors import ReelErrorCode, ReelValidationError
+
+        def _reject(option: str) -> None:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support option {option!r}.",
+            )
+
         if profile.backend == "omni":
+            # Options the Omni Interactions path cannot honour are rejected, never dropped silently.
+            if negative_prompt:
+                _reject("negative_prompt")
+            if seed is not None:
+                _reject("seed")
+            if person_generation != "allow_adult":
+                _reject("person_generation")
+            if reference_type != "asset":
+                _reject("reference_type")
+            if image_prompt:
+                _reject("image_prompt")
             clips = await OmniClipAdapter(self, ProviderMediaDownloader()).generate_many(
                 profile=profile,
                 prompt=prompt_text,
@@ -1041,6 +1061,15 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 deadline=deadline,
             )
         else:
+            for name, value in (
+                ("last_frame", last_frame),
+                ("reference_images", reference_images),
+                ("extend_video", extend_video),
+                ("seed", seed),
+                ("negative_prompt", negative_prompt),
+            ):
+                if value:
+                    _reject(name)
             adapter = VeoClipAdapter(self)
             clips = [
                 await adapter.generate(
@@ -1849,7 +1878,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         aspect_ratio = prompt.aspect_ratio if isinstance(prompt, VideoGenerationPrompt) else "16:9"
         negative_prompt = prompt.negative_prompt if isinstance(prompt, VideoGenerationPrompt) else None
         resolution = prompt.resolution if isinstance(prompt, VideoGenerationPrompt) else None
-        duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else 8
+        duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else None
         seed = prompt.seed if isinstance(prompt, VideoGenerationPrompt) else None
         include_audio = prompt.include_audio if isinstance(prompt, VideoGenerationPrompt) else True
 
@@ -1861,7 +1890,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             aspect_ratio=aspect_ratio,
             negative_prompt=negative_prompt or None,
             resolution=resolution,
-            duration=duration or 8,
+            duration=duration,
             seed=seed,
             include_audio=include_audio,
         )

@@ -208,7 +208,12 @@ class OmniClipAdapter:
         deadline: float,
     ) -> List[GeneratedReelClip]:
         """
-        Generate ``number_of_videos`` Omni videos in ONE Interactions request.
+        Generate ``number_of_videos`` distinct Omni videos for one prompt.
+
+        The Interactions ``VideoResponseFormat`` exposes no output-count
+        parameter, and ``Interaction.output_video`` carries a single clip, so
+        N distinct videos are obtained with N independent requests (each
+        sharing the caller's deadline) rather than by re-reading one response.
 
         Raises:
             ReelValidationError: ``unsupported_option`` when ``number_of_videos`` exceeds
@@ -221,62 +226,20 @@ class OmniClipAdapter:
                 f"Model {profile.model_id!r} returns at most {profile.max_outputs_per_request} videos per request.",
             )
 
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ReelError(
-                ReelErrorCode.TIMEOUT,
-                "Deadline already passed before Omni submission; not submitted.",
-                stage="omni_submit",
-                retryable=True,
+        clips: List[GeneratedReelClip] = []
+        for _ in range(number_of_videos):
+            clips.append(
+                await self.generate(
+                    profile=profile,
+                    prompt=prompt,
+                    output_directory=output_directory,
+                    aspect_ratio=aspect_ratio,
+                    resolution="",
+                    target_duration_seconds=0.0,
+                    starting_frame=None,
+                    deadline=deadline,
+                )
             )
-
-        # response_format.duration is intentionally omitted (spec §3 M4): no
-        # Omni duration value has been verified, so none is sent — the
-        # provider's own default applies and the OUTPUT is measured instead.
-        response_format = {"type": "video", "aspect_ratio": aspect_ratio}
-
-        # "Directly created clients require explicit ownership" (client.py's
-        # get_client docstring) — owned and closed on every exit.
-        client = await self._owner.get_client(model=profile.model_id)
-        try:
-            try:
-                interaction = await client.aio.interactions.create(
-                    agent=profile.model_id,
-                    input=prompt,
-                    background=False,
-                    store=False,
-                    stream=False,
-                    response_format=response_format,
-                    timeout=remaining,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                # Ambiguous creation failure: never retried (Scope: "do not
-                # retry ambiguous creation failures").
-                raise classify_provider_error(exc, stage="omni_submit") from exc
-
-            interaction_id = getattr(interaction, "id", None)
-            clips = []
-            for i in range(number_of_videos):
-                local_path = await self._normalize_and_materialize(
-                    interaction, output_directory, deadline=deadline, operation_id=f"{interaction_id}_{i}"
-                )
-                measured_duration, has_audio = await self._measure(local_path)
-                clips.append(
-                    GeneratedReelClip(
-                        local_path=local_path,
-                        model=profile.model_id,
-                        backend="omni",
-                        submitted_duration_seconds=None,  # Omni: provider default, never submitted
-                        measured_duration_seconds=measured_duration,
-                        has_audio=has_audio,
-                        provider_operation_id=f"{interaction_id}_{i}",
-                    )
-                )
-        finally:
-            await client.aio.aclose()
-
         return clips
 
     async def _normalize_and_materialize(

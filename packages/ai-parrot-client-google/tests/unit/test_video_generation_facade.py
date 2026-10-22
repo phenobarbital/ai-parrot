@@ -54,7 +54,7 @@ async def test_video_generation_rejects_before_paid_call(client, tmp_path):
 
 
 async def test_video_generation_omni_uses_one_multi_output_call(client, tmp_path):
-    """Multiple requested outputs are delegated as one Omni request."""
+    """Multiple requested outputs are delegated to one Omni generate_many call."""
     clips = [_clip(tmp_path, 0), _clip(tmp_path, 1)]
     with patch(
         "parrot.clients.google.reel.omni.OmniClipAdapter.generate_many",
@@ -81,3 +81,17 @@ def test_facade_signatures_keep_optional_models():
 
     assert inspect.signature(GoogleGenAIClient.video_generation).parameters["model"].default is None
     assert inspect.signature(GoogleGenAIClient.generate_videos).parameters["model"].default is None
+
+
+@pytest.mark.parametrize("kwargs", [{"duration": 8}, {"negative_prompt": "blur"}, {"seed": 7}])
+async def test_video_generation_omni_rejects_unsupported_options(client, tmp_path, kwargs):
+    """Options Omni cannot honour (an explicit duration included) are rejected, never dropped."""
+    with patch(
+        "parrot.clients.google.reel.omni.OmniClipAdapter.generate_many",
+        new=AsyncMock(),
+    ) as generate_many:
+        with pytest.raises(ReelValidationError) as exc_info:
+            await client.video_generation("a lion", output_directory=tmp_path, **kwargs)
+
+    generate_many.assert_not_awaited()
+    assert exc_info.value.code is ReelErrorCode.UNSUPPORTED_OPTION
