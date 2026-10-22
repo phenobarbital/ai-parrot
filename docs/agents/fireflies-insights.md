@@ -48,9 +48,17 @@ Create a Jira ticket from a previously reported action item. The `<id>` is
 the 12-character stable identifier shown in the Telegram notification.
 
 - **Authorization**: the command must come from the same chat that received
-  the original notification.
+  the original notification. Authorization is chat-level only: the Telegram
+  context exposes the chat id but not the confirming user, so any member of
+  the reporting chat may confirm.
 - **TTL**: approvals expire after **72 hours**. An expired confirmation is
   refused with a clear message.
+- **Pruning**: expired approvals that never produced a ticket are dropped the
+  next time approvals are registered, and a meeting's stored insights are
+  dropped once no approval references it, so the state file stays bounded.
+- **Revisions**: re-analysing a revised meeting invalidates its pending
+  approvals, so only the ids of the latest report can be confirmed.
+  Approvals that already created a ticket are kept.
 - **Idempotency**: confirming the same action item twice returns the
   existing Jira ticket key without creating a duplicate.
 - **Ordering**: confirmations are serialized by an ``asyncio.Lock`` so

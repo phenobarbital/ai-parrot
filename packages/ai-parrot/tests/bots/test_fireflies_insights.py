@@ -82,7 +82,7 @@ def test_pending_approval_ticket_marker_defaults_empty() -> None:
         insight_id="i1", fireflies_id="m1", action_index=0, chat_id="-100", expires_at="2026-10-23T00:00:00+00:00"
     )
     assert approval.created_ticket is None
-    assert approval.user_id is None
+    assert "user_id" not in PendingApproval.model_fields
 
 
 def test_run_report_starts_at_zero() -> None:
@@ -647,3 +647,122 @@ async def test_insight_ids_are_stable_across_reports(tmp_path: Path, monkeypatch
     second = (await agent._register_approvals(_ticket_insights(), "reporting"))[0]
 
     assert first.insight_id == second.insight_id
+
+
+@pytest.mark.asyncio
+async def test_authorization_is_chat_level_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    approval = await _register_ticket(agent)
+
+    assert await agent._authorize(approval, "reporting") is True
+    assert await agent._authorize(approval, "other") is False
+
+
+@pytest.mark.asyncio
+async def test_register_prunes_expired_pending_approvals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Expired approvals without a ticket are dropped; created ones survive as the idempotence record."""
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    stale = await _register_ticket(agent)
+    past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    state = agent._load_state()
+    state["approvals"][stale.insight_id]["expires_at"] = past
+    state["approvals"]["created0"] = {
+        "insight_id": "created0",
+        "fireflies_id": "meeting-0",
+        "action_index": 0,
+        "chat_id": "reporting",
+        "expires_at": past,
+        "created_ticket": "PROJ-9",
+    }
+    state["insights"]["meeting-0"] = _ticket_insights().model_dump(mode="json") | {"meeting_id": "meeting-0"}
+    state["insights"]["meeting-orphan"] = _ticket_insights().model_dump(mode="json") | {"meeting_id": "meeting-orphan"}
+    agent._save_state(state)
+    fresh_insights = MeetingInsights(
+        meeting_id="meeting-2",
+        meeting_title="Planning",
+        meeting_date="2026-10-23",
+        action_items=[ActionItem(title="Follow up", evidence="Bob: I will follow up")],
+    )
+
+    fresh = (await agent._register_approvals(fresh_insights, "reporting"))[0]
+
+    state = agent._load_state()
+    assert set(state["approvals"]) == {"created0", fresh.insight_id}
+    assert set(state["insights"]) == {"meeting-0", "meeting-2"}
+
+
+@pytest.mark.asyncio
+async def test_revised_meeting_supersedes_pending_approvals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A re-analysed meeting leaves only the latest report's ids confirmable."""
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    old = await _register_ticket(agent)
+    revised = _ticket_insights()
+    revised.action_items = [ActionItem(title="Ship release v2", owner="Ana", evidence="Ana: ship v2")]
+
+    new = (await agent._register_approvals(revised, "reporting"))[0]
+
+    assert new.insight_id != old.insight_id
+    assert set(agent._load_state()["approvals"]) == {new.insight_id}
+    with telegram_chat_scope("reporting"):
+        assert await agent.cmd_create_ticket(old.insight_id) == f"Unknown insight id: {old.insight_id}"
+
+
+@pytest.mark.asyncio
+async def test_revised_meeting_keeps_created_approvals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeJira:
+        async def jira_create_issue(self, **kwargs: object) -> dict[str, object]:
+            return {"ok": True, "key": "PROJ-1"}
+
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    agent.wiki_root = None
+    agent.jira_toolkit = FakeJira()
+    created = await _register_ticket(agent)
+    with telegram_chat_scope("reporting"):
+        assert await agent.cmd_create_ticket(created.insight_id) == "Created PROJ-1"
+    revised = _ticket_insights()
+    revised.action_items = [ActionItem(title="Ship release v2", owner="Ana", evidence="Ana: ship v2")]
+
+    new = (await agent._register_approvals(revised, "reporting"))[0]
+
+    approvals = agent._load_state()["approvals"]
+    assert set(approvals) == {created.insight_id, new.insight_id}
+    assert approvals[created.insight_id]["created_ticket"] == "PROJ-1"
+
+
+@pytest.mark.asyncio
+async def test_ticket_params_escape_jira_markup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Transcript text cannot open or close wiki macros or links inside the template."""
+
+    class CapturingJira:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, object] | None = None
+
+        async def jira_create_issue(self, **kwargs: object) -> dict[str, object]:
+            self.kwargs = kwargs
+            return {"ok": True, "key": "PROJ-3"}
+
+    monkeypatch.setattr("parrot.bots.fireflies_insights.FIREFLIES_REGISTRY_DIR", tmp_path)
+    agent = _bare_agent()
+    agent.wiki_root = None
+    jira = CapturingJira()
+    agent.jira_toolkit = jira
+    insights = _ticket_insights()
+    insights.decisions = ["Use {code}retry{code}"]
+    insights.action_items = [ActionItem(title="Fix [parser]", owner="Ana", evidence="{quote}ship it{quote} see [docs]")]
+
+    result = await agent._create_ticket(insights, insights.action_items[0])
+
+    assert result["ok"] is True
+    assert jira.kwargs is not None
+    params = jira.kwargs["template_params"]
+    assert params["evidence"] == r"\{quote\}ship it\{quote\} see \[docs\]"
+    assert params["action_title"] == r"Fix \[parser\]"
+    assert params["decisions"] == [r"Use \{code\}retry\{code\}"]
+    assert params["owner"] == "Ana"
+    assert params["due_date"] is None
+    assert params["meeting_id"] == "meeting-1"
+    assert jira.kwargs["summary"] == "[Weekly sync] Fix [parser]"
