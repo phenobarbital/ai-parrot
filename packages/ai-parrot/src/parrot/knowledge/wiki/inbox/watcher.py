@@ -59,9 +59,6 @@ class FileSample(NamedTuple):
 
 def is_candidate(path: Path, inbox_dir: Path) -> bool:
     """Whether ``path`` is something InboxProcessor.discover() would pick up."""
-    # FILL IN: False when `path` is not under `inbox_dir`, is a directory, or ANY
-    #          component of path.relative_to(inbox_dir) starts with "." — bounded by
-    #          processor.py:167 and the agent's `.tmp` convention (AC2).
     try:
         relative = path.relative_to(inbox_dir)
     except ValueError:
@@ -101,8 +98,6 @@ class StabilityProbe:
 
     async def sample(self, path: Path) -> FileSample | None:
         """Return the current FileSample, or None when the file is gone."""
-        # FILL IN: call self._stat(path) directly when injected, else
-        #          await asyncio.to_thread(os.stat, path); FileNotFoundError -> None.
         try:
             if self._stat is not None:
                 stat_result = self._stat(path)
@@ -114,10 +109,6 @@ class StabilityProbe:
 
     async def is_stable(self, path: Path) -> bool:
         """True iff >=2 samples spanning >= window seconds are all identical."""
-        # FILL IN: window == 0 -> return (await self.sample(path)) is not None.
-        #          Otherwise sample at start, then loop: await self._sleep(poll_interval),
-        #          sample again; any None or any differing sample -> False; stop once
-        #          self._clock() - start >= self.window AND >= 2 samples -> True.
         if self.window == 0:
             return (await self.sample(path)) is not None
 
@@ -251,6 +242,10 @@ class InboxWatcher:
             self._running = True
             try:
                 report = await self._drain_once()
+            except Exception:  # noqa: BLE001 — worker must survive processor errors
+                logger.exception("InboxWatcher: processor run failed; worker continues")
+                self.stats.runs_started += 1  # count the failed attempt
+                continue
             finally:
                 self._running = False
             self.stats.documents_processed += len(report.documents)

@@ -38,8 +38,9 @@ in one path does not block the other, and both are reported in the
 
 ### `/fireflies_sync [N]`
 
-Fetch the latest meetings (default limit: 50) and run the full sync +
+Fetch the latest meetings (default limit: 10, max 200) and run the full sync +
 insights pipeline. The optional numeric argument overrides the fetch limit.
+Only the configured ``public_channel_id`` chat can trigger a sync.
 
 ### `/fireflies_ticket <id>`
 
@@ -52,9 +53,9 @@ the 12-character stable identifier shown in the Telegram notification.
   refused with a clear message.
 - **Idempotency**: confirming the same action item twice returns the
   existing Jira ticket key without creating a duplicate.
-- **Ordering**: the ticket key is persisted to the state file **before**
-  the reply is sent, so a crash after Jira answers cannot cause a second
-  ticket on retry.
+- **Ordering**: confirmations are serialized by an ``asyncio.Lock`` so
+  concurrent callers cannot create duplicate tickets. The ticket key is
+  persisted to the state file before the reply is sent.
 
 ## Jira template
 
@@ -88,5 +89,6 @@ False`); it never creates the database-backed skill store.
 uv pip install "ai-parrot[filesystem-transport-full]"  # for --watch mode
 ```
 
-The Fireflies MCP server (`@anthropic/fireflies-mcp`) must be configured
-and available; the agent connects lazily on first use.
+The Fireflies MCP server must be configured and available (see
+``add_fireflies_mcp_server`` in ``parrot/mcp/integration.py``); the agent
+connects lazily on first use.

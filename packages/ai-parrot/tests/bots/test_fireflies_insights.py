@@ -1,5 +1,6 @@
 """Unit tests for the FEAT-715 FirefliesInsightsAgent data contracts and core."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ def _bare_agent() -> FirefliesInsightsAgent:
     agent.working_memory = None
     agent.public_channel_id = None
     agent._wrapper = None
+    agent._state_lock = asyncio.Lock()
     return agent
 
 
@@ -338,7 +340,8 @@ async def test_one_failing_meeting_does_not_sink_the_run(tmp_path: Path, monkeyp
 
     assert report.fetched == 2
     assert report.dropped_to_inbox == 1
-    assert report.errors == ["bad: disk failure"]
+    assert report.insights_sent == 2  # AC9: insights run independently of drop
+    assert report.errors == ["drop bad: disk failure"]
     assert (tmp_path / "2026-10-22-weekly-sync-good.md").is_file()
 
 

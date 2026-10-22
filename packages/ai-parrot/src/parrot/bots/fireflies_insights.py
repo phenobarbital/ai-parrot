@@ -1,8 +1,4 @@
-"""FirefliesInsightsAgent — Fireflies meetings to wiki inbox, insights, Telegram and Jira (FEAT-715).
-
-This module starts with the data contracts shared by the ingestion path and the
-insight path. The agent class is added by later tasks of the same feature.
-"""
+"""FirefliesInsightsAgent — Fireflies meetings to wiki inbox, insights, Telegram and Jira (FEAT-715)."""
 
 from __future__ import annotations
 
@@ -150,6 +146,7 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         self.jira_toolkit: JiraToolkit | None = None
         self._wrapper: Any = None
         self._mcp_fireflies_initialized = False
+        self._state_lock = asyncio.Lock()
 
     async def configure(self, app=None) -> None:
         """Resolve the inbox dir and load file-only skills (S6)."""
@@ -342,10 +339,18 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
             return report
         report.fetched = len(listing)
         for item in listing:
+            # Gate — must succeed for either path to proceed
             try:
                 meeting = await self._gate_meeting(item, report)
                 if meeting is None:
                     continue
+            except Exception as exc:
+                self.logger.error("FirefliesInsights: gate %s failed: %s", item.get("id"), exc)
+                report.errors.append(f"{item.get('id')}: {exc}")
+                continue
+            processed.append(meeting)
+            # Path 1: Drop to inbox (independent of insights — AC9/G6)
+            try:
                 path = await asyncio.to_thread(self._drop_to_inbox, meeting)
                 report.dropped_to_inbox += 1
                 if self.registry.available:
@@ -360,11 +365,10 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                         summary_fingerprint=meeting.summary_fingerprint,
                         reset_analysis=meeting.metadata.get("classification") == "revise",
                     )
-            except Exception as exc:
-                self.logger.error("FirefliesInsights: meeting %s failed: %s", item.get("id"), exc)
-                report.errors.append(f"{item.get('id')}: {exc}")
-                continue
-            processed.append(meeting)
+            except Exception as exc:  # noqa: BLE001 — AC9: drop failure must not block insights
+                self.logger.error("FirefliesInsights: drop %s failed: %s", meeting.fireflies_id, exc)
+                report.errors.append(f"drop {meeting.fireflies_id}: {exc}")
+            # Path 2: Generate insights and notify (independent of drop — AC9/G6)
             try:
                 insights = await self.generate_insights(
                     meeting.transcript,
@@ -376,9 +380,16 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                     },
                 )
                 delivery = await self.notify_insights(insights)
-                report.insights_sent += int(delivery.get("sent", 0) > 0)
+                sent = delivery.get("sent", 0)
+                report.insights_sent += int(sent > 0)
                 if self.registry.available:
-                    await self.registry.mark_analyzed(meeting.fireflies_id, meeting.fingerprint)
+                    if sent > 0 and not delivery.get("errors"):
+                        await self.registry.mark_analyzed(meeting.fireflies_id, meeting.fingerprint)
+                    else:
+                        await self.registry.mark_analysis_failed(
+                            meeting.fireflies_id,
+                            f"delivery incomplete: sent={sent} errors={delivery.get('errors', [])}",
+                        )
             except Exception as exc:  # noqa: BLE001 — G6: insights never block ingestion
                 self.logger.error("FirefliesInsights: insights for %s failed: %s", meeting.fireflies_id, exc)
                 report.errors.append(f"insights {meeting.fireflies_id}: {exc}")
@@ -440,13 +451,22 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         return "\n".join(lines)
 
     def _chunk_message(self, text: str) -> list[str]:
-        """Split text on line boundaries and hard-split lines that exceed the budget."""
+        """Split text on line boundaries; word-split lines that exceed the budget.
+
+        Word-boundary splitting avoids cutting inside HTML entities (``&amp;``)
+        or tags, which would cause Telegram ``parse_mode="HTML"`` errors.
+        """
         budget = self._TELEGRAM_MAX_MESSAGE - self._TELEGRAM_PART_RESERVE
         pieces: list[str] = []
         for line in text.splitlines(keepends=True):
             while len(line) > budget:
-                pieces.append(line[:budget])
-                line = line[budget:]
+                # Find the last space within budget to split at a word boundary
+                split_at = line.rfind(" ", 0, budget)
+                if split_at <= 0:
+                    # No space found — fall back to hard split as a last resort
+                    split_at = budget
+                pieces.append(line[:split_at])
+                line = line[split_at:].lstrip(" ")
             if line:
                 pieces.append(line)
         if not pieces:
@@ -565,38 +585,40 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
     async def cmd_create_ticket(self, text: str = "") -> str:
         """Create one Jira ticket only after an authorized human confirmation."""
         insight_id = text.strip()
-        state = await asyncio.to_thread(self._load_state)
-        raw = state.get("approvals", {}).get(insight_id)
-        if raw is None:
-            return f"Unknown insight id: {insight_id or '(none)'}"
-        approval = PendingApproval.model_validate(raw)
-        if approval.created_ticket:
-            return f"Already created: {approval.created_ticket}"
-        chat_id = get_current_telegram_chat_id()
-        now = datetime.now(timezone.utc)
-        try:
-            expired = datetime.fromisoformat(approval.expires_at) <= now
-        except ValueError:
-            expired = True
-        if not await self._authorize(approval, chat_id, None):
-            if expired:
-                return "Confirmation expired"
-            return "Confirmation refused: not the reporting chat"
-        try:
-            insights = MeetingInsights.model_validate(state["insights"][approval.fireflies_id])
-            item = insights.action_items[approval.action_index]
-        except (IndexError, KeyError, TypeError, ValueError):
-            return "Insight details are no longer available"
-        result = await self._create_ticket(insights, item)
-        if not result.get("ok"):
-            return f"Jira ticket creation failed: {result.get('error', 'unknown error')}"
-        ticket_key = result.get("key")
-        if not ticket_key:
-            return "Jira ticket creation failed: Jira returned no ticket key"
-        approval.created_ticket = str(ticket_key)
-        state["approvals"][insight_id] = approval.model_dump(mode="json")
-        await asyncio.to_thread(self._save_state, state)
-        return f"Created {ticket_key}"
+        async with self._state_lock:
+            state = await asyncio.to_thread(self._load_state)
+            raw = state.get("approvals", {}).get(insight_id)
+            if raw is None:
+                return f"Unknown insight id: {insight_id or '(none)'}"
+            approval = PendingApproval.model_validate(raw)
+            # Authorize before revealing existing ticket info (S2)
+            chat_id = get_current_telegram_chat_id()
+            now = datetime.now(timezone.utc)
+            try:
+                expired = datetime.fromisoformat(approval.expires_at) <= now
+            except ValueError:
+                expired = True
+            if not await self._authorize(approval, chat_id, None):
+                if expired:
+                    return "Confirmation expired"
+                return "Confirmation refused: not the reporting chat"
+            if approval.created_ticket:
+                return f"Already created: {approval.created_ticket}"
+            try:
+                insights = MeetingInsights.model_validate(state["insights"][approval.fireflies_id])
+                item = insights.action_items[approval.action_index]
+            except (IndexError, KeyError, TypeError, ValueError):
+                return "Insight details are no longer available"
+            result = await self._create_ticket(insights, item)
+            if not result.get("ok"):
+                return f"Jira ticket creation failed: {result.get('error', 'unknown error')}"
+            ticket_key = result.get("key")
+            if not ticket_key:
+                return "Jira ticket creation failed: Jira returned no ticket key"
+            approval.created_ticket = str(ticket_key)
+            state["approvals"][insight_id] = approval.model_dump(mode="json")
+            await asyncio.to_thread(self._save_state, state)
+            return f"Created {ticket_key}"
 
     async def _authorize(self, approval: PendingApproval, chat_id: str | None, user_id: str | None) -> bool:
         """Require the reporting chat, an unexpired approval, and a known-user match."""
@@ -656,7 +678,10 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
     @telegram_command("fireflies_sync", description="Fetch and report the latest meetings", parse_mode="raw")
     async def cmd_sync(self, text: str = "") -> str:
         """Run an on-demand sync; a numeric argument overrides the default limit."""
-        limit = int(text) if text.strip().isdigit() else 10
+        chat_id = get_current_telegram_chat_id()
+        if self.public_channel_id and str(chat_id) != str(self.public_channel_id):
+            return "Sync refused: not the configured channel"
+        limit = min(int(text), 200) if text.strip().isdigit() else 10
         report = await self.sync_meetings(limit=limit)
         return (
             f"Fireflies: fetched={report.fetched} skipped={report.skipped} "

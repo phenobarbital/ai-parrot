@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,6 +79,7 @@ def agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FirefliesInsightsA
 
     # Stub registry as unavailable so _gate_meeting takes the simple path
     agent.registry = SimpleNamespace(available=False)
+    agent._state_lock = asyncio.Lock()
 
     # Stub MCP
     agent._ensure_fireflies_mcp = AsyncMock()
@@ -115,11 +117,10 @@ def agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FirefliesInsightsA
 
 @pytest.mark.asyncio
 async def test_insights_survive_drop_failure(agent: FirefliesInsightsAgent, monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC9: when _drop_to_inbox fails for one meeting, the next meeting's insights still send.
+    """AC9: when _drop_to_inbox fails, insights for that meeting are still generated.
 
-    With TASK-4571's structure the insight step runs only after a successful drop.
-    So when the first meeting's drop fails, that meeting is skipped entirely (its
-    insights are never generated). The second meeting proceeds normally.
+    The drop and insight paths are independent (AC9/G6): a drop failure must
+    not suppress insight generation for the same meeting.
     """
     # Two meetings: first one will fail to drop, second succeeds
     listing = [
@@ -142,10 +143,11 @@ async def test_insights_survive_drop_failure(agent: FirefliesInsightsAgent, monk
 
     report = await agent.sync_meetings(limit=2)
 
-    # The failed meeting is reported in errors
+    # The drop failure is reported in errors
     assert any("m-fail" in err for err in report.errors)
-    # The second meeting's insights were still sent
-    assert report.insights_sent == 1
+    # Both meetings' insights were sent (drop is independent of insights)
+    assert report.insights_sent == 2
+    # Only the second meeting was dropped to inbox
     assert report.dropped_to_inbox == 1
 
 

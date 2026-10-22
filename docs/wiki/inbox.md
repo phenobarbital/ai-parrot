@@ -247,8 +247,8 @@ is never a concurrent write to the wiki project.
 
 - **Stability window**: a file is not processed until its size and
   mtime have been unchanged for `inbox.stability_window` seconds
-  (default 2.0), polled every `inbox.stability_poll_interval` seconds
-  (default 0.5). The whole inbox must be stable before a run starts —
+  (default 3.0), polled every `inbox.stability_poll_interval` seconds
+  (default 1.5). The whole inbox must be stable before a run starts —
   a single still-changing file defers all candidates.
 - **Dot-prefixed files are ignored**: files whose name (or any parent
   component inside the inbox) starts with `.` are never candidates.
