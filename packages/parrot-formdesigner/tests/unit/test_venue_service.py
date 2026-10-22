@@ -250,7 +250,9 @@ class TestLocations:
     @pytest.mark.asyncio
     async def test_duplicate_location_raises(self) -> None:
         conn = _make_conn(
-            fetchrow_side_effect=Exception("23505 unique violation")
+            fetchrow_side_effect=Exception(
+                'duplicate key value violates unique constraint "uq_location_site_name"'
+            )
         )
         svc = VenueService(_make_pool(conn))
         with pytest.raises(DuplicateVenueError):

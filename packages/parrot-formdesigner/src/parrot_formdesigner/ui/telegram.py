@@ -12,7 +12,7 @@ from pathlib import Path
 import jinja2
 from aiohttp import web
 
-from ..api.tenant import declared_tenant
+from ..core.tenant import declared_tenant
 from ..renderers.html5 import HTML5Renderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
