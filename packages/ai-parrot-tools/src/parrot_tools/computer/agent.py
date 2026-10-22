@@ -26,7 +26,7 @@ class ComputerAgent(Agent):
     """Agent configured for vision-based browser automation via computer-use.
 
     Uses a Google Gemini computer-use model (default:
-    ``gemini-2.5-computer-use-preview-10-2025``). Composes
+    ``gemini-3.8-flash``). Composes
     :class:`ComputerInteractionToolkit` for all 13 predefined browser
     actions plus screenshot, recording, and loop execution. Optionally
     composes :class:`~parrot_tools.scraping.toolkit.WebScrapingToolkit`
@@ -72,7 +72,7 @@ class ComputerAgent(Agent):
     def __init__(
         self,
         *,
-        model: str = "gemini-2.5-computer-use-preview-10-2025",
+        model: str = "gemini-3.8-flash",
         viewport: tuple[int, int] = (1280, 720),
         headless: bool = True,
         initial_url: str = "https://www.google.com",
@@ -100,7 +100,7 @@ class ComputerAgent(Agent):
         self._safety_approvers = safety_approvers
         self._safety_timeout = safety_timeout
         # Computer-use is Google-only (see spec Non-Goals). Bare model strings
-        # like "gemini-2.5-computer-use-preview-10-2025" fail provider
+        # like "gemini-3.8-flash" fail provider
         # resolution ("Unsupported LLM: 'gemini-...'"), so prefix the Google
         # provider when the caller did not specify one.
         if ":" not in model:
@@ -140,6 +140,7 @@ class ComputerAgent(Agent):
         if client is not None:
             try:
                 client._computer_use_safety_handler = self._safety_handler
+                client.computer_use = True
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("ComputerAgent: could not wire safety handler: %s", exc)
 
