@@ -87,7 +87,9 @@ def test_ensure_shared_cost_calculator_honors_pricing_path(monkeypatch: Any) -> 
         def __init__(self, *, override_path: str | None = None) -> None:
             created.append(override_path)
 
-    monkeypatch.setattr(navconfig.config, "get", lambda key, fallback=None: "/tmp/pricing" if key == "PARROT_PRICING_PATH" else fallback)
+    monkeypatch.setattr(
+        navconfig.config, "get", lambda key, fallback=None: "/tmp/pricing" if key == "PARROT_PRICING_PATH" else fallback
+    )
     monkeypatch.setattr(calculator_module, "CostCalculator", _Calculator)
     set_shared_cost_calculator(None)
     try:
