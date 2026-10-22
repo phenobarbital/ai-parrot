@@ -35,7 +35,7 @@
       "feature_id": "FEAT-618",
       "feature": "tests-test-wheel-layout-tech-debt",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -43,8 +43,9 @@
       "parallelism_notes": "Both modify packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py: TASK-3908 rewrites its `from tests.unit.test_api_feat300 import ...` (line 32), this task fixes the helper it imports.",
       "assigned_to": null,
       "started_at": "2026-10-22T14:21:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3910-formdesigner-tenant-test-double.md"
+      "completed_at": "2026-10-22T14:32:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3910-formdesigner-tenant-test-double.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3911",
