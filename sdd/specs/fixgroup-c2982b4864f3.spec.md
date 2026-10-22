@@ -51,8 +51,8 @@ conflicts vanish into `/dev/null` while false ones are shouted at the operator.
 - G1. `ledger audit` reports a `claim_conflicts` count, recomputed **statelessly**
   from the committed log on every call — never read from a prior import report.
 - G2. Only *live* claims — the last `issue.claimed` per subject that was not
-  superseded by a later `issue.unclaimed` / `issue.closed` in the same imported
-  batch — can produce a `ClaimConflict`.
+  superseded by a later `issue.unclaimed`, `issue.closed` or `issue.superseded`
+  in the same imported batch — can produce a `ClaimConflict`.
 - G3. The existing first-claim-wins reducer is untouched: the local claimant
   stays the winner locally, exactly as FEAT-694 §8 Q1 resolved.
 - G4. The superseded-claim filter is one pure, separately testable function
@@ -126,8 +126,8 @@ def live_claims(events: Sequence[LedgerEvent]) -> list[LedgerEvent]:
     """Return the ``issue.claimed`` events that still stand within ``events``.
 
     Walks ``events`` in order, keeping at most one claim per subject — the most
-    recent one — and dropping a subject entirely when an ``issue.unclaimed`` or
-    ``issue.closed`` for it follows its last claim. Pure: no I/O, no mutation of
+    recent one — and dropping a subject entirely when an ``issue.unclaimed`` or a terminal
+    ``issue.closed`` / ``issue.superseded`` for it follows its last claim. Pure: no I/O, no mutation of
     the input. This is the ONLY definition of a live claim; the import path and
     the audit path must both route through it (G4).
     """
@@ -157,9 +157,9 @@ def live_claims(events: Sequence[LedgerEvent]) -> list[LedgerEvent]:
   def live_claims(events: Sequence[LedgerEvent]) -> list[LedgerEvent]:
       """Return the last un-superseded ``issue.claimed`` per subject, in claim order.
 
-      A subject's claim is dropped when a later ``issue.unclaimed`` or
-      ``issue.closed`` for the same subject appears in ``events``; a later
-      ``issue.claimed`` replaces an earlier one.
+      A subject's claim is dropped when a later ``issue.unclaimed`` or a
+      terminal ``issue.closed`` / ``issue.superseded`` for the same subject
+      appears in ``events``; a later ``issue.claimed`` replaces an earlier one.
       """
 
   def import_events(
@@ -231,7 +231,7 @@ def live_claims(events: Sequence[LedgerEvent]) -> list[LedgerEvent]:
 | Test | Module | Description |
 |---|---|---|
 | `test_live_claims_drops_superseded_claim` | M1 | "A claims → A unclaims → B claims" yields only B's claim |
-| `test_live_claims_drops_closed_subject` | M1 | a claim followed by `issue.closed` for the same subject yields nothing |
+| `test_live_claims_drops_closed_subject` | M1 | a claim followed by `issue.closed` — and, parametrized, `issue.superseded` — for the same subject yields nothing |
 | `test_live_claims_keeps_last_claim_per_subject` | M1 | two consecutive claims with no unclaim yield only the later one |
 | `test_live_claims_is_pure` | M1 | the input sequence is not mutated and non-claim kinds are ignored |
 | `test_import_ignores_superseded_claim` | M1+M2 | `import_shared_log` reports **no** `ClaimConflict` for the "A claims, A unclaims, B claims" committed history |
@@ -268,8 +268,8 @@ history is produced on the foreign service with
 ## 5. Acceptance Criteria
 
 - [ ] AC1. `live_claims` exists in `shared_log.py`, is pure, and drops a claim
-      superseded by a later `issue.unclaimed` **or** `issue.closed` for the same
-      subject, keeping only the last live claim per subject in claim order.
+      superseded by a later `issue.unclaimed`, `issue.closed` **or**
+      `issue.superseded` for the same subject, keeping only the last live claim per subject in claim order.
 - [ ] AC2. `import_events` returns only live claims, so a committed history of
       "A claims → A unclaims → B claims" produces **zero** `ClaimConflict`s and
       **no** `⚠️ claim conflict` CLI line.
@@ -377,7 +377,7 @@ An issue state dict (from `_all_issues`) carries `status` (`"open"` /
 - ~~`LedgerService.unclaim_issue`~~ — `unclaim` lives on the service (`service.py:426`); `unclaim_issue` is `LedgerIndex`'s (`index.py:497`).
 - ~~a `sym:` prefix on this issue's `about`~~ — `issue:fe3480881432`'s `about` is a bare path, which is why the fix planner reported `files: []` and fell back to the `fixgroup-…` slug. Do not "fix" the slug.
 - ~~`packages/ai-parrot/tests/knowledge/wiki/`~~ — these ledger tests live at the **repo root**: `tests/knowledge/wiki/`.
-- ~~`issue.unclaim` / `issue.claim`~~ — the event kinds are `issue.claimed`, `issue.unclaimed`, `issue.closed` (`index.py:519`, `service.py` usage).
+- ~~`issue.unclaim` / `issue.claim`~~ — the event kinds are `issue.claimed`, `issue.unclaimed`, `issue.closed`, `issue.superseded` (verified: `ledger/events.py:9-13`).
 
 ### Edit Sites (Blueprint Anchors)
 
