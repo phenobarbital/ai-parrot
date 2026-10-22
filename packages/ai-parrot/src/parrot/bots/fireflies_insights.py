@@ -7,6 +7,7 @@ insight path. The agent class is added by later tasks of the same feature.
 from __future__ import annotations
 
 import asyncio
+import html
 import os
 import re
 from pathlib import Path
@@ -20,7 +21,9 @@ from parrot.agents.meeting_registry import MeetingRegistry, fingerprint
 from parrot.agents.obsidian import FirefliesObsidianAgent
 from parrot.bots.agent import Agent
 from parrot.conf import AGENTS_DIR
+from parrot.integrations.telegram import telegram_command
 from parrot.knowledge.wiki.project import find_project_root, load_effective_config
+from parrot.models.responses import InvokeResult
 from parrot.registry import register_agent
 from parrot.skills.mixin import SkillRegistryMixin
 from parrot.tools.working_memory import WorkingMemoryToolkit
@@ -99,6 +102,13 @@ class InsightRunReport(BaseModel):
 @register_agent(name="fireflies_insights")
 class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
     """Fireflies meetings → wiki inbox + insights → Telegram → Jira (FEAT-715)."""
+
+    _TELEGRAM_MAX_MESSAGE = 4096
+    _TELEGRAM_PART_RESERVE = 32
+    _INSIGHTS_SYSTEM_PROMPT = (
+        "You extract decisions, risks/blockers and action items from a meeting. "
+        "Quote evidence verbatim from the transcript. Never invent owners or dates."
+    )
 
     #: S6 — never build the DB-backed registry at AGENTS_DIR/{agent_id}/skills.
     enable_skill_registry: bool = False
@@ -348,7 +358,145 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                 report.errors.append(f"{item.get('id')}: {exc}")
                 continue
             processed.append(meeting)
+            try:
+                insights = await self.generate_insights(
+                    meeting.transcript,
+                    meeting.summary,
+                    {
+                        "fireflies_id": meeting.fireflies_id,
+                        "title": meeting.title,
+                        "date": meeting.meeting_date,
+                    },
+                )
+                delivery = await self.notify_insights(insights)
+                report.insights_sent += int(delivery.get("sent", 0) > 0)
+                if self.registry.available:
+                    await self.registry.mark_analyzed(meeting.fireflies_id, meeting.fingerprint)
+            except Exception as exc:  # noqa: BLE001 — G6: insights never block ingestion
+                self.logger.error("FirefliesInsights: insights for %s failed: %s", meeting.fireflies_id, exc)
+                report.errors.append(f"insights {meeting.fireflies_id}: {exc}")
+                if self.registry.available:
+                    await self.registry.mark_analysis_failed(meeting.fireflies_id, str(exc))
         return report
+
+    async def generate_insights(self, transcript: str, summary: str, meta: dict[str, Any]) -> MeetingInsights:
+        """Generate validated insights while isolating per-meeting working memory."""
+        if self._llm is None:
+            raise RuntimeError("FirefliesInsightsAgent has no LLM client configured")
+        meeting_id = str(meta["fireflies_id"])
+        keys = (f"meeting:{meeting_id}:transcript", f"meeting:{meeting_id}:summary")
+        try:
+            if self.working_memory is not None:
+                await self.working_memory.store_result(keys[0], transcript)
+                await self.working_memory.store_result(keys[1], summary)
+            prompt = (
+                f"Meeting title: {meta.get('title', '')}\n"
+                f"Meeting date: {meta.get('date', '')}\n\n"
+                f"Fireflies summary:\n{summary}\n\n"
+                f"Transcript:\n{transcript}"
+            )
+            result: InvokeResult = await self._llm.invoke(
+                prompt,
+                output_type=MeetingInsights,
+                system_prompt=self._INSIGHTS_SYSTEM_PROMPT,
+            )
+            if not isinstance(result.output, MeetingInsights):
+                raise ValueError("LLM did not return a valid MeetingInsights result")
+            return result.output
+        finally:
+            if self.working_memory is not None:
+                for key in keys:
+                    await self.working_memory.drop_stored(key)
+
+    def _format_insights_message(self, insights: MeetingInsights) -> str:
+        """Render Telegram HTML with every insight interpolation escaped."""
+        title = html.escape(insights.meeting_title)
+        meeting_date = html.escape(insights.meeting_date)
+        lines = [f"<b>{title}</b> · {meeting_date}"]
+        if insights.decisions:
+            lines.extend(["", "<b>Decisions</b>"])
+            lines.extend(f"{index}. {html.escape(decision)}" for index, decision in enumerate(insights.decisions, 1))
+        if insights.risks:
+            lines.extend(["", "<b>Risks</b>"])
+            lines.extend(f"{index}. {html.escape(risk)}" for index, risk in enumerate(insights.risks, 1))
+        if insights.action_items:
+            lines.extend(["", "<b>Action items</b>"])
+            for index, item in enumerate(insights.action_items, 1):
+                details = []
+                if item.owner:
+                    details.append(f"owner: {html.escape(item.owner)}")
+                if item.due_date:
+                    details.append(f"due: {html.escape(item.due_date)}")
+                suffix = f" — {'; '.join(details)}" if details else ""
+                lines.append(f"{index}. {html.escape(item.title)}{suffix}")
+                lines.append(f"   Evidence: {html.escape(item.evidence)}")
+        return "\n".join(lines)
+
+    def _chunk_message(self, text: str) -> list[str]:
+        """Split text on line boundaries and hard-split lines that exceed the budget."""
+        budget = self._TELEGRAM_MAX_MESSAGE - self._TELEGRAM_PART_RESERVE
+        pieces: list[str] = []
+        for line in text.splitlines(keepends=True):
+            while len(line) > budget:
+                pieces.append(line[:budget])
+                line = line[budget:]
+            if line:
+                pieces.append(line)
+        if not pieces:
+            pieces = [""]
+
+        chunks = [pieces[0]]
+        for piece in pieces[1:]:
+            if len(chunks[-1]) + len(piece) <= budget:
+                chunks[-1] += piece
+            else:
+                chunks.append(piece)
+        if len(chunks) == 1:
+            return chunks
+        total = len(chunks)
+        return [f"(part {part}/{total})\n{chunk}" for part, chunk in enumerate(chunks, 1)]
+
+    def set_wrapper(self, wrapper: Any) -> None:
+        """Attach the Telegram wrapper for proactive delivery."""
+        self._wrapper = wrapper
+
+    def _get_telegram_bot(self) -> Any:
+        """Return the wrapper's aiogram bot, or ``None``."""
+        return getattr(self._wrapper, "bot", None) if self._wrapper is not None else None
+
+    async def notify_insights(self, insights: MeetingInsights) -> dict[str, Any]:
+        """Send insights to the public channel without propagating send failures."""
+        bot = self._get_telegram_bot()
+        if bot is None:
+            return {"sent": 0, "reason": "no telegram wrapper"}
+        if not self.public_channel_id:
+            return {"sent": 0, "reason": "no public_channel_id configured"}
+        text = self._format_insights_message(insights)
+        sent = 0
+        errors = []
+        for chunk in self._chunk_message(text):
+            try:
+                await bot.send_message(
+                    chat_id=self.public_channel_id,
+                    text=chunk,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                sent += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("FirefliesInsights: send to chat %s failed: %s", self.public_channel_id, exc)
+                errors.append(f"{self.public_channel_id}: {exc}")
+        return {"sent": sent, "errors": errors, "chat_id": self.public_channel_id}
+
+    @telegram_command("fireflies_sync", description="Fetch and report the latest meetings", parse_mode="raw")
+    async def cmd_sync(self, text: str = "") -> str:
+        """Run an on-demand sync; a numeric argument overrides the default limit."""
+        limit = int(text) if text.strip().isdigit() else 10
+        report = await self.sync_meetings(limit=limit)
+        return (
+            f"Fireflies: fetched={report.fetched} skipped={report.skipped} "
+            f"dropped={report.dropped_to_inbox} sent={report.insights_sent} errors={len(report.errors)}"
+        )
 
     async def _gate_meeting(self, item: dict[str, Any], report: InsightRunReport) -> FirefliesMeeting | None:
         """Classify an item and return its populated meeting unless it should be skipped."""
