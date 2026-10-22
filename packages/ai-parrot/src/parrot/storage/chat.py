@@ -191,6 +191,7 @@ class ChatStorage:
                     tools_used=[tc.name for tc in tool_call_objs],
                     timestamp=now,
                     metadata={
+                        **(metadata or {}),
                         "output_mode": output_mode,
                         "model": model,
                         "provider": provider,
