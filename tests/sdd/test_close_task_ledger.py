@@ -148,3 +148,81 @@ class TestTaskClosedEmission:
         assert (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").exists()
         assert "ledger emission skipped" in result.stderr
         assert _read_events(repo) == []
+
+
+def _unimportable_python3(tmp_path: Path) -> Path:
+    """Write a `python3` that cannot import parrot, and return its directory.
+
+    The stub exits non-zero without reading stdin, so if `close_task.sh` ever
+    falls back to PATH for the ledger emission the event is lost exactly as in
+    issue:79901cd6b884 — which is what makes the two tests below meaningful.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "python3"
+    stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return bin_dir
+
+
+def _run_close_task_with_env(repo: Path, env: dict, verification: str = "verified"):
+    """Like `_run_close_task`, but with a caller-supplied environment."""
+    return subprocess.run(
+        ["bash", str(CLOSE_TASK_SH), "TASK-9001", "demo-feature", verification],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+class TestInterpreterResolution:
+    """FEAT-718: the emission must not depend on which python3 PATH resolves."""
+
+    def test_emission_survives_a_path_without_an_importable_python3(self, tmp_path):
+        """issue:79901cd6b884: PATH's python3 cannot import parrot, event still lands."""
+        repo = _init_repo(tmp_path)
+        env = _worktree_python_env()
+        env.pop("VIRTUAL_ENV", None)
+        env.pop("SDD_LEDGER_PYTHON", None)
+        env["PATH"] = f"{_unimportable_python3(tmp_path)}:/usr/bin:/bin"
+
+        result = _run_close_task_with_env(repo, env)
+
+        assert result.returncode == 0, result.stderr
+        events = _read_events(repo)
+        assert len(events) == 1, result.stderr
+        assert events[0]["kind"] == "task.closed"
+        assert events[0]["subject"] == "task:TASK-9001"
+        assert events[0]["payload"]["verification"] == "verified"
+
+    def test_sdd_ledger_python_override_is_honoured(self, tmp_path):
+        """An executable SDD_LEDGER_PYTHON wins over every other candidate."""
+        repo = _init_repo(tmp_path)
+        stub = _unimportable_python3(tmp_path) / "python3"
+        env = _worktree_python_env()
+        env["SDD_LEDGER_PYTHON"] = str(stub)
+
+        result = _run_close_task_with_env(repo, env)
+
+        # The override is obeyed: the stub cannot emit, so closure still
+        # succeeds (best-effort emission) but no event is written — and the
+        # warning names the interpreter that failed.
+        assert result.returncode == 0, result.stderr
+        assert (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").exists()
+        assert _read_events(repo) == []
+        assert "ledger emission skipped" in result.stderr
+        assert str(stub) in result.stderr
+
+    def test_non_executable_override_is_ignored(self, tmp_path):
+        """A stale SDD_LEDGER_PYTHON export can never break task closure."""
+        repo = _init_repo(tmp_path)
+        env = _worktree_python_env()
+        env["SDD_LEDGER_PYTHON"] = str(tmp_path / "nope" / "python")
+
+        result = _run_close_task_with_env(repo, env)
+
+        assert result.returncode == 0, result.stderr
+        events = _read_events(repo)
+        assert len(events) == 1, result.stderr
+        assert events[0]["subject"] == "task:TASK-9001"

@@ -28,6 +28,21 @@
 #   1  usage error
 #   2  active file not found AND no completed twin (nothing to close)
 #   3  post-condition failed (active copy still present) — must never happen
+#
+# Ledger emission interpreter:
+#   The task.closed emission below needs an interpreter that can import
+#   `parrot`. PATH's python3 is that interpreter only in a shell that ran
+#   `source .venv/bin/activate` — not in dev-loop coder seats, sandboxed
+#   worktree agents or CI — and a failed import is swallowed (the emission is
+#   best-effort), silently dropping the event. So the interpreter is resolved
+#   explicitly; the first executable candidate wins:
+#     1. $SDD_LEDGER_PYTHON          (operator override; ignored when not -x)
+#     2. <this script's main checkout>/.venv/bin/python   (cf. codex_hook.sh)
+#     3. $VIRTUAL_ENV/bin/python     (an activated venv)
+#     4. python3                     (last resort)
+#   Candidate 2 is derived from ${BASH_SOURCE[0]}, never from $PWD: this script
+#   is routinely run with a cwd in a different repo (the ledger test fixtures)
+#   or from a linked worktree, neither of which holds a .venv.
 set -euo pipefail
 
 TASK_ID="${1:-}"
@@ -121,11 +136,34 @@ echo "✅ ${TASK_ID} closed (verification=${VERIFICATION}). active/ is clean."
 # later applies the event. Emission is best-effort: any failure (missing
 # parrot.knowledge.wiki package, unwritable shared root, ...) is logged and
 # swallowed, never turning an otherwise-successful closure into a failure.
-python3 - "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION" <<'PYEOF' || true
+#
+# Resolve an interpreter that can import parrot (see the header). Candidates are
+# checked for existence only — never probed by running them.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_COMMON_DIR="$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+SCRIPT_CHECKOUT=""
+if [[ -n "$SCRIPT_COMMON_DIR" ]]; then
+  SCRIPT_CHECKOUT="$(dirname "$SCRIPT_COMMON_DIR")"
+fi
+PY_BIN="python3"
+for candidate in \
+  "${SDD_LEDGER_PYTHON:-}" \
+  "${SCRIPT_CHECKOUT:+$SCRIPT_CHECKOUT/.venv/bin/python}" \
+  "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"; do
+  if [[ -n "$candidate" && -x "$candidate" ]]; then
+    PY_BIN="$candidate"
+    break
+  fi
+done
+# The `if !` wrapper (rather than a bare `|| true`): when the interpreter
+# itself cannot run, the Python-level handler below never executes, so this is
+# the only place the operator would ever hear about it. Closure succeeds
+# either way — a ledger failure never undoes a completed closure.
+if ! "$PY_BIN" - "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION" "$PY_BIN" <<'PYEOF'
 import sys
 from pathlib import Path
 
-task_id, feature_slug, verification = sys.argv[1:4]
+task_id, feature_slug, verification, py_bin = sys.argv[1:5]
 # Resolve the cwd BEFORE importing parrot: parrot.knowledge.wiki.project pulls
 # in parrot.bots -> navigator, and navconfig os.chdir()s to its own project
 # root on import, which would redirect the event to the wrong ledger.
@@ -148,5 +186,8 @@ try:
     )
     LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
 except Exception as exc:  # noqa: BLE001 — ledger emission never blocks closure
-    print(f"⚠️  task.closed ledger emission skipped: {exc}", file=sys.stderr)
+    print(f"⚠️  task.closed ledger emission skipped ({py_bin}): {exc}", file=sys.stderr)
 PYEOF
+then
+  echo "⚠️  task.closed ledger emission skipped (${PY_BIN} exited non-zero)" >&2
+fi
