@@ -20,7 +20,7 @@ def test_client_tenant_ignored_and_resolved_tenant_passed() -> None:
     assert 'if data.pop("tenant", None) is not None:' in source
     assert "Ignoring client-supplied 'tenant' for agent %s (FEAT-707)" in source
     assert "tenant = await resolve_request_tenant(app, self.request)" in source
-    assert source.count("tenant=tenant,") == 3
+    assert source.count("tenant=tenant,") == 4  # ask, ask_stream, stream handler, _format_response
 
 
 def test_save_turn_metadata_both_paths() -> None:

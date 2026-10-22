@@ -2082,6 +2082,7 @@ class AgentTalk(BaseView):
             agent_name=agent.name,
             session_id=session_id,
             client_message_id=client_message_id,
+            tenant=tenant,
         )
 
     async def patch(self):
@@ -2829,6 +2830,7 @@ class AgentTalk(BaseView):
         agent_name: str = None,
         session_id: str = None,
         client_message_id: str = None,
+        tenant: Optional[str] = None,
     ) -> web.Response:
         """
         Format the response based on the requested output format.
