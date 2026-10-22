@@ -322,10 +322,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Delivered by seat minimax (nova, minimax.minimax-m2.5), 1 attempt, 212s. Docs-only; no code validation applicable. Worker review: policies, wire shapes, ack flag and quota parameters checked against the merged code; no defects.

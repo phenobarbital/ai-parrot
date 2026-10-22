@@ -44,6 +44,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 
 from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
+from ..services.llm_quota import LLMQuota
 from ..services.sinks.factory import SinkFactory
 from . import controls as controls_module
 from . import file_upload as file_upload_module
@@ -212,6 +213,7 @@ def setup_form_api(
     alias_registry: "SinkAliasRegistry | None" = None,
     public_base_url: str | None = None,
     teams_renderer: "AbstractFormRenderer | None" = None,
+    llm_quota: "LLMQuota | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -363,6 +365,9 @@ def setup_form_api(
     # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).
     # plausibility=None here — the audio engine runs its own check at REVIEW and passes the report in.
     app["submission_pipeline"] = handler._build_submission_pipeline()
+    quota = llm_quota if llm_quota is not None else LLMQuota()
+    handler.llm_quota = quota
+    _stash_without_clobbering(app, "llm_quota", quota)
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
