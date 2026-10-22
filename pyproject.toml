@@ -303,3 +303,34 @@ disable = ["C0330", "C0326", "W1203"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.parrot.worktree]
+# Native build artifacts a fresh `git worktree add` cannot carry, because every
+# one of them is gitignored. `ensure_worktree` and the sdd-coder pool copy these
+# from the main checkout into a new worktree before any agent runs in it, and
+# build them there when they are missing (FEAT-722).
+enabled = true
+
+[[tool.parrot.worktree.native_group]]
+name = "cython-core"
+copy_globs = ["packages/ai-parrot/src/parrot/**/*.so"]
+pair_sources = ["packages/ai-parrot/src/parrot/**/*.pyx"]
+abi_scoped = true
+autobuild = true
+build = ["{python}", "setup.py", "build_ext", "--inplace"]
+build_cwd = "packages/ai-parrot"
+build_timeout_s = 900
+manual_hint = "cd packages/ai-parrot && python setup.py build_ext --inplace"
+
+[[tool.parrot.worktree.native_group]]
+name = "navrules-pyo3"
+copy_globs = ["packages/navrules/src/navrules/_native/*.so"]
+required = true
+# abi3-py311: one .so covers CPython 3.11-3.13, so presence is NOT ABI-scoped.
+abi_scoped = false
+autobuild = true
+# `build-rust-wheel`, never the Makefile's `build-rust` (= `maturin develop`,
+# which reinstalls navrules into the SHARED venv — banned in automated paths).
+build = ["make", "-C", "packages/navrules", "build-rust-wheel"]
+build_timeout_s = 900
+manual_hint = "make -C packages/navrules build-rust-wheel"
