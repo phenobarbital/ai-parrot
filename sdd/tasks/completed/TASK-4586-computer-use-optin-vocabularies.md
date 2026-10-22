@@ -239,10 +239,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+Implemented by an sdd-coder seat; merged manually by the orchestrator because engine task-tier validation was unavailable (attempt had no execution_id). Task tests re-run green in the sub-worktree. TASK-4582: orchestrator removed a duplicated `generate` body left by the coder (fix commit 4b7c7f4c).

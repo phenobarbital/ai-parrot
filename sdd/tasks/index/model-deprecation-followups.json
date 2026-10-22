@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T01:30:58+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T12:56:11+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -50,25 +50,26 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies — first task of the video lane; owns reel/profiles.py",
+      "parallelism_notes": "no dependencies \u2014 first task of the video lane; owns reel/profiles.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4581-video-registry-omni-default.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4581-video-registry-omni-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4582",
       "slug": "omni-multi-output",
-      "title": "OmniClipAdapter.generate_many — N videos in one Interactions request",
+      "title": "OmniClipAdapter.generate_many \u2014 N videos in one Interactions request",
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -77,18 +78,19 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4581: reads VideoModelProfile.max_outputs_per_request (reel/profiles.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4582-omni-multi-output.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:44:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4582-omni-multi-output.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4583",
       "slug": "registry-routed-video-facade",
-      "title": "Registry-routed video_generation / generate_videos façade",
+      "title": "Registry-routed video_generation / generate_videos fa\u00e7ade",
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -98,9 +100,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4581 (VideoRequestOptions, validate_request in reel/profiles.py) and TASK-4582 (OmniClipAdapter.generate_many in reel/omni.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4583-registry-routed-video-facade.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4583-registry-routed-video-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4584",
@@ -109,7 +112,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -118,9 +121,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4583: relies on generate_videos resolving model=None through the registry (generation.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4584-mediagen-video-default.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:56:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4584-mediagen-video-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4585",
@@ -129,16 +133,17 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies — first task of the computer-use lane; owns toolkit.py/backend.py",
+      "parallelism_notes": "no dependencies \u2014 first task of the computer-use lane; owns toolkit.py/backend.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4585-computer-type-text-focused.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4585-computer-type-text-focused.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4586",
@@ -147,7 +152,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -156,9 +161,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4585: the v3_8 `type` action maps to computer_type_text created there (parrot_tools/computer/toolkit.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4586-computer-use-optin-vocabularies.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:44:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4586-computer-use-optin-vocabularies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4587",
@@ -167,7 +173,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -176,9 +182,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4586: sets GoogleGenAIClient.computer_use created there (clients/google/client.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4587-computer-agent-38-flash.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:51:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4587-computer-agent-38-flash.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4588",
@@ -187,16 +194,17 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "independent lane — only touches openai_backend.py and its test",
+      "parallelism_notes": "independent lane \u2014 only touches openai_backend.py and its test",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4588-openai-transcription-formats.md"
+      "started_at": "2026-10-22T12:15:01+00:00",
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4588-openai-transcription-formats.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4589",
@@ -210,7 +218,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "independent lane — only touches openai/client.py; DATE-GATED: do not merge before 2026-12-11",
+      "parallelism_notes": "independent lane \u2014 only touches openai/client.py; DATE-GATED: do not merge before 2026-12-11",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,

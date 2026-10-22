@@ -5,6 +5,7 @@ Exposes 13 predefined computer-use actions, screenshot/recording capabilities,
 and task/loop execution as agent-callable tools. Handles coordinate normalization
 (0-1000 → viewport pixels) and delegates all browser operations to AsyncComputerBackend.
 """
+
 from __future__ import annotations
 
 import logging
@@ -144,6 +145,19 @@ class ComputerInteractionToolkit(AbstractToolkit):
             Dict with ``url`` and ``screenshot_taken``.
         """
         state = await self._backend.hover_at(self._denormalize_x(x), self._denormalize_y(y))
+        return self._state_to_dict(state)
+
+    async def type_text(self, text: str, press_enter: bool = False) -> dict:
+        """Type text into the currently focused element without clicking first.
+
+        Args:
+            text: Text to type.
+            press_enter: If True, presses Enter after typing.
+
+        Returns:
+            Dict with ``url`` and ``screenshot_taken``.
+        """
+        state = await self._backend.type_text(text, press_enter=press_enter)
         return self._state_to_dict(state)
 
     async def type_text_at(

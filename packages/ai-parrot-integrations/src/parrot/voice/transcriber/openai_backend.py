@@ -8,16 +8,49 @@ without GPU access or for simpler deployment.
 Originally part of FEAT-008 (MS Teams Voice Note Support),
 refactored to shared location for FEAT-039.
 """
+
 import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import aiohttp
 
 from .backend import AbstractTranscriberBackend
 from .models import TranscriptionResult
+
+# Per-model response_format; models not listed use "json" (gpt-transcribe rejects verbose_json).
+_RESPONSE_FORMATS: Dict[str, str] = {"whisper-1": "verbose_json"}
+
+# Whisper verbose_json returns the language NAME; map it to ISO 639-1.
+_LANGUAGE_NAMES: Dict[str, str] = {
+    "english": "en",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "dutch": "nl",
+    "russian": "ru",
+    "chinese": "zh",
+    "japanese": "ja",
+    "korean": "ko",
+    "arabic": "ar",
+    "hindi": "hi",
+    "turkish": "tr",
+    "polish": "pl",
+    "ukrainian": "uk",
+    "catalan": "ca",
+    "swedish": "sv",
+    "danish": "da",
+    "norwegian": "no",
+    "finnish": "fi",
+    "greek": "el",
+    "hebrew": "he",
+    "czech": "cs",
+    "romanian": "ro",
+}
 
 
 class OpenAIWhisperBackend(AbstractTranscriberBackend):
@@ -52,7 +85,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
     def __init__(
         self,
         api_key: str,
-        model: str = "whisper-1",
+        model: str = "gpt-transcribe",
         max_retries: int = 3,
         timeout_seconds: int = 60,
     ):
@@ -128,14 +161,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
 
         for attempt in range(self.max_retries):
             try:
-                result = await self._transcribe_attempt(
-                    audio_path, language, start_time
-                )
+                result = await self._transcribe_attempt(audio_path, language, start_time)
                 return result
             except aiohttp.ClientResponseError as e:
                 if e.status == 429:
                     # Rate limited - retry with exponential backoff
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     self.logger.warning(
                         "Rate limited by OpenAI API, retrying in %ds (attempt %d/%d)",
                         wait_time,
@@ -145,16 +176,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                     await asyncio.sleep(wait_time)
                     last_error = e
                 elif e.status == 401:
-                    raise RuntimeError(
-                        "OpenAI API authentication failed. Check your API key."
-                    ) from e
+                    raise RuntimeError("OpenAI API authentication failed. Check your API key.") from e
                 else:
-                    raise RuntimeError(
-                        f"OpenAI API error ({e.status}): {e.message}"
-                    ) from e
+                    raise RuntimeError(f"OpenAI API error ({e.status}): {e.message}") from e
             except aiohttp.ClientError as e:
                 # Network error - retry with backoff
-                wait_time = 2 ** attempt
+                wait_time = 2**attempt
                 self.logger.warning(
                     "Request failed: %s, retrying in %ds (attempt %d/%d)",
                     str(e),
@@ -165,9 +192,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                 await asyncio.sleep(wait_time)
                 last_error = e
 
-        raise RuntimeError(
-            f"Transcription failed after {self.max_retries} attempts: {last_error}"
-        )
+        raise RuntimeError(f"Transcription failed after {self.max_retries} attempts: {last_error}")
 
     async def _transcribe_attempt(
         self,
@@ -205,7 +230,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
             content_type=content_type,
         )
         data.add_field("model", self.model)
-        data.add_field("response_format", "verbose_json")
+        data.add_field("response_format", _RESPONSE_FORMATS.get(self.model, "json"))
 
         if language:
             data.add_field("language", language)
@@ -224,9 +249,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
         ) as response:
             if response.status == 200:
                 result_json = await response.json()
-                processing_time_ms = int(
-                    (time.perf_counter() - start_time) * 1000
-                )
+                processing_time_ms = int((time.perf_counter() - start_time) * 1000)
 
                 self.logger.debug(
                     "Transcription completed: %d chars in %dms",
@@ -234,10 +257,11 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                     processing_time_ms,
                 )
 
+                text, lang, duration = self._parse_result(self.model, result_json, language)
                 return TranscriptionResult(
-                    text=result_json.get("text", ""),
-                    language=result_json.get("language", "en"),
-                    duration_seconds=result_json.get("duration", 0.0),
+                    text=text,
+                    language=lang,
+                    duration_seconds=duration,
                     confidence=None,  # OpenAI API doesn't return confidence
                     processing_time_ms=processing_time_ms,
                 )
@@ -261,3 +285,46 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
             self.logger.debug("Closing OpenAI Whisper backend HTTP session")
             await self._session.close()
             self._session = None
+
+    @staticmethod
+    def _parse_result(model: str, payload: dict, language_hint: Optional[str]) -> tuple[str, str, float]:
+        """Return (text, iso_language, duration_seconds).
+
+        Handles whisper ``verbose_json`` (language name, ``duration``) and
+        gpt-transcribe ``json`` (``languages[0].code``, ``usage.seconds``).
+
+        Args:
+            model: Model name used for the request.
+            payload: Decoded JSON response.
+            language_hint: Language requested by the caller, if any.
+
+        Returns:
+            Tuple of text, ISO 639-1 language code and duration in seconds.
+        """
+        text = payload.get("text", "") or ""
+
+        raw_lang = None
+        languages = payload.get("languages")
+        if isinstance(languages, list) and languages and isinstance(languages[0], dict):
+            raw_lang = languages[0].get("code")
+        if not raw_lang:
+            raw_lang = payload.get("language")
+        lang = None
+        if isinstance(raw_lang, str) and raw_lang.strip():
+            norm = raw_lang.strip().lower()
+            lang = _LANGUAGE_NAMES.get(norm) or (norm[:2] if len(norm) <= 5 else None)
+        if not lang and language_hint:
+            lang = language_hint.strip().lower()[:2]
+        if not lang:
+            lang = "en"
+
+        duration = payload.get("duration")
+        if duration is None:
+            usage = payload.get("usage")
+            if isinstance(usage, dict):
+                duration = usage.get("seconds")
+        try:
+            duration_f = float(duration) if duration is not None else 0.0
+        except (TypeError, ValueError):
+            duration_f = 0.0
+        return text, lang, duration_f

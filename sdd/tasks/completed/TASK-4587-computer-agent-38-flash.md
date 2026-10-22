@@ -168,10 +168,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+Implemented by an sdd-coder seat (codex gpt-5.6-luna); merged by the orchestrator. Task validation commands re-run green in the sub-worktree (engine task-tier validation unavailable: attempt had no execution_id).
