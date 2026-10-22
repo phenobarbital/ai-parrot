@@ -287,6 +287,16 @@ class FormAPIHandler:
             dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
         )
 
+    def _llm_quota(self) -> "LLMQuota":
+        """Return the configured quota, creating a default for direct handlers."""
+        quota = getattr(self, "llm_quota", None)
+        if quota is None:
+            from ..services.llm_quota import LLMQuota
+
+            quota = LLMQuota()
+            self.llm_quota = quota
+        return quota
+
     @staticmethod
     def _plausibility_ack(request: web.Request, body: Any) -> bool:
         """Read the plausibility reconfirmation flag (FEAT-728).
@@ -1133,6 +1143,7 @@ class FormAPIHandler:
         `VALIDATION_FAILED` envelopes (422, invalid) instead of plain JSON.
         A legacy JSON caller is completely unaffected.
         """
+        from ..core.llm_validation import llm_validation_enabled
         from ..core.schema import UnknownFieldsPolicy
 
         form_uid = extract_form_uid(request)
@@ -1176,6 +1187,19 @@ class FormAPIHandler:
         llm_opt_in = request.query.get("llm_validation", "").lower() == "true"
         if isinstance(body, dict) and body.pop("llm_validation", None) is True:
             llm_opt_in = True
+        opt_in_skipped: str | None = None
+        has_session = "session" in request or getattr(request, "session", None) is not None
+        if llm_opt_in and not has_session:
+            llm_opt_in = False
+            opt_in_skipped = "unauthenticated_opt_in"
+        elif llm_opt_in:
+            decision = await self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid))
+            if not decision.allowed:
+                return JSONResponse(
+                    {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                    status=429,
+                    headers={"Retry-After": str(decision.retry_after_s)},
+                )
         ack = self._plausibility_ack(request, body)
         data, visit_context = self._extract_visit_context(form, body)
         pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
@@ -1210,6 +1234,10 @@ class FormAPIHandler:
             payload["code"] = gate.code
         if plausibility is not None:
             payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+        elif opt_in_skipped is not None and any(
+            llm_validation_enabled(form, field) for field in form.iter_fields_recursive()
+        ):
+            payload["plausibility"] = {"status": "skipped", "reason": opt_in_skipped}
         return JSONResponse(payload, status=200 if is_valid else 422)
 
     async def create_blank_form(self, request: web.Request) -> web.Response:
@@ -1791,7 +1819,23 @@ class FormAPIHandler:
 
         from ..services.plausibility import PlausibilityBlocked
         from ..services.submission_pipeline import ImplausibleSubmission, SubmitSinkError, ValidationFailed
+        from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
 
+        plausibility_override: PlausibilityReport | None = None
+        if any(llm_validation_enabled(form, field) for field in form.iter_fields_recursive()):
+            decision = await self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid))
+            if not decision.allowed:
+                policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+                if policy != "annotate":
+                    return _reply(
+                        {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                        status=429,
+                        headers={"Retry-After": str(decision.retry_after_s)},
+                    )
+                config = form.llm_validation or LLMValidationConfig()
+                plausibility_override = PlausibilityReport(
+                    status="skipped", reason="rate_limited", threshold=config.threshold
+                )
         pipeline = self._build_submission_pipeline(form)
         try:
             outcome = await pipeline.submit(
@@ -1804,6 +1848,7 @@ class FormAPIHandler:
                 extra_data=None,
                 auth_context=_auth_ctx,
                 merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
+                plausibility=plausibility_override,
                 plausibility_ack=plausibility_ack,
                 request=request,
                 visit_context=visit_context,
