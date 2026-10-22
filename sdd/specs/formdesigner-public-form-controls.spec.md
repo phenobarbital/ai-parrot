@@ -2,10 +2,10 @@
 type: feature
 base_branch: dev
 projects: [parrot-formdesigner]
-tags: [forms, public-forms, surveys, anonymous-submission, form-designer]
+tags: [forms, public-forms, anonymous-submission, form-designer]
 ---
 
-# Feature Specification: FormDesigner public survey controls
+# Feature Specification: FormDesigner public response controls
 
 **Feature ID**: FEAT-730
 **Date**: 2026-10-22
@@ -15,9 +15,9 @@ tags: [forms, public-forms, surveys, anonymous-submission, form-designer]
 
 > Cross-repo initiative, one spec per repo (decided 2026-10-22):
 > **FEAT-730** (this spec, ai-parrot / parrot-formdesigner) →
-> **FEAT-796** fieldsync `sdd/specs/public-survey-forms.spec.md` →
-> **FEAT-797** navigator-svelte `sdd/specs/svelte-public-survey-forms.spec.md`.
-> Decisions source: fieldsync `sdd/proposals/public-survey-forms.brainstorm.md`
+> **FEAT-796** fieldsync `sdd/specs/public-forms.spec.md` →
+> **FEAT-797** navigator-svelte `sdd/specs/svelte-public-forms.spec.md`.
+> Decisions source: fieldsync `sdd/proposals/public-forms.brainstorm.md`
 > (accepted, Option A). Deploy order: FEAT-730 (ai-parrot + ai-parrot-server
 > lockstep release) → FEAT-796 → FEAT-797.
 
@@ -29,16 +29,16 @@ tags: [forms, public-forms, surveys, anonymous-submission, form-designer]
 
 Admins want to build a form in the Form Designer, publish it, and share a link
 that **anyone** can fill in — customers, retailer staff, event attendees —
-people without a Navigator account. Google-Forms-style surveys, with the
+people without a Navigator account. Google-Forms-style public forms, with the
 answers landing next to the programme's other data.
 
 FEAT-241 (`sdd/specs/formdesigner-public-forms.spec.md`, done 2026-06-16)
 already gives us the auth half: `FormSchema.is_public` (`core/schema.py:483`)
 makes five URLs auth-exempt (`services/public_forms.py:13-53`) and the
 registry toggle/exclude-provider keeps navigator-auth's exclude list in sync
-(`api/routes.py:578-680`). What is missing for a survey:
+(`api/routes.py:578-680`). What is missing for a public form:
 
-1. **No survey controls.** There is no way to close a form, give it a close
+1. **No response controls.** There is no way to close a form, give it a close
    date, cap the number of responses, allow one response per person, or say
    what happens after submit. `FormSchema` has no such fields
    (`core/schema.py:466-491`).
@@ -98,7 +98,7 @@ this initiative. FEAT-241 is not superseded — this spec extends it.
 - Response viewer, export, origin filter — FieldSync FEAT-796.
 - Designer panel, share page, QR — navigator-svelte FEAT-797.
 - Anonymous thumbnails (`…/fields/{field_uid}/thumbnail`) — see §8 Q3.
-- Survey controls on forms that declare `persistence` (FEAT-457 sinks) — the
+- response controls on forms that declare `persistence` (FEAT-457 sinks) — the
   count/uniqueness check cannot be made atomic over an arbitrary sink; the
   schema rejects that combination (Module 1).
 
@@ -109,7 +109,7 @@ this initiative. FEAT-241 is not superseded — this spec extends it.
 ### Overview
 
 `is_public` stays the **auth grant**, unchanged. `public_access` is the
-**survey policy** and is enforced on every pipeline submission of the form,
+**response policy** and is enforced on every pipeline submission of the form,
 public or not.
 
 Enforcement has two layers:
@@ -236,7 +236,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
 
 ### Module 1: Public-access schema block
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/core/public_access.py` (new); modifies `core/schema.py`, `core/__init__.py`
-- **Responsibility**: Typed survey policy + pure open/closed evaluation; `FormSchema` field and cross-field validation.
+- **Responsibility**: Typed response policy + pure open/closed evaluation; `FormSchema` field and cross-field validation.
 - **Depends on**: existing `LocalizedString` (`core/types.py`)
 - **Interface Skeleton**:
   ```python
@@ -254,7 +254,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
           with a host (rejects http:, javascript:, data:, relative). Raises ValueError."""
 
   class PublicAccessConfig(BaseModel):
-      """Per-form survey policy (FormSchema.public_access). None on the form = no policy."""
+      """Per-form response policy (FormSchema.public_access). None on the form = no policy."""
       accepting_responses: bool = True
       closes_at: datetime | None = None
       max_responses: int | None = Field(default=None, ge=1)
@@ -284,7 +284,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
   # core/schema.py (modifies — after line 491)
   class FormSchema(BaseModel):  # verified: core/schema.py:411
       llm_validation: LLMValidationConfig | None = None  # verified: core/schema.py:491
-      # FEAT-730 — public survey controls (typed block, not meta)
+      # FEAT-730 — public response controls (typed block, not meta)
       public_access: PublicAccessConfig | None = None
       @model_validator(mode="after")
       def _validate_public_access(self) -> "FormSchema":
@@ -341,7 +341,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
   __all__ = [..., "SubmissionRejected"]  # verified: submission_pipeline.py:38
 
   class SubmissionRejected(Exception):
-      """Survey-policy refusal (HTTP 409). Controlled flow — never dispatched to onError."""
+      """Response-policy refusal (HTTP 409). Controlled flow — never dispatched to onError."""
       def __init__(self, reason: RejectionReason, message: str, *, field_id: str | None = None) -> None: ...
       reason: RejectionReason
       field_id: str | None
@@ -436,7 +436,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
   so the handler can report the stored timestamp without re-reading storage.
 
 ### Module 6: Documentation
-- **Path**: `docs/formdesigner-public-survey-controls.md` (new)
+- **Path**: `docs/formdesigner-public-form-controls.md` (new)
 - **Responsibility**: Author-facing description of `public_access`, the 409 codes, `/availability`, the seven exempt globs, `on_submitted`, and the deploy note (host must pass `on_submitted`; existing public forms need nothing).
 
 ---
@@ -480,7 +480,7 @@ tests:
 - packages/parrot-formdesigner/tests/unit/test_public_access_schema.py
 - packages/parrot-formdesigner/tests/unit/services/test_public_forms.py
 - packages/parrot-formdesigner/tests/unit/services/test_submission_pipeline_public_access.py
-- packages/parrot-formdesigner/tests/unit/api/test_public_survey_http.py
+- packages/parrot-formdesigner/tests/unit/api/test_public_form_controls_http.py
 - packages/parrot-formdesigner/tests/unit/api/test_file_upload_public.py
 - packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_public_access.py
 - packages/parrot-formdesigner/tests/integration/test_store_guarded.py
@@ -489,7 +489,7 @@ markers: none
 ### Test Data / Fixtures
 ```python
 @pytest.fixture
-def survey_form() -> FormSchema:
+def controlled_form() -> FormSchema:
     """is_public=True, one TEXT 'email' field, public_access(max_responses=5, unique_key_field='email')."""
 ```
 
@@ -621,7 +621,7 @@ def enforce_membership_unless_public(request, form, tenant) -> None  # line 189 
 | FieldSync FEAT-796 | `setup_form_api(on_submitted=…)` | kwarg | fieldsync `fieldsync/forms.py:123-130` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`FormSchema.public_access` / `closes_at` / `max_responses` / any survey control~~ — none exist.
+- ~~`FormSchema.public_access` / `closes_at` / `max_responses` / any response control~~ — none exist.
 - ~~`FormSubmissionStorage.count_responses` / `store_guarded` / any count or uniqueness query~~ — store() is a bare INSERT; reads are `get_submission` (:420) and `list_revisions` (:442) only.
 - ~~`SubmissionRejected`, `SubmittedEvent`, `on_submitted`~~ — new in this spec.
 - ~~a post-submit host hook in `setup_form_api`~~ — the only after-submit seam is the per-form `onAfterSubmit` lifecycle binding (`submission_pipeline.py:288-297`), configured per form, not by the host.
@@ -629,7 +629,7 @@ def enforce_membership_unless_public(request, form, tenant) -> None  # line 189 
 - ~~`PublicFormHandler`, `setup_public_forms`~~ — proposed by fieldsync's FEAT-315 draft, never built.
 - ~~`/api/v1/t/{tenant}/…`~~ — `/t/` removed by FEAT-429; prefix is `{bp}/{tenant}` (`api/routes.py:375`).
 - ~~anonymous thumbnails~~ — `…/thumbnail` stays authenticated (§8 Q3).
-- ~~Survey enforcement on FieldSync's execution submit~~ — FieldSync's execution path writes `submission_storage.store(..., tenant=…)` directly (fieldsync `fieldsync/domains/execution/services.py:645`), not through `SubmissionPipeline`.
+- ~~Response-control enforcement on FieldSync's execution submit~~ — FieldSync's execution path writes `submission_storage.store(..., tenant=…)` directly (fieldsync `fieldsync/domains/execution/services.py:645`), not through `SubmissionPipeline`.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -665,11 +665,11 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 | `packages/parrot-formdesigner/tests/unit/test_public_access_schema.py` | CREATE | — | — | — |
 | `packages/parrot-formdesigner/tests/unit/services/test_public_forms.py` | MODIFY | `from parrot_formdesigner.services.public_forms import public_form_paths` | `test_public_forms.py:15` | 1 |
 | `packages/parrot-formdesigner/tests/unit/services/test_submission_pipeline_public_access.py` | CREATE | — | — | — |
-| `packages/parrot-formdesigner/tests/unit/api/test_public_survey_http.py` | CREATE | — | — | — |
+| `packages/parrot-formdesigner/tests/unit/api/test_public_form_controls_http.py` | CREATE | — | — | — |
 | `packages/parrot-formdesigner/tests/unit/api/test_file_upload_public.py` | CREATE | — | — | — |
 | `packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_public_access.py` | CREATE | — | — | — |
 | `packages/parrot-formdesigner/tests/integration/test_store_guarded.py` | CREATE | — | — | — |
-| `docs/formdesigner-public-survey-controls.md` | CREATE | — | — | — |
+| `docs/formdesigner-public-form-controls.md` | CREATE | — | — | — |
 
 ---
 
@@ -684,7 +684,7 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 ### Known Risks / Gotchas
 - **Tenant write change (G8) is a behaviour change.** Non-public authenticated REST `/data` callers that today land in the default schema will land in `<tenant>.<table>`. The host must have provisioned that table (FieldSync's execution path already writes there — fieldsync `execution/services.py:645`). `store()` does not auto-create tables: a missing per-tenant table becomes a 5xx instead of a silent mis-filed row. See §8 Q1.
 - **`anonymous` is derived from `AuthContext.scheme == "none"`** (contract). A caller authenticated only by a session cookie, with no `Authorization` header and no `request["auth_context"]`, is also reported `anonymous=True` (`_build_auth_context` defaults, `api/handlers.py:453-480`). Hosts using `on_submitted` should also check `is_public`. §8 Q2.
-- **Survey enforcement covers pipeline channels only** (REST `/data`, audio WS). A host that writes `submission_storage.store()` directly (FieldSync execution) is not subject to `public_access`; its rows still count toward `max_responses` and uniqueness because they share the table.
+- **Response-control enforcement covers pipeline channels only** (REST `/data`, audio WS). A host that writes `submission_storage.store()` directly (FieldSync execution) is not subject to `public_access`; its rows still count toward `max_responses` and uniqueness because they share the table.
 - **Uniqueness normalization is SQL `lower(btrim())` on both sides**, not Python `casefold()`: identical for ASCII and most scripts, differs only for special-case folds (e.g. `ß`). Chosen so the comparison happens inside the locked transaction without a second normalized column.
 - **Legacy rows:** submissions already filed in the default schema (`navigator.fs_form_data`, tenant NULL) are not migrated and are invisible to `count_responses` for a tenant. Existing public forms with no `public_access` are unaffected.
 - **FEAT-728 overlap.** FEAT-728 (`formbuilder-llm-validation-enforcement`, approved, 7 tasks pending) edits the same `submission_pipeline.py`, `api/handlers.py` submit block (`:1767`, `:1789-1791`, `:1810`), `api/routes.py:428` and `api/audio_ws.py:1192`. Land FEAT-730 after FEAT-728 merges (or rebase onto it); `/sdd-task` must re-grep every anchor.
@@ -703,7 +703,7 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 
 - [x] Who authors public forms? — *Resolved in brainstorm*: admins, in the existing Form Designer.
 - [x] How is the respondent identified? — *Resolved in brainstorm*: not our concern; the author adds questions (name/email) if needed.
-- [x] Which survey controls in v1? — *Resolved in brainstorm*: open/close, close date, response cap, one-per-person, thank-you/redirect — all optional per form.
+- [x] Which response controls in v1? — *Resolved in brainstorm*: open/close, close date, response cap, one-per-person, thank-you/redirect — all optional per form.
 - [x] How is "one response per person" enforced? — *Resolved in brainstorm*: author picks a question as unique key; backend rejects duplicates.
 - [x] Which field types are allowed in public forms? — *Resolved in brainstorm*: all, author's responsibility.
 - [x] Link format? — *Resolved in brainstorm*: v1 keeps `/share/form/{tenant}/{form_uid}` (svelte); opaque token only if requested later.
@@ -745,4 +745,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from fieldsync brainstorm `public-survey-forms` (Option A) and the cross-repo contract |
+| 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from fieldsync brainstorm `public-forms` (Option A) and the cross-repo contract |
