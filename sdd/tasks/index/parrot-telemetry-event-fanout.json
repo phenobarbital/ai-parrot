@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-20T22:48:21+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T13:50:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -221,7 +221,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -231,8 +231,9 @@
       "parallelism_notes": "Persists usage.estimated_cost that TASK-4548 backfills at the origin (clients/base.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4552-agenttalk-tenant-and-turn-metadata.md"
+      "completed_at": "2026-10-22T13:50:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4552-agenttalk-tenant-and-turn-metadata.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4553",
