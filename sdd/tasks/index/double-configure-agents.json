@@ -45,7 +45,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -53,8 +53,9 @@
       "parallelism_notes": "root of the graph: owns tools/manager.py and creates find_registered_toolkit(); no inbound edge",
       "assigned_to": null,
       "started_at": "2026-10-22T15:38:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4596-toolmanager-keep-first-reregistration.md"
+      "completed_at": "2026-10-22T15:58:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4596-toolmanager-keep-first-reregistration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4597",
@@ -63,7 +64,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -71,8 +72,9 @@
       "parallelism_notes": "owns bots/abstract.py and creates tests/bots/test_double_configure.py; imports nothing TASK-4596 creates, so it runs in wave 1 alongside it",
       "assigned_to": null,
       "started_at": "2026-10-22T15:38:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4597-abstractbot-configure-idempotency.md"
+      "completed_at": "2026-10-22T15:58:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4597-abstractbot-configure-idempotency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4598",

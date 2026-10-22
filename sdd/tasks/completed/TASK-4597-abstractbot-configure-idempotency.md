@@ -358,7 +358,9 @@ See the CREATE block above — five tests covering AC-7…AC-10 plus the no-unbi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (attempt 3)
+
+AbstractBot.configure idempotency (_configure_count, configure_count, reconfigure). Same env-caused validation failure; tests/bots/test_double_configure.py pass. tests/interfaces/test_configure_applies_tooling.py fails identically on origin/dev (AbstractBot abstract-instantiation) - pre-existing, not caused by this feature. Deviation: bare configure() re-entry is a no-op and never unbinds self.app.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
