@@ -7,6 +7,12 @@ tool construction — through the injectable bootstrap hook that
 function is idempotent, which that hook contract requires: the first call does
 the work, every later call returns on the ``_BOOTSTRAPPED`` check.
 
+Idempotent in the failure case too (FEAT-725 / issue:bd94e0afa8e6): a durable
+fan-out misconfiguration keeps raising on every call — it is a startup error,
+not a warning — but ``setup_event_fanout()`` is attempted exactly once and the
+local observability layer is still brought up. The cached exception is re-raised
+from the fast path.
+
 When ``OBSERVABILITY_ENABLED=true``, it activates
 the usage-recording layer selected by ``OBSERVABILITY_BACKEND`` WITHOUT the user
 writing any code:
@@ -44,6 +50,15 @@ _SUBSCRIPTION_IDS: list[str] = []
 _SHUTDOWN_TASKS: set = set()  # strong refs so a scheduled fan-out close is not garbage-collected
 # Guards the atexit flush hook so it is registered at most once per process.
 _ATEXIT_REGISTERED: bool = False
+# FEAT-725 / issue:bd94e0afa8e6 — a durable fan-out misconfiguration is a startup
+# error that keeps raising, but it is diagnosed exactly ONCE: the exception and
+# its original traceback are cached here and re-raised from the fast path, so
+# setup_event_fanout() never runs a second time. The traceback is kept
+# separately because ``raise exc`` prepends the current frame to
+# ``exc.__traceback__``; restoring the original on every raise keeps the chain
+# bounded on the per-construction hot path.
+_FANOUT_ERROR: Optional[BaseException] = None
+_FANOUT_ERROR_TB = None
 
 
 def ensure_observability_bootstrapped() -> None:
@@ -56,40 +71,54 @@ def ensure_observability_bootstrapped() -> None:
     Raises:
         Exception: whatever ``setup_event_fanout()`` raises. Invalid durable
             fan-out configuration is deliberately a startup error, so it is
-            logged at ERROR and re-raised; ``_BOOTSTRAPPED`` stays ``False``
-            and the next construction retries. The ERROR record matters
-            because the ``EventEmitterMixin`` hook site that calls this
+            logged at ERROR and re-raised on this and every later call. The
+            *diagnosis* happens once (FEAT-725 / issue:bd94e0afa8e6): the
+            exception is cached, ``setup_event_fanout()`` is never retried,
+            ``_do_bootstrap()`` still runs so local observability is not
+            collateral damage, and ``_BOOTSTRAPPED`` is set. The ERROR record
+            matters because the ``EventEmitterMixin`` hook site that calls this
             swallows a raising hook at DEBUG.
     """
-    global _BOOTSTRAPPED  # noqa: PLW0603
+    global _BOOTSTRAPPED, _FANOUT_ERROR, _FANOUT_ERROR_TB  # noqa: PLW0603
     if _BOOTSTRAPPED:
+        if _FANOUT_ERROR is not None:
+            raise _FANOUT_ERROR.with_traceback(_FANOUT_ERROR_TB)
         return
     with _LOCK:
         if _BOOTSTRAPPED:
+            if _FANOUT_ERROR is not None:
+                raise _FANOUT_ERROR.with_traceback(_FANOUT_ERROR_TB)
             return
+        fanout_error: Optional[BaseException] = None
         if _event_fanout_enabled():
             from parrot.observability.fanout import setup_event_fanout  # noqa: PLC0415
 
-            # Invalid durable fan-out configuration is a startup error. This is
-            # deliberately outside the best-effort local-observability guard —
-            # but logged at error first (FEAT-725): the EventEmitterMixin hook
-            # site swallows a raising hook at DEBUG, so without this the
-            # misconfiguration would be completely silent in production.
+            # Invalid durable fan-out configuration is a startup error: it is
+            # logged at error (FEAT-725 — the EventEmitterMixin hook site
+            # swallows a raising hook at DEBUG, so without this the
+            # misconfiguration would be completely silent in production) and
+            # re-raised below. It is NOT allowed to escape the lock, because
+            # that would leave _BOOTSTRAPPED False and re-run setup on every
+            # single construction while _do_bootstrap() never ran at all.
             try:
                 setup_event_fanout()
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — cached and re-raised below
                 logger.error(
                     "Durable event fan-out setup failed; PARROT_EVENT_FANOUT_ENABLED "
                     "is set but no lifecycle event will reach the bus.",
                     exc_info=True,
                 )
-                raise
+                fanout_error = exc
         try:
             _do_bootstrap()
         except Exception:  # noqa: BLE001 — observability must never break construction
             logger.error("Observability auto-boot failed; continuing.", exc_info=True)
         finally:
+            _FANOUT_ERROR = fanout_error
+            _FANOUT_ERROR_TB = None if fanout_error is None else fanout_error.__traceback__
             _BOOTSTRAPPED = True
+    if fanout_error is not None:
+        raise fanout_error.with_traceback(_FANOUT_ERROR_TB)
 
 
 def _event_fanout_enabled() -> bool:
@@ -296,6 +325,7 @@ def shutdown_usage_recording() -> None:
 def reset_bootstrap_for_tests() -> None:
     """Test-only: reset module state so a fresh bootstrap can run."""
     global _BOOTSTRAPPED, _SUBSCRIBER, _ATEXIT_REGISTERED  # noqa: PLW0603
+    global _FANOUT_ERROR, _FANOUT_ERROR_TB  # noqa: PLW0603
     shutdown_usage_recording()
     if _ATEXIT_REGISTERED:
         try:
@@ -305,3 +335,5 @@ def reset_bootstrap_for_tests() -> None:
     _BOOTSTRAPPED = False
     _SUBSCRIBER = None
     _ATEXIT_REGISTERED = False
+    _FANOUT_ERROR = None
+    _FANOUT_ERROR_TB = None
