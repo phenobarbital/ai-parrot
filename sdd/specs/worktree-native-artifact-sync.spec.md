@@ -58,8 +58,9 @@ Verified on `add1f89ea` (2026-10-22):
 - The artifacts a worktree needs are **declared**, in one readable place
   (root `pyproject.toml`), rather than hardcoded in each caller.
 - A declared artifact that is missing from the main checkout is **built
-  automatically** (user decision, 2026-10-22), concurrency-safely, for the
-  running interpreter only.
+  automatically** (user decision, 2026-10-22) — for **both** groups,
+  concurrency-safely, for the running interpreter only, and without mutating
+  the shared `.venv` or any tracked file.
 - Native sync never becomes a new way for worktree creation to fail: a
   failed build degrades to a warning that names the exact manual command.
 - `baseline.py`'s hand-rolled copy loop is replaced by the shared helper —
@@ -77,11 +78,14 @@ Verified on `add1f89ea` (2026-10-22):
 - Building or installing `yaml_rs` (`packages/ai-parrot/src/parrot/yaml-rs/Cargo.toml`).
   It is not built and not importable anywhere today (`import yaml_rs` →
   `ModuleNotFoundError`); wiring it up is a separate concern.
-- Auto-building the navrules PyO3 module. Its only build path is
-  `maturin develop --release` (`packages/navrules/Makefile:9`), which mutates
-  the **shared** `.venv` — forbidden by `.claude/rules/worktree-management.md`
-  §4. That group is declared `autobuild = false` and reports a manual command
-  instead. See §8 Q1.
+- Installing anything into the shared `.venv`. The navrules PyO3 module **is**
+  auto-built (§8 Q1, revised 2026-10-22), but never with
+  `maturin develop --release` (`packages/navrules/Makefile:9`), which
+  reinstalls navrules into the active environment — forbidden by
+  `.claude/rules/worktree-management.md` §4 and the cause of two past
+  breakages. The new `build-rust-wheel` target builds a wheel to a temp dir
+  and unpacks only its `.so`; `maturin develop` stays out of every automated
+  path.
 - Tracking `.so` files in git, or removing them from `.gitignore`.
 - Changing `/sdd-done`, `remove_worktree.py`, or any worktree-removal path.
 
@@ -111,7 +115,14 @@ the whole concern:
   `fcntl.flock` on `<main_root>/.parrot/locks/native-<group>.lock`, re-checks
   (another worktree creation may have just built it), runs the declared argv
   in the main checkout, and then copies. A build failure or timeout is a
-  warning carrying the manual command — never an exception.
+  warning carrying the manual command — never an exception. Both declared
+  groups are auto-buildable: `cython-core` via `setup.py build_ext --inplace`,
+  `navrules-pyo3` via the new `make -C packages/navrules build-rust-wheel`,
+  which is `maturin build --release --locked --out <tmp>` plus an unpack of the
+  wheel's single `.so` — measured end to end at **13.7 s** with a warm cargo
+  target, exit 0, wheel payload exactly `navrules/_native/_navrules.abi3.so`
+  (verified 2026-10-22). `--locked` is what keeps an automated build from ever
+  rewriting the tracked `rust/Cargo.lock`.
 - **Wiring.** Both worktree-creation paths call it, and `baseline.py` is
   refactored onto it:
   | Caller | When |
@@ -221,9 +232,12 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 | M6: Docs | yes | exact files and anchors listed | — |
 
 ### Module 1: Declaration + manifest loader
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py` (new) + `pyproject.toml` (modify)
+- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py` (new)
+  + `pyproject.toml`, `packages/navrules/Makefile`,
+  `packages/navrules/rust/Cargo.lock` (modify)
 - **Responsibility**: define the declaration format, add this repo's two
-  groups to the root `pyproject.toml`, and parse them.
+  groups to the root `pyproject.toml`, add the venv-safe navrules build
+  target, and parse the table.
 - **Depends on**: nothing in this spec.
 - **Declared table** (added to the root `pyproject.toml`):
   ```toml
@@ -248,11 +262,31 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
   name = "navrules-pyo3"
   copy = ["packages/navrules/src/navrules/_native/*.so"]
   required = true
-  # `maturin develop --release` mutates the SHARED venv, which worktree agents
-  # must never do — declared, copied, but never auto-built (spec §1 Non-Goals).
-  autobuild = false
-  manual_hint = "make -C packages/navrules build-rust"
+  abi_scoped = false        # abi3-py311: one .so covers CPython 3.11-3.13
+  autobuild = true
+  # `build-rust-wheel`, NOT the Makefile's `build-rust` (= `maturin develop`,
+  # which reinstalls navrules into the SHARED venv — never in an automated path).
+  build = ["make", "-C", "packages/navrules", "build-rust-wheel"]
+  build_timeout_s = 900
+  manual_hint = "make -C packages/navrules build-rust-wheel"
   ```
+- **New Makefile target** (`packages/navrules/Makefile`, added next to
+  `build-rust:` at line 8). Verified command sequence — the task blueprint
+  writes the recipe, this is its contract:
+  ```make
+  # Build the Rust extension as a wheel and unpack ONLY its .so into src/,
+  # without installing anything into the active environment (FEAT-722).
+  # `--locked` guarantees an automated build never rewrites rust/Cargo.lock.
+  build-rust-wheel:
+  <TAB>uv run --no-sync --with maturin maturin build --release --locked --out <tmpdir>
+  <TAB># then: unpack the wheel's `navrules/_native/*.so` into `src/`, rm the tmpdir
+  ```
+  `.PHONY` gains `build-rust-wheel`.
+- **Lockfile refresh**: `packages/navrules/rust/Cargo.lock` still pins
+  `navrules_native 1.2.3` while `rust/Cargo.toml:3` says `1.2.4`, so a
+  `--locked` build fails today. M1 commits that one-line refresh
+  (`1.2.3` → `1.2.4`) on the feature branch; without it the navrules
+  auto-build would always degrade to its warning.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py  (new)
@@ -398,8 +432,9 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 - **Path**: `.claude/rules/worktree-management.md`,
   `.agent/skills/worktree-management/SKILL.md`, `.claude/agents/sdd-worker.md` (modify)
 - **Responsibility**: retire the "known worktree limitation" folklore — state
-  that the artifacts are synced automatically, name the declaration, and give
-  the manual command for the one group that is never auto-built.
+  that the artifacts are synced (and built, when missing) automatically, name
+  the declaration, and give the two manual build commands for the case where
+  an automated build is refused or fails.
 - **Depends on**: Modules 1-5 (document the landed behaviour).
 
 ---
@@ -413,6 +448,9 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 | `test_load_manifest_reads_declared_groups` | M1 | Root `pyproject.toml` yields both groups with the declared fields |
 | `test_load_manifest_defaults_when_table_absent` | M1 | A `pyproject.toml` with no `[tool.parrot.worktree]` returns the built-in defaults |
 | `test_load_manifest_rejects_malformed_table` | M1 | Unknown/ill-typed key raises `ValueError` (loud, not defaulted) |
+| `test_both_declared_groups_are_autobuildable` | M1 | `cython-core` and `navrules-pyo3` both have `autobuild=True` and a non-empty `build` argv |
+| `test_navrules_build_never_uses_maturin_develop` | M1 | The declared argv targets `build-rust-wheel`, and that Makefile recipe contains `maturin build` + `--locked` and **not** `maturin develop` |
+| `test_navrules_cargo_lock_matches_crate_version` | M1 | `rust/Cargo.lock`'s `navrules_native` pin equals `rust/Cargo.toml`'s version — the precondition for a `--locked` build |
 | `test_sync_copies_declared_artifacts` | M2 | Fake main root + empty target: every match lands at the same repo-relative path |
 | `test_sync_is_idempotent` | M2 | Second run reports `skipped`, copies nothing, leaves mtime untouched |
 | `test_sync_disabled_by_env` | M2 | `PARROT_WORKTREE_SYNC_NATIVE=0` ⇒ `enabled=False`, nothing copied |
@@ -485,6 +523,15 @@ def stub_manifest() -> NativeManifest:
 - [ ] With the `cython-core` artifact deleted from the main checkout,
       `ensure_worktree` rebuilds it automatically and the worktree ends up with
       it; two concurrent runs build it exactly once.
+- [ ] With `packages/navrules/src/navrules/_native/_navrules.abi3.so` deleted,
+      `make -C packages/navrules build-rust-wheel` restores it, and afterwards
+      `git status --porcelain packages/navrules/` is empty (no `Cargo.lock`
+      churn) and nothing under `.venv/lib/python3.*/site-packages/navrules*`
+      changed — the auto-build mutates neither tracked files nor the shared
+      environment.
+- [ ] No automated path invokes `maturin develop`
+      (`grep -rn "maturin develop" pyproject.toml packages/ai-parrot/src/parrot/flows/dev_loop/ scripts/`
+      returns nothing).
 - [ ] A failing or impossible build never fails worktree creation: the command
       still prints the path, exits 0, and emits a stderr warning containing the
       group's `manual_hint`.
@@ -547,6 +594,16 @@ class BaselineUnavailable(RuntimeError): ...                                  # 
 def main_checkout_root(worktree: Path) -> Path | None:                        # line 34
 def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -> Path:  # line 45
 
+# packages/navrules/Makefile — the EXISTING rust target (NOT used by the auto-build)
+build-rust:                                      # line 8
+    uv run --with maturin maturin develop --release   # line 9 — reinstalls into the shared venv
+# Verified 2026-10-22: `uv run --no-sync --with maturin maturin build --release
+#   --out <tmp>` exits 0 in 13.7 s (warm target) and produces
+#   navrules-1.2.4-cp311-abi3-manylinux_2_34_x86_64.whl whose only .so member is
+#   `navrules/_native/_navrules.abi3.so`. It left navrules.pth, the venv's
+#   navrules dist-info and the in-tree .so (mtime 2026-10-16) untouched, but DID
+#   rewrite rust/Cargo.lock (stale 1.2.3 vs Cargo.toml 1.2.4) — hence `--locked`.
+
 # packages/ai-parrot/setup.py — the cython-core build target
 Extension(name='parrot.utils.types',        sources=['src/parrot/utils/types.pyx'])        # setup.py:14
 Extension(name='parrot.utils.parsers.toml', sources=['src/parrot/utils/parsers/toml.pyx']) # setup.py:20
@@ -597,6 +654,8 @@ Verified against: `add1f89ea`
 | `packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/flows/dev_loop/test_native_artifacts.py` | CREATE | — | — | — |
 | `pyproject.toml` | MODIFY | `[tool.pylint.messages_control]` | `pyproject.toml:299` | 1 |
+| `packages/navrules/Makefile` | MODIFY | `build-rust:` | `Makefile:8` | 1 |
+| `packages/navrules/rust/Cargo.lock` | MODIFY | `version = "1.2.3"` in the `name = "navrules_native"` block | `Cargo.lock:71` | 1 (within that block) |
 | `scripts/sdd/ensure_worktree.py` | MODIFY | `    parser.add_argument("--json", action="store_true", help="Output JSON instead of bare path.")` | `ensure_worktree.py:293` | 1 |
 | `scripts/sdd/ensure_worktree.py` | MODIFY | `        path, created = ensure(` | `ensure_worktree.py:344` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_manager.py` | MODIFY | `        self._created[worker_id] = (path, branch)` | `worktree_manager.py:173` | 1 |
@@ -651,11 +710,24 @@ Verified against: `add1f89ea`
   gitignored, so `git status` stays clean, but a build racing a parallel
   session's build would be real damage. Hence the `fcntl.flock` + re-check
   under the lock, and the `build_timeout_s` cap.
-- **`maturin develop` is not a safe auto-build.** It installs into the shared
-  `.venv`, which `.claude/rules/worktree-management.md` §4 forbids and which
-  has already broken sessions (project memory: *stale editable .pth from
-  removed worktree*, *shared venv clobbered by concurrent sessions*). The
-  navrules group is therefore `autobuild = false` by design, not by oversight.
+- **`maturin develop` must never appear in an automated path.** It installs
+  into the shared `.venv`, which `.claude/rules/worktree-management.md` §4
+  forbids and which has already broken sessions twice (project memory: *stale
+  editable .pth from removed worktree*, *shared venv clobbered by concurrent
+  sessions*). The navrules auto-build therefore goes through
+  `build-rust-wheel` (`maturin build --out` + unpack), proven venv-neutral on
+  2026-10-22; the existing `build-rust` target stays for humans and is never
+  called by this feature.
+- **An auto-build must not dirty a tracked file.** The measured `maturin build`
+  run rewrote `packages/navrules/rust/Cargo.lock` (its `navrules_native` pin is
+  stale: `1.2.3` vs `Cargo.toml`'s `1.2.4`). A worktree-creation step that
+  silently edits a tracked file would leak into whatever commit comes next, so
+  the declared build passes `--locked`, which fails loudly (→ warning + manual
+  hint) instead of editing the lock. M1 refreshes that one line so `--locked`
+  succeeds; any future staleness degrades to a warning, never a silent edit.
+- **Cold cargo builds are slow.** 13.7 s was a warm `rust/target`; a cold
+  release build with `lto = true, codegen-units = 1` takes minutes — hence
+  `build_timeout_s = 900`, with the group lock held for the whole build.
 - **ABI tags.** The main checkout currently holds both `cpython-311` and
   `cpython-312` artifacts. Presence checks are scoped to the running
   interpreter's `sysconfig.get_config_var("EXT_SUFFIX")`; the copy is not —
@@ -686,12 +758,13 @@ Verified against: `add1f89ea`
 - [x] Where should the artifact list live? — *Resolved by the user,
       2026-10-22*: declared in `pyproject.toml` (shared libraries + crates),
       read by the tooling before the worktree starts being used.
-- [ ] Should `navrules-pyo3` ever be auto-built? Doing it the only supported
-      way (`maturin develop --release`) writes into the shared `.venv`, which
-      worktree agents are forbidden to mutate. Spec assumes **no** (declared,
-      copied, never built; manual hint emitted). Revisit only if a
-      venv-free build target (`maturin build --out` + copy) is added. —
-      *Owner: Jesus Lara*
+- [x] Should `navrules-pyo3` ever be auto-built? — *Resolved by the user,
+      2026-10-22 (spec rev 0.2)*: **yes**, via a venv-free build. The
+      `maturin build --release --locked --out <tmp>` + unpack path was measured
+      before being written into this spec (13.7 s, exit 0, venv and in-tree
+      `.so` untouched), so the group is `autobuild = true` against the new
+      `build-rust-wheel` target. `maturin develop` remains banned from every
+      automated path.
 - [ ] Should `/sdd-done`'s cleanup or `remove_worktree.py` prune synced
       artifacts explicitly? Assumed unnecessary (ignored files die with the
       tree). — *Owner: Jesus Lara*
@@ -746,3 +819,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Jesus Lara | Initial draft — FEAT-722 |
+| 0.2 | 2026-10-22 | Jesus Lara | §8 Q1 resolved: navrules IS auto-built via a new venv-free `build-rust-wheel` target (`maturin build --locked --out` + unpack, measured 13.7 s); `--locked` added so an auto-build cannot rewrite `rust/Cargo.lock`; M1 refreshes the stale lock pin |
