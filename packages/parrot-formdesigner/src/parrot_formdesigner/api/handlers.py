@@ -287,6 +287,25 @@ class FormAPIHandler:
             dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
         )
 
+    @staticmethod
+    def _plausibility_ack(request: web.Request, body: Any) -> bool:
+        """Read the plausibility reconfirmation flag (FEAT-728).
+
+        Accepts ``?plausibility_ack=true`` or a body ``plausibility_ack: true``,
+        and pops the body key so it is never judged as an undeclared answer.
+
+        Args:
+            request: The inbound request (query string).
+            body: The parsed JSON body, mutated in place when it is a dict.
+
+        Returns:
+            True when the client reconfirmed the flagged answers.
+        """
+        ack = request.query.get("plausibility_ack", "").lower() == "true"
+        if isinstance(body, dict) and body.pop("plausibility_ack", None) is True:
+            ack = True
+        return ack
+
     # ------------------------------------------------------------------
     # User context helpers (navigator-auth integration)
     # ------------------------------------------------------------------
@@ -1157,6 +1176,7 @@ class FormAPIHandler:
         llm_opt_in = request.query.get("llm_validation", "").lower() == "true"
         if isinstance(body, dict) and body.pop("llm_validation", None) is True:
             llm_opt_in = True
+        ack = self._plausibility_ack(request, body)
         data, visit_context = self._extract_visit_context(form, body)
         pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
         try:
@@ -1175,6 +1195,10 @@ class FormAPIHandler:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
+        gate = pipeline.gate_for(form, plausibility, ack=ack) if is_valid else None
+        if gate is not None:
+            is_valid = False
+            errors.update(gate.errors)
 
         if a2ui_surface_id is not None:
             if is_valid:
@@ -1182,6 +1206,8 @@ class FormAPIHandler:
             return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
 
         payload: dict[str, Any] = {"is_valid": is_valid, "errors": errors}
+        if gate is not None:
+            payload["code"] = gate.code
         if plausibility is not None:
             payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
         return JSONResponse(payload, status=200 if is_valid else 422)
@@ -1718,6 +1744,8 @@ class FormAPIHandler:
             )
             return a2ui_wire.a2ui_response([envelope], status=status)
 
+        plausibility_ack = self._plausibility_ack(request, body)
+
         # Split off an optional caller-supplied store context before it can
         # be treated as an answer field by the merge/lifecycle steps below
         # (spec §3 Module 5) — `data` is pure answers from here on.
@@ -1762,7 +1790,7 @@ class FormAPIHandler:
                     )
 
         from ..services.plausibility import PlausibilityBlocked
-        from ..services.submission_pipeline import SubmitSinkError, ValidationFailed
+        from ..services.submission_pipeline import ImplausibleSubmission, SubmitSinkError, ValidationFailed
 
         pipeline = self._build_submission_pipeline(form)
         try:
@@ -1776,6 +1804,7 @@ class FormAPIHandler:
                 extra_data=None,
                 auth_context=_auth_ctx,
                 merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
+                plausibility_ack=plausibility_ack,
                 request=request,
                 visit_context=visit_context,
             )
@@ -1784,6 +1813,16 @@ class FormAPIHandler:
             return JSONResponse({"error": exc.user_message, "reason": exc.reason}, status=exc.status_code)
         except ValidationFailed as exc:
             return _reply({"is_valid": False, "errors": exc.errors}, status=422)
+        except ImplausibleSubmission as exc:
+            return _reply(
+                {
+                    "is_valid": False,
+                    "code": exc.code,
+                    "errors": exc.errors,
+                    "plausibility": exc.report.model_dump(mode="json", exclude_none=True),
+                },
+                status=422,
+            )
         except SubmitSinkError as exc:
             return _reply({"error": str(exc)}, status=exc.status, headers=exc.headers or None)
         except PlausibilityBlocked as exc:
