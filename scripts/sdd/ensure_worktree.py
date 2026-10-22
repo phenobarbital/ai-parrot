@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from parrot.flows.dev_loop.native_artifacts import NativeSyncReport, sync_native_artifacts
 from scripts.sdd.brief_meta import brief_worktree_plan
 from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
@@ -291,6 +292,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--no-sync", action="store_true", help="Skip fetching origin/<base_branch>.")
     parser.add_argument("--dry-run", action="store_true", help="Resolve and report without mutating git.")
     parser.add_argument("--json", action="store_true", help="Output JSON instead of bare path.")
+    parser.add_argument(
+        "--no-native-sync",
+        action="store_true",
+        help="Do not copy declared native build artifacts into the worktree (FEAT-722).",
+    )
+    parser.add_argument(
+        "--no-autobuild",
+        action="store_true",
+        help="Copy native artifacts that exist, but never build a missing one (FEAT-722).",
+    )
 
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
@@ -348,6 +359,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_paths=require_paths,
             dry_run=args.dry_run,
         )
+        native = NativeSyncReport(enabled=False)
+        if not args.dry_run and not args.no_native_sync:
+            native = sync_native_artifacts(
+                main_root=repo_root,
+                target=path,
+                autobuild=not args.no_autobuild,
+            )
+        for warning in native.warnings:
+            # stderr ONLY: stdout is captured as the worktree path by callers.
+            sys.stderr.write(f"warning: {warning}\n")
 
         if args.json:
             print(
@@ -362,6 +383,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "worktree_path": str(path),
                         "base_ref": plan.base_ref,
                         "created": created,
+                        "native": {
+                            "enabled": native.enabled,
+                            "copied": native.copied,
+                            "skipped": native.skipped,
+                            "built": native.built,
+                            "missing": [entry.model_dump() for entry in native.missing],
+                            "warnings": native.warnings,
+                        },
                     }
                 )
             )
