@@ -69,7 +69,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,8 +79,9 @@
       "parallelism_notes": "imports implausible_fields and reads LLMValidationConfig.on_implausible from TASK-4623 (core/llm_validation.py); sole modifier of services/submission_pipeline.py.",
       "assigned_to": null,
       "started_at": "2026-10-22T20:09:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4624-submission-pipeline-gate.md"
+      "completed_at": "2026-10-22T20:19:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4624-submission-pipeline-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4625",
