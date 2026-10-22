@@ -354,10 +354,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat mistral (nova, attempt 1, ~6min); review fixes by orchestrator
+**Date**: 2026-10-22
+**Notes**: Created watcher.py with StabilityProbe, WatcherStats, is_candidate, FileSample. Review fix: scripted_stat in test used next(it) which raised StopIteration inside coroutine (PEP 479); fixed to next(it, None). Merge-tier validation 80 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
