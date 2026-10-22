@@ -377,10 +377,50 @@ import fails; never run `uv sync` inside a worktree.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: Claude Opus 5.5 (interactive session, `/sdd-fix issue:1c7d47068c4d`)
+**Date**: 2026-10-22
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Implemented exactly as the blueprint specified — `retract()` inserted above
+`_read()`, the tombstone branch as the first statement in `_read()`'s loop, and
+the docstring updated. No signature changed; no import added. Port of orphaned
+commit `cc5d1a6157`.
+
+All 9 acceptance criteria met:
+
+- AC-1…AC-6 — covered by `test_retracted_feedback_is_dropped_from_replay`;
+  `pytest … test_feedback.py` is 24 passed (23 pre-existing + 1 new).
+- AC-7 — the new test was run against the unmodified `coder_feedback.py` and
+  **failed** (`1 failed in 0.62s`), then passed after restoring the change.
+- AC-8 — `ruff check` and `black --check --line-length 120` clean on both files.
+- AC-9 — no signature change to `record()`, `context()`, `_read()`'s return
+  type, or `CoderFeedback`.
+
+Real-log evidence for the feature's whole point (spec §5, AC-4) is in
+`artifacts/logs/feat-723-retraction-evidence.md` (git-ignored by `.gitignore:286`
+`artifacts/`, so committed with `git add -f`). Replaying a byte copy of the
+repo's own 2436-event ledger:
+
+| | misattributed live | `context()` mentions pattern | `context()` chars |
+|---|---|---|---|
+| `dev`'s code | **4** | **yes** | 7058 |
+| FEAT-723 | **0** | no | 6725 |
+
+Event counts identical in both (723 `insight.recorded`, 4 `insight.superseded`)
+and the real ledger's sha256 is unchanged — the fix is pure replay semantics
+over an untouched append-only log.
+
+Two things worth knowing for the next task:
+
+1. The four records' real identity is `backend="codex"`, `model="gpt-5.6-terra"`,
+   files `artifacts/laya/*` — **not** the `nova` backend. A `context()` probe with
+   the wrong backend returns `""` and looks like a false pass.
+2. `python -I` **ignores `PYTHONPATH`**, so an isolated-mode script inside a
+   worktree silently imports the main checkout's editable install. The first
+   evidence run did that and reported a false FAIL. Run such scripts without
+   `-I` and assert `module.__file__` before trusting the output. (The worktree
+   also needs the Cython `.so` files copied from the main checkout —
+   `parrot/utils/types` and `parrot/utils/parsers/toml` — or everything
+   `ImportError`s at collection.)
+
+**Deviations from spec**: none.
