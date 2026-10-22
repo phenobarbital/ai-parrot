@@ -261,4 +261,7 @@ a skip is not a pass for this task's acceptance.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. `store()` now uses `_insert_params` (same 22-param order). 
+Tests (own scratch Postgres container postgres:16, SCRATCH_DSN set, none skipped): test_store_guarded.py 4 passed; test_submission_jsonb_shape.py 6 passed (baseline 6 passed); unit storage tests (revisions, extra_data, schema_tenant, metadata_storage) 64 passed. Mutation checks: no lock, `>` vs `>=`, no lower/btrim, count-all-rows — all RED (the last one needed a stronger test: cap 2 with root+revision).
+AC9 / FEAT-731: FEAT-731 has NOT landed on origin/dev (only its spec/tasks); `_clear_pending` is not part of this task.
+Deviation: ruff not installed in the worktree venv; ruff check not run.
