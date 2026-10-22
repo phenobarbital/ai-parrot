@@ -6,6 +6,7 @@
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
+**Discovered-from**: `issue:f249c19e8a4d`
 **Assigned-to**: unassigned
 
 ---
@@ -536,10 +537,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5), via `/sdd-fix issue:f249c19e8a4d`
+**Date**: 2026-10-22
+**Notes**: Implemented exactly as the blueprint fixes it, both `FILL IN` markers completed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- `store.py`: `MIN_RUNTIME_KEY`, `_running_version()`, `WikiStoreVersionError(RuntimeError)`
+  with the `newer_schema(...)` classmethod, and `SQLiteWikiStore._check_runtime_gate()`.
+  The gate is called from all four connect sites — `_open` (after `_apply_pragmas`, before
+  `_ensure_schema`), `_connect_immutable`, and both `_connect_readonly` rungs (each before
+  `yielded = True`). `min_runtime_version` is stamped in the fresh-plane block of
+  `_ensure_schema` (`INSERT OR IGNORE`) and in `_migrate`'s `if version_stale:` branch.
+  `_migration_needed` was not touched; `rebuild_index`'s restamp was left alone and is
+  covered by the gate instead.
+- The gate compares `schema_version` as integers and fails open on a missing `meta` table,
+  a missing row, or a non-integer value (warning + open, then stale/migrate as today).
+  `min_runtime_version` is never compared.
+- Tests: `packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py`, 9 tests, all
+  passing. The two `FILL IN` tests were written as bounded: `test_gate_blocks_read_only_store`
+  (read-only store refused) and `test_gate_blocks_writes_before_any_write` (`set_meta` and
+  `rebuild_index` both refused; `schema_version` still "99" and `k` still "v" afterwards —
+  nothing written). `test_newer_schema_version_refused` also asserts the read-only refusal.
+- Codebase Contract re-verified against dev `e01686b21` before writing code: every anchor
+  and every blueprint occurrence count still matched exactly (`SCHEMA_VERSION = "3"`,
+  `AttrsUnsupportedError`, the `_assert_writable` raise, the `_apply_pragmas` call, 1×
+  12-space and 2× 16-space `_log_read_only_once()`, the `_ensure_schema` insert).
+  `version.py:8` is still `__version__ = "1.2.3"`.
+- Validation: the 5 Validation Commands pass (9 + 30 tests). Wider sweep:
+  `packages/ai-parrot/tests/knowledge/wiki/` 1196 passed / 6 failed and
+  `tests/knowledge/wiki/` 2079 passed / 11 skipped. The 6 failures are pre-existing and
+  unrelated (arango backend dispatch, CLI surface golden, standup assets, backend parity) —
+  confirmed by running those same 6 node ids in the main checkout on pristine `dev`, where
+  they fail identically. `ruff check` clean; `black --line-length 120` applied.
+- Worktree note: `feat-FEAT-633-parrot-installer` was a 570-commit-stale `dev` snapshot with
+  zero feature commits (local `97e808e62`, remote `6059706c`, both already contained in
+  `origin/dev`), so it was fast-forwarded to `origin/dev` before implementing — otherwise the
+  branch diff would have read as a mass revert.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

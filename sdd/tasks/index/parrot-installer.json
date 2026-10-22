@@ -690,7 +690,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -698,8 +698,9 @@
       "parallelism_notes": "no deps; edits knowledge/wiki/store.py only",
       "assigned_to": null,
       "started_at": "2026-10-22T01:22:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4092-store-runtime-gate.md"
+      "completed_at": "2026-10-22T01:31:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4092-store-runtime-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4093",
