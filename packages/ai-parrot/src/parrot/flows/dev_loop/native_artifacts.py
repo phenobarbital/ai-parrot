@@ -168,7 +168,12 @@ def missing_artifacts(main_root: Path, manifest: NativeManifest) -> list[Missing
             elif group.abi_scoped and not any(sibling.name.endswith(_ext_suffix()) for sibling in siblings):
                 missing.append(MissingArtifact(group=group.name, reason="abi_mismatch", detail=detail))
 
-        if group.abi_scoped and matches and not sources and not any(path.name.endswith(_ext_suffix()) for path in matches):
+        if (
+            group.abi_scoped
+            and matches
+            and not sources
+            and not any(path.name.endswith(_ext_suffix()) for path in matches)
+        ):
             missing.append(
                 MissingArtifact(
                     group=group.name,

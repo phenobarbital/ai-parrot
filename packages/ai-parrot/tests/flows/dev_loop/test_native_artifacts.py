@@ -107,9 +107,7 @@ def test_env_flag_disabled_only_on_explicit_zero(monkeypatch: pytest.MonkeyPatch
     assert env_flag_disabled(AUTOBUILD_ENV_VAR) is True
 
 
-def test_sync_copies_declared_artifacts(
-    fake_main_root: Path, stub_manifest: NativeManifest, tmp_path: Path
-) -> None:
+def test_sync_copies_declared_artifacts(fake_main_root: Path, stub_manifest: NativeManifest, tmp_path: Path) -> None:
     """Sync recreates declared artifact paths under an initially empty target."""
     target = tmp_path / "wt"
     report = sync_native_artifacts(main_root=fake_main_root, target=target, manifest=stub_manifest)
