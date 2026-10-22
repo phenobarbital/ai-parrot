@@ -36,14 +36,14 @@
       "feature_id": "FEAT-716",
       "feature": "models-bots-fixes",
       "spec": "sdd/specs/models-bots-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task; touches models/bots.py and its test file only.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-22T01:00:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4577-botmodel-legacy-column-tolerance.md"
     }
