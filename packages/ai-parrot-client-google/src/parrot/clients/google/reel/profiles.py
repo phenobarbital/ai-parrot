@@ -57,6 +57,8 @@ class VideoModelProfile(BaseModel):
             values for this model. Empty when the model has no such control.
         source: Where this capability data was verified.
         checked_on: When the capability data was last verified.
+        max_outputs_per_request: Maximum number of videos one provider request
+            may return.
     """
 
     model_id: str = Field(..., description="Exact provider model identifier.")
@@ -84,6 +86,24 @@ class VideoModelProfile(BaseModel):
     )
     source: str = Field(..., description="Where this capability data was verified.")
     checked_on: date = Field(..., description="When the capability data was last verified.")
+    max_outputs_per_request: int = Field(
+        1,
+        ge=1,
+        description="Maximum videos one provider request may return (Omni > 1).",
+    )
+
+
+class VideoRequestOptions(BaseModel):
+    """Normalised single-request video options validated against a profile."""
+
+    resolution: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    number_of_videos: int = 1
+    has_starting_frame: bool = False
+    has_last_frame: bool = False
+    reference_image_count: int = 0
+    extends_video: bool = False
+    audio_mode: str = "separate"
 
 
 class VideoProfileRegistry:
@@ -102,7 +122,7 @@ class VideoProfileRegistry:
 
     @classmethod
     def default(cls) -> "VideoProfileRegistry":
-        """Developer API: Veo 3.1 standard/Fast/Lite preview + Gemini Omni (enabled).
+        """Developer API: Gemini Omni (enabled).
 
         Vertex: Veo 3.1 standard/Fast GA (``enabled=False``, pending spec §8 Q5).
         """
@@ -120,34 +140,7 @@ class VideoProfileRegistry:
             resolution_min_duration={"1080p": 8, "4k": 8},
             supports_reference_guidance=True,
         )
-        lite_shape = dict(
-            # Lite never gains 4k or reference guidance (task scope).
-            resolutions=["720p", "1080p"],
-            resolution_min_duration={"1080p": 8},
-            supports_reference_guidance=False,
-        )
         profiles = [
-            VideoModelProfile(
-                model_id="veo-3.1-generate-preview",
-                surface="gemini_developer",
-                enabled=True,
-                **veo_common,
-                **standard_shape,
-            ),
-            VideoModelProfile(
-                model_id="veo-3.1-fast-generate-preview",
-                surface="gemini_developer",
-                enabled=True,
-                **veo_common,
-                **standard_shape,
-            ),
-            VideoModelProfile(
-                model_id="veo-3.1-lite-generate-preview",
-                surface="gemini_developer",
-                enabled=True,
-                **veo_common,
-                **lite_shape,
-            ),
             VideoModelProfile(
                 model_id="gemini-omni-1.1-flash",
                 surface="gemini_developer",
@@ -160,6 +153,7 @@ class VideoProfileRegistry:
                 supports_reference_guidance=False,
                 native_audio="always",
                 person_generation_values=[],
+                max_outputs_per_request=4,
                 source=_OMNI_SDK_SOURCE,
                 checked_on=_CHECKED_ON,
             ),
@@ -181,7 +175,7 @@ class VideoProfileRegistry:
         return cls(profiles)
 
     def default_video_model(self, surface: ApiSurface) -> str:
-        """Returns the API-surface Veo 3.1 standard default model id.
+        """Returns the configured default model id for an API surface.
 
         Args:
             surface: The API surface to resolve a default for.
@@ -193,7 +187,7 @@ class VideoProfileRegistry:
             ReelValidationError: If the surface has no default configured.
         """
         defaults: Dict[ApiSurface, str] = {
-            "gemini_developer": "veo-3.1-generate-preview",
+            "gemini_developer": "gemini-omni-1.1-flash",
             "vertex": "veo-3.1-generate-001",
         }
         try:
@@ -275,6 +269,65 @@ class VideoProfileRegistry:
             raise ReelValidationError(
                 ReelErrorCode.UNSUPPORTED_OPTION,
                 f"Model {profile.model_id!r} does not support native audio.",
+            )
+
+    def validate_request(self, profile: VideoModelProfile, *, request: VideoRequestOptions) -> None:
+        """Validate all options in one provider video request against a profile.
+
+        Raises:
+            ReelValidationError: ``unsupported_option`` when the profile cannot
+                honour any requested option.
+        """
+        if request.resolution is not None:
+            if not profile.resolutions:
+                raise ReelValidationError(
+                    ReelErrorCode.UNSUPPORTED_OPTION,
+                    f"Model {profile.model_id!r} does not support a user-selectable resolution.",
+                )
+            self.validate_scene(
+                profile,
+                resolution=request.resolution,
+                audio_mode=request.audio_mode,
+                has_starting_frame=request.has_starting_frame,
+            )
+        elif request.has_starting_frame or request.audio_mode == "native":
+            self.validate_scene(
+                profile,
+                resolution=profile.resolutions[0] if profile.resolutions else "",
+                audio_mode=request.audio_mode,
+                has_starting_frame=request.has_starting_frame,
+            )
+
+        if request.duration_seconds is not None and (
+            profile.durations_seconds is None or request.duration_seconds not in profile.durations_seconds
+        ):
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support duration {request.duration_seconds!r} seconds.",
+            )
+
+        if request.number_of_videos > profile.max_outputs_per_request:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} supports at most {profile.max_outputs_per_request} videos per request.",
+            )
+
+        if request.has_last_frame and profile.backend != "veo":
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support a last-frame image.",
+            )
+
+        if request.extends_video and profile.backend != "veo":
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support video extension.",
+            )
+
+        if request.reference_image_count > 0 and not profile.supports_reference_guidance:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support reference images.",
             )
 
 
