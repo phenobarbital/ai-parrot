@@ -113,6 +113,9 @@ def _do_bootstrap() -> None:
         from parrot.observability.cost.calculator import CostCalculator  # noqa: PLC0415
 
         cost_calc = CostCalculator(override_path=config.pricing_override_path)
+        from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+        set_shared_cost_calculator(cost_calc)
 
     from parrot.observability.recorders.factory import (  # noqa: PLC0415
         build_recorders_from_config,
@@ -206,6 +209,9 @@ def shutdown_usage_recording() -> None:
             logger.exception("Error unsubscribing usage recorder.")
         _SUBSCRIPTION_IDS.clear()
 
+    from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+    set_shared_cost_calculator(None)
     if _SUBSCRIBER is not None:
         aclose = getattr(_SUBSCRIBER, "aclose", None)
         if aclose is not None:
