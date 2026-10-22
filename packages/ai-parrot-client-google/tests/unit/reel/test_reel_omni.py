@@ -419,6 +419,42 @@ class TestStartingFrameAndDeadline:
         create.assert_not_called()
 
 
+class TestGenerateMany:
+    async def test_omni_generate_many_single_request(self, profile, downloader, tmp_path):
+        video = _video_content(data=base64.b64encode(b"FAKEVIDEO").decode("ascii"))
+        create = AsyncMock(return_value=_interaction(output_video=video))
+        client = _fake_client(create=create)
+        owner = _fake_owner(client)
+        adapter = OmniClipAdapter(owner, downloader)
+
+        clips = await adapter.generate_many(
+            profile=profile,
+            prompt="p",
+            output_directory=tmp_path,
+            aspect_ratio="16:9",
+            number_of_videos=2,
+            deadline=FAR_DEADLINE(),
+        )
+
+        assert len(clips) == 2
+        assert client.aio.interactions.create.await_count == 1
+
+    async def test_omni_generate_many_over_cap(self, profile, downloader, tmp_path):
+        with pytest.raises(ReelValidationError):
+            await OmniClipAdapter(
+                _fake_owner(_fake_client(create=AsyncMock())),
+                downloader,
+            ).generate_many(
+                profile=profile,
+                prompt="p",
+                output_directory=tmp_path,
+                aspect_ratio="16:9",
+                number_of_videos=999,
+                deadline=FAR_DEADLINE(),
+            )
+        # The mock client is not used in this test, so we just verify the error is raised
+
+
 class TestCancellation:
     async def test_cancellation_during_create_propagates_and_closes_client(self, profile, downloader, tmp_path):
         create = AsyncMock(side_effect=asyncio.CancelledError())

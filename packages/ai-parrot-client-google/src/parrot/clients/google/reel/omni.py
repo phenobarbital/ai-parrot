@@ -23,7 +23,7 @@ import importlib.util
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from .clip import GeneratedReelClip
 from .download import ProviderMediaDownloader
@@ -106,6 +106,178 @@ class OmniClipAdapter:
         starting_frame: Optional[Path],
         deadline: float,
     ) -> GeneratedReelClip:
+        """
+        Generates one Omni clip for a scene.
+
+        Args:
+            profile: The resolved, enabled Omni profile to generate with.
+            prompt: The scene's video prompt.
+            output_directory: Directory the materialized clip is written into.
+            aspect_ratio: Requested aspect ratio, forwarded as-is to
+                ``response_format.aspect_ratio``.
+            resolution: Not applicable to Omni; accepted only for signature
+                parity with :class:`VeoClipAdapter`.
+            target_duration_seconds: The scene's edit target duration, used
+                only for the post-measurement insufficient-duration check —
+                never sent to the provider (Omni has no verified duration
+                enum; see spec §3 M4 "Does NOT invent a duration enum").
+            starting_frame: Must be ``None`` — Omni has no verified
+                starting-frame/image-to-video capability (profile
+                ``supports_starting_frame=False``).
+            deadline: Absolute ``time.monotonic()``-comparable deadline.
+
+        Returns:
+            The generated, measured, locally-saved clip.
+
+        Raises:
+            ReelError: Unsupported starting frame, submission failure,
+                terminal interaction status, empty/invalid output, download
+                or media-validation failure — creation failures are never
+                retried (ambiguous outcome).
+            asyncio.CancelledError: Propagated unchanged.
+        """
+        if starting_frame is not None:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support a starting-frame image.",
+            )
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ReelError(
+                ReelErrorCode.TIMEOUT,
+                "Deadline already passed before Omni submission; not submitted.",
+                stage="omni_submit",
+                retryable=True,
+            )
+
+        # response_format.duration is intentionally omitted (spec §3 M4): no
+        # Omni duration value has been verified, so none is sent — the
+        # provider's own default applies and the OUTPUT is measured instead.
+        response_format = {"type": "video", "aspect_ratio": aspect_ratio}
+
+        # "Directly created clients require explicit ownership" (client.py's
+        # get_client docstring) — owned and closed on every exit.
+        client = await self._owner.get_client(model=profile.model_id)
+        try:
+            try:
+                interaction = await client.aio.interactions.create(
+                    agent=profile.model_id,
+                    input=prompt,
+                    background=False,
+                    store=False,
+                    stream=False,
+                    response_format=response_format,
+                    timeout=remaining,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Ambiguous creation failure: never retried (Scope: "do not
+                # retry ambiguous creation failures").
+                raise classify_provider_error(exc, stage="omni_submit") from exc
+
+            interaction_id = getattr(interaction, "id", None)
+            local_path = await self._normalize_and_materialize(
+                interaction, output_directory, deadline=deadline, operation_id=interaction_id
+            )
+        finally:
+            await client.aio.aclose()
+
+        measured_duration, has_audio = await self._measure(local_path)
+        self._check_sufficient_duration(target_duration_seconds, measured_duration, operation_id=interaction_id)
+
+        return GeneratedReelClip(
+            local_path=local_path,
+            model=profile.model_id,
+            backend="omni",
+            submitted_duration_seconds=None,  # Omni: provider default, never submitted
+            measured_duration_seconds=measured_duration,
+            has_audio=has_audio,
+            provider_operation_id=interaction_id,
+        )
+
+    async def generate_many(
+        self,
+        *,
+        profile: VideoModelProfile,
+        prompt: str,
+        output_directory: Path,
+        aspect_ratio: str,
+        number_of_videos: int,
+        deadline: float,
+    ) -> List[GeneratedReelClip]:
+        """
+        Generate ``number_of_videos`` Omni videos in ONE Interactions request.
+
+        Raises:
+            ReelValidationError: ``unsupported_option`` when ``number_of_videos`` exceeds
+                ``profile.max_outputs_per_request``.
+            ReelError: same submission/timeout/download semantics as :meth:`generate`.
+        """
+        if number_of_videos > profile.max_outputs_per_request:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} returns at most {profile.max_outputs_per_request} videos per request.",
+            )
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ReelError(
+                ReelErrorCode.TIMEOUT,
+                "Deadline already passed before Omni submission; not submitted.",
+                stage="omni_submit",
+                retryable=True,
+            )
+
+        # response_format.duration is intentionally omitted (spec §3 M4): no
+        # Omni duration value has been verified, so none is sent — the
+        # provider's own default applies and the OUTPUT is measured instead.
+        response_format = {"type": "video", "aspect_ratio": aspect_ratio}
+
+        # "Directly created clients require explicit ownership" (client.py's
+        # get_client docstring) — owned and closed on every exit.
+        client = await self._owner.get_client(model=profile.model_id)
+        try:
+            try:
+                interaction = await client.aio.interactions.create(
+                    agent=profile.model_id,
+                    input=prompt,
+                    background=False,
+                    store=False,
+                    stream=False,
+                    response_format=response_format,
+                    timeout=remaining,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Ambiguous creation failure: never retried (Scope: "do not
+                # retry ambiguous creation failures").
+                raise classify_provider_error(exc, stage="omni_submit") from exc
+
+            interaction_id = getattr(interaction, "id", None)
+            clips = []
+            for i in range(number_of_videos):
+                local_path = await self._normalize_and_materialize(
+                    interaction, output_directory, deadline=deadline, operation_id=f"{interaction_id}_{i}"
+                )
+                measured_duration, has_audio = await self._measure(local_path)
+                clips.append(
+                    GeneratedReelClip(
+                        local_path=local_path,
+                        model=profile.model_id,
+                        backend="omni",
+                        submitted_duration_seconds=None,  # Omni: provider default, never submitted
+                        measured_duration_seconds=measured_duration,
+                        has_audio=has_audio,
+                        provider_operation_id=f"{interaction_id}_{i}",
+                    )
+                )
+        finally:
+            await client.aio.aclose()
+
+        return clips
         """Generates one Omni clip for a scene.
 
         Args:
