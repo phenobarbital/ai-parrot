@@ -59,7 +59,7 @@ unattributable.
   directly, e.g. FieldSync execution/visits) — and by FEAT-730's
   `store_guarded()`.
 - G3. A **reaper** deletes the blob (and thumbnail) of every pending record
-  older than its TTL — 48 h for anonymous uploads, 30 days for authenticated
+  older than its TTL — 48 h for anonymous uploads, 7 days for authenticated
   ones — after a safety check that no stored submission references it.
 - G4. Same mechanism for anonymous (public share page) and authenticated (app)
   uploads; only the TTL differs.
@@ -152,7 +152,7 @@ unattributable.
      (`failed`) for the next run;
    - returns `ReapResult(deleted, failed, still_referenced)`.
    - Defaults exported: `DEFAULT_ANONYMOUS_TTL = timedelta(hours=48)`,
-     `DEFAULT_AUTHENTICATED_TTL = timedelta(days=30)`.
+     `DEFAULT_AUTHENTICATED_TTL = timedelta(days=7)`.
 
 6. **Strict delete** — `AbstractBlobStorage.delete()` today swallows every
    non-404 error with a warning (`services/blob_storage.py:323-341`), so the
@@ -167,7 +167,7 @@ unattributable.
    warning, so the thumbnail of a rejected multi-file upload is always leaked.
    It now deletes the extracted thumbnail ref.
 
-**Why 30 days for authenticated uploads.** Parrot's own server-side drafts do
+**Why 7 days for authenticated uploads (Juan, 2026-10-22: "30 días es demasiado… una semana… que se pierda la foto y tenga que llenarlo de nuevo").** Parrot's own server-side drafts do
 NOT justify it: `PartialSaveStore` is Redis with a default TTL of 1 hour
 (`services/partial_saves.py:37-38, :54`), refreshed on write. The long TTL is
 for the HOST's clients: the FieldSync app uploads on pick and may hold the
@@ -259,7 +259,7 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
 
   DEFAULT_TABLE = "pending_uploads"            # FieldSync passes table_name="fs_pending_uploads"
   DEFAULT_ANONYMOUS_TTL = timedelta(hours=48)
-  DEFAULT_AUTHENTICATED_TTL = timedelta(days=30)
+  DEFAULT_AUTHENTICATED_TTL = timedelta(days=7)
 
   def iter_blob_refs(data: Any) -> set[str]:
       """Every str value under a `blob_ref` key, walking dicts/lists recursively."""
@@ -548,7 +548,7 @@ Verified against: `a0bb15f9d`
 
 ### Known Risks / Gotchas
 - **FEAT-730 overlap**: FEAT-730 M2 adds `store_guarded` (same file, same transaction concern) and M4 rewires the file-upload route and blob tenant. Whichever lands second must (a) call `_clear_pending` inside `store_guarded`'s transaction, (b) keep recording under the URL tenant. FEAT-728 also edits the pipeline submit block (:231-260).
-- **Late submit after TTL**: an authenticated device that submits more than 30 days after uploading references a deleted blob. The safety check cannot help (no submission yet). Mitigated by the long default and host-tunable TTL.
+- **Late submit after TTL**: an authenticated device that submits more than 7 days after uploading references a deleted blob. The safety check cannot help (no submission yet). ACCEPTED by Juan: after a week the rep re-takes the photo and fills the form again; host-tunable TTL.
 - **Sink forms**: rows stored by a FEAT-457 sink are invisible to `references_blob` (it reads the generic table). If the post-sink clear fails, the reaper deletes a referenced blob after the TTL. Logged at warning level on the clear; accepted (sink forms are rare and the clear is a single DELETE).
 - **Pending rows in another tenant**: rows are recorded under the URL tenant; a host that stores the submission under a different tenant than the upload URL will not clear them (FieldSync uses the programme for both).
 - **Cost of the safety check**: `jsonb_path_exists` is evaluated only on rows of the pending row's `form_uid` (existing `idx_<table>_form_uid`), at most `batch` times per tenant per night. Upper bound ≈ batch × submissions-per-form JSON scans; acceptable for a nightly job. No new index on `data`.
@@ -567,7 +567,7 @@ Verified against: `a0bb15f9d`
 
 - [x] Which cleanup strategy? — *Resolved 2026-10-22 (Juan)*: pending-upload registry + nightly sweep (Option 3), not S3 lifecycle and not upload-on-submit.
 - [x] Same mechanism for the app and the public share page? — *Resolved 2026-10-22 (Juan)*: yes, one mechanism; separate feature from public forms.
-- [x] TTLs? — *Contract default*: 48 h anonymous / 30 days authenticated, host-configurable (FieldSync FEAT-801 config keys).
+- [x] TTLs? — *Contract default*: 48 h anonymous / 7 days authenticated (Juan, 2026-10-22), host-configurable (FieldSync FEAT-801 config keys).
 - [ ] Should the reaper also handle abandoned chunk-upload blobs (`_CHUNK_BUFFERS`)? Out of scope v1. — *Owner: Juan*
 - [ ] Should `is_anonymous_caller` also become the source of FEAT-730's `SubmittedEvent.anonymous` (FEAT-730 Q2)? — *Owner: Juan*
 
@@ -599,3 +599,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from the orphan-upload contract (Option 3) |
+| 0.2 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Authenticated TTL 30 → 7 days (Juan) |
