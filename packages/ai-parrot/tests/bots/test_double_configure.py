@@ -141,3 +141,52 @@ async def test_failed_configure_still_marks_configured() -> None:
         await bot.configure()
 
     assert bot.is_configured is True
+
+
+def _wm_registering_bot() -> AbstractBot:
+    """A stub bot whose post_configure() re-registers a FRESH WorkingMemoryToolkit every call (unfixed shape)."""
+    from parrot.tools.manager import ToolManager
+    from parrot.tools.working_memory import WorkingMemoryToolkit
+
+    bot = _stub_bot()
+    bot.tool_manager = ToolManager(include_search_tool=False)
+
+    async def post_configure() -> None:
+        bot.tool_manager.register_toolkit(WorkingMemoryToolkit(session_id=f"{bot.name}-wm"))
+
+    bot.post_configure = post_configure
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_configure_twice_end_to_end() -> None:
+    from parrot.tools.working_memory import WorkingMemoryToolkit
+
+    bot, app = _wm_registering_bot(), _app()
+    await bot.configure(app)
+    first = bot.tool_manager.find_registered_toolkit(WorkingMemoryToolkit)
+    assert first is not None
+    names = list(bot.tool_manager.list_tools())
+    await bot.configure(app)
+    await bot.reconfigure()
+    after = list(bot.tool_manager.list_tools())
+    wm_names = [n for n in after if n.startswith("wm_")]
+    assert wm_names
+    assert len(wm_names) == len(set(wm_names))
+    assert sorted(after) == sorted(names)
+    assert bot.tool_manager.find_registered_toolkit(WorkingMemoryToolkit) is first
+
+
+@pytest.mark.asyncio
+async def test_two_agents_parallel_configure() -> None:
+    import asyncio
+
+    from parrot.tools.working_memory import WorkingMemoryToolkit
+
+    first, second = _wm_registering_bot(), _wm_registering_bot()
+    second.name = "test-bot-2"
+    await asyncio.gather(first.configure(_app()), second.configure(_app()))
+    wm1 = first.tool_manager.find_registered_toolkit(WorkingMemoryToolkit)
+    wm2 = second.tool_manager.find_registered_toolkit(WorkingMemoryToolkit)
+    assert wm1 is not None and wm2 is not None
+    assert wm1 is not wm2
