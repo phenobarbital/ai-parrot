@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from collections import OrderedDict, deque
 from typing import TYPE_CHECKING, Callable, Protocol
@@ -77,7 +78,7 @@ class InProcessSlidingWindow:
                 hits.append(now)
             else:
                 # Deny: compute retry_after_s from hits[0]
-                retry_after_s = max(1, int(hits[0] - now + 1))  # Always >= 1
+                retry_after_s = max(1, math.ceil(hits[0] + window_s - now))  # Always >= 1
                 return QuotaDecision(allowed=False, retry_after_s=retry_after_s)
 
             # Evict LRU key while len(self._hits) > self._max_keys

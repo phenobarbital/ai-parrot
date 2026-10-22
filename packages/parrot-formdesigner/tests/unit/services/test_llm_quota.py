@@ -74,6 +74,8 @@ class TestSlidingWindow:
         decision = await limiter.acquire(key, limit=10, window_s=60.0)
         assert decision.allowed is False
         assert decision.retry_after_s >= 1, f"retry_after_s should be >= 1, got {decision.retry_after_s}"
+        # All hits landed at t=0, so the oldest expires a full window later.
+        assert decision.retry_after_s == 60
 
     async def test_window_slides(self) -> None:
         """advance past window_s -> allowed again — bounded by AC13 (monotonic clock)"""
