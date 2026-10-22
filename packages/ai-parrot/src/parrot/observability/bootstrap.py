@@ -1,7 +1,13 @@
 """ensure_observability_bootstrapped — env-driven, idempotent auto-boot.
 
-Called once (lazily, from ``EventEmitterMixin._init_events``) the first time any
-bot/client/tool is constructed. When ``OBSERVABILITY_ENABLED=true``, it activates
+Invoked on every ``EventEmitterMixin._init_events()`` — i.e. on each bot/client/
+tool construction — through the injectable bootstrap hook that
+``parrot.core.events.lifecycle`` installs via
+``navigator_eventbus.lifecycle.mixin.set_bootstrap_hook`` (FEAT-725). This
+function is idempotent, which that hook contract requires: the first call does
+the work, every later call returns on the ``_BOOTSTRAPPED`` check.
+
+When ``OBSERVABILITY_ENABLED=true``, it activates
 the usage-recording layer selected by ``OBSERVABILITY_BACKEND`` WITHOUT the user
 writing any code:
 
@@ -44,8 +50,16 @@ def ensure_observability_bootstrapped() -> None:
     """Activate env-driven observability exactly once. Safe to call repeatedly.
 
     No-op (after recording the decision) when ``OBSERVABILITY_ENABLED`` is not
-    truthy. Never raises: any failure is logged at DEBUG and swallowed so it can
-    never break bot/client construction.
+    truthy. A failure of the local observability layer is logged at ERROR and
+    swallowed, so it can never break bot/client construction.
+
+    Raises:
+        Exception: whatever ``setup_event_fanout()`` raises. Invalid durable
+            fan-out configuration is deliberately a startup error, so it is
+            logged at ERROR and re-raised; ``_BOOTSTRAPPED`` stays ``False``
+            and the next construction retries. The ERROR record matters
+            because the ``EventEmitterMixin`` hook site that calls this
+            swallows a raising hook at DEBUG.
     """
     global _BOOTSTRAPPED  # noqa: PLW0603
     if _BOOTSTRAPPED:
@@ -57,12 +71,23 @@ def ensure_observability_bootstrapped() -> None:
             from parrot.observability.fanout import setup_event_fanout  # noqa: PLC0415
 
             # Invalid durable fan-out configuration is a startup error. This is
-            # deliberately outside the best-effort local-observability guard.
-            setup_event_fanout()
+            # deliberately outside the best-effort local-observability guard —
+            # but logged at error first (FEAT-725): the EventEmitterMixin hook
+            # site swallows a raising hook at DEBUG, so without this the
+            # misconfiguration would be completely silent in production.
+            try:
+                setup_event_fanout()
+            except Exception:
+                logger.error(
+                    "Durable event fan-out setup failed; PARROT_EVENT_FANOUT_ENABLED "
+                    "is set but no lifecycle event will reach the bus.",
+                    exc_info=True,
+                )
+                raise
         try:
             _do_bootstrap()
         except Exception:  # noqa: BLE001 — observability must never break construction
-            logger.debug("Observability auto-boot failed; continuing.", exc_info=True)
+            logger.error("Observability auto-boot failed; continuing.", exc_info=True)
         finally:
             _BOOTSTRAPPED = True
 
