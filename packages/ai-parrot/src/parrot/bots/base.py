@@ -72,6 +72,8 @@ from parrot.core.events.lifecycle.events import (
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 # user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
 # current_memory_key_id (FEAT-525): scopes read_omitted_content's omission-store lookup
+from parrot.observability.cost import backfill_estimated_cost as _backfill_estimated_cost
+from parrot.observability.cost import last_call_cost as _last_call_cost
 from parrot.observability.context import (
     current_agent_name,
     current_memory_key_id,
@@ -2139,9 +2141,11 @@ class BaseBot(AbstractBot):
                     try:
                         _stream_blocked = False
                         try:
+                            _last_call_cost.set(None)
                             async for chunk in client.ask_stream(**llm_kwargs):
                                 if isinstance(chunk, AIMessage):
                                     ai_message = chunk
+                                    _backfill_estimated_cost(ai_message)
                                 else:
                                     # FEAT-396 (TASK-2029): wrap chunk yields through
                                     # registered StreamingGuardrail adapters + the

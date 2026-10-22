@@ -86,7 +86,7 @@ from parrot.observability.context import (
     current_tenant,
     current_user_id,
 )
-from parrot.observability.cost import get_shared_cost_calculator
+from parrot.observability.cost import get_shared_cost_calculator, last_call_cost
 
 # FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
 _BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
@@ -786,6 +786,7 @@ $backstory
         # the event reaches MetricsSubscriber before the next line of the caller
         # executes.
         await self._forward_to_global_awaited(event)
+        last_call_cost.set(cost_usd)
         return cost_usd
 
     def _compute_call_cost(

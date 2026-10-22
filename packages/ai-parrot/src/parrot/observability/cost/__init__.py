@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Optional
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from parrot.core.events.lifecycle.events import AfterClientCallEvent
@@ -18,6 +19,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 _SHARED: "Optional[CostCalculator]" = None
+
+
+#: FEAT-710 — cost (USD) computed once for the most recent client call in this context. Set by
+#: ``AbstractClient._emit_after_call``; read by the bot layer to fill ``usage.estimated_cost``.
+last_call_cost: ContextVar[Optional[float]] = ContextVar("parrot_last_call_cost", default=None)
+
+
+def backfill_estimated_cost(message: Any) -> None:
+    """Copy the last call's cost into ``message.usage.estimated_cost`` when that is still None.
+
+    Never raises: telemetry must not break the response path.
+    """
+    cost = last_call_cost.get()
+    if cost is None:
+        return
+    try:
+        usage = getattr(message, "usage", None)
+        if usage is not None and getattr(usage, "estimated_cost", None) is None:
+            usage.estimated_cost = cost
+    except Exception:  # noqa: BLE001
+        logger.debug("estimated_cost backfill failed", exc_info=True)
 
 
 def get_shared_cost_calculator() -> "Optional[CostCalculator]":

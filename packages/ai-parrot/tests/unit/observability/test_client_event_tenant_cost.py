@@ -102,3 +102,58 @@ async def test_failed_call_has_tenant() -> None:
     event = client.events.emitted[0]
     assert isinstance(event, ClientCallFailedEvent)
     assert event.tenant == "t2"
+
+
+# --- AC-3: the cost computed once reaches the response's usage.estimated_cost ---------------------
+
+
+class _Usage:
+    def __init__(self, estimated_cost=None):
+        self.estimated_cost = estimated_cost
+
+
+class _Msg:
+    def __init__(self, usage):
+        self.usage = usage
+
+
+@pytest.mark.asyncio
+async def test_emit_after_call_publishes_last_call_cost() -> None:
+    from parrot.observability.cost import last_call_cost
+
+    set_shared_cost_calculator(_Calc(0.02))
+    last_call_cost.set(None)
+    await _Client()._emit_after_call(TraceContext.new_root(), client_name="openai", model="m", duration_ms=1.0)
+    assert last_call_cost.get() == 0.02
+
+
+def test_backfill_only_fills_none_and_never_raises() -> None:
+    from parrot.observability.cost import backfill_estimated_cost, last_call_cost
+
+    token = last_call_cost.set(0.5)
+    try:
+        empty, priced = _Msg(_Usage()), _Msg(_Usage(0.9))
+        backfill_estimated_cost(empty)
+        backfill_estimated_cost(priced)
+        backfill_estimated_cost(object())  # no usage attribute
+        assert empty.usage.estimated_cost == 0.5
+        assert priced.usage.estimated_cost == 0.9
+    finally:
+        last_call_cost.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_execute_llm_call_backfills_estimated_cost() -> None:
+    from parrot.bots.abstract import AbstractBot
+
+    set_shared_cost_calculator(_Calc(0.03))
+    client = _Client()
+    usage = _Usage()
+
+    async def _ask(**_kwargs):
+        await client._emit_after_call(TraceContext.new_root(), client_name="openai", model="m", duration_ms=1.0)
+        return _Msg(usage)
+
+    client.ask = _ask
+    response = await AbstractBot.execute_llm_call(object(), client, "ask")
+    assert response.usage.estimated_cost == 0.03
