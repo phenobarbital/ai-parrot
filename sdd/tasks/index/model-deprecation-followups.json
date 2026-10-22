@@ -50,7 +50,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +58,9 @@
       "parallelism_notes": "no dependencies — first task of the video lane; owns reel/profiles.py",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4581-video-registry-omni-default.md"
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4581-video-registry-omni-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4582",
@@ -129,7 +130,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -137,8 +138,9 @@
       "parallelism_notes": "no dependencies — first task of the computer-use lane; owns toolkit.py/backend.py",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4585-computer-type-text-focused.md"
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4585-computer-type-text-focused.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4586",
@@ -187,7 +189,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -195,8 +197,9 @@
       "parallelism_notes": "independent lane — only touches openai_backend.py and its test",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4588-openai-transcription-formats.md"
+      "completed_at": "2026-10-22T12:26:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4588-openai-transcription-formats.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4589",
