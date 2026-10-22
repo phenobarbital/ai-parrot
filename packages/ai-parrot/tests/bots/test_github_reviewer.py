@@ -4947,7 +4947,8 @@ class TestPostConfigureReentrant:
         reviewer = GitHubReviewer.__new__(GitHubReviewer)
         reviewer.logger = logging.getLogger(__name__)
         reviewer.public_channel_id = "public123"
-        reviewer._management_chat_id = None
+        reviewer.management_chat_id = None
+        reviewer.configured_management_chat_id = None
         reviewer.tool_manager = ToolManager(include_search_tool=False)
         reviewer.tools = []
         reviewer._llm = None
@@ -4961,8 +4962,27 @@ class TestPostConfigureReentrant:
         # register_toolkit() can generate their tools without __init__ state; otherwise construct them
         # offline (read their __init__ first — `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:874`). Count builder calls with a
         # MagicMock(side_effect=[...]) patched over _build_git_toolkit / _build_jira_toolkit.
-        git_toolkit = GitToolkit.__new__(GitToolkit)
-        jira_toolkit = JiraToolkit.__new__(JiraToolkit)
+        from parrot.bots import github_reviewer as gr_module
+        from parrot.tools.toolkit import AbstractToolkit
+
+        class FakeGit(AbstractToolkit):
+            """Offline stand-in for GitToolkit."""
+
+            async def fake_git_op(self) -> str:
+                """Fake git operation."""
+                return "ok"
+
+        class FakeJira(AbstractToolkit):
+            """Offline stand-in for JiraToolkit."""
+
+            async def fake_jira_op(self) -> str:
+                """Fake jira operation."""
+                return "ok"
+
+        monkeypatch.setattr(gr_module, "GitToolkit", FakeGit)
+        monkeypatch.setattr(gr_module, "JiraToolkit", FakeJira)
+        git_toolkit = FakeGit()
+        jira_toolkit = FakeJira()
 
         # Track builder calls
         git_build_calls = []
@@ -4995,7 +5015,7 @@ class TestPostConfigureReentrant:
 
         # reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(GitToolkit)
         assert reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(
-            GitToolkit
+            FakeGit
         ), "git_toolkit should be the registered instance"
 
         # No duplicate names in reviewer.tools
