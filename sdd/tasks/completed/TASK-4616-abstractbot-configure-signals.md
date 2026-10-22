@@ -542,4 +542,30 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+Implemented as specified, with one design correction found during
+implementation and folded in:
+
+**`configure_is_noop` is prospective, not retrospective.** The blueprint had
+`configure()` increment the counter and then call the predicate, which implies
+a `> 1` test. But a pre-super override asks the question from *outside*
+`configure()`, where the counter has not yet been incremented — after one
+completed configure it reads 1, so a `> 1` test would answer `False` and let
+the override's pre-super work run a second time. The predicate therefore tests
+`configure_count >= 1` and `configure()` calls it BEFORE incrementing. Both
+callers now get the same answer. `test_configure_is_noop_is_prospective_before_any_increment`
+pins this; without the fix TASK-4618's whole pattern would have been a no-op.
+
+`previous_app` was dropped from `configure()` (it is now read inside the
+predicate); `resolved_app` is assigned after the guard, where the surviving
+path uses it. Observable behaviour of `configure()` is unchanged: same counter
+semantics, same INFO log text, same `None` return, same try/except/finally.
+
+Tests: 11 added in `tests/bots/test_configure_override_guards.py`. The file
+duplicates FEAT-721's `_stub_bot`/`_app` helpers rather than importing them —
+cross-test-module import (`from test_double_configure import ...`) raises
+`ModuleNotFoundError` under this suite's pytest import mode. A comment marks
+the two as needing to stay in sync.
+
+Validation: `pytest tests/bots/test_configure_override_guards.py
+tests/bots/test_double_configure.py -q` → **17 passed**. `ruff check` clean on
+both files.

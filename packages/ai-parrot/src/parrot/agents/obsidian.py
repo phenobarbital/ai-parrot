@@ -271,6 +271,8 @@ class FirefliesObsidianAgent(BasicAgent):
         can answer free-text questions about meetings.
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
 
         # --- Register Obsidian toolkit tools with ToolManager ---
         self._initialize_tools([self.obsidian_toolkit])

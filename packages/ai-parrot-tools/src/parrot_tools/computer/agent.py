@@ -132,6 +132,8 @@ class ComputerAgent(Agent):
         are routed back here for auto / interactive / HITL confirmation.
         """
         await super().configure(app=app)
+        if self.configure_skipped:
+            return
         client = getattr(self, "_llm", None)
         if client is not None:
             try:
