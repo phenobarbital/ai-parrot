@@ -488,10 +488,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Delivered on attempt 3 by seat gpt-5.6-luna (codex) after two terra attempts failed task-tier validation. Merge-tier validation green (226 passed). Review found an undefined LLMQuota annotation (F821); fixed in 317c60e0653a65e5dc887e845119d4baa5562712. Feedback recorded for the pattern string-annotation-without-type-checking-import.

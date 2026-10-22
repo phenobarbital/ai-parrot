@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T23:00:36+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -50,16 +50,17 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: touches core/llm_validation.py and core/__init__.py, which no other task in this feature modifies.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4623-llm-validation-policy-and-classifier.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:15:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4623-llm-validation-policy-and-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4624",
@@ -68,7 +69,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -77,9 +78,10 @@
       "parallel": true,
       "parallelism_notes": "imports implausible_fields and reads LLMValidationConfig.on_implausible from TASK-4623 (core/llm_validation.py); sole modifier of services/submission_pipeline.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4624-submission-pipeline-gate.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:19:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4624-submission-pipeline-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4625",
@@ -88,7 +90,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -97,9 +99,10 @@
       "parallel": true,
       "parallelism_notes": "catches ImplausibleSubmission and calls SubmissionPipeline.gate_for / submit(plausibility_ack=) from TASK-4624 (services/submission_pipeline.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4625-http-a2ui-gate-surfacing.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:27:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4625-http-a2ui-gate-surfacing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4626",
@@ -108,16 +111,17 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates services/llm_quota.py and its own unit test file; imports nothing from this feature's other tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4626-llm-quota-service.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4626-llm-quota-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4627",
@@ -126,7 +130,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -136,9 +140,10 @@
       "parallel": true,
       "parallelism_notes": "both modify api/handlers.py with TASK-4625 (serialized: 4625 first); imports LLMQuota/QuotaDecision from TASK-4626 (services/llm_quota.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4627-llm-quota-wiring-and-auth-gate.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:41:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4627-llm-quota-wiring-and-auth-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4628",
@@ -147,7 +152,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -156,9 +161,10 @@
       "parallel": true,
       "parallelism_notes": "imports ImplausibleSubmission and passes submit(plausibility_ack=) from TASK-4624 (services/submission_pipeline.py); sole modifier of api/audio_ws.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4628-audio-channel-gate-parity.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:27:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4628-audio-channel-gate-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4629",
@@ -167,7 +173,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -177,9 +183,10 @@
       "parallel": true,
       "parallelism_notes": "documents the merged behaviour of TASK-4627 (quota knobs, 429 shape) and TASK-4628 (voice codes); transitively covers 4623-4625.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4629-enforcement-documentation.md"
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:46:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4629-enforcement-documentation.md",
+      "verification": "verified"
     }
   ]
 }

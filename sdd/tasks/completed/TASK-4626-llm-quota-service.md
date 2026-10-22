@@ -449,10 +449,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Delivered by seat glm (nova, zai.glm-4.7-flash), 1 attempt, 211s. Merge-tier validation green (189 passed). Review found retry_after_s ignored window_s; fixed in fa18c0e96de9ce5acbf3a317efc267721f18b37a with an exact-value test. Feedback: coder-feedback:6d0d1fcc75d81293964b0da2. Review: coder-review:489283f0d5b1194ddbec3134.

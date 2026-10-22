@@ -97,7 +97,7 @@ from ..renderers.audio import (
 from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
-from ..services.submission_pipeline import SubmissionPipeline, ValidationFailed
+from ..services.submission_pipeline import ImplausibleSubmission, SubmissionPipeline, ValidationFailed
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -1200,12 +1200,19 @@ class AudioFormWSHandler:
                 auth_context=self._auth_context(ctx.user),
                 merge_session_id=self._partial_session(ctx),
                 plausibility=state.plausibility,
+                # Reaching Submit in server mode means the REVIEW turn was confirmed, so the
+                # answers are already reconfirmed by the user (FEAT-728). `reject` still refuses.
+                plausibility_ack=True,
                 submission_id=state.submission_id,
             )
         except ValidationFailed as exc:
             return SubmitDone(type="_submit_done", outcome={"errors": exc.errors})
         except PlausibilityBlocked as exc:
             return IOFailed(type="_io_failed", request=item.type, code="PLAUSIBILITY_UNAVAILABLE", detail=exc.reason)
+        except ImplausibleSubmission as exc:
+            # FEAT-728 — `reject` refuses even a reconfirmed answer; tell the user which code,
+            # not a generic SUBMIT_FAILED. MUST stay above the broad `except` below.
+            return IOFailed(type="_io_failed", request=item.type, code=exc.code, detail="implausible answers")
         except Exception as exc:  # noqa: BLE001 — sink/lifecycle failures: surface and re-ask the last question
             self.logger.warning("Audio submission failed: %s", type(exc).__name__)
             return IOFailed(
