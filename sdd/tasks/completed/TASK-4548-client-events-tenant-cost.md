@@ -205,10 +205,10 @@ See the test-file block in the Implementation Blueprint; every `FILL IN` test mu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker orchestrator (attempt 3; codex terra+sol returned empty_delivery on the under-specified `# FILL IN`)
+**Date**: 2026-10-22
+**Notes**: AC-1, AC-2 and failed-call tenant delivered in clients/base.py (+ tests, merge-tier green). AC-3 (backfill usage.estimated_cost) NOT delivered: needs edits in clients/openai_base.py and other provider call sites, outside the task file list. _emit_after_call now returns cost_usd so call sites can do it. Filed in ledger as a major feature_gap.
 
 **Deviations from spec**: none

@@ -136,7 +136,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -148,8 +148,9 @@
       "parallelism_notes": "Reads current_tenant (TASK-4544, observability/context.py), sets AfterClientCallEvent.tenant/cost_usd (TASK-4546, events/client.py), calls get_shared_cost_calculator (TASK-4547, observability/cost/__init__.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4548-client-events-tenant-cost.md"
+      "completed_at": "2026-10-22T13:46:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4548-client-events-tenant-cost.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4549",
