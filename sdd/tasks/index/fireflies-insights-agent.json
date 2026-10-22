@@ -207,7 +207,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -217,8 +217,9 @@
       "parallelism_notes": "anchors on `processed.append(meeting)` inside sync_meetings written by TASK-4571 (fireflies_insights.py).",
       "assigned_to": null,
       "started_at": "2026-10-21T23:46:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4572-fireflies-insights-telegram.md"
+      "completed_at": "2026-10-22T00:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4572-fireflies-insights-telegram.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4573",
