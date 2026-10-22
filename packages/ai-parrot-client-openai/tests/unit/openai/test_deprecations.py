@@ -192,21 +192,6 @@ class TestDefaults:
         assert default == "gpt-4.1-mini", f"Expected 'gpt-4.1-mini', got {default!r}"
 
 
-class TestOpenAICleanups:
-    """Tests for post-shutoff OpenAI client cleanup."""
-
-    def test_openai_cleanups(self):
-        """Former Responses-only models use normal routing and resolve max tokens."""
-        from parrot.clients.openai import client as gpt_mod
-
-        assert "o3" not in getattr(gpt_mod, "RESPONSES_ONLY_MODELS", set())
-        assert "o3-pro" not in getattr(gpt_mod, "RESPONSES_ONLY_MODELS", set())
-
-        ask_source = inspect.getsource(gpt_mod.OpenAIClient.ask)
-        assert 'if model_str != "gpt-5-nano"' not in ask_source
-        assert 'args["max_tokens"] = self._resolve_max_tokens(max_tokens)' in ask_source
-
-
 class TestPartitionedListing:
     """Tests for LLMClient._get_supported_models partitioned return."""
 

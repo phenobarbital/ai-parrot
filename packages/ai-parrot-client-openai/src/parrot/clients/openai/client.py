@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI
     from PIL import Image
 from ...models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
+from ...models.responses import InvokeResult
 from ...exceptions import InvokeError
 from .models import (
     OpenAIModel,
@@ -45,6 +46,15 @@ getLogger("openai").setLevel("INFO")
 # Module-level deduplication cache for deprecation warnings (spec §3 Module 2).
 # set.add is atomic under the GIL; no async lock needed.
 _warned: set[str] = set()
+
+# Reasoning models available via the Responses API only.
+# NOTE: spec §8 Q1 open — search-preview / deep-research IDs are
+# DEPRECATED (shutoff 2026-07-23) and NOT listed here; their code
+# paths are preserved with DeprecationWarnings until Q1 is resolved.
+RESPONSES_ONLY_MODELS = {
+    "o3",
+    "o3-pro",
+}
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
     OpenAIModel.GPT5_6.value,
@@ -328,6 +338,12 @@ class OpenAIClient(OpenAIBaseClient):
     # tenacity-wrapped retry/dispatch logic is generic and now inherited
     # unchanged.
 
+    def _is_responses_model(self, model_str: str) -> bool:
+        """Return True if the selected model must go through Responses API."""
+        # allow aliases/enums already normalized to str
+        ms = (model_str or "").strip()
+        return ms in RESPONSES_ONLY_MODELS
+
     @staticmethod
     def _resolve_deep_research_model(model_str: str) -> str:
         """Resolve the deep research model. NOTE: spec §8 Q1 open — these IDs
@@ -512,7 +528,7 @@ class OpenAIClient(OpenAIBaseClient):
             except BadRequestError as exc:
                 # 2.6.0 returns 400 unknown_parameter for fields like "response", "modalities", etc.
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", dict)()
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -542,7 +558,7 @@ class OpenAIClient(OpenAIBaseClient):
                 last_exc = exc
             except BadRequestError as exc:
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", dict)()
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -856,14 +872,15 @@ class OpenAIClient(OpenAIBaseClient):
             )
             model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
-        args["max_tokens"] = self._resolve_max_tokens(max_tokens)
+        if model_str != "gpt-5-nano":
+            args["max_tokens"] = self._resolve_max_tokens(max_tokens)
         if temperature:
             args["temperature"] = temperature
         if deep_research and background:
             args["background"] = True
 
         # -------- ROUTING: Responses-only vs Chat -----------
-        use_responses = False
+        use_responses = self._is_responses_model(model_str)
         resp_format = self._build_response_format_from(output_config) if output_config else None
         _used_fallback = False
         _original_model = model_str
@@ -1162,7 +1179,7 @@ class OpenAIClient(OpenAIBaseClient):
         # Build the OpenAI response_format payload (dict) once
         resp_format = self._build_response_format_from(output_config) if output_config else None
 
-        use_responses = False
+        use_responses = self._is_responses_model(model_str)
         assistant_content = ""
 
         if use_responses:
