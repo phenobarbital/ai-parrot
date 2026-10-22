@@ -187,7 +187,9 @@ Documentation only; the validation command re-runs the behaviour the page docume
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+
+Delivered by glm (after mistral timeout). Validation test test_configure_applies_tooling fails on origin/dev too (pre-existing, AbstractBot abstract instantiation); docs/agent-configure-lifecycle.md present.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

@@ -420,7 +420,9 @@ See the CREATE block above — seven tests, one per AC plus the identity check.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (attempt 3)
+
+Keep-first re-registration in ToolManager.register_toolkit + find_registered_toolkit helpers. Delivered by codex seat (gpt-5.6-terra/luna); engine task-tier validation failed only because the Cython/.so build artifacts are absent in sub-worktrees (env). Worker merged the a3 branch manually and ran test_toolkit_reregistration.py in the feature worktree with .so copied: all pass.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

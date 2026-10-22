@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T14:24:33Z",
-  "completed_at": null,
+  "completed_at": "2026-10-22T16:30:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -45,16 +45,17 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root of the graph: owns tools/manager.py and creates find_registered_toolkit(); no inbound edge",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4596-toolmanager-keep-first-reregistration.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T15:58:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4596-toolmanager-keep-first-reregistration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4597",
@@ -63,16 +64,17 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "owns bots/abstract.py and creates tests/bots/test_double_configure.py; imports nothing TASK-4596 creates, so it runs in wave 1 alongside it",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4597-abstractbot-configure-idempotency.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T15:58:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4597-abstractbot-configure-idempotency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4598",
@@ -81,7 +83,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -90,9 +92,10 @@
       "parallel": true,
       "parallelism_notes": "calls ToolManager.find_registered_toolkit created by TASK-4596 (tools/manager.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4598-fireflies-post-configure-adopts-toolkits.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T16:20:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4598-fireflies-post-configure-adopts-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4599",
@@ -101,7 +104,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -110,9 +113,10 @@
       "parallel": true,
       "parallelism_notes": "calls ToolManager.find_registered_toolkit from TASK-4596 (tools/manager.py) and de-duplicates the tools keep-first now returns",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4599-github-reviewer-post-configure-adopts-toolkits.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T16:20:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4599-github-reviewer-post-configure-adopts-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4600",
@@ -121,7 +125,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -130,9 +134,10 @@
       "parallel": true,
       "parallelism_notes": "calls find_registered_toolkit (TASK-4596, tools/manager.py) for JiraToolkit and ReminderToolkit in bots/jira_specialist.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4600-jira-specialist-post-configure-adopts-toolkits.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T16:20:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4600-jira-specialist-post-configure-adopts-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4601",
@@ -141,7 +146,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -151,9 +156,10 @@
       "parallel": true,
       "parallelism_notes": "appends to tests/bots/test_double_configure.py created by TASK-4597 (reuses _stub_bot/_app, calls reconfigure) and asserts TASK-4596 keep-first via find_registered_toolkit",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4601-double-configure-integration-tests.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T16:20:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4601-double-configure-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4602",
@@ -162,7 +168,7 @@
       "feature_id": "FEAT-721",
       "feature": "double-configure-agents",
       "spec": "sdd/specs/double-configure-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -172,9 +178,10 @@
       "parallel": true,
       "parallelism_notes": "documents find_registered_toolkit (TASK-4596) and reconfigure/configure_count (TASK-4597) by their final names; docs-only file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4602-agent-configure-lifecycle-doc.md"
+      "started_at": "2026-10-22T15:38:31+00:00",
+      "completed_at": "2026-10-22T16:20:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4602-agent-configure-lifecycle-doc.md",
+      "verification": "verified"
     }
   ]
 }
