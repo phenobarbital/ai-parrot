@@ -101,6 +101,7 @@ class UsageRecordingSubscriber:
         from parrot.observability.cost import resolve_event_cost
 
         cost_usd = resolve_event_cost(event, self._cost)
+        cumulative: Optional[float] = None
         if cost_usd is not None or self._cost is not None:
             with self._lock:
                 if cost_usd is not None:

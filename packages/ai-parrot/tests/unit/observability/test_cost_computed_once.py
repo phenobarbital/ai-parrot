@@ -20,9 +20,11 @@ class _SpyCostCalculator:
         self.call_count = 0
         self._real_calculator = CostCalculator()
 
-    def cost_usd(self, provider, model, input_tokens, output_tokens):
+    def cost_usd(self, *, provider, model, input_tokens, output_tokens):
         self.call_count += 1
-        return self._real_calculator.cost_usd(provider, model, input_tokens, output_tokens)
+        return self._real_calculator.cost_usd(
+            provider=provider, model=model, input_tokens=input_tokens, output_tokens=output_tokens
+        )
 
 
 class _CapturingRecorder:
