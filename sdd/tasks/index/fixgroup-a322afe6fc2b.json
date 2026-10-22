@@ -1,0 +1,52 @@
+{
+  "feature": "fixgroup-a322afe6fc2b",
+  "feature_id": "FEAT-718",
+  "spec": "sdd/specs/fixgroup-a322afe6fc2b.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T02:05:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd/test_close_task_ledger.py",
+          "tests/sdd/test_ledger_lifecycle_acceptance.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c2c60bb6df073c5a701bb2322b92322216d52671e35f4750c288a1f15174f5a0"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4580",
+      "slug": "close-task-ledger-interpreter",
+      "title": "Resolve a parrot-capable interpreter for close_task.sh's task.closed emission",
+      "feature_id": "FEAT-718",
+      "feature": "fixgroup-a322afe6fc2b",
+      "spec": "sdd/specs/fixgroup-a322afe6fc2b.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Sole task of FEAT-718; touches only scripts/sdd/close_task.sh and tests/sdd/test_close_task_ledger.py, no shared state outside them.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4580-close-task-ledger-interpreter.md"
+    }
+  ]
+}
