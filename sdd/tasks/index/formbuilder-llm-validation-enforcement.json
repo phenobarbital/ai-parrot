@@ -130,7 +130,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,8 +141,9 @@
       "parallelism_notes": "both modify api/handlers.py with TASK-4625 (serialized: 4625 first); imports LLMQuota/QuotaDecision from TASK-4626 (services/llm_quota.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T20:09:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4627-llm-quota-wiring-and-auth-gate.md"
+      "completed_at": "2026-10-22T20:41:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4627-llm-quota-wiring-and-auth-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4628",
