@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T16:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T16:21:33+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -39,7 +39,7 @@
       "feature_id": "FEAT-725",
       "feature": "fixgroup-f3ad5ee39704",
       "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "Touches only parrot/core/events/lifecycle/__init__.py and the NEW tests/unit/observability/test_bootstrap_hook.py; shares no file with TASK-4614, which owns bootstrap.py and test_bootstrap.py. No symbol dependency either way: this task calls ensure_observability_bootstrapped, which already exists on dev.",
       "assigned_to": null,
       "started_at": "2026-10-22T16:18:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4613-install-observability-bootstrap-hook.md"
+      "completed_at": "2026-10-22T16:21:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4613-install-observability-bootstrap-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4614",
@@ -57,7 +58,7 @@
       "feature_id": "FEAT-725",
       "feature": "fixgroup-f3ad5ee39704",
       "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -65,8 +66,9 @@
       "parallelism_notes": "Touches only parrot/observability/bootstrap.py and tests/unit/observability/test_bootstrap.py; shares no file with TASK-4613. Its tests call ensure_observability_bootstrapped directly, so they do not need the hook TASK-4613 installs.",
       "assigned_to": null,
       "started_at": "2026-10-22T16:19:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4614-loud-observability-bootstrap-failures.md"
+      "completed_at": "2026-10-22T16:21:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4614-loud-observability-bootstrap-failures.md",
+      "verification": "verified"
     }
   ]
 }
