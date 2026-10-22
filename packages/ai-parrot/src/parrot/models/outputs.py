@@ -260,11 +260,16 @@ class VideoGenerationPrompt(BaseModel):
 
     prompt: str = Field(..., description="The text prompt describing the desired video content.")
     number_of_videos: int = Field(default=1, description="The number of videos to generated per request.")
-    model: str = Field(..., description="The video generation model to use.")
+    model: Optional[str] = Field(
+        default=None,
+        description="Video model id; None uses the registry default (e.g. 'gemini-omni-1.1-flash').",
+    )
     aspect_ratio: str = Field(default="16:9", description="The desired aspect ratio (e.g., '16:9', '9:16').")
     duration: Optional[int] = Field(None, description="Optional duration in seconds for the video.")
     negative_prompt: Optional[str] = Field(default="", description="A description of what to avoid in the video.")
-    resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
+    resolution: Optional[str] = Field(
+        default=None, description="Optional resolution (e.g., '1080p', '2K'); leave unset for models that reject it."
+    )
     smoothing: Optional[bool] = Field(
         default=False, description="Whether to apply frame rate smoothing to the generated video."
     )

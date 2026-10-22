@@ -143,9 +143,12 @@ class VideoGenerationPrompt(BaseModel):
         description="The text prompt describing the desired video content."
     )
 
-    model: str = Field(
-        ...,
-        description="The video generation model to use (e.g., 'veo-3.1-generate-preview')."
+    model: Optional[str] = Field(
+        None,
+        description=(
+            "Video model id; None uses the registry default for the API surface "
+            "(e.g. 'gemini-omni-1.1-flash')."
+        ),
     )
 
     aspect_ratio: str = Field(
@@ -154,8 +157,8 @@ class VideoGenerationPrompt(BaseModel):
     )
 
     resolution: Optional[str] = Field(
-        default="720p",
-        description="Video resolution ('720p', '1080p', or '4k'). VEO 3.1 only for 1080p/4k."
+        default=None,
+        description="Optional video resolution ('720p', '1080p', or '4k'); leave unset for models that reject it."
     )
 
     negative_prompt: Optional[str] = Field(
@@ -187,12 +190,10 @@ class VideoGenerationPrompt(BaseModel):
         json_schema_extra={
             "example": {
                 "prompt": "A cinematic shot of a majestic lion in the savannah",
-                "model": "veo-3.1-generate-preview",
+                "model": "gemini-omni-1.1-flash",
                 "aspect_ratio": "16:9",
-                "resolution": "1080p",
                 "negative_prompt": "cartoon, drawing, low quality",
                 "number_of_videos": 1,
-                "duration": 8,
                 "include_audio": True,
             }
         }
