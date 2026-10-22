@@ -519,9 +519,31 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         temporary.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
         os.replace(temporary, path)
 
+    def _prune_expired_approvals(self, state: dict[str, Any]) -> None:
+        """Remove expired approvals that never created a ticket, plus orphaned insights."""
+        approvals = state.get("approvals", {})
+        now = datetime.now(timezone.utc)
+        expired_ids = []
+        for aid, raw in approvals.items():
+            if raw.get("created_ticket") is not None:
+                continue
+            try:
+                if datetime.fromisoformat(raw["expires_at"]) <= now:
+                    expired_ids.append(aid)
+            except (KeyError, ValueError, TypeError):
+                expired_ids.append(aid)
+        for aid in expired_ids:
+            del approvals[aid]
+        insights_store = state.get("insights", {})
+        referenced = {raw.get("fireflies_id") for raw in approvals.values()}
+        orphaned = [mid for mid in insights_store if mid not in referenced]
+        for mid in orphaned:
+            del insights_store[mid]
+
     async def _register_approvals(self, insights: MeetingInsights, chat_id: str) -> list[PendingApproval]:
         """Persist stable, chat-bound approvals for every reported action item."""
         state = await asyncio.to_thread(self._load_state)
+        self._prune_expired_approvals(state)
         approvals = state.setdefault("approvals", {})
         state.setdefault("insights", {})[insights.meeting_id] = insights.model_dump(mode="json")
         registered: list[PendingApproval] = []
