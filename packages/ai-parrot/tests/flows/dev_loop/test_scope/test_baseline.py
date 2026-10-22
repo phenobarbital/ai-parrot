@@ -130,3 +130,31 @@ def test_baseline_checkout_still_refuses_unbuilt_extension(hermetic_repo, tmp_pa
     assert seen["autobuild"] is False
     assert _worktrees(repo) == []
     assert not any(scratch.iterdir())
+
+
+def test_baseline_checkout_tolerates_non_source_missing_artifacts(hermetic_repo, tmp_path, monkeypatch):
+    """`no_match` / `abi_mismatch` were invisible to the pre-FEAT-722 check and stay non-fatal.
+
+    A main checkout that never built navrules, or one whose `.so` files target another
+    interpreter, must still produce a usable baseline checkout — otherwise every
+    baseline-classified failure silently becomes `unknown`.
+    """
+    from parrot.flows.dev_loop.native_artifacts import MissingArtifact, NativeSyncReport
+
+    repo, base = hermetic_repo
+
+    def fake_sync(*, main_root, target, autobuild=True, **kwargs):
+        return NativeSyncReport(
+            enabled=True,
+            missing=[
+                MissingArtifact(group="navrules-pyo3", reason="no_match", detail="packages/navrules/**/*.so"),
+                MissingArtifact(group="cython-core", reason="abi_mismatch", detail="pkg/ext.cpython-399.so"),
+            ],
+        )
+
+    monkeypatch.setattr(baseline, "sync_native_artifacts", fake_sync)
+    scratch = tmp_path / "s"
+    scratch.mkdir()
+    target = baseline.prepare_baseline_checkout(worktree=repo, base_ref=base, scratch=scratch)
+    assert target.is_dir()
+    baseline.remove_baseline_checkout(repo, target)

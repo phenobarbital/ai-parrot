@@ -52,9 +52,22 @@ def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -
             # One shared implementation (FEAT-722). `autobuild=False`: a verdict run must never trigger
             # a compile, so an unbuilt extension stays fatal here.
             report = sync_native_artifacts(main_root=main_root, target=target, autobuild=False)
-            if report.missing:
-                detail = report.missing[0].detail
-                raise BaselineUnavailable(f"no compiled extension for {detail} in main checkout")
+            # Only an UNPAIRED SOURCE is fatal, which is exactly what the pre-FEAT-722
+            # loop checked: a `.pyx` with no sibling `.so`. `no_match` (a declared group
+            # whose artifacts are absent, e.g. navrules on a checkout that never built
+            # it) and `abi_mismatch` (artifacts built for another interpreter) were
+            # invisible to the old check and must not turn every baseline verdict into
+            # `unknown` here.
+            fatal = [entry for entry in report.missing if entry.reason == "unpaired_source"]
+            for entry in report.missing:
+                if entry not in fatal:
+                    logger.warning(
+                        "baseline: native artifact %s missing from the main checkout (%s), continuing",
+                        entry.detail,
+                        entry.reason,
+                    )
+            if fatal:
+                raise BaselineUnavailable(f"no compiled extension for {fatal[0].detail} in main checkout")
     except BaselineUnavailable:
         remove_baseline_checkout(worktree, target)
         raise
