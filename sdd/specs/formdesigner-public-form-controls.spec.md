@@ -710,9 +710,9 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 - [x] Typed block or `meta`? — *Resolved (contract 2026-10-22)*: typed `public_access`, FEAT-649 precedent.
 - [ ] Q1. G8 (tenant-stamped generic store): are there non-FieldSync hosts calling REST `/data` whose per-tenant `fs_form_data` table does not exist? If so, gate G8 behind a `setup_form_api` flag instead of changing it unconditionally. — *Owner: Jesús Lara*
 - [ ] Q2. Should `SubmittedEvent.anonymous` be derived from the navigator session (no authenticated user) rather than `AuthContext.scheme`? The contract fixes `scheme == "none"`; changing it needs FEAT-796 to agree. — *Owner: Juan*
-- [ ] Q3. Anonymous thumbnails: the file-upload response carries a `thumbnail_url` an anonymous page cannot fetch. Exempt `fields/*/thumbnail` too, or have the share page show the file name only? — *Owner: Juan (with FEAT-797)*
+- [x] Q3. Anonymous thumbnails — *Resolved 2026-10-22 (Juan)*: `…/thumbnail` stays authenticated. The share page (navigator-svelte FEAT-797 M4) shows a LOCAL preview of the picked file and never requests `thumbnail_url`; the admin sees the photo through FieldSync's authenticated viewer.
 - [ ] Q4. Upload abuse ceiling for anonymous callers (size/count per request) beyond the field's own `constraints` — reuse the field config (current plan) or add a public cap? — *Owner: Juan*
-- [ ] Q5. The svelte share page never calls `/file-upload`: `PhotoControl.svelte:44-69` sends photos inline as base64 data URLs inside the `/data` body (navigator-svelte FEAT-797 §8). Does `/data` accept/persist inline data URLs for public forms (size limits, storage), or must the share page upload first and send blob refs? Decides whether M4's file-upload exemption is used at all by v1. — *Owner: Juan (with FEAT-797)*
+- [x] Q5. How do photo/file answers travel from the share page? — *Resolved 2026-10-22 (Juan)*: upload first — the share page uploads each file on pick to `…/fields/{field_uid}/file-upload` (FEAT-460 design, opened anonymously by M4 of this spec) through a same-origin SvelteKit proxy, and sends parrot's `FileEnvelope` (`data_url` stripped) in `/data`. The inline-base64 path of FEAT-357 is retired for the share page. M4's anonymous file-upload is therefore REQUIRED for v1, not optional.
 
 ---
 
@@ -746,3 +746,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from fieldsync brainstorm `public-forms` (Option A) and the cross-repo contract |
+| 0.2 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Q3/Q5 resolved: share page uploads first through anonymous `/file-upload`; thumbnails stay authenticated |
