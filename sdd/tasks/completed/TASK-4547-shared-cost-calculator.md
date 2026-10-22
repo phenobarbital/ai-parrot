@@ -285,10 +285,10 @@ See the test-file block in the Implementation Blueprint; every `FILL IN` test mu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker orchestrator (coder: codex/gpt-5.6-sol)
+**Date**: 2026-10-22
+**Notes**: Delivered, merged, tests green; pre-existing unrelated failure test_attributes (jev/meta) noted.
 
 **Deviations from spec**: none

@@ -75,7 +75,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,8 +85,9 @@
       "parallelism_notes": "Imports current_tenant from TASK-4544 (observability/context.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4545-basebot-bind-current-tenant.md"
+      "completed_at": "2026-10-22T12:28:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4545-basebot-bind-current-tenant.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4546",
@@ -114,7 +115,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +125,9 @@
       "parallelism_notes": "resolve_event_cost reads AfterClientCallEvent.cost_usd, created by TASK-4546 (events/client.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4547-shared-cost-calculator.md"
+      "completed_at": "2026-10-22T12:28:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4547-shared-cost-calculator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4548",
