@@ -1,0 +1,135 @@
+{
+  "feature": "formdesigner-orphan-upload-cleanup",
+  "feature_id": "FEAT-731",
+  "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T23:45:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4638",
+      "slug": "pending-upload-store",
+      "title": "PendingUploadStore, models, iter_blob_refs, TTL constants",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task: creates services/pending_uploads.py; no upstream symbol.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4638-pending-upload-store.md"
+    },
+    {
+      "id": "TASK-4639",
+      "slug": "record-pending-on-upload",
+      "title": "Record pending uploads in /file-upload (+ thumbnail-cleanup fix)",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4638"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports PendingUpload from TASK-4638 (services/pending_uploads.py); calls PendingUploadStore.record/delete_rows.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4639-record-pending-on-upload.md"
+    },
+    {
+      "id": "TASK-4640",
+      "slug": "clear-pending-on-store",
+      "title": "Clear pending rows inside store()'s transaction + references_blob",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4638"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports iter_blob_refs and calls PendingUploadStore.clear(conn=) from TASK-4638 (services/pending_uploads.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4640-clear-pending-on-store.md"
+    },
+    {
+      "id": "TASK-4641",
+      "slug": "strict-delete-and-reaper",
+      "title": "Strict blob delete + PendingUploadReaper",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4638",
+        "TASK-4640"
+      ],
+      "parallel": true,
+      "parallelism_notes": "appends PendingUploadReaper to services/pending_uploads.py created by TASK-4638 (same file); calls FormSubmissionStorage.references_blob from TASK-4640 (services/submissions.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4641-strict-delete-and-reaper.md"
+    },
+    {
+      "id": "TASK-4642",
+      "slug": "wire-pending-uploads",
+      "title": "Wire setup_form_api(pending_uploads=\u2026), sink-path clear, exports",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4638",
+        "TASK-4640"
+      ],
+      "parallel": true,
+      "parallelism_notes": "exports PendingUploadStore/iter_blob_refs from TASK-4638 (services/pending_uploads.py); calls attach_pending_uploads from TASK-4640 (services/submissions.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4642-wire-pending-uploads.md"
+    },
+    {
+      "id": "TASK-4643",
+      "slug": "orphan-cleanup-docs-and-version",
+      "title": "Docs page + parrot-formdesigner version bump (orphan cleanup)",
+      "feature_id": "FEAT-731",
+      "feature": "formdesigner-orphan-upload-cleanup",
+      "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4639",
+        "TASK-4641",
+        "TASK-4642"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: bumps the package version (version.py feeds pyproject's dynamic version). Documents record (TASK-4639, api/file_upload.py), reaper (TASK-4641, services/pending_uploads.py) and wiring (TASK-4642, api/routes.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4643-orphan-cleanup-docs-and-version.md"
+    }
+  ]
+}
