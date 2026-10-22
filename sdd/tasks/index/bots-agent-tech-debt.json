@@ -19,8 +19,7 @@
           "packages/ai-parrot/tests/bots/test_jira_specialist_reconfigure.py",
           "packages/ai-parrot/tests/bots/test_fireflies_insights.py",
           "packages/ai-parrot/tests/test_basic_agent_new.py",
-          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py",
-          "packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py"
+          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py"
         ],
         "settings": {
           "markers": ""
@@ -32,7 +31,7 @@
         ]
       }
     ],
-    "digest": "sha256:909f984d578762525f800a49ea0adcd4e51fefb29892cb80bf1af8b822c63c30"
+    "digest": "sha256:dc35da989f25af8073018e74e4aa833a60e4f390e0b0ac141d6098d32f52cc0e"
   },
   "tasks": [
     {
@@ -61,7 +60,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,8 +70,9 @@
       "parallelism_notes": "reads AbstractBot.configure_skipped created by TASK-4616 (bots/abstract.py), and appends to tests/bots/test_configure_override_guards.py which TASK-4616 creates",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4617-post-super-configure-guards.md"
+      "completed_at": "2026-10-22T17:06:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4617-post-super-configure-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4618",

@@ -376,7 +376,11 @@ database.
 
 - `pytest packages/ai-parrot/tests/bots/test_configure_override_guards.py -q`
 - `pytest packages/ai-parrot/tests/bots/test_double_configure.py -q`
-- `pytest packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py -q`
+
+> `tests/interfaces/test_configure_applies_tooling.py` was dropped from this list:
+> it is red on `dev` independently of this feature
+> (`AbstractBot.__new__(AbstractBot)` on a class with unimplemented abstract
+> methods), filed as `issue:487531e66e0b`.
 
 ---
 

@@ -412,8 +412,12 @@ pin the two sites whose repeat-run is most likely to raise in production
 - `pytest packages/ai-parrot/tests/bots/test_configure_override_guards.py -q`
 - `pytest packages/ai-parrot/tests/bots/test_double_configure.py -q`
 - `pytest packages/ai-parrot/tests/bots/test_fireflies_insights.py -q`
-- `pytest packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py -q`
 - `pytest packages/ai-parrot/tests/tools/test_toolkit_reregistration.py -q`
+
+> `tests/interfaces/test_configure_applies_tooling.py` was dropped from this list:
+> it is red on `dev` independently of this feature
+> (`AbstractBot.__new__(AbstractBot)` on a class with unimplemented abstract
+> methods), filed as `issue:487531e66e0b`.
 
 ---
 
@@ -451,4 +455,44 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+All nine sites guarded with the two-line `if self.configure_skipped: return`
+immediately after their `super().configure(...)` call; the diff is exactly 18
+added lines of source plus tests, no reformatting.
+
+Tests took a different shape than the blueprint sketched, for a reason worth
+recording. Behaviourally mocking nine real agents (Chrome DevTools MCP,
+Fireflies MCP, A2A routes, specialist-agent registration) would have meant nine
+fragile mock stacks testing one shared two-line mechanism. Instead:
+
+* three behavioural tests on a stub subclass cover the mechanism itself —
+  repeat configure, CLI-then-server, and `reconfigure()`;
+* one parametrized test covers all nine real sites **structurally**: the guard
+  must directly follow `super().configure(...)`, and `configure_count > 1` must
+  not appear in the method. That is precisely the AC ("grep finds no post-super
+  site left unguarded") and it catches the thing that actually regresses — a new
+  or edited override losing its guard;
+* one parametrized test pins the three assessed exemptions (`PandasAgent`,
+  `NarrativeMixin`, `InfographicAuthoringMixin`) as deliberately **unguarded**,
+  so someone "completing" the fix trips a test that points at
+  docs/agent-configure-lifecycle.md §8.
+
+Two pre-existing problems found and NOT fixed here (both out of scope,
+both recorded):
+
+1. `tests/interfaces/test_configure_applies_tooling.py::test_configure_calls_apply_tooling_specs_once`
+   is red on `dev`: `AbstractBot.__new__(AbstractBot)` cannot work for a class
+   with unimplemented abstract methods. Verified pre-existing by re-running it
+   with this feature's `abstract.py` change reverted — identical failure. Filed
+   as `issue:487531e66e0b` and removed from this feature's validation contract
+   (spec §4 records why); it was inherited from FEAT-721's list.
+2. `ruff check` reports 10 findings across these files (bare `except` in
+   obsidian.py/document.py, unused imports in a2a_orchestrator.py, PIE790/B905
+   in orchestrator.py). Verified pre-existing by running ruff on the base
+   versions: the same 10 findings appear, two lines earlier. Left untouched per
+   the minimal-diff rule. The AC's "ruff clean" therefore holds for the lines
+   this task adds, not for the files as a whole.
+
+Validation: `pytest tests/bots/test_configure_override_guards.py
+tests/bots/test_double_configure.py tests/bots/test_fireflies_insights.py
+tests/bots/test_jira_specialist_reconfigure.py
+tests/tools/test_toolkit_reregistration.py -q` → **74 passed**.
