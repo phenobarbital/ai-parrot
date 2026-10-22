@@ -30,11 +30,14 @@ SCHEMA_PATH = (
 
 @pytest.fixture(autouse=True)
 def _seed_builtin():
+    """Re-seed the builtin controls and restore the prior registry contents."""
+    saved = dict(_REGISTRY)
     _REGISTRY.clear()
     sys.modules.pop("parrot_formdesigner.controls.builtin", None)
     importlib.import_module("parrot_formdesigner.controls.builtin")
     yield
     _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 async def test_endpoint_returns_envelope(aiohttp_client):
@@ -78,6 +81,8 @@ async def test_each_entry_has_full_metadata(aiohttp_client):
     expected_keys = {
         "type", "label", "description", "category", "icon",
         "snippet", "render_hint", "supports_constraints", "is_container",
+        "supported_operators", "supported_effects", "supported_operations",
+        "value_shape",
     }
     for entry in body["controls"]:
         assert set(entry.keys()) == expected_keys
