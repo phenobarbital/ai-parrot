@@ -288,6 +288,17 @@ class AsyncComputerBackend:
         await self._page.mouse.move(x, y)
         return await self.current_state()
 
+    async def type_text(self, text: str, press_enter: bool = False) -> EnvState:
+        """Type text into the currently focused element (no click, no clearing)."""
+        await self._page.keyboard.type(text)
+        if press_enter:
+            await self._page.keyboard.press("Enter")
+            try:
+                await self._page.wait_for_load_state("domcontentloaded", timeout=5_000)
+            except Exception:
+                pass
+        return await self.current_state()
+
     async def type_text_at(
         self,
         x: int,
