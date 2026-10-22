@@ -10,7 +10,7 @@ tags: [formbuilder, llm-validation, plausibility, security, rate-limit]
 **Feature ID**: FEAT-728
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 ---
