@@ -209,6 +209,26 @@ class StableAfterFirstProbe(AlwaysStable):
         return self.calls > 1
 
 
+class ConcurrencyRecordingProbe(AlwaysStable):
+    """Probe fake that sleeps like a real window and records overlapping checks."""
+
+    def __init__(self, delay: float = 0.02) -> None:
+        super().__init__()
+        self._delay = delay
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    async def is_stable(self, path: Path) -> bool:
+        """Hold the probe open for a window while recording concurrent callers."""
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(self._delay)
+            return True
+        finally:
+            self.in_flight -= 1
+
+
 @pytest.fixture
 def runtime(tmp_path: Path) -> SimpleNamespace:
     """Build the limited runtime surface the watcher is permitted to read."""
@@ -269,6 +289,27 @@ async def test_unstable_candidate_defers_run(runtime: SimpleNamespace) -> None:
     await asyncio.sleep(0.08)
     await watcher.stop(drain=True)
     assert probe.calls >= 2
+    assert CountingProcessor.runs == 1
+
+
+async def test_candidates_are_probed_concurrently(runtime: SimpleNamespace) -> None:
+    """Every candidate is probed in parallel, so N files cost one window, not N."""
+    reset_processor()
+    observer = FakeObserver()
+    probe = ConcurrencyRecordingProbe()
+    for name in ("a.md", "b.md", "c.md"):
+        (runtime.root / "inbox" / name).write_text(name, encoding="utf-8")
+    watcher = InboxWatcher(
+        runtime,
+        probe=probe,
+        debounce=0.01,
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    await asyncio.sleep(0.12)
+    await watcher.stop(drain=True)
+    assert probe.max_in_flight == 3
     assert CountingProcessor.runs == 1
 
 

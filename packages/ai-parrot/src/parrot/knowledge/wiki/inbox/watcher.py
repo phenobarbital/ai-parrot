@@ -232,7 +232,8 @@ class InboxWatcher:
                 if self._stopping and not self._pending:
                     return
                 continue
-            if not all([await self._is_stable(path) for path in candidates]):
+            stability = await asyncio.gather(*(self._is_stable(path) for path in candidates))
+            if not all(stability):
                 self.logger.info("Deferring inbox watcher run because a candidate is still changing")
                 self._pending = True
                 self._wake.set()
