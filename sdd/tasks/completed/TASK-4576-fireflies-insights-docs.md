@@ -168,10 +168,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (manual — attempt 3 after gemini fidelity_violation)
+**Date**: 2026-10-22
+**Notes**: Added ## Watch mode section to docs/wiki/inbox.md before ## Exit codes and
+concurrency (anchor line 228, verified). Covers: filesystem-transport-full extra install,
+wikitoolkit inbox --watch, stability window with whole-inbox rule, dot-prefixed temp
+convention, --limit/--dry-run incompatibility, graceful Ctrl-C, and the stage_git Warning
+callout (AC21). Created docs/agents/fireflies-insights.md with: what the agent does,
+configuration table, /fireflies_sync and /fireflies_ticket commands, approval TTL 72h,
+chat-only authorization, idempotency, Jira template contract (10 keys), file-based skills,
+and install instructions. All names verified against merged code.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
