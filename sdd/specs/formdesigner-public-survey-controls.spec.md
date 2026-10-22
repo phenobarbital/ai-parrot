@@ -712,6 +712,7 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 - [ ] Q2. Should `SubmittedEvent.anonymous` be derived from the navigator session (no authenticated user) rather than `AuthContext.scheme`? The contract fixes `scheme == "none"`; changing it needs FEAT-796 to agree. — *Owner: Juan*
 - [ ] Q3. Anonymous thumbnails: the file-upload response carries a `thumbnail_url` an anonymous page cannot fetch. Exempt `fields/*/thumbnail` too, or have the share page show the file name only? — *Owner: Juan (with FEAT-797)*
 - [ ] Q4. Upload abuse ceiling for anonymous callers (size/count per request) beyond the field's own `constraints` — reuse the field config (current plan) or add a public cap? — *Owner: Juan*
+- [ ] Q5. The svelte share page never calls `/file-upload`: `PhotoControl.svelte:44-69` sends photos inline as base64 data URLs inside the `/data` body (navigator-svelte FEAT-797 §8). Does `/data` accept/persist inline data URLs for public forms (size limits, storage), or must the share page upload first and send blob refs? Decides whether M4's file-upload exemption is used at all by v1. — *Owner: Juan (with FEAT-797)*
 
 ---
 
