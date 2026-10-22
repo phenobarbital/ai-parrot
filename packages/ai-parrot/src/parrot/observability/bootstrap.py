@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import threading
 from typing import Optional
 
@@ -34,6 +35,7 @@ _BOOTSTRAPPED: bool = False
 _LOCK = threading.Lock()
 _SUBSCRIBER: Optional[object] = None
 _SUBSCRIPTION_IDS: list[str] = []
+_SHUTDOWN_TASKS: set = set()  # strong refs so a scheduled fan-out close is not garbage-collected
 # Guards the atexit flush hook so it is registered at most once per process.
 _ATEXIT_REGISTERED: bool = False
 
@@ -51,12 +53,32 @@ def ensure_observability_bootstrapped() -> None:
     with _LOCK:
         if _BOOTSTRAPPED:
             return
+        if _event_fanout_enabled():
+            from parrot.observability.fanout import setup_event_fanout  # noqa: PLC0415
+
+            # Invalid durable fan-out configuration is a startup error. This is
+            # deliberately outside the best-effort local-observability guard.
+            setup_event_fanout()
         try:
             _do_bootstrap()
         except Exception:  # noqa: BLE001 — observability must never break construction
             logger.debug("Observability auto-boot failed; continuing.", exc_info=True)
         finally:
             _BOOTSTRAPPED = True
+
+
+def _event_fanout_enabled() -> bool:
+    """Return whether durable event fan-out is explicitly enabled."""
+    try:
+        from navconfig import config as nav_config  # noqa: PLC0415
+
+        value = nav_config.get(
+            "PARROT_EVENT_FANOUT_ENABLED",
+            fallback=os.environ.get("PARROT_EVENT_FANOUT_ENABLED"),
+        )
+    except Exception:  # noqa: BLE001 — navconfig is optional on lightweight paths
+        value = os.environ.get("PARROT_EVENT_FANOUT_ENABLED")
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _do_bootstrap() -> None:
@@ -113,6 +135,9 @@ def _do_bootstrap() -> None:
         from parrot.observability.cost.calculator import CostCalculator  # noqa: PLC0415
 
         cost_calc = CostCalculator(override_path=config.pricing_override_path)
+        from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+        set_shared_cost_calculator(cost_calc)
 
     from parrot.observability.recorders.factory import (  # noqa: PLC0415
         build_recorders_from_config,
@@ -190,6 +215,22 @@ def shutdown_usage_recording() -> None:
     torn down via ``shutdown_telemetry``.
     """
     global _SUBSCRIBER  # noqa: PLW0603
+    try:
+        from parrot.observability.fanout import shutdown_event_fanout  # noqa: PLC0415
+
+        import asyncio  # noqa: PLC0415
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(shutdown_event_fanout())
+        else:
+            _task = asyncio.ensure_future(shutdown_event_fanout())
+            _SHUTDOWN_TASKS.add(_task)
+            _task.add_done_callback(_SHUTDOWN_TASKS.discard)
+    except Exception:  # noqa: BLE001 — shutdown must never raise
+        logger.debug("Error closing event fan-out bus.", exc_info=True)
+
     if _SUBSCRIPTION_IDS:
         try:
             from parrot.core.events.lifecycle import (  # noqa: PLC0415
@@ -206,6 +247,9 @@ def shutdown_usage_recording() -> None:
             logger.exception("Error unsubscribing usage recorder.")
         _SUBSCRIPTION_IDS.clear()
 
+    from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+    set_shared_cost_calculator(None)
     if _SUBSCRIBER is not None:
         aclose = getattr(_SUBSCRIBER, "aclose", None)
         if aclose is not None:

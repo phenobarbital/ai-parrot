@@ -262,10 +262,8 @@ not on `dev`. It will merge with the rest of the feature.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (code by seat gpt-5.6-luna, attempt 2; attempt 1 gpt-5.6-terra delivered nothing)
+**Date**: 2026-10-22
+**Notes**: Items 1-6 implemented in shared_log.py / service.py / cli.py; item 7 (FEAT-671 superseded marker) was already present in spec §1 (line 31), so the spec was not touched. `import-log` has no `--stage`, so only `export-log` and `rotate-log` got the CalledProcessError handling. Worker fixed an over-indented try block in cli.py (commit a4be44176). Merge-tier validation: 608 passed, 7 skipped, exit 0 (twice), but the engine labelled the outcome `timed_out` despite ~40s runtime, so it was not accepted as a formal green; targeted FEAT-694 tests (43) were also run directly and passed; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The task's Files table omitted `tests/knowledge/wiki/test_ledger_shared_log_rotation.py` and `test_cli_ledger_shared_log.py`, although its Test Specification and Validation Commands name them. The engine flagged them as fidelity_violation; the worker committed them manually as the task's own Test Specification requires. No feedback recorded (the task-doc inconsistency was not a model defect).

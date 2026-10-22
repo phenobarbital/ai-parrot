@@ -240,15 +240,11 @@ class MetricsSubscriber:
             )
 
         # Cost counter — only when calculator provides a value
-        if self._cost is not None:
-            cost = self._cost.cost_usd(
-                provider=system,
-                model=event.model,
-                input_tokens=event.input_tokens or 0,
-                output_tokens=event.output_tokens or 0,
-            )
-            if cost is not None:
-                self._client_cost_total.add(cost, attributes=base)
+        from parrot.observability.cost import resolve_event_cost
+
+        cost = resolve_event_cost(event, self._cost)
+        if cost is not None:
+            self._client_cost_total.add(cost, attributes=base)
 
     async def _on_client_round(self, event: ClientRoundEvent) -> None:
         """Record per-round token usage and round count.
