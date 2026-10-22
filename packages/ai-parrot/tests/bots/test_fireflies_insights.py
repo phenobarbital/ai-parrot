@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from parrot.agents.meeting_registry import Classified, fingerprint
 from parrot.agents.obsidian import FirefliesObsidianAgent
 from parrot.bots.fireflies_insights import (
     ActionItem,
@@ -149,3 +150,167 @@ async def test_fetch_summary_failure_is_none(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(agent, "_call_fireflies_tool", failing_call)
 
     assert await agent._fetch_summary("meeting-1") is None
+
+
+def _meeting(**overrides: object) -> FirefliesMeeting:
+    """Build a representative meeting for inbox tests."""
+    values: dict[str, object] = {
+        "fireflies_id": "meeting-1",
+        "title": "Weekly: Bob's Update",
+        "meeting_date": "2026-10-22T09:30:00Z",
+        "transcript": "Ana: ship it.",
+        "summary": "The team agreed to ship.",
+        "participants": ["ana@example.test", "Bob's Team"],
+        "duration_minutes": 30.0,
+        "fingerprint": fingerprint("Ana: ship it."),
+        "summary_fingerprint": fingerprint("The team agreed to ship."),
+    }
+    values.update(overrides)
+    return FirefliesMeeting.model_validate(values)
+
+
+def test_drop_is_atomic_and_leaves_no_tmp(tmp_path: Path) -> None:
+    agent = _bare_agent()
+    agent.inbox_dir = tmp_path
+
+    final = agent._drop_to_inbox(_meeting())
+
+    assert final == tmp_path / "2026-10-22-weekly-bob-s-update-meeting-1.md"
+    assert final.is_file()
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_rendered_document_has_fireflies_id_frontmatter() -> None:
+    document = _bare_agent()._render_inbox_document(_meeting())
+
+    frontmatter, body = document.removeprefix("---\n").split("\n---\n", maxsplit=1)
+    assert "fireflies_id: 'meeting-1'" in frontmatter
+    assert "title: 'Weekly: Bob''s Update'" in frontmatter
+    assert "  - 'Bob''s Team'" in frontmatter
+    assert "## Fireflies Summary" in body
+    assert "## Transcript" in body
+
+
+class _Registry:
+    """Minimal MeetingRegistry substitute for sync tests."""
+
+    def __init__(self, *, available: bool, classification: str = "create") -> None:
+        self.available = available
+        self.classification = classification
+        self.recorded: list[dict[str, object]] = []
+
+    async def suggest_from_date(self, *, overlap_days: int) -> str | None:
+        return None
+
+    async def classify(self, item: dict[str, object], *, fetch, fetch_summary) -> Classified:
+        if self.classification == "skip":
+            return Classified(action="skip")
+        transcript = await fetch(str(item["id"]))
+        summary = await fetch_summary(str(item["id"]))
+        return Classified(
+            action=self.classification,
+            fetched_text=transcript,
+            fingerprint=fingerprint(transcript),
+            summary_fingerprint=fingerprint(summary) if summary else None,
+        )
+
+    async def record_synced(self, **kwargs: object) -> None:
+        self.recorded.append(kwargs)
+
+
+def _listing_item(meeting_id: str, title: str = "Weekly Sync") -> dict[str, object]:
+    """Return one Fireflies listing item."""
+    return {
+        "id": meeting_id,
+        "title": title,
+        "date": "2026-10-22T09:30:00Z",
+        "participants": ["ana@example.test"],
+        "duration": 30,
+    }
+
+
+def _stub_sync_fetches(
+    agent: FirefliesInsightsAgent,
+    monkeypatch: pytest.MonkeyPatch,
+    listing: list[dict[str, object]],
+) -> list[str]:
+    """Stub MCP setup and fetches, returning transcript fetch ids."""
+    transcript_calls: list[str] = []
+
+    async def ensure_mcp() -> None:
+        return None
+
+    async def fetch_listing(limit: int, from_date: str | None) -> list[dict[str, object]]:
+        return listing[:limit]
+
+    async def fetch_transcript(meeting_id: str) -> str:
+        transcript_calls.append(meeting_id)
+        return f"Transcript for {meeting_id}"
+
+    async def fetch_summary(meeting_id: str) -> str:
+        return f"Summary for {meeting_id}"
+
+    monkeypatch.setattr(agent, "_ensure_fireflies_mcp", ensure_mcp)
+    monkeypatch.setattr(agent, "_fetch_listing", fetch_listing)
+    monkeypatch.setattr(agent, "_fetch_transcript", fetch_transcript)
+    monkeypatch.setattr(agent, "_fetch_summary", fetch_summary)
+    return transcript_calls
+
+
+@pytest.mark.asyncio
+async def test_skip_classification_is_not_redropped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = _bare_agent()
+    agent.inbox_dir = tmp_path
+    agent.registry = _Registry(available=True, classification="skip")
+    transcript_calls = _stub_sync_fetches(agent, monkeypatch, [_listing_item("known")])
+
+    report = await agent.sync_meetings()
+
+    assert report.fetched == 1
+    assert report.skipped == 1
+    assert report.dropped_to_inbox == 0
+    assert transcript_calls == []
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_degraded_registry_skips_existing_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = _bare_agent()
+    agent.inbox_dir = tmp_path
+    agent.registry = _Registry(available=False)
+    item = _listing_item("known")
+    existing = tmp_path / "2026-10-22-weekly-sync-known.md"
+    existing.write_text("already dropped", encoding="utf-8")
+    transcript_calls = _stub_sync_fetches(agent, monkeypatch, [item])
+
+    report = await agent.sync_meetings()
+
+    assert report.fetched == 1
+    assert report.skipped == 1
+    assert report.dropped_to_inbox == 0
+    assert transcript_calls == []
+    assert existing.read_text(encoding="utf-8") == "already dropped"
+
+
+@pytest.mark.asyncio
+async def test_one_failing_meeting_does_not_sink_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = _bare_agent()
+    agent.inbox_dir = tmp_path
+    agent.registry = _Registry(available=False)
+    _stub_sync_fetches(agent, monkeypatch, [_listing_item("bad"), _listing_item("good")])
+    real_drop = agent._drop_to_inbox
+
+    def fail_one_drop(meeting: FirefliesMeeting) -> Path:
+        if meeting.fireflies_id == "bad":
+            raise OSError("disk failure")
+        return real_drop(meeting)
+
+    monkeypatch.setattr(agent, "_drop_to_inbox", fail_one_drop)
+
+    report = await agent.sync_meetings()
+
+    assert report.fetched == 2
+    assert report.dropped_to_inbox == 1
+    assert report.errors == ["bad: disk failure"]
+    assert (tmp_path / "2026-10-22-weekly-sync-good.md").is_file()

@@ -6,15 +6,17 @@ insight path. The agent class is added by later tasks of the same feature.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from navconfig import config
 from pydantic import BaseModel, Field
 
-from parrot.agents.conf import FIREFLIES_REGISTRY_DIR
-from parrot.agents.meeting_registry import MeetingRegistry
+from parrot.agents.conf import FIREFLIES_REGISTRY_DIR, FIREFLIES_SYNC_OVERLAP_DAYS
+from parrot.agents.meeting_registry import MeetingRegistry, fingerprint
 from parrot.agents.obsidian import FirefliesObsidianAgent
 from parrot.bots.agent import Agent
 from parrot.conf import AGENTS_DIR
@@ -263,3 +265,154 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         except Exception as exc:
             self.logger.warning("Fireflies summary fetch failed for %s: %s", fireflies_id, exc)
         return None
+
+    _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+    def _inbox_filename(self, meeting: FirefliesMeeting) -> str:
+        """Return the stable inbox filename for a meeting."""
+        slug = self._SLUG_RE.sub("-", meeting.title.lower()).strip("-")[:60] or "meeting"
+        return f"{meeting.meeting_date[:10]}-{slug}-{meeting.fireflies_id}.md"
+
+    @staticmethod
+    def _yaml_scalar(value: object) -> str:
+        """Return a safely quoted YAML scalar without requiring a YAML emitter."""
+        text = str(value).replace("\r", " ").replace("\n", " ")
+        return f"'{text.replace(chr(39), chr(39) * 2)}'"
+
+    def _render_inbox_document(self, meeting: FirefliesMeeting) -> str:
+        """Render markdown with the Fireflies external identity in frontmatter."""
+        participants = (
+            "\n".join(f"  - {self._yaml_scalar(participant)}" for participant in meeting.participants)
+            if meeting.participants
+            else "[]"
+        )
+        sections = [
+            "---",
+            f"fireflies_id: {self._yaml_scalar(meeting.fireflies_id)}",
+            f"title: {self._yaml_scalar(meeting.title)}",
+            f"date: {self._yaml_scalar(meeting.meeting_date)}",
+            f"participants: {participants}",
+            "---",
+            "",
+        ]
+        if meeting.summary:
+            sections.extend(["## Fireflies Summary", "", meeting.summary.strip(), ""])
+        sections.extend(["## Transcript", "", meeting.transcript.strip(), ""])
+        return "\n".join(sections)
+
+    def _drop_to_inbox(self, meeting: FirefliesMeeting) -> Path:
+        """Write a dot-prefixed temporary file and atomically replace the final path."""
+        if self.inbox_dir is None:
+            raise RuntimeError("configure() must run before _drop_to_inbox()")
+        final = self.inbox_dir / self._inbox_filename(meeting)
+        tmp = self.inbox_dir / f".{final.name}.tmp"
+        tmp.write_text(self._render_inbox_document(meeting), encoding="utf-8")
+        os.replace(tmp, final)
+        return final
+
+    async def sync_meetings(self, limit: int = 10) -> InsightRunReport:
+        """Fetch, gate on MeetingRegistry, and atomically drop meetings without raising."""
+        report = InsightRunReport()
+        processed: list[FirefliesMeeting] = []
+        try:
+            await self._ensure_fireflies_mcp()
+            from_date = None
+            if self.registry.available:
+                from_date = await self.registry.suggest_from_date(overlap_days=FIREFLIES_SYNC_OVERLAP_DAYS)
+            listing = await self._fetch_listing(limit, from_date)
+        except Exception as exc:
+            report.errors.append(f"fireflies sync: {exc}")
+            return report
+        report.fetched = len(listing)
+        for item in listing:
+            try:
+                meeting = await self._gate_meeting(item, report)
+                if meeting is None:
+                    continue
+                path = await asyncio.to_thread(self._drop_to_inbox, meeting)
+                report.dropped_to_inbox += 1
+                if self.registry.available:
+                    await self.registry.record_synced(
+                        fireflies_id=meeting.fireflies_id,
+                        note_path=path,
+                        title=meeting.title,
+                        meeting_date=meeting.meeting_date,
+                        participants=meeting.participants,
+                        duration_minutes=meeting.duration_minutes,
+                        fingerprint=meeting.fingerprint,
+                        summary_fingerprint=meeting.summary_fingerprint,
+                        reset_analysis=meeting.metadata.get("classification") == "revise",
+                    )
+            except Exception as exc:
+                self.logger.error("FirefliesInsights: meeting %s failed: %s", item.get("id"), exc)
+                report.errors.append(f"{item.get('id')}: {exc}")
+                continue
+            processed.append(meeting)
+        return report
+
+    async def _gate_meeting(self, item: dict[str, Any], report: InsightRunReport) -> FirefliesMeeting | None:
+        """Classify an item and return its populated meeting unless it should be skipped."""
+        fireflies_id = str(item["id"])
+        title = str(item.get("title") or "Untitled Meeting")
+        meeting_date = str(item.get("date") or "")
+        participants = [str(participant) for participant in item.get("participants") or []]
+        duration_minutes = float(item.get("duration") or 0.0)
+        transcript_cache: dict[str, str] = {}
+        summary_cache: dict[str, str] = {}
+
+        async def fetch_transcript(transcript_id: str) -> str:
+            if transcript_id not in transcript_cache:
+                transcript_cache[transcript_id] = await self._fetch_transcript(transcript_id)
+            return transcript_cache[transcript_id]
+
+        async def fetch_summary(transcript_id: str) -> str | None:
+            if transcript_id not in summary_cache:
+                summary = await self._fetch_summary(transcript_id)
+                summary_cache[transcript_id] = summary or ""
+            return summary_cache[transcript_id] or None
+
+        if self.registry.available:
+            classified = await self.registry.classify(
+                item,
+                fetch=fetch_transcript,
+                fetch_summary=fetch_summary,
+            )
+            if classified.action == "skip":
+                report.skipped += 1
+                return None
+            transcript = classified.fetched_text or await fetch_transcript(fireflies_id)
+            summary = summary_cache.get(fireflies_id, "")
+            transcript_fingerprint = classified.fingerprint or fingerprint(transcript)
+            summary_fingerprint = classified.summary_fingerprint
+            classification = classified.action
+        else:
+            candidate = FirefliesMeeting(
+                fireflies_id=fireflies_id,
+                title=title,
+                meeting_date=meeting_date,
+                transcript="",
+                participants=participants,
+                duration_minutes=duration_minutes,
+                fingerprint="",
+            )
+            if self.inbox_dir is not None and (self.inbox_dir / self._inbox_filename(candidate)).exists():
+                report.skipped += 1
+                return None
+            transcript = await fetch_transcript(fireflies_id)
+            summary = (await fetch_summary(fireflies_id)) or ""
+            transcript_fingerprint = fingerprint(transcript)
+            summary_fingerprint = fingerprint(summary) if summary else None
+            classification = "create"
+
+        return FirefliesMeeting(
+            fireflies_id=fireflies_id,
+            title=title,
+            meeting_date=meeting_date,
+            transcript=transcript,
+            summary=summary,
+            participants=participants,
+            duration_minutes=duration_minutes,
+            fingerprint=transcript_fingerprint,
+            summary_fingerprint=summary_fingerprint,
+            metadata={"classification": classification},
+        )
