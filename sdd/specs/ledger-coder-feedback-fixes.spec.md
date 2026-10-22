@@ -212,9 +212,10 @@ Module 2 is validated by the real-log evidence step in §5 instead.
 
 ### Validation Contract
 
-```
-packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py
-```
+tests:
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py
+- packages/ai-parrot/tests/knowledge/wiki/test_cli_remote_push.py
+markers: none
 
 ### Test Data / Fixtures
 

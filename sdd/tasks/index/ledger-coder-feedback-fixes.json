@@ -1,0 +1,72 @@
+{
+  "feature": "ledger-coder-feedback-fixes",
+  "feature_id": "FEAT-723",
+  "spec": "sdd/specs/ledger-coder-feedback-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T14:23:13.327127+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_cli_remote_push.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5ce5312a236d9158ca0456b97cbbaaa21106ccca4cb799c357134fac630cb8bb"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4603",
+      "slug": "coder-feedback-retract-and-replay",
+      "title": "CoderFeedbackStore.retract() and tombstone-aware replay",
+      "feature_id": "FEAT-723",
+      "feature": "ledger-coder-feedback-fixes",
+      "spec": "sdd/specs/ledger-coder-feedback-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies. Owns coder_feedback.py and test_feedback.py; neither is declared by TASK-4604, so the two never contend for a file. Touches no shared state outside its declared files (no manifest, no conftest.py, no compiled extension, no DDL).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4603-coder-feedback-retract-and-replay.md"
+    },
+    {
+      "id": "TASK-4604",
+      "slug": "ledger-retract-feedback-cli",
+      "title": "wikitoolkit ledger retract-feedback CLI command",
+      "feature_id": "FEAT-723",
+      "feature": "ledger-coder-feedback-fixes",
+      "spec": "sdd/specs/ledger-coder-feedback-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4603"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls CoderFeedbackStore.retract, created by TASK-4603 (packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py) — the command body cannot be written or validated before that method exists. Modifies only cli.py, which TASK-4603 does not declare.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4604-ledger-retract-feedback-cli.md"
+    }
+  ]
+}
