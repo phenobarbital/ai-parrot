@@ -19,7 +19,6 @@ from parrot.knowledge.wiki.inbox.watcher import (
 from parrot.knowledge.wiki.inbox.processor import InboxLockBusy
 from parrot.knowledge.wiki.project import InboxConfig, WikiProjectConfig
 
-
 class FakeClock:
     """Deterministic clock and sleep for tests."""
 
