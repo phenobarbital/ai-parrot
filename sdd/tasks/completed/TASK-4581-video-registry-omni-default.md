@@ -259,10 +259,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+Implemented by an sdd-coder seat, merged by sdd-worker orchestrator. Task tests green (verified in sub-worktree); fidelity ok. Engine task-tier validation was unavailable for TASK-4581 (attempt had no execution_id), tests re-run manually: 39 passed.

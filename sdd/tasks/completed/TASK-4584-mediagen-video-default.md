@@ -185,10 +185,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Two seat attempts returned empty deliveries; attempt 3 implemented by the sdd-worker orchestrator.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Divergence (flag for reviewer)**: `parrot.models.VideoGenerationPrompt` (the class the handler and `GoogleGeneration.generate_videos` actually use) is defined in `packages/ai-parrot/src/parrot/models/outputs.py`, NOT `generation.py` — `models/__init__.py` imports it from `.outputs`. The `generation.py` class named in the task contract is a shadowed duplicate. Both were updated (model Optional/None, resolution None); `outputs.py` was added to the file list because the acceptance criteria are unmeetable otherwise. Also, the mediagen image default in the repo is `gemini-3.1-flash-image`, left unchanged.
 
-**Deviations from spec**: none
+Validation: new handler test 2 passed; tests/handlers/test_mediagen_handler.py 7 passed.

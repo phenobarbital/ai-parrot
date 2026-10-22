@@ -1,4 +1,5 @@
 """Unit tests for parrot_tools.computer.backend (TASK-1476)."""
+
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -85,6 +86,20 @@ class TestAsyncComputerBackend:
         assert isinstance(result, EnvState)
         mock_page.mouse.click.assert_called_once_with(100, 200)
         mock_page.keyboard.type.assert_called_once_with("hello")
+
+    @pytest.mark.asyncio
+    async def test_type_text_focused(self, backend, mock_page):
+        result = await backend.type_text("hello", press_enter=True)
+        assert isinstance(result, EnvState)
+        mock_page.mouse.click.assert_not_called()
+        mock_page.keyboard.type.assert_awaited_once_with("hello")
+        mock_page.keyboard.press.assert_any_await("Enter")
+
+    @pytest.mark.asyncio
+    async def test_type_text_focused_does_not_clear(self, backend, mock_page):
+        await backend.type_text("hello")
+        mock_page.mouse.click.assert_not_called()
+        mock_page.keyboard.press.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_type_text_at_with_enter(self, backend, mock_page):

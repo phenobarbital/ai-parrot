@@ -23,7 +23,7 @@ import importlib.util
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from .clip import GeneratedReelClip
 from .download import ProviderMediaDownloader
@@ -106,7 +106,8 @@ class OmniClipAdapter:
         starting_frame: Optional[Path],
         deadline: float,
     ) -> GeneratedReelClip:
-        """Generates one Omni clip for a scene.
+        """
+        Generates one Omni clip for a scene.
 
         Args:
             profile: The resolved, enabled Omni profile to generate with.
@@ -195,6 +196,51 @@ class OmniClipAdapter:
             has_audio=has_audio,
             provider_operation_id=interaction_id,
         )
+
+    async def generate_many(
+        self,
+        *,
+        profile: VideoModelProfile,
+        prompt: str,
+        output_directory: Path,
+        aspect_ratio: str,
+        number_of_videos: int,
+        deadline: float,
+    ) -> List[GeneratedReelClip]:
+        """
+        Generate ``number_of_videos`` distinct Omni videos for one prompt.
+
+        The Interactions ``VideoResponseFormat`` exposes no output-count
+        parameter, and ``Interaction.output_video`` carries a single clip, so
+        N distinct videos are obtained with N independent requests (each
+        sharing the caller's deadline) rather than by re-reading one response.
+
+        Raises:
+            ReelValidationError: ``unsupported_option`` when ``number_of_videos`` exceeds
+                ``profile.max_outputs_per_request``.
+            ReelError: same submission/timeout/download semantics as :meth:`generate`.
+        """
+        if number_of_videos > profile.max_outputs_per_request:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} returns at most {profile.max_outputs_per_request} videos per request.",
+            )
+
+        clips: List[GeneratedReelClip] = []
+        for _ in range(number_of_videos):
+            clips.append(
+                await self.generate(
+                    profile=profile,
+                    prompt=prompt,
+                    output_directory=output_directory,
+                    aspect_ratio=aspect_ratio,
+                    resolution="",
+                    target_duration_seconds=0.0,
+                    starting_frame=None,
+                    deadline=deadline,
+                )
+            )
+        return clips
 
     async def _normalize_and_materialize(
         self, interaction, output_directory: Path, *, deadline: float, operation_id: Optional[str]

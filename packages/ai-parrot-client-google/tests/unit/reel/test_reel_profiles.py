@@ -1,24 +1,72 @@
-"""TASK-3323: capability registry and covering-duration selection tests.
+"""Capability registry and covering-duration selection tests.
 
-Verifies `VideoProfileRegistry` resolves/validates exactly the spec's
-Developer API preview IDs and disabled Vertex GA entries (never by
-substring), that Lite is excluded from 4k/reference guidance, and that
-`select_generation_duration` picks the smallest legal covering duration
-(4/5/6/8 s cases, high-resolution forcing 8 s, Omni returning None).
+Verifies `VideoProfileRegistry` resolves the Omni Developer API default and
+disabled Vertex GA entries (never by substring), that the retained Veo shape
+is excluded from 4k/reference guidance, and that
+`select_generation_duration` picks the smallest legal covering duration.
 """
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from parrot.clients.google.reel.clip import GeneratedReelClip
 from parrot.clients.google.reel.errors import ReelErrorCode, ReelValidationError
-from parrot.clients.google.reel.profiles import VideoProfileRegistry, select_generation_duration
+from parrot.clients.google.reel.profiles import (
+    VideoModelProfile,
+    VideoProfileRegistry,
+    VideoRequestOptions,
+    select_generation_duration,
+)
 
 
 @pytest.fixture
 def registry() -> VideoProfileRegistry:
     return VideoProfileRegistry.default()
+
+
+@pytest.fixture
+def veo_registry() -> VideoProfileRegistry:
+    """Build the remaining Veo shapes for scene-validation unit coverage."""
+    common = dict(
+        backend="veo",
+        enabled=True,
+        durations_seconds=[4, 6, 8],
+        supports_starting_frame=True,
+        native_audio="controllable",
+        person_generation_values=["allow_adult"],
+        source="test",
+        checked_on=date(2026, 9, 17),
+    )
+    return VideoProfileRegistry(
+        [
+            VideoModelProfile(
+                model_id="veo-3.1-generate-preview",
+                surface="gemini_developer",
+                resolutions=["720p", "1080p", "4k"],
+                resolution_min_duration={"1080p": 8, "4k": 8},
+                supports_reference_guidance=True,
+                **common,
+            ),
+            VideoModelProfile(
+                model_id="veo-3.1-fast-generate-preview",
+                surface="gemini_developer",
+                resolutions=["720p", "1080p", "4k"],
+                resolution_min_duration={"1080p": 8, "4k": 8},
+                supports_reference_guidance=True,
+                **common,
+            ),
+            VideoModelProfile(
+                model_id="veo-3.1-lite-generate-preview",
+                surface="gemini_developer",
+                resolutions=["720p", "1080p"],
+                resolution_min_duration={"1080p": 8},
+                supports_reference_guidance=False,
+                **common,
+            ),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -30,9 +78,6 @@ class TestRegistryResolve:
     @pytest.mark.parametrize(
         "model_id",
         [
-            "veo-3.1-generate-preview",
-            "veo-3.1-fast-generate-preview",
-            "veo-3.1-lite-generate-preview",
             "gemini-omni-1.1-flash",
         ],
     )
@@ -52,10 +97,23 @@ class TestRegistryResolve:
             registry.resolve("veo-4-ultra-preview", "gemini_developer")
         assert exc_info.value.code is ReelErrorCode.UNKNOWN_MODEL
 
+    @pytest.mark.parametrize(
+        "model_id",
+        [
+            "veo-3.1-generate-preview",
+            "veo-3.1-fast-generate-preview",
+            "veo-3.1-lite-generate-preview",
+        ],
+    )
+    def test_registry_dev_veo_preview_unknown(self, registry, model_id):
+        with pytest.raises(ReelValidationError) as exc_info:
+            registry.resolve(model_id, "gemini_developer")
+        assert exc_info.value.code is ReelErrorCode.UNKNOWN_MODEL
+
     def test_wrong_api_surface_rejected(self, registry):
         """Registered on gemini_developer, requested on vertex -> wrong_api_surface, not unknown_model."""
         with pytest.raises(ReelValidationError) as exc_info:
-            registry.resolve("veo-3.1-generate-preview", "vertex")
+            registry.resolve("veo-3.1-generate-001", "gemini_developer")
         assert exc_info.value.code is ReelErrorCode.WRONG_API_SURFACE
 
     def test_no_substring_matching(self, registry):
@@ -65,8 +123,39 @@ class TestRegistryResolve:
         assert exc_info.value.code is ReelErrorCode.UNKNOWN_MODEL
 
     def test_default_video_model_per_surface(self, registry):
-        assert registry.default_video_model("gemini_developer") == "veo-3.1-generate-preview"
+        assert registry.default_video_model("gemini_developer") == "gemini-omni-1.1-flash"
         assert registry.default_video_model("vertex") == "veo-3.1-generate-001"
+
+    def test_registry_dev_default_is_omni(self, registry):
+        assert registry.default_video_model("gemini_developer") == "gemini-omni-1.1-flash"
+
+
+class TestVideoRequestValidation:
+    @pytest.mark.parametrize(
+        "options",
+        [
+            VideoRequestOptions(resolution="1080p"),
+            VideoRequestOptions(duration_seconds=8),
+            VideoRequestOptions(has_starting_frame=True),
+            VideoRequestOptions(has_last_frame=True),
+            VideoRequestOptions(reference_image_count=1),
+            VideoRequestOptions(extends_video=True),
+            VideoRequestOptions(number_of_videos=999),
+        ],
+    )
+    def test_validate_request_rejects_omni_gaps(self, registry, options):
+        profile = registry.resolve("gemini-omni-1.1-flash", "gemini_developer")
+
+        with pytest.raises(ReelValidationError) as exc_info:
+            registry.validate_request(profile, request=options)
+
+        assert exc_info.value.code is ReelErrorCode.UNSUPPORTED_OPTION
+
+    def test_validate_request_number_of_videos_cap(self, registry):
+        profile = registry.resolve("gemini-omni-1.1-flash", "gemini_developer")
+
+        assert profile.max_outputs_per_request == 4
+        registry.validate_request(profile, request=VideoRequestOptions(number_of_videos=4))
 
 
 # ---------------------------------------------------------------------------
@@ -75,30 +164,31 @@ class TestRegistryResolve:
 
 
 class TestLiteExclusions:
-    def test_lite_never_gains_4k(self, registry):
-        profile = registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
+
+    def test_lite_never_gains_4k(self, veo_registry):
+        profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         assert "4k" not in profile.resolutions
 
-    def test_lite_never_gains_reference_guidance(self, registry):
-        profile = registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
+    def test_lite_never_gains_reference_guidance(self, veo_registry):
+        profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         assert profile.supports_reference_guidance is False
 
-    def test_standard_and_fast_support_4k_and_reference_guidance(self, registry):
+    def test_standard_and_fast_support_4k_and_reference_guidance(self, veo_registry):
         for model_id in ("veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"):
-            profile = registry.resolve(model_id, "gemini_developer")
+            profile = veo_registry.resolve(model_id, "gemini_developer")
             assert "4k" in profile.resolutions
             assert profile.supports_reference_guidance is True
 
-    def test_validate_scene_rejects_4k_for_lite(self, registry):
-        profile = registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
+    def test_validate_scene_rejects_4k_for_lite(self, veo_registry):
+        profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         with pytest.raises(ReelValidationError) as exc_info:
-            registry.validate_scene(profile, resolution="4k", audio_mode="separate", has_starting_frame=False)
+            veo_registry.validate_scene(profile, resolution="4k", audio_mode="separate", has_starting_frame=False)
         assert exc_info.value.code is ReelErrorCode.UNSUPPORTED_OPTION
 
-    def test_validate_scene_accepts_supported_resolution(self, registry):
-        profile = registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
+    def test_validate_scene_accepts_supported_resolution(self, veo_registry):
+        profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         # Must not raise.
-        registry.validate_scene(profile, resolution="720p", audio_mode="separate", has_starting_frame=False)
+        veo_registry.validate_scene(profile, resolution="720p", audio_mode="separate", has_starting_frame=False)
 
     def test_validate_scene_rejects_unsupported_starting_frame(self, registry):
         profile = registry.resolve("gemini-omni-1.1-flash", "gemini_developer")
@@ -106,15 +196,12 @@ class TestLiteExclusions:
             registry.validate_scene(profile, resolution="720p", audio_mode="separate", has_starting_frame=True)
         assert exc_info.value.code is ReelErrorCode.UNSUPPORTED_OPTION
 
-    def test_validate_scene_accepts_native_audio_on_controllable_profile(self, registry):
-        profile = registry.resolve("veo-3.1-generate-preview", "gemini_developer")
+    def test_validate_scene_accepts_native_audio_on_controllable_profile(self, veo_registry):
+        profile = veo_registry.resolve("veo-3.1-generate-preview", "gemini_developer")
         # Must not raise: this profile supports native audio (controllable).
-        registry.validate_scene(profile, resolution="720p", audio_mode="native", has_starting_frame=False)
+        veo_registry.validate_scene(profile, resolution="720p", audio_mode="native", has_starting_frame=False)
 
     def test_validate_scene_rejects_native_audio_when_unsupported(self):
-        from datetime import date
-
-        from parrot.clients.google.reel.profiles import VideoModelProfile
         from parrot.clients.google.reel.profiles import VideoProfileRegistry as _Registry
 
         no_audio_profile = VideoModelProfile(
@@ -146,13 +233,14 @@ class TestLiteExclusions:
 
 
 class TestPersonGenerationValues:
-    def test_all_veo_profiles_have_lowercase_person_generation_values(self, registry):
+
+    def test_all_veo_profiles_have_lowercase_person_generation_values(self, veo_registry):
         for model_id in (
             "veo-3.1-generate-preview",
             "veo-3.1-fast-generate-preview",
             "veo-3.1-lite-generate-preview",
         ):
-            profile = registry.resolve(model_id, "gemini_developer")
+            profile = veo_registry.resolve(model_id, "gemini_developer")
             assert profile.person_generation_values
             for value in profile.person_generation_values:
                 assert value == value.lower()
@@ -178,14 +266,14 @@ class TestSelectGenerationDuration:
             (8.0, 8),
         ],
     )
-    def test_720p_covering_duration(self, registry, target, expected):
-        profile = registry.resolve("veo-3.1-generate-preview", "gemini_developer")
+    def test_720p_covering_duration(self, veo_registry, target, expected):
+        profile = veo_registry.resolve("veo-3.1-generate-preview", "gemini_developer")
         assert select_generation_duration(profile, target, "720p", has_starting_frame=False) == expected
 
-    def test_high_resolution_forces_8(self, registry):
+    def test_high_resolution_forces_8(self, veo_registry):
         """A 1080p/4k request is forced to the resolution's minimum duration
         regardless of a lower target."""
-        profile = registry.resolve("veo-3.1-generate-preview", "gemini_developer")
+        profile = veo_registry.resolve("veo-3.1-generate-preview", "gemini_developer")
         for target in (4.0, 5.0, 6.0):
             assert select_generation_duration(profile, target, "1080p", has_starting_frame=False) == 8
         assert select_generation_duration(profile, 4.0, "4k", has_starting_frame=False) == 8
@@ -195,11 +283,11 @@ class TestSelectGenerationDuration:
         assert select_generation_duration(profile, 5.0, "720p", has_starting_frame=False) is None
         assert select_generation_duration(profile, 8.0, "720p", has_starting_frame=True) is None
 
-    def test_unconfigured_resolution_has_no_duration_floor(self, registry):
+    def test_unconfigured_resolution_has_no_duration_floor(self, veo_registry):
         """A resolution with no configured minimum imposes no floor — smallest
         candidate covering the target wins. Resolution *membership* is
         validate_scene's job, not duration selection's."""
-        profile = registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
+        profile = veo_registry.resolve("veo-3.1-lite-generate-preview", "gemini_developer")
         assert select_generation_duration(profile, 4.0, "8k", has_starting_frame=False) == 4
 
     def test_no_legal_duration_raises(self):

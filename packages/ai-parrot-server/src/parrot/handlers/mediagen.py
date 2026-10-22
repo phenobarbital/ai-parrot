@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 from aiohttp import MultipartWriter, web
 from navigator.views import BaseView
@@ -78,8 +77,9 @@ class MediaGen(BaseView):
         use_flex = bool(data.get("use_flex", False))
         download_mode = str(data.get("download_mode", "StreamResponse")).strip()
 
-        # Default model based on action
-        default_model = "gemini-3.1-flash-image" if action == "image" else "veo-3.1-generate-preview"
+        # Default model based on action. Video has no handler-level default:
+        # None lets the façade apply the video model registry default.
+        default_model = "gemini-3.1-flash-image" if action == "image" else None
         model = data.get("model") or default_model
 
         if action not in {"image", "video"}:
@@ -89,7 +89,7 @@ class MediaGen(BaseView):
         # provider module at module scope (AC-3).
         from parrot.clients.google import GoogleGenAIClient
 
-        client = GoogleGenAIClient(model=model)
+        client = GoogleGenAIClient(model=model) if model else GoogleGenAIClient()
         try:
             generated_files: List[Path] = []
             results_metadata: List[Any] = []
@@ -180,7 +180,7 @@ class MediaGen(BaseView):
                     model_fields = set(VideoGenerationPrompt.model_fields.keys())
                     filtered_inputs = {k: v for k, v in data.items() if k in model_fields}
                     filtered_inputs["prompt"] = prompt
-                    filtered_inputs["model"] = model
+                    filtered_inputs["model"] = model  # None -> registry default
 
                     prompt_data = VideoGenerationPrompt(**filtered_inputs)
                     r = await client.generate_videos(prompt=prompt_data)
@@ -243,8 +243,8 @@ class MediaGen(BaseView):
 
             # Direct attribute check for native google-genai ClientError/APIError
             if hasattr(exc, "code") and hasattr(exc, "message"):
-                error_message = getattr(exc, "message")
-                error_code = getattr(exc, "code")
+                error_message = exc.message
+                error_code = exc.code
 
             return self.json_response(
                 {"error": {"message": error_message, "code": error_code, "details": str(exc)}}, status=500

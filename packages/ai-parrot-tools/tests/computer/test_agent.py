@@ -1,4 +1,5 @@
 """Unit tests for parrot_tools.computer.agent (TASK-1478)."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,14 @@ from parrot_tools.computer.agent import ComputerAgent
 
 class TestComputerAgentTools:
     """Tests for agent_tools() composition."""
+
+    def test_computer_agent_default_model(self):
+        """The default model uses the Google provider and current Gemini model."""
+        base_agent = ComputerAgent.__bases__[0]
+        with patch.object(base_agent, "__init__", autospec=True) as base_init:
+            ComputerAgent()
+
+        assert base_init.call_args.kwargs["llm"] == "google:gemini-3.8-flash"
 
     def test_agent_tools_without_scraping(self):
         """agent_tools() returns ComputerInteractionToolkit tools only."""
@@ -62,6 +71,22 @@ class TestComputerAgentTools:
 
 class TestComputerAgentSafetyMode:
     """Tests for safety mode configuration."""
+
+    @pytest.mark.asyncio
+    async def test_configure_enables_computer_use(self, monkeypatch):
+        """configure() opts the resolved client into computer-use mode."""
+        base_agent = ComputerAgent.__bases__[0]
+
+        async def configure(_self, app=None):
+            return None
+
+        monkeypatch.setattr(base_agent, "configure", configure)
+        agent = ComputerAgent.__new__(ComputerAgent)
+        agent._llm = MagicMock()
+
+        await agent.configure()
+
+        assert agent._llm.computer_use is True
 
     def test_safety_mode_default(self):
         agent = ComputerAgent.__new__(ComputerAgent)

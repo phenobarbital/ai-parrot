@@ -159,10 +159,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+*(Agent fills this in when done)* — NOTE: a first implementation was reverted from this branch because the spec forbids merging before 2026-12-11. Re-apply on or after that date.

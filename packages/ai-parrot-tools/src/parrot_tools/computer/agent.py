@@ -5,6 +5,7 @@ Configured for Google Gemini computer-use models. Composes
 ComputerInteractionToolkit + optional WebScrapingToolkit. Manages
 screenshot memory pruning and safety decision handling.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ class ComputerAgent(Agent):
     """Agent configured for vision-based browser automation via computer-use.
 
     Uses a Google Gemini computer-use model (default:
-    ``gemini-2.5-computer-use-preview-10-2025``). Composes
+    ``gemini-3.8-flash``). Composes
     :class:`ComputerInteractionToolkit` for all 13 predefined browser
     actions plus screenshot, recording, and loop execution. Optionally
     composes :class:`~parrot_tools.scraping.toolkit.WebScrapingToolkit`
@@ -72,7 +73,7 @@ class ComputerAgent(Agent):
     def __init__(
         self,
         *,
-        model: str = "gemini-2.5-computer-use-preview-10-2025",
+        model: str = "gemini-3.8-flash",
         viewport: tuple[int, int] = (1280, 720),
         headless: bool = True,
         initial_url: str = "https://www.google.com",
@@ -100,7 +101,7 @@ class ComputerAgent(Agent):
         self._safety_approvers = safety_approvers
         self._safety_timeout = safety_timeout
         # Computer-use is Google-only (see spec Non-Goals). Bare model strings
-        # like "gemini-2.5-computer-use-preview-10-2025" fail provider
+        # like "gemini-3.8-flash" fail provider
         # resolution ("Unsupported LLM: 'gemini-...'"), so prefix the Google
         # provider when the caller did not specify one.
         if ":" not in model:
@@ -111,17 +112,12 @@ class ComputerAgent(Agent):
         if include_scraping:
             try:
                 from parrot_tools.scraping.toolkit import WebScrapingToolkit
-                self._scraping_toolkit = WebScrapingToolkit(
-                    driver_type="playwright", headless=True
-                )
+
+                self._scraping_toolkit = WebScrapingToolkit(driver_type="playwright", headless=True)
             except ImportError as exc:
-                logger.warning(
-                    "ComputerAgent: WebScrapingToolkit not available (ImportError): %s", exc
-                )
+                logger.warning("ComputerAgent: WebScrapingToolkit not available (ImportError): %s", exc)
             except Exception as exc:
-                logger.warning(
-                    "ComputerAgent: could not initialize WebScrapingToolkit: %s", exc
-                )
+                logger.warning("ComputerAgent: could not initialize WebScrapingToolkit: %s", exc)
         super().__init__(
             agent_id=self.agent_id,
             llm=model,
@@ -140,6 +136,7 @@ class ComputerAgent(Agent):
         if client is not None:
             try:
                 client._computer_use_safety_handler = self._safety_handler
+                client.computer_use = True
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("ComputerAgent: could not wire safety handler: %s", exc)
 
@@ -185,13 +182,13 @@ class ComputerAgent(Agent):
         if manager is None:
             try:
                 from parrot.human import get_default_human_manager
+
                 manager = get_default_human_manager()
             except Exception:
                 manager = None
         if manager is None:
             logger.info(
-                "ComputerAgent: no HumanInteractionManager configured; "
-                "falling back to terminal confirmation."
+                "ComputerAgent: no HumanInteractionManager configured; " "falling back to terminal confirmation."
             )
             return await self._terminal_confirm(decision)
 
@@ -212,10 +209,7 @@ class ComputerAgent(Agent):
             source_agent=self.agent_id,
         )
         result = await manager.request_human_input(interaction, channel=self._safety_channel)
-        approved = (
-            result.status == InteractionStatus.COMPLETED
-            and bool(result.consolidated_value)
-        )
+        approved = result.status == InteractionStatus.COMPLETED and bool(result.consolidated_value)
         logger.info(
             "ComputerAgent HITL safety decision: approved=%s (status=%s)",
             approved,
@@ -242,10 +236,7 @@ class ComputerAgent(Agent):
         """Build a human-readable confirmation prompt from a safety decision."""
         tool = decision.get("tool", "an action")
         explanation = decision.get("explanation") or "(no explanation provided)"
-        return (
-            f"The computer-use agent wants to perform '{tool}'. "
-            f"Reason: {explanation}. Approve?"
-        )
+        return f"The computer-use agent wants to perform '{tool}'. " f"Reason: {explanation}. Approve?"
 
     def agent_tools(self) -> List[AbstractTool]:
         """Return the tools available to the ComputerAgent.
@@ -346,9 +337,7 @@ class ComputerAgent(Agent):
             when no callback is configured.
         """
         if self._safety_mode == "auto":
-            logger.warning(
-                "ComputerAgent safety decision (auto-acknowledged): %s", decision
-            )
+            logger.warning("ComputerAgent safety decision (auto-acknowledged): %s", decision)
             return True
         else:
             # Interactive mode: emit event for any listeners.
@@ -373,8 +362,7 @@ class ComputerAgent(Agent):
                     )
             # No callback configured — default to proceeding with a clear warning.
             logger.warning(
-                "ComputerAgent safety decision (interactive mode, no callback set — "
-                "defaulting to proceed): %s",
+                "ComputerAgent safety decision (interactive mode, no callback set — " "defaulting to proceed): %s",
                 decision,
             )
             return True
