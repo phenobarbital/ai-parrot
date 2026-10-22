@@ -1,0 +1,180 @@
+{
+  "feature": "double-configure-agents",
+  "feature_id": "FEAT-721",
+  "spec": "sdd/specs/double-configure-agents.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T14:24:33Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py",
+          "packages/ai-parrot/tests/bots/test_double_configure.py",
+          "packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py",
+          "packages/ai-parrot/tests/bots/test_fireflies_insights.py",
+          "packages/ai-parrot/tests/bots/test_github_reviewer.py",
+          "packages/ai-parrot/tests/tools/test_toolkit_resolver.py",
+          "packages/ai-parrot/tests/tools/test_auto_registration_hooks.py",
+          "packages/ai-parrot/tests/unit/tools/test_tool_lifecycle.py",
+          "packages/ai-parrot/tests/bots/test_jira_specialist_reconfigure.py",
+          "packages/ai-parrot/tests/bots/test_jira_standup.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:73c8dc9568b1c5f49ec48c7f0cd4d1b9c0aab5b567c385f758fe3ec32656384a"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4596",
+      "slug": "toolmanager-keep-first-reregistration",
+      "title": "ToolManager keep-first toolkit re-registration",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root of the graph: owns tools/manager.py and creates find_registered_toolkit(); no inbound edge",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4596-toolmanager-keep-first-reregistration.md"
+    },
+    {
+      "id": "TASK-4597",
+      "slug": "abstractbot-configure-idempotency",
+      "title": "AbstractBot.configure() idempotency + reconfigure()",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "owns bots/abstract.py and creates tests/bots/test_double_configure.py; imports nothing TASK-4596 creates, so it runs in wave 1 alongside it",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4597-abstractbot-configure-idempotency.md"
+    },
+    {
+      "id": "TASK-4598",
+      "slug": "fireflies-post-configure-adopts-toolkits",
+      "title": "FirefliesInsightsAgent.post_configure adopts its toolkits",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4596"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls ToolManager.find_registered_toolkit created by TASK-4596 (tools/manager.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4598-fireflies-post-configure-adopts-toolkits.md"
+    },
+    {
+      "id": "TASK-4599",
+      "slug": "github-reviewer-post-configure-adopts-toolkits",
+      "title": "GitHubReviewer.post_configure adopts its toolkits",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4596"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls ToolManager.find_registered_toolkit from TASK-4596 (tools/manager.py) and de-duplicates the tools keep-first now returns",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4599-github-reviewer-post-configure-adopts-toolkits.md"
+    },
+    {
+      "id": "TASK-4600",
+      "slug": "jira-specialist-post-configure-adopts-toolkits",
+      "title": "JiraSpecialist.post_configure adopts its toolkits",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4596"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls find_registered_toolkit (TASK-4596, tools/manager.py) for JiraToolkit and ReminderToolkit in bots/jira_specialist.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4600-jira-specialist-post-configure-adopts-toolkits.md"
+    },
+    {
+      "id": "TASK-4601",
+      "slug": "double-configure-integration-tests",
+      "title": "Integration tests — double configure end to end, parallel agents",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4596",
+        "TASK-4597"
+      ],
+      "parallel": true,
+      "parallelism_notes": "appends to tests/bots/test_double_configure.py created by TASK-4597 (reuses _stub_bot/_app, calls reconfigure) and asserts TASK-4596 keep-first via find_registered_toolkit",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4601-double-configure-integration-tests.md"
+    },
+    {
+      "id": "TASK-4602",
+      "slug": "agent-configure-lifecycle-doc",
+      "title": "Document the agent configure lifecycle",
+      "feature_id": "FEAT-721",
+      "feature": "double-configure-agents",
+      "spec": "sdd/specs/double-configure-agents.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4596",
+        "TASK-4597"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents find_registered_toolkit (TASK-4596) and reconfigure/configure_count (TASK-4597) by their final names; docs-only file",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4602-agent-configure-lifecycle-doc.md"
+    }
+  ]
+}

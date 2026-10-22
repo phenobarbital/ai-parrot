@@ -423,6 +423,8 @@ tests:
 - packages/ai-parrot/tests/tools/test_toolkit_resolver.py
 - packages/ai-parrot/tests/tools/test_auto_registration_hooks.py
 - packages/ai-parrot/tests/unit/tools/test_tool_lifecycle.py
+- packages/ai-parrot/tests/bots/test_jira_specialist_reconfigure.py
+- packages/ai-parrot/tests/bots/test_jira_standup.py
 markers: none
 
 ### Test Data / Fixtures
