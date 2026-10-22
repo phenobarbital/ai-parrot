@@ -290,10 +290,20 @@ breaking the property.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 2
+**Date**: 2026-10-22
+**Notes**: Six pins now derive from the source of truth: both version tests assert
+`__version__ == importlib.metadata.version("parrot-formdesigner")` and PEP 440 validity;
+`len(FieldType)==32` -> enum-uniqueness check; `len(controls)==32` -> one control per `FieldType`
+(spot-checks kept); toolkit count -> non-empty, uniquely named; frozen 15-name set -> subset check.
+No new numeric/version literal in an equality assertion. 50-line budget: per spec rev 0.4 the product
+moved — `examples/forms/form_server.py` trimmed from 60 to 27 non-empty lines (comments/docstring prose
+only; `setup_form_routes` usage preserved); `test_msteams_import_compat.py` NOT edited.
+Environment caveat: the shared venv's `parrot_formdesigner.egg-info` reports 1.2.3 while `version.py`
+is 1.2.4, so the two version tests are red locally until the package is re-installed; verified green
+(103 passed) against a throwaway dist-info reporting 1.2.4. Full `parrot-formdesigner` suite after
+TASK-3910..3913: 3864 passed, 3 failed (all TASK-3914's cluster). The task file was stale vs spec rev 0.4
+(it said "pick ONE" for the budget and omitted form_server.py), which caused two empty deliveries on
+attempt 1 of the first run; corrected in bc3ff3653 and re-dispatched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: The 50-line budget decision + reason; new `parrot-formdesigner` failure count.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

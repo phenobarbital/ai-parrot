@@ -94,7 +94,7 @@
       "feature_id": "FEAT-618",
       "feature": "tests-test-wheel-layout-tech-debt",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,9 @@
       "parallelism_notes": "Rewrites the len(FieldType)/len(controls) count assertions, whose values settle only after TASK-3911's 11 snippet entries land in field_helpers.py:15.",
       "assigned_to": null,
       "started_at": "2026-10-22T14:21:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3913-formdesigner-pinned-constant-drift.md"
+      "completed_at": "2026-10-22T14:57:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3913-formdesigner-pinned-constant-drift.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3914",
