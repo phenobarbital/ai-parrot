@@ -706,7 +706,7 @@ class LedgerService:
         marker = Path(self.log.path).parent / MARKER_FILENAME
         if not marker.exists():
             marker_state = "missing"
-        elif marker.read_text(encoding="utf-8") == digest_files(files):
+        elif marker.read_text(encoding="utf-8") == digest_files(files, self.shared_root):
             marker_state = "ok"
         else:
             marker_state = "stale"
