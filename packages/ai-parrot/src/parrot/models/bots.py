@@ -17,7 +17,6 @@ from asyncdb.models import Model
 from parrot.conf import PARROT_BOTS_TABLE, PARROT_SCHEMA
 
 
-
 def created_at(*args, **kwargs) -> int:
     return int(time.time()) * 1000
 
