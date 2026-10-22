@@ -7,6 +7,7 @@ satellite at module load). ``parrot.handlers.models.bots`` re-exports these name
 """
 
 from typing import List, Optional
+from functools import wraps
 import uuid
 import time
 from datetime import datetime
@@ -21,7 +22,82 @@ def created_at(*args, **kwargs) -> int:
     return int(time.time()) * 1000
 
 
+# --- Legacy-column tolerance (schema drift) --------------------------------
+# The canonical home for all LLM tuning is the ``model_config`` JSONB column,
+# and the embedding model lives at ``vector_store_config['embedding_model']``.
+# Older ``navigator.ai_bots`` tables still carry the pre-fold standalone
+# columns, and a row hydrated from such a table reaches ``BotModel`` as
+# unexpected keyword arguments, which ``Meta.strict = True`` rejects.
+#
+# They are folded out of ``**kwargs`` instead of being declared as fields on
+# purpose: a declared column is emitted in the driver's
+# ``INSERT ... RETURNING`` clause even when its value is skipped, so an
+# environment that already ran the fold migrations would fail every write with
+# ``column "model_name" does not exist``. Run
+# ``sdd/migrations/FEAT-fold-legacy-llm-columns.sql`` and
+# ``sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql``
+# to retire the columns in an environment that still has them.
+_LEGACY_LLM_COLUMNS = ("model_name", "temperature", "max_tokens", "top_k", "top_p")
+_LEGACY_EMBEDDING_COLUMN = "embedding_model"
+
+
+def _fold_legacy_bot_columns(kwargs: dict) -> None:
+    """Fold the legacy ``ai_bots`` columns found in *kwargs* into the canonical JSONB.
+
+    Mutates *kwargs* in place: every non-null legacy LLM-tuning scalar is moved
+    into ``model_config`` (``model_name`` is mirrored to the ``model`` key as
+    well, since callers read either), and ``embedding_model`` is moved into
+    ``vector_store_config['embedding_model']``. An explicitly supplied JSONB key
+    always wins, and a caller-owned dict is copied rather than mutated.
+
+    Args:
+        kwargs: The keyword arguments about to be passed to ``BotModel.__init__``.
+    """
+    legacy = {name: kwargs.pop(name, None) for name in _LEGACY_LLM_COLUMNS}
+    embedding_model = kwargs.pop(_LEGACY_EMBEDDING_COLUMN, None)
+    if not any(value is not None for value in legacy.values()) and not embedding_model:
+        return
+
+    model_config = dict(kwargs.get("model_config") or {})
+    for key, value in legacy.items():
+        if value is not None:
+            model_config.setdefault(key, value)
+    if legacy["model_name"] is not None:
+        model_config.setdefault("model", legacy["model_name"])
+    kwargs["model_config"] = model_config
+
+    if embedding_model:
+        vector_store_config = dict(kwargs.get("vector_store_config") or {})
+        vector_store_config.setdefault("embedding_model", embedding_model)
+        kwargs["vector_store_config"] = vector_store_config
+
+
+def _tolerate_legacy_columns(model_cls: type) -> type:
+    """Wrap ``model_cls.__init__`` so legacy columns fold instead of raising.
+
+    Must be applied as a class decorator — i.e. after ``ModelMeta`` generated
+    the dataclass ``__init__`` — because ``dataclasses.dataclass(init=True)``
+    skips generating ``__init__`` when the class body already defines one.
+
+    Args:
+        model_cls: The strict datamodel class to make tolerant.
+
+    Returns:
+        The same class, with a folding ``__init__`` wrapper installed.
+    """
+    original_init = model_cls.__init__
+
+    @wraps(original_init)
+    def __init__(self, *args, **kwargs) -> None:  # noqa: N807
+        _fold_legacy_bot_columns(kwargs)
+        original_init(self, *args, **kwargs)
+
+    model_cls.__init__ = __init__
+    return model_cls
+
+
 # Chatbot Model:
+@_tolerate_legacy_columns
 class BotModel(Model):
     """
     Unified Bot Model combining chatbot and agent functionality.
