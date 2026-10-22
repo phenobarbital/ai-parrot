@@ -9,6 +9,95 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.4] — 2026-10-22 — Per-tenant skills, Fireflies insights agent, Jira CLI, OTLP metrics fan-out
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.4`, `ai-parrot-server` to `1.3.3`,
+the other core-line packages to `1.2.4`, satellites to `0.4.4`). Satellites are re-pinned to `ai-parrot>=1.2.4`.
+
+### Migration
+
+- **`navigator.ai_bots` must be homologated with `BotModel`** — `sdd/migrations/ai-bots-homologate-botmodel.sql`.
+  `BotModel` is `Meta.strict = True`, so asyncdb selects every declared field by name and a missing column
+  (e.g. `toolkit_config`) fails *every* bot load. FEAT-716 restores tolerance for legacy columns via a kwargs
+  fold, but running the migration is the supported path.
+
+### Security
+
+- **Locale-directory traversal in the narration engine** (CWE-22): locale directories are now selected from a
+  directory listing instead of being built from the caller's locale string.
+- **Chat-level authorization in `FirefliesInsightsAgent`** (FEAT-715), plus revision supersede and Jira markup
+  escaping.
+- **Per-tenant skill isolation (FEAT-707).** Tenant skill hardening, rejected empty tenant ids, tool-less
+  tenant layers, and HTTP handlers that drop any client-supplied tenant before forwarding.
+- **Wiki clone origin** is parsed as a host before matching (CodeQL `cs:228`); project/shared root walks never
+  climb into the system temp directory.
+- **Prompt-injection guardrail (FEAT-714).** `ThreatLevel` gains a total ordering so threat comparisons cannot
+  silently mis-rank; malformed threat levels are surfaced at debug rather than swallowed.
+
+### Added
+
+- **Per-tenant skills for `SkillRegistryMixin` (FEAT-707).** `AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/`
+  shadows the global tree by name and `/trigger` per request (`global_only` skills cannot be shadowed, learned
+  skills stay global). `ask(tenant=...)` / `ask_stream(tenant=...)` binding hooks, a tenant-aware
+  `NarrativeMixin.narrate()`, and `parrot/skills/tenancy.py`. See `docs/skills/per-tenant-skills.md`.
+- **`FirefliesInsightsAgent` (FEAT-715)** — meeting-transcript insights with human-approved Jira ticket
+  creation — plus a wiki **inbox watcher** (`knowledge/wiki/inbox/watcher.py`) with a stability probe and a
+  lazy watchdog gate. Docs: `docs/agents/fireflies-insights.md`.
+- **Jira toolkit upgrades (FEAT-696).** Extracted 3LO OAuth helpers, a local token store and credential
+  resolver, a Jira Knowledge Base model (`jira_kb.py`, ruamel round-trip), and a `jira` CLI
+  (`auth`, `status`, `logout`, `sync-kb`). New dependency: `ruamel-yaml>=0.18`.
+- **Workday worker event history and job changes (FEAT-706).** `worker_event_history` / `worker_job_changes`
+  handlers and the `worker_event` model, plus `wd_get_position` and `wd_get_job_profile`. Docs:
+  `docs/tools/workday-worker-history.md`.
+- **OTLP metrics fan-out and env-level switches (FEAT-705).** `setup_telemetry()` now builds one metric
+  exporter per `otlp_targets` entry (with per-target headers), matching the trace path, and trace/metric
+  export can be toggled from the environment.
+- **Language-agnostic validation runners (FEAT-709).** A runner registry with pytest, vitest, cargo (stable
+  libtest text parser) and `parrot-e2e` adapters; verdict models and a `validation_failed` outcome; a
+  fail-closed task-tier gate with same-seat repair; a dispatcher `run_validation` tool; repo
+  `test_runners.toml` and UI vitest in the nightly matrix. Docs: `docs/dev_loop/validation-runners.md`.
+- **Contract-driven test selection (FEAT-699).** A Validation Contract in the spec template and `/sdd-spec`,
+  cached into the per-spec index header by `/sdd-task`; a content-addressed green cache across merges;
+  baseline-aware verdicts; a nightly full package-suite workflow on `dev` that fails on new reds. Docs:
+  `docs/sdd/test-selection-validation-contract.md`.
+- **Shared ledger event log (FEAT-694).** `sdd/ledger/events.jsonl` with managed `parrot-ledger` git hooks,
+  `/sdd-done` rotation, and a codex twin.
+- **`/sdd-brief` hotfix flow (FEAT-698).** Research-first briefs for hotfixes and single-issue fixes — no
+  FEAT/TASK ids, `HOTFIX-<KEY>-<N>` local ids, worktree provisioned via `ensure_worktree --brief-key`, and an
+  Antigravity twin that keeps each host's hand-off native.
+- **Parallel research for `/sdd-proposal` (FEAT-708).** Independent research lanes, citation-identity dedup
+  into canonical `F001+` findings, and citation verification through the new `sdd-contract-probe` agent
+  (which also gains a `file` check kind for `path:NN` citations).
+- **Code-enforced E2E closeout gate** in `/sdd-done` and both its twins; **ledger snapshot removal guard**
+  wired into CI (FEAT-712).
+- **GitHubReviewer and Jira standup.** Reports the tickets resolved or closed in the last 24 h, its own Google
+  key, open-only `today_pr`, a strict `/review_pr` gate. Docs: `docs/jira-standup.md`.
+
+### Changed
+
+- **`use_tools=False` is honoured** in `ask`, `ask_stream` and `conversation`, and in the generated prompt.
+- **dev-loop seats.** `luna` replaced by `sol` and `opus` added to the strong seat roster; in-process seat
+  `max_turns` scales with the task's declared file count; a `max_turns` overrun no longer suspends the seat.
+- **Scheduler.** The aiohttp Redis attachment is configurable via `SCHEDULER_REDIS`.
+- **Ledger audit (FEAT-717).** `claim_conflicts` is stateless; `live_claims()` filters superseded claims, and
+  `issue.superseded` supersedes a claim.
+
+### Fixed
+
+- **Images.** `parrot-formdesigner` applies EXIF orientation before generating thumbnails; zero-denominator
+  `IFDRational` and NaN/Inf convert to `None` for valid JSON (NAV-10288).
+- **Google Drive.** Download retry seeks back on `BinaryIO`; resumable chunks expose `Retry-After`.
+- **`AgentCrew.__init__`** honours all four Google credential signals.
+- **Telegram** renders a `/call` result as a code block, not as prose.
+- **Tool registration** keeps the class-name alias when every claimant is the same class.
+- **E2E `up`** keeps the detached daemon alive when the launcher exits.
+- **Wiki inbox** probes candidate stability concurrently.
+- **SDD infra.** Ledger snapshots are compared at the merge base; `sdd-contract-probe` is invocable on every
+  host; `check_task_graph` respects `parallelism_notes` that name the creator; `close_task.sh` resolves a
+  parrot-capable interpreter for its `task.closed` emission.
+
+---
+
 ## [1.2.3] — 2026-10-16 — GraphIndex core seams, planogram appearance rules, Gemini upgrade
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.3`, `ai-parrot-server` to `1.3.2`,
