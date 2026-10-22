@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T20:46:07+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -184,8 +184,9 @@
       "parallelism_notes": "documents the merged behaviour of TASK-4627 (quota knobs, 429 shape) and TASK-4628 (voice codes); transitively covers 4623-4625.",
       "assigned_to": null,
       "started_at": "2026-10-22T20:09:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4629-enforcement-documentation.md"
+      "completed_at": "2026-10-22T20:46:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4629-enforcement-documentation.md",
+      "verification": "verified"
     }
   ]
 }
