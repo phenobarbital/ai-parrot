@@ -31,6 +31,14 @@ class LLMValidationConfig(BaseModel):
     enabled: bool = False
     threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     on_error: Literal["skip", "block"] = "skip"
+    on_implausible: Literal["annotate", "review", "reject"] = "annotate"
+    """What to do with an answer the model judged implausible.
+
+    ``annotate`` (default) stores it with the verdict attached — FEAT-649
+    behaviour, unchanged; ``review`` refuses the submission until the client
+    reconfirms; ``reject`` always refuses. Distinct from ``on_error``, which
+    governs LLM *unavailability* only.
+    """
     model: str | None = None
     timeout_s: float = Field(default=8.0, gt=0.0)
     max_fields: int = Field(default=50, ge=1)
@@ -79,3 +87,22 @@ def llm_validation_enabled(form: FormSchema, field: FormField) -> bool:
     if field.llm_validation is not None:
         return field.llm_validation
     return bool(form.llm_validation and form.llm_validation.enabled)
+
+
+def implausible_fields(report: PlausibilityReport) -> list[str]:
+    """Return sorted field ids whose verdict trips the enforcement gate.
+
+    Args:
+        report: One plausibility batch outcome.
+
+    Returns:
+        Sorted field ids for implausible verdicts. Reports whose status is not
+        ``"ok"`` remain on the LLM-unavailability path and return no ids.
+    """
+    if report.status != "ok":
+        return []
+    return sorted(
+        field_id
+        for field_id, verdict in report.items.items()
+        if not verdict.plausible or verdict.confidence < report.threshold
+    )

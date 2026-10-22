@@ -62,6 +62,7 @@ from .llm_validation import (
     PlausibilityReport,
     PlausibilityVerdict,
     llm_validation_enabled,
+    implausible_fields,
 )
 from .voice import (
     FieldVoiceMeta,
@@ -95,6 +96,7 @@ __all__ = [
     "PlausibilityVerdict",
     "PlausibilityReport",
     "llm_validation_enabled",
+    "implausible_fields",
     # Auth
     "AuthConfig",
     "NoAuth",
