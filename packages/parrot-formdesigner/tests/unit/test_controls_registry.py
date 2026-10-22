@@ -29,10 +29,12 @@ _TASK2337_TYPES = [
 
 @pytest.fixture(autouse=True)
 def _clear_registry():
-    """Reset the module-level registry between tests."""
+    """Reset the module-level registry for each test and restore it afterwards."""
+    saved = dict(_REGISTRY)
     _REGISTRY.clear()
     yield
     _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 def test_register_basic():

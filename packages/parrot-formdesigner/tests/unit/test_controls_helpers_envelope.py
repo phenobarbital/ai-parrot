@@ -23,10 +23,13 @@ def _ensure_registry_seeded():
     test running afterward in the same session. Re-seed here rather than
     assume a particular test-run order.
     """
+    saved = dict(_REGISTRY)
     if not _REGISTRY:
         sys.modules.pop("parrot_formdesigner.controls.builtin", None)
         importlib.import_module("parrot_formdesigner.controls.builtin")
     yield
+    _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 class TestBuiltinMetadataEnvelope:
