@@ -99,7 +99,7 @@ class UsageRecordingSubscriber:
         usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
         from parrot.observability.cost import resolve_event_cost
-        
+
         cost_usd = resolve_event_cost(event, self._cost)
         if cost_usd is not None or self._cost is not None:
             with self._lock:

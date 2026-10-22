@@ -241,7 +241,7 @@ class MetricsSubscriber:
 
         # Cost counter — only when calculator provides a value
         from parrot.observability.cost import resolve_event_cost
-        
+
         cost = resolve_event_cost(event, self._cost)
         if cost is not None:
             self._client_cost_total.add(cost, attributes=base)
