@@ -96,7 +96,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -105,7 +105,7 @@
       "parallel": true,
       "parallelism_notes": "hardens code created by TASK-4405/4406/4408; serialized after TASK-4408 (rotation must exist); before TASK-4409 (docs)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-22T12:02:32+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4416-shared-log-hardening.md"
     },
