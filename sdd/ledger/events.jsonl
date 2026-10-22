@@ -1391,3 +1391,4 @@
 {"event_id":"1b9abaa9d977","kind":"issue.claimed","subject":"issue:f249c19e8a4d","actor":"agent:sdd-fix","ts":"2026-10-22T01:14:21.977023+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
 {"event_id":"09fc2b237406","kind":"issue.claimed","subject":"issue:79901cd6b884","actor":"agent:sdd-fix","ts":"2026-10-22T01:15:35.406772+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
 {"event_id":"5113b86910ba","kind":"task.closed","subject":"task:TASK-4580","actor":"agent:close_task.sh","ts":"2026-10-22T01:26:09.189104+00:00","payload":{"feature":"fixgroup-a322afe6fc2b","verification":"verified"}}
+{"event_id":"98ca5ab22717","kind":"issue.closed","subject":"issue:78cd71fa5162","actor":"agent:sdd-fix","ts":"2026-10-22T01:26:32.507391+00:00","payload":{"reason":"configure() local renamed to wiki_config; no longer shadows the module-level navconfig config import.","closed_by":"agent:sdd-fix","resolved_by":"commit:7ccffa60519d7917e40f6ca4a25b92bc160f4b43"}}

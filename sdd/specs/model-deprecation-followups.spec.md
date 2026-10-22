@@ -372,6 +372,9 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/msteams/test_voice_transcriber.py
 - packages/ai-parrot-server/tests/handlers/test_video_reel_inputs.py
 - packages/ai-parrot-client-openai/tests/unit/openai/test_deprecations.py
+- packages/ai-parrot-client-google/tests/unit/test_video_generation_facade.py
+- packages/ai-parrot-client-google/tests/unit/test_computer_use_vocabulary.py
+- packages/ai-parrot-server/tests/handlers/test_mediagen_video_default.py
 markers: none
 
 ### Test Data / Fixtures
