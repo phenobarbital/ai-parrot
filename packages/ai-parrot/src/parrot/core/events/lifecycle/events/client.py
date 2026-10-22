@@ -76,8 +76,8 @@ class AfterClientCallEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
-    tenant: Optional[str] = None        # FEAT-710
-    cost_usd: Optional[float] = None    # FEAT-710: computed once at the origin
+    tenant: Optional[str] = None  # FEAT-710
+    cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
 
 
 @dataclass(frozen=True)
@@ -109,7 +109,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
-    tenant: Optional[str] = None        # FEAT-710
+    tenant: Optional[str] = None  # FEAT-710
 
 
 @dataclass(frozen=True)

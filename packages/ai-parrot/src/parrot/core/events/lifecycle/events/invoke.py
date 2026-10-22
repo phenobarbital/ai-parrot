@@ -52,9 +52,9 @@ class AfterInvokeEvent(LifecycleEvent):
     duration_ms: float = 0.0
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
-    tenant: Optional[str] = None        # FEAT-710: server-resolved tenant
-    user_id: Optional[str] = None       # FEAT-710: per-user attribution
-    session_id: Optional[str] = None    # FEAT-710: per-session correlation
+    tenant: Optional[str] = None  # FEAT-710: server-resolved tenant
+    user_id: Optional[str] = None  # FEAT-710: per-user attribution
+    session_id: Optional[str] = None  # FEAT-710: per-session correlation
 
 
 @dataclass(frozen=True)
