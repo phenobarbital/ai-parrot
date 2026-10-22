@@ -10,7 +10,7 @@ tags: [pytest, conftest, test-collection, import-mode, tech-debt]
 **Feature ID**: FEAT-720
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Slug note.** The slug `tests-test-wheel-layout-tech-debt-2` is inherited
