@@ -1,0 +1,73 @@
+{
+  "feature": "fixgroup-c2982b4864f3",
+  "feature_id": "FEAT-717",
+  "spec": "sdd/specs/fixgroup-c2982b4864f3.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T00:00:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/knowledge/wiki/test_ledger_shared_log.py",
+          "tests/knowledge/wiki/test_ledger_shared_log_service.py",
+          "tests/knowledge/wiki/test_cli_ledger_shared_log.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:4a1db2c9fdc16a917e574fd6a00b07308a6f84e3f3febbe6c562f366b0f39d7b"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4578",
+      "slug": "live-claims-import-filter",
+      "title": "`live_claims` helper + superseded-claim filter in `import_events`",
+      "feature_id": "FEAT-717",
+      "feature": "fixgroup-c2982b4864f3",
+      "spec": "sdd/specs/fixgroup-c2982b4864f3.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies — creates live_claims() in shared_log.py and filters import_events' return. Touches tests/knowledge/wiki/test_ledger_shared_log_service.py, which TASK-4579 also modifies; TASK-4579 depends on this task, so the two never run concurrently.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4578-live-claims-import-filter.md"
+    },
+    {
+      "id": "TASK-4579",
+      "slug": "stateless-audit-claim-conflicts",
+      "title": "Stateless `claim_conflicts` count in `ledger audit` + CLI line",
+      "feature_id": "FEAT-717",
+      "feature": "fixgroup-c2982b4864f3",
+      "spec": "sdd/specs/fixgroup-c2982b4864f3.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4578"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports live_claims from TASK-4578 (packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py) in _shared_log_audit, and both tasks modify tests/knowledge/wiki/test_ledger_shared_log_service.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4579-stateless-audit-claim-conflicts.md"
+    }
+  ]
+}
