@@ -76,7 +76,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -84,8 +84,9 @@
       "parallelism_notes": "Root task: services/public_forms.py + api/file_upload.py; uses only existing enforce_membership_unless_public (core/tenant.py:189).",
       "assigned_to": null,
       "started_at": "2026-10-22T23:35:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4633-public-paths-and-file-upload.md"
+      "completed_at": "2026-10-22T23:53:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4633-public-paths-and-file-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4634",
