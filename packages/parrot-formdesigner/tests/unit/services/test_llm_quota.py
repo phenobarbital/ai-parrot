@@ -32,6 +32,7 @@ def _request(*, session: dict | None = None, remote: str = "203.0.113.7", header
     req.session = session or {}
     req.remote = remote
     req.headers = headers or {}
+
     # Make __contains__ and __getitem__ work for "session" key
     def __contains__(self, key):
         return key == "session"
@@ -181,6 +182,7 @@ class TestQuotaPolicy:
 
     async def test_key_includes_tenant_and_form(self) -> None:
         """a recording fake backend sees ``{tenant}:{form_uid}:{identity}`` — AC12"""
+
         class RecordingBackend:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, int, float]] = []
@@ -203,6 +205,7 @@ class TestQuotaPolicy:
 
     async def test_backend_failure_allows(self) -> None:
         """a backend raising -> allowed=True, warning logged — bounded by §7"""
+
         class FailingBackend:
             async def acquire(self, key: str, *, limit: int, window_s: float) -> QuotaDecision:
                 raise RuntimeError("backend down")
