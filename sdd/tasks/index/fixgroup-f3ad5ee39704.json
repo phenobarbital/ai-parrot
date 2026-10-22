@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T16:30:00+00:00",
-  "completed_at": "2026-10-22T16:26:06+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -69,6 +69,27 @@
       "completed_at": "2026-10-22T16:21:33+00:00",
       "file": "sdd/tasks/completed/TASK-4614-loud-observability-bootstrap-failures.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-4615",
+      "slug": "fanout-failure-fail-once",
+      "title": "Fail once on a bad fan-out configuration",
+      "feature_id": "FEAT-725",
+      "feature": "fixgroup-f3ad5ee39704",
+      "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4614"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites the same hunk of bootstrap.py and the same test that TASK-4614 just added; strictly after it.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T16:31:30+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4615-fanout-failure-fail-once.md",
+      "verification": null
     }
   ]
 }
