@@ -85,7 +85,6 @@ class PendingApproval(BaseModel):
     fireflies_id: str
     action_index: int
     chat_id: str
-    user_id: str | None = None
     expires_at: str
     created_ticket: str | None = None
 
@@ -155,8 +154,8 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         root = self.wiki_root or find_project_root()
         if root is None:
             raise ValueError("FirefliesInsightsAgent needs wiki_root= or a configured wiki project")
-        config = load_effective_config(root).config
-        self.inbox_dir = config.inbox_path(root)
+        wiki_config = load_effective_config(root).config
+        self.inbox_dir = wiki_config.inbox_path(root)
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
         self.wiki_root = root
 
@@ -541,15 +540,27 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
             del insights_store[mid]
 
     async def _register_approvals(self, insights: MeetingInsights, chat_id: str) -> list[PendingApproval]:
-        """Persist stable, chat-bound approvals for every reported action item."""
+        """Persist stable, chat-bound approvals for every reported action item.
+
+        Pending approvals of the same meeting that the fresh report no longer
+        lists are invalidated, so re-analysing a revised meeting cannot leave two
+        confirmable ids for one action item; approvals that already created a
+        ticket are kept as the idempotence record.
+        """
         state = await asyncio.to_thread(self._load_state)
         self._prune_expired_approvals(state)
         approvals = state.setdefault("approvals", {})
+        superseded = {
+            insight_id
+            for insight_id, raw in approvals.items()
+            if raw.get("fireflies_id") == insights.meeting_id and not raw.get("created_ticket")
+        }
         state.setdefault("insights", {})[insights.meeting_id] = insights.model_dump(mode="json")
         registered: list[PendingApproval] = []
         expires_at = (datetime.now(timezone.utc) + self.APPROVAL_TTL).isoformat()
         for index, item in enumerate(insights.action_items):
             insight_id = hashlib.sha256(f"{insights.meeting_id}:{index}:{item.title}".encode()).hexdigest()[:12]
+            superseded.discard(insight_id)
             existing = approvals.get(insight_id)
             if existing is not None:
                 approval = PendingApproval.model_validate(existing)
@@ -566,6 +577,8 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
             )
             approvals[insight_id] = approval.model_dump(mode="json")
             registered.append(approval)
+        for insight_id in superseded:
+            del approvals[insight_id]
         await asyncio.to_thread(self._save_state, state)
         return registered
 
@@ -620,7 +633,7 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
                 expired = datetime.fromisoformat(approval.expires_at) <= now
             except ValueError:
                 expired = True
-            if not await self._authorize(approval, chat_id, None):
+            if not await self._authorize(approval, chat_id):
                 if expired:
                     return "Confirmation expired"
                 return "Confirmation refused: not the reporting chat"
@@ -642,30 +655,47 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
             await asyncio.to_thread(self._save_state, state)
             return f"Created {ticket_key}"
 
-    async def _authorize(self, approval: PendingApproval, chat_id: str | None, user_id: str | None) -> bool:
-        """Require the reporting chat, an unexpired approval, and a known-user match."""
+    async def _authorize(self, approval: PendingApproval, chat_id: str | None) -> bool:
+        """Require the reporting chat and an unexpired approval.
+
+        Authorization is chat-level only: the Telegram context exposes the chat
+        id but not the confirming user, so any member of the reporting chat may
+        confirm an action item reported there.
+        """
         try:
             expires_at = datetime.fromisoformat(approval.expires_at)
         except ValueError:
             return False
-        if str(chat_id) != approval.chat_id or expires_at <= datetime.now(timezone.utc):
-            return False
-        return not (approval.user_id and user_id and approval.user_id != user_id)
+        return str(chat_id) == approval.chat_id and expires_at > datetime.now(timezone.utc)
+
+    #: Jira wiki-markup delimiters that open macros (``{quote}``) and links (``[...]``).
+    _JIRA_MARKUP_RE = re.compile(r"([{}\[\]])")
+
+    @classmethod
+    def _jira_text(cls, value: str | None) -> str | None:
+        """Backslash-escape macro and link delimiters so transcript text cannot break the template."""
+        if value is None:
+            return None
+        return cls._JIRA_MARKUP_RE.sub(r"\\\1", value)
 
     async def _create_ticket(self, insights: MeetingInsights, item: ActionItem) -> dict[str, Any]:
-        """Create an action-item issue through the configured Jira template."""
+        """Create an action-item issue through the configured Jira template.
+
+        Every LLM-derived field is escaped with :meth:`_jira_text` before it
+        reaches the wiki-markup template; identifiers and the backlink are not.
+        """
         if self.jira_toolkit is None:
             return {"ok": False, "error": "Jira is not configured"}
         params = {
-            "meeting_title": insights.meeting_title,
-            "meeting_date": insights.meeting_date,
+            "meeting_title": self._jira_text(insights.meeting_title),
+            "meeting_date": self._jira_text(insights.meeting_date),
             "meeting_id": insights.meeting_id,
-            "action_title": item.title,
-            "owner": item.owner,
-            "due_date": item.due_date,
-            "evidence": item.evidence,
-            "decisions": insights.decisions,
-            "risks": insights.risks,
+            "action_title": self._jira_text(item.title),
+            "owner": self._jira_text(item.owner),
+            "due_date": self._jira_text(item.due_date),
+            "evidence": self._jira_text(item.evidence),
+            "decisions": [self._jira_text(decision) for decision in insights.decisions],
+            "risks": [self._jira_text(risk) for risk in insights.risks],
             "wiki_url": await self._wiki_backlink(insights.meeting_id),
         }
         return await self.jira_toolkit.jira_create_issue(
