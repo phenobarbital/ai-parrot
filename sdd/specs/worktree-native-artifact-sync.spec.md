@@ -169,9 +169,9 @@ ensure_worktree       .create()          prepare_baseline_checkout()
 class NativeGroup(BaseModel):
     """One family of native build artifacts declared in [tool.parrot.worktree]."""
     name: str
-    copy: list[str]                       # globs, repo-relative, matched in the MAIN checkout
+    copy_globs: list[str]                       # globs, repo-relative, matched in the MAIN checkout
     pair_sources: list[str] = []          # globs whose each match needs a sibling compiled artifact
-    required: bool = True                 # `copy` must match at least one file
+    required: bool = True                 # `copy_globs` must match at least one file
     abi_scoped: bool = False              # presence counts only artifacts for the running EXT_SUFFIX
     autobuild: bool = False
     build: list[str] = []                 # argv; "{python}" is replaced with sys.executable
@@ -249,7 +249,7 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 
   [[tool.parrot.worktree.native_group]]
   name = "cython-core"
-  copy = ["packages/ai-parrot/src/parrot/**/*.so"]
+  copy_globs = ["packages/ai-parrot/src/parrot/**/*.so"]
   pair_sources = ["packages/ai-parrot/src/parrot/**/*.pyx"]
   abi_scoped = true
   autobuild = true
@@ -260,7 +260,7 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 
   [[tool.parrot.worktree.native_group]]
   name = "navrules-pyo3"
-  copy = ["packages/navrules/src/navrules/_native/*.so"]
+  copy_globs = ["packages/navrules/src/navrules/_native/*.so"]
   required = true
   abi_scoped = false        # abi3-py311: one .so covers CPython 3.11-3.13
   autobuild = true
@@ -305,9 +305,11 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
   def load_manifest(repo_root: Path) -> NativeManifest:
       """Parse ``[tool.parrot.worktree]`` from ``repo_root/pyproject.toml``.
 
-      Returns the built-in default manifest when the file or the table is
-      absent; raises ValueError when the table is present but malformed —
-      a typo in the declaration must be loud, not silently defaulted.
+      Returns an EMPTY manifest (``groups=[]``, so the sync is a no-op) when
+      the file or the table is absent — the declaration is the single source of
+      truth and is never duplicated in Python. Raises ValueError when the table
+      is present but malformed: a typo in the declaration must be loud, not
+      silently defaulted.
       """
   ```
 
@@ -328,7 +330,7 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
   def missing_artifacts(main_root: Path, manifest: NativeManifest) -> list[MissingArtifact]:
       """Declared artifacts absent from ``main_root``.
 
-      Three reasons: ``no_match`` (a ``required`` group's ``copy`` globs match
+      Three reasons: ``no_match`` (a ``required`` group's ``copy_globs`` match
       nothing), ``unpaired_source`` (a ``pair_sources`` match has no sibling
       ``<stem>.*.so``/``<stem>.so``), ``abi_mismatch`` (``abi_scoped`` group
       whose only artifacts carry a foreign ``EXT_SUFFIX``).
@@ -446,7 +448,7 @@ def main_checkout_root(worktree: Path) -> Path | None: ...
 | Test | Module | Description |
 |---|---|---|
 | `test_load_manifest_reads_declared_groups` | M1 | Root `pyproject.toml` yields both groups with the declared fields |
-| `test_load_manifest_defaults_when_table_absent` | M1 | A `pyproject.toml` with no `[tool.parrot.worktree]` returns the built-in defaults |
+| `test_load_manifest_empty_when_table_absent` | M1 | A `pyproject.toml` with no `[tool.parrot.worktree]` yields `groups=[]` (no-op sync), not a hardcoded default |
 | `test_load_manifest_rejects_malformed_table` | M1 | Unknown/ill-typed key raises `ValueError` (loud, not defaulted) |
 | `test_both_declared_groups_are_autobuildable` | M1 | `cython-core` and `navrules-pyo3` both have `autobuild=True` and a non-empty `build` argv |
 | `test_navrules_build_never_uses_maturin_develop` | M1 | The declared argv targets `build-rust-wheel`, and that Makefile recipe contains `maturin build` + `--locked` and **not** `maturin develop` |
@@ -484,6 +486,8 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_baseline.py
 - tests/sdd_scripts/test_ensure_worktree.py
 - tests/sdd_scripts/test_brief_scaffold_integration.py
+- tests/sdd_scripts/test_native_artifact_declaration.py
+- tests/sdd_scripts/test_feat722_doc_contract.py
 markers: none
 
 ### Test Data / Fixtures
@@ -819,4 +823,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Jesus Lara | Initial draft — FEAT-722 |
+| 0.3 | 2026-10-22 | Jesus Lara | Task-time finding: the manifest field is `copy_globs`, not `copy` — a pydantic field named `copy` shadows `BaseModel.copy` and emits a `UserWarning`, which this repo's `filterwarnings = ["error"]` turns into a collection failure. An absent table now yields an EMPTY manifest instead of hardcoded defaults, so the declaration is never duplicated in Python. Also adds `tests/sdd_scripts/test_native_artifact_declaration.py` to the Validation Contract |
 | 0.2 | 2026-10-22 | Jesus Lara | §8 Q1 resolved: navrules IS auto-built via a new venv-free `build-rust-wheel` target (`maturin build --locked --out` + unpack, measured 13.7 s); `--locked` added so an auto-build cannot rewrite `rust/Cargo.lock`; M1 refreshes the stale lock pin |
