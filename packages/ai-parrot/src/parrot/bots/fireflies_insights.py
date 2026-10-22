@@ -150,6 +150,8 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
     async def configure(self, app=None) -> None:
         """Resolve the inbox dir and load file-only skills (S6)."""
         await super().configure(app)
+        if self.configure_skipped:
+            return
         await self._configure_skill_file_registry()
         root = self.wiki_root or find_project_root()
         if root is None:

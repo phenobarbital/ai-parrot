@@ -186,6 +186,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         the base configuration completes.
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()

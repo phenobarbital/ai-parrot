@@ -240,3 +240,142 @@ def test_resolve_configure_app_is_shared() -> None:
 
     assert bot._resolve_configure_app(None) is None
     assert bot._resolve_configure_app(app) is app.get_app()
+
+
+# ---------------------------------------------------------------------------
+# Module 2 — post-super overrides return early on configure_skipped
+# ---------------------------------------------------------------------------
+
+
+class _PostSuperBot(_ConfigureTestBot):
+    """An override in the canonical post-super shape."""
+
+    async def configure(self, app=None) -> None:
+        """Do own setup only when the base pipeline actually ran."""
+        await super().configure(app)
+        if self.configure_skipped:
+            return
+        self.own_calls += 1
+
+
+def _post_super_bot() -> AbstractBot:
+    """Return a stubbed _PostSuperBot with its own-work counter zeroed."""
+    bot = _stub_bot(_PostSuperBot)
+    bot.own_calls = 0
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_post_super_work_skipped_on_repeat_configure() -> None:
+    """A post-super override body runs ONCE across two configure() calls."""
+    bot, app = _post_super_bot(), _app()
+
+    await bot.configure(app)
+    await bot.configure(app)
+
+    assert bot.own_calls == 1
+    assert bot.configure_count == 2
+
+
+@pytest.mark.asyncio
+async def test_post_super_work_runs_when_app_arrives_later() -> None:
+    """The same body DOES run on a genuine reconfiguration (CLI-then-server).
+
+    This is the regression a `configure_count > 1` guard would introduce: the
+    counter is 2 here, yet the base pipeline ran and the override's setup is
+    needed.
+    """
+    bot, app = _post_super_bot(), _app()
+
+    await bot.configure()
+    await bot.configure(app)
+
+    assert bot.own_calls == 2
+    assert bot.configure_count == 2
+
+
+@pytest.mark.asyncio
+async def test_post_super_work_runs_again_after_reconfigure() -> None:
+    """reconfigure() is the supported way to force the override's setup again."""
+    bot, app = _post_super_bot(), _app()
+
+    await bot.configure(app)
+    await bot.configure(app)
+    await bot.reconfigure()
+
+    assert bot.own_calls == 2
+
+
+# The nine real post-super override sites (issue:81fa838a18c1). Each is checked
+# structurally: the guard must follow its super().configure(...) call directly.
+_POST_SUPER_SITES = [
+    ("parrot.bots.agent", "BasicAgent"),
+    ("parrot.bots.fireflies_insights", "FirefliesInsightsAgent"),
+    ("parrot.agents.obsidian", "FirefliesObsidianAgent"),
+    ("parrot.bots.chrome", "WebAgent"),
+    ("parrot.bots.document", "DocumentAgent"),
+    ("parrot.bots.flows.agents.orchestrator", "OrchestratorAgent"),
+    ("parrot.bots.flows.agents.a2a_orchestrator", "A2AOrchestratorAgent"),
+    ("parrot.bots.a2a_agent", "A2AAgent"),
+    ("parrot_tools.computer.agent", "ComputerAgent"),
+]
+
+
+@pytest.mark.parametrize(("module_name", "class_name"), _POST_SUPER_SITES)
+def test_post_super_override_is_guarded(module_name: str, class_name: str) -> None:
+    """Every post-super override guards on configure_skipped, right after super().
+
+    Structural rather than behavioural on purpose: the nine sites share one
+    two-line mechanism (covered behaviourally above), and what regresses is a
+    *new or edited* override losing its guard. Asserting the guard follows the
+    super() call catches that for all nine without nine sets of heavy mocks.
+    """
+    import importlib
+
+    module = pytest.importorskip(module_name)
+    cls = getattr(importlib.import_module(module.__name__), class_name)
+    source = inspect.getsource(cls.configure)
+    lines = [ln.strip() for ln in source.splitlines()]
+
+    super_calls = [i for i, ln in enumerate(lines) if ln.startswith("await super().configure(")]
+    assert len(super_calls) == 1, f"{class_name}.configure: expected one super().configure() call"
+
+    after = lines[super_calls[0] + 1 :]
+    assert after[:2] == ["if self.configure_skipped:", "return"], (
+        f"{class_name}.configure must guard its post-super work with "
+        f"`if self.configure_skipped: return` immediately after super().configure(); got {after[:2]!r}"
+    )
+    assert "configure_count > 1" not in source, (
+        f"{class_name}.configure uses the counter-based guard, which is wrong on "
+        "the CLI-then-server path; use configure_skipped"
+    )
+
+
+# Sites assessed and deliberately NOT guarded (spec §1). Pinned so that
+# "completing" the fix by guarding them fails loudly instead of silently
+# changing behaviour that is already correct.
+_EXEMPT_SITES = [
+    ("parrot.bots.data", "PandasAgent"),
+    ("parrot.bots.mixins.narrative", "NarrativeMixin"),
+    ("parrot.bots.mixins.infographic_authoring", "InfographicAuthoringMixin"),
+]
+
+
+@pytest.mark.parametrize(("module_name", "class_name"), _EXEMPT_SITES)
+def test_exempt_override_is_not_guarded(module_name: str, class_name: str) -> None:
+    """The assessed-exempt overrides stay unguarded, for the reasons in the spec.
+
+    data.py self-gates on `not self.dataframes`; NarrativeMixin is a pure
+    passthrough; InfographicAuthoringMixin's set_bot() is idempotent behind a
+    sentinel header. See docs/agent-configure-lifecycle.md §8.
+    """
+    import importlib
+
+    module = pytest.importorskip(module_name)
+    cls = getattr(importlib.import_module(module.__name__), class_name)
+    source = inspect.getsource(cls.configure)
+
+    assert "configure_skipped" not in source, (
+        f"{class_name}.configure is a documented exemption (docs/agent-configure-lifecycle.md §8); "
+        "guarding it was not intended — update the doc and the spec if that has genuinely changed"
+    )
