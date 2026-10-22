@@ -2757,9 +2757,7 @@ class ToolManager(MCPToolManagerMixin):
             return owner
         return None
 
-    def _match_registered_toolkit(
-        self, toolkit_cls: type, tool_prefix: Optional[str]
-    ) -> Optional["AbstractToolkit"]:
+    def _match_registered_toolkit(self, toolkit_cls: type, tool_prefix: Optional[str]) -> Optional["AbstractToolkit"]:
         """Return an exact-class and exact-prefix registered toolkit, if any."""
         for owner in self._registered_toolkit_owners():
             if type(owner) is toolkit_cls and owner.tool_prefix == tool_prefix:
