@@ -42,6 +42,9 @@ class AfterInvokeEvent(LifecycleEvent):
         duration_ms: Wall-clock time in milliseconds.
         input_tokens: Input token count (if available from the LLM response).
         output_tokens: Output token count (if available from the LLM response).
+        tenant: Optional server-resolved tenant identifier.
+        user_id: Optional user identifier for usage attribution.
+        session_id: Optional session identifier for correlation.
     """
 
     agent_name: str = ""
@@ -49,6 +52,9 @@ class AfterInvokeEvent(LifecycleEvent):
     duration_ms: float = 0.0
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    tenant: Optional[str] = None        # FEAT-710: server-resolved tenant
+    user_id: Optional[str] = None       # FEAT-710: per-user attribution
+    session_id: Optional[str] = None    # FEAT-710: per-session correlation
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,9 @@ class InvokeFailedEvent(LifecycleEvent):
         duration_ms: Wall-clock time in milliseconds until failure.
         error_type: ``type(exc).__name__`` of the exception.
         error_message: String representation of the exception.
+        tenant: Optional server-resolved tenant identifier.
+        user_id: Optional user identifier for usage attribution.
+        session_id: Optional session identifier for correlation.
     """
 
     agent_name: str = ""
@@ -70,3 +79,6 @@ class InvokeFailedEvent(LifecycleEvent):
     duration_ms: float = 0.0
     error_type: str = ""
     error_message: str = ""
+    tenant: Optional[str] = None
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
