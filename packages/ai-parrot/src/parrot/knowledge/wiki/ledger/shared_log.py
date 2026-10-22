@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -23,6 +24,7 @@ ARCHIVE_FILENAME_FMT: str = "events-{yyyy_mm}.jsonl"
 MARKER_FILENAME: str = "shared_log.marker"
 ROTATION_DAYS_DEFAULT: int = 30
 TERMINAL_ISSUE_STATUSES: frozenset[str] = frozenset({"closed", "superseded"})
+SUPERSEDING_CLAIM_KINDS: frozenset[str] = frozenset({"issue.unclaimed", "issue.closed", "issue.superseded"})
 LOCAL_ONLY_INSIGHT_CATEGORIES: frozenset[str] = frozenset({CODER_SUSPENSION_CATEGORY})
 
 
@@ -162,10 +164,43 @@ def export_events(local: LedgerLog, repo_root: Path) -> SharedLogExportReport:
     )
 
 
+def live_claims(events: Sequence[LedgerEvent]) -> list[LedgerEvent]:
+    """Return the ``issue.claimed`` events that still stand within ``events``.
+
+    Walks ``events`` in order, keeping at most one claim per subject — the most
+    recent one — and dropping a subject entirely when a kind in
+    :data:`SUPERSEDING_CLAIM_KINDS` for it follows its last claim. Pure: no I/O
+    and the input is never mutated.
+
+    This is the ONLY definition of a live claim. Both the import path
+    (:func:`import_events`) and the audit path
+    (:meth:`~parrot.knowledge.wiki.ledger.service.LedgerService._shared_log_audit`)
+    route through it so they can never disagree about what counts as a conflict.
+
+    Args:
+        events: Ledger events in log order (archives before the current log).
+
+    Returns:
+        The surviving ``issue.claimed`` events, in the order their claim events
+        appeared in ``events``.
+    """
+    survivors: dict[str, tuple[int, LedgerEvent]] = {}
+    for position, event in enumerate(events):
+        if event.kind == "issue.claimed":
+            survivors[event.subject] = (position, event)
+        elif event.kind in SUPERSEDING_CLAIM_KINDS:
+            survivors.pop(event.subject, None)
+    return [event for _, event in sorted(survivors.values(), key=lambda item: item[0])]
+
+
 def import_events(
     local: LedgerLog, repo_root: Path, marker: Path, *, force: bool = False
 ) -> tuple[SharedLogImportReport, list[LedgerEvent]]:
-    """Append committed unknown events to a local log, archives before the current log."""
+    """Append committed unknown events to a local log, archives before the current log.
+
+    The returned claim list contains only live claims (:func:`live_claims`) — a claim
+    superseded within the same batch is never reported as a conflict.
+    """
     files = shared_log_files(repo_root)
     digest = digest_files(files)
     if not force and marker.exists() and marker.read_text(encoding="utf-8") == digest:
@@ -214,7 +249,7 @@ def import_events(
             synced_events=0,
             index_busy=False,
         ),
-        imported_claims,
+        live_claims(imported_claims),
     )
 
 

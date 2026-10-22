@@ -92,3 +92,50 @@ def test_cli_import_log_outputs_and_exit_codes(tmp_path: Path, monkeypatch) -> N
     assert "Imported +2 events (3 known)" in imported.output
     assert "claim conflict on issue:abc: local task:local vs committed task:foreign (e1)" in imported.output
     assert busy.exit_code == 2
+
+
+def _audit_payload(claim_conflicts: int, shared_path: Path) -> dict:
+    """Return a complete `ledger audit` payload with the requested conflict count."""
+    return {
+        "log_size_bytes": 2048,
+        "event_counts": {"issue.opened": 2},
+        "total_events": 2,
+        "cursor_offset": 2,
+        "cursor_lag_events": 0,
+        "broken_edges": 0,
+        "shared_log": {
+            "path": str(shared_path),
+            "exists": True,
+            "local_only_events": 0,
+            "committed_unknown_events": 0,
+            "marker": "ok",
+            "claim_conflicts": claim_conflicts,
+        },
+        "sqlite": {"journal_mode": "wal", "busy_timeout_ms": 5000},
+    }
+
+
+def test_cli_audit_prints_claim_conflicts(tmp_path: Path, monkeypatch) -> None:
+    """`ledger audit` prints the conflict count when non-zero and omits the line at zero."""
+    monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))
+    shared_path = tmp_path / "sdd" / "ledger" / "events.jsonl"
+    shared_path.parent.mkdir(parents=True)
+    shared_path.write_text("{}\n", encoding="utf-8")
+
+    def run(claim_conflicts: int) -> str:
+        service = MagicMock(spec=LedgerService)
+        service.shared_root = tmp_path
+        service.audit = AsyncMock(return_value=_audit_payload(claim_conflicts, shared_path))
+        with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+            result = CliRunner().invoke(ledger, ["audit"])
+        assert result.exit_code == 0, result.output
+        return result.output
+
+    conflicted = run(2)
+    assert "claim conflicts: 2" in conflicted
+    # the pre-existing shared-log line is untouched
+    assert "marker: ok" in conflicted
+
+    clean = run(0)
+    assert "claim conflicts" not in clean
+    assert "marker: ok" in clean
