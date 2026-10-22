@@ -214,6 +214,7 @@ def setup_form_api(
     public_base_url: str | None = None,
     teams_renderer: "AbstractFormRenderer | None" = None,
     llm_quota: "LLMQuota | None" = None,
+    tenant_scoped_submissions: bool = False,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -228,6 +229,7 @@ def setup_form_api(
         submission_storage: Optional storage backend for submissions.
         forwarder: Optional submission forwarder.
         base_path: URL prefix for all routes (default ``"/api/v1"``).
+        tenant_scoped_submissions: Store generic ``/data`` submissions under the URL tenant; default False.
         blob_storage: Optional ``AbstractBlobStorage`` instance for REST field
             binary uploads. If ``None``, the upload handler will construct an
             ``S3BlobStorage()`` lazily on first use from environment variables.
@@ -360,6 +362,7 @@ def setup_form_api(
         venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
         sink_factory=sink_factory,
+        tenant_scoped_submissions=tenant_scoped_submissions,
     )
     app["form_api_handler"] = handler
     # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).
@@ -432,6 +435,11 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/data",
         _wrap_auth(handler.submit_data, tenant="public"),
     )
+    # FEAT-730 — can this form take a response now? Auth-exempt for public forms (7th glob).
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/availability",
+        _wrap_auth(handler.get_availability, tenant="public"),
+    )
 
     # Form-controls toolbar metadata — static, tenant-agnostic field-type
     # catalog (no registry access, no per-tenant data). Path unchanged,
@@ -456,7 +464,7 @@ def setup_form_api(
     # Raw upload field types (FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD) — FEAT-460
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/file-upload",
-        _wrap_auth(file_upload_module.handle_file_upload),
+        _wrap_auth(file_upload_module.handle_file_upload, tenant="public"),  # FEAT-730: handler enforces membership unless public
     )
     # Thumbnail serving route — TASK-2469 (follow-up: thumbnail_url must be
     # a fetchable URL, not a raw blob_ref)
