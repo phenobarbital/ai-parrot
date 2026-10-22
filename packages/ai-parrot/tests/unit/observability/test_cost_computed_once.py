@@ -92,7 +92,11 @@ async def test_three_subscribers_zero_recompute_when_event_priced() -> None:
     assert capturing_recorder.records[0].cost_usd == 0.002
 
     # Verify metrics subscriber recorded the cost
-    mock_counter.add.assert_called_once_with(0.002, attributes=mock_counter.add.call_args[0][1])
+    mock_counter.add.assert_called_once()
+    call_args = mock_counter.add.call_args
+    assert call_args is not None
+    args, kwargs = call_args
+    assert args[0] == 0.002
 
     # Verify trace subscriber would use the cost (we can't easily check the span attributes in this test)
 
@@ -154,5 +158,8 @@ async def test_unpriced_event_still_priced_by_fallback() -> None:
 
     # Verify metrics subscriber recorded the computed cost
     mock_counter.add.assert_called_once()
-    computed_cost = mock_counter.add.call_args[0][0]
+    call_args = mock_counter.add.call_args
+    assert call_args is not None
+    args, kwargs = call_args
+    computed_cost = args[0]
     assert computed_cost > 0
