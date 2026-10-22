@@ -5943,6 +5943,7 @@ def ingest(
 @click.option("--archive/--no-archive", default=True)
 @click.option("--force", is_flag=True)
 @click.option("--json", "as_json", is_flag=True)
+@click.option("--watch", is_flag=True, help="Observe the inbox directory and ingest continuously until interrupted.")
 def inbox(
     path_: str | None,
     dry_run: bool,
@@ -5953,11 +5954,15 @@ def inbox(
     archive: bool,
     force: bool,
     as_json: bool,
+    watch: bool,
 ) -> None:
     """Ingest every safe document from the configured inbox directory.
 
     The processor, rather than the CLI, owns the whole-run write lock.
     """
+    if watch and (limit is not None or dry_run):
+        raise click.UsageError("--watch cannot be combined with --limit or --dry-run")
+
     from parrot.knowledge.wiki.charter import load_charter
     from parrot.knowledge.wiki.inbox.processor import InboxLockBusy, InboxProcessor
     from parrot.knowledge.wiki.project import validate_inbox_paths
@@ -5998,6 +6003,27 @@ def inbox(
             lightweight_model_opt=lightweight_model_opt,
             model_opt=model_opt,
         )
+    if watch:
+        from parrot.knowledge.wiki.inbox.watcher import InboxWatcher, WatcherUnavailable
+
+        watcher = InboxWatcher(runtime, force=force, archive=archive)
+        try:
+            _run(watcher.run_forever())
+        except WatcherUnavailable as exc:
+            raise click.UsageError(str(exc)) from exc
+        except KeyboardInterrupt:
+            pass
+        if as_json:
+            click.echo(watcher.stats.model_dump_json())
+        else:
+            stats = watcher.stats
+            click.echo(
+                "Watcher: "
+                f"events={stats.events_seen} runs={stats.runs_started} "
+                f"documents={stats.documents_processed} lock_retries={stats.lock_busy_retries}"
+            )
+        return
+
     try:
         report = _run(InboxProcessor(runtime).run(dry_run=dry_run, limit=limit, force=force, archive=archive))
     except WikiConfigError as exc:

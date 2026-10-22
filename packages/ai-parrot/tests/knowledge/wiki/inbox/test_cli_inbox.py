@@ -1,6 +1,7 @@
 """Focused FEAT-626 regression and failure-path tests."""
 
 import json
+import sys
 from pathlib import Path
 
 import click
@@ -147,3 +148,94 @@ def test_cli_dry_run_has_no_setup_writes(tmp_path: Path, monkeypatch: pytest.Mon
     result = CliRunner().invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_path), "--dry-run"])
     assert result.exit_code == 0, result.output
     assert calls == [{"dry_run": True, "limit": None, "force": False, "archive": True}]
+
+
+def test_watch_rejects_limit_and_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject watch combinations before the CLI opens a store or builds a runtime."""
+    opened = False
+
+    def reject_store(*args: object, **kwargs: object) -> object:
+        nonlocal opened
+        opened = True
+        return object()
+
+    monkeypatch.setattr(wiki_cli, "_open_store", reject_store)
+    runner = CliRunner()
+    for args in (["--watch", "--limit", "1"], ["--watch", "--dry-run"]):
+        result = runner.invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_path), *args])
+        assert result.exit_code == 2
+        assert "--watch cannot be combined with --limit or --dry-run" in result.output
+    assert not opened
+
+
+def test_watch_runs_watcher_with_cli_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build the watcher with the command's archive and force options."""
+    _patch_runtime(tmp_path, monkeypatch, _report())
+    captured: dict[str, object] = {}
+
+    class FakeStats:
+        """Provide deterministic shutdown counters for the CLI."""
+
+        events_seen = 2
+        runs_started = 3
+        documents_processed = 4
+        lock_busy_retries = 5
+
+        def model_dump_json(self) -> str:
+            """Render the CLI's expected machine-readable shutdown summary."""
+            return '{"events_seen":2}'
+
+    class FakeWatcher:
+        """Record the runtime and command flags passed to the lazy watcher."""
+
+        def __init__(self, runtime: object, *, force: bool, archive: bool) -> None:
+            captured.update(runtime=runtime, force=force, archive=archive)
+            self.stats = FakeStats()
+
+        async def run_forever(self) -> FakeStats:
+            """Return immediately so the CLI can render final statistics."""
+            return self.stats
+
+    monkeypatch.setattr("parrot.knowledge.wiki.inbox.watcher.InboxWatcher", FakeWatcher)
+    result = CliRunner().invoke(
+        wiki_cli.wiki,
+        ["inbox", "--path", str(tmp_path), "--watch", "--force", "--no-archive"],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["force"] is True
+    assert captured["archive"] is False
+    assert "Watcher: events=2 runs=3 documents=4 lock_retries=5" in result.output
+
+    as_json = CliRunner().invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_path), "--watch", "--json"])
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output) == {"events_seen": 2}
+
+
+def test_watch_without_watchdog_is_usage_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Translate the lazy watch-extra failure to Click's usage exit code."""
+    _patch_runtime(tmp_path, monkeypatch, _report())
+    from parrot.knowledge.wiki.inbox.watcher import WatcherUnavailable
+
+    class UnavailableWatcher:
+        """Raise the lazy dependency error only from the watch execution path."""
+
+        def __init__(self, runtime: object, *, force: bool, archive: bool) -> None:
+            self.stats = None
+
+        async def run_forever(self) -> None:
+            """Model watchdog's unavailable extra."""
+            raise WatcherUnavailable("install ai-parrot[filesystem-transport-full]")
+
+    monkeypatch.setattr("parrot.knowledge.wiki.inbox.watcher.InboxWatcher", UnavailableWatcher)
+    result = CliRunner().invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_path), "--watch"])
+    assert result.exit_code == 2
+    assert "filesystem-transport-full" in result.output
+
+
+def test_one_shot_works_without_watchdog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ordinary inbox processing independent of the optional watcher extra."""
+    calls = _patch_runtime(tmp_path, monkeypatch, _report(status="empty"))
+    monkeypatch.setitem(sys.modules, "watchdog", None)
+    result = CliRunner().invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert calls == [{"dry_run": False, "limit": None, "force": False, "archive": True}]
