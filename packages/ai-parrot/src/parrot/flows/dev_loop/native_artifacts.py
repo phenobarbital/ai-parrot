@@ -18,12 +18,21 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import sysconfig
+import time
 import tomllib
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+try:  # POSIX only
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -184,22 +193,145 @@ def missing_artifacts(main_root: Path, manifest: NativeManifest) -> list[Missing
     return missing
 
 
+@contextmanager
+def _build_lock(main_root: Path, group: NativeGroup) -> Iterator[bool]:
+    """Hold an exclusive build lock for ``group``; yield False when unavailable.
+
+    The lock lives below the main checkout so every process capable of building
+    shares it. Lock acquisition failures and timeout are deliberately soft:
+    native syncing must never prevent worktree creation.
+    """
+    if fcntl is None:  # pragma: no cover - exercised on non-POSIX platforms
+        yield False
+        return
+
+    try:
+        lock_dir = main_root / LOCK_DIRNAME
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        with (lock_dir / f"native-{group.name}.lock").open("a+", encoding="utf-8") as lock_file:
+            deadline = time.monotonic() + max(group.build_timeout_s, 0)
+            while True:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        yield False
+                        return
+                    time.sleep(min(0.05, remaining))
+
+            try:
+                yield True
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        yield False
+
+
+def build_missing(
+    main_root: Path,
+    manifest: NativeManifest,
+    missing: Sequence[MissingArtifact],
+) -> tuple[list[str], list[str]]:
+    """Build missing artifact groups and return their names with warnings.
+
+    Each group is checked again after its exclusive lock is acquired, allowing
+    a concurrent sync to reuse another process's successful build.
+    """
+    built: list[str] = []
+    warnings: list[str] = []
+    pending_groups = {artifact.group for artifact in missing}
+    processed_groups: set[str] = set()
+
+    for group in manifest.groups:
+        if group.name not in pending_groups or group.name in processed_groups:
+            continue
+        processed_groups.add(group.name)
+
+        manual_hint = group.manual_hint or "no manual command declared"
+
+        def warn(reason: str) -> None:
+            warnings.append(f"{group.name}: {reason}; build it manually with: {manual_hint}")
+
+        try:
+            if env_flag_disabled(AUTOBUILD_ENV_VAR):
+                warn(f"{AUTOBUILD_ENV_VAR}=0")
+                continue
+            if not group.autobuild:
+                warn("autobuild is disabled")
+                continue
+            if not group.build:
+                warn("no build command declared")
+                continue
+
+            with _build_lock(main_root, group) as acquired:
+                if not acquired:
+                    warn("build lock is unavailable")
+                    continue
+                if not any(artifact.group == group.name for artifact in missing_artifacts(main_root, manifest)):
+                    continue
+
+                argv = [sys.executable if item == PYTHON_PLACEHOLDER else item for item in group.build]
+                try:
+                    result = subprocess.run(
+                        argv,
+                        cwd=str(main_root / group.build_cwd),
+                        timeout=group.build_timeout_s,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                except subprocess.TimeoutExpired:
+                    warn(f"build timed out after {group.build_timeout_s}s")
+                    continue
+                except OSError as exc:
+                    warn(f"build could not start: {exc}")
+                    continue
+
+                if result.returncode != 0:
+                    stderr = "\n".join(result.stderr.strip().splitlines()[-10:])
+                    reason = f"build exited with status {result.returncode}"
+                    warn(f"{reason}: {stderr}" if stderr else reason)
+                    continue
+                built.append(group.name)
+        except Exception as exc:
+            warn(f"build failed unexpectedly: {exc}")
+
+    return built, warnings
+
+
 def sync_native_artifacts(
     *,
     main_root: Path,
     target: Path,
     manifest: NativeManifest | None = None,
+    autobuild: bool = True,
 ) -> NativeSyncReport:
     """Copy declared native artifacts into ``target`` and report missing entries.
 
     Existing destinations with matching size and mtime are left untouched, so
     calls are safe when a worktree is reused.
+
+    Args:
+        autobuild: Build declared artifacts missing from the main checkout
+            before copying, subject to each group's build policy.
     """
     resolved = manifest if manifest is not None else load_manifest(main_root)
     if not resolved.enabled or env_flag_disabled(SYNC_ENV_VAR):
         return NativeSyncReport(enabled=False)
 
     report = NativeSyncReport(enabled=True)
+    pending = missing_artifacts(main_root, resolved)
+    if pending:
+        if autobuild:
+            report.built, report.warnings = build_missing(main_root, resolved, pending)
+        else:
+            groups = {group.name: group for group in resolved.groups}
+            for artifact in pending:
+                hint = groups[artifact.group].manual_hint or "no manual command declared"
+                report.warnings.append(f"{artifact.group}: autobuild is disabled; build it manually with: {hint}")
+
     for group in resolved.groups:
         for source in _matches(main_root, group.copy_globs):
             relative_path = source.relative_to(main_root)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 import sysconfig
+import threading
 from pathlib import Path
 
 import pytest
@@ -47,6 +49,38 @@ def stub_manifest() -> NativeManifest:
                 manual_hint="make demo",
             )
         ],
+    )
+
+
+def _missing_main_root(tmp_path: Path) -> Path:
+    """Return a synthetic checkout with a source but no compiled artifact."""
+    package = tmp_path / "main" / "packages" / "demo" / "src" / "demo"
+    package.mkdir(parents=True)
+    (package / "built.pyx").write_text("# cython\n", encoding="utf-8")
+    return tmp_path / "main"
+
+
+def _counting_build_group(main_root: Path, counter: Path) -> NativeGroup:
+    """Return a build group whose argv records one build and creates an artifact."""
+    script = main_root / "fake_build.py"
+    script.write_text(
+        "import pathlib, sys\n"
+        "counter = pathlib.Path(sys.argv[1])\n"
+        "counter.write_text(counter.read_text() + 'x' if counter.exists() else 'x')\n"
+        "artifact = pathlib.Path(sys.argv[2])\n"
+        "artifact.parent.mkdir(parents=True, exist_ok=True)\n"
+        "artifact.write_bytes(b'ELF')\n",
+        encoding="utf-8",
+    )
+    return NativeGroup(
+        name="stub",
+        copy_globs=["packages/demo/src/demo/*.so"],
+        pair_sources=["packages/demo/src/demo/*.pyx"],
+        autobuild=True,
+        build=["{python}", "fake_build.py", str(counter), f"packages/demo/src/demo/built{EXT}"],
+        build_cwd=".",
+        build_timeout_s=60,
+        manual_hint="run it yourself",
     )
 
 
@@ -188,3 +222,157 @@ def test_missing_never_raises_and_warns_with_hint(
     report = sync_native_artifacts(main_root=fake_main_root, target=tmp_path / "wt", manifest=stub_manifest)
     assert report.missing
     assert any("make demo" in warning for warning in report.warnings)
+
+
+def test_autobuild_runs_declared_argv(tmp_path: Path) -> None:
+    """A missing artifact is built, then copied into the target worktree."""
+    main_root = _missing_main_root(tmp_path)
+    counter = tmp_path / "counter"
+    manifest = NativeManifest(groups=[_counting_build_group(main_root, counter)])
+
+    report = sync_native_artifacts(main_root=main_root, target=tmp_path / "wt", manifest=manifest)
+
+    artifact = f"packages/demo/src/demo/built{EXT}"
+    assert report.built == ["stub"]
+    assert report.copied == [artifact]
+    assert report.missing == []
+    assert counter.read_text(encoding="utf-8") == "x"
+
+
+def test_autobuild_failure_is_a_warning(tmp_path: Path) -> None:
+    """A failed argv preserves the missing entry and provides the manual command."""
+    main_root = _missing_main_root(tmp_path)
+    group = NativeGroup(
+        name="failing",
+        copy_globs=["packages/demo/src/demo/*.so"],
+        pair_sources=["packages/demo/src/demo/*.pyx"],
+        autobuild=True,
+        build=["{python}", "-c", "import sys; sys.stderr.write('failed build'); sys.exit(7)"],
+        manual_hint="repair failing manually",
+    )
+
+    report = sync_native_artifacts(
+        main_root=main_root,
+        target=tmp_path / "wt",
+        manifest=NativeManifest(groups=[group]),
+    )
+
+    assert report.missing
+    assert any("status 7" in warning and "repair failing manually" in warning for warning in report.warnings)
+
+
+def test_autobuild_timeout_is_a_warning(tmp_path: Path) -> None:
+    """A timed-out argv leaves the artifact missing and reports the manual command."""
+    main_root = _missing_main_root(tmp_path)
+    group = NativeGroup(
+        name="timed-out",
+        copy_globs=["packages/demo/src/demo/*.so"],
+        pair_sources=["packages/demo/src/demo/*.pyx"],
+        autobuild=True,
+        build=["{python}", "-c", "import time; time.sleep(2)"],
+        build_timeout_s=1,
+        manual_hint="repair timeout manually",
+    )
+
+    report = sync_native_artifacts(
+        main_root=main_root,
+        target=tmp_path / "wt",
+        manifest=NativeManifest(groups=[group]),
+    )
+
+    assert report.missing
+    assert any("timed out" in warning and "repair timeout manually" in warning for warning in report.warnings)
+
+
+def test_autobuild_skipped_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """All explicit autobuild disable mechanisms avoid starting the build argv."""
+    main_root = _missing_main_root(tmp_path)
+    counter = tmp_path / "counter"
+    group = _counting_build_group(main_root, counter)
+
+    monkeypatch.setenv(AUTOBUILD_ENV_VAR, "0")
+    env_disabled = sync_native_artifacts(
+        main_root=main_root, target=tmp_path / "env", manifest=NativeManifest(groups=[group])
+    )
+    assert not counter.exists()
+    assert any("run it yourself" in warning for warning in env_disabled.warnings)
+
+    monkeypatch.delenv(AUTOBUILD_ENV_VAR)
+    caller_disabled = sync_native_artifacts(
+        main_root=main_root,
+        target=tmp_path / "caller",
+        manifest=NativeManifest(groups=[group]),
+        autobuild=False,
+    )
+    assert not counter.exists()
+    assert any("run it yourself" in warning for warning in caller_disabled.warnings)
+
+    group_disabled = group.model_copy(update={"autobuild": False})
+    group_disabled_report = sync_native_artifacts(
+        main_root=main_root, target=tmp_path / "group", manifest=NativeManifest(groups=[group_disabled])
+    )
+    assert not counter.exists()
+    assert any("run it yourself" in warning for warning in group_disabled_report.warnings)
+
+    no_build = group.model_copy(update={"build": []})
+    no_build_report = sync_native_artifacts(
+        main_root=main_root, target=tmp_path / "empty", manifest=NativeManifest(groups=[no_build])
+    )
+    assert not counter.exists()
+    assert any("run it yourself" in warning for warning in no_build_report.warnings)
+
+
+def test_autobuild_lock_serializes_builds(tmp_path: Path) -> None:
+    """Concurrent syncs share one lock and execute the declared argv once."""
+    main_root = _missing_main_root(tmp_path)
+    counter = tmp_path / "counter"
+    manifest = NativeManifest(groups=[_counting_build_group(main_root, counter)])
+    start = threading.Barrier(2)
+    reports: list[object] = []
+
+    def run_sync(target: Path) -> None:
+        start.wait()
+        reports.append(sync_native_artifacts(main_root=main_root, target=target, manifest=manifest))
+
+    first = threading.Thread(target=run_sync, args=(tmp_path / "first",))
+    second = threading.Thread(target=run_sync, args=(tmp_path / "second",))
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert len(reports) == 2
+    assert counter.read_text(encoding="utf-8") == "x"
+
+
+def test_python_placeholder_is_substituted(tmp_path: Path) -> None:
+    """The placeholder invokes the running interpreter rather than a shell command."""
+    main_root = _missing_main_root(tmp_path)
+    executable = tmp_path / "executable"
+    artifact = f"packages/demo/src/demo/built{EXT}"
+    script = main_root / "capture_python.py"
+    script.write_text(
+        "import pathlib, sys\n"
+        "pathlib.Path(sys.argv[1]).write_text(sys.executable)\n"
+        "artifact = pathlib.Path(sys.argv[2])\n"
+        "artifact.parent.mkdir(parents=True, exist_ok=True)\n"
+        "artifact.write_bytes(b'ELF')\n",
+        encoding="utf-8",
+    )
+    group = NativeGroup(
+        name="interpreter",
+        copy_globs=["packages/demo/src/demo/*.so"],
+        pair_sources=["packages/demo/src/demo/*.pyx"],
+        autobuild=True,
+        build=["{python}", "capture_python.py", str(executable), artifact],
+        manual_hint="run capture manually",
+    )
+
+    report = sync_native_artifacts(
+        main_root=main_root,
+        target=tmp_path / "wt",
+        manifest=NativeManifest(groups=[group]),
+    )
+
+    assert report.built == ["interpreter"]
+    assert executable.read_text(encoding="utf-8") == sys.executable
