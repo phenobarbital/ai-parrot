@@ -507,10 +507,16 @@ tests:
 - packages/parrot-formdesigner/tests/formdesigner/test_plausibility_enforcement.py
 - packages/parrot-formdesigner/tests/formdesigner/test_llm_quota_http.py
 - packages/parrot-formdesigner/tests/formdesigner/test_audio_plausibility_policy.py
+- packages/parrot-formdesigner/tests/formdesigner/test_audio_engine_review_resume.py
+- packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_v2_integration.py
 - packages/parrot-formdesigner/tests/unit/services/test_llm_quota.py
 - packages/parrot-formdesigner/tests/unit/test_llm_validation_policy.py
+- packages/parrot-formdesigner/tests/unit/test_core_models.py
 - packages/parrot-formdesigner/tests/unit/api/test_submit_unknown_fields.py
 - packages/parrot-formdesigner/tests/unit/api/test_validate_a2ui.py
+- packages/parrot-formdesigner/tests/unit/api/test_submit_a2ui.py
+- packages/parrot-formdesigner/tests/unit/api/test_setup_form_api.py
+- packages/parrot-formdesigner/tests/unit/api/test_route_tenant_coverage.py
 markers: none
 
 ### Test Data / Fixtures
