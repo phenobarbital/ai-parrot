@@ -303,10 +303,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: gpt-5.6-terra (codex seat) via sdd-worker orchestrator
+**Date**: 2026-10-22
+**Notes**: Implemented durable approval state (JSON, atomic os.replace), stable
+insight_id via sha256(meeting_id:index:title)[:12], /fireflies_ticket command
+with chat-bound authorization + 72h TTL, idempotent replay (returns existing key),
+templated Jira ticket creation via fireflies/action_item template, and best-effort
+wiki backlink via SourceCollectionManager.find_by_external_id. Extended notify_insights
+to append confirmation lines. 7 new tests: unknown id, idempotent replay, foreign chat
+refusal, expired approval, failed Jira, backlink omission, stable insight ids.
+Seat: gpt-5.6-terra (codex), 1 attempt, 313s, merge-tier 111 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

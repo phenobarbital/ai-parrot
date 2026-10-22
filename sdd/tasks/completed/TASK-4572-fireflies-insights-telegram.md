@@ -297,10 +297,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat gpt-5.6-sol (codex, attempt 1, 225.9s)
+**Date**: 2026-10-22
+**Notes**: Added Telegram approval flow with callback handling. 101 passed merge-tier validation.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from parrot.knowledge.wiki.project import (
     InboxConfig,
@@ -54,6 +55,33 @@ def test_inbox_bounds(bad: dict) -> None:
     """Numeric bounds are enforced."""
     with pytest.raises(ValueError):
         InboxConfig(**bad)
+
+
+def test_stability_defaults() -> None:
+    """Use the configured stability defaults and preserve stage_git."""
+    cfg = InboxConfig()
+    assert cfg.stability_window == 3.0
+    assert cfg.stability_poll_interval == 1.5
+    assert cfg.stage_git is True
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"stability_window": -1.0},
+        {"stability_poll_interval": 0.0},
+        {"stability_window": 1.0, "stability_poll_interval": 2.0},
+    ],
+)
+def test_stability_rejected(kwargs: dict) -> None:
+    """Reject invalid stability bounds and intervals exceeding their window."""
+    with pytest.raises(ValidationError):
+        InboxConfig(**kwargs)
+
+
+def test_zero_window_disables_gate() -> None:
+    """Allow any valid polling interval when the stability gate is disabled."""
+    assert InboxConfig(stability_window=0.0, stability_poll_interval=5.0).stability_window == 0.0
 
 
 def test_env_overlay_merges_inbox(tmp_path: Path) -> None:

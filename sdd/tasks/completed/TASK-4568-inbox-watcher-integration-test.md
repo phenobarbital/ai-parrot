@@ -201,10 +201,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator manual — attempt 3 after fidelity_violation)
+**Date**: 2026-10-22
+**Notes**: Created test_watcher_integration.py with three cases: (1) atomic drop via
+os.replace is processed exactly once, (2) dot-prefixed temps never reach the processor,
+(3) two files dropped together coalesce into one run. Uses asyncio.Event signalling from
+RecordingProcessor to avoid polling loops (ruff ASYNC110). All tests bounded by
+asyncio.wait_for(timeout=10). Module skipped cleanly when watchdog is absent via
+pytest.importorskip. Previous coder attempt (minimax seat) had a fidelity_violation
+touching sdd/ledger/events.jsonl.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

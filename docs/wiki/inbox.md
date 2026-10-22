@@ -225,6 +225,49 @@ Each row's `status` is one of `admitted`, `archived_category`, `rejected`,
 `skipped`, `failed` or `dry_run`. `verified` is `false` for dry-run rows and
 rejected rows.
 
+## Watch mode
+
+The inbox processor can run as a long-lived watcher that reacts to
+filesystem events instead of a one-shot scan:
+
+```bash
+uv pip install "ai-parrot[filesystem-transport-full]"
+wikitoolkit inbox --watch
+```
+
+The `--watch` flag requires the optional `watchdog` package, installed
+via the `filesystem-transport-full` extra. When `watchdog` is absent
+the command exits with a clear error naming the extra.
+
+**How it works.** A `watchdog` observer monitors the inbox directory
+(recursively) for create, move and modify events. Events are debounced
+and then handed to the same `InboxProcessor` that the one-shot command
+uses. A single worker coroutine serializes all processor runs so there
+is never a concurrent write to the wiki project.
+
+- **Stability window**: a file is not processed until its size and
+  mtime have been unchanged for `inbox.stability_window` seconds
+  (default 3.0), polled every `inbox.stability_poll_interval` seconds
+  (default 1.5). The whole inbox must be stable before a run starts —
+  a single still-changing file defers all candidates.
+- **Dot-prefixed files are ignored**: files whose name (or any parent
+  component inside the inbox) starts with `.` are never candidates.
+  Use this convention for atomic drops: write to `.file.tmp`, then
+  `os.replace` it to the final name.
+- **`--watch` is incompatible with `--limit` and `--dry-run`**: the
+  watcher processes every candidate on every wake.
+- **Ctrl-C drains gracefully**: the in-flight processor run completes
+  before shutdown so no document is left half-processed.
+- **Startup scan**: files already present in the inbox when the watcher
+  starts are processed immediately — you do not need to touch them.
+
+> **Warning** — `inbox.stage_git` defaults to `true`, which means every
+> processed document is automatically `git add`-ed into the wiki project's
+> repository. Under a long-running watcher this results in a steady stream
+> of staged changes. If you do not want that, set `stage_git: false` in
+> your `wiki.json` `inbox` section. The watcher deliberately never
+> overrides this setting.
+
 ## Exit codes and concurrency
 
 | Code | Meaning |
