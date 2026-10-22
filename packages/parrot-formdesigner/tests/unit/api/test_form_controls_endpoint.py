@@ -36,9 +36,18 @@ async def test_form_controls_payload_shape(aiohttp_client):
     assert isinstance(body["controls"], list)
     assert len(body["controls"]) == len(FieldType)
     expected_keys = {
-        "type", "label", "description", "category", "icon",
-        "snippet", "render_hint", "supports_constraints", "is_container",
-        "supported_operators", "supported_effects", "supported_operations",
+        "type",
+        "label",
+        "description",
+        "category",
+        "icon",
+        "snippet",
+        "render_hint",
+        "supports_constraints",
+        "is_container",
+        "supported_operators",
+        "supported_effects",
+        "supported_operations",
         "value_shape",
     }
     for entry in body["controls"]:

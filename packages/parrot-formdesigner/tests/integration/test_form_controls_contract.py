@@ -79,9 +79,18 @@ async def test_each_entry_has_full_metadata(aiohttp_client):
     resp = await client.get("/api/v1/form-controls")
     body = await resp.json()
     expected_keys = {
-        "type", "label", "description", "category", "icon",
-        "snippet", "render_hint", "supports_constraints", "is_container",
-        "supported_operators", "supported_effects", "supported_operations",
+        "type",
+        "label",
+        "description",
+        "category",
+        "icon",
+        "snippet",
+        "render_hint",
+        "supports_constraints",
+        "is_container",
+        "supported_operators",
+        "supported_effects",
+        "supported_operations",
         "value_shape",
     }
     for entry in body["controls"]:
