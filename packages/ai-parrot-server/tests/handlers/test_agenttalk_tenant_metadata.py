@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 _AGENT_SRC = Path(__file__).resolve().parents[2] / "src" / "parrot" / "handlers" / "agent.py"
 
 
@@ -34,7 +33,10 @@ def test_save_turn_metadata_both_paths() -> None:
     for save_call, message_name in ((stream_save, "ai_message"), (sync_save, "response")):
         assert "metadata={" in save_call
         assert f'"usage": {message_name}.usage.model_dump() if {message_name}.usage is not None else None,' in save_call
-        assert f'"cost_usd": {message_name}.usage.estimated_cost if {message_name}.usage is not None else None,' in save_call
+        assert (
+            f'"cost_usd": {message_name}.usage.estimated_cost if {message_name}.usage is not None else None,'
+            in save_call
+        )
         assert '"tenant": tenant,' in save_call
         assert '"agent": agent_name,' in save_call
 
