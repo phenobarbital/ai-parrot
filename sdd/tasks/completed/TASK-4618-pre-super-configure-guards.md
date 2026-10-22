@@ -376,7 +376,11 @@ database.
 
 - `pytest packages/ai-parrot/tests/bots/test_configure_override_guards.py -q`
 - `pytest packages/ai-parrot/tests/bots/test_double_configure.py -q`
-- `pytest packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py -q`
+
+> `tests/interfaces/test_configure_applies_tooling.py` was dropped from this list:
+> it is red on `dev` independently of this feature
+> (`AbstractBot.__new__(AbstractBot)` on a class with unimplemented abstract
+> methods), filed as `issue:487531e66e0b`.
 
 ---
 
@@ -413,4 +417,36 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+All three sites guarded with `if self.configure_is_noop(app): await
+super().configure(...); return` as the first statement after the docstring —
+above every side effect, not merely above the `super()` call. `DatabaseAgent`
+uses its existing keyword form (`app=app`) on the no-op path.
+
+The MRO chain was checked end to end, because `Chatbot` sits between
+`AbstractBot` and `BasicAgent` and both now guard. On a repeat entry
+`Chatbot.configure` short-circuits, awaits `AbstractBot.configure` (which sets
+`_configure_skipped = True` and returns), and returns; back in
+`BasicAgent.configure` the post-super guard from TASK-4617 then sees
+`configure_skipped is True` and returns. On the CLI-then-server path both
+guards correctly fall through. Covered by the behavioural tests.
+
+Tests: four behavioural (repeat / counter-still-moves / CLI-then-server /
+reconfigure) on a `_PreSuperBot` stub, plus a parametrized structural check
+over the three real sites asserting the guard precedes every `super()` call,
+is not awaited, and that its branch awaits `super()` and then returns.
+
+Three pre-existing failures found in `voice.py`'s neighbourhood and NOT fixed
+(out of scope, verified unrelated):
+`test_voicebot_provider_switch.py::TestVoiceBotLazyClientWiring::test_resolve_branches_on_provider`,
+`::test_create_branches_on_provider` and
+`test_voicebot_refinements.py::TestVoiceBotVoiceCapableCheck::test_both_provider_branches_still_present`.
+They assert on the AST source of `_resolve_llm_config` / `_create_llm_client`,
+not `configure`. Verified pre-existing by reverting `voice.py` to the base
+commit and re-running them — identical failures. Also 4 pre-existing ruff
+findings in `voice.py` (unused imports at :33/:42/:932, unused local at :692);
+`chatbot.py` and `database/agent.py` are ruff-clean.
+
+Validation: `pytest tests/bots/test_configure_override_guards.py
+tests/bots/test_double_configure.py -q` -> **39 passed**. The wider sweep
+(voice + database + guards) was **300 passed, 9 skipped, 3 failed** — the three
+pre-existing voice failures above.

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T17:05:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-22T17:17:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -19,8 +19,7 @@
           "packages/ai-parrot/tests/bots/test_jira_specialist_reconfigure.py",
           "packages/ai-parrot/tests/bots/test_fireflies_insights.py",
           "packages/ai-parrot/tests/test_basic_agent_new.py",
-          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py",
-          "packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py"
+          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py"
         ],
         "settings": {
           "markers": ""
@@ -32,7 +31,7 @@
         ]
       }
     ],
-    "digest": "sha256:909f984d578762525f800a49ea0adcd4e51fefb29892cb80bf1af8b822c63c30"
+    "digest": "sha256:dc35da989f25af8073018e74e4aa833a60e4f390e0b0ac141d6098d32f52cc0e"
   },
   "tasks": [
     {
@@ -42,7 +41,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +49,9 @@
       "parallelism_notes": "root of the graph: owns bots/abstract.py and creates tests/bots/test_configure_override_guards.py; no inbound edge",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4616-abstractbot-configure-signals.md"
+      "completed_at": "2026-10-22T17:00:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4616-abstractbot-configure-signals.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4617",
@@ -60,7 +60,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -70,8 +70,9 @@
       "parallelism_notes": "reads AbstractBot.configure_skipped created by TASK-4616 (bots/abstract.py), and appends to tests/bots/test_configure_override_guards.py which TASK-4616 creates",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4617-post-super-configure-guards.md"
+      "completed_at": "2026-10-22T17:06:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4617-post-super-configure-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4618",
@@ -80,7 +81,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -90,8 +91,9 @@
       "parallelism_notes": "needs AbstractBot.configure_is_noop from TASK-4616 (bots/abstract.py) and shares tests/bots/test_configure_override_guards.py with TASK-4617, so it is serialized behind TASK-4617 (which transitively covers TASK-4616)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4618-pre-super-configure-guards.md"
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4618-pre-super-configure-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4619",
@@ -100,7 +102,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -110,8 +112,9 @@
       "parallelism_notes": "file-overlap only: both this task and TASK-4617 modify bots/agent.py, so the lower id runs first; no symbol dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4619-speech-report-empty-speakers-guard.md"
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4619-speech-report-empty-speakers-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4620",
@@ -120,7 +123,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -130,8 +133,9 @@
       "parallelism_notes": "file-overlap only: both this task and TASK-4619 append to tests/test_basic_agent_new.py; no symbol dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4620-speech-report-google-tts-verbatim-test.md"
+      "completed_at": "2026-10-22T17:17:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4620-speech-report-google-tts-verbatim-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4621",
@@ -140,7 +144,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -150,8 +154,9 @@
       "parallelism_notes": "documents configure_skipped and configure_is_noop by their final names, and the pre-super pattern TASK-4618 lands (transitively covers TASK-4616/4617); docs-only file, no code overlap",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4621-agent-configure-lifecycle-docs.md"
+      "completed_at": "2026-10-22T17:17:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4621-agent-configure-lifecycle-docs.md",
+      "verification": "verified"
     }
   ]
 }

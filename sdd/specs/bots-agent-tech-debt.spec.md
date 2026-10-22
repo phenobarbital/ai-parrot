@@ -401,8 +401,19 @@ tests:
 - packages/ai-parrot/tests/bots/test_fireflies_insights.py
 - packages/ai-parrot/tests/test_basic_agent_new.py
 - packages/ai-parrot/tests/tools/test_toolkit_reregistration.py
-- packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py
 markers: none
+
+> **Deliberately NOT in the contract**:
+> `packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py`.
+> It was in the first draft of this list (inherited from FEAT-721's) and is
+> **red on `dev`**, independently of this feature:
+> `test_configure_calls_apply_tooling_specs_once` does
+> `AbstractBot.__new__(AbstractBot)`, which `object.__new__` rejects for a class
+> with unimplemented abstract methods. Verified pre-existing by re-running it
+> against the base `bots/abstract.py` with this feature's change reverted — it
+> fails identically. Filed as `issue:487531e66e0b`; fixing it is that issue's
+> job, not this feature's, and gating FEAT-726 on a test that cannot pass would
+> make the gate meaningless.
 
 ### Test Data / Fixtures
 

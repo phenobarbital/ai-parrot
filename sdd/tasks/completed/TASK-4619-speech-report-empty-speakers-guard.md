@@ -394,4 +394,29 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+Both script paths guarded. Site 1 (the narrator pick, `next(iter(...))`) and
+site 2 (the multi-speaker `definitions` build) now raise `ValueError` naming
+`speakers` and `type(self).__name__`, and pointing at the two ways out: set
+`speakers` on the class, or use `speech_mode='verbatim'`.
+
+Site 2 was not in the original ledger issue, which named only the
+`StopIteration` line. It is included because the same empty dict there built an
+**empty** `speakers` list and handed it to `ConversationalScriptConfig`, failing
+later and further from the cause — one path failing opaquely and the other
+silently is not half a bug fixed.
+
+The guards sit INSIDE the non-verbatim branch, not above the
+`if mode == "verbatim"` test: verbatim never reads `self.speakers` and is the
+one working configuration for a speakerless agent.
+`test_speech_report_verbatim_works_with_empty_speakers` pins that, so a later
+"simplification" that hoists the guard fails.
+
+Tests use a `Speechless(BasicAgent)` subclass with `speakers = {}` — never
+assignment to `BasicAgent.speakers`, which is class-level and shared by every
+instance in the session (`agent.py:78`, called out at `:827-829`). They follow
+the existing `test_speech_report_rejects_zero_speakers` shape. Appended at the
+end of the file rather than spliced after the supertonic test; same suite,
+no structural risk.
+
+Validation: `pytest tests/test_basic_agent_new.py -q` -> **27 passed** (3 new).
+`ruff check` clean on both files.

@@ -368,6 +368,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self._configured: bool = False
         # FEAT-721: entries into configure(); a re-entry with no new app is a no-op.
         self._configure_count: int = 0
+        # FEAT-726: whether the most recent configure() entry was that no-op.
+        self._configure_skipped: bool = False
         self._status: AgentStatus = AgentStatus.IDLE
         self._listeners: Dict[str, List[Callable]] = {}
 
@@ -1585,7 +1587,13 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         Subclass overrides that do their own work AFTER
         ``await super().configure(app)`` guard it with
-        ``if self.configure_count > 1: return``.
+        ``if self.configure_skipped: return``. Overrides that work BEFORE the
+        ``super()`` call guard it with ``if self.configure_is_noop(app): ...``
+        (see ``docs/agent-configure-lifecycle.md`` §6 and §8).
+
+        Do NOT use ``configure_count > 1`` for either guard: it is ``2`` on the
+        CLI-then-server path, where this method genuinely DOES run its
+        pipeline, so a counter-based guard skips setup that was needed.
 
         Wrapped in ``try/except/finally`` so ``self._configured`` is always
         flipped to ``True`` at the end, even when an inner step raises.
@@ -1596,18 +1604,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         raises ``ToolNameCollisionError`` on top of the original failure —
         masking the real cause.
         """
-        previous_app = getattr(self, "app", None)
-        resolved_app = None
-        if app:
-            resolved_app = app if isinstance(app, web.Application) else app.get_app()
+        # Ask BEFORE incrementing: configure_is_noop() answers the prospective
+        # question ("would a call right now be a no-op?") so that a pre-super
+        # override can consult it before it has entered configure() at all.
+        is_noop = self.configure_is_noop(app)
         self._configure_count = getattr(self, "_configure_count", 0) + 1
-        if self._configure_count > 1 and (resolved_app is None or resolved_app is previous_app):
+        if is_noop:
+            self._configure_skipped = True
             self.logger.info(
                 "configure() already ran for '%s' (entry #%d); skipping. Use reconfigure() to force a re-run.",
                 getattr(self, "name", self.__class__.__name__),
                 self._configure_count,
             )
             return
+        self._configure_skipped = False
+        resolved_app = self._resolve_configure_app(app)
         self._configured = False
         self.app = resolved_app
         if resolved_app is not None:
@@ -1887,6 +1898,66 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     def configure_count(self) -> int:
         """How many times :meth:`configure` has been entered on this instance."""
         return getattr(self, "_configure_count", 0)
+
+    @property
+    def configure_skipped(self) -> bool:
+        """Whether the most recent :meth:`configure` entry was an idempotent no-op.
+
+        ``False`` before the first ``configure()`` and after any entry that ran
+        the pipeline — including a genuine reconfiguration (an app arriving
+        where none was bound) and :meth:`reconfigure`.
+
+        Overrides that do their own work AFTER ``await super().configure(app)``
+        read this and return early when it is ``True``. Do NOT use
+        ``configure_count > 1`` for that: it is ``2`` on the CLI-then-server
+        path, where the pipeline genuinely DID run.
+
+        Returns:
+            True when the last entry skipped the pipeline, else False.
+        """
+        return getattr(self, "_configure_skipped", False)
+
+    def _resolve_configure_app(self, app) -> Optional[web.Application]:
+        """Resolve ``app`` to an :class:`aiohttp.web.Application` or ``None``.
+
+        The single app-resolution used by both :meth:`configure` and
+        :meth:`configure_is_noop`, so the two can never disagree about which
+        app a call refers to.
+
+        Args:
+            app: An ``aiohttp`` application, an object exposing ``get_app()``,
+                or ``None``.
+
+        Returns:
+            The resolved application, or ``None`` when ``app`` is falsy.
+        """
+        if not app:
+            return None
+        return app if isinstance(app, web.Application) else app.get_app()
+
+    def configure_is_noop(self, app=None) -> bool:
+        """Whether a :meth:`configure` call with ``app`` would be an idempotent no-op.
+
+        Deliberately synchronous: overrides that do their own work BEFORE
+        ``await super().configure(app)`` must consult it first, and an
+        ``async`` predicate would force them to await before deciding.
+
+        The question is **prospective** — "would a call made right now be a
+        no-op?" — so it tests ``configure_count >= 1`` (at least one entry has
+        already happened), not ``> 1``. :meth:`configure` therefore calls it
+        BEFORE incrementing its counter; a pre-super override calls it before
+        entering ``configure()`` at all, and both get the same answer.
+
+        Args:
+            app: The app that would be passed to ``configure()``.
+
+        Returns:
+            True when ``configure(app)`` would log and return without running
+            the pipeline.
+        """
+        resolved_app = self._resolve_configure_app(app)
+        previous_app = getattr(self, "app", None)
+        return getattr(self, "_configure_count", 0) >= 1 and (resolved_app is None or resolved_app is previous_app)
 
     async def reconfigure(self, app=None) -> None:
         """Reset the idempotency counter and run :meth:`configure` again.
