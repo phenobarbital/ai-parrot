@@ -298,6 +298,18 @@ class InboxConfig(BaseModel):
     stage_git: bool = Field(default=True, description="Stage archived and projected files in git.")
     max_candidates: int = Field(default=20, ge=1, le=100, description="Maximum candidates per run.")
     lock_timeout: float = Field(default=30.0, ge=0.0, description="Seconds to wait for the inbox lock.")
+    stability_window: float = Field(
+        default=3.0,
+        ge=0.0,
+        le=300.0,
+        description="Seconds a candidate's size and mtime must stay unchanged before ingestion (0 disables the gate).",
+    )
+    stability_poll_interval: float = Field(
+        default=1.5,
+        gt=0.0,
+        le=60.0,
+        description="Seconds between the size/mtime samples that prove a candidate is stable.",
+    )
 
     @model_validator(mode="after")
     def _validate_layout(self) -> "InboxConfig":
@@ -309,6 +321,8 @@ class InboxConfig(BaseModel):
         rejected = self.rejected_subdir
         if not rejected.strip() or "/" in rejected or "\\" in rejected or ".." in rejected:
             raise ValueError("inbox.rejected_subdir must be a single path segment without separators or '..'")
+        if self.stability_window > 0 and self.stability_poll_interval > self.stability_window:
+            raise ValueError("inbox.stability_poll_interval must not exceed inbox.stability_window")
         return self
 
 

@@ -1,0 +1,21 @@
+h3. Action item: {{ action_title }}
+
+*Meeting:* {{ meeting_title }} ({{ meeting_date }})
+*Fireflies ID:* {{ meeting_id }}
+{% if owner %}*Owner:* {{ owner }}
+{% endif %}{% if due_date %}*Due:* {{ due_date }}
+{% endif %}
+h4. Evidence from the transcript
+{quote}{{ evidence }}{quote}
+{% if decisions %}
+h4. Decisions taken in the meeting
+{% for item in decisions %}* {{ item }}
+{% endfor %}{% endif %}{% if risks %}
+h4. Risks and blockers raised
+{% for item in risks %}* {{ item }}
+{% endfor %}{% endif %}{% if wiki_url %}
+h4. Meeting notes
+[Wiki page|{{ wiki_url }}]
+{% endif %}
+----
+_Created by FirefliesInsightsAgent after confirmation in Telegram._
