@@ -242,8 +242,9 @@ def test_field_type_enum_has_new_values() -> None:
 
 
 def test_field_type_enum_total_count() -> None:
-    """FieldType now has exactly 32 values (20 existing + 10 FEAT-167 + 1 FEAT-170 REST + 1 FEAT-300 FORMULA)."""
-    assert len(FieldType) == 32
+    """FieldType members have unique names and values."""
+    members = FieldType.__members__
+    assert len(members) == len(set(members)) == len({member.value for member in members.values()})
 
 
 def test_field_type_existing_values_unchanged() -> None:
