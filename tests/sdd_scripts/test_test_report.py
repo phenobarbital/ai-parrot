@@ -72,6 +72,28 @@ def test_render_cli_uses_fixture_record_and_final_head(
     assert "TASK-0 (stale): 1 suite(s), 1 attempt(s)" in output
 
 
+def test_render_cli_surfaces_corrupt_record_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Corrupt record files are reported in a Notes subsection, not silently dropped."""
+    index = tmp_path / "index.json"
+    _write_index(index)
+    reports = tmp_path / "reports"
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(reports))
+    (reports / "FEAT-695").mkdir(parents=True)
+    (reports / "FEAT-695" / "bad.json").write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(
+        test_report.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout="final-head\n"),
+    )
+
+    assert test_report.main(["render", "--index", str(index), "--worktree", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "### Notes" in output
+    assert "skipped corrupt report: bad.json" in output
+
+
 def test_unreadable_index_exits_2(tmp_path: Path) -> None:
     """A missing index is the sole data error that returns the usage exit code."""
     assert test_report.main(["render", "--index", str(tmp_path / "missing.json")]) == 2
