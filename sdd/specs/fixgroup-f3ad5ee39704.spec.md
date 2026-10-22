@@ -257,19 +257,22 @@ mixin→hook→bootstrap chain in-process; no external service is involved.
 
 ### Validation Contract
 
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/unit/observability/ -q
-ruff check packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py \
-           packages/ai-parrot/src/parrot/observability/bootstrap.py \
-           packages/ai-parrot/tests/unit/observability/
-```
+tests:
+- packages/ai-parrot/tests/unit/observability/test_bootstrap_hook.py
+- packages/ai-parrot/tests/unit/observability/test_bootstrap.py
+- packages/ai-parrot/tests/unit/observability/test_bootstrap_cleanup.py
+- packages/ai-parrot/tests/unit/observability/test_event_fanout.py
+markers: none
 
-Both must exit 0. Also expected green (they construct bots/clients and now
-run the hook on every construction — a no-op when the env is unset):
-
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/unit/observability packages/ai-parrot/tests/core -q
-```
+> Lint is not part of the cached contract; each task runs it on its own files:
+> `ruff check packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py
+> packages/ai-parrot/src/parrot/observability/bootstrap.py
+> packages/ai-parrot/tests/unit/observability/`
+>
+> `test_bootstrap_cleanup.py` and `test_event_fanout.py` are listed although
+> neither task edits them: they drive `ensure_observability_bootstrapped()`
+> directly and are the nearest thing to a blast-radius check for the hook now
+> firing on every construction.
 
 ### Test Data / Fixtures
 
