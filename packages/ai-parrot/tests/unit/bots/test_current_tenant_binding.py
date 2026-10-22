@@ -9,7 +9,6 @@ import pytest
 from parrot.observability.context import current_tenant
 from parrot.skills.mixin import SkillRegistryMixin
 
-
 _ASK_KWARGS = {
     "use_conversation_history": False,
     "use_tools": False,
