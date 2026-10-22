@@ -238,7 +238,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -249,8 +249,9 @@
       "parallelism_notes": "EXCLUSIVE: bumps the navigator-eventbus pin in packages/ai-parrot/pyproject.toml (shared manifest). Redacts the fields added by TASK-4546 (events/*.py); serialized after TASK-4547 because both modify observability/bootstrap.py and it calls ensure_shared_cost_calculator. BLOCKED until navigator-eventbus FEAT-711 is released.",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4553-event-fanout-wiring.md"
+      "completed_at": "2026-10-22T13:36:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4553-event-fanout-wiring.md",
+      "verification": "verified"
     }
   ]
 }
