@@ -209,6 +209,4 @@ See the test-file block in the Implementation Blueprint; every `FILL IN` test mu
 
 **Completed by**: sdd-worker orchestrator (attempt 3; codex terra+sol returned empty_delivery on the under-specified `# FILL IN`)
 **Date**: 2026-10-22
-**Notes**: AC-1, AC-2 and failed-call tenant delivered in clients/base.py (+ tests, merge-tier green). AC-3 (backfill usage.estimated_cost) NOT delivered: needs edits in clients/openai_base.py and other provider call sites, outside the task file list. _emit_after_call now returns cost_usd so call sites can do it. Filed in ledger as a major feature_gap.
-
-**Deviations from spec**: none
+**Notes**: AC-1, AC-2 and failed-call tenant delivered in clients/base.py (tests, merge-tier green). AC-3 delivered in a follow-up pass (commit 9b08af6b6) via a central path rather than per-provider call sites: `AbstractClient._emit_after_call` publishes the once-computed cost in `parrot.observability.cost.last_call_cost`; `AbstractBot.execute_llm_call` and the `BaseBot.ask_stream` terminal-chunk path call `backfill_estimated_cost()` so `usage.estimated_cost` is filled only when None. Files beyond the original list (approved by the user): bots/abstract.py, bots/base.py, observability/cost/__init__.py. Unit tests green; bots+clients unit sweep shows the same 12 pre-existing failures before and after. Ledger issue:1874ef259510 covers this gap and can be closed once the PR merges.
