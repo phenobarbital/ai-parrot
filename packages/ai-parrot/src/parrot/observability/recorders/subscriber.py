@@ -98,15 +98,10 @@ class UsageRecordingSubscriber:
         output_tokens = event.output_tokens or 0
         usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
-        cost_usd: Optional[float] = None
-        cumulative: Optional[float] = None
-        if self._cost is not None:
-            cost_usd = self._cost.cost_usd(
-                provider=provider,
-                model=event.model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
+        from parrot.observability.cost import resolve_event_cost
+        
+        cost_usd = resolve_event_cost(event, self._cost)
+        if cost_usd is not None or self._cost is not None:
             with self._lock:
                 if cost_usd is not None:
                     self._cumulative_cost_usd += cost_usd
