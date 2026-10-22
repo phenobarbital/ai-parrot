@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from ..core.events import FormEventAbort
-from ..core.llm_validation import PlausibilityReport, llm_validation_enabled
+from ..core.llm_validation import PlausibilityReport, implausible_fields, llm_validation_enabled
 from ..core.schema import FormSchema, UnknownFieldsPolicy
 from ..core.voice_answer import VoiceEvidenceEnvelope, is_voice_envelope, unwrap_voice
 from .auth_context import AuthContext
@@ -35,7 +35,14 @@ if TYPE_CHECKING:
     from .partial_saves import PartialSaveStore
     from .sinks.factory import SinkFactory
 
-__all__ = ["SubmissionPipeline", "SubmitOutcome", "SubmitSinkError", "ValidationFailed", "PlausibilityBlocked"]
+__all__ = [
+    "SubmissionPipeline",
+    "SubmitOutcome",
+    "SubmitSinkError",
+    "ValidationFailed",
+    "PlausibilityBlocked",
+    "ImplausibleSubmission",
+]
 
 
 class SubmitOutcome(BaseModel):
@@ -69,6 +76,35 @@ class SubmitSinkError(Exception):
         self.headers = headers or {}
 
 
+_DEFAULT_IMPLAUSIBLE_MESSAGE = "This answer does not appear to answer the question."
+
+
+class ImplausibleSubmission(Exception):
+    """Gate refusal (422 class): answers flagged under a non-``annotate`` policy."""
+
+    def __init__(
+        self,
+        *,
+        policy: Literal["review", "reject"],
+        fields: list[str],
+        report: PlausibilityReport,
+    ) -> None:
+        self.policy = policy
+        self.fields = list(fields)
+        self.report = report
+        self.errors: dict[str, list[str]] = {
+            field_id: [report.items[field_id].reason or _DEFAULT_IMPLAUSIBLE_MESSAGE]
+            for field_id in self.fields
+            if field_id in report.items
+        }
+        super().__init__(f"Implausible answers ({policy}): {', '.join(self.fields)}")
+
+    @property
+    def code(self) -> str:
+        """Return the client-facing refusal code for the enforcement policy."""
+        return "PLAUSIBILITY_REVIEW" if self.policy == "review" else "PLAUSIBILITY_REJECTED"
+
+
 class SubmissionPipeline:
     """Validate → plausibility → persist → forward → cleanup → events, for every channel."""
 
@@ -96,6 +132,31 @@ class SubmissionPipeline:
     def _plausibility_enabled(self, form: FormSchema) -> bool:
         """True when any field resolves llm_validation on (field override or form default)."""
         return any(llm_validation_enabled(form, f) for f in form.iter_fields_recursive())
+
+    def gate_for(
+        self, form: FormSchema, report: PlausibilityReport | None, *, ack: bool = False
+    ) -> ImplausibleSubmission | None:
+        """Return the pure enforcement decision for one plausibility report.
+
+        Args:
+            form: The form whose ``llm_validation.on_implausible`` decides.
+            report: The plausibility outcome, or ``None`` when no check ran.
+            ack: The client reconfirmed these answers (``review`` only).
+
+        Returns:
+            The gate exception to raise, or ``None`` when submission may proceed.
+        """
+        if report is None:
+            return None
+        policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+        if policy == "annotate":
+            return None
+        flagged = implausible_fields(report)
+        if not flagged:
+            return None
+        if policy == "review" and ack:
+            return None
+        return ImplausibleSubmission(policy=policy, fields=flagged, report=report)
 
     async def validate(
         self,
@@ -128,6 +189,7 @@ class SubmissionPipeline:
         extra_data: dict[str, Any] | None,
         auth_context: AuthContext | None,
         merge_session_id: str | None,
+        plausibility_ack: bool = False,
         plausibility: PlausibilityReport | None = None,
         request: "web.Request | None" = None,
         visit_context: dict[str, Any] | None = None,
@@ -188,6 +250,18 @@ class SubmissionPipeline:
             if plausibility is None and self.plausibility is not None and self._plausibility_enabled(form):
                 plausibility = await self.plausibility.check(form, unwrap_voice(result.sanitized_data), locale=locale)
 
+            gate = self.gate_for(form, plausibility, ack=plausibility_ack)
+            if gate is not None:
+                self.logger.info(
+                    "Submission refused by plausibility policy %s for form %s (%d field(s))",
+                    gate.policy,
+                    form.form_id,
+                    len(gate.fields),
+                )
+                if gate.policy == "reject":
+                    await _on_error(gate, "plausibility reject")
+                raise gate
+
             # Storage/wire asymmetry is DELIBERATE (FEAT-458): extras are stored in their own column but
             # flat-merged into the outbound payload. Declared answers win a key collision.
             outbound = {**result.sanitized_data, **extras} if extras else result.sanitized_data
@@ -196,6 +270,8 @@ class SubmissionPipeline:
             ctx = dict(context or {})
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
+                if plausibility_ack:
+                    ctx["llm_validation"]["acknowledged"] = True
             submission = FormSubmission(
                 submission_id=submission_id or str(uuid.uuid4()),
                 form_uid=form.form_uid,
@@ -305,7 +381,7 @@ class SubmissionPipeline:
                 plausibility=plausibility,
                 validation=result,
             )
-        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked):
+        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked, ImplausibleSubmission):
             raise
         except Exception as exc:
             user_message: str | None = None
