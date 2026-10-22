@@ -10,15 +10,15 @@ tags: [forms, file-upload, blob-storage, retention, orphan-cleanup]
 **Feature ID**: FEAT-731
 **Date**: 2026-10-22
 **Author**: Juan Francisco Ruffato (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor after FEAT-730
 
 > Cross-repo initiative, one spec per repo (decided by Juan 2026-10-22):
 > **FEAT-731** (this spec, ai-parrot / parrot-formdesigner — the mechanism) →
 > **FEAT-801** fieldsync `sdd/specs/orphan-upload-cleanup.spec.md` (provisioning,
 > wiring, nightly schedule). Juan chose "Option 3 — pending-upload registry +
-> nightly sweep" and required the SAME mechanism for the anonymous share page
-> (FEAT-797 M4) and the authenticated app. It is a separate feature from the
+> nightly sweep" and required the SAME mechanism for the public share page
+> (FEAT-797 M4) and the app. It is a separate feature from the
 > public-forms trio (FEAT-730 / FEAT-796 / FEAT-797).
 > Deploy order: ai-parrot FEAT-731 (+ ai-parrot-server lockstep) → fieldsync
 > FEAT-801 (migration first).
@@ -52,17 +52,20 @@ unattributable.
 
 - G1. Every blob returned by `/file-upload` is **recorded** as pending in the
   caller's tenant schema (`fs_pending_uploads` in FieldSync), with its
-  thumbnail ref, form/field uids and whether the caller was anonymous.
+  thumbnail ref, form/field uids and whether the FORM is public
+  (`public_form` = `form.is_public` at upload time).
 - G2. A pending record is **cleared in the same transaction** that stores a
   submission referencing the blob — for every host path that calls
   `FormSubmissionStorage.store()` (the parrot pipeline AND hosts that call it
   directly, e.g. FieldSync execution/visits) — and by FEAT-730's
   `store_guarded()`.
 - G3. A **reaper** deletes the blob (and thumbnail) of every pending record
-  older than its TTL — 48 h for anonymous uploads, 7 days for authenticated
-  ones — after a safety check that no stored submission references it.
-- G4. Same mechanism for anonymous (public share page) and authenticated (app)
-  uploads; only the TTL differs.
+  older than its TTL — **48 h for uploads to a public form, 7 days otherwise**
+  (TTL by FORM, never by caller: "es público… puedo ser o no ser empleado, da
+  igual" — Juan, 2026-10-22) — after a safety check that no stored submission
+  references it.
+- G4. Same mechanism for the public share page and the app; only the TTL
+  differs, and it is decided by the form.
 - G5. Feature off by default: with no `pending_uploads` passed to
   `setup_form_api`, behaviour is byte-for-byte today's.
 - G6. Parrot schedules nothing; the host calls `reap_once` per tenant.
@@ -96,7 +99,7 @@ unattributable.
        form_uid       UUID        NOT NULL,
        field_uid      UUID        NOT NULL,
        tenant         TEXT        NOT NULL,
-       anonymous      BOOLEAN     NOT NULL,
+       public_form    BOOLEAN     NOT NULL,
        uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT now()
    );
    CREATE INDEX IF NOT EXISTS "idx_<table>_uploaded_at" ON <schema>.<table> (uploaded_at);
@@ -112,8 +115,8 @@ unattributable.
    thumbnail only as a URL, `api/file_upload.py:608`). `tenant` = the
    **declared URL tenant** (`declared_tenant(request)`), never
    `X-Parrot-Tenant` — the clear runs in the submission's tenant schema, which
-   is the URL tenant. `anonymous` = no authenticated navigator user on the
-   request (`is_anonymous_caller`, §3 M2). Upsert on `blob_ref`
+   is the URL tenant. `public_form` = `form.is_public` of the resolved form at
+   upload time (no caller inspection). Upsert on `blob_ref`
    (FEAT-652 idempotent uploads re-send the same blob: `uploaded_at` is
    refreshed, nothing duplicated). Fail-soft: a record failure is logged and
    the upload still answers 200 (the blob is merely untracked — today's state).
@@ -140,9 +143,9 @@ unattributable.
    the sink; a failure is logged).
 
 5. **Reaper** — `PendingUploadReaper(pending, blob_storage, submissions)`;
-   `reap_once(*, tenant, anonymous_ttl, authenticated_ttl, batch=500)`:
-   - selects up to `batch` expired rows (`anonymous` rows older than
-     `anonymous_ttl`, others older than `authenticated_ttl`) with
+   `reap_once(*, tenant, public_form_ttl, ttl, batch=500)`:
+   - selects up to `batch` expired rows (`public_form` rows older than
+     `public_form_ttl`, others older than `ttl`) with
      `FOR UPDATE SKIP LOCKED` inside a short transaction that only reads;
    - **safety check** per row: `submissions.references_blob(form_uid,
      blob_ref, tenant=…)` — if a stored submission references it, drop the
@@ -151,8 +154,8 @@ unattributable.
      on success delete the row (`deleted`); on failure keep the row
      (`failed`) for the next run;
    - returns `ReapResult(deleted, failed, still_referenced)`.
-   - Defaults exported: `DEFAULT_ANONYMOUS_TTL = timedelta(hours=48)`,
-     `DEFAULT_AUTHENTICATED_TTL = timedelta(days=7)`.
+   - Defaults exported: `DEFAULT_PUBLIC_FORM_TTL = timedelta(hours=48)`,
+     `DEFAULT_TTL = timedelta(days=7)`.
 
 6. **Strict delete** — `AbstractBlobStorage.delete()` today swallows every
    non-404 error with a warning (`services/blob_storage.py:323-341`), so the
@@ -167,7 +170,7 @@ unattributable.
    warning, so the thumbnail of a rejected multi-file upload is always leaked.
    It now deletes the extracted thumbnail ref.
 
-**Why 7 days for authenticated uploads (Juan, 2026-10-22: "30 días es demasiado… una semana… que se pierda la foto y tenga que llenarlo de nuevo").** Parrot's own server-side drafts do
+**Why 7 days for uploads to non-public forms (Juan, 2026-10-22: "30 días es demasiado… una semana… que se pierda la foto y tenga que llenarlo de nuevo").** Parrot's own server-side drafts do
 NOT justify it: `PartialSaveStore` is Redis with a default TTL of 1 hour
 (`services/partial_saves.py:37-38, :54`), refreshed on write. The long TTL is
 for the HOST's clients: the FieldSync app uploads on pick and may hold the
@@ -181,7 +184,7 @@ submit. The host can tune both TTLs (FEAT-801 config keys).
 client ──POST …/fields/{field_uid}/file-upload──▶ handle_file_upload
                                                      │ blob_storage.put (+ thumbnail)
                                                      ▼
-                                      PendingUploadStore.record(anonymous, uploaded_at)
+                                      PendingUploadStore.record(public_form, uploaded_at)
                                                      │
 client ──POST …/data (pipeline) ─▶ SubmissionPipeline ─▶ FormSubmissionStorage.store()/store_guarded()
 host (FieldSync execution/visits) ────────────────────▶   └─ INSERT + PendingUploadStore.clear(refs)  [one txn]
@@ -201,7 +204,6 @@ host scheduler (FieldSync FEAT-801, nightly, per tenant)
 | `services/submission_pipeline.py::SubmissionPipeline.submit` | modifies | clear after a successful sink write |
 | `services/blob_storage.py::AbstractBlobStorage.delete` (+ manager-backed impl) | extends | `strict` kwarg |
 | `api/routes.py::setup_form_api` | extends | `pending_uploads` kwarg; stash + attach (via a helper — function already over budget) |
-| `core/tenant.py` | extends | `is_anonymous_caller(request)` |
 | FEAT-730 `FormSubmissionStorage.store_guarded` | coordinates | must call the same clear helper in its transaction |
 
 ### Data Models
@@ -212,7 +214,7 @@ class PendingUpload(BaseModel):
     form_uid: uuid.UUID
     field_uid: uuid.UUID
     tenant: str
-    anonymous: bool
+    public_form: bool                     # form.is_public at upload time
     uploaded_at: datetime | None = None   # None on record → DB default now()
 
 class ReapResult(BaseModel):
@@ -225,7 +227,7 @@ class ReapResult(BaseModel):
 ```python
 from parrot_formdesigner.services.pending_uploads import (
     PendingUpload, PendingUploadStore, PendingUploadReaper, ReapResult,
-    iter_blob_refs, DEFAULT_ANONYMOUS_TTL, DEFAULT_AUTHENTICATED_TTL,
+    iter_blob_refs, DEFAULT_PUBLIC_FORM_TTL, DEFAULT_TTL,
 )
 setup_form_api(app, registry, ..., pending_uploads: PendingUploadStore | None = None)
 FormSubmissionStorage.attach_pending_uploads(store: PendingUploadStore | None) -> None
@@ -242,7 +244,7 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: PendingUploadStore + models | yes | DDL §2.1; methods §3 M1; `qualified_table`/`validate_identifier` | — |
-| M2: Record on upload | yes | record point after prior-ref block; URL tenant; `is_anonymous_caller`; fail-soft | — |
+| M2: Record on upload | yes | record point after prior-ref block; URL tenant; `public_form = form.is_public`; fail-soft | — |
 | M3: Clear on store + references_blob | yes | one transaction, SAVEPOINT around clear, `iter_blob_refs` | — |
 | M4: Strict delete + reaper | yes | algorithm §2.5 | — |
 | M5: Wiring + sink-path clear + exports | yes | `setup_form_api` kwarg via helper; pipeline after `sink.write` | — |
@@ -258,8 +260,8 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
   from ._identifiers import qualified_table, validate_identifier  # verified: services/submissions.py:25
 
   DEFAULT_TABLE = "pending_uploads"            # FieldSync passes table_name="fs_pending_uploads"
-  DEFAULT_ANONYMOUS_TTL = timedelta(hours=48)
-  DEFAULT_AUTHENTICATED_TTL = timedelta(days=7)
+  DEFAULT_PUBLIC_FORM_TTL = timedelta(hours=48)
+  DEFAULT_TTL = timedelta(days=7)
 
   def iter_blob_refs(data: Any) -> set[str]:
       """Every str value under a `blob_ref` key, walking dicts/lists recursively."""
@@ -272,24 +274,19 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
           """INSERT … ON CONFLICT (blob_ref) DO UPDATE SET uploaded_at = now(), thumbnail_ref = EXCLUDED.thumbnail_ref."""
       async def clear(self, blob_refs: Iterable[str], *, tenant: str | None, conn: Any | None = None) -> int:
           """DELETE … WHERE blob_ref = ANY($1); uses `conn` when given (caller's transaction). No-op on empty input."""
-      async def expired(self, *, tenant: str, anonymous_ttl: timedelta, authenticated_ttl: timedelta,
+      async def expired(self, *, tenant: str, public_form_ttl: timedelta, ttl: timedelta,
                         limit: int, conn: Any | None = None) -> list[PendingUpload]:
-          """Rows with (anonymous AND uploaded_at < now()-anon) OR (NOT anonymous AND uploaded_at < now()-auth),
+          """Rows with (public_form AND uploaded_at < now()-public_form_ttl) OR (NOT public_form AND uploaded_at < now()-ttl),
           oldest first, FOR UPDATE SKIP LOCKED when `conn` is in a transaction."""
       async def delete_rows(self, blob_refs: Iterable[str], *, tenant: str) -> int: ...
   ```
 
 ### Module 2: Record on upload
-- **Path**: `api/file_upload.py`, `core/tenant.py`
+- **Path**: `api/file_upload.py`
 - **Responsibility**: Record every returned envelope; drop the prior's row on replacement; fix the thumbnail cleanup at :291.
 - **Depends on**: M1.
 - **Interface Skeleton**:
   ```python
-  # core/tenant.py (new function, next to enforce_membership_unless_public :189)
-  def is_anonymous_caller(request: web.Request) -> bool:
-      """True when navigator-auth's user_session attached no user (request.user absent/None
-      and request.get("user") falsy). Shared with FEAT-730 M4's blob-tenant rule."""
-
   # api/file_upload.py
   def _thumbnail_ref(thumbnail_url: str | None) -> str | None:
       """The `ref` query param of a thumbnail_url built at :608, unquoted; None when absent."""
@@ -298,7 +295,7 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
       """…unchanged… After the prior-ref block (:325-337) and before the response (:339):
       if app["form_pending_uploads"] is set, record each envelope as PendingUpload(
       blob_ref, thumbnail_ref=_thumbnail_ref(env.thumbnail_url), form_uid=form.form_uid,
-      field_uid=field.field_uid, tenant=declared_tenant, anonymous=is_anonymous_caller(request));
+      field_uid=field.field_uid, tenant=declared_tenant, public_form=bool(form.is_public));
       on a successful prior delete also delete_rows([prior_blob_ref]). Any exception → logger.warning.
       Multi-file rejection cleanup (:291) deletes orphan.blob_ref and _thumbnail_ref(orphan.thumbnail_url)."""
   ```
@@ -341,8 +338,8 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
   class PendingUploadReaper:
       def __init__(self, pending: PendingUploadStore, blob_storage: AbstractBlobStorage,
                    submissions: FormSubmissionStorage) -> None: ...
-      async def reap_once(self, *, tenant: str, anonymous_ttl: timedelta = DEFAULT_ANONYMOUS_TTL,
-                          authenticated_ttl: timedelta = DEFAULT_AUTHENTICATED_TTL,
+      async def reap_once(self, *, tenant: str, public_form_ttl: timedelta = DEFAULT_PUBLIC_FORM_TTL,
+                          ttl: timedelta = DEFAULT_TTL,
                           batch: int = 500) -> ReapResult:
           """§2.5. A ref whose scheme does not match the backend (ValueError from _from_ref,
           e.g. a pre-FEAT-460-fix `temp://` ref) counts as failed and is logged, never raised."""
@@ -378,14 +375,13 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
 |---|---|---|
 | `test_iter_blob_refs_shapes` | M1 | single envelope, list, nested group/array, legacy `{answer, blob_ref, display}`, non-str ignored, no refs → empty |
 | `test_thumbnail_ref_from_url` | M2 | URL from `_finalize_envelope` → original ref; None/absent → None |
-| `test_is_anonymous_caller` | M2 | request through the real `_wrap_auth` chain built with `make_mocked_request`: no session → True; session with user → False |
-| `test_upload_records_pending` | M2 | single + list (`image_dropzone`) uploads record one row per envelope with thumbnail_ref, URL tenant (NOT `X-Parrot-Tenant`), anonymous flag |
+| `test_upload_records_pending` | M2 | single + list (`image_dropzone`) uploads record one row per envelope with thumbnail_ref, URL tenant (NOT `X-Parrot-Tenant`), `public_form` = the form's `is_public` (same value with and without a session) |
 | `test_upload_record_failure_is_soft` | M2 | store raising → 200, envelope returned, warning logged |
 | `test_prior_replacement_clears_prior_row` | M2 | `X-Parrot-Prior-Blob-Ref` → prior blob deleted AND its row deleted |
 | `test_multi_file_rejection_deletes_thumbnail` | M2 | rejected 2nd part → `delete` called with the THUMBNAIL REF, never the URL. **Mutation: restore `orphan.thumbnail_url` → RED** |
 | `test_store_without_pending_unchanged` | M3 | no attach → single execute, no transaction, no clear (G5) |
 | `test_delete_strict` | M4 | strict re-raises a 500-type error; NoSuchKey/FileNotFound still silent; non-strict unchanged |
-| `test_reaper_ttls_and_outcomes` | M4 | fake blob storage: expired anonymous (49 h) deleted, anonymous 47 h kept, authenticated 29 d kept / 31 d deleted; referenced → `still_referenced`, blob untouched; delete failure → row kept, `failed` |
+| `test_reaper_ttls_and_outcomes` | M4 | fake blob storage: public-form row 49 h deleted, 47 h kept; non-public row 6 d kept / 8 d deleted; referenced → `still_referenced`, blob untouched; delete failure → row kept, `failed` |
 | `test_reaper_bad_scheme_counts_failed` | M4 | `temp://…` ref on an S3 backend → failed, no raise |
 | `test_setup_form_api_wires_pending` | M5 | kwarg set → app key + `attach_pending_uploads` called; absent → key `None`, nothing attached |
 | `test_sink_path_clears_after_write` | M5 | persistence form → clear called after `sink.write`; sink error → no clear |
@@ -409,11 +405,11 @@ AbstractBlobStorage.delete(blob_ref, *, strict: bool = False) -> None
 ## 5. Acceptance Criteria
 
 - [ ] AC1 — Without `pending_uploads`, every existing upload, storage and pipeline test is green and `store()` issues the same single statement (G5).
-- [ ] AC2 — Every `/file-upload` response (single or list) leaves exactly one pending row per returned envelope, in the URL tenant's schema, with `thumbnail_ref`, uids and the right `anonymous` flag; a retried idempotent upload refreshes `uploaded_at` without duplicating.
+- [ ] AC2 — Every `/file-upload` response (single or list) leaves exactly one pending row per returned envelope, in the URL tenant's schema, with `thumbnail_ref`, uids and `public_form` = the form's `is_public`; a retried idempotent upload refreshes `uploaded_at` without duplicating.
 - [ ] AC3 — A failure to record never fails the upload.
 - [ ] AC4 — `store()` with an attached store deletes the pending rows of every `blob_ref` in the submission's data in the SAME transaction as the INSERT; a failed INSERT leaves them.
 - [ ] AC5 — A host calling `FormSubmissionStorage.store()` directly (no pipeline) gets the clear with no host code.
-- [ ] AC6 — `reap_once` deletes blob + thumbnail + row for expired unreferenced rows (48 h anonymous / 30 d authenticated by default), drops only the row when a submission still references the blob, and keeps the row when the delete fails.
+- [ ] AC6 — `reap_once` deletes blob + thumbnail + row for expired unreferenced rows (48 h for a public form / 7 d otherwise by default), drops only the row when a submission still references the blob, and keeps the row when the delete fails.
 - [ ] AC7 — `delete(strict=True)` surfaces non-missing errors; `delete()` without the flag is unchanged.
 - [ ] AC8 — The multi-file rejection cleanup deletes the thumbnail by ref (mutation-checked).
 - [ ] AC9 — FEAT-730's `store_guarded` (whichever lands second) calls `_clear_pending` inside its transaction; a test pins it.
@@ -510,7 +506,7 @@ def enforce_membership_unless_public(request, form, tenant) -> None             
 - ~~A transaction in `FormSubmissionStorage.store()`~~ — today a bare execute.
 - ~~`delete(..., strict=)`~~ — new; today's `delete` never raises on backend errors.
 - ~~`FormSubmissionStorage.references_blob` / any jsonpath query in parrot~~ — new.
-- ~~`is_anonymous_caller`~~ — new (FEAT-730 M4 describes the same rule in prose; one helper serves both).
+- ~~`is_anonymous_caller` / any caller-identity check~~ — deliberately NOT added (Juan, 2026-10-22: no caller distinction; the TTL is decided by `form.is_public`).
 - ~~A scheduler in parrot-formdesigner~~ — the host schedules `reap_once`.
 
 ### Edit Sites (Blueprint Anchors)
@@ -524,7 +520,6 @@ Verified against: `a0bb15f9d`
 | same | MODIFY | `if prior_blob_ref and prior_blob_ref not in written:` | `:327` | 1 |
 | same | MODIFY | `    if isinstance(result, list):` | `:339` | 1 |
 | same | MODIFY | `# leaves its entry and chunk blobs orphaned — no expiry/GC in V1.` (comment: chunk blobs remain out of scope) | `:75` | 1 |
-| `core/tenant.py` | MODIFY | `def enforce_membership_unless_public(request: web.Request, form: Any, tenant: str) -> None:` | `:189` | 1 |
 | `services/submissions.py` | MODIFY | `    async def store(` | `:313` | 1 |
 | same | MODIFY | `    def __init__(` | `:140` | 1 |
 | `services/blob_storage.py` | MODIFY | `    async def delete(self, blob_ref: str) -> None:` (1st = abstract :169, 2nd = manager-backed :323 — anchor with the following docstring/`key = self._from_ref(blob_ref)` line) | `:169/:323` | 2 |
@@ -548,11 +543,12 @@ Verified against: `a0bb15f9d`
 
 ### Known Risks / Gotchas
 - **FEAT-730 overlap**: FEAT-730 M2 adds `store_guarded` (same file, same transaction concern) and M4 rewires the file-upload route and blob tenant. Whichever lands second must (a) call `_clear_pending` inside `store_guarded`'s transaction, (b) keep recording under the URL tenant. FEAT-728 also edits the pipeline submit block (:231-260).
-- **Late submit after TTL**: an authenticated device that submits more than 7 days after uploading references a deleted blob. The safety check cannot help (no submission yet). ACCEPTED by Juan: after a week the rep re-takes the photo and fills the form again; host-tunable TTL.
+- **Late submit after TTL**: a device that submits to a non-public form more than 7 days after uploading references a deleted blob. The safety check cannot help (no submission yet). ACCEPTED by Juan: after a week the rep re-takes the photo and fills the form again; host-tunable TTL.
 - **Sink forms**: rows stored by a FEAT-457 sink are invisible to `references_blob` (it reads the generic table). If the post-sink clear fails, the reaper deletes a referenced blob after the TTL. Logged at warning level on the clear; accepted (sink forms are rare and the clear is a single DELETE).
 - **Pending rows in another tenant**: rows are recorded under the URL tenant; a host that stores the submission under a different tenant than the upload URL will not clear them (FieldSync uses the programme for both).
 - **Cost of the safety check**: `jsonb_path_exists` is evaluated only on rows of the pending row's `form_uid` (existing `idx_<table>_form_uid`), at most `batch` times per tenant per night. Upper bound ≈ batch × submissions-per-form JSON scans; acceptable for a nightly job. No new index on `data`.
 - **Thumbnails** live in the same bucket under the thumbnail service's own key; deleted by ref alongside the blob. A blob whose thumbnail generation failed has `thumbnail_ref = NULL`.
+- **Environment restores / shared bucket**: dev, staging and prod share one S3 bucket (`navigator-files-production`, prefix `fieldsync/forms/`). Each environment's reaper only acts on rows of its OWN database, so it can only delete blobs that environment recorded. Two rules follow: (1) after restoring a lower environment from a prod dump, `TRUNCATE <tenant>.fs_pending_uploads` in every schema — otherwise staging would reap prod's still-pending uploads, which prod may yet submit; (2) never run a bucket-listing cleanup from any environment (a lower env would see every prod photo as an orphan). Document both in the docs page (M6).
 - `temp://` refs from before the FEAT-460 wiring fix are never recorded (recording starts with this feature); the bad-scheme branch is defensive only.
 
 ### External Dependencies
@@ -567,9 +563,10 @@ Verified against: `a0bb15f9d`
 
 - [x] Which cleanup strategy? — *Resolved 2026-10-22 (Juan)*: pending-upload registry + nightly sweep (Option 3), not S3 lifecycle and not upload-on-submit.
 - [x] Same mechanism for the app and the public share page? — *Resolved 2026-10-22 (Juan)*: yes, one mechanism; separate feature from public forms.
-- [x] TTLs? — *Contract default*: 48 h anonymous / 7 days authenticated (Juan, 2026-10-22), host-configurable (FieldSync FEAT-801 config keys).
-- [ ] Should the reaper also handle abandoned chunk-upload blobs (`_CHUNK_BUFFERS`)? Out of scope v1. — *Owner: Juan*
-- [ ] Should `is_anonymous_caller` also become the source of FEAT-730's `SubmittedEvent.anonymous` (FEAT-730 Q2)? — *Owner: Juan*
+- [x] TTLs? — *Resolved 2026-10-22 (Juan)*: by FORM, not caller — 48 h for a public form, 7 days otherwise; host-configurable (FieldSync FEAT-801 config keys).
+- [x] Should the reaper also handle abandoned chunk-upload blobs (`_CHUNK_BUFFERS`)? — *Resolved 2026-10-22 (Juan)*: out of v1.
+- [x] Should `is_anonymous_caller` feed FEAT-730's `SubmittedEvent.anonymous`? — *Resolved 2026-10-22 (Juan)*: moot — `SubmittedEvent.anonymous` is dropped (FEAT-730 Q2) and `is_anonymous_caller` is not built; no caller distinction anywhere.
+- [x] One-off cleanup of pre-feature orphans? — *Resolved 2026-10-22 (Juan)*: no (see Known Risks: shared bucket, environment restores).
 
 ---
 
@@ -600,3 +597,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from the orphan-upload contract (Option 3) |
 | 0.2 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Authenticated TTL 30 → 7 days (Juan) |
+| 0.3 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Juan's decisions: TTL by form (`public_form` column, 48 h / 7 d), no caller distinction (`is_anonymous_caller` dropped), chunk uploads out of v1, restore/shared-bucket rule. APPROVED |

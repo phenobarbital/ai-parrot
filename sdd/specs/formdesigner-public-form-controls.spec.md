@@ -10,7 +10,7 @@ tags: [forms, public-forms, anonymous-submission, form-designer]
 **Feature ID**: FEAT-730
 **Date**: 2026-10-22
 **Author**: Juan Francisco Ruffato (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.x (next minor after FEAT-728)
 
 > Cross-repo initiative, one spec per repo (decided 2026-10-22):
@@ -42,11 +42,11 @@ registry toggle/exclude-provider keeps navigator-auth's exclude list in sync
    date, cap the number of responses, allow one response per person, or say
    what happens after submit. `FormSchema` has no such fields
    (`core/schema.py:466-491`).
-2. **Anonymous file uploads fail.** `…/fields/{field_uid}/file-upload` is not
+2. **File uploads to public forms need a login.** `…/fields/{field_uid}/file-upload` is not
    one of the five exempt globs and its route is mounted `tenant="required"`
    (`api/routes.py:452-455`). Worse, the handler takes the blob tenant from a
    client header (`X-Parrot-Tenant`, `api/file_upload.py:238`) — acceptable for
-   an authenticated caller, not for an anonymous one.
+   a private form, not for a public one where anybody can call it.
 3. **The host app cannot see public submissions.** `submit_data` gives the
    host no hook after a successful store, so FieldSync (FEAT-796) cannot index
    a public submission into its response viewer.
@@ -81,11 +81,15 @@ this initiative. FEAT-241 is not superseded — this spec extends it.
   neither exceed `max_responses` nor store a duplicate key.
 - G5. `GET /api/v1/{tenant}/forms/{form_uid}/availability` so a client can
   render the closed state without submitting.
-- G6. Anonymous file uploads on public forms (exempt glob + public-mode route +
-  membership check unless public + server-decided blob tenant).
+- G6. File uploads on public forms without a login (exempt glob + public-mode
+  route + membership check unless public + blob tenant = URL tenant for a
+  public form). No caller distinction: public is public (Juan, 2026-10-22).
 - G7. `setup_form_api(..., on_submitted=…)` post-submit callback with a typed
   `SubmittedEvent`, invoked by REST `/data` after a successful store.
-- G8. Generic storage writes the submission to the declared URL tenant.
+- G8. Generic storage writes the submission to the declared URL tenant — **behind
+  a `setup_form_api(tenant_scoped_submissions: bool = False)` flag** (Juan,
+  2026-10-22: "con tal que funcione en fieldsync"). Default OFF: other hosts
+  keep today's behaviour byte-for-byte; FieldSync passes `True`.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -153,7 +157,8 @@ POST /{tenant}/forms/{uid}/data ──→ FormAPIHandler.submit_data
                      │        cap/key set     → storage.store_guarded (advisory lock,
                      │                          count, key check, INSERT) ─→ ResponseLimitReached /
                      │                                                        DuplicateResponse
-                     │        otherwise       → storage.store(submission, tenant=tenant)
+                     │        otherwise       → storage.store(submission, tenant=tenant if
+                     │                          tenant_scoped_submissions else None)
                      ▼
               409 {error, reason, field_id?}      200 → on_submitted(SubmittedEvent) (host hook)
 
@@ -174,7 +179,7 @@ GET /{tenant}/forms/{uid}/availability ──→ FormAPIHandler.get_availability
 | `public_form_paths` (`services/public_forms.py:13`) | modifies | +2 globs (7 total) |
 | `handle_file_upload` (`api/file_upload.py:169`) | modifies | membership-unless-public, blob tenant |
 | `AudioFormWSHandler` submit (`api/audio_ws.py:1192`) | modifies | map `SubmissionRejected` |
-| FieldSync FEAT-796 | consumer | passes `on_submitted`; relies on G8 tenant write |
+| FieldSync FEAT-796 | consumer | passes `on_submitted` and `tenant_scoped_submissions=True`; relies on G8 tenant write |
 
 ### Data Models
 ```python
@@ -205,14 +210,14 @@ class SubmittedEvent(BaseModel):
     form_id: str
     form_version: str
     tenant: str
-    anonymous: bool          # AuthContext scheme == "none" at submit time
     is_public: bool          # form.is_public at submit time
     created_at: datetime     # UTC, the stored submission's created_at
 ```
 
 ### New Public Interfaces
 ```python
-setup_form_api(app, registry, *, ..., on_submitted: SubmittedCallback | None = None) -> None
+setup_form_api(app, registry, *, ..., on_submitted: SubmittedCallback | None = None,
+               tenant_scoped_submissions: bool = False) -> None
 SubmittedCallback = Callable[[SubmittedEvent], Awaitable[None]]
 
 GET  /api/v1/{tenant}/forms/{form_uid}/availability -> 200 AvailabilityState | 403 | 404
@@ -333,7 +338,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
 
 ### Module 3: Pipeline enforcement
 - **Path**: modifies `packages/parrot-formdesigner/src/parrot_formdesigner/services/submission_pipeline.py`
-- **Responsibility**: Fail-fast closed check; guarded store when the policy needs it; stamp the URL tenant on the generic store; translate storage refusals into `SubmissionRejected`.
+- **Responsibility**: Fail-fast closed check; guarded store when the policy needs it; stamp the URL tenant on the generic store when `tenant_scoped_submissions` is on; translate storage refusals into `SubmissionRejected`.
 - **Depends on**: M1, M2
 - **Interface Skeleton**:
   ```python
@@ -351,8 +356,11 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
           """(1) evaluate_open(form.public_access, now=utcnow()) == "form_closed" -> raise
           SubmissionRejected("form_closed") BEFORE onBeforeSubmit (anchor :137 / :146).
           (2) unchanged validate / plausibility / metadata.
-          (3) FormSubmission gets tenant=tenant (anchor :206 block) and the generic branch
-          (:258-260) calls store(submission, tenant=tenant) — or, when public_access sets
+          (3) When self.tenant_scoped_submissions (new ctor kwarg, default False; FormAPIHandler
+          passes it from setup_form_api through _build_submission_pipeline, handlers.py:262):
+          FormSubmission gets tenant=tenant (anchor :206 block) and the generic branch
+          (:258-260) calls store(submission, tenant=tenant). When False: today's behaviour
+          (no tenant), and store_guarded runs on the storage's default schema. — or, when public_access sets
           max_responses or unique_key_field, store_guarded(...) with
           unique_value = normalize_key_value(data[unique_key_field]).
           ResponseLimitReached -> SubmissionRejected("response_limit_reached");
@@ -363,7 +371,7 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
 
 ### Module 4: HTTP surface (409, availability, exempt paths, anonymous file upload, audio WS)
 - **Path**: modifies `api/handlers.py`, `api/routes.py`, `services/public_forms.py`, `api/file_upload.py`, `api/audio_ws.py`
-- **Responsibility**: Expose the policy over HTTP and let anonymous respondents upload files to public forms.
+- **Responsibility**: Expose the policy over HTTP and let anyone upload files to public forms without a login.
 - **Depends on**: M1, M2, M3
 - **Interface Skeleton**:
   ```python
@@ -394,8 +402,9 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
   async def handle_file_upload(request: web.Request) -> web.Response:
       """After the form is resolved (:210, 1st occurrence): enforce_membership_unless_public(request,
       form, tenant) — a private form keeps requiring tenant membership now that the route is
-      public-mode. Blob tenant (:238): an anonymous caller (no authenticated session) ALWAYS uses
-      the declared URL tenant; X-Parrot-Tenant is honoured only for authenticated callers."""
+      public-mode. Blob tenant (:238): for a PUBLIC form the blob tenant is ALWAYS the declared
+      URL tenant (X-Parrot-Tenant ignored); for a private form, today's behaviour. Decided by the
+      form, never by who the caller is."""
 
   # api/audio_ws.py (modifies the submit except chain, 2nd PlausibilityBlocked occurrence :1207)
   except SubmissionRejected as exc:
@@ -416,20 +425,21 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
       form_id: str
       form_version: str
       tenant: str
-      anonymous: bool
       is_public: bool
       created_at: datetime
   SubmittedCallback = Callable[[SubmittedEvent], Awaitable[None]]
 
   # api/routes.py — setup_form_api (verified: :192), new kwarg after teams_renderer (:214)
-  def setup_form_api(..., teams_renderer=None, on_submitted: SubmittedCallback | None = None) -> None:
-      """Passes on_submitted to FormAPIHandler (construction :348-361)."""
+  def setup_form_api(..., teams_renderer=None, on_submitted: SubmittedCallback | None = None,
+                     tenant_scoped_submissions: bool = False) -> None:
+      """Passes on_submitted and tenant_scoped_submissions to FormAPIHandler (construction :348-361)."""
 
   # api/handlers.py — FormAPIHandler.__init__ (verified: :145), new kwarg after sink_factory (:158)
-  def __init__(self, ..., sink_factory=None, on_submitted: SubmittedCallback | None = None) -> None: ...
+  def __init__(self, ..., sink_factory=None, on_submitted: SubmittedCallback | None = None,
+               tenant_scoped_submissions: bool = False) -> None: ...
   # submit_data, just before `return _reply(body_out, status=200)` (:1811):
   #   when self._on_submitted is set and outcome.stored_in != "none": await it with
-  #   SubmittedEvent(anonymous=_auth_ctx.scheme == "none", is_public=form.is_public,
+  #   SubmittedEvent(is_public=form.is_public,
   #   created_at=<stored submission created_at>, ...); any exception -> logger.warning, swallowed.
   ```
   `SubmitOutcome` (`services/submission_pipeline.py:41`) gains `created_at: datetime | None = None`
@@ -454,14 +464,15 @@ POST /api/v1/{tenant}/forms/{form_uid}/data         -> 409 {"error", "reason", "
 | `test_evaluate_open` | M1 | manual close, past/future `closes_at`, None config |
 | `test_public_form_paths_seven` | M4 | 7 globs incl. availability and `fields/*/file-upload` |
 | `test_submit_closed_before_validation` | M3 | closed form → `SubmissionRejected("form_closed")`, validator and plausibility never called, onError not dispatched |
-| `test_generic_store_receives_tenant` | M3 | `store`/`store_guarded` called with the URL tenant (mutation: drop the kwarg → RED) |
+| `test_generic_store_receives_tenant` | M3 | `tenant_scoped_submissions=True` → `store`/`store_guarded` called with the URL tenant (mutation: drop the kwarg → RED) |
+| `test_generic_store_flag_off_unchanged` | M3 | default (`False`) → `store(submission)` called exactly as today, no tenant |
 | `test_limit_maps_to_rejection` / `test_duplicate_maps_to_rejection` | M3 | storage exceptions → reason codes; `field_id` set for duplicate |
 | `test_submit_data_409_body` | M4 | 409 body shape for each reason |
 | `test_availability_states` | M4 | open / closed / limit / no block; private form anonymous → 403/404 like get_form |
-| `test_file_upload_anonymous_public` | M4 | public form, no session → 200; header `X-Parrot-Tenant` ignored |
+| `test_file_upload_public_form_no_session` | M4 | public form, no session → 200; header `X-Parrot-Tenant` ignored for a public form (with or without a session) |
 | `test_file_upload_private_requires_member` | M4 | private form on public-mode route → TenantForbidden |
 | `test_audio_ws_rejection_ioFailed` | M4 | `SubmissionRejected` → `IOFailed(code="FORM_CLOSED")` |
-| `test_on_submitted_called_once` | M5 | success → one `SubmittedEvent` with `anonymous`/`is_public`; rejection → not called |
+| `test_on_submitted_called_once` | M5 | success → one `SubmittedEvent` with `is_public` (no `anonymous` field); rejection → not called |
 | `test_on_submitted_error_swallowed` | M5 | callback raises → still 200 |
 
 ### Integration Tests
@@ -503,8 +514,8 @@ def controlled_form() -> FormSchema:
 - [ ] AC4 — With `unique_key_field`, a second response with the same normalized value returns 409 `duplicate_response` + `field_id`; a blank value is never checked.
 - [ ] AC5 — `GET …/availability` returns `{accepting, reason, completion}` and is auth-exempt for public forms; a private form answers exactly like `GET …/forms/{form_uid}` (403/404).
 - [ ] AC6 — `public_form_paths` returns 7 globs; both the toggle callback and the exclude provider register them (no code change needed beyond the helper).
-- [ ] AC7 — An anonymous caller can upload to an upload field of a public form; the blob lands under the declared URL tenant regardless of `X-Parrot-Tenant`; a private form still requires membership.
-- [ ] AC8 — Generic-storage submissions from the pipeline are written to `<URL tenant>.<table>` with `tenant` set.
+- [ ] AC7 — Anyone can upload to an upload field of a public form without a session; for a public form the blob lands under the declared URL tenant regardless of `X-Parrot-Tenant`; a private form still requires membership.
+- [ ] AC8 — With `setup_form_api(tenant_scoped_submissions=True)`, generic-storage submissions from the pipeline are written to `<URL tenant>.<table>` with `tenant` set; with the default (`False`), byte-for-byte today's behaviour.
 - [ ] AC9 — `setup_form_api(on_submitted=cb)` calls `cb` exactly once per successful REST `/data` store with the contract's `SubmittedEvent`; never on 4xx/5xx; a raising callback never changes the response.
 - [ ] AC10 — `CompletionAction.redirect_url` accepts only absolute `https://` URLs.
 - [ ] AC11 — Docs page added; package version bumped; ai-parrot-server released in lockstep.
@@ -648,11 +659,13 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 | `services/submission_pipeline.py` | MODIFY | `        auth = auth_context or AuthContext(scheme="none")` | `:137` | 1 |
 | `services/submission_pipeline.py` | MODIFY | `                created_at=datetime.now(timezone.utc),` | `:206` | 1 |
 | `services/submission_pipeline.py` | MODIFY | `                await self.submission_storage.store(submission)` | `:259` | 1 |
+| `services/submission_pipeline.py` | MODIFY | `        sink_factory: "SinkFactory \| None" = None,` (ctor: add `tenant_scoped_submissions: bool = False`) | `:83` | 1 |
 | `services/public_forms.py` | MODIFY | `        f"{base}/validate",` | `:52` | 1 |
 | `api/submission_events.py` | CREATE | — | — | — |
 | `api/handlers.py` | MODIFY | `        sink_factory: "SinkFactory \| None" = None,` | `:158` | 1 |
 | `api/handlers.py` | MODIFY | 3 lines, submit copy: `        except PlausibilityBlocked as exc:` / `            return _reply(` / `                {"error": f"Answer plausibility check unavailable: {exc.reason}", "code": "PLAUSIBILITY_UNAVAILABLE"},` | `:1789-1791` | 2 (bare line; `/validate` copy at `:1166` returns `JSONResponse`) |
 | `api/handlers.py` | MODIFY | `        return _reply(body_out, status=200)` | `:1811` | 1 |
+| `api/handlers.py` | MODIFY | `    def _build_submission_pipeline(self, form: FormSchema \| None = None) -> "SubmissionPipeline":` (pass `tenant_scoped_submissions`) | `:262` | 1 |
 | `api/handlers.py` | MODIFY | `    async def get_form(self, request: web.Request) -> web.Response:` (insert `get_availability` after get_form) | `:944` | 1 |
 | `api/routes.py` | MODIFY | `    teams_renderer: "AbstractFormRenderer \| None" = None,` | `:214` | 1 |
 | `api/routes.py` | MODIFY | `        sink_factory=sink_factory,` | `:360` | 1 |
@@ -682,8 +695,7 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 - All SQL identifiers via the existing `_qualified()` / `validate_identifier` helpers; the key name is a bind parameter (`data->>$n`), never interpolated.
 
 ### Known Risks / Gotchas
-- **Tenant write change (G8) is a behaviour change.** Non-public authenticated REST `/data` callers that today land in the default schema will land in `<tenant>.<table>`. The host must have provisioned that table (FieldSync's execution path already writes there — fieldsync `execution/services.py:645`). `store()` does not auto-create tables: a missing per-tenant table becomes a 5xx instead of a silent mis-filed row. See §8 Q1.
-- **`anonymous` is derived from `AuthContext.scheme == "none"`** (contract). A caller authenticated only by a session cookie, with no `Authorization` header and no `request["auth_context"]`, is also reported `anonymous=True` (`_build_auth_context` defaults, `api/handlers.py:453-480`). Hosts using `on_submitted` should also check `is_public`. §8 Q2.
+- **Tenant write change (G8) is opt-in.** With `tenant_scoped_submissions=True`, REST `/data` callers that today land in the default schema land in `<tenant>.<table>`. The host must have provisioned that table (FieldSync's execution path already writes there — fieldsync `execution/services.py:645`). `store()` does not auto-create tables: a missing per-tenant table becomes a 5xx instead of a silent mis-filed row. Default OFF, so other hosts are untouched (§8 Q1).
 - **Response-control enforcement covers pipeline channels only** (REST `/data`, audio WS). A host that writes `submission_storage.store()` directly (FieldSync execution) is not subject to `public_access`; its rows still count toward `max_responses` and uniqueness because they share the table.
 - **Uniqueness normalization is SQL `lower(btrim())` on both sides**, not Python `casefold()`: identical for ASCII and most scripts, differs only for special-case folds (e.g. `ß`). Chosen so the comparison happens inside the locked transaction without a second normalized column.
 - **Legacy rows:** submissions already filed in the default schema (`navigator.fs_form_data`, tenant NULL) are not migrated and are invisible to `count_responses` for a tenant. Existing public forms with no `public_access` are unaffected.
@@ -708,10 +720,10 @@ Verified against: `d5f75d3e2`. Paths under `packages/parrot-formdesigner/src/par
 - [x] Which field types are allowed in public forms? — *Resolved in brainstorm*: all, author's responsibility.
 - [x] Link format? — *Resolved in brainstorm*: v1 keeps `/share/form/{tenant}/{form_uid}` (svelte); opaque token only if requested later.
 - [x] Typed block or `meta`? — *Resolved (contract 2026-10-22)*: typed `public_access`, FEAT-649 precedent.
-- [ ] Q1. G8 (tenant-stamped generic store): are there non-FieldSync hosts calling REST `/data` whose per-tenant `fs_form_data` table does not exist? If so, gate G8 behind a `setup_form_api` flag instead of changing it unconditionally. — *Owner: Jesús Lara*
-- [ ] Q2. Should `SubmittedEvent.anonymous` be derived from the navigator session (no authenticated user) rather than `AuthContext.scheme`? The contract fixes `scheme == "none"`; changing it needs FEAT-796 to agree. — *Owner: Juan*
+- [x] Q1. G8 (tenant-stamped generic store) unconditional or gated? — *Resolved 2026-10-22 (Juan)*: gated behind `setup_form_api(tenant_scoped_submissions: bool = False)`, default OFF; FieldSync passes `True` ("con tal que funcione en fieldsync").
+- [x] Q2. How is `SubmittedEvent.anonymous` derived? — *Resolved 2026-10-22 (Juan)*: it is not — the field is DROPPED. "Es público… puedo ser o no ser empleado, da igual": no caller distinction anywhere; FieldSync indexes every `/data` submission of a form with `is_public`.
 - [x] Q3. Anonymous thumbnails — *Resolved 2026-10-22 (Juan)*: `…/thumbnail` stays authenticated. The share page (navigator-svelte FEAT-797 M4) shows a LOCAL preview of the picked file and never requests `thumbnail_url`; the admin sees the photo through FieldSync's authenticated viewer.
-- [ ] Q4. Upload abuse ceiling for anonymous callers (size/count per request) beyond the field's own `constraints` — reuse the field config (current plan) or add a public cap? — *Owner: Juan*
+- [x] Q4. Extra upload ceiling for public forms? — *Resolved 2026-10-22 (Juan)*: no — the existing limits are enough: the field's own `constraints` (size/type), the share-page proxy's 30 uploads/min/IP and the 25 MB `BODY_SIZE_LIMIT` (navigator-svelte FEAT-797 M4).
 - [x] Q5. How do photo/file answers travel from the share page? — *Resolved 2026-10-22 (Juan)*: upload first — the share page uploads each file on pick to `…/fields/{field_uid}/file-upload` (FEAT-460 design, opened anonymously by M4 of this spec) through a same-origin SvelteKit proxy, and sends parrot's `FileEnvelope` (`data_url` stripped) in `/data`. The inline-base64 path of FEAT-357 is retired for the share page. M4's anonymous file-upload is therefore REQUIRED for v1, not optional.
 
 ---
@@ -747,3 +759,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Initial draft from fieldsync brainstorm `public-forms` (Option A) and the cross-repo contract |
 | 0.2 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Q3/Q5 resolved: share page uploads first through anonymous `/file-upload`; thumbnails stay authenticated |
+| 0.3 | 2026-10-22 | Juan Francisco Ruffato (with Claude) | Juan's decisions: G8 behind `tenant_scoped_submissions` (default off); `SubmittedEvent.anonymous` dropped; blob tenant decided by the form; no extra upload cap. APPROVED |
