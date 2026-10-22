@@ -366,6 +366,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # Status and Events
         self._configured: bool = False
+        # FEAT-721: entries into configure(); a re-entry with no new app is a no-op.
+        self._configure_count: int = 0
         self._status: AgentStatus = AgentStatus.IDLE
         self._listeners: Dict[str, List[Callable]] = {}
 
@@ -1573,6 +1575,18 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
 
+        Idempotent per instance. The counter is incremented on entry; a
+        second or later entry returns immediately (INFO log) when the
+        resolved app is the SAME object as the one already bound —
+        including both being ``None``. An app arriving where none was bound
+        before (CLI first, server later) is a genuine reconfiguration and
+        runs the pipeline; Module 1 makes the toolkit re-registration in
+        that path safe.
+
+        Subclass overrides that do their own work AFTER
+        ``await super().configure(app)`` guard it with
+        ``if self.configure_count > 1: return``.
+
         Wrapped in ``try/except/finally`` so ``self._configured`` is always
         flipped to ``True`` at the end, even when an inner step raises.
         Without this guarantee an uncaught error during configure() leaves
@@ -1582,10 +1596,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         raises ``ToolNameCollisionError`` on top of the original failure —
         masking the real cause.
         """
-        self._configured = False
-        self.app = None
+        previous_app = getattr(self, "app", None)
+        resolved_app = None
         if app:
-            self.app = app if isinstance(app, web.Application) else app.get_app()
+            resolved_app = app if isinstance(app, web.Application) else app.get_app()
+        self._configure_count = getattr(self, "_configure_count", 0) + 1
+        if self._configure_count > 1 and (resolved_app is None or resolved_app is previous_app):
+            self.logger.info(
+                "configure() already ran for '%s' (entry #%d); skipping. Use reconfigure() to force a re-run.",
+                getattr(self, "name", self.__class__.__name__),
+                self._configure_count,
+            )
+            return
+        self._configured = False
+        self.app = resolved_app
+        if resolved_app is not None:
             if self.tool_manager._server_param_source is None:  # a Studio build already bound it before its tools
                 self.tool_manager.set_server_param_source(self.app)
         try:
@@ -1785,6 +1810,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         The default implementation is a no-op. Subclasses that override
         this should ``await super().post_configure()`` first to stay
         forward-compatible with future base-class setup added here.
+
+        Called once per configure() that actually runs its pipeline, and again by
+        reconfigure(). An override MUST be safe to run more than once per instance:
+        adopt an already-registered toolkit via
+        ``self.tool_manager.find_registered_toolkit(...)`` instead of building a
+        second one. See ``docs/agent-configure-lifecycle.md``.
         """
         return None
 
@@ -1851,6 +1882,24 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     def is_configured(self) -> bool:
         """Return whether the bot has completed its configuration."""
         return self._configured
+
+    @property
+    def configure_count(self) -> int:
+        """How many times :meth:`configure` has been entered on this instance."""
+        return getattr(self, "_configure_count", 0)
+
+    async def reconfigure(self, app=None) -> None:
+        """Reset the idempotency counter and run :meth:`configure` again.
+
+        The ONLY supported way to re-run the configure pipeline on a live
+        instance. ``post_configure()`` runs again, so overrides must adopt
+        already-registered toolkits (see ``docs/agent-configure-lifecycle.md``).
+
+        Args:
+            app: The aiohttp app to bind; defaults to the currently bound one.
+        """
+        self._configure_count = 0
+        await self.configure(app if app is not None else getattr(self, "app", None))
 
     def get_conversation_memory(self, storage_type: str = "memory", **kwargs) -> ConversationMemory:
         """Factory function to create conversation memory instances."""
