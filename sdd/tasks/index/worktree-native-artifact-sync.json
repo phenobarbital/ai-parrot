@@ -103,7 +103,7 @@
       "feature_id": "FEAT-722",
       "feature": "worktree-native-artifact-sync",
       "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -113,8 +113,9 @@
       "parallelism_notes": "calls missing_artifacts and extends sync_native_artifacts, both written by TASK-4607 in native_artifacts.py (same file)",
       "assigned_to": null,
       "started_at": "2026-10-22T15:07:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4608-native-artifact-autobuild.md"
+      "completed_at": "2026-10-22T15:27:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4608-native-artifact-autobuild.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4609",

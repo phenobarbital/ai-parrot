@@ -399,10 +399,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) — seat: gpt-5.6-terra (codex), 1 attempt
+**Date**: 2026-10-22
+**Notes**: Added autobuild to native_artifacts.py. test_native_artifacts.py: 21 passed. Residual ruff B023 (loop var closure, called immediately) left for /sdd-done.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
