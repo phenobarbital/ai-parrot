@@ -16,7 +16,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task: creates core/public_access.py; no upstream symbol needed.",
       "assigned_to": null,
       "started_at": "2026-10-22T23:35:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4630-public-access-schema-block.md"
+      "completed_at": "2026-10-22T23:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4630-public-access-schema-block.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4631",
