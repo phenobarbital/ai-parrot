@@ -73,7 +73,7 @@
       "feature_id": "FEAT-618",
       "feature": "tests-test-wheel-layout-tech-debt",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,9 @@
       "parallelism_notes": "Regenerates tests/fixtures/form_controls_response_schema.json from the live endpoint, whose payload changes once TASK-3911 adds 11 entries to _FIELD_SCHEMA_SNIPPETS (field_helpers.py:15).",
       "assigned_to": null,
       "started_at": "2026-10-22T14:21:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3912-formdesigner-registry-fixture-isolation.md"
+      "completed_at": "2026-10-22T14:48:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3912-formdesigner-registry-fixture-isolation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3913",
