@@ -333,10 +333,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat gpt-5.6-sol (codex, attempt 1, 120.9s); review fixes by orchestrator
+**Date**: 2026-10-22
+**Notes**: Added FirefliesInsightsAgent class with configure/post_configure, _ensure_fireflies_mcp, _call_fireflies_tool, _fetch_listing (pagination), _fetch_transcript, _fetch_summary, _build_jira_toolkit. Review fix: test set _agents_dir=None causing fallback to read-only AGENTS_DIR in bwrap; fixed by setting _agents_dir=tmp_path/"agents" in test_configure_uses_file_skills_only. Merge-tier validation 80 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-21T23:42:24+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T01:02:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -44,16 +44,17 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root of the watcher chain; touches only wiki/project.py + test_inbox_config.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4564-inbox-config-stability-window.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-21T23:53:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4564-inbox-config-stability-window.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4565",
@@ -62,7 +63,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,9 +72,10 @@
       "parallel": true,
       "parallelism_notes": "needs InboxConfig.stability_window / stability_poll_interval from TASK-4564 (wiki/project.py) for StabilityProbe.from_config.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4565-inbox-watcher-stability-probe.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:06:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4565-inbox-watcher-stability-probe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4566",
@@ -82,7 +84,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -91,9 +93,10 @@
       "parallel": true,
       "parallelism_notes": "imports StabilityProbe / WatcherStats / _require_watchdog / is_candidate from TASK-4565 and appends to the same file (watcher.py, test_watcher.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4566-inbox-watcher-lifecycle.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:20:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4566-inbox-watcher-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4567",
@@ -102,7 +105,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -111,9 +114,10 @@
       "parallel": true,
       "parallelism_notes": "constructs InboxWatcher and catches WatcherUnavailable from TASK-4566 (inbox/watcher.py); only task touching wiki/cli.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4567-wikitoolkit-inbox-watch-flag.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:27:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4567-wikitoolkit-inbox-watch-flag.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4568",
@@ -122,7 +126,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -131,9 +135,10 @@
       "parallel": true,
       "parallelism_notes": "imports InboxWatcher re-exported by TASK-4566 (inbox/__init__.py); creates its own test file only.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4568-inbox-watcher-integration-test.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:32:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4568-inbox-watcher-integration-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4569",
@@ -142,16 +147,17 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root of the agent chain; creates bots/fireflies_insights.py + test_fireflies_insights.py (models only).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4569-fireflies-insights-models.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-21T23:54:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4569-fireflies-insights-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4570",
@@ -160,7 +166,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -169,9 +175,10 @@
       "parallel": true,
       "parallelism_notes": "appends the agent class to fireflies_insights.py created by TASK-4569 and uses its ChatId / InsightRunReport.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4570-fireflies-insights-agent-core.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:06:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4570-fireflies-insights-agent-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4571",
@@ -180,7 +187,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -189,9 +196,10 @@
       "parallel": true,
       "parallelism_notes": "calls _fetch_listing / _fetch_transcript / _fetch_summary / registry from TASK-4570 in the same file (fireflies_insights.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4571-fireflies-inbox-drop-and-sync.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:20:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4571-fireflies-inbox-drop-and-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4572",
@@ -200,7 +208,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -209,9 +217,10 @@
       "parallel": true,
       "parallelism_notes": "anchors on `processed.append(meeting)` inside sync_meetings written by TASK-4571 (fireflies_insights.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4572-fireflies-insights-telegram.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4572-fireflies-insights-telegram.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4573",
@@ -220,16 +229,17 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: edits the repo-wide .gitignore (/agents/ rule), which decides what every other task can commit.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4573-agent-assets-gitignore-template-skill.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-21T23:49:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4573-agent-assets-gitignore-template-skill.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4574",
@@ -238,7 +248,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -248,9 +258,10 @@
       "parallel": true,
       "parallelism_notes": "anchors on `text = self._format_insights_message(insights)` in notify_insights from TASK-4572 (fireflies_insights.py); consumes the ten-key fireflies/action_item template contract created by TASK-4573.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4574-fireflies-jira-confirmation.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T00:39:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4574-fireflies-jira-confirmation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4575",
@@ -259,7 +270,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -268,9 +279,10 @@
       "parallel": true,
       "parallelism_notes": "exercises cmd_create_ticket / _authorize / approval state from TASK-4574; creates its own test file only.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4575-fireflies-insights-integration-tests.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T01:02:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4575-fireflies-insights-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4576",
@@ -279,7 +291,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -289,9 +301,10 @@
       "parallel": true,
       "parallelism_notes": "documents the --watch flag from TASK-4567 (wiki/cli.py) and the /fireflies_ticket protocol + template contract from TASK-4574.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4576-fireflies-insights-docs.md"
+      "started_at": "2026-10-21T23:46:31+00:00",
+      "completed_at": "2026-10-22T01:02:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4576-fireflies-insights-docs.md",
+      "verification": "verified"
     }
   ]
 }

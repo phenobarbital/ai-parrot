@@ -267,10 +267,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat gpt-5.6-sol (codex, attempt 1, 193.9s)
+**Date**: 2026-10-22
+**Notes**: Added ingestion path: _ingest_meeting builds FirefliesMeeting from fetched data, writes to inbox, logs via MeetingRegistry. 90 passed merge-tier validation. No review fixes needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -361,10 +361,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat gpt-5.6-sol (codex, attempt 1, 120.9s)
+**Date**: 2026-10-22
+**Notes**: Models added in `parrot/bots/fireflies_insights.py` (FirefliesMeeting, ActionItem, MeetingInsights, PendingApproval, InsightRunReport, ChatId). Merge-tier validation green (64 passed). Orchestrator reviewed the diff; no fixes needed. Closed via close_task.sh because finalize_task requires HEAD == the task's merge commit (a sibling task had already moved HEAD).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -235,10 +235,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4564
+- Feature: fireflies-insights-agent
+- Implementation SHA: f2b9c15a3b3622a4831920b2c6eec5a27fb1be9d
+- Closed at (UTC): 2026-10-21T23:53:25+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 105.4s · Tokens: n/a |
