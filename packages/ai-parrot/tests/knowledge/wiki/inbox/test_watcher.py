@@ -19,6 +19,7 @@ from parrot.knowledge.wiki.inbox.watcher import (
 from parrot.knowledge.wiki.inbox.processor import InboxLockBusy
 from parrot.knowledge.wiki.project import InboxConfig, WikiProjectConfig
 
+
 class FakeClock:
     """Deterministic clock and sleep for tests."""
 
@@ -55,18 +56,14 @@ def scripted_stat(samples):  # list[tuple[size, mtime_ns] | None], consumed in o
 async def test_identical_samples_are_stable(tmp_path: Path) -> None:
     """Stable when all samples are identical and window elapsed."""
     clock = FakeClock()
-    probe = StabilityProbe(
-        3.0, 1.5, stat=scripted_stat([(10, 1)] * 3), sleep=clock.sleep, clock=clock
-    )
+    probe = StabilityProbe(3.0, 1.5, stat=scripted_stat([(10, 1)] * 3), sleep=clock.sleep, clock=clock)
     assert await probe.is_stable(tmp_path / "a.md") is True
 
 
 async def test_same_size_changed_mtime_is_unstable(tmp_path: Path) -> None:
     """Unstable when mtime changes even if size stays the same."""
     clock = FakeClock()
-    probe = StabilityProbe(
-        3.0, 1.5, stat=scripted_stat([(10, 1), (10, 2), (10, 2)]), sleep=clock.sleep, clock=clock
-    )
+    probe = StabilityProbe(3.0, 1.5, stat=scripted_stat([(10, 1), (10, 2), (10, 2)]), sleep=clock.sleep, clock=clock)
     assert await probe.is_stable(tmp_path / "a.md") is False
 
 
@@ -134,18 +131,14 @@ def test_watchdog_absent_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_size_change_is_unstable(tmp_path: Path) -> None:
     """Unstable when size changes."""
     clock = FakeClock()
-    probe = StabilityProbe(
-        3.0, 1.5, stat=scripted_stat([(10, 1), (11, 1), (11, 1)]), sleep=clock.sleep, clock=clock
-    )
+    probe = StabilityProbe(3.0, 1.5, stat=scripted_stat([(10, 1), (11, 1), (11, 1)]), sleep=clock.sleep, clock=clock)
     assert await probe.is_stable(tmp_path / "a.md") is False
 
 
 async def test_insufficient_samples_unstable(tmp_path: Path) -> None:
     """Unstable if window elapses with only one sample."""
     clock = FakeClock()
-    probe = StabilityProbe(
-        3.0, 1.5, stat=scripted_stat([(10, 1)]), sleep=clock.sleep, clock=clock
-    )
+    probe = StabilityProbe(3.0, 1.5, stat=scripted_stat([(10, 1)]), sleep=clock.sleep, clock=clock)
     assert await probe.is_stable(tmp_path / "a.md") is False
 
 

@@ -22,6 +22,7 @@ from parrot.bots.fireflies_insights import (
 from parrot.bots.agent import Agent
 from parrot.integrations.telegram.context import telegram_chat_scope
 
+
 def _bare_agent() -> FirefliesInsightsAgent:
     """Return an uninitialized agent with just enough state for isolated methods."""
     agent = FirefliesInsightsAgent.__new__(FirefliesInsightsAgent)

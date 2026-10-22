@@ -35,8 +35,7 @@ def _require_watchdog() -> Any:
         from watchdog import observers  # noqa: PLC0415 — lazy by design (spec §8 Q1)
     except ImportError as exc:
         raise WatcherUnavailable(
-            "wikitoolkit inbox --watch needs the optional 'watchdog' package: "
-            f"install ai-parrot[{WATCHDOG_EXTRA}]"
+            "wikitoolkit inbox --watch needs the optional 'watchdog' package: " f"install ai-parrot[{WATCHDOG_EXTRA}]"
         ) from exc
     return observers
 

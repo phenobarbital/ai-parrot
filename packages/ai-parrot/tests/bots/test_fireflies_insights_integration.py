@@ -154,6 +154,7 @@ async def test_insights_survive_drop_failure(agent: FirefliesInsightsAgent, monk
 @pytest.mark.asyncio
 async def test_ingest_survives_insight_failure(agent: FirefliesInsightsAgent, monkeypatch: pytest.MonkeyPatch) -> None:
     """AC9: when generate_insights raises, the file is still in the inbox."""
+
     async def failing_invoke(prompt, output_type=None, system_prompt=None):
         raise RuntimeError("LLM unavailable")
 
@@ -179,6 +180,7 @@ async def test_confirm_and_replay(agent: FirefliesInsightsAgent) -> None:
     bot = agent._wrapper.bot
     sent_text = "".join(msg.get("text", "") for msg in bot.sent)
     import re
+
     ids = re.findall(r"/fireflies_ticket (\S+)", sent_text)
     assert len(ids) >= 1
     insight_id = ids[0]
@@ -201,6 +203,7 @@ async def test_foreign_chat_refused(agent: FirefliesInsightsAgent) -> None:
     bot = agent._wrapper.bot
     sent_text = "".join(msg.get("text", "") for msg in bot.sent)
     import re
+
     ids = re.findall(r"/fireflies_ticket (\S+)", sent_text)
     assert len(ids) >= 1
     insight_id = ids[0]
@@ -237,6 +240,4 @@ async def test_long_transcript_chunks_within_limit(agent: FirefliesInsightsAgent
     bot = agent._wrapper.bot
     budget = agent._TELEGRAM_MAX_MESSAGE
     for msg in bot.sent:
-        assert len(msg.get("text", "")) <= budget, (
-            f"Chunk length {len(msg['text'])} exceeds {budget}"
-        )
+        assert len(msg.get("text", "")) <= budget, f"Chunk length {len(msg['text'])} exceeds {budget}"

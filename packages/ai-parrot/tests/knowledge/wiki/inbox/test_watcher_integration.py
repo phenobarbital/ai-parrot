@@ -28,9 +28,7 @@ class RecordingProcessor:
 
     async def run(self, **kwargs):
         """Snapshot visible filenames and clear the inbox to emulate archiving."""
-        names = sorted(
-            p.name for p in self.inbox.iterdir() if p.is_file() and not p.name.startswith(".")
-        )
+        names = sorted(p.name for p in self.inbox.iterdir() if p.is_file() and not p.name.startswith("."))
         type(self).seen.append(names)
         for p in self.inbox.iterdir():
             if p.is_file() and not p.name.startswith("."):
