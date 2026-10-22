@@ -31,7 +31,7 @@ class TestOpenAIWhisperBackendInit:
         """Backend initializes with API key."""
         backend = OpenAIWhisperBackend(api_key="sk-test123")
         assert backend.api_key == "sk-test123"
-        assert backend.model == "whisper-1"
+        assert backend.model == "gpt-transcribe"
         assert backend.max_retries == 3
         assert backend._session is None
 
@@ -396,3 +396,48 @@ class TestOpenAIWhisperBackendAPIURL:
             OpenAIWhisperBackend.API_URL
             == "https://api.openai.com/v1/audio/transcriptions"
         )
+
+
+GPT_TRANSCRIBE_JSON = {
+    "text": "Hello, welcome to the world of generative AI audio.",
+    "languages": [{"code": "en"}],
+    "usage": {"type": "duration", "seconds": 5},
+}
+WHISPER_VERBOSE = {
+    "task": "transcribe", "language": "english", "duration": 4.97,
+    "text": "Hello!", "segments": [],
+}
+
+
+def test_gpt_transcribe_json_parsing():
+    assert OpenAIWhisperBackend._parse_result("gpt-transcribe", GPT_TRANSCRIBE_JSON, None) == (
+        GPT_TRANSCRIBE_JSON["text"], "en", 5.0)
+
+
+def test_whisper_language_iso():
+    assert OpenAIWhisperBackend._parse_result("whisper-1", WHISPER_VERBOSE, None) == ("Hello!", "en", 4.97)
+
+
+def test_language_fallbacks():
+    assert OpenAIWhisperBackend._parse_result("gpt-transcribe", {"text": "x"}, "es")[1] == "es"
+    assert OpenAIWhisperBackend._parse_result("gpt-transcribe", {"text": "x"}, None)[1] == "en"
+
+
+@pytest.mark.parametrize("model,fmt", [("gpt-transcribe", "json"), ("whisper-1", "verbose_json")])
+@pytest.mark.asyncio
+async def test_response_format_per_model(tmp_path, model, fmt):
+    audio_file = tmp_path / "a.wav"
+    audio_file.write_bytes(b"x")
+    resp = AsyncMock()
+    resp.status = 200
+    resp.json = AsyncMock(return_value=GPT_TRANSCRIBE_JSON)
+    session = MagicMock()
+    session.closed = False
+    session.post = MagicMock(return_value=AsyncMock())
+    session.post.return_value.__aenter__.return_value = resp
+    backend = OpenAIWhisperBackend(api_key="sk-test", model=model)
+    backend._session = session
+    await backend.transcribe(audio_file)
+    form = session.post.call_args.kwargs["data"]
+    fields = {f[0]["name"]: f[2] for f in form._fields}
+    assert fields["response_format"] == fmt
