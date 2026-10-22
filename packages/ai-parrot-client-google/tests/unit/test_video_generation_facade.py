@@ -25,10 +25,13 @@ def client():
 async def test_video_generation_default_routes_omni(client, tmp_path):
     """The developer default resolves to Omni and returns its media paths."""
     clips = [_clip(tmp_path)]
-    with patch(
-        "parrot.clients.google.reel.omni.OmniClipAdapter.generate_many",
-        new=AsyncMock(return_value=clips),
-    ) as generate_many, patch("parrot.clients.google.reel.veo.VeoClipAdapter.generate", new=AsyncMock()) as veo:
+    with (
+        patch(
+            "parrot.clients.google.reel.omni.OmniClipAdapter.generate_many",
+            new=AsyncMock(return_value=clips),
+        ) as generate_many,
+        patch("parrot.clients.google.reel.veo.VeoClipAdapter.generate", new=AsyncMock()) as veo,
+    ):
         message = await client.video_generation("a lion", output_directory=tmp_path)
 
     generate_many.assert_awaited_once()
