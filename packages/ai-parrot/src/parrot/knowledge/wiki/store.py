@@ -50,6 +50,19 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "3"
 
+#: FEAT-633: the ai-parrot release that last created or migrated a plane; a ``meta`` row
+#: stamped by ``SQLiteWikiStore._ensure_schema`` and ``_migrate``. Informational only:
+#: quoted in :class:`WikiStoreVersionError`, never compared (the gate is the schema number).
+MIN_RUNTIME_KEY = "min_runtime_version"
+
+
+def _running_version() -> str:
+    """The running ai-parrot version, read at call time (tests patch ``parrot.version.__version__``)."""
+    from parrot import version as _parrot_version  # stdlib-only module; parrot/__init__ already loaded it
+
+    return _parrot_version.__version__
+
+
 #: Entity-attribute plane (FEAT-627). Additive: created on writable planes
 #: that lack it (see ``SQLiteWikiStore._migrate``) without a schema bump.
 #: ``ON DELETE CASCADE`` is documentation only — foreign keys are not
@@ -428,6 +441,38 @@ def _row_to_symbol_record(row: aiosqlite.Row) -> SymbolRecord:
 
 class AttrsUnsupportedError(RuntimeError):
     """Raised when a backend or plane cannot persist page attributes."""
+
+
+class WikiStoreVersionError(RuntimeError):
+    """The plane's ``schema_version`` is newer than the running ``SCHEMA_VERSION`` (FEAT-633).
+
+    Decided by schema number only. ``store_minimum`` (the plane's ``min_runtime_version``
+    stamp) is quoted in the message, never compared. Deliberately NOT a
+    :class:`sqlite3.OperationalError`: the read ladder in
+    :meth:`SQLiteWikiStore._read` degrades on ``OperationalError``, and this must never
+    degrade — an older runtime has to fail fast rather than open a newer plane.
+    """
+
+    def __init__(self, db_path: Path, store_schema: str, store_minimum: Optional[str], running: str) -> None:
+        self.db_path = db_path
+        self.store_schema = store_schema
+        self.store_minimum = store_minimum
+        self.running = running
+        written_by = store_minimum or "unknown"
+        upgrade_to = f"ai-parrot >= {store_minimum}" if store_minimum else "a newer ai-parrot"
+        super().__init__(
+            f"wiki store {db_path} has schema version {store_schema}, newer than this runtime's "
+            f"{SCHEMA_VERSION} (ai-parrot {running}). This store was written by ai-parrot {written_by}; "
+            f"upgrade to {upgrade_to}: `parrot self update` (managed runtime) or"
+            " `parrot self add --here` (project venv)."
+        )
+
+    @classmethod
+    def newer_schema(
+        cls, db_path: Path, stored: str, store_minimum: Optional[str], running: str
+    ) -> "WikiStoreVersionError":
+        """The plane's ``schema_version`` is newer than ``SCHEMA_VERSION`` (the only refusal)."""
+        return cls(db_path, stored, store_minimum, running)
 
 
 class WikiPageRecord(BaseModel):
@@ -1211,6 +1256,62 @@ class SQLiteWikiStore(BaseWikiStore):
         if self._read_only:
             raise PermissionError(f"read-only wiki store: {self._db_path}")
 
+    async def _check_runtime_gate(self, conn: aiosqlite.Connection) -> None:
+        """Refuse the plane when its ``schema_version`` is newer than the running one.
+
+        FEAT-633: a managed runtime (``~/.parrot/venv``) and project venvs can open the
+        same plane, so a newer ai-parrot may have migrated it already. The schema
+        comparison is the whole gate; ``min_runtime_version`` is read only for the error
+        message. One indexed read per connection (a second one only on refusal) — never
+        latched per instance, because a newer runtime may migrate the plane while this
+        instance is alive.
+
+        Opens normally (fails open) when there is nothing to compare: a plane without a
+        ``meta`` table (brand new, before :meth:`_ensure_schema`), without a
+        ``schema_version`` row, or with a non-integer value — the last logs a warning and
+        lets :meth:`_migration_needed` treat it as stale, as it does today. Failing closed
+        on garbage would brick a plane with no fix path.
+
+        Only runtimes that carry this gate honour it: a pre-FEAT-633 ai-parrot has no gate
+        and still migrates a newer plane downward.
+
+        Args:
+            conn: A freshly opened connection, before anything is written.
+
+        Raises:
+            WikiStoreVersionError: The store has a newer schema than this runtime.
+        """
+        try:
+            async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") as cur:
+                row = await cur.fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return
+            raise
+        if row is None:
+            return
+        stored = row[0]
+        try:
+            stored_schema = int(stored)
+        except (TypeError, ValueError):
+            self.logger.warning(
+                "wiki store %s has a non-integer schema_version %r — opening anyway;"
+                " it will be treated as stale and migrated",
+                self._db_path,
+                stored,
+            )
+            return
+        if stored_schema <= int(SCHEMA_VERSION):
+            return
+        async with conn.execute("SELECT value FROM meta WHERE key = ?", (MIN_RUNTIME_KEY,)) as cur:
+            min_row = await cur.fetchone()
+        raise WikiStoreVersionError.newer_schema(
+            self._db_path,
+            str(stored),
+            None if min_row is None else min_row[0],
+            _running_version(),
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -1270,6 +1371,7 @@ class SQLiteWikiStore(BaseWikiStore):
         ) as conn:
             conn.row_factory = aiosqlite.Row
             await self._apply_pragmas(conn, writable=writable)
+            await self._check_runtime_gate(conn)
             if writable:
                 await self._ensure_schema(conn)
             yield conn
@@ -1300,6 +1402,10 @@ class SQLiteWikiStore(BaseWikiStore):
                 await conn.execute(
                     "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
                     ("schema_version", SCHEMA_VERSION),
+                )
+                await conn.execute(
+                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                    (MIN_RUNTIME_KEY, _running_version()),
                 )
                 if self._wiki_name:
                     await conn.execute(
@@ -1459,6 +1565,7 @@ class SQLiteWikiStore(BaseWikiStore):
             # The file open is lazy — force it before yielding.
             await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
             self._log_read_only_once()
+            await self._check_runtime_gate(conn)
             yield conn
 
     @asynccontextmanager
@@ -1494,6 +1601,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 # The file open is lazy — force it before yielding.
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
+                await self._check_runtime_gate(conn)
                 yielded = True
                 yield conn
             return
@@ -1530,6 +1638,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 conn.row_factory = aiosqlite.Row
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
+                await self._check_runtime_gate(conn)
                 yielded = True
                 yield conn
         except sqlite3.OperationalError as imm_exc:
@@ -1637,6 +1746,13 @@ class SQLiteWikiStore(BaseWikiStore):
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (SCHEMA_VERSION,),
+            )
+            # FEAT-633: record the release that brought the plane to this schema. A newer
+            # schema was already refused by `_check_runtime_gate`, so this only ever
+            # stamps an upgrade. Informational — never compared.
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?)" " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (MIN_RUNTIME_KEY, _running_version()),
             )
         await conn.commit()
 
