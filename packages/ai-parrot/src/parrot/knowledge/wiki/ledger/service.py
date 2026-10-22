@@ -379,9 +379,9 @@ class LedgerService:
 
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Import the committed shared log first (FEAT-694 G8), then :meth:`LedgerIndex.claim_issue`."""
-        from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH
+        from parrot.knowledge.wiki.ledger.shared_log import shared_log_files
 
-        if (self.shared_root / SHARED_LOG_REL_PATH).exists():
+        if shared_log_files(self.shared_root):
             try:
                 await self.import_shared_log()
             except WikiStoreBusy:
