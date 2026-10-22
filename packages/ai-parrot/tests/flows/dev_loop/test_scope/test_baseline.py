@@ -106,3 +106,27 @@ def test_checkout_always_removed(hermetic_repo, tmp_path):
     assert _worktrees(repo) == []
     classify_failures(worktree=repo, base_ref="bad", failed_nodeids=["tests/test_b.py::test_x"], timeout_s=5)
     assert _worktrees(repo) == []
+
+
+def test_baseline_checkout_still_refuses_unbuilt_extension(hermetic_repo, tmp_path, monkeypatch):
+    """An unpaired source in the main checkout is still fatal and the checkout is removed."""
+    from parrot.flows.dev_loop.native_artifacts import MissingArtifact, NativeSyncReport
+
+    repo, base = hermetic_repo
+    seen = {}
+
+    def fake_sync(*, main_root, target, autobuild=True, **kwargs):
+        seen["autobuild"] = autobuild
+        return NativeSyncReport(
+            enabled=True,
+            missing=[MissingArtifact(group="core", reason="unpaired_source", detail="pkg/ext.pyx")],
+        )
+
+    monkeypatch.setattr(baseline, "sync_native_artifacts", fake_sync)
+    scratch = tmp_path / "s"
+    scratch.mkdir()
+    with pytest.raises(baseline.BaselineUnavailable, match="no compiled extension for pkg/ext.pyx"):
+        baseline.prepare_baseline_checkout(worktree=repo, base_ref=base, scratch=scratch)
+    assert seen["autobuild"] is False
+    assert _worktrees(repo) == []
+    assert not any(scratch.iterdir())

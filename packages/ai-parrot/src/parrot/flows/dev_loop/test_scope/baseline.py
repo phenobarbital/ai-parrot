@@ -15,6 +15,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from ..native_artifacts import main_checkout_root, sync_native_artifacts
 from .datatypes import BaselineVerdict
 from .mirror import distribution_of
 from .report import parse_junit
@@ -29,17 +30,6 @@ class BaselineUnavailable(RuntimeError):
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run git in ``cwd`` capturing text output."""
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False)
-
-
-def main_checkout_root(worktree: Path) -> Path | None:
-    """Root of the primary checkout that owns ``worktree``'s git common dir."""
-    try:
-        proc = _git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    except OSError:
-        return None
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return None
-    return Path(proc.stdout.strip()).parent
 
 
 def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -> Path:
@@ -59,16 +49,12 @@ def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -
     try:
         main_root = main_checkout_root(worktree)
         if main_root is not None:
-            for so_file in main_root.glob("packages/*/src/**/*.so"):
-                rel = so_file.relative_to(main_root)
-                dest = target / rel
-                if dest.exists() or not dest.parent.is_dir():
-                    continue
-                shutil.copy2(so_file, dest)
-        for pyx in target.glob("packages/*/src/**/*.pyx"):
-            stem = pyx.stem
-            if not any(pyx.parent.glob(f"{stem}.*.so")) and not (pyx.parent / f"{stem}.so").exists():
-                raise BaselineUnavailable(f"no compiled extension for {pyx.relative_to(target)} in main checkout")
+            # One shared implementation (FEAT-722). `autobuild=False`: a verdict run must never trigger
+            # a compile, so an unbuilt extension stays fatal here.
+            report = sync_native_artifacts(main_root=main_root, target=target, autobuild=False)
+            if report.missing:
+                detail = report.missing[0].detail
+                raise BaselineUnavailable(f"no compiled extension for {detail} in main checkout")
     except BaselineUnavailable:
         remove_baseline_checkout(worktree, target)
         raise
