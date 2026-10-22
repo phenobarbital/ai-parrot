@@ -33,6 +33,10 @@ def _bare_agent() -> FirefliesInsightsAgent:
     agent._prompt_pipeline = None
     agent._prompt_builder = None
     agent._tools = []
+    agent._llm = None
+    agent.working_memory = None
+    agent.public_channel_id = None
+    agent._wrapper = None
     return agent
 
 
@@ -199,6 +203,8 @@ class _Registry:
         self.available = available
         self.classification = classification
         self.recorded: list[dict[str, object]] = []
+        self.analyzed: list[tuple[str, str]] = []
+        self.analysis_failures: list[tuple[str, str]] = []
 
     async def suggest_from_date(self, *, overlap_days: int) -> str | None:
         return None
@@ -217,6 +223,12 @@ class _Registry:
 
     async def record_synced(self, **kwargs: object) -> None:
         self.recorded.append(kwargs)
+
+    async def mark_analyzed(self, fireflies_id: str, meeting_fingerprint: str) -> None:
+        self.analyzed.append((fireflies_id, meeting_fingerprint))
+
+    async def mark_analysis_failed(self, fireflies_id: str, error: str) -> None:
+        self.analysis_failures.append((fireflies_id, error))
 
 
 def _listing_item(meeting_id: str, title: str = "Weekly Sync") -> dict[str, object]:
@@ -308,9 +320,192 @@ async def test_one_failing_meeting_does_not_sink_the_run(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(agent, "_drop_to_inbox", fail_one_drop)
 
+    async def generate_insights(transcript: str, summary: str, meta: dict[str, object]) -> MeetingInsights:
+        return MeetingInsights(
+            meeting_id=str(meta["fireflies_id"]),
+            meeting_title=str(meta["title"]),
+            meeting_date=str(meta["date"]),
+        )
+
+    async def notify_insights(insights: MeetingInsights) -> dict[str, int]:
+        return {"sent": 1}
+
+    monkeypatch.setattr(agent, "generate_insights", generate_insights)
+    monkeypatch.setattr(agent, "notify_insights", notify_insights)
+
     report = await agent.sync_meetings()
 
     assert report.fetched == 2
     assert report.dropped_to_inbox == 1
     assert report.errors == ["bad: disk failure"]
     assert (tmp_path / "2026-10-22-weekly-sync-good.md").is_file()
+
+
+def test_format_escapes_hostile_title() -> None:
+    agent = _bare_agent()
+    insights = MeetingInsights(
+        meeting_id="meeting-1",
+        meeting_title='<b>Q3 & "risks"</b>',
+        meeting_date="2026-10-22 <today>",
+        decisions=["Use A & B"],
+        risks=["<blocked>"],
+        action_items=[
+            ActionItem(
+                title="Ship <release>",
+                owner="Ana & Bob",
+                due_date="2026-11-01 > now",
+                evidence='Ana: "ship it"',
+            )
+        ],
+    )
+
+    message = agent._format_insights_message(insights)
+
+    assert '<b>Q3 & "risks"</b>' not in message
+    assert "&lt;b&gt;Q3 &amp; &quot;risks&quot;&lt;/b&gt;" in message
+    assert "2026-10-22 &lt;today&gt;" in message
+    assert "Use A &amp; B" in message
+    assert "&lt;blocked&gt;" in message
+    assert "Ship &lt;release&gt;" in message
+    assert "Ana &amp; Bob" in message
+    assert "2026-11-01 &gt; now" in message
+    assert "Ana: &quot;ship it&quot;" in message
+
+
+def test_chunk_never_exceeds_telegram_limit() -> None:
+    agent = _bare_agent()
+
+    chunks = agent._chunk_message("x" * 10_000)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= agent._TELEGRAM_MAX_MESSAGE for chunk in chunks)
+    assert chunks[0].startswith(f"(part 1/{len(chunks)})\n")
+    assert chunks[-1].startswith(f"(part {len(chunks)}/{len(chunks)})\n")
+
+
+@pytest.mark.asyncio
+async def test_notify_without_wrapper_does_not_raise() -> None:
+    agent = _bare_agent()
+    insights = MeetingInsights(meeting_id="m1", meeting_title="Sync", meeting_date="2026-10-22")
+
+    result = await agent.notify_insights(insights)
+
+    assert result == {"sent": 0, "reason": "no telegram wrapper"}
+
+
+@pytest.mark.asyncio
+async def test_generate_insights_drops_working_memory_keys() -> None:
+    class FakeWorkingMemory:
+        def __init__(self) -> None:
+            self.stored: dict[str, str] = {}
+            self.dropped: list[str] = []
+
+        async def store_result(self, key: str, data: str) -> dict[str, str]:
+            self.stored[key] = data
+            return {"status": "stored"}
+
+        async def drop_stored(self, key: str) -> dict[str, str]:
+            self.stored.pop(key, None)
+            self.dropped.append(key)
+            return {"status": "dropped"}
+
+    class FakeLlm:
+        def __init__(self, memory: FakeWorkingMemory) -> None:
+            self.memory = memory
+            self.snapshots: list[set[str]] = []
+
+        async def invoke(self, prompt: str, **kwargs: object) -> SimpleNamespace:
+            self.snapshots.append(set(self.memory.stored))
+            meeting_id = next(iter(self.memory.stored)).split(":")[1]
+            return SimpleNamespace(
+                output=MeetingInsights(meeting_id=meeting_id, meeting_title="Sync", meeting_date="2026-10-22")
+            )
+
+    agent = _bare_agent()
+    memory = FakeWorkingMemory()
+    llm = FakeLlm(memory)
+    agent.working_memory = memory
+    agent._llm = llm
+
+    for meeting_id in ("m1", "m2"):
+        result = await agent.generate_insights(
+            f"transcript {meeting_id}",
+            f"summary {meeting_id}",
+            {"fireflies_id": meeting_id, "title": "Sync", "date": "2026-10-22"},
+        )
+        assert result.meeting_id == meeting_id
+        assert memory.stored == {}
+
+    assert llm.snapshots == [
+        {"meeting:m1:transcript", "meeting:m1:summary"},
+        {"meeting:m2:transcript", "meeting:m2:summary"},
+    ]
+    assert memory.dropped == [
+        "meeting:m1:transcript",
+        "meeting:m1:summary",
+        "meeting:m2:transcript",
+        "meeting:m2:summary",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cmd_sync_with_empty_text_reaches_sync_meetings(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = _bare_agent()
+    limits: list[int] = []
+
+    async def sync_meetings(limit: int = 10) -> InsightRunReport:
+        limits.append(limit)
+        return InsightRunReport(fetched=2, dropped_to_inbox=2, insights_sent=1)
+
+    monkeypatch.setattr(agent, "sync_meetings", sync_meetings)
+
+    result = await agent.cmd_sync("")
+
+    assert limits == [10]
+    assert result == "Fireflies: fetched=2 skipped=0 dropped=2 sent=1 errors=0"
+    assert agent.cmd_sync._telegram_command["parse_mode"] == "raw"
+
+
+@pytest.mark.asyncio
+async def test_bad_llm_output_is_reported_not_sent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class BadLlm:
+        async def invoke(self, prompt: str, **kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(output="not validated insights")
+
+    agent = _bare_agent()
+    agent.inbox_dir = tmp_path
+    agent.registry = _Registry(available=False)
+    agent._llm = BadLlm()
+    _stub_sync_fetches(agent, monkeypatch, [_listing_item("bad-insights")])
+    sent: list[MeetingInsights] = []
+
+    async def notify_insights(insights: MeetingInsights) -> dict[str, int]:
+        sent.append(insights)
+        return {"sent": 1}
+
+    monkeypatch.setattr(agent, "notify_insights", notify_insights)
+
+    report = await agent.sync_meetings()
+
+    assert report.dropped_to_inbox == 1
+    assert report.insights_sent == 0
+    assert report.errors == ["insights bad-insights: LLM did not return a valid MeetingInsights result"]
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_notify_send_failure_names_chat_id(caplog: pytest.LogCaptureFixture) -> None:
+    class FailingBot:
+        async def send_message(self, **kwargs: object) -> None:
+            raise RuntimeError("telegram unavailable")
+
+    agent = _bare_agent()
+    agent.public_channel_id = "-100123"
+    agent.set_wrapper(SimpleNamespace(bot=FailingBot()))
+    insights = MeetingInsights(meeting_id="m1", meeting_title="Sync", meeting_date="2026-10-22")
+
+    with caplog.at_level(logging.WARNING):
+        result = await agent.notify_insights(insights)
+
+    assert result == {"sent": 0, "errors": ["-100123: telegram unavailable"], "chat_id": "-100123"}
+    assert "send to chat -100123 failed" in caplog.text
