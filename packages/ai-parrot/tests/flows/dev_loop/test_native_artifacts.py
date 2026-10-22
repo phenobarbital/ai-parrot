@@ -345,6 +345,24 @@ def test_autobuild_lock_serializes_builds(tmp_path: Path) -> None:
     assert counter.read_text(encoding="utf-8") == "x"
 
 
+def test_build_lock_propagates_caller_errors_once(tmp_path: Path) -> None:
+    """An OSError raised inside the lock body propagates as itself.
+
+    `_build_lock`'s `except OSError` arms must exclude the `yield`. If they wrapped
+    it, the caller's error would be thrown back in at the yield point, the generator
+    would yield a second time, and contextlib would replace the real error with
+    `RuntimeError: generator didn't stop after throw()` — hiding the cause and
+    making `build_missing`'s warning misleading.
+    """
+    from parrot.flows.dev_loop.native_artifacts import _build_lock
+
+    group = NativeGroup(name="stub", build_timeout_s=5)
+    with pytest.raises(OSError, match="caller exploded"):
+        with _build_lock(tmp_path, group) as acquired:
+            assert acquired is True
+            raise OSError("caller exploded")
+
+
 def test_python_placeholder_is_substituted(tmp_path: Path) -> None:
     """The placeholder invokes the running interpreter rather than a shell command."""
     main_root = _missing_main_root(tmp_path)

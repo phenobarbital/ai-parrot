@@ -14,10 +14,17 @@ build-rust:
 # never mutate; `--locked` guarantees an automated build never rewrites
 # rust/Cargo.lock. Recipe lines are TAB-indented; `$$` is a literal `$`.
 build-rust-wheel:
-	@tmp=$$(mktemp -d) && \
-		uv run --no-sync --with maturin maturin build --release --locked --out "$$tmp" && \
-		uv run --no-sync python -c 'import glob,sys,zipfile; w=glob.glob(sys.argv[1]+"/*.whl")[0]; z=zipfile.ZipFile(w); [z.extract(n, sys.argv[2]) for n in z.namelist() if n.endswith(".so")]' "$$tmp" src && \
-		rm -rf "$$tmp"
+	@set -e; \
+		tmp=$$(mktemp -d); \
+		trap 'rm -rf "$$tmp"' EXIT; \
+		uv run --no-sync --with maturin maturin build --release --locked --out "$$tmp"; \
+		uv run --no-sync python -c 'import glob,sys,zipfile;\
+wheels = sorted(glob.glob(sys.argv[1] + "/*.whl"));\
+sys.exit("build-rust-wheel: maturin produced no wheel in " + sys.argv[1]) if not wheels else None;\
+z = zipfile.ZipFile(wheels[-1]);\
+members = [n for n in z.namelist() if n.endswith(".so")];\
+sys.exit("build-rust-wheel: no .so inside " + wheels[-1]) if not members else None;\
+[z.extract(n, sys.argv[2]) for n in members]' "$$tmp" src
 
 # Full Python suite (builds the extension via the maturin backend).
 test:

@@ -210,28 +210,46 @@ def _build_lock(main_root: Path, group: NativeGroup) -> Iterator[bool]:
         yield False
         return
 
+    # The `except OSError` arms below deliberately cover ONLY the setup and the
+    # release. Wrapping the `yield` in them would catch an OSError raised by the
+    # caller's own block, thrown back in at the yield point, and yield a second
+    # time — which contextlib turns into "generator didn't stop after throw()".
     try:
         lock_dir = main_root / LOCK_DIRNAME
         lock_dir.mkdir(parents=True, exist_ok=True)
-        with (lock_dir / f"native-{group.name}.lock").open("a+", encoding="utf-8") as lock_file:
-            deadline = time.monotonic() + max(group.build_timeout_s, 0)
-            while True:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        yield False
-                        return
-                    time.sleep(min(0.05, remaining))
-
-            try:
-                yield True
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file = (lock_dir / f"native-{group.name}.lock").open("a+", encoding="utf-8")
     except OSError:
         yield False
+        return
+
+    try:
+        deadline = time.monotonic() + max(group.build_timeout_s, 0)
+        acquired = False
+        while not acquired:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(0.05, remaining))
+            except OSError:
+                break
+
+        if not acquired:
+            yield False
+            return
+
+        try:
+            yield True
+        finally:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError:  # pragma: no cover - the fd is closed right after
+                pass
+    finally:
+        lock_file.close()
 
 
 def build_missing(
@@ -256,8 +274,12 @@ def build_missing(
 
         manual_hint = group.manual_hint or "no manual command declared"
 
-        def warn(reason: str) -> None:
-            warnings.append(f"{group.name}: {reason}; build it manually with: {manual_hint}")
+        def warn(reason: str, *, name: str = group.name, hint: str = manual_hint) -> None:
+            # Default args bind the loop variables at definition time (ruff B023):
+            # `warn` is called inside this iteration, but a late-bound closure over
+            # `group` would silently attribute a warning to the wrong group if this
+            # ever gained a deferred call path.
+            warnings.append(f"{name}: {reason}; build it manually with: {hint}")
 
         try:
             if env_flag_disabled(AUTOBUILD_ENV_VAR):
