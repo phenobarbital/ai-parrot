@@ -200,6 +200,7 @@ None — this is a unit-level fixture repair.
 
 tests:
 - packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py
+- packages/ai-parrot/tests/bots/test_double_configure.py
 markers: none
 
 ### Test Data / Fixtures
@@ -209,6 +210,10 @@ markers: none
 #   packages/ai-parrot/tests/bots/test_double_configure.py — _ConfigureTestBot
 #   shell + _stub_bot attribute list (FEAT-721)
 ```
+
+`test_double_configure.py` is in the Validation Contract as the pattern
+source: running it alongside proves the borrowed fixture still matches its
+origin and that the shared `AbstractBot.configure()` path did not regress.
 
 ---
 
