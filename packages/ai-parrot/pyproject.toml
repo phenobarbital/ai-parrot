@@ -184,7 +184,7 @@ dependencies = [
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
-    "navigator-eventbus>=0.2.1",
+    "navigator-eventbus>=0.4.0",
     # wikitoolkit ships in core (project.scripts) and its import chain
     # (wiki/cli.py → graphindex/__init__.py → signals.py / communities.py /
     # builder.py / sqlite_reader.py) imports these unconditionally at module
