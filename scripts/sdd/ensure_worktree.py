@@ -9,6 +9,7 @@ Replaces the hand-rolled ``git worktree add`` blocks that used to live in
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import shutil
@@ -17,9 +18,31 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from parrot.flows.dev_loop.native_artifacts import NativeSyncReport, sync_native_artifacts
-from scripts.sdd.brief_meta import brief_worktree_plan
-from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
+
+def _load_native_artifacts():
+    """Load ``native_artifacts.py`` by file path (stdlib + pydantic only).
+
+    A normal ``import parrot...`` would run ``parrot/__init__`` (which chdirs into
+    the main checkout and imports the Cython ``parrot.utils.types`` — the very
+    artifact this command exists to provide), so the module is loaded standalone.
+    """
+    name = "_parrot_native_artifacts"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_native = _load_native_artifacts()
+NativeSyncReport = _native.NativeSyncReport
+sync_native_artifacts = _native.sync_native_artifacts
+
+from scripts.sdd.brief_meta import brief_worktree_plan  # noqa: E402
+from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -361,11 +384,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         native = NativeSyncReport(enabled=False)
         if not args.dry_run and not args.no_native_sync:
-            native = sync_native_artifacts(
-                main_root=repo_root,
-                target=path,
-                autobuild=not args.no_autobuild,
-            )
+            try:
+                native = sync_native_artifacts(
+                    main_root=repo_root,
+                    target=path,
+                    autobuild=not args.no_autobuild,
+                )
+            except Exception as exc:  # never fail worktree creation (FEAT-722)
+                native = NativeSyncReport(enabled=False, warnings=[f"native artifact sync failed: {exc}"])
         for warning in native.warnings:
             # stderr ONLY: stdout is captured as the worktree path by callers.
             sys.stderr.write(f"warning: {warning}\n")

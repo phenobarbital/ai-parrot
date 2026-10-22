@@ -183,7 +183,7 @@ class SubWorktreeManager:
         (FEAT-722). Blocking I/O, so it runs in a thread. Never raises: a
         native-sync problem must not fail a coder attempt.
         """
-        main_root = main_checkout_root(Path(self.base_worktree))
+        main_root = await asyncio.to_thread(main_checkout_root, Path(self.base_worktree))
         if main_root is None:
             self.logger.debug("native sync skipped: no main checkout for %s", self.base_worktree)
             return

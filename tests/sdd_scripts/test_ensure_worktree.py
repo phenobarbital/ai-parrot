@@ -443,3 +443,34 @@ def test_main_brief_key_rejects_feature_id_jira_and_type(
     assert rc == 1
     assert "Error:" in capsys.readouterr().err
     assert after == before
+
+
+def test_native_sync_failure_does_not_fail_worktree_creation(monkeypatch, capsys):
+    """FEAT-722 review: a raising sync degrades to a stderr warning, exit 0."""
+    from scripts.sdd import ensure_worktree as ew
+
+    def boom(**_kwargs):
+        raise ValueError("malformed manifest")
+
+    monkeypatch.setattr(ew, "sync_native_artifacts", boom)
+    monkeypatch.setattr(ew, "ensure", lambda *a, **k: (Path("/tmp/x-wt"), False))
+    code = ew.main(["--slug", "s", "--feature-id", "FEAT-1"])
+    out = capsys.readouterr()
+    assert code == 0
+    assert out.out.strip() == "/tmp/x-wt"
+    assert "native artifact sync failed" in out.err
+
+
+def test_ensure_worktree_import_keeps_cwd_and_skips_parrot_utils():
+    """FEAT-722 review: importing the CLI must not chdir or load parrot.utils (Cython)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import os, sys; c = os.getcwd(); import scripts.sdd.ensure_worktree; "
+        "print(os.getcwd() == c, 'parrot.utils' in sys.modules, 'parrot.flows.dev_loop' in sys.modules)"
+    )
+    res = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[2]
+    )
+    assert res.stdout.strip().splitlines()[-1] == "True False False", res.stderr

@@ -150,8 +150,13 @@ def _ext_suffix() -> str:
 def _matches(root: Path, patterns: list[str]) -> list[Path]:
     """Return existing files below ``root`` matching any pattern, sorted and deduplicated."""
     found: set[Path] = set()
+    root_resolved = root.resolve()
     for pattern in patterns:
-        found.update(path for path in root.glob(pattern) if path.is_file())
+        found.update(
+            path
+            for path in root.glob(pattern)
+            if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root_resolved)
+        )
     return sorted(found)
 
 

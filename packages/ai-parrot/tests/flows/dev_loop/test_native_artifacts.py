@@ -376,3 +376,16 @@ def test_python_placeholder_is_substituted(tmp_path: Path) -> None:
 
     assert report.built == ["interpreter"]
     assert executable.read_text(encoding="utf-8") == sys.executable
+
+
+def test_matches_skips_symlinks_and_outside_files(tmp_path):
+    """FEAT-722 review: a symlinked artifact is never copied."""
+    from parrot.flows.dev_loop.native_artifacts import _matches
+
+    root = tmp_path / "main"
+    root.mkdir()
+    outside = tmp_path / "secret.so"
+    outside.write_bytes(b"x")
+    (root / "real.so").write_bytes(b"y")
+    (root / "link.so").symlink_to(outside)
+    assert [p.name for p in _matches(root, ["*.so"])] == ["real.so"]
