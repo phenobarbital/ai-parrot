@@ -14,9 +14,7 @@ from parrot_formdesigner.core.llm_validation import (
 )
 
 
-def _report(
-    status: str = "ok", threshold: float = 0.7, **items: PlausibilityVerdict
-) -> PlausibilityReport:
+def _report(status: str = "ok", threshold: float = 0.7, **items: PlausibilityVerdict) -> PlausibilityReport:
     """Build a report carrying the supplied verdicts."""
     return PlausibilityReport(status=status, threshold=threshold, items=dict(items))
 
