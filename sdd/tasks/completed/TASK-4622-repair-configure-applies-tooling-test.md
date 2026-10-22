@@ -322,8 +322,27 @@ regressed.
 
 > Filled in when the task is closed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5.5 (session /sdd-fix issue:487531e66e0b)
+**Date**: 2026-10-22
+**Notes**: Applied the four blueprint edits verbatim — added the module-private
+`_ConfigureTestBot(AbstractBot)` shell (ask / ask_stream / conversation /
+invoke), switched construction to `object.__new__(_ConfigureTestBot)`, replaced
+`bot.tool_manager = None` with `MagicMock(_server_param_source=None)` plus a
+`sync_tools` mock, and replaced the assignment to the read-only `events`
+property with `bot._events_registry = MagicMock()`. Both original assertions
+are untouched; no file under `packages/ai-parrot/src/` was modified.
 
-**Deviations from spec**:
+Validation (worktree, `PYTHONPATH=packages/ai-parrot/src`):
+`pytest packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py
+packages/ai-parrot/tests/bots/test_double_configure.py -q` → **8 passed**
+(1 repaired + 7 pattern-source regressions). `ruff check` on the changed file:
+clean. Pre-fix state reproduced first: `TypeError: Can't instantiate abstract
+class AbstractBot ...` at line 13.
+
+Resolves `issue:487531e66e0b` (closed by this task, two-key evidence:
+`task:TASK-4622` + the file in `git diff origin/dev...HEAD`).
+
+**Deviations from spec**: none. One spec amendment during decomposition:
+`tests/bots/test_double_configure.py` was added to §4's Validation Contract so
+the task's second validation command is covered (`check_task_graph` warned
+`test-contract-task-tests-uncovered` otherwise).
