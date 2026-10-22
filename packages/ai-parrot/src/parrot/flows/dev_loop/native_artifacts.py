@@ -14,12 +14,18 @@ pull in the rest of ``parrot``.
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
+import subprocess
+import sysconfig
 import tomllib
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 #: Directory (relative to the main checkout) holding the per-group build locks.
 LOCK_DIRNAME: str = ".parrot/locks"
@@ -109,3 +115,109 @@ def load_manifest(repo_root: Path) -> NativeManifest:
         return NativeManifest.model_validate(manifest_data)
     except ValueError as exc:
         raise ValueError(f"invalid [tool.parrot.worktree] in {pyproject}: {exc}") from exc
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run git in ``cwd`` capturing text output; never raises on a non-zero exit."""
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False)
+
+
+def main_checkout_root(worktree: Path) -> Path | None:
+    """Root of the primary checkout that owns ``worktree``'s git common dir."""
+    try:
+        proc = _git(Path(worktree), "rev-parse", "--path-format=absolute", "--git-common-dir")
+    except OSError:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    return Path(proc.stdout.strip()).parent
+
+
+def _ext_suffix() -> str:
+    """Return the running interpreter's extension suffix."""
+    return sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+
+
+def _matches(root: Path, patterns: list[str]) -> list[Path]:
+    """Return existing files below ``root`` matching any pattern, sorted and deduplicated."""
+    found: set[Path] = set()
+    for pattern in patterns:
+        found.update(path for path in root.glob(pattern) if path.is_file())
+    return sorted(found)
+
+
+def missing_artifacts(main_root: Path, manifest: NativeManifest) -> list[MissingArtifact]:
+    """Return declared artifacts that are absent from ``main_root``."""
+    missing: list[MissingArtifact] = []
+    for group in manifest.groups:
+        matches = _matches(main_root, group.copy_globs)
+        sources = _matches(main_root, group.pair_sources)
+        if group.required and not matches and not sources:
+            missing.append(MissingArtifact(group=group.name, reason="no_match", detail=", ".join(group.copy_globs)))
+            continue
+
+        for source in sources:
+            stem = source.stem
+            siblings = list(source.parent.glob(f"{stem}.*.so"))
+            direct_sibling = source.parent / f"{stem}.so"
+            if direct_sibling.is_file():
+                siblings.append(direct_sibling)
+            detail = source.relative_to(main_root).as_posix()
+            if not siblings:
+                missing.append(MissingArtifact(group=group.name, reason="unpaired_source", detail=detail))
+            elif group.abi_scoped and not any(sibling.name.endswith(_ext_suffix()) for sibling in siblings):
+                missing.append(MissingArtifact(group=group.name, reason="abi_mismatch", detail=detail))
+
+        if group.abi_scoped and matches and not sources and not any(path.name.endswith(_ext_suffix()) for path in matches):
+            missing.append(
+                MissingArtifact(
+                    group=group.name,
+                    reason="abi_mismatch",
+                    detail=matches[0].relative_to(main_root).as_posix(),
+                )
+            )
+    return missing
+
+
+def sync_native_artifacts(
+    *,
+    main_root: Path,
+    target: Path,
+    manifest: NativeManifest | None = None,
+) -> NativeSyncReport:
+    """Copy declared native artifacts into ``target`` and report missing entries.
+
+    Existing destinations with matching size and mtime are left untouched, so
+    calls are safe when a worktree is reused.
+    """
+    resolved = manifest if manifest is not None else load_manifest(main_root)
+    if not resolved.enabled or env_flag_disabled(SYNC_ENV_VAR):
+        return NativeSyncReport(enabled=False)
+
+    report = NativeSyncReport(enabled=True)
+    for group in resolved.groups:
+        for source in _matches(main_root, group.copy_globs):
+            relative_path = source.relative_to(main_root)
+            destination = target / relative_path
+            report_path = relative_path.as_posix()
+            if destination.is_file():
+                source_stat = source.stat()
+                destination_stat = destination.stat()
+                if (source_stat.st_size, source_stat.st_mtime_ns) == (
+                    destination_stat.st_size,
+                    destination_stat.st_mtime_ns,
+                ):
+                    report.skipped.append(report_path)
+                    continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            logger.debug("copied native artifact %s to %s", source, destination)
+            report.copied.append(report_path)
+
+    report.missing.extend(missing_artifacts(main_root, resolved))
+    groups = {group.name: group for group in resolved.groups}
+    for missing in report.missing:
+        manual_hint = groups[missing.group].manual_hint
+        if manual_hint:
+            report.warnings.append(f"missing native artifact for {missing.group}: {manual_hint}")
+    return report
