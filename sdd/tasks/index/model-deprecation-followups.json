@@ -90,7 +90,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,9 @@
       "parallelism_notes": "depends on TASK-4581 (VideoRequestOptions, validate_request in reel/profiles.py) and TASK-4582 (OmniClipAdapter.generate_many in reel/omni.py)",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4583-registry-routed-video-facade.md"
+      "completed_at": "2026-10-22T12:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4583-registry-routed-video-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4584",
@@ -171,7 +172,7 @@
       "feature_id": "FEAT-719",
       "feature": "model-deprecation-followups",
       "spec": "sdd/specs/model-deprecation-followups.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -181,8 +182,9 @@
       "parallelism_notes": "depends on TASK-4586: sets GoogleGenAIClient.computer_use created there (clients/google/client.py)",
       "assigned_to": null,
       "started_at": "2026-10-22T12:15:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4587-computer-agent-38-flash.md"
+      "completed_at": "2026-10-22T12:51:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4587-computer-agent-38-flash.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4588",
