@@ -95,7 +95,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -107,8 +107,9 @@
       "parallelism_notes": "catches SubmissionRejected and passes tenant_scoped_submissions to SubmissionPipeline from TASK-4632; get_availability uses AvailabilityState/evaluate_open from TASK-4630 and count_responses from TASK-4631.",
       "assigned_to": null,
       "started_at": "2026-10-22T23:35:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4634-http-409-availability-routes.md"
+      "completed_at": "2026-10-22T23:57:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4634-http-409-availability-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4635",
