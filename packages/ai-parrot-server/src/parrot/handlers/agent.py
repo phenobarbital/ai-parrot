@@ -43,6 +43,7 @@ from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
+from .scope import resolve_request_tenant
 from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
@@ -1618,6 +1619,11 @@ class AgentTalk(BaseView):
             agent_name = self._get_agent_name(data) or "<unknown>"
             return self.error(f"Agent '{agent_name}' not found.", status=404)
         agent: AbstractBot = agent_or_response
+        agent_name = agent.name
+
+        if data.pop("tenant", None) is not None:
+            self.logger.warning("Ignoring client-supplied 'tenant' for agent %s (FEAT-707)", agent_name)
+        tenant = await resolve_request_tenant(app, self.request)
 
         # Load user's tool_manager from session (configured via PATCH).
         # User-defined bots own their own ToolManager in the session cache
@@ -1854,9 +1860,10 @@ class AgentTalk(BaseView):
                         format_kwargs=format_kwargs,
                         memory=memory,
                         llm=llm,
-                        agent_name=agent.name,
+                        agent_name=agent_name,
                         client_message_id=client_message_id,
                         avatar_bifurcate=avatar_bifurcate,
+                        tenant=tenant,
                         **data,
                     )
                 if followup_turn_id and followup_data is not None:
@@ -1892,6 +1899,7 @@ class AgentTalk(BaseView):
                         format_kwargs=format_kwargs,
                         memory=memory,
                         llm=llm,
+                        tenant=tenant,
                         **data,
                     )
         except AuthorizationRequired as exc:
@@ -2612,6 +2620,7 @@ class AgentTalk(BaseView):
         agent_name: str = "",
         client_message_id: Optional[str] = None,
         avatar_bifurcate: bool = False,
+        tenant: Optional[str] = None,
         **kwargs,
     ) -> web.StreamResponse:
         """Stream bot response via HTTP chunked transfer encoding.
@@ -2661,6 +2670,7 @@ class AgentTalk(BaseView):
                 output_mode=output_mode,
                 memory=memory,
                 llm=llm,
+                tenant=tenant,
                 **kwargs,
             ):
                 if isinstance(chunk, AIMessage):
@@ -2753,6 +2763,12 @@ class AgentTalk(BaseView):
                                 s if isinstance(s, dict) else s.to_dict()
                                 for s in getattr(ai_message, "source_documents", [])
                             ],
+                            metadata={
+                                "usage": ai_message.usage.model_dump() if ai_message.usage is not None else None,
+                                "cost_usd": ai_message.usage.estimated_cost if ai_message.usage is not None else None,
+                                "tenant": tenant,
+                                "agent": agent_name,
+                            },
                         )
                     )
                     # Log any exception raised inside the background save so it is
@@ -2992,6 +3008,12 @@ class AgentTalk(BaseView):
                                 s if isinstance(s, dict) else s.to_dict()
                                 for s in getattr(response, "source_documents", [])
                             ],
+                            metadata={
+                                "usage": response.usage.model_dump() if response.usage is not None else None,
+                                "cost_usd": response.usage.estimated_cost if response.usage is not None else None,
+                                "tenant": tenant,
+                                "agent": agent_name,
+                            },
                         )
                     )
             except Exception as ex:
