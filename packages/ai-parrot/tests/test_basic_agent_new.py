@@ -702,3 +702,48 @@ async def test_speech_report_verbatim_works_with_empty_speakers(mock_agent_deps,
 
     mock_agent_deps.create_conversation_script.assert_not_awaited()
     assert response["podcast_path"].suffix == ".wav"
+
+
+# --- FEAT-726 / issue:b858ae4ad636 -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_speech_report_verbatim_google_tts_zero_llm_calls(mock_agent_deps, tmp_path):
+    """google_tts verbatim synthesis bypasses all LLM calls.
+
+    Closes issue:b858ae4ad636 — google_tts was covered only at the backend unit
+    level (test_google_backend.py), never through speech_report() itself, while
+    supertonic and aws_polly both had an agent-level zero-LLM-calls test.
+
+    The extra assertion over its supertonic twin is the resolved TTS backend:
+    "google_tts" is the speech_report selector, "google" the TTS backend name it
+    maps to via _SPEECH_TO_TTS_BACKEND. Supertonic cannot exercise that mapping
+    because its selector and backend name are identical.
+    """
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    result = MagicMock(audio=b"wav", mime_format="audio/wav")
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=result)
+    get_synth = AsyncMock(return_value=synthesizer)
+
+    with patch("parrot.voice.tts.synthesizer.get_shared_synthesizer", get_synth):
+        response = await agent.speech_report(
+            report="# Heading\n\n**Plain** report",
+            tts_backend="google_tts",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    mock_agent_deps.create_conversation_script.assert_not_awaited()
+    mock_agent_deps.generate_speech.assert_not_awaited()
+    synthesizer.synthesize.assert_awaited_once_with("Heading\n\nPlain report", language=None)
+
+    tts_config = get_synth.await_args.args[0]
+    assert tts_config.backend == "google"
+    assert tts_config.mime_format == "audio/wav"
+
+    assert response["script_path"].read_text() == "Heading\n\nPlain report"
+    assert response["podcast_path"].suffix == ".wav"
