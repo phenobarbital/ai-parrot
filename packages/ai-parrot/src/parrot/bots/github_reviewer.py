@@ -965,6 +965,10 @@ class GitHubReviewer(Agent):
         warning — the bot still works for manually-triggered reviews, but
         GitHub deliveries land on a 404 until the route is registered
         before the aiohttp router freezes.
+
+        Re-entrant (FEAT-721): toolkits already served by
+        the ToolManager are adopted, so a second pass opens no second authenticated client and
+        ``self.git_toolkit``/``self.jira_toolkit`` always name the registered instances.
         """
         await super().post_configure()
 
@@ -986,10 +990,17 @@ class GitHubReviewer(Agent):
                 self.management_chat_id,
             )
 
-        self.git_toolkit = self._build_git_toolkit()
-        self._wiki_cache = self._build_wiki_cache()
+        git_toolkit = self.tool_manager.find_registered_toolkit(GitToolkit)
+        if git_toolkit is None:
+            git_toolkit = self._build_git_toolkit()
+        self.git_toolkit = git_toolkit
+        if self._wiki_cache is None:
+            self._wiki_cache = self._build_wiki_cache()
         await self._schedule_wiki_warmup()
-        self.jira_toolkit = self._build_jira_toolkit()
+        jira_toolkit = self.tool_manager.find_registered_toolkit(JiraToolkit)
+        if jira_toolkit is None:
+            jira_toolkit = self._build_jira_toolkit()
+        self.jira_toolkit = jira_toolkit
 
         self._attach_toolkit(self.git_toolkit, "Git")
         self._attach_toolkit(self.jira_toolkit, "Jira")
@@ -1259,7 +1270,7 @@ class GitHubReviewer(Agent):
             self.app[self._WEBHOOK_STARTED_KEY] = True
 
     def _attach_toolkit(self, toolkit: Any, name: str) -> None:
-        """Register ``toolkit`` and extend ``self.tools`` with its exports."""
+        """Register ``toolkit`` and extend ``self.tools`` with exports not already present."""
         if toolkit is None:
             return
         try:
@@ -1276,7 +1287,8 @@ class GitHubReviewer(Agent):
             return
         if not hasattr(self, "tools") or self.tools is None:
             self.tools = []
-        self.tools.extend(tools)
+        present = {getattr(tool, "name", None) for tool in self.tools}
+        self.tools.extend(tool for tool in tools if getattr(tool, "name", None) not in present)
 
     def _build_git_toolkit(self) -> Optional[GitToolkit]:
         """Build a :class:`GitToolkit` for this reviewer.
