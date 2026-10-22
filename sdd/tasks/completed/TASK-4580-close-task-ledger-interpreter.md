@@ -484,10 +484,61 @@ is created.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (session 64484ad2, `/sdd-fix issue:79901cd6b884`)
+**Date**: 2026-10-22
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Root cause confirmed before implementing, not assumed. The issue was filed as
+"likely environment/sandbox related" with no cause; it reproduces
+deterministically whenever `PATH`'s `python3` cannot import `parrot`:
 
-**Deviations from spec**: none | describe if any
+```
+# on dev @83b6290a3, before the fix
+PATH=<stub>:/usr/bin:/bin .venv/bin/python -m pytest \
+  tests/sdd/test_close_task_ledger.py tests/sdd/test_ledger_lifecycle_acceptance.py -q
+→ 2 failed, 62 passed   (3-suite gate)  /  FileNotFoundError on events.jsonl
+```
+
+Implemented as blueprinted: `SDD_LEDGER_PYTHON` → `<script's main
+checkout>/.venv/bin/python` (from `${BASH_SOURCE[0]}`, via
+`git rev-parse --path-format=absolute --git-common-dir`) → `$VIRTUAL_ENV/bin/python`
+→ `python3`, `-x` existence checks only, resolved inside the emission block
+after the hard post-condition.
+
+Evidence (worktree `feat-FEAT-718-fixgroup-a322afe6fc2b`, commit `065a71af7`):
+
+| Environment | `test_close_task_ledger.py` + `test_ledger_lifecycle_acceptance.py` |
+|---|---|
+| activated shell | 8 + 5 = **13 passed** |
+| `PATH=<stub>:/usr/bin:/bin`, no `VIRTUAL_ENV`, no `SDD_LEDGER_PYTHON` | **13 passed** |
+
+`bash -n scripts/sdd/close_task.sh` clean; `ruff check` + `black --check` clean
+on the test file; no file under `packages/` touched (AC8);
+`artifacts/logs/feat-566-lifecycle.log` restored and not committed.
+End-to-end dogfood: closing this very task emitted
+`task.closed task:TASK-4580` into the main checkout's
+`.parrot/ledger/events.jsonl`.
+
+**Deviations from spec**: three, all additive and inside the task's declared files.
+
+1. **`|| true` → `if !` wrapper** on the heredoc invocation (one edit site
+   beyond the blueprint, same block). The blueprint's FILL IN asked the
+   override test to assert "the warning names the stub", but with `|| true` a
+   stub interpreter that cannot start produces *no* output at all — the
+   Python-level `except` handler never runs. So a non-zero exit of the
+   interpreter itself is now reported on stderr with the resolved path. Closure
+   still never fails on a ledger error (AC6 holds, asserted by the existing
+   `test_ledger_emission_failure_never_fails_an_otherwise_successful_closure`).
+2. **A third test**, `test_non_executable_override_is_ignored`, covering AC4's
+   second half (a stale `SDD_LEDGER_PYTHON` export must be ignored, not break
+   closure). The spec's §3 Module 2 named two tests; the AC demanded three
+   behaviours. 8 tests in the file now, not the 7 the spec's §4 table predicts.
+3. **Helper `_run_close_task_with_env(repo, env, verification)`** added instead
+   of three inline `subprocess.run` calls — the existing `_run_close_task`
+   hard-codes `env=_worktree_python_env()` and these tests must mutate the env.
+
+**Related, not closed here**: `issue:dc663a223799` (minor, from `spec:FEAT-625`)
+is the same defect observed from inside a feature worktree. This change fixes
+it, but it belongs to a different fix group and was never claimed, so it stays
+open per spec N5 — close it with
+`--resolved-by commit:065a71af7` once this lands.
