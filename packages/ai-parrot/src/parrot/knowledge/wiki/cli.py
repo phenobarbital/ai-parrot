@@ -3655,7 +3655,16 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
         if stage and (report.added > 0 or report.created):
-            subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3711,7 +3720,16 @@ def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | No
                 str(SHARED_LOG_REL_PATH),
                 *(str(path.relative_to(root)) for path in report.archives_touched),
             ]
-            subprocess.run(["git", "-C", str(root), "add", "--", *staged_paths], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", *staged_paths],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
