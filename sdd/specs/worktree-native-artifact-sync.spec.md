@@ -10,7 +10,7 @@ tags: [worktree, native-extensions, cython, build, sdd-worker]
 **Feature ID**: FEAT-722
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.5
 
 ---
