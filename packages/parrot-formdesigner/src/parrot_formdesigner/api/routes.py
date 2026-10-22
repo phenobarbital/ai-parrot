@@ -56,6 +56,8 @@ from .tenant import requires_tenant
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+
+    from .submission_events import SubmittedCallback
     from parrot.core.ws_auth import TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
@@ -215,6 +217,7 @@ def setup_form_api(
     teams_renderer: "AbstractFormRenderer | None" = None,
     llm_quota: "LLMQuota | None" = None,
     tenant_scoped_submissions: bool = False,
+    on_submitted: "SubmittedCallback | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -229,6 +232,8 @@ def setup_form_api(
         submission_storage: Optional storage backend for submissions.
         forwarder: Optional submission forwarder.
         base_path: URL prefix for all routes (default ``"/api/v1"``).
+        on_submitted: Optional async host hook ``(SubmittedEvent) -> None`` awaited after a successful
+            REST ``/data`` store (errors are logged, never fail the submit).
         tenant_scoped_submissions: Store generic ``/data`` submissions under the URL tenant; default False.
         blob_storage: Optional ``AbstractBlobStorage`` instance for REST field
             binary uploads. If ``None``, the upload handler will construct an
@@ -363,6 +368,7 @@ def setup_form_api(
         rbac_enforcing=rbac_enforcing,
         sink_factory=sink_factory,
         tenant_scoped_submissions=tenant_scoped_submissions,
+        on_submitted=on_submitted,
     )
     app["form_api_handler"] = handler
     # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).

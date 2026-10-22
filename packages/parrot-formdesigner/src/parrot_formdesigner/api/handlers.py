@@ -92,6 +92,7 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from .submission_events import SubmittedCallback
     from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
@@ -158,6 +159,7 @@ class FormAPIHandler:
         rbac_enforcing: bool = False,
         sink_factory: "SinkFactory | None" = None,
         tenant_scoped_submissions: bool = False,
+        on_submitted: "SubmittedCallback | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
@@ -169,6 +171,8 @@ class FormAPIHandler:
         self._sink_factory = sink_factory
         # FEAT-730 G8: host opt-in to store generic submissions under the URL tenant.
         self._tenant_scoped_submissions = tenant_scoped_submissions
+        # FEAT-730 — host hook after a successful REST /data store.
+        self._on_submitted = on_submitted
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
         self._org_graph_service = org_graph_service
@@ -1700,6 +1704,26 @@ class FormAPIHandler:
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
 
+    async def _notify_submitted(self, form: FormSchema, outcome: Any, tenant: str) -> None:
+        """Await the host's on_submitted hook; never fails the submit (FEAT-730)."""
+        from datetime import datetime, timezone
+
+        from .submission_events import SubmittedEvent
+
+        try:
+            event = SubmittedEvent(
+                submission_id=outcome.submission_id,
+                form_uid=form.form_uid,
+                form_id=form.form_id,
+                form_version=form.version,
+                tenant=tenant,
+                is_public=bool(form.is_public),
+                created_at=outcome.created_at or datetime.now(timezone.utc),
+            )
+            await self._on_submitted(event)
+        except Exception as exc:  # noqa: BLE001 — the submit already succeeded
+            self.logger.warning("on_submitted hook failed for %s: %s", outcome.submission_id, exc)
+
     async def submit_data(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/data — Receive and process a form submission.
 
@@ -1931,6 +1955,8 @@ class FormAPIHandler:
         }
         if outcome.plausibility is not None:
             body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+        if self._on_submitted is not None and outcome.stored_in != "none":
+            await self._notify_submitted(form, outcome, tenant)
         return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:
