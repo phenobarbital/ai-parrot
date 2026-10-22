@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             print("skip (no tasks)")  # noqa: T201 - CLI output
         return 0
 
-    records, _notes = report_mod.load_records(feature_id)
+    records, notes = report_mod.load_records(feature_id)
     rerun = records.pop(report_mod.RERUN_RECORD, None)
     rerun_skip_reason = None if rerun is not None or report_mod.should_rerun(task_count) else "no tasks"
     markdown = report_mod.render_markdown(
@@ -100,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         final_head=_final_head(args.worktree),
         rerun=rerun,
         rerun_skip_reason=rerun_skip_reason,
+        notes=tuple(notes),
     )
     if args.out is None:
         print(markdown)  # noqa: T201 - CLI output
