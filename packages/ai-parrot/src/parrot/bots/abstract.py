@@ -1257,7 +1257,16 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             sig = inspect.signature(getattr(client, method))
             if "budget_scope" in sig.parameters:
                 llm_kwargs["budget_scope"] = _scope
-        return await getattr(client, method)(**llm_kwargs)
+        if method != "ask":
+            return await getattr(client, method)(**llm_kwargs)
+        # FEAT-710: the client computes the call cost once (``_emit_after_call``); surface it on the
+        # response's usage so AgentTalk can persist it without recomputing.
+        from ..observability.cost import backfill_estimated_cost, last_call_cost
+
+        last_call_cost.set(None)
+        response = await client.ask(**llm_kwargs)
+        backfill_estimated_cost(response)
+        return response
 
     def _budget_defaults(self):
         """Constructor-level budget settings (FEAT-550 §2.1)."""

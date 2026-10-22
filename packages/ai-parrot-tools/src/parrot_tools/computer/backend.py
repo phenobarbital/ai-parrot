@@ -4,6 +4,7 @@ AsyncComputerBackend — async Playwright wrapper for computer-use actions.
 Translates coordinate-based computer-use model actions into Playwright API
 calls. Every action returns an EnvState with a screenshot and current URL.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -202,8 +203,7 @@ class AsyncComputerBackend:
         """
         if self._page is None:
             raise RuntimeError(
-                "Browser not started. Call start() or use the toolkit which calls "
-                "_pre_execute() automatically."
+                "Browser not started. Call start() or use the toolkit which calls " "_pre_execute() automatically."
             )
 
     @property
@@ -286,6 +286,17 @@ class AsyncComputerBackend:
             EnvState after the hover.
         """
         await self._page.mouse.move(x, y)
+        return await self.current_state()
+
+    async def type_text(self, text: str, press_enter: bool = False) -> EnvState:
+        """Type text into the currently focused element (no click, no clearing)."""
+        await self._page.keyboard.type(text)
+        if press_enter:
+            await self._page.keyboard.press("Enter")
+            try:
+                await self._page.wait_for_load_state("domcontentloaded", timeout=5_000)
+            except Exception:
+                pass
         return await self.current_state()
 
     async def type_text_at(
@@ -505,6 +516,7 @@ class AsyncComputerBackend:
             output_dir: Directory where the recorded video will be saved.
         """
         import os
+
         os.makedirs(output_dir, exist_ok=True)
         # Close existing context and reopen with recording
         current_url = self._page.url if self._page else self._initial_url

@@ -388,6 +388,14 @@ only place in this feature where an example's content changes.
 
 ### Module 7: formdesigner F5 — layering & harness (3 failures)
 
+- **Design decision (2026-10-22, F5a):** the edges are `ui/routes.py:27`
+  (`requires_tenant`, used as a decorator at definition time) and
+  `ui/telegram.py:15` (`declared_tenant`) — not `ui/__init__.py`. A deferred import
+  cannot cut `routes.py`'s edge, and any `parrot_formdesigner.api.*` import runs
+  `api/__init__`. The tenant layer (`api/tenant.py` + `api/errors.py`) moves
+  verbatim to `core/tenant.py` + `core/tenant_errors.py`; the `api/` modules
+  re-export it so every existing importer keeps working with the same objects.
+
 - **Path**: `…/src/parrot_formdesigner/ui/`, `…/tests/unit/ui/test_ui_imports.py`,
   `…/tests/unit/test_venue_service.py`,
   `…/tests/unit/test_deterministic_integration.py`
