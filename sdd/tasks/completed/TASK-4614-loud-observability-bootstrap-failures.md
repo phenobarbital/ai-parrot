@@ -355,8 +355,25 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (/sdd-fix issue:9296682eda19)
+**Date**: 2026-10-22
+**Notes**: Three edits to `bootstrap.py` as blueprinted — module docstring
+rewritten to describe the hook path (AC6), the swallowed `_do_bootstrap()`
+failure raised from `logger.debug` to `logger.error` (AC4), and
+`setup_event_fanout()` wrapped so a failure logs at ERROR with `exc_info` and
+is then re-raised by a bare `raise` (AC5). Two regression tests appended to
+`test_bootstrap.py`, both asserting the log LEVEL (the defect being guarded is
+a DEBUG record nobody sees) and `_BOOTSTRAPPED` state.
+Validation: the full cached contract — `test_bootstrap_hook.py`,
+`test_bootstrap.py`, `test_bootstrap_cleanup.py`, `test_event_fanout.py` —
+35 passed. `ruff check` clean on both files.
+NG1 held: no caching/dedup state was added; `_BOOTSTRAPPED` still stays False
+on the fan-out path and the next construction still retries. The second new
+test asserts exactly that, so `issue:bd94e0afa8e6` will have to change it
+deliberately.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one addition. The *function* docstring of
+`ensure_observability_bootstrapped()` also claimed "Never raises: any failure
+is logged at DEBUG and swallowed" — false on both counts (it was already false
+about the fan-out path before this change). Corrected it alongside the module
+docstring; same file, same AC6 intent, no behaviour change.

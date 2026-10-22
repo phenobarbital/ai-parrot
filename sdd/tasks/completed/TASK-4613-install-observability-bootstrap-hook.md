@@ -369,8 +369,21 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (/sdd-fix issue:9296682eda19)
+**Date**: 2026-10-22
+**Notes**: Installed `set_bootstrap_hook(_observability_bootstrap_hook)` at the
+end of `parrot/core/events/lifecycle/__init__.py`, with the
+`parrot.observability.bootstrap` import deferred to call time. Verified live in
+a fresh interpreter: `navigator_eventbus.lifecycle.mixin._bootstrap_hook is
+lifecycle._observability_bootstrap_hook` is True and `parrot.observability` is
+NOT in `sys.modules` after importing the lifecycle package (AC1, AC7).
+New `tests/unit/observability/test_bootstrap_hook.py`: 4 tests, all passing —
+installation, delegation, end-to-end `_init_events()` wiring, and a subprocess
+import-deferral guard. `ruff check` clean on both files.
+Validation: `test_bootstrap_hook.py` 4 passed; `test_bootstrap.py` +
+`test_event_fanout.py` 21 passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Both blueprint `FILL IN` markers were resolved
+as the blueprint predicted — the hook's lazy `from ... import` resolves the
+attribute at call time, so `monkeypatch.setattr` on the
+`parrot.observability.bootstrap` module object is what it sees.
