@@ -1,0 +1,195 @@
+{
+  "feature": "worktree-native-artifact-sync",
+  "feature_id": "FEAT-722",
+  "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T15:01:36+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_native_artifacts.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_manager.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_baseline.py",
+          "tests/sdd_scripts/test_ensure_worktree.py",
+          "tests/sdd_scripts/test_brief_scaffold_integration.py",
+          "tests/sdd_scripts/test_native_artifact_declaration.py",
+          "tests/sdd_scripts/test_feat722_doc_contract.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:104f5f2ce77a9ed148adca4d8c3f2bb59b7f5da38540a4b6a4b2fcb4fb4297a5"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4605",
+      "slug": "native-artifact-declaration",
+      "title": "Declare native artifacts in pyproject.toml + venv-safe navrules wheel build",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: edits the root pyproject.toml and packages/navrules/rust/Cargo.lock — a shared dependency manifest and a lockfile, i.e. state outside this task's own module files",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4605-native-artifact-declaration.md"
+    },
+    {
+      "id": "TASK-4606",
+      "slug": "native-artifacts-models-loader",
+      "title": "native_artifacts models + manifest loader",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4605"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads the [tool.parrot.worktree] table TASK-4605 writes to pyproject.toml (load_manifest's first test parses it)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4606-native-artifacts-models-loader.md"
+    },
+    {
+      "id": "TASK-4607",
+      "slug": "native-artifacts-copy-engine",
+      "title": "Copy engine — main_checkout_root, missing_artifacts, sync_native_artifacts",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4606"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports NativeGroup/NativeManifest/MissingArtifact/NativeSyncReport, load_manifest and env_flag_disabled from native_artifacts.py, which TASK-4606 creates (same file)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4607-native-artifacts-copy-engine.md"
+    },
+    {
+      "id": "TASK-4608",
+      "slug": "native-artifact-autobuild",
+      "title": "Auto-build missing artifacts under a cross-process lock",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4607"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls missing_artifacts and extends sync_native_artifacts, both written by TASK-4607 in native_artifacts.py (same file)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4608-native-artifact-autobuild.md"
+    },
+    {
+      "id": "TASK-4609",
+      "slug": "ensure-worktree-native-sync",
+      "title": "Sync native artifacts from the ensure_worktree CLI",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4608"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls sync_native_artifacts with the autobuild parameter TASK-4608 adds (scripts/sdd/ensure_worktree.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4609-ensure-worktree-native-sync.md"
+    },
+    {
+      "id": "TASK-4610",
+      "slug": "subworktree-native-sync",
+      "title": "Sync native artifacts into every sdd-coder pool sub-worktree",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4608"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls sync_native_artifacts(autobuild default) + main_checkout_root from TASK-4608/4607 (worktree_manager.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4610-subworktree-native-sync.md"
+    },
+    {
+      "id": "TASK-4611",
+      "slug": "baseline-uses-shared-sync",
+      "title": "Refactor baseline.py onto the shared native-artifact sync",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4608"
+      ],
+      "parallel": true,
+      "parallelism_notes": "passes autobuild=False to sync_native_artifacts (parameter added by TASK-4608) and imports main_checkout_root from native_artifacts (test_scope/baseline.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4611-baseline-uses-shared-sync.md"
+    },
+    {
+      "id": "TASK-4612",
+      "slug": "worktree-native-sync-docs",
+      "title": "Document the native-artifact sync for agents",
+      "feature_id": "FEAT-722",
+      "feature": "worktree-native-artifact-sync",
+      "spec": "sdd/specs/worktree-native-artifact-sync.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no code dependency: documents the flags, env vars and build commands the spec already fixes; touches only the five docs and its own new test file",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4612-worktree-native-sync-docs.md"
+    }
+  ]
+}
