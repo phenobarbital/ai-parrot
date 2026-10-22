@@ -56,7 +56,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -64,8 +64,9 @@
       "parallelism_notes": "Root task: creates current_tenant in observability/context.py; no upstream dependency.",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4544-generic-current-tenant-contextvar.md"
+      "completed_at": "2026-10-22T12:18:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4544-generic-current-tenant-contextvar.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4545",
@@ -94,7 +95,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -102,8 +103,9 @@
       "parallelism_notes": "Root task: only adds defaulted dataclass fields to invoke.py and client.py; no upstream dependency.",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4546-usage-event-tenant-cost-fields.md"
+      "completed_at": "2026-10-22T12:18:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4546-usage-event-tenant-cost-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4547",
@@ -195,7 +197,7 @@
       "feature_id": "FEAT-710",
       "feature": "parrot-telemetry-event-fanout",
       "spec": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -203,8 +205,9 @@
       "parallelism_notes": "Independent: only storage/chat.py; no symbol from another task.",
       "assigned_to": null,
       "started_at": "2026-10-22T12:12:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4551-chat-hot-tier-metadata.md"
+      "completed_at": "2026-10-22T12:18:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4551-chat-hot-tier-metadata.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4552",
