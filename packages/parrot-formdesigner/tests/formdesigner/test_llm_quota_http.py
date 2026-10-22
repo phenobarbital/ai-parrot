@@ -189,6 +189,30 @@ async def test_submit_quota_key_contains_tenant_and_form_uid() -> None:
     assert backend.calls[0].startswith(f"{_TENANT}:{_FORM_UID}:")
 
 
+async def test_submit_invalid_payload_does_not_charge_quota() -> None:
+    """issue:eadd89b2242f — a 422 never reaches the LLM, so it must not burn quota."""
+    handler, storage = _handler(_form(LLMValidationConfig(enabled=True, on_implausible="reject")), FakeLLM())
+    backend = ExhaustedQuota()
+    handler.llm_quota = LLMQuota(backend=backend)
+
+    response = await handler.submit_data(_request({}))
+
+    assert response.status == 422
+    assert backend.calls == []
+    storage.store.assert_not_called()
+
+
+async def test_validate_invalid_payload_does_not_charge_quota() -> None:
+    handler, _ = _handler(_form(LLMValidationConfig(enabled=True)), FakeLLM())
+    backend = ExhaustedQuota()
+    handler.llm_quota = LLMQuota(backend=backend)
+
+    response = await handler.validate(_request({"llm_validation": True}, authenticated=True))
+
+    assert response.status == 422
+    assert backend.calls == []
+
+
 def test_setup_form_api_publishes_default_llm_quota() -> None:
     app = web.Application()
     setup_form_api(app, FormRegistry())

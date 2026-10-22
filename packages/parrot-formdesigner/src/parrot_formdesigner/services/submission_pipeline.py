@@ -10,12 +10,17 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from ..core.events import FormEventAbort
-from ..core.llm_validation import PlausibilityReport, implausible_fields, llm_validation_enabled
+from ..core.llm_validation import (
+    LLMValidationConfig,
+    PlausibilityReport,
+    implausible_fields,
+    llm_validation_enabled,
+)
 from ..core.schema import FormSchema, UnknownFieldsPolicy
 from ..core.voice_answer import VoiceEvidenceEnvelope, is_voice_envelope, unwrap_voice
 from .auth_context import AuthContext
@@ -29,6 +34,7 @@ from .unknown_fields import ExtrasCapExceeded, enforce_extras_cap
 from .validators import FormValidator, ValidationResult
 
 if TYPE_CHECKING:
+    from .llm_quota import QuotaDecision
     from aiohttp import web
 
     from .forwarder import SubmissionForwarder
@@ -42,6 +48,7 @@ __all__ = [
     "ValidationFailed",
     "PlausibilityBlocked",
     "ImplausibleSubmission",
+    "PlausibilityRateLimited",
 ]
 
 
@@ -105,6 +112,17 @@ class ImplausibleSubmission(Exception):
         return "PLAUSIBILITY_REVIEW" if self.policy == "review" else "PLAUSIBILITY_REJECTED"
 
 
+class PlausibilityRateLimited(Exception):
+    """The LLM quota denied a plausibility check that the policy cannot skip (429 class)."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        self.retry_after_s = retry_after_s
+        super().__init__(f"Plausibility check rate limited; retry after {retry_after_s}s")
+
+
+QuotaCheck = Callable[[], Awaitable["QuotaDecision"]]
+
+
 class SubmissionPipeline:
     """Validate → plausibility → persist → forward → cleanup → events, for every channel."""
 
@@ -158,6 +176,36 @@ class SubmissionPipeline:
             return None
         return ImplausibleSubmission(policy=policy, fields=flagged, report=report)
 
+    async def _charge_quota(
+        self, form: FormSchema, quota_check: "QuotaCheck | None", *, skippable: bool
+    ) -> PlausibilityReport | None:
+        """Charge the LLM quota immediately before a plausibility call (FEAT-728).
+
+        Called only once every deterministic step passed and a check is about to
+        run, so invalid submissions and LLM-less pipelines never burn quota.
+
+        Args:
+            form: The form being checked.
+            quota_check: Awaitable returning the limiter decision, or ``None`` for no quota.
+            skippable: True when an ``annotate`` form may continue without a verdict.
+
+        Returns:
+            ``None`` when the check may run, or a ``skipped`` report when it must be skipped.
+
+        Raises:
+            PlausibilityRateLimited: When denied and the call cannot be skipped.
+        """
+        if quota_check is None:
+            return None
+        decision = await quota_check()
+        if decision.allowed:
+            return None
+        policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+        if skippable and policy == "annotate":
+            config = form.llm_validation or LLMValidationConfig()
+            return PlausibilityReport(status="skipped", reason="rate_limited", threshold=config.threshold)
+        raise PlausibilityRateLimited(decision.retry_after_s)
+
     async def validate(
         self,
         form: FormSchema,
@@ -167,6 +215,7 @@ class SubmissionPipeline:
         auth_context: AuthContext | None,
         llm_validation: bool = False,
         visit_context: dict[str, Any] | None = None,
+        quota_check: "QuotaCheck | None" = None,
     ) -> tuple[ValidationResult, PlausibilityReport | None]:
         """Prepare step: deterministic validation, then plausibility only when valid and requested."""
         result = await self.validator.validate(
@@ -174,6 +223,7 @@ class SubmissionPipeline:
         )
         report: PlausibilityReport | None = None
         if llm_validation and result.is_valid and self.plausibility is not None and self._plausibility_enabled(form):
+            await self._charge_quota(form, quota_check, skippable=False)
             report = await self.plausibility.check(form, unwrap_voice(result.sanitized_data), locale=locale)
         return result, report
 
@@ -194,6 +244,7 @@ class SubmissionPipeline:
         request: "web.Request | None" = None,
         visit_context: dict[str, Any] | None = None,
         submission_id: str | None = None,
+        quota_check: "QuotaCheck | None" = None,
     ) -> SubmitOutcome:
         """Commit step. Raises ValidationFailed, SubmitSinkError, PlausibilityBlocked or FormEventAbort."""
         auth = auth_context or AuthContext(scheme="none")
@@ -248,7 +299,11 @@ class SubmissionPipeline:
             # Plausibility sits after every deterministic 422 so an invalid submission never costs an LLM call.
             # A report passed in by the caller (audio REVIEW) is used as-is. PlausibilityBlocked propagates.
             if plausibility is None and self.plausibility is not None and self._plausibility_enabled(form):
-                plausibility = await self.plausibility.check(form, unwrap_voice(result.sanitized_data), locale=locale)
+                plausibility = await self._charge_quota(form, quota_check, skippable=True)
+                if plausibility is None:
+                    plausibility = await self.plausibility.check(
+                        form, unwrap_voice(result.sanitized_data), locale=locale
+                    )
 
             gate = self.gate_for(form, plausibility, ack=plausibility_ack)
             if gate is not None:
@@ -382,7 +437,7 @@ class SubmissionPipeline:
                 plausibility=plausibility,
                 validation=result,
             )
-        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked, ImplausibleSubmission):
+        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked, ImplausibleSubmission, PlausibilityRateLimited):
             raise
         except Exception as exc:
             user_message: str | None = None

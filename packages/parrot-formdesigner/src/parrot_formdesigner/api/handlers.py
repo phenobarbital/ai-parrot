@@ -1182,6 +1182,7 @@ class FormAPIHandler:
             body = submission_in.answers
 
         from ..services.plausibility import PlausibilityBlocked
+        from ..services.submission_pipeline import PlausibilityRateLimited
 
         # Opt-in plausibility check; popped BEFORE visit-context extraction so the flag is
         # never reported as an unknown field.
@@ -1194,20 +1195,24 @@ class FormAPIHandler:
         if llm_opt_in and not has_session:
             llm_opt_in = False
             opt_in_skipped = "unauthenticated_opt_in"
-        elif llm_opt_in:
-            decision = await self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid))
-            if not decision.allowed:
-                return JSONResponse(
-                    {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
-                    status=429,
-                    headers={"Retry-After": str(decision.retry_after_s)},
-                )
         ack = self._plausibility_ack(request, body)
         data, visit_context = self._extract_visit_context(form, body)
         pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
         try:
             result, plausibility = await pipeline.validate(
-                form, data, locale="en", auth_context=None, llm_validation=llm_opt_in, visit_context=visit_context
+                form,
+                data,
+                locale="en",
+                auth_context=None,
+                llm_validation=llm_opt_in,
+                visit_context=visit_context,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
+            )
+        except PlausibilityRateLimited as exc:
+            return JSONResponse(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
             )
         except PlausibilityBlocked as exc:
             return JSONResponse(
@@ -1820,24 +1825,13 @@ class FormAPIHandler:
                     )
 
         from ..services.plausibility import PlausibilityBlocked
-        from ..services.submission_pipeline import ImplausibleSubmission, SubmitSinkError, ValidationFailed
-        from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
+        from ..services.submission_pipeline import (
+            ImplausibleSubmission,
+            PlausibilityRateLimited,
+            SubmitSinkError,
+            ValidationFailed,
+        )
 
-        plausibility_override: PlausibilityReport | None = None
-        if any(llm_validation_enabled(form, field) for field in form.iter_fields_recursive()):
-            decision = await self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid))
-            if not decision.allowed:
-                policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
-                if policy != "annotate":
-                    return _reply(
-                        {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
-                        status=429,
-                        headers={"Retry-After": str(decision.retry_after_s)},
-                    )
-                config = form.llm_validation or LLMValidationConfig()
-                plausibility_override = PlausibilityReport(
-                    status="skipped", reason="rate_limited", threshold=config.threshold
-                )
         pipeline = self._build_submission_pipeline(form)
         try:
             outcome = await pipeline.submit(
@@ -1850,8 +1844,8 @@ class FormAPIHandler:
                 extra_data=None,
                 auth_context=_auth_ctx,
                 merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
-                plausibility=plausibility_override,
                 plausibility_ack=plausibility_ack,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
                 request=request,
                 visit_context=visit_context,
             )
@@ -1860,6 +1854,12 @@ class FormAPIHandler:
             return JSONResponse({"error": exc.user_message, "reason": exc.reason}, status=exc.status_code)
         except ValidationFailed as exc:
             return _reply({"is_valid": False, "errors": exc.errors}, status=422)
+        except PlausibilityRateLimited as exc:
+            return _reply(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
+            )
         except ImplausibleSubmission as exc:
             return _reply(
                 {
