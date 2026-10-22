@@ -1,0 +1,161 @@
+{
+  "feature": "tests-test-wheel-layout-tech-debt-2",
+  "feature_id": "FEAT-720",
+  "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T13:55:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/test_package_test_collection.py",
+          "packages/ai-parrot-embeddings/tests/test_wheel_layout.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_plane_operations.py",
+          "packages/ai-parrot/tests/unit/clients/test_factory_discovery.py",
+          "packages/ai-parrot/tests/tools/test_obsidian_toolkit.py",
+          "packages/ai-parrot-integrations/tests/agentd/test_cli.py",
+          "packages/ai-parrot-integrations/tests/agentd/test_service.py",
+          "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py",
+          "packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py",
+          "packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py",
+          "packages/parrot-formdesigner/tests/unit/test_org_graph_service.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:a29f68c5fe2881095ffe83d4ec92edbd06a0af92c31adfac3ffd181022ad39ec"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4590",
+      "slug": "spike-remeasure-strategy-a",
+      "title": "Spike — re-measure strategy (a) on current dev",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: applies strategy (a) repo-wide (deletes 25 packages/*/tests/__init__.py and edits the root pyproject.toml addopts), measures, then reverts. While it runs, every other task's pytest collection semantics are mutated outside its declared files.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4590-spike-remeasure-strategy-a.md"
+    },
+    {
+      "id": "TASK-4591",
+      "slug": "collection-identity",
+      "title": "Collection identity — delete the 25 test-root packages, add importlib mode",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4590"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the STRATEGY (a) CONFIRMED verdict in sdd/state/FEAT-720/spike-collect.md from TASK-4590. Exclusive: edits the root pyproject.toml (a shared manifest) and changes pytest import semantics for the entire monorepo, so no other task's test run is meaningful while it lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4591-collection-identity.md"
+    },
+    {
+      "id": "TASK-4592",
+      "slug": "repair-import-sites-ai-parrot",
+      "title": "Repair the ai-parrot import sites",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4591"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Repairs the sites TASK-4591 breaks by deleting packages/ai-parrot/tests/__init__.py, and is scoped from the §3 table of TASK-4590's spike-collect.md. Exclusive: until every distribution is repaired the tree is half-converted, so a concurrent task's collection run cannot distinguish its own breakage from this one's.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4592-repair-import-sites-ai-parrot.md"
+    },
+    {
+      "id": "TASK-4593",
+      "slug": "repair-import-sites-integrations-tools",
+      "title": "Repair the integrations and tools import sites",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4592"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serialized after TASK-4592 so the half-converted window stays single-owner: both tasks validate by comparing per-distribution collect counts against the same TASK-4590 baseline, which only one task at a time can interpret. Exclusive for the same reason.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4593-repair-import-sites-integrations-tools.md"
+    },
+    {
+      "id": "TASK-4594",
+      "slug": "repair-import-sites-server-embeddings-loaders-formdesigner",
+      "title": "Repair the server, embeddings, loaders and formdesigner import sites",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4593"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Last repair task: it is the first point at which AC1's pair collect can pass, so it must observe the tree after TASK-4592 and TASK-4593 have landed. Exclusive: its class (vi) resolution changes whether the name `mcp` reaches top level, which affects every session in the repo.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4594-repair-import-sites-server-embeddings-loaders-formdesigner.md"
+    },
+    {
+      "id": "TASK-4595",
+      "slug": "collection-regression-guard",
+      "title": "Regression guard for package test-collection identity",
+      "feature_id": "FEAT-720",
+      "feature": "tests-test-wheel-layout-tech-debt-2",
+      "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4594"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Asserts the end state TASK-4591..4594 create, so it can only pass once TASK-4594 lands. Exclusive: its AC8 demonstration deliberately recreates a packages/*/tests/__init__.py to prove the guard fails, which breaks collection repo-wide for the duration.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4595-collection-regression-guard.md"
+    }
+  ]
+}

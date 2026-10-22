@@ -319,18 +319,19 @@ it**. There are ~60 live worktrees at spec time. Two consequences, both binding:
 
 ### Validation Contract
 
-```yaml
-runners:
-  - kind: pytest
-    tier: [task, feature, merge]
-    tests:
-      - packages/ai-parrot/tests/test_package_test_collection.py
-      - packages/ai-parrot-embeddings/tests/test_wheel_layout.py
-```
-
-Deliberately narrow: this feature's correctness is proven by **collection
-matrices** (AC1/AC2), which are wall-clock expensive and belong in the feature
-tier's explicit commands, not in every task's selector run.
+tests:
+- packages/ai-parrot/tests/test_package_test_collection.py
+- packages/ai-parrot-embeddings/tests/test_wheel_layout.py
+- packages/ai-parrot/tests/knowledge/wiki/test_plane_operations.py
+- packages/ai-parrot/tests/unit/clients/test_factory_discovery.py
+- packages/ai-parrot/tests/tools/test_obsidian_toolkit.py
+- packages/ai-parrot-integrations/tests/agentd/test_cli.py
+- packages/ai-parrot-integrations/tests/agentd/test_service.py
+- packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py
+- packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py
+- packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py
+- packages/parrot-formdesigner/tests/unit/test_org_graph_service.py
+markers: none
 
 ### Test Data / Fixtures
 None. M1's artefact is evidence, not a fixture.
