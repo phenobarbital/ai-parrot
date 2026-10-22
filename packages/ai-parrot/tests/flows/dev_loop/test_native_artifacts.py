@@ -44,8 +44,7 @@ def test_load_manifest_empty_when_table_absent(tmp_path: Path) -> None:
 def test_load_manifest_rejects_malformed_table(tmp_path: Path) -> None:
     """Unknown group fields are reported as a caller-friendly ValueError."""
     (tmp_path / "pyproject.toml").write_text(
-        "[tool.parrot.worktree]\nenabled = true\n"
-        '[[tool.parrot.worktree.native_group]]\nname = "x"\nbogus_key = 1\n',
+        "[tool.parrot.worktree]\nenabled = true\n" '[[tool.parrot.worktree.native_group]]\nname = "x"\nbogus_key = 1\n',
         encoding="utf-8",
     )
     with pytest.raises(ValueError):
