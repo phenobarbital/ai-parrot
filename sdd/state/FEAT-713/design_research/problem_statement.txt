@@ -1,0 +1,13 @@
+## Problem Statement
+
+Finance questions that agents receive — "revenue for Pokémon at TROC last quarter", "EBITDA by cost center", "operating expenses YTD" — are not analytical questions over a schema; they are **rollups over a chart of accounts**. Which GL accounts sum into *revenue*, which ones are netted (returns, discounts), what sign convention applies to each account, and which accounts moved between buckets at the last fiscal year change is **internal, closed knowledge** that no LLM has and no `information_schema` exposes.
+
+Today the only places that knowledge could live are:
+
+1. **A skill / system prompt in prose.** Lossy by construction: a list of 40 account codes in a markdown skill will eventually be paraphrased, truncated or partially recalled, and one omitted account silently changes the number. There is no way to *validate* a prose skill against the chart of accounts.
+2. **Free-form SQL from the DB Query Toolkit.** The agent writes the aggregation itself. Even with the sqlglot positive allowlist guard planned in the semantic-layer research, the guard validates *tables and columns*, not *which accounts belong in the `IN (...)` list*. The query is syntactically safe and semantically wrong.
+3. **A view maintained by DBAs.** Deterministic, but opaque to the agent (no lineage, no explanation), not portable to in-memory DataFrames in `DatasetManager`, and the "why is revenue this number" question cannot be answered.
+
+The generic semantic layer (BSL/Ibis per the research, sidemantic pending legal) solves metric *naming* and *governance*, but its primitives (measures, dimensions, joins) do not express the accounting-specific invariants: completeness of the chart of accounts over the declared buckets, debit/credit sign normalisation, effective-dated account membership, and reconciliation assertions (`revenue − expenses == net_income`).
+
+Who is affected: any agent using `DatabaseToolkit` / `SQLToolkit` or `DatasetManager` over a general ledger; finance users of the client deployments (TROC is the first concrete case); the AuditLedger (a financial figure must be traceable to the exact query and the exact model version that produced it). Why now: the semantic-layer spec is in progress and this layer must be designed as its *specialisation*, not bolted on after; and the first client request for GL-level answers is on the table.

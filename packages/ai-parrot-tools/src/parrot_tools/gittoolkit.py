@@ -25,9 +25,11 @@ import base64
 import datetime as _dt
 from datetime import datetime, timezone
 import os
+import re
 import shutil
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -42,7 +44,57 @@ from .toolkit import AbstractToolkit
 
 
 class GitToolkitError(RuntimeError):
-    """Raised when the toolkit cannot satisfy a request."""
+    """Raised when the toolkit cannot satisfy a request.
+
+    When the failure came from a GitHub API call the exception also carries the
+    HTTP context, so callers can branch on :attr:`status_code` instead of
+    sniffing the message, and can surface GitHub's own explanation to the
+    operator. ``str(exc)`` is unchanged, which keeps older callers working.
+
+    Attributes:
+        status_code: HTTP status returned by GitHub, or ``None`` for failures
+            raised before/without a request (e.g. unresolved repository).
+        url: The API URL that failed.
+        api_message: GitHub's own ``message`` field from the error body.
+        accepted_permissions: The ``x-accepted-github-permissions`` response
+            header, which names the fine-grained permission the endpoint wants
+            (e.g. ``repository_hooks=write``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        url: Optional[str] = None,
+        api_message: Optional[str] = None,
+        accepted_permissions: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
+        self.api_message = api_message
+        self.accepted_permissions = accepted_permissions
+
+
+class StatsNotReadyError(GitToolkitError):
+    """Raised when a ``/stats/*`` endpoint keeps answering 202.
+
+    GitHub computes repository statistics lazily: the first request for a cold
+    repo returns ``202 Accepted`` and only *starts* the computation, which can
+    take minutes on a large repository. Exhausting the 202 retries therefore
+    means "not ready yet", not "broken" — a distinct outcome callers should be
+    able to defer on instead of treating as an error. It stays a
+    :class:`GitToolkitError` so existing ``except GitToolkitError`` handlers
+    keep working.
+
+    Attributes:
+        attempts: How many requests were made before giving up.
+    """
+
+    def __init__(self, message: str, *, attempts: Optional[int] = None, url: Optional[str] = None) -> None:
+        super().__init__(message, status_code=202, url=url)
+        self.attempts = attempts
 
 
 class RepositoryCredential(BaseModel):
@@ -331,6 +383,26 @@ class SubmitPRReviewInput(BaseModel):
         description="Review event to record on the pull request."
     )
     body: str = Field(description="Review body in Markdown (required for REQUEST_CHANGES).")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
+class GetPRChecksInput(BaseModel):
+    """Input payload for ``get_pr_checks``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
+class ConvertPRToDraftInput(BaseModel):
+    """Input payload for ``convert_pr_to_draft``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
     repository: Optional[str] = Field(
         default=None,
         description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
@@ -1168,6 +1240,23 @@ class GitToolkit(AbstractToolkit):
         return _GitHubContext(repository=conn.repository, base_branch=branch, token=conn.token())
 
     @staticmethod
+    def _api_error_message(response: requests.Response) -> Optional[str]:
+        """Return GitHub's own ``message`` for a failed call, when present.
+
+        GitHub error bodies are JSON with a human-readable ``message`` ("Resource
+        not accessible by personal access token", "Bad credentials", ...), which
+        is far more actionable than the raw body. Non-JSON bodies yield ``None``.
+        """
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001 — HTML/empty error bodies are common
+            return None
+        if isinstance(payload, dict):
+            message = payload.get("message")
+            return str(message) if message else None
+        return None
+
+    @staticmethod
     def _request(
         method: str,
         url: str,
@@ -1183,7 +1272,11 @@ class GitToolkit(AbstractToolkit):
         response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         if response.status_code != expected:
             raise GitToolkitError(
-                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}"
+                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}",
+                status_code=response.status_code,
+                url=url,
+                api_message=GitToolkit._api_error_message(response),
+                accepted_permissions=(getattr(response, "headers", None) or {}).get("x-accepted-github-permissions"),
             )
         return response
 
@@ -1214,8 +1307,9 @@ class GitToolkit(AbstractToolkit):
             The ``requests.Response`` with status 200.
 
         Raises:
-            GitToolkitError: If the response is not 200/202, or after
-                exhausting all retries without seeing 200.
+            GitToolkitError: If the response is not 200/202.
+            StatsNotReadyError: After exhausting all retries without seeing
+                200 — the data is still being computed, not unavailable.
         """
         headers = {
             "Authorization": f"Bearer {token}",
@@ -1234,8 +1328,10 @@ class GitToolkit(AbstractToolkit):
                 break
             delay = min(initial_delay * (2**attempt), max_delay)
             time.sleep(delay)
-        raise GitToolkitError(
-            f"GitHub stats call to {url} returned 202 after " f"{max_retries + 1} attempts; giving up."
+        raise StatsNotReadyError(
+            f"GitHub stats call to {url} returned 202 after " f"{max_retries + 1} attempts; giving up.",
+            attempts=max_retries + 1,
+            url=url,
         )
 
     @staticmethod
@@ -1814,6 +1910,378 @@ class GitToolkit(AbstractToolkit):
 
         return await asyncio.to_thread(self._submit_pr_review_sync, repository, pr_number, event, body)
 
+    #: Check-run / commit-status conclusions that count as a pass.
+    _CHECK_SUCCESS = frozenset({"success", "neutral", "skipped"})
+    #: Conclusions that count as a hard failure.
+    _CHECK_FAILURE = frozenset({"failure", "timed_out", "action_required", "startup_failure", "stale", "error"})
+
+    @classmethod
+    def _classify_check(cls, status: Optional[str], conclusion: Optional[str]) -> str:
+        """Map a check run / commit status onto ``success|failure|pending``.
+
+        GitHub reports a check run's lifecycle in ``status`` and its outcome in
+        ``conclusion``: while it runs the conclusion is ``None``, so the
+        lifecycle decides. ``neutral`` and ``skipped`` are deliberately counted
+        as passes — a skipped job is not a broken one. ``cancelled`` is treated
+        as pending-unknown rather than a failure, because a cancelled run is
+        most often a superseded push, not a red test.
+        """
+        state = (status or "").lower()
+        verdict = (conclusion or "").lower()
+        if state in ("queued", "in_progress", "pending", "waiting", "requested") and not verdict:
+            return "pending"
+        if verdict in cls._CHECK_FAILURE:
+            return "failure"
+        if verdict in cls._CHECK_SUCCESS:
+            return "success"
+        return "pending"
+
+    def _get_pr_checks_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        head_sha: Optional[str],
+    ) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        sha = head_sha
+        if not sha:
+            pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+            pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+            sha = ((pr_data.get("head") or {}).get("sha")) or ""
+        if not sha:
+            raise GitToolkitError(
+                f"Cannot resolve the head SHA of {repo}#{pr_number}; check runs are unavailable.",
+                url=f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+            )
+
+        checks: List[Dict[str, Any]] = []
+        denied: List[str] = []
+        answered: List[str] = []
+        # endpoint -> GitHub's own ``x-accepted-github-permissions`` answer.
+        accepted: Dict[str, str] = {}
+
+        # GitHub Checks API — what GitHub Actions, and most CI apps, report to.
+        # A token may be allowed one of the two APIs and not the other (the
+        # fine-grained "Checks" and "Commit statuses" permissions are
+        # independent), so a denial on either is tolerated and reported rather
+        # than losing the evidence the token CAN read.
+        runs_url = f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs"
+        try:
+            runs = self._request("GET", runs_url, token, expected=200, params={"per_page": 100}).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("check_runs")
+            if exc.accepted_permissions:
+                accepted["check_runs"] = str(exc.accepted_permissions)
+            runs = {}
+        else:
+            answered.append("check_runs")
+        for run in runs.get("check_runs") or []:
+            checks.append(
+                {
+                    "name": str((run or {}).get("name") or ""),
+                    "status": (run or {}).get("status"),
+                    "conclusion": (run or {}).get("conclusion"),
+                    "state": self._classify_check((run or {}).get("status"), (run or {}).get("conclusion")),
+                    "url": (run or {}).get("html_url"),
+                    "source": "check_run",
+                }
+            )
+
+        # Actions workflow runs — the substitute when the Checks API is
+        # refused, which is the NORMAL case for a fine-grained PAT: GitHub does
+        # not offer them the `checks` permission at all (GitHub Apps only), so
+        # `actions=read` is the only way such a token can see an Actions
+        # pipeline. Queried only when check-runs failed, because every workflow
+        # run also surfaces as a check run and would otherwise be counted twice.
+        if "check_runs" in denied:
+            wf_url = f"https://api.github.com/repos/{repo}/actions/runs"
+            try:
+                workflows = (
+                    self._request(
+                        "GET",
+                        wf_url,
+                        token,
+                        expected=200,
+                        params={"head_sha": sha, "per_page": 100},
+                    ).json()
+                    or {}
+                )
+            except GitToolkitError as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+                denied.append("workflow_runs")
+                if exc.accepted_permissions:
+                    accepted["workflow_runs"] = str(exc.accepted_permissions)
+                workflows = {}
+            else:
+                answered.append("workflow_runs")
+            for wf in workflows.get("workflow_runs") or []:
+                wf = wf or {}
+                checks.append(
+                    {
+                        "name": str(wf.get("name") or wf.get("display_title") or ""),
+                        "status": wf.get("status"),
+                        "conclusion": wf.get("conclusion"),
+                        "state": self._classify_check(wf.get("status"), wf.get("conclusion")),
+                        "url": wf.get("html_url"),
+                        "source": "workflow_run",
+                    }
+                )
+
+        # Legacy Commit Status API — older integrations (Travis, Jenkins
+        # webhooks, custom scripts) only ever write here, so a repo can have
+        # a fully green pipeline and an empty check-runs list.
+        status_url = f"https://api.github.com/repos/{repo}/commits/{sha}/status"
+        try:
+            combined = self._request("GET", status_url, token, expected=200).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("commit_statuses")
+            if exc.accepted_permissions:
+                accepted["commit_statuses"] = str(exc.accepted_permissions)
+            combined = {}
+        else:
+            answered.append("commit_statuses")
+        for st in combined.get("statuses") or []:
+            state = str((st or {}).get("state") or "").lower()
+            checks.append(
+                {
+                    "name": str((st or {}).get("context") or ""),
+                    "status": state,
+                    "conclusion": state,
+                    "state": (
+                        "success" if state == "success" else ("failure" if state in ("failure", "error") else "pending")
+                    ),
+                    "url": (st or {}).get("target_url"),
+                    "source": "commit_status",
+                }
+            )
+
+        counts = Counter(c["state"] for c in checks)
+        # Readable if ANY of the three sources answered. Nothing answering means
+        # "we do not know", which must never be mistaken for "green".
+        available = bool(answered)
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "head_sha": sha,
+            "checks": checks,
+            "total": len(checks),
+            "success": counts.get("success", 0),
+            "failure": counts.get("failure", 0),
+            "pending": counts.get("pending", 0),
+            "combined_state": combined.get("state"),
+            "available": available,
+            "answered": answered,
+            "denied": denied,
+            "denied_permissions": accepted,
+            "reason": self._denial_reason(denied, accepted) if denied else None,
+        }
+
+    #: API permission name -> the label the fine-grained-PAT UI shows for it.
+    #: Needed because GitHub answers ``checks=read`` while the settings page
+    #: calls it "Checks", and ``statuses=read`` is listed as "Commit statuses"
+    #: — an operator searching the UI for "statuses" or "Actions" finds the
+    #: wrong row otherwise.
+    _PERMISSION_LABELS = {
+        "actions": "Actions",
+        "checks": "Checks",
+        "contents": "Contents",
+        "issues": "Issues",
+        "metadata": "Metadata",
+        "pull_requests": "Pull requests",
+        "statuses": "Commit statuses",
+        "workflows": "Workflows",
+    }
+    #: Fallback when GitHub sends no ``x-accepted-github-permissions`` header.
+    _CHECK_PERMISSIONS = {
+        "check_runs": "checks=read",
+        "commit_statuses": "statuses=read",
+        "workflow_runs": "actions=read",
+    }
+    #: Permissions a fine-grained PAT can NEVER hold, whatever the endpoint's
+    #: own docs claim. GitHub disabled `checks` for PATs — only GitHub Apps can
+    #: read the Checks API — so telling an operator to "grant Checks" sends
+    #: them hunting for a row that does not exist in the token UI.
+    #: See https://github.com/orgs/community/discussions/129512
+    _APP_ONLY_PERMISSIONS = frozenset({"checks"})
+
+    @classmethod
+    def _describe_permission(cls, accepted: str) -> str:
+        """Turn ``"checks=read; contents=read"`` into UI-findable labels."""
+        labels: List[str] = []
+        for part in re.split(r"[;,]", accepted or ""):
+            part = part.strip()
+            if not part:
+                continue
+            name, _, level = part.partition("=")
+            label = cls._PERMISSION_LABELS.get(name.strip(), name.strip())
+            access = "Read-only" if (level.strip() or "read") == "read" else "Read and write"
+            labels.append(f"'{label}' ({access})")
+        return ", ".join(labels)
+
+    @classmethod
+    def _denial_reason(cls, denied: List[str], accepted: Optional[Dict[str, str]] = None) -> str:
+        """Explain each refused CI read in terms the operator can act on.
+
+        Prefers GitHub's own ``x-accepted-github-permissions`` header over any
+        static mapping: it is authoritative and survives API changes. But the
+        header alone is a trap — it answers ``checks=read`` for check runs, and
+        that permission cannot be granted to a fine-grained PAT at all, so the
+        advice has to say what to do INSTEAD of naming a row that is not in the
+        token UI.
+        """
+        accepted = accepted or {}
+        parts: List[str] = []
+        grantable = False
+        for name in denied:
+            raw = accepted.get(name) or cls._CHECK_PERMISSIONS.get(name, "")
+            slugs = {part.partition("=")[0].strip() for part in re.split(r"[;,]", raw or "") if part.strip()}
+            described = cls._describe_permission(raw)
+            if slugs & cls._APP_ONLY_PERMISSIONS:
+                parts.append(
+                    f"{name} needs [{raw}], which GitHub does NOT offer to fine-grained PATs "
+                    f"(GitHub Apps only) — grant 'Actions' (Read-only) so workflow runs stand in, "
+                    f"or use a classic PAT with the 'repo' scope, or a GitHub App with "
+                    f"'Checks' (Read-only)"
+                )
+            elif described:
+                grantable = True
+                parts.append(f"{name} needs {described} [{raw}] on the fine-grained PAT")
+            else:
+                parts.append(f"{name} denied")
+        reason = "; ".join(parts)
+        if grantable:
+            reason += " — on an org-owned repository that change may also need an owner's approval"
+        # Phrased to nest inside a caller's sentence, so it must not repeat
+        # "for this token" — the caller has already said whose token it is.
+        return reason
+
+    @tool_schema(GetPRChecksInput)
+    async def get_pr_checks(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+        head_sha: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return the CI checks reported for a pull request's head commit.
+
+        Merges the Checks API (``check-runs``) with the legacy Commit Status
+        API, because a repository may use either or both, and normalizes every
+        entry to ``state`` in ``success|failure|pending`` alongside the raw
+        GitHub fields. ``head_sha`` skips the extra PR lookup when the caller
+        already knows it.
+
+        The two APIs sit behind independent token permissions, so a 403/404 on
+        one does not discard the other: the denial is listed in ``denied`` and
+        explained in ``reason``, and ``available`` is False only when BOTH were
+        refused — "we do not know" must never read as "green".
+        """
+
+        return await asyncio.to_thread(self._get_pr_checks_sync, repository, pr_number, head_sha)
+
+    _CONVERT_TO_DRAFT_MUTATION = (
+        "mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) "
+        "{ pullRequest { number isDraft } } }"
+    )
+
+    def _convert_pr_to_draft_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+        if pr_data.get("draft"):
+            return {
+                "status": "already_draft",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": True,
+            }
+        node_id = pr_data.get("node_id")
+        if not node_id:
+            raise GitToolkitError(
+                f"GitHub did not return a node_id for {repo}#{pr_number}; cannot convert it to draft.",
+                url=pr_url,
+            )
+        if (pr_data.get("state") or "").lower() != "open":
+            return {
+                "status": "not_open",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": False,
+                "message": f"{repo}#{pr_number} is {pr_data.get('state')}; only an open PR can become a draft.",
+            }
+
+        # REST cannot flip the draft flag — PATCH /pulls ignores it. The
+        # GraphQL mutation is the only supported path, and it answers 200 with
+        # an ``errors`` array instead of an HTTP error code.
+        response = self._request(
+            "POST",
+            "https://api.github.com/graphql",
+            token,
+            expected=200,
+            json={"query": self._CONVERT_TO_DRAFT_MUTATION, "variables": {"id": node_id}},
+        )
+        body = response.json() or {}
+        errors = body.get("errors") or []
+        if errors:
+            message = "; ".join(str((e or {}).get("message") or e) for e in errors)
+            raise GitToolkitError(
+                f"GraphQL convertPullRequestToDraft failed for {repo}#{pr_number}: {message}",
+                url="https://api.github.com/graphql",
+                api_message=message,
+            )
+        pull = (((body.get("data") or {}).get("convertPullRequestToDraft") or {}).get("pullRequest")) or {}
+        return {
+            "status": "converted",
+            "repository": repo,
+            "pr_number": pr_number,
+            "is_draft": bool(pull.get("isDraft", True)),
+        }
+
+    @tool_schema(ConvertPRToDraftInput)
+    async def convert_pr_to_draft(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Convert an open pull request into a draft so it cannot be merged.
+
+        Returns ``status`` in ``converted|already_draft|not_open``. Needs the
+        GraphQL mutation (REST has no writable ``draft`` field), so the token
+        must carry the same ``pull_requests: write`` permission used to submit
+        reviews.
+        """
+
+        return await asyncio.to_thread(self._convert_pr_to_draft_sync, repository, pr_number)
+
+    @staticmethod
+    def _webhook_failure(exc: GitToolkitError, *, operation: str) -> Dict[str, Any]:
+        """Translate a failed ``/hooks`` call into an ``ensure_webhook`` result.
+
+        403 and 404 both mean "this token cannot manage hooks here" — the
+        permission is missing, or the repository is invisible to it — and keep
+        the ``no_permission`` status callers already branch on. Anything else is
+        a plain error. The HTTP context rides along so the operator reads
+        GitHub's own explanation instead of a guess about which scope is
+        missing.
+        """
+        status = "no_permission" if exc.status_code in (403, 404) else "error"
+        return {
+            "status": status,
+            "message": str(exc),
+            "operation": operation,
+            "status_code": exc.status_code,
+            "api_message": exc.api_message,
+            "required_permission": exc.accepted_permissions,
+        }
+
     def _ensure_webhook_sync(
         self,
         repository: Optional[str],
@@ -1824,7 +2292,10 @@ class GitToolkit(AbstractToolkit):
         """Idempotently register a GitHub webhook for ``webhook_url``.
 
         Returns a dict with ``status`` in {created, already_exists, no_permission, error}
-        plus the hook payload when available.
+        plus the hook payload when available. Failures also carry ``operation``
+        (``list``/``create``), ``status_code``, GitHub's own ``api_message`` and
+        ``required_permission`` (the ``x-accepted-github-permissions`` header),
+        so callers can report the real cause instead of assuming a scope.
         """
         conn = self._resolve_connection(repository)
         repo, token = conn.repository, conn.token()
@@ -1832,10 +2303,7 @@ class GitToolkit(AbstractToolkit):
         try:
             response = self._request("GET", list_url, token, expected=200)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="list")
 
         for hook in response.json() or []:
             cfg = (hook or {}).get("config") or {}
@@ -1858,10 +2326,7 @@ class GitToolkit(AbstractToolkit):
         try:
             create = self._request("POST", list_url, token, expected=201, json=payload)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="create")
         return {"status": "created", "hook": create.json()}
 
     async def ensure_webhook(
@@ -1873,9 +2338,13 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Ensure a GitHub webhook pointing at ``webhook_url`` exists on the repo.
 
-        Idempotent. Falls back gracefully when the token lacks
-        ``admin:repo_hook`` (status ``"no_permission"``) so callers can run in
-        hybrid mode (auto when allowed, manual otherwise).
+        Idempotent. Falls back gracefully when GitHub refuses the hooks
+        endpoint (status ``"no_permission"``) so callers can run in hybrid mode
+        (auto when allowed, manual otherwise). That refusal is not always a
+        missing scope: repository webhooks require the **admin** role on the
+        repo, and a fine-grained token can never exceed its owner's role, so
+        the result also carries ``status_code``, ``api_message`` and
+        ``required_permission`` for the operator-facing log.
         """
 
         return await asyncio.to_thread(
@@ -2472,6 +2941,7 @@ __all__ = [
     "AddPRCommentInput",
     "SubmitPRReviewInput",
     "GitToolkitError",
+    "StatsNotReadyError",
     # FEAT-180 stats models
     "ContributorWeek",
     "ContributorStats",

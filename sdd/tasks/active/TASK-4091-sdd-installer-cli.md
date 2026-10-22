@@ -140,6 +140,50 @@ delta for reviewers.
 
 ---
 
+## Amendments — spec rev 0.6 C25 (2026-10-21)
+
+- **C25 — render the guard-hook line so it resolves without the managed launcher** (proposal
+  C25, approved by Jesus Lara 2026-10-21; spec §3 M6 "Rev 0.6 amendment C25"). The C16 hook
+  `parrot sdd run worktree_environment --hook || exit 2` fails closed when ai-parrot lives
+  only in the target repo's `.venv` and the venv is not on the Claude Code process's PATH
+  (observed in navigator-eventbus). This task:
+  1. Adds `GUARD_HOOK_LINE = "parrot sdd run worktree_environment --hook || exit 2"` and
+     `guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]`:
+     bare when `portable`, or when `shutil.which("parrot")` resolves under
+     `parrot.launcher.parrot_home()` (compare both the path as found and after
+     `Path.resolve()`, because the managed shims may be symlinks into `~/.parrot/venv`);
+     otherwise baked: `shlex.quote(script_path(Path(sys.prefix), "parrot").as_posix())`
+     + `" sdd run worktree_environment --hook || exit 2"`.
+  2. Adds `_rendered_payload(entry, hook: str) -> bytes`: when the packaged bytes contain
+     `GUARD_HOOK_LINE` (only the Claude `sdd-coder` / `sdd-worker` agents today; match on the
+     content, never on a hardcoded target path), it replaces that substring with `hook`,
+     YAML-escaped for the single-quoted scalar (`'` → `''`). Otherwise it returns the bytes
+     unchanged. `classify_entry` and `_apply_asset` both use it instead of the raw packaged
+     bytes, and the receipt records the rendered SHA. A mode change therefore classifies as
+     `outdated` and upgrades without `--force`; a team edit still classifies as `edited`.
+  3. `install_sdd_integration(..., portable: bool = False)` and `parrot sdd install --portable`
+     (help: "Write the bare guard-hook command (needs the global launcher on PATH); default
+     bakes the installing venv's `parrot` when the launcher is not on PATH"). `plan_install`
+     takes the hook string so `--dry-run` stays pure and still prints the plan. In baked form,
+     the action log adds `note: guard hook baked to <path>; re-run after rebuilding the venv,
+     or install the global launcher and use --portable`. When `Path(sys.prefix)` is neither
+     `<root>/.venv` nor the main checkout's `.venv` (from `git rev-parse --git-common-dir`), it
+     adds a `warning:` naming the venv.
+  4. `sdd_status()` gains `"guard_hook": {"form": "bare" | "baked" | "other" | None,
+     "command": str | None, "targets": [str], "resolvable": bool}`. It reads the `command:`
+     of every `.claude/agents/*.md` on disk whose frontmatter names `worktree_environment`,
+     installed or foreign. `"other"` is any command that is neither the bare line nor
+     `<abs path to a parrot script> sdd run worktree_environment --hook || exit 2`; this
+     catches hand-patched `site-packages/.../worktree_environment.py` forms. `resolvable`:
+     bare → `shutil.which("parrot") is not None`; baked → the path exists; other → `False`;
+     `None` (no such file) → `True`. TASK-4080 consumes it (`sdd: guard hook`).
+  5. Hand-copied agent files stay `foreign` (C4 unchanged; never overwritten, even with
+     `--force`); `status` / doctor report them.
+- Not changed: the programmatic hook command (C19, TASK-4509), the shipped asset text, the
+  asset sync check, C3's managed-PATH scenarios.
+
+---
+
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: C3 `Scenario` list extended (`review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment`, TASK-4508's `cache_test_contract` / `test_report` / `check_e2e_closeout` / `close_resolved_issues`); `INVOCATION_RE` takes digits, `\`-continuations are joined and argv is cut at shell operators (the C16 hook); the C3 test installs and scans all three hosts as the AC says; `_lazy_commands` has 25 entries; claude-installer anchors `:51` / `:72` / `:1013`; C16 hook-denial test folded in.
 - FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
@@ -195,6 +239,8 @@ delta for reviewers.
   blocks we upserted, and `ledger_hooks` the hook events whose `parrot-ledger` block this install
   created (PR #1746 review, 2026-10-20). One write per install/uninstall, sorted keys, trailing newline.
 - `--dry-run` for `install` and `uninstall` (C5): print the plan, write nothing.
+- *(rev 0.6 C25)* Render the guard-hook line per the C25 amendment above (`guard_hook_command`,
+  `_rendered_payload`, `--portable`, `sdd_status()["guard_hook"]`).
 - Add a managed `.gitignore` marker block ignoring `.claude/worktrees/` (own copy of the
   marker helpers — do NOT import the claude installer for them).
 - *(rev 0.5 C23)* For any host, write a marker-delimited `.gitattributes` block (`merge=union` for
@@ -246,12 +292,12 @@ delta for reviewers.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit; C23 / D5 `.gitattributes` block + four ledger hooks (+ receipt `blocks` / `ledger_hooks`); C21 null-`test_command` warning |
-| `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` / `run` (Q1); `--dry-run` on install/uninstall |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit; C23 / D5 `.gitattributes` block + four ledger hooks (+ receipt `blocks` / `ledger_hooks`); C21 null-`test_command` warning; C25 guard-hook rendering + `sdd_status()["guard_hook"]` |
+| `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` / `run` (Q1); `--dry-run` on install/uninstall; `--portable` on install (C25) |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands` |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds, C23 block + hooks, C21 warning) + `test_sdd_flow_in_foreign_repo` integration |
 | `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | CREATE | CliRunner tests for the group, lazy registration, `--dry-run`, `run` |
-| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation (all three hosts) runs with fixture inputs under an allowlisted PATH and scrubbed env; C16: the installed `worktree_environment --hook` still denies a shared-environment write; C21: pinned test-step outcomes; C23: `.gitattributes` block + four ledger hooks after `--host codex` (merge tier, `pytestmark = pytest.mark.integration`) |
+| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation (all three hosts) runs with fixture inputs under an allowlisted PATH and scrubbed env; C16: the installed `worktree_environment --hook` still denies a shared-environment write; C21: pinned test-step outcomes; C23: `.gitattributes` block + four ledger hooks after `--host codex`; C25: project-venv-only install still denies (merge tier, `pytestmark = pytest.mark.integration`) |
 
 ---
 
@@ -274,6 +320,9 @@ from typing import Literal
 from pydantic import BaseModel                 # core dependency; convention: data structures are Pydantic v2 models
 # Created by dependency tasks (do NOT exist on dev yet — verify exact names before use):
 from parrot.sdd.audit import AssumptionFinding, missing_tools, scan_paths   # TASK-4070
+from parrot.launcher import parrot_home, script_path   # TASK-4071 (stdlib-only; reached via 4080 → 4079 → 4071)
+                                               # script_path(venv: Path, name: str) -> Path (Windows: Scripts/<name>.exe)
+import shlex, shutil                           # stdlib — rev 0.6 C25 guard-hook rendering
 from parrot.sdd.scripts.id_ledger import LEDGER_PATH, bootstrap_ledger, save_ledger  # TASK-4085 (moved from
                                                # scripts/sdd/id_ledger.py:28,145,69 — same names)
 from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299 (C6): CONFIG_PATH = Path("sdd/config.json");
@@ -1659,6 +1708,15 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
       `sdd-coder` / `sdd-worker` hook command (`parrot sdd run worktree_environment --hook || exit 2`)
       denies a write into the managed venv in the foreign repo, with only `$PARROT_HOME/bin` + allowlisted
       tools on PATH (spec §5 C16 bullet).
+- [ ] *(rev 0.6 C25)* `test_installed_hook_project_venv_only` passes: ai-parrot (wheel) only in
+      `<repo>/.venv`, no `$PARROT_HOME/bin`, install run as `<repo>/.venv/bin/parrot sdd install --host claude`,
+      and the hook command read back from the installed `sdd-worker.md` frontmatter, run under `sh -c` with only
+      allowlisted system tools on PATH, denies a shared-environment write.
+- [ ] *(rev 0.6 C25)* `test_guard_hook_*` pass: managed launcher on PATH or `--portable` → bare
+      `GUARD_HOOK_LINE`; otherwise baked `script_path(sys.prefix, "parrot")` with neither `python3.` nor
+      `site-packages` in it; a path with a space and a `'` round-trips through YAML and `sh`; baked → bare
+      re-install is `outdated` → `upgraded` without `--force`, and `status` is `current` afterwards; a hand-patched
+      foreign agent gives `guard_hook.form == "other"`, `resolvable == False`.
 - [ ] *(rev 0.5 C21)* `parrot sdd install` warns when `sdd/config.json` `test_command` is null
       (`test_install_warns_when_test_command_is_null`); `test_c21_test_step_outcomes` pins
       `cache_test_contract` (`none — fallback` → exit 0 `fallback`; missing section → exit 2),
@@ -1724,16 +1782,20 @@ Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/
 #   test_seeds_written_once_never_overwritten_or_removed (C6/C10), test_existing_gitignore_content_preserved,
 #   test_unknown_host_rejected, test_status_shape, test_sdd_flow_in_foreign_repo[claude|codex|google] (spec §4 integration),
 #   test_gitattributes_block_written_recorded_and_removed[claude|codex|google], test_ledger_hooks_installed_for_any_host (C23),
-#   test_install_warns_when_test_command_is_null (C21)
+#   test_install_warns_when_test_command_is_null (C21),
+#   test_guard_hook_bare_when_managed_launcher_on_path, test_guard_hook_baked_when_launcher_absent,
+#   test_guard_hook_portable_flag_forces_bare, test_guard_hook_quoting_space_and_quote,
+#   test_guard_hook_mode_change_is_outdated_not_edited, test_guard_hook_status_flags_hand_patched_foreign (C25)
 # packages/ai-parrot/tests/sdd/test_sdd_cli.py — see the CREATE block:
 #   test_lazy_registration, test_install_status_uninstall_roundtrip, test_unknown_host_is_a_usage_error,
-#   test_force_flag_overwrites, test_dry_run_flag_prints_plan_and_writes_nothing (C5),
+#   test_force_flag_overwrites, test_dry_run_flag_prints_plan_and_writes_nothing (C5), test_portable_flag (C25),
 #   test_run_dispatches_helper_help, test_run_unknown_helper_lists_available, test_run_sdd_meta_is_dispatchable,
 #   test_run_propagates_helper_exit_code (Q1)
 # packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py — see the CREATE block (C3, merge tier):
 #   test_parrot_resolves_to_managed_install, test_install_then_every_documented_helper_invocation,
 #   test_installed_hook_denies_shared_environment_write (C16), test_c21_test_step_outcomes (C21),
-#   test_c23_codex_install_writes_ledger_gitattributes_and_hooks (C23)
+#   test_c23_codex_install_writes_ledger_gitattributes_and_hooks (C23),
+#   test_installed_hook_project_venv_only (C25)
 ```
 
 ---

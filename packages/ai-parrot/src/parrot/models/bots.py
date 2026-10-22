@@ -61,6 +61,8 @@ class BotModel(Model):
         auto_tool_detection BOOLEAN DEFAULT TRUE,
         tool_threshold DOUBLE PRECISION DEFAULT 0.7,
         tools JSONB DEFAULT '[]'::JSONB,
+        toolkit_config JSONB DEFAULT '{}'::JSONB,
+        mcp_servers JSONB DEFAULT '[]'::JSONB,
         operation_mode VARCHAR DEFAULT 'adaptive',
 
         -- Vector store and retrieval configuration

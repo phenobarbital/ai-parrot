@@ -11,6 +11,7 @@ __pycache__/
 etc/config/
 static/*
 plugins/*
+planogram_backups/*
 
 # data from examples:
 /outputs/**/*.html

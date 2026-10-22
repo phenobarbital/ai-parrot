@@ -11,7 +11,9 @@ loaded via ``importlib.util.spec_from_file_location`` because this
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util as _ilu
+import json
 import sys
 import types
 from pathlib import Path
@@ -190,6 +192,66 @@ def test_corpus_summary_totals_match() -> None:
     assert summary["seed_corpus"] == len(corpus_mod.ATTACK_SEED_CORPUS)
 
 
+def test_corpus_sample_order_is_pinned() -> None:
+    """Freeze the per-sample order the committed ``results.json`` files assume.
+
+    ``compare_runs.py`` aligns two runs' per-sample ``scores`` arrays **by
+    corpus index**. Reordering or inserting a sample therefore silently
+    mis-attributes every stored score instead of failing loudly, so the
+    order is pinned here. If this test fails because samples were added on
+    purpose, the stored runs are stale: re-run the harness (or re-derive
+    them) and update the digest in the same commit.
+    """
+    texts, labels, buckets = corpus_mod.build_eval_set()
+    blob = json.dumps([texts, labels, buckets], ensure_ascii=False).encode()
+    assert hashlib.sha256(blob).hexdigest() == (
+        "28eaa2e7db442b88310479603070d103ff54e8e563c1f1b2a0802d0f2576d759"
+    )
+
+
+def test_language_tags_are_aligned() -> None:
+    """Every sample carries exactly one known language tag."""
+    corpus_mod.assert_languages_aligned()
+    texts, _, _ = corpus_mod.build_eval_set()
+    languages = corpus_mod.build_eval_languages()
+    assert len(languages) == len(texts)
+    assert set(languages) <= {"en", "es", "mixed"}
+
+
+def test_language_tags_follow_the_sublists() -> None:
+    """The tags are derived from structure, not hand-maintained.
+
+    Guards the property that makes the per-language table trustworthy: a
+    sample appended to a language sub-list is tagged automatically, so the
+    tags cannot drift out of alignment with the texts.
+    """
+    tags = corpus_mod.BUCKET_LANGUAGES["clean"]
+    assert tags == ["en"] * 18 + ["es"] * 16
+    for index, text in enumerate(corpus_mod.CLEAN):
+        if tags[index] == "es":
+            assert text in corpus_mod._CLEAN_ES
+        else:
+            assert text in corpus_mod._CLEAN_EN
+
+
+def test_language_summary_matches_the_eval_set() -> None:
+    summary = corpus_mod.language_summary()
+    assert sum(summary.values()) == len(corpus_mod.build_eval_languages())
+    # The Spanish benign bucket is the sample set the FEAT-439 follow-up
+    # proposal's false-positive rate is computed over; n=16 is load-bearing
+    # for those percentages.
+    clean_es = sum(
+        1
+        for bucket, language in zip(
+            corpus_mod.build_eval_set()[2],
+            corpus_mod.build_eval_languages(),
+            strict=True,
+        )
+        if bucket == "clean" and language == "es"
+    )
+    assert clean_es == 16
+
+
 def test_framework_bucket_wraps_clean_prompts() -> None:
     """clean_framework must carry the real <user_context> wrapper."""
     for text in corpus_mod.CLEAN_FRAMEWORK:
@@ -273,3 +335,53 @@ def test_parity_gate_ignores_non_classifier_tiers() -> None:
         threshold=0.98,
     )
     assert set(report) == set()
+
+
+# ---------------------------------------------------------------------------
+# Per-language quality (harness-level)
+# ---------------------------------------------------------------------------
+
+
+def test_per_language_quality_counts_fp_and_recall() -> None:
+    """FP and recall are segmented per language at the production threshold."""
+    labels = [0, 0, 1, 1]
+    languages = ["en", "es", "en", "es"]
+    #            en benign ok | es benign FP | en attack hit | es attack miss
+    scores = [0.0, 1.0, 1.0, 0.0]
+    output = _harness._per_language_quality(
+        [_clf_result("clf-onnx", scores)], labels, languages
+    )["clf-onnx"]
+
+    assert output["en"]["benign_n"] == 1
+    assert output["en"]["fp"] == 0
+    assert output["en"]["fp_rate"] == 0.0
+    assert output["en"]["recall"] == 1.0
+
+    assert output["es"]["fp"] == 1
+    assert output["es"]["fp_rate"] == 1.0
+    assert output["es"]["fn"] == 1
+    assert output["es"]["recall"] == 0.0
+
+
+def test_per_language_quality_handles_a_language_with_no_benign_samples() -> None:
+    """``mixed`` has attacks only — rates must be None, not a ZeroDivisionError."""
+    output = _harness._per_language_quality(
+        [_clf_result("clf-onnx", [1.0])], [1], ["mixed"]
+    )["clf-onnx"]
+    assert output["mixed"]["fp_rate"] is None
+    assert output["mixed"]["recall"] == 1.0
+
+
+def test_per_language_quality_skips_a_tier_that_failed() -> None:
+    """A tier with no scores (load error) contributes no row."""
+    assert _harness._per_language_quality(
+        [{"tier": "clf-onnx", "scores": None, "error": "boom"}], [1], ["en"]
+    ) == {}
+
+
+def test_per_language_quality_rejects_misaligned_inputs() -> None:
+    """Misalignment must fail loudly, not mis-attribute scores."""
+    with pytest.raises(ValueError):
+        _harness._per_language_quality(
+            [_clf_result("clf-onnx", [1.0, 0.0])], [1], ["en"]
+        )

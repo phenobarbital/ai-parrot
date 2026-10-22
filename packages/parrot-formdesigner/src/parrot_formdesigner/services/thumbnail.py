@@ -11,7 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from parrot_formdesigner.services.blob_storage import AbstractBlobStorage, BlobMetadata
 
@@ -101,7 +101,10 @@ class ThumbnailService:
         Returns:
             The encoded thumbnail bytes.
         """
-        img = Image.open(BytesIO(image_bytes))
+        # Phone cameras store sensor-oriented pixels plus an EXIF
+        # Orientation tag; re-encoding drops the tag, so bake the rotation
+        # into the pixels first or portrait photos come out sideways.
+        img = ImageOps.exif_transpose(Image.open(BytesIO(image_bytes)))
         img.thumbnail((self._max_width, self._max_height))
         buf = BytesIO()
         img.save(buf, format=self._format, quality=self._quality)

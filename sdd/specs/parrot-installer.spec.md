@@ -12,7 +12,12 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.5 (2026-10-20) — folds in C18–C24 of
+**Revision**: 0.6 (2026-10-21) — folds in C25 of
+`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.7): the installed
+`sdd-coder`/`sdd-worker` guard hook must resolve when ai-parrot lives only in the target
+repo's `.venv` (found in navigator-eventbus); `parrot sdd install` renders the hook line
+and `doctor` checks it (amends TASK-4091, TASK-4080; no new task).
+**Revision 0.5** (2026-10-20) — folds in C18–C24 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.6), from the 2026-10-19
 readiness review (`sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`) and Jesus Lara's
 answers: helper inventory completed (TASK-4508), C16 move mechanics (TASK-4509),
@@ -28,7 +33,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -434,7 +439,10 @@ class ToolkitTemplate(BaseModel):
       sdd/tasks/.id_ledger.json git-tracked; .claude/worktrees/ ignored; `gh` present and
       authenticated; `jq` present while an installed file still uses it; installed SDD
       files current (parrot.sdd.installer.sdd_status, lazy import); host CLI present per
-      installed host (informational). --runtime-only (bootstrap scope, C14): managed uv,
+      installed host (informational). [rev 0.6 C25] `sdd: guard hook`: the
+      sdd-coder/sdd-worker PreToolUse command on disk resolves (bare → which("parrot");
+      baked → the path exists) and is not a hand-patched "other" form; read from
+      sdd_status()["guard_hook"]. --runtime-only (bootstrap scope, C14): managed uv,
       Python, runtime entry points and PATH only. Doctor reports and suggests a fix; it
       never changes anything."""
   ```
@@ -581,6 +589,29 @@ class ToolkitTemplate(BaseModel):
   package (`parrot/flows/dev_loop/test_scope`), still loading it by path so it never
   imports `parrot.flows.dev_loop`. `regen_core_paths` keeps its monorepo paths because it
   stays.
+- **Rev 0.6 amendment C25 (M6 part)** *[rev 0.6 C25]* (details and "done when" in the
+  amendments proposal §3, rev 0.7). C16's bare hook resolves only when `parrot` on PATH is
+  the managed launcher. With ai-parrot installed only in the target repo's `.venv` (project
+  mode) and the venv not activated, the hook fails closed (`command not found` → `exit 2`)
+  and the seat cannot run any tool.
+  - **Render, do not rewrite the asset.** The packaged copy and `.claude/` keep the bare
+    form, so byte-equality holds. When `parrot sdd install` writes a Claude agent target
+    that carries the line, it emits **bare** for `--portable`, or when
+    `shutil.which("parrot")` resolves under `parrot_home()`; otherwise it emits **baked**:
+    the quoted `parrot.launcher.script_path(Path(sys.prefix), "parrot")` of the installing
+    venv + ` sdd run worktree_environment --hook || exit 2`. No Python version,
+    `site-packages` or source path. Quoting follows C24 (forward slashes + `shlex.quote`),
+    then YAML `''` escaping. A baked venv outside `<root>/.venv` and the main checkout's
+    `.venv` adds a `warning:`.
+  - **Rendered bytes drive C4.** `classify_entry`/`_apply_asset` compare and record the
+    rendered payload, so a venv rebuild, the global launcher arriving, or `--portable`
+    shows as `outdated` and upgrades without `--force`.
+  - **Status + doctor.** `sdd_status()["guard_hook"]` =
+    `{"form": "bare"|"baked"|"other"|None, "command", "targets", "resolvable"}`, read from
+    the agent files on disk (installed or foreign). `doctor --sdd` adds `sdd: guard hook`
+    (TASK-4080).
+  - **Hand-copied agents** stay `foreign` (never overwritten). Doctor names them; the fix is
+    to delete them and re-install. No adopt path in v1. (TASK-4091, TASK-4080)
 - **Rev 0.5 amendments C18–C24 (M6 part)** (details and "done when" in the amendments
   proposal §3, rev 0.6):
   - **C18 — helper inventory.** Every module that moves into `parrot.sdd.scripts`: the 17
@@ -686,7 +717,8 @@ class ToolkitTemplate(BaseModel):
   ```python
   # parrot/sdd/installer.py  (new)
   def install_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
-                              force: bool = False, dry_run: bool = False) -> list[str]:
+                              force: bool = False, dry_run: bool = False,
+                              portable: bool = False) -> list[str]:  # [rev 0.6 C25] portable
       """Deploy packaged SDD assets into <root> (marker-block/merge; never overwrites
       foreign content; receipt-driven conflict rule; seeds config/conventions/ledger).
       Returns action log (the plan only, when dry_run)."""  # [rev 0.2 C4/C5/C6/C10]
@@ -704,7 +736,8 @@ class ToolkitTemplate(BaseModel):
   def load_sdd_config(root: Path) -> SddConfig: ...   # defaults when the file is absent
 
   # parrot/sdd/cli.py  (new; lazy "sdd" in cli/__init__.py:109)
-  #   install [--host …] [--dry-run] [--force] · uninstall [--dry-run] · status · run <name> [args…]
+  #   install [--host …] [--dry-run] [--force] [--portable] · uninstall [--dry-run] · status · run <name> [args…]
+  #   [rev 0.6 C25] --portable: bare guard-hook form; default renders it per §3 M6 C25
   ```
 
 ### Module 7: Store migration safety (backup + lock + min-runtime gate)
@@ -931,6 +964,8 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
 | `test_audit_new_kinds` | M0 | `org-data`, `claude-md-ref`, `branch-literal` detected; placeholders excluded [rev 0.2 C11] |
 | `test_no_repo_script_refs` | M6 | zero `scripts.sdd.*` / `scripts/sdd/*` references in any shipped file [rev 0.2 C12] |
 | `test_subagent_single_source` | M6 | `load_subagent_definition` returns the packaged body; no `_subagent_data` twin remains for shipped prompts [rev 0.2 C2] |
+| `test_guard_hook_rendering` | M6 | managed launcher on PATH or `--portable` ⇒ bare; otherwise baked absolute `parrot` of `sys.prefix`, containing neither `python3.` nor `site-packages`; YAML/shell quoting of a path with a space and a `'`; a mode change re-renders as `outdated` → upgrade without `--force` [rev 0.6 C25] |
+| `test_doctor_sdd_guard_hook` | M3 | unresolvable or `"other"` (hand-patched) guard hook fails `sdd: guard hook` with the re-install fix; no agent files ⇒ informational [rev 0.6 C25] |
 | `test_doctor_sdd_readiness` | M3 | fixture repo missing each prerequisite fails the matching check with its fix; `--runtime-only` excludes repo/host checks; `--sdd` + `--runtime-only` rejected [rev 0.2 C14/C15] |
 | `test_install_global_pre_install_gate` | M2 | each failed gate exits before any write; failed post-install `doctor --runtime-only` rolls back; repo-readiness failures do not [rev 0.2 C14] |
 | `test_docs_claims_cli_verb_flag` | docs | claim harness verifies `cli-verb`/`flag` claims against the real click commands [rev 0.2 C13] |
@@ -946,6 +981,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
 | `test_managed_to_project_reexec_stdio` | spawn via launcher from a fake managed venv; JSON-RPC initialize round-trip intact, stderr-only diagnostics |
 | `test_portable_config_two_roots` | same `--portable` output generated from two different fake roots is byte-identical (committable) |
 | `test_wheel_only_foreign_repo` | *(replaces `test_sdd_flow_in_foreign_repo` [rev 0.2 C3])* build the wheel, install it into a temp `PARROT_HOME`, `parrot sdd install` into a tmp non-Python git repo, run every helper invocation from the installed markdown with fixture inputs and only `$PARROT_HOME/bin` + an allowlist of system tools on PATH |
+| `test_installed_hook_project_venv_only` | *[rev 0.6 C25]* wheel installed only into `<repo>/.venv`, no `$PARROT_HOME/bin`; `<repo>/.venv/bin/parrot sdd install --host claude`; with only allowlisted system tools on PATH, the installed hook command still denies a shared-environment write |
 | `test_store_migrate_then_old_open` | migrate a fixture store, reopen with a mocked older version ⇒ fail-fast gate (spike S6 codified) |
 
 ### Test scope map
@@ -1209,6 +1245,12 @@ def linked_worktree_repo(tmp_path):
       `scripts/`, `$CLAUDE_PROJECT_DIR/…`) — `test_no_repo_script_refs` is widened past
       C12's `scripts/sdd` sweep — and C3's foreign-repo test shows the shared-environment
       guard denying a write with only `$PARROT_HOME/bin` on PATH.
+- [ ] *[rev 0.6 C25]* With ai-parrot only in the target repo's `.venv` and neither
+      `$PARROT_HOME/bin` nor that venv's `bin` on PATH, the installed `sdd-coder`/`sdd-worker`
+      hook still denies a shared-environment write; the rendered command names no Python
+      version, `site-packages` or source path; `--portable` emits the bare form; a mode change
+      upgrades as `outdated`; `parrot self doctor --sdd` fails `sdd: guard hook` on an
+      unresolvable or hand-patched hook.
 - [ ] *[rev 0.4 C17]* `parrot sdd install` deploys `/sdd-brief` on all three hosts
       (`.claude/commands/sdd-brief.md`, `.agents/skills/sdd-brief/SKILL.md`,
       `.agent/workflows/sdd-brief.md`) and `sdd/templates/brief.md`; the installed
@@ -1476,6 +1518,11 @@ Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
   placeholders and the "base branch in `sdd/config.json`" wording land in `.claude/` too;
   ai-parrot's `sdd/config.json` must be committed in the same change or the monorepo's
   own flow loses its branch policy.
+- **Baked guard hook in committed agent files** *[rev 0.6 C25]*: the default render of a
+  project-venv install writes an absolute path into `.claude/agents/sdd-{coder,worker}.md`,
+  which the receipt tells the team to commit. Other machines then carry a dead path. The fix
+  is a re-install per machine, or the global launcher + `--portable`. Doctor reports it. Same
+  trade-off as M5's default host emission.
 - **Gemini config is user-global** (`~/.gemini/config/mcp_config.json`): `--portable` is
   what makes it multi-repo-safe; `self doctor` flags baked-path collisions there.
 - **cp314 in `build` vs `requires-python <3.14`** (pyproject): M8 must reconcile
@@ -1592,3 +1639,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.5 (`dev`) | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract (the curated list of the row above, not `none — fallback`) + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries before C22 (83 after the Google probe copy, see the next row; **80** once `/sdd-insight` is excluded). Anchors re-verified on `9625844f5` (spec-wide, not only §6): `store.py` +144, `project.py` `parrot_home` +148, `claude_code/{assets,installer}.py`, `codex/{assets,installer}.py`, `mcp/hosts.py`, `pyproject.toml` (`[project.scripts]` 199-206, package-data 970/983, `[tool.cibuildwheel]` 1057-1059), `release.yml` (`build-parrot-codec` 408-479); two anchor texts changed (`_open` signature, `elif servers.get(...)`), `_migrate` anchor made unique; D6's `_is_wikitoolkit_entry` corrected to :753 |
 | 0.5 (`dev`) | 2026-10-20 | Jesus Lara + Claude | D8 corrected (owner: too strict): the store gate compares `schema_version` only; `min_runtime_version` is stamped but informational (error message), so a same-schema store opens whatever release wrote it. `sdd-contract-probe` invocation fixed on dev: Antigravity copy `.agents/agents/sdd-contract-probe/agent.md`, host-neutral invocation in `sdd-task`/`sdd-brainstorm`/`sdd-proposal` (both hosts), module lookup via `git ls-files` (no monorepo path) → 9 Google agents, 80 manifest entries with C22; TASK-4070/4089/4090/4092/4093/4095 updated |
 | 0.5 (merge) | 2026-10-20 | Claude, for Jesus Lara | `dev`'s rev 0.5 amendments (clauses D1–D8, M6 inventory, anchors on `9625844f5`) merged into PR #1746's rev 0.5 (C18–C24): D1 keeps C20 (ai-parrot-tools in the managed runtime; core-only is `issue:2c263fd19a1a`), D2 keeps the curated Validation Contract, D3 keeps C22 (`/sdd-insight` out; rules (a)–(d) ≙ categories A–D), D8 takes `dev`'s schema-only gate, `sdd-contract-probe` ships on Claude and Google → 80 manifest entries, `SourceRegistry` → `SourceCollectionManager._connect` |
+| 0.6 | 2026-10-21 | Jesus Lara + Claude | Amendment C25 folded in (proposal rev 0.7), from navigator-eventbus (project-venv install, no `~/.parrot/bin`, agents hand-patched to `<root>/.venv/lib/python3.11/site-packages/.../worktree_environment.py`): `parrot sdd install` renders the guard-hook line (bare under the managed launcher or `--portable`, else the absolute `parrot` script of the installing venv), C4 compares rendered bytes, `sdd_status()["guard_hook"]`, doctor `sdd: guard hook`; new tests `test_guard_hook_rendering`, `test_doctor_sdd_guard_hook`, `test_installed_hook_project_venv_only` (amends TASK-4091, TASK-4080) |

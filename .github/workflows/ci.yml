@@ -11,7 +11,13 @@ jobs:
     name: Lint & Registry Check
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — the ledger guard compares the snapshot at the MERGE BASE
+      # of HEAD and the base ref, and reads `Ledger-Removal:` trailers from
+      # <merge-base>..HEAD. Both need the two histories to actually meet, which a
+      # depth-1 checkout plus a shallow base fetch never let them do.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -105,6 +111,25 @@ jobs:
         run: |
           uv run python -m scripts.sdd.check_task_state \
             --baseline scripts/sdd/.task_state_baseline.json
+
+      # FEAT-712: sdd/ledger/issues.jsonl has silently lost open issues twice
+      # (ccbfef606, 769ca8516 — 25 issues, 14 of them open, including a
+      # vulnerability), and the loss is invisible in review inside a 350+ line
+      # generated JSONL diff. export_snapshot reconciles since FEAT-671, so this
+      # is the independent backstop: it fails the build when a row that is open
+      # or claimed at the base ref disappears. An open -> closed transition is
+      # normal and passes; dropping a closed row is legal compaction. Intentional
+      # removals carry a `Ledger-Removal: issue:<id>` trailer on the removing
+      # commit. The base branch is fetched first (without --depth: that would
+      # write .git/shallow and sever the merge base again) — the guard treats an
+      # unresolvable base ref, or a base that shares no history with HEAD, as an
+      # error, never as a silent pass.
+      - name: Check SDD ledger snapshot removals (FEAT-712)
+        run: |
+          BASE="${{ github.base_ref || 'dev' }}"
+          git fetch origin "$BASE"
+          uv run python -m scripts.sdd.check_ledger_snapshot \
+            --base-ref "origin/$BASE"
 
   # FEAT-586: keeps docs/getting-started.md's factual claims honest (the
   # claim-verification harness) and both installer scripts parseable.

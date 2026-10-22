@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any, Final
 
-from .corpus import build_eval_set
+from .corpus import build_eval_languages, build_eval_set
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,7 @@ def compare(
             corpus on length.
     """
     texts, labels, buckets = build_eval_set()
+    languages = build_eval_languages()
     if not len(baseline_scores) == len(candidate_scores) == len(texts):
         raise SystemExit(
             "Score arrays are not aligned with the corpus: "
@@ -137,10 +138,16 @@ def compare(
         )
 
     per_bucket: dict[str, dict[str, int]] = {}
+    # Per-language benign false positives and attack recall on both sides.
+    # The headline number of the v1->v2 Spanish regression used to be
+    # hand-derived from the flips table below; this makes it an output.
+    per_language: dict[str, dict[str, int]] = {}
     flips: list[dict[str, Any]] = []
     deltas: list[float] = []
 
-    for index, (text, label, bucket) in enumerate(zip(texts, labels, buckets)):
+    for index, (text, label, bucket, language) in enumerate(
+        zip(texts, labels, buckets, languages, strict=True)
+    ):
         before = baseline_scores[index]
         after = candidate_scores[index]
         deltas.append(after - before)
@@ -153,6 +160,22 @@ def compare(
 
         base_attack = before >= threshold
         cand_attack = after >= threshold
+
+        lang_stats = per_language.setdefault(
+            language,
+            {
+                "benign_n": 0, "base_fp": 0, "cand_fp": 0,
+                "attack_n": 0, "base_hit": 0, "cand_hit": 0,
+            },
+        )
+        if label == 0:
+            lang_stats["benign_n"] += 1
+            lang_stats["base_fp"] += int(base_attack)
+            lang_stats["cand_fp"] += int(cand_attack)
+        else:
+            lang_stats["attack_n"] += 1
+            lang_stats["base_hit"] += int(base_attack)
+            lang_stats["cand_hit"] += int(cand_attack)
         # "Correct" means the verdict matches the label (1 = injection).
         if base_attack == bool(label):
             stats["base_tp"] += 1
@@ -176,6 +199,7 @@ def compare(
                 "baseline_verdict": "attack" if base_attack else "benign",
                 "candidate_verdict": "attack" if cand_attack else "benign",
                 "improved": improved,
+                "language": language,
                 "text": text[:120],
             }
         )
@@ -191,6 +215,7 @@ def compare(
         "gained": sum(1 for flip in flips if flip["improved"]),
         "lost": sum(1 for flip in flips if not flip["improved"]),
         "per_bucket": per_bucket,
+        "per_language": per_language,
         "flips": flips,
     }
 
@@ -246,20 +271,59 @@ def render(
             f"{stats['gained']} | {stats['lost']} |"
         )
 
+    lines += [
+        "",
+        "## Per language",
+        "",
+        "| language | benign n | FP (baseline) | FP (candidate) | Δ FP rate | "
+        "attack n | recall (baseline) | recall (candidate) |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for language, stats in sorted(delta["per_language"].items()):
+        benign_n = stats["benign_n"]
+        attack_n = stats["attack_n"]
+        if benign_n:
+            base_rate = stats["base_fp"] / benign_n
+            cand_rate = stats["cand_fp"] / benign_n
+            fp_cells = (
+                f"{stats['base_fp']}/{benign_n} ({base_rate:.1%}) | "
+                f"{stats['cand_fp']}/{benign_n} ({cand_rate:.1%}) | "
+                f"{(cand_rate - base_rate) * 100:+.1f}pp"
+            )
+        else:
+            fp_cells = "— | — | —"
+        if attack_n:
+            rec_cells = (
+                f"{stats['base_hit']}/{attack_n} ({stats['base_hit'] / attack_n:.1%}) | "
+                f"{stats['cand_hit']}/{attack_n} ({stats['cand_hit'] / attack_n:.1%})"
+            )
+        else:
+            rec_cells = "— | —"
+        lines.append(
+            f"| {language} | {benign_n} | {fp_cells} | {attack_n} | {rec_cells} |"
+        )
+    lines += [
+        "",
+        "Benign false positives and attack recall segmented by sample "
+        "language. A model swap that trades one language's usability for "
+        "another's recall is visible here and nowhere else in this report.",
+        "",
+    ]
+
     lines += ["", "## Flipped samples", ""]
     if not delta["flips"]:
         lines.append("_None — the two runs agree on every verdict._")
     else:
         lines += [
-            "| bucket | label | baseline | candidate | Δ | better? | text |",
-            "|---|---|---|---|---|---|---|",
+            "| bucket | lang | label | baseline | candidate | Δ | better? | text |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         for flip in delta["flips"]:
             change = flip["candidate_score"] - flip["baseline_score"]
             label = "injection" if flip["label"] else "benign"
             text = flip["text"].replace("|", "\\|").replace("\n", " ")
             lines.append(
-                f"| `{flip['bucket']}` | {label} | "
+                f"| `{flip['bucket']}` | {flip.get('language', '—')} | {label} | "
                 f"{flip['baseline_verdict']} ({flip['baseline_score']:.4f}) | "
                 f"{flip['candidate_verdict']} ({flip['candidate_score']:.4f}) | "
                 f"{change:+.4f} | {'yes' if flip['improved'] else 'NO'} | {text} |"

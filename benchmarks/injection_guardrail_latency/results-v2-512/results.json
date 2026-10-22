@@ -17,7 +17,8 @@
     "repeats": 10,
     "warmup": 5,
     "isolated": true,
-    "python": "3.12.3"
+    "python": "3.12.3",
+    "reanalysed": true
   },
   "results": [
     {
@@ -630,6 +631,60 @@
       "attack_direct": 1.0,
       "attack_paraphrase": 0.8,
       "attack_obfuscated": 1.0
+    }
+  },
+  "per_language": {
+    "clf-torch": {
+      "en": {
+        "benign_n": 30,
+        "fp": 1,
+        "attack_n": 37,
+        "fn": 4,
+        "fp_rate": 0.0333,
+        "recall": 0.8919
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 7,
+        "attack_n": 12,
+        "fn": 0,
+        "fp_rate": 0.4375,
+        "recall": 1.0
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 0,
+        "fp_rate": null,
+        "recall": 1.0
+      }
+    },
+    "clf-onnx": {
+      "en": {
+        "benign_n": 30,
+        "fp": 1,
+        "attack_n": 37,
+        "fn": 4,
+        "fp_rate": 0.0333,
+        "recall": 0.8919
+      },
+      "es": {
+        "benign_n": 16,
+        "fp": 7,
+        "attack_n": 12,
+        "fn": 0,
+        "fp_rate": 0.4375,
+        "recall": 1.0
+      },
+      "mixed": {
+        "benign_n": 0,
+        "fp": 0,
+        "attack_n": 1,
+        "fn": 0,
+        "fp_rate": null,
+        "recall": 1.0
+      }
     }
   }
 }

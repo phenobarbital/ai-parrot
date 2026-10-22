@@ -13,7 +13,7 @@ projects: [ai-parrot, sdd-tooling, dev-loop, docs, ci]
 tags: [installer, sdd-packaging, portability, publication-safety, amendment]
 research_state: sdd/state/FEAT-633/
 created: 2026-10-14
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # FEAT-633 — Amendments: portability safeguards carried over from FEAT-583
@@ -73,6 +73,7 @@ its spec:
 | C15 | SDD readiness checks in `parrot self doctor` | TASK-4080, TASK-4091 | — | S |
 | Q1 | `parrot sdd run <helper>` replaces `python -m parrot.sdd.scripts.<name>` | spec M6, TASK-4089, TASK-4091 | ⚖️ | S |
 | C16 | No shipped reference to a monorepo source path (`worktree_environment`) | TASK-4085, 4072, 4089, 4090, 4091 | ⚖️ | M |
+| C25 | The installed guard hook resolves without the managed launcher (project-venv installs) | TASK-4091, TASK-4080 | — | S |
 
 ---
 
@@ -791,6 +792,79 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   created for that error". Both issues are filed (above). Everything else in C24 is the
   review's recommendation, adopted for v1; confirm in review.
 
+### C25 — The installed guard hook must resolve without the managed launcher
+- **Problem**: C16 makes the shipped `sdd-coder` / `sdd-worker` frontmatter run the bare
+  `parrot sdd run worktree_environment --hook || exit 2`, and C3 proves it only with
+  `$PARROT_HOME/bin` on PATH. That covers the `--global` install, not the other supported
+  setup: ai-parrot installed **only** into the target repo's own `.venv` (FEAT-586 project
+  mode, `uv pip install ai-parrot ai-parrot-tools` + `parrot claude install`). There, the
+  bare `parrot` in the hook resolves to whatever is first on the Claude Code process's
+  PATH:
+  - **nothing**, when the venv is not activated (an `sdd-worker` launched in tmux, or from
+    a worktree): `parrot: command not found` → `|| exit 2` → every Bash / Write / Edit of
+    the seat is denied. The guard fails closed, so it is not a security hole, but it makes
+    the seat unusable;
+  - **another repo's venv**, when that one happens to be on PATH. The launcher re-execs only
+    from the managed venv (M1), so a non-managed `parrot` runs the guard with that venv's
+    code. `shared_environments` (`worktree_environment.py:74-92`) still protects
+    `<root>/.venv` and the main checkout's `.venv`, so protection holds, but the guard
+    version is not the repo's.
+  Observed 2026-10-21 in navigator-eventbus (project-venv install, no `~/.parrot/bin`):
+  the user hand-patched both agent files to
+  `<root>/.venv/bin/python3 -I <root>/.venv/lib/python3.11/site-packages/parrot/flows/dev_loop/worktree_environment.py --hook`,
+  which hardcodes the repo path **and** the Python minor version and breaks on any venv
+  rebuild. `parrot claude install` does not manage these files, so nothing re-renders them.
+  `parrot self doctor` checks that `~/.parrot/bin` is on PATH, not that the installed hook
+  command resolves.
+- **Change**:
+  1. **The installer renders the hook command; the asset stays canonical.** The packaged
+     copy (and `.claude/` in the monorepo) keep the bare form, so the C2/C16 byte-equality
+     sync check is untouched. `parrot sdd install` renders the one line when it writes a
+     Claude agent target that carries it, choosing:
+     - **bare** `parrot sdd run worktree_environment --hook || exit 2` when `--portable` is
+       given, or when `shutil.which("parrot")` resolves under `parrot_home()` (the managed
+       launcher, which re-execs into the project venv);
+     - **baked** `<quoted script_path(Path(sys.prefix), "parrot")> sdd run worktree_environment --hook || exit 2`
+       otherwise: the `parrot` console script of the venv running the install. No Python
+       version, no `site-packages`, no source path; the M1 launcher's script-path helper
+       gives the Windows form; quoting follows C24 (forward slashes + `shlex.quote`), then
+       YAML single-quote escaping (`'` → `''`).
+     When the baked venv is neither `<root>/.venv` nor the main checkout's `.venv`, the
+     install adds a `warning:` naming it.
+  2. **Classification compares the rendered bytes.** `classify_entry` and `_apply_asset`
+     use the rendered payload instead of the raw packaged bytes, and the receipt records its
+     SHA. A venv rebuild, a move to the global launcher, or adding `--portable` therefore
+     shows as `outdated`, and a re-run upgrades it without `--force`.
+  3. **`parrot sdd install --portable`** forces the bare form, for teams that commit
+     `.claude/agents/` and give every member the global launcher. It means the same as the
+     host installers' `--portable` (M5): committable, with the launcher on PATH assumed.
+  4. **Status and doctor.** `sdd_status` reports
+     `"guard_hook": {"form": "bare" | "baked" | "other" | None, "command": str | None,
+     "targets": [...], "resolvable": bool}`, read from the agent files on disk (installed
+     or foreign). `parrot self doctor --sdd` adds `sdd: guard hook`: it fails when the
+     command does not resolve (bare: `shutil.which("parrot")`; baked: the path exists) or
+     is `"other"` (a hand-patched command such as the navigator-eventbus one). The fix line
+     says to re-run `parrot sdd install`, or to install the global launcher and use
+     `--portable`. Doctor sees the shell's PATH, not the Claude Code process's, and says so
+     in the detail for the bare form.
+  5. **Hand-copied agents.** Files copied by hand from ai-parrot (navigator-eventbus,
+     commit `1c50c53`) are `foreign` under C4 and are never overwritten, even with
+     `--force`. Doctor's guard check names them; the documented fix is to delete the two
+     files and re-run `parrot sdd install`. There is no adopt-foreign path in v1.
+- **Unchanged**: the programmatic hook command (`sys.executable -m
+  parrot.sdd.scripts.worktree_environment --hook`, C19), which never depended on PATH; the
+  TASK-4509 fast path, which also serves the baked absolute path (a non-managed launcher,
+  ≤ 5 ms budget); C3's managed-PATH proof.
+- **Amends**: TASK-4091 (rendering, `--portable`, `sdd_status["guard_hook"]`, tests),
+  TASK-4080 (`sdd: guard hook` check). No new task, no new IDs.
+- **Decision note** (Jesus Lara, 2026-10-21): approved: "prepara el cambio en FEAT-633 del
+  instalador", after the navigator-eventbus finding.
+- **Done when**: in a foreign repo with ai-parrot only in `<root>/.venv` and neither
+  `$PARROT_HOME/bin` nor the venv's `bin` on PATH, the installed hook denies a
+  shared-environment write (`test_installed_hook_project_venv_only`); the baked command
+  contains neither `python3.` nor `site-packages`; re-rendering after a mode change is an
+  `outdated` → upgrade; doctor fails on an unresolvable or hand-patched hook.
+
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
   store gate and the wheel matrix.
@@ -887,6 +961,7 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - C20 follow-up (Jesus Lara, 2026-10-20): the stdio consolidation (`issue:7a366d6004de`) as a FEAT-633
   task or a fix-lane item. It does not block any FEAT-633 task (see C20).
 - Otherwise none. Rev 0.6 folds into FEAT-633 spec revision 0.5; the PR #1746 review resolutions are recorded in the spec with `[PR #1746 review]` tags.
+  Rev 0.7 (C25) folds into spec revision 0.6.
 
 ---
 
@@ -1060,3 +1135,4 @@ with fixture inputs. This corrects the earlier claim that `resolve_flow()` was a
 | 0.4 | 2026-10-17 | Jesus Lara + Claude | C16 added: C12's sweep covered only `scripts/sdd` references and missed the shipped `sdd-coder`/`sdd-worker` hook, which addresses `worktree_environment.py` by monorepo source path; the module is relocated to `parrot/sdd/scripts/` with a re-export shim, invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, and `test_no_repo_script_refs` is widened to any monorepo source path |
 | 0.6 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara; PR #1746 review resolutions (Codex P1/P2 + implementer notes) | C18–C24 added from the 2026-10-19 readiness review against `dev` `9f51c7735`/`0263f0724`: helper inventory completed (TASK-4508); C16 move mechanics (kernel lookup, by-path shim, programmatic hook command, TASK-4509); `wikitoolkit mcp` needs ai-parrot-tools on a core-only install (interim + follow-up); test steps in foreign repos (C7 follow-through, own Validation Contract, validation phase deferred to v1.1); monorepo-specific text rules (78 assets, `/sdd-insight` not shipped); shared ledger in foreign repos; host/store follow-through (ledger `issue:f249c19e8a4d`, `issue:1555e747bcb9`) |
 | 0.5 | 2026-10-18 | Jesus Lara + Claude | C17 added: `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` joins TASK-4085's move and gets a CLI in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md`, counts updated (15 commands per host, 13 tracked templates, 81 manifest entries), C3 scenarios for `ensure_worktree --brief-key` / `brief_meta write-index` |
+| 0.7 | 2026-10-21 | Jesus Lara + Claude | C25 added after the navigator-eventbus finding: the bare `parrot sdd run worktree_environment --hook` in the installed `sdd-coder`/`sdd-worker` frontmatter fails closed when ai-parrot lives only in the repo's `.venv`; `parrot sdd install` renders the line (bare when the managed launcher is on PATH or `--portable`, else the absolute `parrot` script of the installing venv; no Python version), classification compares rendered bytes, `sdd_status["guard_hook"]` + doctor `sdd: guard hook` (amends TASK-4091, TASK-4080) |

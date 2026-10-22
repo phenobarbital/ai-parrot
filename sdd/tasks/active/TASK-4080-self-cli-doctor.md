@@ -59,6 +59,25 @@ review). Every section below is already rewritten to match; this list is the del
 
 ---
 
+## Amendments — spec rev 0.6 C25 (2026-10-21)
+
+- **C25 — `sdd: guard hook`** (proposal C25, approved by Jesus Lara 2026-10-21). `doctor --sdd`
+  (or `full` with an `sdd/` tree) adds one check, read from TASK-4091's
+  `sdd_status()["guard_hook"]` = `{"form": "bare"|"baked"|"other"|None, "command", "targets",
+  "resolvable"}`, through the same lazy import as "sdd files current":
+  - key or module absent, or `form is None` → `ok=True, informational=True` ("no sdd-coder/sdd-worker agents");
+  - `form == "other"` → `ok=False`, detail names the targets and the command (hand-patched or copied by
+    hand, e.g. a `site-packages/.../worktree_environment.py` path), fix "delete the hand-copied agent
+    files and re-run `parrot sdd install`";
+  - `resolvable is False` → `ok=False`, fix "re-run `parrot sdd install` (re-bakes the path), or install
+    the global launcher (`install-parrot.sh --global`) and re-install with `--portable`";
+  - `form == "bare"` and resolvable → `ok=True`, detail notes that this checks the shell's PATH, not the
+    Claude Code process's.
+  Doctor still only reads. New tests in `test_doctor_sdd.py`: `test_guard_hook_unresolvable_fails_with_fix`,
+  `test_guard_hook_hand_patched_is_other`, `test_guard_hook_absent_is_informational`.
+
+---
+
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: agentd `status` anchor `cli/__init__.py:134`→`:136` (094ec8616 added `jiratoolkit`); Codex `MCP_TABLE` 19→20 and toolkit table 84→85; `_check_python` contract + test now accept `version_info = 3.12` as well as `3.12.x` (repo `.venv` records `3.12`); added the remote-HTTP-entry contract note and `test_remote_http_entry_is_not_flagged`.
 - Resolved by spec rev 0.5 (2026-10-20):
@@ -949,7 +968,7 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] `doctor.py::_command_problem` / `_check_host_configs` — per-file checks (both Gemini files) + Gemini collision on the user-global file only; bounded by spec §3 M3 check 4, §7, rev 0.5 C24
 - [ ] `doctor.py::_check_tools_wiki` — managed-venv import probe; bounded by rev 0.5 C20
 - [ ] `doctor.py::_check_toolkits` — dist/env checks; bounded by spec §3 M3 check 5
-- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin` + the two rev 0.5 C23 ledger checks; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
+- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin` + the two rev 0.5 C23 ledger checks + the rev 0.6 C25 guard-hook check; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
 - [ ] `cli.py::update` — bounded by add's error mapping (`doctor`'s exit code is now fully specified in the blueprint)
 - [ ] tests marked FILL IN in all three test files
 
@@ -963,6 +982,8 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] *[rev 0.5 C24]* Both Gemini MCP config files are command-checked (user-global + `<root>/.agents/plugins/parrot/mcp_config.json`); the cross-repo collision is checked on the user-global one only (`test_gemini_repo_local_config_checked`).
 - [ ] *[rev 0.5 C20]* Outside `--runtime-only`, doctor checks that `parrot_tools.wiki` imports in the managed venv; failure fix `parrot self update` (`test_tools_wiki_check`).
 - [ ] *[rev 0.5 C23]* `doctor --sdd` (or `full` with an `sdd/` tree) checks the `.gitattributes` ledger block (`merge=union` for `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`) and the four ledger hooks (pre-commit, post-merge, post-checkout, post-rewrite), each with fix `parrot sdd install` (matrix rows in `test_each_missing_prerequisite_fails_its_check_with_a_fix`).
+- [ ] *[rev 0.6 C25]* `doctor --sdd` reports `sdd: guard hook` from `sdd_status()["guard_hook"]`: unresolvable
+      or `"other"` fails with its fix, absent is informational (`test_guard_hook_*` in `test_doctor_sdd.py`).
 - [ ] C15: with an `sdd/` tree (or `--sdd`), doctor reports `origin` remote, configured base branch on `origin` (from `sdd/config.json`, default `dev`), ledger git-tracked, `.claude/worktrees/` ignored, `gh` present + authenticated, `jq` present while referenced, installed SDD files current, and host CLIs (informational); a fixture repo missing each prerequisite gets exactly that check failing with a concrete `fix` (`test_each_missing_prerequisite_fails_its_check_with_a_fix`).
 - [ ] C14: `parrot self doctor --runtime-only` runs only uv, Python, runtime entry points and PATH — no repository, host-config or toolkit check, no network — and a repo with a broken host config, uncommitted ledger or unauthenticated `gh` does not fail it (`test_scope_runtime_only_excludes_repo_host_and_component_checks`).
 - [ ] `--sdd` and `--runtime-only` together are a usage error (exit 2); doctor exits 1 iff a non-informational check in the selected scope failed; informational host-CLI checks never fail it (`test_cli_flags_mutually_exclusive_and_exit_codes`).
