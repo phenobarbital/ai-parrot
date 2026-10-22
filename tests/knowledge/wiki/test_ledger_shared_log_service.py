@@ -122,3 +122,80 @@ async def test_audit_reports_shared_log_block(two_ledgers: tuple[LedgerService, 
     assert shared["local_only_events"] == 1
     assert shared["committed_unknown_events"] == 1
     assert shared["marker"] == "missing"
+
+
+async def test_audit_counts_claim_conflicts(two_ledgers: tuple[LedgerService, LedgerService, Path]) -> None:
+    """A divergent committed claim is counted by audit with no prior import (issue:fe3480881432)."""
+    local, foreign, checkout = two_ledgers
+    issue_id = await local.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await local.claim(issue_id, "task:local")
+    await foreign.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await foreign.claim(issue_id, "task:foreign")
+    await foreign.export_shared_log(checkout)
+    local.shared_root = checkout
+
+    # Deliberately NO import_shared_log: the count must be recomputed from the
+    # committed files, not read back from a transient SharedLogImportReport.
+    audit = await local.audit()
+
+    assert audit["shared_log"]["claim_conflicts"] == 1
+
+
+async def test_audit_claim_conflicts_ignores_superseded(two_ledgers: tuple[LedgerService, LedgerService, Path]) -> None:
+    """A superseded committed claim history counts zero conflicts."""
+    local, foreign, checkout = two_ledgers
+    issue_id = await local.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    await foreign.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await foreign.claim(issue_id, "task:a")
+    assert await foreign.unclaim(issue_id, "handing off", "task:a")
+    assert await foreign.claim(issue_id, "task:b")
+    await foreign.export_shared_log(checkout)
+    assert await local.claim(issue_id, "task:b")
+    local.shared_root = checkout
+
+    audit = await local.audit()
+
+    assert audit["shared_log"]["claim_conflicts"] == 0
+
+
+async def test_audit_claim_conflicts_zero_when_claimants_agree(
+    two_ledgers: tuple[LedgerService, LedgerService, Path],
+) -> None:
+    """Identical claimants on both sides are not a conflict."""
+    local, foreign, checkout = two_ledgers
+    issue_id = await local.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await local.claim(issue_id, "task:same")
+    await foreign.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await foreign.claim(issue_id, "task:same")
+    await foreign.export_shared_log(checkout)
+    local.shared_root = checkout
+
+    audit = await local.audit()
+
+    assert audit["shared_log"]["claim_conflicts"] == 0
+
+
+async def test_audit_preserves_existing_shared_log_keys(two_ledgers: tuple[LedgerService, LedgerService, Path]) -> None:
+    """The five pre-existing keys keep their names and values when claim_conflicts is added."""
+    local, foreign, checkout = two_ledgers
+    await local.open_issue("Local", "body", discovered_from="spec:FEAT-694")
+    await foreign.open_issue("Foreign", "body", discovered_from="spec:FEAT-694")
+    await foreign.export_shared_log(checkout)
+    local.shared_root = checkout
+
+    shared = (await local.audit())["shared_log"]
+
+    assert set(shared) == {
+        "path",
+        "exists",
+        "local_only_events",
+        "committed_unknown_events",
+        "marker",
+        "claim_conflicts",
+    }
+    assert shared["path"] == str(checkout / "sdd" / "ledger" / "events.jsonl")
+    assert shared["exists"] is True
+    assert shared["local_only_events"] == 1
+    assert shared["committed_unknown_events"] == 1
+    assert shared["marker"] == "missing"
+    assert shared["claim_conflicts"] == 0
