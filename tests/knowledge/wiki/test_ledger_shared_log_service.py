@@ -70,6 +70,25 @@ async def test_import_detects_claim_conflict(two_ledgers: tuple[LedgerService, L
     assert dict(await local._all_issues())[issue_id]["claimed_by"] == "task:local"
 
 
+async def test_import_ignores_superseded_claim(two_ledgers: tuple[LedgerService, LedgerService, Path]) -> None:
+    """A committed "A claims, A unclaims, B claims" history reports no conflict (issue:fe3480881432)."""
+    local, foreign, checkout = two_ledgers
+    issue_id = await local.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    await foreign.open_issue("Shared", "body", discovered_from="spec:FEAT-694")
+    assert await foreign.claim(issue_id, "task:a")
+    assert await foreign.unclaim(issue_id, "handing off", "task:a")
+    assert await foreign.claim(issue_id, "task:b")
+    await foreign.export_shared_log(checkout)
+    # The local machine agrees with the live committed claimant, so nothing is in conflict.
+    assert await local.claim(issue_id, "task:b")
+
+    report = await local.import_shared_log(checkout)
+
+    # Before the superseded-claim filter, task:a's revoked claim was reported against task:b.
+    assert report.claim_conflicts == []
+    assert dict(await local._all_issues())[issue_id]["claimed_by"] == "task:b"
+
+
 async def test_import_index_busy_is_soft(
     two_ledgers: tuple[LedgerService, LedgerService, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
