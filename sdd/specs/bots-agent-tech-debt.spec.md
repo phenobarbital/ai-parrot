@@ -64,6 +64,19 @@ because the body already ran by the time `super()` decides to no-op:
 | `bots/database/agent.py` (pre-`:331`) | re-starts toolkit pools and re-runs prefix/collision validation |
 | `bots/data.py:881-889` | already naturally idempotent — gated on `not self.dataframes` |
 
+*Assessed and deliberately left unguarded* — the full inventory is
+`git grep -n 'async def configure' -- packages/ai-parrot/src packages/ai-parrot-tools/src`
+filtered to `AbstractBot` descendants. These four are the sites that need **no**
+change; they are listed so a later reader does not "complete" the fix by
+guarding them:
+
+| Site | Why no guard |
+|---|---|
+| `bots/data.py:876-889` | pre-super work is self-gating (`if self._queries and not self.dataframes`, `:881`); `_sync_dataframes_from_dm()` is a pure re-sync |
+| `bots/mixins/narrative.py:51-52` | pure cooperative passthrough — `await super().configure(*args, **kwargs)` and nothing else |
+| `bots/mixins/infographic_authoring.py:109-118` | pre-super `set_bot()` is **verified** idempotent: `_inject_prompt_guidance` returns early on the sentinel `"## Infographic Generation Mode" in tmpl` (`tools/infographic_toolkit.py:437-447`) |
+| `bots/mixins/identity.py:49` | not code — an `async def configure` inside the `IdentityMixin` class **docstring**'s usage example |
+
 **The prescribed pattern in the docs is wrong.** Both
 `docs/agent-configure-lifecycle.md` §6 and the `configure()` docstring
 (`abstract.py:1587-1588`) tell overrides to write
@@ -293,10 +306,10 @@ class AbstractBot:
       ...  # unchanged body, including setup_a2a
       await super().configure(app)
   ```
-  `bots/data.py` is deliberately **left unguarded**: its pre-super work is gated
-  on `if self._queries and not self.dataframes` (`data.py:881`) and
-  `_sync_dataframes_from_dm()` is a pure re-sync. Module 6 records this as an
-  intentional exemption so a later reader does not "fix" it.
+  `bots/data.py` and the two cooperative mixins are deliberately **left
+  unguarded** — see §1's "Assessed and deliberately left unguarded" table for
+  each one's evidence. Module 6 records them as intentional exemptions so a
+  later reader does not "fix" them. This task changes exactly three files.
 
 ### Module 4: `speech_report` narrator guard
 - **Path**: `packages/ai-parrot/src/parrot/bots/agent.py`
@@ -338,14 +351,16 @@ class AbstractBot:
 ### Module 6: Lifecycle documentation
 - **Path**: `docs/agent-configure-lifecycle.md`
 - **Responsibility**: Replace the incorrect `configure_count > 1` recipe; document
-  the pre-super shape and the `data.py` exemption.
+  the pre-super shape and the assessed exemptions.
 - **Depends on**: Modules 1-3 (documents their final names)
 - **Interface Skeleton**: §6 "Work after `super().configure()`" rewritten around
   `configure_skipped`, with a note on why `configure_count > 1` is wrong (it
   misfires on the CLI-then-server path). A new §8 documents the pre-super
-  `configure_is_noop(app)` shape and lists `bots/data.py` as the one intentional
-  exemption. The `configure()` docstring at `abstract.py:1587-1588` is corrected
-  by Module 1 to match.
+  `configure_is_noop(app)` shape and reproduces §1's "Assessed and deliberately
+  left unguarded" table (`bots/data.py`, `mixins/narrative.py`,
+  `mixins/infographic_authoring.py`) with each one's reason, so the exemptions
+  are discoverable from the docs and not only from this spec. The `configure()`
+  docstring at `abstract.py:1587-1588` is corrected by Module 1 to match.
 
 ---
 
@@ -413,9 +428,12 @@ supertonic twin.
       resolution is expressed once, in `_resolve_configure_app`.
 - [ ] All 9 post-super override sites in §6 return early on
       `configure_skipped`; `grep` finds no post-super site left unguarded.
-- [ ] `chatbot.py`, `voice.py` and `database/agent.py` consult
-      `configure_is_noop(app)` before their pre-super work and still enter
-      `super().configure(app)` on the no-op path.
+      The owning classes are `BasicAgent`, `FirefliesInsightsAgent`,
+      `FirefliesObsidianAgent`, `WebAgent`, `DocumentAgent`,
+      `OrchestratorAgent`, `A2AOrchestratorAgent`, `A2AAgent`, `ComputerAgent`.
+- [ ] `chatbot.py` (`Chatbot`), `voice.py` (`VoiceBot`) and `database/agent.py`
+      (`DatabaseAgent`) consult `configure_is_noop(app)` before their pre-super
+      work and still enter `super().configure(app)` on the no-op path.
 - [ ] A second `configure()` with an unchanged app registers no duplicate
       toolkit/tool/MCP server/agent and starts no second runtime.
 - [ ] The CLI-then-server path (app arriving where none was bound) still runs
@@ -428,7 +446,14 @@ supertonic twin.
       zero LLM calls.
 - [ ] `docs/agent-configure-lifecycle.md` no longer prescribes
       `if self.configure_count > 1: return`; it documents `configure_skipped`,
-      the pre-super `configure_is_noop` shape, and the `bots/data.py` exemption.
+      the pre-super `configure_is_noop` shape, and all three assessed
+      exemptions (`bots/data.py`, `mixins/narrative.py`,
+      `mixins/infographic_authoring.py`) with their reasons.
+- [ ] The override inventory is complete: re-running
+      `git grep -n 'async def configure' -- packages/ai-parrot/src packages/ai-parrot-tools/src`
+      and filtering to `AbstractBot` descendants yields exactly the 9 guarded
+      post-super sites, the 3 guarded pre-super sites, and the 4 recorded
+      exemptions — no unclassified site remains.
 - [ ] The `configure()` docstring at `abstract.py:1587-1588` matches the docs.
 - [ ] Validation Contract tests pass; `ruff check` clean on every touched file.
 - [ ] No breaking change: `configure_count` and `reconfigure()` keep their
@@ -452,6 +477,20 @@ from aiohttp import web                               # verified: used by abstra
 ```
 
 ### Existing Class Signatures
+
+MRO chain (verified): `AbstractBot` (`bots/abstract.py:201`) → `BaseBot`
+(`bots/base.py:91`, **does not override `configure`**) → `Chatbot`
+(`bots/chatbot.py:33`) → `BasicAgent` (`bots/agent.py`) → `Agent`
+(`bots/agent.py:1562`, **does not override `configure`**). So both new members
+are inherited by every site below.
+
+Owning classes of the override sites: `BasicAgent` (`agent.py`),
+`FirefliesInsightsAgent` (`fireflies_insights.py`), `FirefliesObsidianAgent`
+(`agents/obsidian.py` — **not** `ObsidianAgent`), `WebAgent` (`chrome.py` —
+**not** `ChromeAgent`), `DocumentAgent`, `OrchestratorAgent`,
+`A2AOrchestratorAgent`, `A2AAgent`, `ComputerAgent`
+(`parrot_tools/computer/agent.py`), `Chatbot`, `VoiceBot` (`voice.py`),
+`DatabaseAgent` (`bots/database/agent.py`).
 
 ```python
 # packages/ai-parrot/src/parrot/bots/abstract.py
@@ -504,6 +543,14 @@ this feature:
 - ~~`packages/ai-parrot/tests/bots/test_configure_override_guards.py`~~ — new file
 - ~~`AbstractBot.configure()` returning a bool~~ — it returns `None`; do not
   change its return type
+- ~~`ObsidianAgent`~~ — the class in `agents/obsidian.py` is
+  **`FirefliesObsidianAgent`** (the ledger issue's prose calls it
+  `ObsidianAgent`; that name does not exist)
+- ~~`ChromeAgent`~~ — the class in `bots/chrome.py` is **`WebAgent`**
+- ~~`BaseBot.configure`~~ — `BaseBot` (`bots/base.py:91`) does **not** override
+  `configure`; do not add a guard there
+- ~~`Agent.configure`~~ — `Agent` (`bots/agent.py:1562`) does **not** override
+  `configure`; it inherits `BasicAgent`'s
 
 ### Edit Sites (Blueprint Anchors)
 
