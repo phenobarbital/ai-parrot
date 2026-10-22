@@ -95,6 +95,7 @@ if TYPE_CHECKING:
     from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
+    from ..services.llm_quota import LLMQuota
     from ..services.org_graph import OrgGraphService
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
