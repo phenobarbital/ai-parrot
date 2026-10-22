@@ -105,7 +105,7 @@
       "feature_id": "FEAT-715",
       "feature": "fireflies-insights-agent",
       "spec": "sdd/specs/fireflies-insights-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -115,8 +115,9 @@
       "parallelism_notes": "constructs InboxWatcher and catches WatcherUnavailable from TASK-4566 (inbox/watcher.py); only task touching wiki/cli.py.",
       "assigned_to": null,
       "started_at": "2026-10-21T23:46:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4567-wikitoolkit-inbox-watch-flag.md"
+      "completed_at": "2026-10-22T00:27:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4567-wikitoolkit-inbox-watch-flag.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4568",
