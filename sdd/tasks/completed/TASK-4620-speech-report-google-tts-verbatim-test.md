@@ -351,4 +351,22 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+Test-only, as scoped — no source file touched.
+
+Mirrors `test_speech_report_verbatim_supertonic_zero_llm_calls`, with both
+zero-LLM assertions (`create_conversation_script` and `generate_speech` not
+awaited), the single `synthesizer.synthesize` await, and the `.wav` suffix.
+
+The one assertion beyond a copy is the resolved backend: the patched
+`get_shared_synthesizer`'s `await_args.args[0]` is the `TTSConfig`, and its
+`backend` is `"google"` while the `speech_report` selector is `"google_tts"`.
+That pins `_SPEECH_TO_TTS_BACKEND` (`agent.py:35`), which the supertonic twin
+cannot exercise because its selector and backend name are the same string.
+`mime_format` is asserted as `"audio/wav"` for the same reason — it comes from
+`_NATIVE_MIME["google"]`, a dict keyed by the TTS name, not the selector.
+
+No `google_tts` routing defect surfaced, so nothing was escalated.
+
+Validation: `pytest tests/test_basic_agent_new.py::test_speech_report_verbatim_google_tts_zero_llm_calls
+tests/test_basic_agent_new.py::test_speech_report_verbatim_supertonic_zero_llm_calls -q`
+-> **2 passed**. Full file earlier in the feature: 27 passed. `ruff check` clean.

@@ -404,4 +404,35 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent at close time. -->
+Documentation-only, as scoped — nothing under `packages/` touched.
+
+§6 rewritten around `configure_skipped`. The wrong recipe is kept, but only
+inside an explicit "**Do not use `if self.configure_count > 1: return`**"
+blockquote that names the CLI-then-server path. Removing it silently would have
+left `configure_count` sitting there as the obvious-looking guard for the next
+contributor to reach for — which is how §6 became wrong in the first place.
+
+New §8 documents the pre-super `configure_is_noop(app)` shape, including why
+its no-op branch still awaits `super()`, and that the predicate is prospective
+(`>= 1`). It reproduces the three assessed exemptions with their reasons and
+notes that `tests/bots/test_configure_override_guards.py` asserts they stay
+unguarded.
+
+Two additions beyond the task's scope statement, both documentation:
+
+* §1 was quietly inconsistent after TASK-4616 — it presented the counter as
+  the enforcement mechanism, which invites the same wrong inference §6 made. It
+  now points at §6/§8 and states plainly that the counter is not the guard.
+* a new §9 gives the `git grep 'async def configure'` that re-derives the whole
+  inventory, with the MRO note that `BaseBot` and `Agent` do not override
+  `configure`. This is what makes an unclassified site visibly a defect rather
+  than something a reader has to notice.
+
+§2-§5 and §7 are unchanged. The FEAT-721 header trail is kept with FEAT-726
+added beside it. Every symbol the doc names was re-verified present in the
+source (`configure_skipped`, `configure_is_noop`, `configure_count`,
+`reconfigure`, `find_registered_toolkit`), and no example awaits the predicate.
+
+Validation: `pytest tests/bots/test_double_configure.py
+tests/bots/test_jira_specialist_reconfigure.py -q` -> passed (doc edit changes
+no importable code).
