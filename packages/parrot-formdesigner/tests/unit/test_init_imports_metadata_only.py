@@ -17,7 +17,6 @@ from importlib.metadata import version as dist_version
 import pytest
 from packaging.version import Version
 
-
 # Modules that the metadata-only test must drop from sys.modules to verify
 # that ``import parrot_formdesigner`` reloads cleanly without pulling them.
 # We use ``monkeypatch.delitem`` (instead of ``sys.modules.pop``) so pytest
