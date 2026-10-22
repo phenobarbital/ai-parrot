@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -661,6 +661,7 @@ class LedgerService:
             ) as cur:
                 broken_row = await cur.fetchone()
         broken_edges = broken_row[0] if broken_row else 0
+        issues = dict(await self._all_issues())
 
         return {
             "log_size_bytes": log_size,
@@ -669,24 +670,36 @@ class LedgerService:
             "cursor_offset": offset,
             "cursor_lag_events": lag,
             "broken_edges": broken_edges,
-            "shared_log": await asyncio.to_thread(self._shared_log_audit),
+            "shared_log": await asyncio.to_thread(self._shared_log_audit, issues),
             "sqlite": await self.store.sqlite_settings(),
         }
 
-    def _shared_log_audit(self) -> dict[str, Any]:
-        """Blocking: compare the local log with the committed logical shared log."""
+    def _shared_log_audit(self, issues: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+        """Blocking: compare the local log with the committed logical shared log.
+
+        Args:
+            issues: ``{issue_id: state}`` resolved by :meth:`audit` — this method cannot
+                await, so local issue state is passed in.
+
+        Returns:
+            The drift/marker keys plus ``claim_conflicts``: the number of live committed
+            claims whose claimant differs from a locally ``claimed`` issue's claimant.
+            Recomputed from the committed files on every call and NEVER read from a
+            ``SharedLogImportReport``, which the git hooks discard (FEAT-694 AC10/AC12).
+        """
         from parrot.knowledge.wiki.ledger.shared_log import (
             MARKER_FILENAME,
             SHARED_LOG_REL_PATH,
             digest_files,
             is_shareable,
+            live_claims,
             read_raw_events,
-            read_shared_event_ids,
             shared_log_files,
         )
 
         files = shared_log_files(self.shared_root)
-        committed = read_shared_event_ids(files)
+        committed_events = [event for path in files for _, event in read_raw_events(path)]
+        committed = {event.event_id for event in committed_events}
         local_events = read_raw_events(Path(self.log.path))
         local = {event.event_id for _, event in local_events if is_shareable(event)}
         all_local_ids = {event.event_id for _, event in local_events}
@@ -697,10 +710,18 @@ class LedgerService:
             marker_state = "ok"
         else:
             marker_state = "stale"
+        conflicts = 0
+        for event in live_claims(committed_events):
+            state = issues.get(event.subject)
+            if state is None or state.get("status") != "claimed":
+                continue
+            if state.get("claimed_by") != event.payload.get("claimed_by"):
+                conflicts += 1
         return {
             "path": str(self.shared_root / SHARED_LOG_REL_PATH),
             "exists": (self.shared_root / SHARED_LOG_REL_PATH).exists(),
             "local_only_events": len(local - committed),
             "committed_unknown_events": len(committed - all_local_ids),
             "marker": marker_state,
+            "claim_conflicts": conflicts,
         }

@@ -145,6 +145,24 @@ def _commit_snapshot(root: Path, text: str, message: str) -> None:
     )
 
 
+def _advance_base(root: Path, text: str, message: str) -> None:
+    """Commit a new snapshot on the ``base`` branch, leaving HEAD where it is.
+
+    Models the real CI race: ``dev`` gains rows while the PR branch (or GitHub's
+    ``refs/pull/N/merge`` ref) still points at an older fork point.
+    """
+    current = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", "-q", "base"], cwd=root, check=True, capture_output=True, text=True)
+    _commit_snapshot(root, text, message)
+    subprocess.run(["git", "checkout", "-q", current], cwd=root, check=True, capture_output=True, text=True)
+
+
 class TestMainInGitRepo:
     """End-to-end runs through main() against a real git history (I1-I4)."""
 
@@ -207,6 +225,49 @@ class TestMainInGitRepo:
         assert allowed_removals("base") == {"issue:a", "issue:b"}
         assert main(["--base-ref", "base"]) == 0
 
+    def test_row_added_to_base_after_the_fork_is_not_a_removal(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CI 39696105212: the branch never had the row, so it cannot have removed it."""
+        monkeypatch.chdir(repo)
+        _commit_snapshot(repo, _jsonl(_row("issue:a", "open"), _row("issue:b", "closed")), "unrelated work")
+        _advance_base(
+            repo,
+            _jsonl(_row("issue:a", "open"), _row("issue:b", "closed"), _row("issue:c", "open")),
+            "base gains an open issue after the fork",
+        )
+        assert main(["--base-ref", "base"]) == 0
+
+    def test_a_real_removal_is_still_caught_on_a_branch_behind_base(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        """Being behind base must not become a blanket amnesty for the branch's own drops."""
+        monkeypatch.chdir(repo)
+        _commit_snapshot(repo, _jsonl(_row("issue:b", "closed")), "drop an open issue")
+        _advance_base(
+            repo,
+            _jsonl(_row("issue:a", "open"), _row("issue:b", "closed"), _row("issue:c", "open")),
+            "base gains an open issue after the fork",
+        )
+        assert main(["--base-ref", "base"]) == 1
+        err = capsys.readouterr().err
+        assert "issue:a" in err
+        assert "issue:c" not in err
+
+    def test_unrelated_history_fails_closed(self, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+        """No merge base (a too-shallow clone looks like this) must never pass silently."""
+        monkeypatch.chdir(repo)
+        subprocess.run(
+            ["git", "checkout", "-q", "--orphan", "severed"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        _commit_snapshot(repo, _jsonl(_row("issue:a", "open"), _row("issue:b", "closed")), "severed root")
+        assert main(["--base-ref", "base"]) == 1
+        assert "merge base" in capsys.readouterr().err
+
 
 def test_real_repo_snapshot_is_clean() -> None:
     """I5 / AC8: today's committed snapshot must not drop anything vs origin/dev."""
@@ -249,3 +310,17 @@ class TestCiWiring:
     def test_guard_step_falls_back_to_dev_off_pull_requests(self) -> None:
         """github.base_ref is empty on push events; the guard must still have a base."""
         assert "github.base_ref || 'dev'" in self._guard_step()["run"]
+
+    def test_guard_job_checks_out_full_history(self) -> None:
+        """merge-base and the Ledger-Removal trailer lookup both need connected history."""
+        yaml = pytest.importorskip("yaml")
+        repo_root = Path(__file__).resolve().parents[2]
+        workflow = yaml.safe_load((repo_root / ".github/workflows/ci.yml").read_text())
+        steps = workflow["jobs"]["lint-and-registry"]["steps"]
+        checkouts = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+        assert checkouts, "lint-and-registry has no checkout step"
+        assert checkouts[0].get("with", {}).get("fetch-depth") == 0
+
+    def test_guard_step_does_not_reshallow_the_fetch(self) -> None:
+        """--depth on a full clone writes .git/shallow and severs the merge base again."""
+        assert "--depth" not in self._guard_step()["run"]

@@ -50,6 +50,7 @@ from parrot.security.prompt_injection import (
     PromptInjectionDetector,
     SecurityEventLogger,
     ThreatLevel,
+    max_threat_level,
 )
 
 from ..base import (
@@ -809,12 +810,13 @@ class PromptInjectionGuardrail(Guardrail):
             },
         )
 
-        # NOTE: `max()` here has no `key=`, matching the legacy
-        # `_sanitize_question` behavior exactly (bots/abstract.py:1955) —
-        # including its latent TypeError if `threats` ever mixes severity
-        # levels without total ordering. Preserved intentionally for
-        # byte-for-byte compat; not introduced or fixed by this task.
-        max_severity = max((t["level"] for t in threats), default=ThreatLevel.LOW)
+        # The legacy `_sanitize_question` aggregated severities with a bare
+        # `max()` over `ThreatLevel`, which has no total ordering — a
+        # reachable `TypeError` that the pipeline's default `fail_open`
+        # turned into a silent PASS for any input matching patterns at two
+        # severities (`issue:a6abf12a2027`). `max_threat_level` is the one
+        # ordered aggregation; do not inline a bare `max()` here again.
+        max_severity = max_threat_level(threats)
 
         if self.block_on_threat and max_severity in (ThreatLevel.CRITICAL, ThreatLevel.HIGH):
             # `report` on a BLOCK result is non-content (just a count) — the
