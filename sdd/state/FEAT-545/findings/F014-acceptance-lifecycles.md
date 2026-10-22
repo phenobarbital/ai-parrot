@@ -2,7 +2,7 @@
 id: F014
 query_id: Q016
 type: grep
-intent: Status lifecycles: brainstorm accepted / proposal accepted / spec approved
+intent: "Status lifecycles: brainstorm accepted / proposal accepted / spec approved"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 500
 parent_id: null

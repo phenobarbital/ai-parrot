@@ -135,8 +135,9 @@ class StructuralService:
         root: Repository root the store's symbols/pages describe.
         config: Effective project configuration (storage path, include/
             exclude filters) — used only by :meth:`_ensure_fresh`.
-        read_repair: When ``False`` :meth:`_ensure_fresh` never touches the
-            working tree or the store (used for foreign namespaces).
+        read_repair: When ``False`` the service is rootless: :meth:`_ensure_fresh`
+            never touches the working tree or the store and source excerpts are
+            never read (foreign namespaces, remote store-only servers).
     """
 
     def __init__(
@@ -331,7 +332,12 @@ class StructuralService:
         ``symbol_from_page`` decode, whose ``start_byte``/``end_byte``
         are intentionally zeroed (the rendered markdown body does not
         carry them precisely — see ``symbol_from_page``'s docstring).
+
+        Returns ``(None, False)`` in rootless mode (``read_repair=False``): no
+        source tree is available, so no bytes are ever read.
         """
+        if not self._read_repair:
+            return None, False
         try:
             _rel, qualname, _ordinal = parse_sym_id(sym_id)
         except ValueError:
@@ -391,7 +397,9 @@ class StructuralService:
             return out.model_copy(
                 update={
                     "root": _qualified_hit(out.root, ns) if out.root else None,
-                    "impacted": [imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted],
+                    "impacted": [
+                        imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted
+                    ],
                 }
             )
         out = await self._blast_local(

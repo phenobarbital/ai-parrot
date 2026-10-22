@@ -8,6 +8,8 @@ A linked surface is an A2UI envelope that carries data-source descriptors in `me
 
 When a surface includes a snapshot (≤ 500 rows), it is indistinguishable from a regular baked surface to renderers that don't understand the `parrot_data_sources` extension. This ensures backward compatibility with existing renderers.
 
+Tool-built envelopes (`qs_build_linked_surface`, `qs_build_linked_dashboard`) are **definition-only by default**: every source ships with `rows: []` and `snapshot_at: null`, the builder only *probes* each slug with `querylimit=1` to validate the bound columns and dtypes, and the renderer fetches the rows on mount. This avoids running every query twice (once to bake a snapshot nobody displays, once when the surface mounts). Pass `snapshot=True` only when viewers cannot fetch for themselves (share links, offline export). Persisting a surface through `POST /api/v1/ui/surfaces` still takes a full snapshot at save time (`ensure_snapshot`).
+
 ## 2. Wire format — `metadata.extensions.parrot_data_sources`
 
 The `parrot_data_sources` extension is a mapping keyed by data-model root keys, where each value is a `LinkedDataSource` descriptor:
@@ -21,7 +23,7 @@ The `parrot_data_sources` extension is a mapping keyed by data-model root keys, 
 | `params` | object | User-editable parameter metadata |
 | `locked` | string[] | Parameter names forced by the server |
 | `refresh` | RefreshPolicy | Renderer refresh policy |
-| `transform` | TransformSpec/null | Inline DSL or catalogued module |
+| `transform` | TransformSpec/null | Inline DSL, catalogued module (`ref`), or server-side python transformer (`python`) |
 | `target` | string | Data-model pointer for binding |
 | `snapshot_at` | datetime/null | When snapshot was taken |
 | `snapshot_truncated` | boolean | Whether snapshot hit row limit |
@@ -36,21 +38,104 @@ The `request` field contains the canonical representation of conditions:
 - `grouping`: Group-by columns
 - `limit`/`offset`: Pagination
 
+### Source kinds
+
+Every entry carries a `kind` discriminator (a descriptor without one is a `query_slug` source — the shape above):
+
+| `kind` | What it is | Fields |
+|---|---|---|
+| `query_slug` | A fetched source: one QuerySource call per run | the table above |
+| `derived` | A **view computed from a sibling source's frame** with the transform DSL — never fetched, no params, no refresh policy of its own | `from` (sibling key), `transform` (`ops` only; `ref` is rejected), `target`, `snapshot_at`, `snapshot_truncated` |
+
+A derived source is the wire form of "my data comes from the Dashboard": the dashboard fetches `from` once, and
+any number of derived views (and any number of components bound directly to `/<from>/rows`) reuse that frame.
+Its base is the parent's **full fetched frame** (bounded by the 5000-row fetch cap), never the parent's ≤500-row
+snapshot; its own rows are snapshotted like any other source, so bake/HTML lanes and renderers without a lane see
+the computed view. Validation (`DATA_SOURCE_INVALID`) requires `from` to name another key of the same surface, a
+parent without a `transform.ref`, and no dependency cycle; a FilterBar `parrot_param` may not target a derived key.
+
+## 2b. Linked dashboards — dashboard-owned sources
+
+A dashboard is one linked surface whose sources belong to the *dashboard*, not to its widgets. A widget declares
+one of three data origins:
+
+1. **inline** — rows baked into `dataModel[<key>]` with no descriptor (never refreshed);
+2. **its own `query_slug` source** — fetched and refreshed independently (the FEAT-610 one-widget-one-source shape);
+3. **a dashboard source** — bound directly (`/kpis/rows/0/total_visits` from six KPICards over one `kpis` query that
+   computes six aggregates) or through a `derived` view (a grid shows every row of `rows`; a pie chart is
+   `{"kind": "derived", "from": "rows", "transform": {"ops": [{"op": "group_by", …}]}}` — a categorical aggregation of
+   those same rows computed on the client, with no second call).
+
+`qs_build_linked_dashboard` (see [querysource-toolkit.md](../tools/querysource-toolkit.md)) emits this shape from a
+`sources` map plus widgets with `source` / `slug` / `data`. The [Polestar example](../../examples/a2ui/README.md) loads
+with 4 QuerySource calls instead of the 8 per-widget calls of its first version.
+
+Refresh semantics, identical on the Python executor, the admin UI lane and the example lane:
+
+| Action | `query_slug` source | `derived` source |
+|---|---|---|
+| Mount / save-time snapshot | fetched in dependency order, once per pass however many widgets read it | computed after its parent, from the parent's full frame |
+| Refresh the dashboard (`refreshAll`, `POST …/refresh {}`) | re-fetched | recomputed through the parent's cascade; never fetched |
+| Refresh one shared source (`refreshSource(k)`) | re-fetched, then every query-slug source that (transitively) depends on `k` | every derived view that depends on `k` — through `from`, `join.with` or `union.sources` — recomputed in dependency order |
+| Refresh a derived widget (`refreshSource(d)`) | its parent is refreshed | recomputed by the cascade |
+| `setParam` / `{"params": {"d": {…}}}` | applied when declared and unlocked | ignored (`source d: ignored params […]` warning); broadcast params never reach derived keys |
+| Failure | `error` / `unavailable`, snapshot kept | a parent failure marks its derived views `error` (Python: `data_stage`); a `TransformError` fails only that view and blocks save-time snapshots (502 `data_stage`) |
+
+Caveat: a derived view aggregates what its parent fetched (≤ `max_fetch_rows`, 5000). When the full data set is
+larger, put the aggregation in the parent's `request` (`fields` + `grouping`) and derive from that; a server-paged
+grid source can never feed a derived view. Note that the DSL `group_by` drops rows whose group key is NULL, whereas
+QuerySource `grouping` keeps them as one bucket. `contract/fixtures/parity/derived_dashboard.json` pins the execution
+order, the set of fetched keys, the ignored params and the rows every executor must reproduce.
+
 ## 3. Fetch path and errors
 
-Renderers fetch linked data by making authenticated requests to QuerySource endpoints:
+Renderers fetch linked data by making authenticated requests to QuerySource endpoints. The route rule (identical in
+the admin UI lane, the vanilla example lane and the example Python client) is:
 
 ```
-POST /api/v3/queries/{slug}                     # no tenant (used by the renderer when no tenant is set)
-POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer when a tenant is set)
-POST /api/v1/queries/{schema}/{slug}            # alias, querysource >= 5.1.2
-POST /api/v2/services/queries/{slug}            # service route
+POST /api/v2/services/queries/{slug}            # DEFAULT: no tenant, regular slug → plain QS() (milliseconds)
+POST /api/v3/queries/{slug}                     # only when is_multiquery: MultiQS, the one HTTP lane that expands a pipeline
+POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer whenever a tenant is set; kind-aware)
+POST /api/v1/queries/{schema}/{slug}            # alias of the tenant route, querysource >= 5.1.2
 ```
+
+Route rule (`ui/src/lib/api/querysource.ts::queryUrl`, mirrored by `examples/a2ui/static/linked.js` and
+`examples/a2ui/client.py`): `tenant` wins; else `is_multiquery` selects v3; else v2. The v3 route is served by
+MultiQS, which favours availability over latency (it loads the pipeline definitions, runs in threads and retries
+up to 3 times) — it is the data-pipeline/ETL lane, so a regular slug that `QS()` answers in milliseconds must
+never go through it. Only a real MultiQuery pipeline needs v3, because v2 executes single-query slugs only.
+
+All four routes accept the same JSON body (`fields`, `filter`, `grouping`, `ordering`, `querylimit`, `_offset`, …)
+and answer an empty result with **HTTP 204** (`x-status: Empty Result`, no body): every lane renders that as zero
+rows, never as an error.
+
+### Linked surface data fetch
+
+For linked surfaces with server-side python transformers, renderers fetch transformed data through a dedicated
+endpoint:
+
+```
+POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data
+```
+
+The request body contains only the source parameters (no transform specification — the transform is already
+registered on the server). The response returns the transformed rows (up to 5000, see §4).
+
+**Error codes:**
+- `404 unavailable` — the source key does not exist or the surface is not accessible
+- `403 Forbidden` — guard check or PBAC denied access
+- `422 Unprocessable Entity` — transformer errors:
+  - `transformer_not_registered` — the transformer module is not registered with the server
+  - `transform_failed` — the transformer function raised an error during execution
+  - `transform_invalid_output` — the transformer returned data in an unexpected format
 
 With JWT authentication from the viewer's session. The request includes:
 - `refresh: true` only on a manual refresh; the field is omitted otherwise (never sent as false)
 - `querylimit` capped at 5000 rows per fetch (`DEFAULT_MAX_FETCH_ROWS`); `request.limit` may lower it, never raise it
 - All other request parameters from the descriptor
+
+An empty result is answered with HTTP 204 (`x-status: Empty Result`) and no body; the lane treats it as zero
+rows, never as an error.
 
 ### Per-source refresh
 
@@ -71,24 +156,37 @@ Linked surfaces support three refresh policies:
 While hidden (e.g., in a non-active tab), refresh is paused automatically.
 
 Snapshots embed up to 500 rows directly in the envelope:
+- Tool-built envelopes carry none by default (`snapshot=False`, see §1): the renderer fetches on mount
 - `snapshot_truncated: true` indicates truncation occurred
-- Once persisted, snapshots are mandatory (AC16)
+- Once persisted, snapshots are mandatory (AC16): the pin lane takes one at save time
 - `GET` requests never execute queries; they return the stored snapshot
 - While `snapshot_at` is null, show a loading state
 
-## 5. Transforms — DSL v1 and `transform.ref`
+## 5. Transforms — DSL v1, `transform.ref` and `transform.python`
 
-Linked surfaces support two types of transforms:
+Linked surfaces support three types of transforms:
 1. Inline DSL operations (ten operations: select, rename, filter, group_by, sort, limit, derive, pivot, join, union)
 2. Catalogued renderer modules via `transform.ref` (opaque `name@version` with SRI integrity pin)
+3. Server-side python transformers via `transform.python` (registered transformer name, executed on the server)
 
-The DSL provides lightweight data manipulation without requiring server round trips. Renderer modules offer more sophisticated transformations but require proper CSP configuration by the host page.
+The DSL provides lightweight data manipulation without requiring server round trips. Renderer modules offer more sophisticated transformations but require proper CSP configuration by the host page. Server-side python transformers run on the server and support complex data processing without exposing code to the client.
+
+### `transform.python` — server-side registered transformers (FEAT-636)
+
+- **Registered name**: The transformer is identified by a registered name (G1). The server must have imported the transformer module via `load_transformer_module` before it can be used.
+- **Input alias**: Defaults to `"source"` — the input DataFrame is available under this name in the transformer context (`input_alias`).
+- **Output selection**: The transformer returns a DataFrame; the `output` field selects which DataFrame to use from the result.
+- **Terminal rule**: A `transform.python` transform is terminal — no further transforms (DSL or otherwise) can be chained after it.
+- **Post-transform row cap**: After transformation, the result is capped at 5000 rows.
+- **Persisted-only dynamic fetch**: Dynamic fetch (on mount/refresh) only works with persisted surfaces. For non-persisted surfaces, the renderer shows "saved data" instead of attempting a fetch.
+- **Operator note**: The serving process must have imported the transformer module using `load_transformer_module`. If the transformer is not registered, requests return 422 `transformer_not_registered`.
 
 ## 6. Trust model
 
 - `locked` is not security: It is a UX hint; security is QuerySource PBAC + slug design. Tenant is routing, not security.
 - Server lanes run as a trusted service behind a mandatory guard: `LinkedSurfaceService` fails closed without a guard (`LinkedGuardRequired` → 403); owner `principal=` is defense in depth (PBAC can no-op when QuerySource's bootstrap is absent). Document the default wiring (TASK-3805): `BotManager.setup` builds `app["dataplane_guard"]` / injects `bot._dataplane_guard` via `setup_dataplane_guard()` when PBAC initializes (navigator-auth + `PARROT_PBAC_POLICY_DIR`); otherwise linked saves answer 403 until an operator configures PBAC. Owner-check resource naming (confirmed 2026-09-26): `source:read` on `query_slug:<tenant|public>:<slug>`.
 - `ref` module CSP is the host page's responsibility: SRI authenticates bytes, not behaviour.
+- **Identity rule for python transformers**: When the caller has a full session (owner/scope), the caller's principal context is used. For share-token-only access, only the owner's principal context is available — the caller cannot execute python transformers with their own identity.
 
 ## 7. Share-token viewers
 

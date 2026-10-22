@@ -62,15 +62,21 @@ also edits can mask the very defects it should surface.
    # Feature tier (FEAT-563): mirror of directories over the feature's changes ∪ every
    # task's `## Validation Commands` ∪ core escalation (paid once, ledger-deduped).
    # Never run the whole suite here — CI owns full-suite and e2e runs.
+   # The gate is NEW reds vs origin/<base_branch> (plus unknowns); baseline reds are reported, not blocking.
    # --task-file enumerates the feature's own tasks from its per-spec index, so the
    # "∪ declared Validation Commands" half of the feature tier is actually exercised.
    TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json")
    python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+     --index "sdd/tasks/index/<feature-slug>.json" \
      $(printf -- '--task-file %s ' $TASK_FILES) --run
    ```
    Add `--json` once (without `--run`) to record in the report which tests ran and why
    (`declared` / `mirror` / `core` / `escalated`, plus `skipped_escalations`).
    Use `pytest-asyncio` conventions already in the repo for async tests.
+   
+   **Note**: Non-pytest runners in the plan (vitest, cargo, parrot-e2e) gate on **any** red 
+   in v1 (no green cache, no baseline classification). Cache and baseline are explicitly 
+   pytest-scoped.
 4. **Lint and type-check the changed files only:**
    ```bash
    ruff check <changed-files>

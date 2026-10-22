@@ -1,0 +1,18 @@
+{
+  "summary_oneline": "Wire listeners on aiohttp, Redis per-fire claim via executor hook, row re-check at fire, picklable module-level trampolines",
+  "overall_confidence": "medium",
+  "claims": [
+    {"id": "C1", "text": "aiohttp on_startup disables listeners; success path dead", "confidence": "high", "evidence": ["F001"]},
+    {"id": "C2", "text": "every worker loads and fires every job; no row re-check", "confidence": "high", "evidence": ["F002"]},
+    {"id": "C3", "text": "bound-method jobs pickle the manager -> TypeError (reproduced)", "confidence": "high", "evidence": ["F003"]},
+    {"id": "C4", "text": "AsyncIOExecutor._do_submit_job(job, run_times) is a workable claim hook", "confidence": "medium", "evidence": ["F003"]}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "dedup mechanism", "user_answer": "per-fire Redis lock"},
+    {"id": "U2", "question": "listeners on aiohttp", "user_answer": "on by default"},
+    {"id": "U3", "question": "Redis unavailable at fire", "user_answer": "fail closed"},
+    {"id": "U4", "question": "keep scheduler_type=redis?", "user_answer": null},
+    {"id": "U5", "question": "restart endpoint across workers?", "user_answer": null}
+  ],
+  "recommended_next_command": {"command": "sdd-spec", "rationale": "high-confidence localization, key design decisions resolved, ~4 tasks in one package"}
+}

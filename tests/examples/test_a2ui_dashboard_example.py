@@ -27,7 +27,8 @@ def _message(*tool_calls: ToolCall) -> AIMessage:
 
 
 def test_widgets_match_query_map() -> None:
-    """The example declares the eight verified widget queries and display types."""
+    """The example declares two dashboard-owned sources and the eight verified widgets over them."""
+    assert list(dashboard.SOURCES) == ["kpis", "geo"]
     assert [widget["key"] for widget in dashboard.WIDGETS] == [
         "kpi_total",
         "kpi_studio",
@@ -42,30 +43,37 @@ def test_widgets_match_query_map() -> None:
     assert sum(component["component"] == "KPICard" for component in components) == 4
     assert sum(component["component"] == "Chart" for component in components) == 3
     assert sum(component["component"] == "DataTable" for component in components) == 1
-    assert [component["value"] for component in components[:4]] == ["total", "total", "total", "multi_graduates"]
+    assert [component["value"] for component in components[:4]] == ["total", "studio", "mat", "multi_graduates"]
     assert all("people" in component["title"] for component in components[:4])
     assert "diplomas" in components[6]["title"]
     by_key = {widget["key"]: widget for widget in dashboard.WIDGETS}
-    assert by_key["kpi_total"]["request"] == {"fields": ["count(*) as total"]}
-    assert by_key["kpi_studio"]["request"]["filter"] == {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}
-    assert by_key["kpi_mat"]["request"]["filter"] == {"graduation_details": {"@>": [{"course": "Pilates Mat"}]}}
-    assert by_key["kpi_multi"]["request"] == {
-        "fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]
+    # Four KPIs, ONE query: every aggregate is a field of the shared `kpis` source.
+    assert all(by_key[key]["source"] == "kpis" for key in ("kpi_total", "kpi_studio", "kpi_mat", "kpi_multi"))
+    kpi_fields = dashboard.SOURCES["kpis"]["request"]["fields"]
+    assert kpi_fields[0] == "count(*) as total"
+    assert '@> \'[{"course": "Pilates Studio"}]\') as studio' in kpi_fields[1]
+    assert '@> \'[{"course": "Pilates Mat"}]\') as mat' in kpi_fields[2]
+    assert kpi_fields[3] == "count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"
+    # Two charts, ONE grouped query: derived views aggregate the geo matrix client-side.
+    assert dashboard.SOURCES["geo"]["request"] == {
+        "fields": ["country", "licensee", "count(*) as graduates"],
+        "grouping": ["country", "licensee"],
     }
-    assert by_key["by_country"]["request"] == {
-        "fields": ["country", "count(*) as graduates"],
-        "grouping": ["country"],
-    }
-    assert by_key["by_licensee"]["request"] == {
-        "fields": ["licensee", "count(*) as graduates"],
-        "grouping": ["licensee"],
-    }
+    for key, column in (("by_country", "country"), ("by_licensee", "licensee")):
+        assert by_key[key]["source"] == "geo"
+        assert by_key[key]["transform"]["ops"][0] == {
+            "op": "group_by",
+            "by": [column],
+            "aggregate": {"graduates": "sum"},
+        }
+    # The pie and the server-paged grid keep their own sources.
     assert by_key["by_course"]["slug"] == dashboard.BY_COURSE_SLUG
     assert by_key["graduates"]["request"] == {
         "fields": ["student_uid", "full_name", "country", "licensee", "is_requalified", "last_diploma_date"],
         "ordering": ["student_uid"],
         "limit": 500,
     }
+    assert "sources" in dashboard.dashboard_question() and "widgets" in dashboard.dashboard_question()
 
 
 def test_extract_envelope() -> None:

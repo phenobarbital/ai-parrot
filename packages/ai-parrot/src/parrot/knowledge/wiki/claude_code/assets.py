@@ -47,6 +47,11 @@ HOOK_MATCHER = "Grep|Glob|Read|Bash"
 GIT_HOOK_BEGIN = "# >>> parrot-wiki post-commit >>>"
 GIT_HOOK_END = "# <<< parrot-wiki post-commit <<<"
 
+# FEAT-694: shared ledger event log sync (export on pre-commit, import after pull/checkout/rewrite).
+LEDGER_HOOK_BEGIN = "# >>> parrot-ledger >>>"
+LEDGER_HOOK_END = "# <<< parrot-ledger <<<"
+LEDGER_HOOK_EVENTS: tuple[str, ...] = ("pre-commit", "post-merge", "post-checkout", "post-rewrite")
+
 #: Permission allow-rules merged into .claude/settings.json so wiki
 #: queries run without a permission prompt. Covers the bare CLI, the
 #: ``parrot wiki`` alias, and the common venv-activation compound.
@@ -118,6 +123,15 @@ def mcp_json_entry(root: Path) -> dict:
         "args": ["mcp"],
         "env": {},
     }
+
+
+def mcp_json_entry_remote(url: str, token_env: str) -> dict:
+    """Native Claude Code HTTP entry for a remote wiki mount (FEAT-569).
+
+    Claude Code expands ``${VAR}`` inside ``.mcp.json`` header values (2.1.274+),
+    so the token never lands on disk.
+    """
+    return {"type": "http", "url": url, "headers": {"Authorization": f"Bearer ${{{token_env}}}"}}
 
 
 def resolve_parrot_bin(root: Path) -> str:
@@ -199,6 +213,34 @@ def git_hook_block(root: Path) -> str:
 def git_hook_new_file(root: Path) -> str:
     """Build a fresh managed hook file with an absolute path."""
     return f"#!/bin/sh\n{git_hook_block(root)}"
+
+
+def ledger_hook_block(root: Path, hook_name: str) -> str:
+    """Build the managed ledger-sync block for one hook event (no linked-worktree guard).
+
+    Args:
+        root: Repository root (used to resolve the wikitoolkit binary).
+        hook_name: One of :data:`LEDGER_HOOK_EVENTS`.
+
+    Raises:
+        ValueError: ``hook_name`` is not in :data:`LEDGER_HOOK_EVENTS`.
+    """
+    if hook_name not in LEDGER_HOOK_EVENTS:
+        raise ValueError(f"unknown ledger hook event: {hook_name!r}")
+    wt_bin = resolve_wikitoolkit_bin(root)
+    sub = "ledger export-log --stage --quiet" if hook_name == "pre-commit" else "ledger import-log --quiet"
+    return (
+        f"{LEDGER_HOOK_BEGIN}\n"
+        f"# Sync the shared SDD ledger event log (FEAT-694).\n"
+        f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
+        f"{wt_bin} {sub} >/dev/null 2>&1 || true\n"
+        f"{LEDGER_HOOK_END}\n"
+    )
+
+
+def ledger_hook_new_file(root: Path, hook_name: str) -> str:
+    """Build a fresh hook file holding only the ledger block."""
+    return f"#!/bin/sh\n{ledger_hook_block(root, hook_name)}"
 
 
 def permission_rules(root: Path) -> tuple[str, ...]:
@@ -306,7 +348,7 @@ to export a human-readable markdown wiki).
 
 SLASH_COMMAND_MD = """---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | status | build | --wiki [dir]]
+argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | standup | entity | status | build | --wiki [dir]]
 allowed-tools: Bash(wikitoolkit:*)
 ---
 
@@ -338,11 +380,17 @@ matching `wikitoolkit` command with Bash:
 - `memories` — run `wikitoolkit memories` and summarise what has
   been saved.
 - `audit` — run `wikitoolkit audit` and summarise recent writes.
+- `standup` — run `wikitoolkit standup`; use --period day|week|month and --language en|es.
+- `entity` — run `wikitoolkit entity add|list|reindex`; reindex foreign planes with --store.
 - `--wiki [dir]` — build a human-readable markdown wiki from the
   graph: run `wikitoolkit export -o <dir>` (default `docs/wiki`) and
   list what was written.
 - no arguments — run `wikitoolkit status` and briefly explain the
   available actions above.
+
+MCP writes (standup, entity) are opt-in and mirror the checked-in command
+text. Run `wikitoolkit standup --no-store --no-file --json` for read-only
+output, or use explicit --store/--path to target a specific wiki plane.
 
 If `wikitoolkit` reports the wiki is not built yet, run
 `wikitoolkit build` first, then retry the requested action.

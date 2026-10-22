@@ -1,0 +1,90 @@
+**Option B** is recommended because:
+
+- The user chose all four sources *and* a typed-entity convention; a
+  convention that lives only inside one command's parser (Option A) is
+  not a convention, it is a private heuristic that the next consumer
+  (weekly roll-up, `wiki_query` filters, lint) re-implements.
+- The brief's hard requirements — horizon filtering, "blocked first",
+  day-over-day diff, per-type status enums — are index questions. One
+  additive attrs table answers all of them in SQL; Option A answers them
+  by loading every candidate body every morning.
+- The cost that matters (touching ingest paths + a migration) is bounded:
+  the table is additive, old planes open unchanged, and Option A's
+  body-frontmatter reader is kept as the fallback so the brief works on
+  day one even before `issues`/vault planes are re-ingested.
+- Option C is rejected on the hybrid decision alone: the mechanical part
+  must be deterministic and offline.
+
+What we trade: a bigger first feature and a decision about
+`SCHEMA_VERSION` (open question 1). Mitigation: phase the spec so the
+attrs plane (store + vault + jira + remember + entity CLI) lands first and
+the standup collectors run against it or the fallback.
+
+---
+
+Add a small **page attribute index** to the wiki store — one additive
+table (`page_attrs(concept_id, key, value, value_kind)` with a composite
+index) populated from frontmatter at every ingest path: vault scan,
+markdown documents in `build`/`upsert`, `ingest-jira` (from
+`IssueFrontmatter`), `remember` (new flags), and a new
+`wikitoolkit entity add|list` command. A normalisation layer defines the
+**entity vocabulary**: `type` ∈ {project, engagement, meeting, ticket,
+decision, deliverable, person} with aliases (FEAT-481 `meeting-source` →
+meeting), `status` enums per type, `project`, `date`, `due`, `owner`,
+`language`. Mapping rules derive entities for planes that have no
+frontmatter: ledger issue → ticket, SDD spec → project (via the task
+index), ADR record → decision.
+
+`wikitoolkit standup` then becomes a set of **collectors** (one per
+source, each returning the same `BriefItem` shape), a **grouper**
+(project resolution chain), a **renderer** (markdown, en/es heading
+table, `--json`), an optional **LLM summariser**, and a **writer**
+(brief page `brief:daily:<date>` in the local plane with its item ids
+stored as attrs for the next day's diff, plus the markdown file).
+Registered as a lazy click group so the hook fast path never imports it.
+Exposed as `WikiStandupTool` in `tools.py` and as a `/parrotwiki standup`
+bullet in the managed slash command.
+
+✅ **Pros:**
+- Entities become first-class and indexed: the brief filters by
+  `status`/`date` in SQL, and `wiki_query`, roll-ups, lint and future
+  agents reuse the same index.
+- `remember --category meeting --project X --status held --date …` has a
+  real home; `entity add` validates against the per-type enums.
+- Day-over-day diff is trivial (previous brief's item ids are attrs).
+- Additive migration: pre-existing v3 planes open; attrs fill in on the
+  next `build`/`upsert`/`ingest-jira`.
+
+❌ **Cons:**
+- Touches the four ingest paths plus `store.py` — larger blast radius;
+  `wiki/cli.py` is a hot file (rebase often).
+- Planes built before the change have **empty** attrs until re-ingested
+  (`ingest-jira --force` for `issues`; `build --force` for a vault).
+  Collectors must fall back to body frontmatter parsing when attrs are
+  missing (Option A's reader becomes the fallback).
+- Whether this needs a `SCHEMA_VERSION` bump is a real decision (v3
+  planes already broke v2 code once; see open questions).
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `python-frontmatter` | parse YAML blocks | existing dep |
+| `PyYAML` | render brief frontmatter | existing dep |
+| `click`, `rich` | CLI | existing deps |
+| `pydantic>=2` | `BriefItem`, `EntityRecord`, per-type enums | existing dep |
+| (optional) `WIKI_LIGHTWEIGHT_MODEL` via `LLMFactory` | one-paragraph summary | same env pattern as `ingest`/`remember --extract` |
+
+🔗 **Existing Code to Reuse:**
+- `wiki/store.py` DDL block (:93–107), `_MIGRATION_COLUMNS` (:229), `_migrate` (:1370) — precedent for an additive migration
+- `wiki/vault_scan.py` `scan_vault` (:118), `_note_summary` (:90), `_note_body` (:103) — the only place vault frontmatter is read today
+- `wiki/jira_render.py` `IssueFrontmatter` (:116) — the structured ticket fields to project into attrs
+- `wiki/cli.py` `remember` (:3776–3820) + `_authoring_identity` (:3513) — authoring path and identity
+- `wiki/lazy_commands.py` `LazyAdrGroup` (:21) — generalise into a `LazyGroup(import_path)` so `standup` and `adr` share it
+- `wiki/tools.py` `WikiStatusTool` (:514), `create_wiki_tools` (:807) — MCP tool pattern and registration
+- `wiki/claude_code/assets.py` `SLASH_COMMAND_MD` (:307, `argument-hint` :309) — add the `standup` bullet
+- `wiki/obsidian_sync.py` `render_note` (:183) — frontmatter marker convention (`wiki_sync`/`wiki_scope`/`wiki_id`) for the brief file when it lands in a vault
+- `wiki/jira_sync.py` `load_sync_state` (:176) — watermark age for the Hygiene section
+
+---

@@ -1,0 +1,26 @@
+From the brainstorm (normalization scope only):
+
+Fixing (5) by forcing the language exposes a sixth defect: the transcript "confidence" that gates
+low-confidence confirmations is Whisper's **language-ID probability**
+(`info.language_probability`). With a forced language it is ~1.0, and confirmations would stop
+firing.
+
+## Constraints & Requirements
+
+- English first (US product). Spanish keeps parity where the lexicon already supports it.
+- The runtime stays deterministic: no LLM per turn (FEAT-649 decision). Normalization is rules.
+- **Normalization applies to spoken answers only.** Typed answers are stored as typed. Email
+  *validation* applies to both.
+- **Email:** normalize spoken tokens ("at", "dot", "underscore", "dash", "hyphen", spelled letters)
+  and validate. If the result is not a valid address, ask for confirmation with the normalized
+  value. The front already lets the user fix the text before confirming.
+- **Phone:** join digits only ("oh" → 0, "double five" → 55). No format validation.
+
+Decisions taken by the product owner after the brainstorm (requirements, scope of this feature):
+- Scope is ONLY the spoken-value normalization (defects 2-4). The session lock and STT language/confidence defects are separate features.
+- Optional LLM post-processor: a per-form / per-field opt-in step where an LLM client (through the project's AbstractClient) corrects what was heard. When enabled for a field it runs on EVERY spoken answer of that field, after the deterministic rules; its value is accepted without confirmation when its confidence reaches a configurable threshold. Restricted to the typed families (email, phone, number, date/time) — not allowed on free TEXT fields. Sensitive fields never go to the LLM.
+- "next <weekday>" always means the nearest such weekday after today.
+- Numeric dates: order per locale (en M/D, es D/M).
+- Persist which post-processor produced the value (rules / llm) with every voice-answered field's stored evidence.
+- Calibrate the LLM confidence threshold and timeout (and the existing 0.6 STT confirm threshold) with a calibration run.
+- Ships together with the FEAT-649 release.

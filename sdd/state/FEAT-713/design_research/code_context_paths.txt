@@ -1,0 +1,7 @@
+packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py
+packages/ai-parrot/src/parrot/bots/database/models.py
+packages/ai-parrot/src/parrot/security/audit_ledger.py
+packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py
+packages/ai-parrot/src/parrot/tools/dataset_manager/config.py
+packages/ai-parrot-embeddings/pyproject.toml
+sdd/specs/semantic-layer.spec.md

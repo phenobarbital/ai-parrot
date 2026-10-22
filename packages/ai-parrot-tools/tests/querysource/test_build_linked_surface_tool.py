@@ -87,19 +87,35 @@ async def test_variable_values_rejected(fake_core_qs):
         )
 
 
-async def test_snapshot_false_still_executes(fake_core_qs):
-    """Axis validation executes the slug even without an embedded snapshot."""
+async def test_default_is_definition_only_probe(fake_core_qs):
+    """By default the slug is probed with querylimit=1 and the envelope carries no rows."""
     toolkit = QuerysourceToolkit(dsn="postgres://fake")
     result = await toolkit.build_linked_surface(
         "epson_field_activity",
         {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
-        snapshot=False,
     )
 
     source = result["a2ui_envelope"]["metadata"]["extensions"]["parrot_data_sources"]["epson_field_activity"]
     assert len(fake_core_qs["qs"]) == 1
+    assert fake_core_qs["qs"][0]["conditions"]["querylimit"] == 1
     assert result["a2ui_envelope"]["dataModel"]["epson_field_activity"] == {"rows": []}
-    assert source["snapshot_at"] is None
+    assert source["snapshot_at"] is None and source["snapshot_truncated"] is False
+
+
+async def test_snapshot_true_fetches_full_and_embeds_rows(fake_core_qs):
+    """snapshot=True keeps the legacy behaviour: full fetch (capped at 5000) and an embedded snapshot."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    result = await toolkit.build_linked_surface(
+        "epson_field_activity",
+        {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
+        snapshot=True,
+    )
+
+    source = result["a2ui_envelope"]["metadata"]["extensions"]["parrot_data_sources"]["epson_field_activity"]
+    assert fake_core_qs["qs"][0]["conditions"]["querylimit"] == 5000
+    rows = result["a2ui_envelope"]["dataModel"]["epson_field_activity"]["rows"]
+    assert rows and {"day", "visits"} <= set(rows[0])
+    assert source["snapshot_at"] is not None
 
 
 async def test_axis_validation_unknown_column(fake_core_qs):
@@ -160,3 +176,15 @@ def test_toolkit_build_conditions_matches_derive():
         payload.pop("querylimit")
         payload.pop("refresh", None)
         assert payload == derive_conditions(SourceRequest.model_validate(request), locked=locked)
+
+
+async def test_manual_policy_warns_without_snapshot(fake_core_qs, caplog):
+    """A manual-refresh surface without a snapshot renders empty in the admin lane, so the toolkit warns."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    with caplog.at_level("WARNING"):
+        await toolkit.build_linked_surface(
+            "epson_field_activity",
+            {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
+            refresh={"policy": "manual"},
+        )
+    assert any("manual" in record.message and "epson_field_activity" in record.message for record in caplog.records)

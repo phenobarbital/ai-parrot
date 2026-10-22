@@ -1,0 +1,164 @@
+name: Nightly — package suites (FEAT-699)
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  suites:
+    name: ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - root
+          - ai-parrot
+          - ai-parrot-advisors
+          - ai-parrot-client-amazon
+          - ai-parrot-client-anthropic
+          - ai-parrot-client-gemma4
+          - ai-parrot-client-google
+          - ai-parrot-client-grok
+          - ai-parrot-client-groq
+          - ai-parrot-client-hf
+          - ai-parrot-client-jev
+          - ai-parrot-client-local
+          - ai-parrot-client-meta
+          - ai-parrot-client-moonshot
+          - ai-parrot-client-nvidia
+          - ai-parrot-client-openai
+          - ai-parrot-client-openrouter
+          - ai-parrot-client-vllm
+          - ai-parrot-client-zai
+          - ai-parrot-embeddings
+          - ai-parrot-integrations
+          - ai-parrot-loaders
+          - ai-parrot-openlit-bridge
+          - ai-parrot-pipelines
+          - ai-parrot-server
+          - ai-parrot-tools
+          - ai-parrot-visualizations
+          - navrules
+          - parrot-formdesigner
+          - admin-ui
+        timeout: [30]
+        include:
+          - suite: ai-parrot
+            timeout: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: dev
+
+      - name: Set up Python
+        if: matrix.suite != 'admin-ui'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        if: matrix.suite != 'admin-ui'
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      - name: Sync all workspace packages
+        if: matrix.suite != 'admin-ui'
+        run: uv sync --all-packages
+
+      - name: Set up Node.js
+        if: matrix.suite == 'admin-ui'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable pnpm via corepack
+        if: matrix.suite == 'admin-ui'
+        run: corepack enable && corepack prepare pnpm@9 --activate
+
+      - name: Install Node dependencies
+        if: matrix.suite == 'admin-ui'
+        run: pnpm install --frozen-lockfile
+
+      - name: Run suite
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          mkdir -p junit
+          if [ "$SUITE" = "admin-ui" ]; then
+            pnpm --filter ./packages/ai-parrot-server/ui exec vitest run --reporter=junit --outputFile=../../../junit/admin-ui.xml
+          else
+            if [ "$SUITE" = "root" ]; then
+              TESTS_PATH=tests
+            else
+              TESTS_PATH="packages/$SUITE/tests"
+            fi
+            uv run pytest "$TESTS_PATH" -q -m "not real_llm" -o junit_family=xunit1 \
+              --junitxml="junit/$SUITE.xml" --continue-on-collection-errors -p no:cacheprovider
+          fi
+
+      - name: Upload junit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.suite }}
+          path: junit/${{ matrix.suite }}.xml
+          if-no-files-found: warn
+
+  summary:
+    name: Red-set summary
+    needs: suites
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Download junit artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: junit-*
+          path: junit
+          merge-multiple: true
+
+      - name: Download previous red-set (tolerate absence)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous
+          PREV_ID=$(gh run list --workflow nightly-tests.yml --status completed --limit 5 \
+            --json databaseId --jq '.[].databaseId' | grep -v "^${{ github.run_id }}$" | head -n 1 || true)
+          if [ -n "$PREV_ID" ]; then
+            gh run download "$PREV_ID" --name red-set --dir previous || echo "no previous red-set"
+          fi
+
+      - name: Compute red set
+        shell: bash
+        run: |
+          set -o pipefail
+          ARGS=""
+          if [ -f previous/red-set.json ]; then
+            ARGS="--previous previous/red-set.json"
+          fi
+          python scripts/sdd/nightly_red_set.py junit/ --out red-set.json $ARGS | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload red-set
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: red-set
+          path: red-set.json
+          if-no-files-found: warn

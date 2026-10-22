@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Sequence
 
-from .context import pending_escalations
-from .contract import is_broad_pytest
-from .datatypes import CoreHit, ScopePlan, TestTarget
+from .datatypes import CoreHit, ScopePlan, TestContract, TestTarget
 from .impact import ImportIndex, detect_core, impacted_tests, module_name_for
-from .mirror import distribution_of, pytest_targets
+from .mirror import distribution_of
 from .planner import build_plan
 from .policy import TIERS, ScopePolicy
+from .runners.registry import RunnerRegistry, load_registry
 
 _FLAG_WITH_VALUE = frozenset({"-m", "-k", "-o", "-p", "-c", "-n", "--rootdir", "--confcutdir", "--tb", "--ignore"})
 _PYTEST_MODULE_FORMS = (("python", "-m", "pytest"), ("python3", "-m", "pytest"))
@@ -64,12 +62,6 @@ def changed_files(worktree: Path, base_ref: str) -> list[str]:
     return files
 
 
-def _suite_for(distribution: str, worktree: Path) -> str | None:
-    """Package-suite path of a distribution (`tests` for root), or None when it does not exist."""
-    rel = "tests" if distribution == "root" else f"packages/{distribution}/tests"
-    return rel if (worktree / rel).is_dir() else None
-
-
 def _operands(argv: Sequence[str]) -> list[str]:
     """Non-flag operands of a (already known non-broad) pytest argv, `::node` suffix kept."""
     if not argv:
@@ -96,22 +88,38 @@ def _operands(argv: Sequence[str]) -> list[str]:
     return operands
 
 
-def _declared_targets(declared: Sequence[Sequence[str]], notes: list[str], *, worktree: Path) -> list[str]:
-    """Path operands of declared pytest argvs; broad ones (or unmappable ones) are dropped with a note."""
-    targets: list[str] = []
+def _declared_targets(
+    declared: Sequence[Sequence[str]],
+    notes: list[str],
+    *,
+    worktree: Path,
+    registry: RunnerRegistry | None = None,
+    tier: str = "task",
+) -> list[TestTarget]:
+    """Return bounded declared targets classified by their registered runner."""
+    registry = registry or load_registry(worktree)
+    targets: list[TestTarget] = []
     for argv in declared:
         if not argv:
             continue
-        if is_broad_pytest(argv, worktree=worktree):
+        adapter = registry.adapter_for_argv(argv)
+        if adapter is None:
+            continue
+        if tier not in registry.tiers_for(adapter.kind):
+            notes.append(f"{adapter.kind}: not eligible for tier {tier}")
+            continue
+        if adapter.is_broad(argv, worktree=worktree):
             notes.append(f"declared command is over-broad, dropped: {' '.join(argv)}")
             continue
-        for operand in _operands(argv):
+        for operand in adapter.operands(argv) or ():
             try:
-                distribution_of(operand.split("::", 1)[0])
+                distribution = adapter.distribution_of(
+                    operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind)
+                )
             except ValueError:
                 notes.append(f"declared path does not map to a distribution, dropped: {operand}")
                 continue
-            targets.append(operand)
+            targets.append(TestTarget(operand, distribution, "declared", runner=adapter.kind))
     return targets
 
 
@@ -120,162 +128,129 @@ def _dist(path: str) -> str:
     return distribution_of(path.split("::", 1)[0])
 
 
+def _dist_or_none(path: str) -> str | None:
+    """`_dist`, or None for a path under neither `tests/` nor `packages/<dist>/`."""
+    try:
+        return _dist(path)
+    except ValueError:
+        return None
+
+
 def plan_tests(
     *,
     worktree: Path,
     changed_files: Sequence[str],
     tier: str,
     declared: Sequence[Sequence[str]] = (),
+    contract: TestContract | None = None,
     policy: ScopePolicy | None = None,
+    registry: RunnerRegistry | None = None,
 ) -> ScopePlan:
-    """Tier entry point: task=declared∪mirror (no escalation); merge=mirror∪impact∪core (cap→escalate);
-    feature=declared∪mirror∪core; core escalations deduped by the ledger."""
+    """Plan bounded tests using either a declared contract or direct-import fallback."""
     if tier not in TIERS:
         raise ValueError(f"unknown tier {tier!r}; expected one of {TIERS}")
     policy = policy or ScopePolicy()
+    registry = registry or load_registry(worktree)
+    mode = "contract" if contract is not None else "fallback"
     notes: list[str] = []
-    targets = [
-        TestTarget(path=p, distribution=_dist(p), reason="declared")
-        for p in _declared_targets(declared, notes, worktree=worktree)
-    ]
-    targets += [
-        TestTarget(path=p, distribution=_dist(p), reason="mirror")
-        for p in pytest_targets(list(changed_files), str(worktree))
-    ]
-    escalated: list[str] = []
-    hits: list[CoreHit] = []
-    skipped: list[str] = []
-    cap_hits: dict[str, tuple[str, ...]] = {}
-    cap_impacted: dict[str, str] = {}
-    if tier != "task":
-        try:
-            is_git = (
-                subprocess.run(
-                    ["git", "rev-parse", "--is-inside-work-tree"],
-                    cwd=worktree,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                ).returncode
-                == 0
+    targets = _declared_targets(declared, notes, worktree=worktree, registry=registry, tier=tier)
+    if contract is None:
+        runner_blocks = (("pytest", registry.settings_for("pytest"), registry.tiers_for("pytest")),)
+    else:
+        runner_blocks = tuple((block.kind, block.settings, block.tiers) for block in contract.runners)
+    for kind, settings, contract_tiers in runner_blocks:
+        if tier not in contract_tiers or tier not in registry.tiers_for(kind):
+            notes.append(f"{kind}: not eligible for tier {tier}")
+            continue
+        adapter = registry.adapter_for_kind(kind)
+        targets += [
+            TestTarget(
+                path=path,
+                distribution=adapter.distribution_of(path, settings=settings),
+                reason="mirror",
+                runner=kind,
             )
-        except OSError:
-            is_git = False
+            for path in adapter.mirror_targets(list(changed_files), worktree=worktree, settings=settings)
+        ]
+    hits: list[CoreHit] = []
 
+    if tier != "task" and contract is not None:
+        for runner in contract.runners:
+            if tier not in runner.tiers or tier not in registry.tiers_for(runner.kind):
+                continue
+            adapter = registry.adapter_for_kind(runner.kind)
+            for operand in runner.targets or ("",):
+                operand_path = operand.split("::", 1)[0]
+                if operand_path and not (worktree / operand_path).is_file():
+                    notes.append(f"contract operand missing on disk, skipped: {operand}")
+                    continue
+                targets.append(
+                    TestTarget(
+                        path=operand,
+                        distribution=adapter.distribution_of(operand_path, settings=runner.settings),
+                        reason="contract",
+                        runner=runner.kind,
+                    )
+                )
+
+    if tier != "task":
         index: ImportIndex | None = None
-        if not is_git:
-            notes.append("worktree is not a git repository; skipping the import index (no impact/core detection)")
-        else:
+        package_sources_changed = any(module_name_for(path) is not None for path in changed_files)
+        if contract is None or package_sources_changed:
             try:
-                index = ImportIndex.load_or_build(worktree)
+                is_git = (
+                    subprocess.run(
+                        ["git", "rev-parse", "--is-inside-work-tree"],
+                        cwd=worktree,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    ).returncode
+                    == 0
+                )
             except OSError:
-                notes.append("could not build the import index; skipping impact/core detection")
+                is_git = False
+            if not is_git:
+                notes.append("worktree is not a git repository; skipping the import index (no impact/core detection)")
+            else:
+                try:
+                    index = ImportIndex.load_or_build(worktree)
+                except OSError:
+                    notes.append("could not build the import index; skipping impact/core detection")
 
-        cap_candidates: dict[str, list[str]] = {}
-        if index is not None and tier == "merge":
-            impacted = impacted_tests(index, list(changed_files), worktree=worktree, depth=policy.impact_depth)
+        if index is not None and contract is None:
+            impacted = impacted_tests(index, list(changed_files), worktree=worktree, depth=1)
             by_dist: dict[str, list[str]] = {}
             for path in impacted:
                 by_dist.setdefault(_dist(path), []).append(path)
-            per_file_impact: dict[str, set[str]] = {
-                path: set(impacted_tests(index, [path], worktree=worktree, depth=policy.impact_depth))
-                for path in changed_files
-                if module_name_for(path) is not None
-            }
-            changed_dists = {_dist(path) for path in changed_files}
             for dist, paths in by_dist.items():
+                paths = sorted(paths)
                 if len(paths) > policy.impact_cap:
-                    # FEAT-618: a cap-only escalation into a distribution that owns
-                    # none of the changed files used to contribute that whole suite,
-                    # so a merge verdict absorbed unrelated packages' failing
-                    # baselines (issue:181bd0c01bb4 -- an outputs/a2ui/linked-only
-                    # diff pulled in ~2800 tests and parrot-formdesigner's 40 reds).
-                    # Skip BEFORE cap_candidates so the distribution stays out of
-                    # cap_hits/cap_impacted and therefore out of `escalated` too,
-                    # matching the invariant documented below. detect_core() runs
-                    # after this loop, so a core-reached distribution is still
-                    # escalated via `hits` -- the guard cannot suppress that.
-                    if not policy.escalate_foreign_dists and dist not in changed_dists:
-                        notes.append(
-                            f"{dist}: cap-only escalation into a distribution owning none of the "
-                            f"changed files; skipped (ScopePolicy.escalate_foreign_dists=False)"
-                        )
-                        continue
-                    cap_candidates[dist] = paths
                     notes.append(
-                        f"{dist}: {len(paths)} impacted tests exceed cap {policy.impact_cap}, escalated to suite"
+                        f"{dist}: {len(paths)} impacted tests exceed cap {policy.impact_cap}; "
+                        f"kept {policy.impact_cap}, rest covered by nightly"
                     )
-                else:
-                    targets += [TestTarget(path=path, distribution=dist, reason="import") for path in paths]
-            cap_hits = {
-                dist: tuple(sorted(path for path, tests in per_file_impact.items() if tests & set(paths)))
-                for dist, paths in cap_candidates.items()
-            }
-            cap_impacted = {
-                dist: hashlib.sha256("\n".join(sorted(paths)).encode("utf-8")).hexdigest()
-                for dist, paths in cap_candidates.items()
-            }
-            # NOTE: `escalated` is populated below, once we know which of these
-            # cap candidates the ledger actually skipped -- a distribution whose
-            # cap escalation was proven unchanged and ran zero invocations must
-            # NOT appear in `escalated` too (that would put it in both
-            # `escalated` and `skipped_escalations` for the same zero-invocation
-            # outcome, inconsistent with how a ledger-skipped core escalation is
-            # handled below). Extending `escalated` unconditionally here, before
-            # the ledger is even consulted, was the previous (inconsistent) behavior.
-
-        if index is not None and tier in ("merge", "feature"):
-            hits = detect_core(index, list(changed_files), policy=policy)
-            to_run, ledger_skipped = pending_escalations(worktree, hits, cap_hits, cap_impacted)
-            unattributed_caps = {dist for dist, paths in cap_hits.items() if not paths}
-            to_run = sorted(set(to_run) | unattributed_caps)
-            ledger_skipped = [dist for dist in ledger_skipped if dist not in unattributed_caps]
-            skipped = ledger_skipped
-            core_dists = {dist for hit in hits for dist in hit.distributions}
-            for dist in to_run:
-                suite = _suite_for(dist, worktree)
-                reason = "core" if dist in core_dists else "escalated"
-                if suite:
-                    targets.append(TestTarget(path=suite, distribution=dist, reason=reason))
-                    # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
-                    # core-only escalation was invisible to the plain-text CLI ("# escalated:
-                    # <dist>") and to the spec's own datatypes.py contract ("distributions
-                    # escalated (core or cap)"). Both escalation kinds are visible here now.
-                    # FEAT-604 review: append for BOTH reasons ("core" and "escalated"/cap),
-                    # and only once we know this distribution actually got a real
-                    # invocation added (this loop only runs over `to_run`, never over a
-                    # ledger-skipped distribution) -- a cap escalation the ledger proved
-                    # unchanged must not appear in `escalated` while also appearing in
-                    # `skipped_escalations`, symmetric with how a ledger-skipped core
-                    # escalation was already excluded from `escalated`.
-                    escalated.append(dist)
-                else:
-                    notes.append(f"{dist}: {reason} escalation target suite does not exist, skipped")
-            skipped_cap_dists = {dist for dist in ledger_skipped if dist in cap_candidates}
-            for dist in ledger_skipped:
-                if dist in cap_candidates:
-                    notes.append(f"{dist}: cap escalation skipped — ledger blobs and impacted hash match")
-            if skipped_cap_dists:
-                # A ledger-skipped cap escalation must produce NO invocation for its
-                # distribution at all — a "mirror" target added earlier (top of this
-                # function, before cap detection ran) for the exact changed file that
-                # drove the escalation is otherwise a leftover invocation for content
-                # the ledger already proved green (spec §3 M2; TASK-3798 scope).
-                targets = [
-                    target
-                    for target in targets
-                    if not (target.reason == "mirror" and target.distribution in skipped_cap_dists)
+                targets += [
+                    TestTarget(path=path, distribution=dist, reason="import") for path in paths[: policy.impact_cap]
                 ]
+
+        if index is not None:
+            hits = detect_core(index, list(changed_files), policy=policy)
+            if hits:
+                hit_paths = ", ".join(hit.path for hit in hits)
+                notes.append(f"core change ({hit_paths}) — covered by nightly")
+
+    if contract is None:
+        notes.append("no test contract declared — bounded fallback (own tests + direct importers)")
 
     return build_plan(
         targets,
         tier=tier,
         worktree=worktree,
         policy=policy,
-        escalated=escalated,
         core_hits=hits,
-        skipped_escalations=skipped,
-        cap_hits=cap_hits,
-        cap_impacted=cap_impacted,
         notes=notes,
+        contract=contract,
+        mode=mode,
+        registry=registry,
     )

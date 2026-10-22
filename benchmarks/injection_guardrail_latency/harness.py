@@ -560,7 +560,9 @@ def main(argv: list[str] | None = None) -> int:
 
     _preimport_framework()
     corpus_mod.assert_seed_disjoint()
+    corpus_mod.assert_languages_aligned()
     texts, labels, buckets = corpus_mod.build_eval_set()
+    languages = corpus_mod.build_eval_languages()
     summary = corpus_mod.corpus_summary()
     logger.info(
         "Corpus: %d samples (%d benign, %d injection), seed catalogue %d",
@@ -600,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
 
     payload: dict[str, Any] = {
         "corpus": summary,
+        "corpus_languages": corpus_mod.language_summary(),
         "config": {
             "classifier": args.classifier,
             "embedder": args.embedder,
@@ -622,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
     payload["parity"] = analyse_parity(results, threshold=args.clf_threshold)
     payload["tiering"] = analyse_tiering(results, labels, clf_threshold=args.clf_threshold)
     payload["per_bucket"] = _per_bucket_recall(results, buckets)
+    payload["per_language"] = _per_language_quality(results, labels, languages)
 
     report = build_report(payload)
     if args.output_dir:
@@ -649,7 +653,9 @@ def _reanalyse(args: argparse.Namespace) -> int:
         Process exit code.
     """
     payload = json.loads(args.reanalyse.read_text())
+    corpus_mod.assert_languages_aligned()
     _, labels, buckets = corpus_mod.build_eval_set()
+    languages = corpus_mod.build_eval_languages()
     results = payload["results"]
 
     stored = payload["results"][0].get("n_samples")
@@ -678,6 +684,7 @@ def _reanalyse(args: argparse.Namespace) -> int:
     payload["parity"] = analyse_parity(results, threshold=threshold)
     payload["tiering"] = analyse_tiering(results, labels, clf_threshold=threshold)
     payload["per_bucket"] = _per_bucket_recall(results, buckets)
+    payload["per_language"] = _per_language_quality(results, labels, languages)
     payload.setdefault("config", {})["reanalysed"] = True
 
     report = build_report(payload)
@@ -719,6 +726,64 @@ def _per_bucket_recall(
             per_bucket.setdefault(bucket, []).append(1 if score >= threshold else 0)
         output[result["tier"]] = {
             bucket: round(sum(flags) / len(flags), 4) for bucket, flags in per_bucket.items()
+        }
+    return output
+
+
+def _per_language_quality(
+    results: list[dict[str, Any]],
+    labels: list[int],
+    languages: list[str],
+) -> dict[str, dict[str, dict[str, float | int | None]]]:
+    """Per-language false-positive rate and recall for each tier.
+
+    The gate the benchmark was missing. ``per_bucket`` segments by *attack
+    shape*, which is orthogonal to language, so a classifier that is fine
+    in English and unusable in Spanish shows up as a mild aggregate dip —
+    exactly how the v1→v2 Spanish false-positive regression had to be
+    hand-derived from a flipped-sample table instead of read off a report.
+
+    Args:
+        results: Per-tier results, each carrying per-sample ``scores``.
+        labels: Ground truth per sample (``1`` = injection).
+        languages: Language tag per sample.
+
+    Returns:
+        ``{tier: {language: {benign_n, fp, fp_rate, attack_n, fn, recall}}}``.
+    """
+    output: dict[str, dict[str, dict[str, float | int | None]]] = {}
+    for result in results:
+        scores = result.get("scores")
+        if not scores:
+            continue
+        threshold = _production_threshold(result["tier"])
+        counts: dict[str, dict[str, int]] = {}
+        for score, label, language in zip(scores, labels, languages, strict=True):
+            stats = counts.setdefault(
+                language, {"benign_n": 0, "fp": 0, "attack_n": 0, "fn": 0}
+            )
+            flagged = score >= threshold
+            if label == 0:
+                stats["benign_n"] += 1
+                stats["fp"] += int(flagged)
+            else:
+                stats["attack_n"] += 1
+                stats["fn"] += int(not flagged)
+        output[result["tier"]] = {
+            language: {
+                **stats,
+                "fp_rate": (
+                    round(stats["fp"] / stats["benign_n"], 4)
+                    if stats["benign_n"] else None
+                ),
+                "recall": (
+                    round(
+                        (stats["attack_n"] - stats["fn"]) / stats["attack_n"], 4
+                    )
+                    if stats["attack_n"] else None
+                ),
+            }
+            for language, stats in sorted(counts.items())
         }
     return output
 

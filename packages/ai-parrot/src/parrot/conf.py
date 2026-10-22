@@ -494,6 +494,12 @@ AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)
 #   when unset, the base URL is constructed from the resolved region.
 BEDROCK_MANTLE_API_KEY = config.get("BEDROCK_MANTLE_API_KEY", fallback=None)
 BEDROCK_MANTLE_BASE_URL = config.get("BEDROCK_MANTLE_BASE_URL", fallback=None)
+AWS_NOVA_REGION = config.get("AWS_NOVA_REGION", fallback=None)
+# Dedicated Bedrock SigV4 credentials — the "bedrock" profile in
+# AWS_CREDENTIALS, isolated from S3/DynamoDB/monitoring keys.
+AWS_BEDROCK_KEY_ID = config.get("AWS_BEDROCK_KEY_ID", fallback=None)
+AWS_BEDROCK_SECRET_KEY = config.get("AWS_BEDROCK_SECRET_KEY", fallback=None)
+AWS_BEDROCK_REGION = config.get("AWS_BEDROCK_REGION", fallback=BEDROCK_AWS_REGION or AWS_NOVA_REGION or "us-east-2")
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
@@ -547,6 +553,13 @@ AWS_CREDENTIALS = {
         "aws_key": config.get("AWS_NOVA_SONIC_KEY_ID"),
         "aws_secret": config.get("AWS_NOVA_SONIC_SECRET_KEY"),
         "region_name": config.get("AWS_NOVA_SONIC_REGION", fallback="us-east-1"),
+    },
+    "bedrock": {
+        "use_credentials": bool(AWS_BEDROCK_KEY_ID and AWS_BEDROCK_SECRET_KEY),
+        "aws_key": AWS_BEDROCK_KEY_ID,
+        "aws_secret": AWS_BEDROCK_SECRET_KEY,
+        "aws_bearer_token": AWS_NOVA_API_KEY,
+        "region_name": AWS_BEDROCK_REGION,
     },
 }
 
@@ -633,6 +646,10 @@ WORKDAY_CLIENT_SECRET = config.get("WORKDAY_CLIENT_SECRET")
 WORKDAY_TOKEN_URL = config.get("WORKDAY_TOKEN_URL")
 WORKDAY_WSDL_PATH = config.get(
     "WORKDAY_WSDL_PATH", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
+)
+# Get_Positions only exists in the Staffing WSDL; WORKDAY_WSDL_PATH may point elsewhere.
+WORKDAY_WSDL_STAFFING = config.get(
+    "WORKDAY_WSDL_STAFFING", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
 )
 WORKDAY_WSDL_TIME = config.get(
     "WORKDAY_WSDL_TIME", fallback=BASE_DIR.joinpath("env", "workday", "timetracking_custom_44_2.wsdl")
@@ -742,6 +759,14 @@ JIRA_DEFAULT_REPORTER: str | None = config.get(
     "JIRA_DEFAULT_REPORTER",
     fallback="jesuslarag@gmail.com",
 )
+# Telegram channel (or group) the JiraSpecialist posts its standup digests to —
+# e.g. the single list of developers who did not answer the morning standup,
+# which goes there instead of one DM per manager. Channel ids are negative
+# ("-1001234567890"), so this stays a string and the Telegram client coerces it.
+JIRA_TELEGRAM_PUBLIC_CHANNEL_ID: str | None = config.get(
+    "JIRA_TELEGRAM_PUBLIC_CHANNEL_ID",
+    fallback=None,
+)
 
 # ── GitHub Reviewer Agent ──
 # Comma-separated list of Telegram chat IDs notified when a PR review finds
@@ -756,6 +781,12 @@ for _chat_id in _raw_pr_chat_ids:
 # Telegram chat / channel ID receiving the daily stale-PR summary. Accepts
 # either a numeric chat_id (e.g. -1001234567890) or a public @username.
 GITHUB_REVIEW_PUBLIC_CHANNEL_ID: str | None = config.get("GITHUB_REVIEW_PUBLIC_CHANNEL_ID", fallback=None)
+# Telegram chat / channel ID receiving the MANAGEMENT reports (today's PRs,
+# the weekly activity digest and the Jira ticket summary) — the reports people
+# read to follow the project, as opposed to the stale-PR nag that goes to the
+# public channel above. Same accepted shapes. Unset falls back to
+# GITHUB_REVIEW_PUBLIC_CHANNEL_ID so those reports never go silent.
+GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID: str | None = config.get("GITHUB_MANAGEMENT_TELEGRAM_CHAT_ID", fallback=None)
 # Shared secret used by GitHub to sign webhook deliveries. Required when
 # HMAC verification is enabled on the GitHubWebhookHook.
 GITHUB_REVIEW_WEBHOOK_SECRET: str | None = config.get("GITHUB_REVIEW_WEBHOOK_SECRET", fallback=None)
@@ -778,16 +809,52 @@ GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint("GITHUB_REVIEW_MAX_DIFF_BYTES"
 # spliced into the LLM prompt. Prevents a single oversized ticket from
 # blowing the model's context window.
 GITHUB_REVIEW_MAX_TICKET_BYTES: int = config.getint("GITHUB_REVIEW_MAX_TICKET_BYTES", fallback=20_000)
+# Dedicated Google credential for the GitHub Reviewer agent, so its traffic
+# can be metered and rotated apart from the process-wide GOOGLE_API_KEY.
+# Unset -> the agent's Google client falls back to GOOGLE_API_KEY as before.
+GITHUB_REVIEW_GOOGLE_API_KEY: str | None = config.get("GITHUB_REVIEW_GOOGLE_API_KEY", fallback=None)
+
+# ── /review_pr — on-demand strict PR gate ──
+# Share of a PR's CI checks that must be green for the reviewer to approve it
+# ("all OK, or a great part of them"). Checks still running are excluded from
+# the ratio: a pending pipeline defers the verdict instead of failing it.
+# navconfig exposes no getfloat(), and a typo in the env must not kill startup.
+try:
+    GITHUB_REVIEW_MIN_CHECK_PASS_RATIO: float = float(config.get("GITHUB_REVIEW_MIN_CHECK_PASS_RATIO", fallback=0.8))
+except (TypeError, ValueError):
+    GITHUB_REVIEW_MIN_CHECK_PASS_RATIO = 0.8
+# Makes test evidence mandatory for /review_pr. CI is an OPTIONAL gate by
+# default: only a FAILING pipeline refuses a PR, while one that is absent or
+# unreadable (no checks on the commit, an outage, or a permission a
+# fine-grained PAT cannot hold) is a non-blocking warning — "no CI" is not
+# "CI failed". Set this true and missing evidence blocks (drafts) too.
+GITHUB_REVIEW_REQUIRE_CHECKS: bool = config.getboolean("GITHUB_REVIEW_REQUIRE_CHECKS", fallback=False)
 
 # Number of past weeks to consider when computing "silent contributors".
 GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS: int = config.getint("GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS", fallback=4)
 # A contributor with zero commits across this many consecutive recent
 # weeks is flagged in the weekly activity report as silent.
 GITHUB_REVIEW_SILENT_WEEKS_THRESHOLD: int = config.getint("GITHUB_REVIEW_SILENT_WEEKS_THRESHOLD", fallback=3)
+# GitHub computes /stats/* lazily: the first request on a cold repo returns 202
+# and only starts the computation, which takes minutes on a large repository —
+# longer than the toolkit's in-call 202 budget (~63s). When that budget runs
+# out the weekly report defers instead of failing: it waits this many seconds
+# and runs again, up to GITHUB_REVIEW_STATS_RETRY_MAX times, because the first
+# attempt is what warms GitHub's cache.
+GITHUB_REVIEW_STATS_RETRY_DELAY: int = config.getint("GITHUB_REVIEW_STATS_RETRY_DELAY", fallback=900)
+GITHUB_REVIEW_STATS_RETRY_MAX: int = config.getint("GITHUB_REVIEW_STATS_RETRY_MAX", fallback=3)
 # When True, the weekly report prose is generated by the agent's LLM.
 # Numbers always come from the structured summary; only the wording varies.
 # Falls back to the templated body on any LLM failure.
 GITHUB_REVIEW_USE_LLM_SUMMARY: bool = config.getboolean("GITHUB_REVIEW_USE_LLM_SUMMARY", fallback=False)
+GITHUB_REVIEW_WIKI_ENABLED: bool = config.getboolean("GITHUB_REVIEW_WIKI_ENABLED", fallback=False)
+GITHUB_REVIEW_CACHE_DIR: str = config.get("GITHUB_REVIEW_CACHE_DIR", fallback="~/.cache/parrot/github-reviewer")
+GITHUB_REVIEW_CLONE_BRANCH: str | None = config.get("GITHUB_REVIEW_CLONE_BRANCH", fallback=None)
+GITHUB_REVIEW_CLONE_DEPTH: int | None = config.getint("GITHUB_REVIEW_CLONE_DEPTH", fallback=None)
+GITHUB_REVIEW_CACHE_MAX_BYTES: int = config.getint("GITHUB_REVIEW_CACHE_MAX_BYTES", fallback=5 * 1024**3)
+GITHUB_REVIEW_BUILD_TIMEOUT: int = config.getint("GITHUB_REVIEW_BUILD_TIMEOUT", fallback=900)
+GITHUB_REVIEW_WIKI_CONTEXT_TOKENS: int = config.getint("GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", fallback=4000)
+GITHUB_REVIEW_WIKI_WAIT: int = config.getint("GITHUB_REVIEW_WIKI_WAIT", fallback=120)
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fallback=25 * 1024 * 1024)  # 25MB

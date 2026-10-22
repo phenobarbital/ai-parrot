@@ -28,9 +28,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
+from pandas.api import types as pdt
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
 from parrot.auth.permission import build_principal_context
+from parrot.tools.server_params import ServerParam
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.template.engine import JinjaConfig, TemplateEngine
 from parrot.models.infographic import (
@@ -194,6 +196,32 @@ class InfographicRenderResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _column_type_for(series: pd.Series) -> Optional[str]:
+    """Map a DataFrame column's dtype to a ``TableColumn.type`` value, or ``None``.
+
+    The dtype is a typed source, not a guess. Bool is tested before integer because
+    bool is an integer subtype; anything that is not clearly numeric/boolean/datetime
+    (object, category, mixed, string) yields ``None`` so no ``type`` is declared.
+    A duplicated column name (``df[c]`` is then a DataFrame) also yields ``None``.
+    """
+    if not isinstance(series, pd.Series):
+        return None
+    if pdt.is_bool_dtype(series):
+        return "boolean"
+    if pdt.is_integer_dtype(series):
+        return "integer"
+    if pdt.is_float_dtype(series):
+        return "number"
+    if pdt.is_datetime64_any_dtype(series):
+        return "datetime"
+    return None
+
+
+def _column_def(header: str, col_type: Optional[str]) -> Dict[str, Any]:
+    """``ColumnDef`` dict; the ``type`` key is omitted when the dtype says nothing."""
+    return {"header": header, "type": col_type} if col_type else {"header": header}
+
+
 class InfographicToolkit(AbstractToolkit):
     """Toolkit that produces frozen, multi-dataset HTML infographic artifacts.
 
@@ -224,6 +252,7 @@ class InfographicToolkit(AbstractToolkit):
 
     return_direct: bool = True  # bypass LLM re-summarisation
     tool_prefix: Optional[str] = "infographic"
+    server_managed_params = {"artifact_store": ServerParam(source="app", key="artifact_store")}
     prefix_separator: str = "_"
     exclude_tools: Tuple[str, ...] = ()
 
@@ -1620,7 +1649,7 @@ class InfographicToolkit(AbstractToolkit):
             df = df.head(max_rows)
         block: Dict[str, Any] = {
             "type": "table",
-            "columns": [str(c) for c in columns],
+            "columns": [_column_def(str(c), _column_type_for(df[c])) for c in columns],
             "rows": df[columns].values.tolist(),
         }
         if title:

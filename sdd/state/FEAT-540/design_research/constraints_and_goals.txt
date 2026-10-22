@@ -1,0 +1,12 @@
+- G1 Import ceilings in fresh subprocesses: parrot.auth.exceptions <= 150 modules, parrot.knowledge.ontology.schema <= 240, parrot.knowledge.graphindex <= 800, parrot.knowledge.graphindex.builder <= 1200, parrot.knowledge.wiki.cli <= 850; none of navconfig, parrot.conf, navigator_eventbus, asyncdb, pandas, faiss, pyarrow, redis, asyncpg loaded.
+- G2 Nothing under parrot/knowledge/wiki/ or parrot/knowledge/graphindex/ imports parrot.tools.*, parrot.clients.*, parrot.loaders.*, parrot.stores.*, parrot.embeddings.*, parrot.conf or concrete PageIndex adapters at module level.
+- G3 Framework capability preserved exactly (real embedders, LLM adapter, PageIndex toolkit, Arango/Postgres planes) — injected rather than imported; hashing embedder stays the offline default.
+- G4 Framework tools and the SDK MCP transport share plain operations, input schemas and result serialization; the complete current tool surface (query/page/related/remember/note/status/vault + lint, standup, ledger, structural, decisions, schema, bulk/sync) is preserved.
+- G5 Local and remote-proxy stdio MCP run with parrot.mcp / parrot.tools / parrot_tools blocked; framework stdio and HTTP (serve.py) consumers keep working.
+- G6 After this feature the graph tree is git-mv-shaped for the follow-up standalone distribution (FEAT-541).
+- G7 (new) Every GraphIndex persistence backend satisfies one explicit contract and is selected through one registry/factory seam; consumers never branch on backend; optional capabilities (temporal history, hybrid retrieval, incremental staleness) are discoverable without hasattr probing.
+- G8 (new) The ontology graph store has a backend-neutral contract; raw AQL is no longer the public surface for core callers; ArangoDB keeps working unchanged behind that contract.
+- No behaviour change for the existing sqlite / memory / arangodb / postgres backends; existing planes reopen unchanged; no data migration.
+- No new third-party dependency. navconfig stays an optional lazy credential provider. asyncdb stays the Arango driver; asyncpg+pgvector stay the Postgres driver.
+- Hard cuts are acceptable: there are no external consumers; renamed/removed internal APIs are updated in-feature, no deprecation shims (old dotted import paths must still resolve lazily until FEAT-541's redirector).
+- Out of scope: the HelixDB backend itself, parrot/interfaces/hierarchy.py (15 direct AQL calls outside the knowledge tree), Cypher, schema migrations, creating packages/parrot-graphindex/.

@@ -25,6 +25,7 @@ workflow **without** running the `/sdd-*` commands. Details:
 | `sdd/state/<FEAT-ID>/` | Research / design-research artifacts of a feature |
 | `sdd/reviews/` | Feature code-review reports |
 | `sdd/ledger/issues.jsonl` | Committed snapshot of the work ledger (written by `/sdd-done`) |
+| `sdd/ledger/events.jsonl` / `sdd/ledger/archive/` | Shared ledger event log (FEAT-694) — synced by the `parrot-ledger` git hooks; rotated only by `/sdd-done` |
 
 Gone / legacy — never write to them: `sdd/tasks/.index.json` (old monolith,
 ignored), `tasks/` at the repo root, `docs/sdd/specs/`, `docs/sdd/proposals/`.
@@ -44,6 +45,11 @@ ignored), `tasks/` at the repo root, `docs/sdd/specs/`, `docs/sdd/proposals/`.
 Flow types: `feature` bases on `dev` (or `staging` during a freeze), never
 `main`; `hotfix` bases on `main`, reserves **no** FEAT/TASK IDs, is keyed by
 its Jira issue, and normally skips `/sdd-task`.
+
+**Hotfixes and single-issue fixes** are produced by `/sdd-brief <source>`
+(research first, no FEAT/TASK ids, worktree provisioned with
+`ensure_worktree --brief-key`), no longer by `/sdd-spec`. Ledger-sourced
+briefs base on `dev`; the rest default to `main`.
 
 ---
 
@@ -85,7 +91,7 @@ its Jira issue, and normally skips `/sdd-task`.
    state: `sdd: complete TASK-<NNN> — <title>`. Push early.
 10. **Finish the feature** with `/sdd-done FEAT-<NNN>`: it verifies every task,
     snapshots the ledger, pushes, and opens a PR against `base_branch`
-    (`--merge` merges directly). It never pushes to or opens a PR against `main`.
+    (`--merge` merges directly). It never pushes to or merges into `main`; it opens the `main` PR for a hotfix brief and merging it is the human act.
 
 If a task cannot be completed, set it `done-with-issues` and explain why in
 the Completion Note. If the spec is ambiguous, stop and write it down there.
@@ -138,6 +144,7 @@ through the **Fast lane** (branch `fix/<id>-<slug>` off `origin/dev`, always
 | `/sdd-proposal` | Research-first proposal from Jira / text / file |
 | `/sdd-fromjira` · `/sdd-tojira` | Brainstorm from a Jira ticket · export a spec to Jira |
 | `/sdd-spec` | Write a spec (from exploration, a request, or an intake interview) |
+| `/sdd-brief <source>` | Research a bug/alert/issue into a worktree-held brief (hotfix / single-issue fix; no FEAT/TASK ids) |
 | `/sdd-task <spec>` | Decompose a spec into tasks + per-spec index |
 | `/sdd-start <task>` | Implement and close one task in the feature worktree |
 | `/sdd-codereview <task>` | Review a completed task with adversarial cross-checks |

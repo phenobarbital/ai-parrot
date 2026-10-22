@@ -42,6 +42,7 @@ from parrot.mcp.registry import (
     get_factory_map,
 )
 from parrot.tools.manager import ToolManager
+from parrot.tools.spec import agent_tooling_ref
 
 _registry = MCPServerRegistry()
 logger = logging.getLogger(__name__)
@@ -90,7 +91,14 @@ async def _get_tool_manager(request: web.Request, agent_id: str) -> ToolManager:
     with contextlib.suppress(AttributeError):
         request_session = request.session or await get_session(request)
 
-    session_key = f"{agent_id}_tool_manager"
+    ref = agent_id
+    manager = request.app.get("bot_manager")
+    if manager is not None:
+        try:
+            ref = agent_tooling_ref(await manager.get_bot(agent_id))
+        except Exception:   # unknown agent: legacy name-based key
+            ref = agent_id
+    session_key = f"{ref}_tool_manager"
 
     if request_session is not None:
         tool_manager = request_session.get(session_key)

@@ -1,0 +1,61 @@
+Decisions taken in the discovery rounds (2026-10-03, Jesus):
+
+- **Flow**: `type: feature`, `base_branch: dev`.
+- **Sources (all four)**: Obsidian/vault pages with typed frontmatter; the
+  Jira `issues` namespace; the SDD ledger + specs/tasks + memories; and a
+  new **typed-entity convention** in the wiki so any ingest can populate
+  project / meeting / ticket / decision / deliverable entities.
+- **Entity intake (all four)**: frontmatter on ingested markdown is the
+  primary path; `wikitoolkit remember` gains entity flags; mapping rules
+  turn existing planes into entities (Jira issue → ticket, SDD spec →
+  project, ledger issue → ticket, ADR → decision); and a dedicated
+  `wikitoolkit entity add|list` command gives validated CRUD.
+- **Synthesis**: hybrid — section lists are computed with no LLM
+  (offline, cron-safe); only the "On your plate" paragraph uses a model,
+  and only when one is configured. Without a model it degrades to a
+  ranked bullet list, never fails.
+- **Scope**: personal by default (`--me` identity: Jira assignee, memory
+  author `human:<user>`, spec author), `--team` widens.
+- **Project key**: resolution chain `project:` link → Jira project key →
+  SDD feature slug → `Internal`.
+- **Outputs**: wiki page in the local plane (category `brief`), a
+  markdown file in a folder, `/parrotwiki standup` + `wiki_standup` MCP
+  tool. stdout markdown/`--json` is implied by the CLI.
+- **Delta**: diff against the previous stored brief ("New since last
+  brief" / "Closed since last brief").
+- **Hygiene**: computed from existing data only (stale tickets, old
+  proposed decisions, ledger blockers, Jira watermark age) — no new lint.
+- **Language**: `--language en|es`, default from a new
+  `standup.default_language` key in `.parrot/wiki.json`.
+- Read-only on entity pages: the command writes only the brief page and
+  the brief file.
+- Must not regress `wikitoolkit claude-hook` startup (FEAT-584 p50 budget,
+  ledger issue `f0a40d0853f2`): anything that imports the ledger/decision
+  chain must be lazily registered like `adr`.
+- Compatible with FEAT-481's vault frontmatter vocabulary
+  (`type: meeting-source`, `meeting_date`, `primary_project`, `projects`)
+  — alias it, do not compete with it.
+- Keep the `wiki/cli.py` diff to additive command blocks (5.4k-line hot
+  file); logic lives in new modules.
+
+Resolved in the open-question round (2026-10-03, Jesus) — see §Open
+Questions for the full trail:
+
+- `page_attrs` is **additive**, `SCHEMA_VERSION` stays `"3"`.
+- Jira status → canonical ticket status mapping lives in `.parrot/wiki.json`
+  (`standup.ticket_status_map`) with a shipped default; raw value kept.
+- Brief file default folder: **always** `${PARROT_HOME}/wikis/briefs/`
+  (`--out` overrides).
+- Jira identity: `IssueFrontmatter` gains `assignee_email`; "me" matches
+  `JIRA_USERNAME` against it, falling back to the display name.
+- Back-fill via a new `wikitoolkit entity reindex` (re-reads stored bodies,
+  no re-ingest, no LLM).
+- FEAT-481 vocabulary is **aliased only**; FEAT-481 is not modified.
+- Spanish: static heading table, item titles verbatim, only the LLM
+  paragraph is written in the requested language.
+- Brief pages use the open-string category `brief`.
+- **Weekly/monthly roll-up is in scope**: `standup --period day|week|month`.
+- This spec **owns** `wiki/entities.py` + `page_attrs`; the sibling
+  `wikitoolkit inbox` spec depends on it and writes attrs.
+
+---

@@ -34,6 +34,7 @@ from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
+    WikiRemoteConfig,
     config_path,
     load_effective_config,
     save_project_config,
@@ -690,7 +691,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp_json(root: Path) -> str:
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
     """Write/refresh the wikitoolkit entry plus one managed entry per
     enabled toolkit section in the project's .mcp.json (FEAT-485).
 
@@ -716,14 +717,20 @@ def _install_mcp_json(root: Path) -> str:
     if not isinstance(data, dict):
         data = {}
 
-    entry = assets.mcp_json_entry(root)
+    if remote is not None:
+        entry = assets.mcp_json_entry_remote(remote.url, remote.token_env)
+    else:
+        entry = assets.mcp_json_entry(root)
 
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
 
     changed = False
-    if servers.get("wikitoolkit") == entry:
+    if "wikitoolkit" in servers and not _is_wikitoolkit_entry(servers["wikitoolkit"]):
+        sys.stderr.write(".mcp.json: existing 'wikitoolkit' entry is not managed by parrot; leaving it untouched\n")
+        wikitoolkit_status = "wikitoolkit entry is foreign — left untouched"
+    elif servers.get("wikitoolkit") == entry:
         wikitoolkit_status = "wikitoolkit entry already current"
     else:
         wikitoolkit_status = "wikitoolkit entry updated" if "wikitoolkit" in servers else "wikitoolkit entry added"
@@ -741,6 +748,18 @@ def _install_mcp_json(root: Path) -> str:
 
     parts = [wikitoolkit_status, *toolkit_actions]
     return ".mcp.json — " + "; ".join(parts)
+
+
+def _is_wikitoolkit_entry(entry: Any) -> bool:
+    """True for BOTH managed shapes: stdio (``command`` ends with wikitoolkit, args == ["mcp"]) and http."""
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("type") == "http":
+        headers = entry.get("headers")
+        auth = headers.get("Authorization", "") if isinstance(headers, dict) else ""
+        return isinstance(entry.get("url"), str) and isinstance(auth, str) and auth.startswith("Bearer ${")
+    command = entry.get("command")
+    return isinstance(command, str) and command.endswith("wikitoolkit") and entry.get("args") == ["mcp"]
 
 
 def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
@@ -773,7 +792,7 @@ def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
         return None, []
 
     removed: list[str] = []
-    if "wikitoolkit" in servers:
+    if "wikitoolkit" in servers and _is_wikitoolkit_entry(servers["wikitoolkit"]):
         del servers["wikitoolkit"]
         removed.append("wikitoolkit")
 
@@ -880,7 +899,16 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     return interpreter in _SH_FAMILY
 
 
-def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
+def _install_managed_git_hook(
+    root: Path,
+    hook_name: str,
+    label: str,
+    *,
+    block: str | None = None,
+    new_file: str | None = None,
+    begin_marker: str | None = None,
+    manual_hint: str | None = None,
+) -> str:
     """Install (or chain into) a managed git hook running the wiki upsert.
 
     Shared body for the ``post-commit`` (:func:`_install_git_hook`) and
@@ -898,18 +926,20 @@ def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
     hook_path = _git_hook_path(root, hook_name)
     if hook_path is None:
         return f"git {label} hook — skipped (not a git repository)"
-    block = assets.git_hook_block(root)
-    new_file = assets.git_hook_new_file(root)
+    block = block if block is not None else assets.git_hook_block(root)
+    new_file = new_file if new_file is not None else assets.git_hook_new_file(root)
+    begin_marker = begin_marker if begin_marker is not None else assets.GIT_HOOK_BEGIN
+    manual_hint = manual_hint if manual_hint is not None else "wikitoolkit upsert --changed --quiet"
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
-        if assets.GIT_HOOK_BEGIN in text:
+        if begin_marker in text:
             return f"git {label} hook — already installed"
         first_line = text.splitlines()[0] if text.strip() else ""
         if not _shebang_is_sh_compatible(first_line):
             # Appending sh syntax to a python/node/csh hook would break it.
             return (
                 f"git {label} hook — skipped (existing hook is not a "
-                "shell script; add `wikitoolkit upsert --changed --quiet` "
+                f"shell script; add `{manual_hint}` "
                 "to it manually)"
             )
         if not text.endswith("\n"):
@@ -938,6 +968,46 @@ def _install_post_merge_hook(root: Path) -> str:
     branch), not just after each individual commit.
     """
     return _install_managed_git_hook(root, "post-merge", "post-merge")
+
+
+def _install_ledger_hooks(root: Path) -> list[str]:
+    """Install the ``parrot-ledger`` block on every event of :data:`assets.LEDGER_HOOK_EVENTS`."""
+    return [
+        _install_managed_git_hook(
+            root,
+            event,
+            f"{event} ledger",
+            block=assets.ledger_hook_block(root, event),
+            new_file=assets.ledger_hook_new_file(root, event),
+            begin_marker=assets.LEDGER_HOOK_BEGIN,
+            manual_hint=(
+                "wikitoolkit ledger export-log --stage --quiet"
+                if event == "pre-commit"
+                else "wikitoolkit ledger import-log --quiet"
+            ),
+        )
+        for event in assets.LEDGER_HOOK_EVENTS
+    ]
+
+
+def _uninstall_ledger_hooks(root: Path) -> list[str]:
+    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks."""
+    actions: list[str] = []
+    for event in assets.LEDGER_HOOK_EVENTS:
+        hook_path = _git_hook_path(root, event)
+        if hook_path is None or not hook_path.exists():
+            continue
+        text = hook_path.read_text(encoding="utf-8")
+        if assets.LEDGER_HOOK_BEGIN not in text:
+            continue
+        updated = _remove_marker_block(text, assets.LEDGER_HOOK_BEGIN, assets.LEDGER_HOOK_END)
+        if updated.strip() in {"", "#!/bin/sh"}:
+            hook_path.unlink()
+            actions.append(f"git {event} ledger hook — removed")
+        else:
+            hook_path.write_text(updated, encoding="utf-8")
+            actions.append(f"git {event} ledger hook — ledger block removed")
+    return actions
 
 
 def _install_gitignore(root: Path) -> str:
@@ -971,6 +1041,7 @@ def install_claude_integration(
     compaction: bool = False,
     typesafe_api_key: Optional[str] = None,
     plugin_cli: bool = True,
+    remote: Optional[WikiRemoteConfig] = None,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -991,6 +1062,8 @@ def install_claude_integration(
             it to ``TYPESAFE_API_KEY``.
         plugin_cli: Let the compaction installer also run the ``claude
             plugin`` CLI when it is on ``PATH``.
+        remote: When given, register wikitoolkit as a native HTTP MCP entry
+            pointing at this remote instead of the local stdio server.
 
     Returns:
         Human-readable list of actions performed.
@@ -1021,7 +1094,7 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
-    actions.append(_install_mcp_json(root))
+    actions.append(_install_mcp_json(root, remote=remote))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -1037,6 +1110,7 @@ def install_claude_integration(
         commit_action = _install_git_hook(root)
         merge_action = _install_post_merge_hook(root)
         actions.append(f"{commit_action}; {merge_action}")
+        actions.append("; ".join(_install_ledger_hooks(root)))
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:
@@ -1177,6 +1251,8 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 hook_path.write_text(updated, encoding="utf-8")
                 actions.append("git post-commit hook — wiki block removed")
 
+    actions.extend(_uninstall_ledger_hooks(root))
+
     if not actions:
         actions.append("nothing to remove — integration not installed")
     return actions
@@ -1234,13 +1310,18 @@ def integration_status(root: Path) -> dict[str, Any]:
 
     mcp_json_path = root / ".mcp.json"
     mcp_json_installed = False
+    mcp_transport: Optional[str] = None
     if mcp_json_path.exists():
         try:
             mcp_data = json.loads(mcp_json_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             mcp_data = None
         if isinstance(mcp_data, dict):
-            mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
+            mcp_servers = mcp_data.get("mcpServers", {})
+            mcp_json_installed = "wikitoolkit" in mcp_servers
+            wk_entry = mcp_servers.get("wikitoolkit") if isinstance(mcp_servers, dict) else None
+            if _is_wikitoolkit_entry(wk_entry):
+                mcp_transport = "http" if wk_entry.get("type") == "http" else "stdio"
 
     # Compute mcp_approved (True when every _managed_server_names(root) entry appears in enabledMcpjsonServers)
     mcp_approved = False
@@ -1272,6 +1353,7 @@ def integration_status(root: Path) -> dict[str, Any]:
         "slash_command": (root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME).exists(),
         "git_post_commit_hook": git_hook_installed,
         "mcp_json": mcp_json_installed,
+        "mcp_transport": mcp_transport,
         "mcp_servers_authorized": mcp_approved,
         "toolkits_yaml": (root / ".parrot" / "mcp-toolkits.yaml").exists(),
     }

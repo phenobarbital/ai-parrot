@@ -103,7 +103,7 @@ def plan_worktree(tmp_path: Path) -> Path:
 
 
 def _cap_plan(worktree: Path) -> ScopePlan:
-    """Select one changed module with a cap that escalates its distribution."""
+    """Select one changed module with a cap that truncates direct importers."""
     return plan_tests(
         worktree=worktree,
         changed_files=["packages/a/src/pa/leaf.py"],
@@ -112,49 +112,36 @@ def _cap_plan(worktree: Path) -> ScopePlan:
     )
 
 
-def test_plan_reports_cap_driving_files(plan_worktree: Path) -> None:
-    """ScopePlan.cap_hits names the changed files per cap-escalated distribution (spec §4)."""
+def test_plan_reports_cap_as_note_only(plan_worktree: Path) -> None:
+    """The selector no longer populates escalation-ledger metadata for caps."""
     plan = _cap_plan(plan_worktree)
-    assert plan.cap_hits == {"a": ("packages/a/src/pa/leaf.py",)}
-    assert len(plan.cap_impacted["a"]) == 64
-    assert int(plan.cap_impacted["a"], 16) >= 0
+    assert plan.cap_hits == {}
+    assert plan.cap_impacted == {}
+    assert plan.escalated == ()
+    assert "a: 1 impacted tests exceed cap 0; kept 0, rest covered by nightly" in plan.notes
 
 
-def test_second_selection_skips_unchanged_cap_suite(plan_worktree: Path) -> None:
-    """Green record + identical content omits its cap suite and reports the skipped distribution."""
-    first = _cap_plan(plan_worktree)
-    record_green_escalation(
-        plan_worktree,
-        ["a"],
-        [],
-        first.cap_hits["a"],
-        first.cap_impacted,
-    )
+def test_selection_is_independent_of_existing_ledger(plan_worktree: Path) -> None:
+    """An existing ledger record cannot suppress the bounded mirror target."""
+    record_green_escalation(plan_worktree, ["a"], [], ["packages/a/src/pa/leaf.py"], {"a": "old-hash"})
 
-    second = _cap_plan(plan_worktree)
+    plan = _cap_plan(plan_worktree)
 
-    assert second.skipped_escalations == ("a",)
-    assert all(invocation.distribution != "a" for invocation in second.invocations)
-    assert "a: cap escalation skipped — ledger blobs and impacted hash match" in second.notes
+    assert plan.skipped_escalations == ()
+    assert [target.path for invocation in plan.invocations for target in invocation.targets] == [
+        "packages/a/tests/test_leaf.py"
+    ]
 
 
-def test_cap_skip_rearmed_by_impacted_set_change(plan_worktree: Path) -> None:
-    """A new importing test changes the impacted hash and re-arms the cap suite."""
-    first = _cap_plan(plan_worktree)
-    record_green_escalation(
-        plan_worktree,
-        ["a"],
-        [],
-        first.cap_hits["a"],
-        first.cap_impacted,
-    )
+def test_cap_note_updates_when_impacted_set_changes(plan_worktree: Path) -> None:
+    """A new importing test updates the bounded-fallback note, never ledger metadata."""
     new_test = plan_worktree / "packages/a/tests/test_second_leaf.py"
     new_test.write_text("import pa.leaf\n")
     _git(plan_worktree, "add", "-A")
     _git(plan_worktree, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "add test")
 
-    rearmed = _cap_plan(plan_worktree)
+    plan = _cap_plan(plan_worktree)
 
-    assert rearmed.skipped_escalations == ()
-    assert rearmed.cap_impacted["a"] != first.cap_impacted["a"]
-    assert any(invocation.distribution == "a" for invocation in rearmed.invocations)
+    assert plan.skipped_escalations == ()
+    assert plan.cap_impacted == {}
+    assert "a: 2 impacted tests exceed cap 0; kept 0, rest covered by nightly" in plan.notes

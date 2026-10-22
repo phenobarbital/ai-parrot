@@ -1,0 +1,5 @@
+packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
+packages/ai-parrot-tools/src/parrot_tools/jira_config.py
+packages/ai-parrot/src/parrot/auth/jira_oauth.py
+packages/ai-parrot/src/parrot/cli/__init__.py
+packages/ai-parrot/src/parrot/interfaces/jira/client.py

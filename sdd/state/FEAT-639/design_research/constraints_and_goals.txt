@@ -1,0 +1,32 @@
+Locked during discovery (Rounds 0–3) — these are decisions, not suggestions:
+
+- **Flow type**: `feature`, base branch `dev`.
+- **Four origins in scope**: server-side path, chat upload, remote URL
+  (SharePoint / Drive / S3), and agent-generated document.
+- **Both call paths in scope**: `jira_add_attachment` and
+  `jira_add_comment(attachments=[…])`.
+- **Strict session sandbox.** An agent may attach *only* files inside its own
+  session store. A remote URL must be downloaded into that store by an explicit
+  tool first; the Jira tool never fetches a URL itself. This is the security
+  boundary against prompt-injected exfiltration (`/etc/…`, other tenants' files)
+  and against SSRF to internal metadata endpoints.
+- **Opaque handles.** The Jira tool takes a session `file_id`, not a path. The
+  model never sees, and therefore cannot invent, a filesystem path.
+- **Hard cut** on the tool contract — a single helper behind both tools, all
+  callers updated in-feature, no compatibility shim (the repo has no external
+  consumers of these signatures).
+- **Best-effort semantics** with a per-file report (success/error per item), so
+  the model can retry exactly what failed. No all-or-nothing: Jira offers no
+  attachment rollback.
+- **Pre-flight validation** of existence, emptiness, size and type, returning an
+  actionable error instead of an opaque `JIRAError`.
+- ~~**Real Content-Type** sent per file~~ — **reversed on 2026-10-07 during `/sdd-spec`**:
+  we keep `jira.JIRA.add_attachment` and accept `application/octet-stream`, rather
+  than hand-rolling a multipart POST. See the resolved Open Question below.
+- **Lifecycle**: session files persist; cleanup is manual. No TTL, no
+  end-of-session sweep.
+- **Project conventions**: async-first (`asyncio.to_thread` around the
+  sync `jira` client), `aiohttp` only for HTTP, Pydantic v2 schemas,
+  `self.logger`, no new provider SDK.
+
+---

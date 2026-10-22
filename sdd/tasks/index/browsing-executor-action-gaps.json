@@ -1,0 +1,73 @@
+{
+  "feature": "browsing-executor-action-gaps",
+  "feature_id": "FEAT-681",
+  "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15",
+  "completed_at": "2026-10-15T17:50:00+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4355",
+      "slug": "driver-typing-element-screenshots",
+      "title": "Add driver typing and element screenshot capabilities",
+      "feature_id": "FEAT-681",
+      "feature": "browsing-executor-action-gaps",
+      "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent driver files and a new test module; no executor writes or shared-state mutations.",
+      "assigned_to": null,
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:19:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4355-driver-typing-element-screenshots.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4356",
+      "slug": "executor-hover-submit",
+      "title": "Execute hover and submit actions",
+      "feature_id": "FEAT-681",
+      "feature": "browsing-executor-action-gaps",
+      "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-4355: hover, evaluate, click and wait_for_selector already exist; owns executor.py and hover/submit tests in the first wave.",
+      "assigned_to": null,
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:19:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4356-executor-hover-submit.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4357",
+      "slug": "executor-type-screenshot-artifacts",
+      "title": "Execute typing and report screenshot artifacts",
+      "feature_id": "FEAT-681",
+      "feature": "browsing-executor-action-gaps",
+      "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4355",
+        "TASK-4356"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes AbstractDriver.type_text and screenshot_element from TASK-4355; depends on TASK-4356 for overlapping executor.py writes and the hover/submit handlers exercised by integration.",
+      "assigned_to": null,
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4357-executor-type-screenshot-artifacts.md",
+      "verification": "verified"
+    }
+  ]
+}

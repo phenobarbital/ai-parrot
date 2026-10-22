@@ -5,10 +5,10 @@ for the default command rules (curl, wget, find, sed, awk, python3, pip, git).
 """
 import pytest
 
+from parrot.security.command_sanitizer import _default_command_rules
 from parrot.tools.shell_tool.security import (
     CommandSanitizer,
     SecurityPolicy,
-    _default_command_rules,
 )
 
 

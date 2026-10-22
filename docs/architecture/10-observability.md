@@ -65,10 +65,9 @@ OBSERVABILITY_SERVICE_NAME=my-agent
 # Metrics -> the local Prometheus OTLP write receiver. BASE URL ONLY: the
 # exporter appends /v1/metrics itself (exporters.py:152).
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:9090/api/v1/otlp
-# Prometheus 2.x serves no /v1/traces, and enable_traces is a code-only field
-# (config.py:132) — so silence traces here rather than 404ing on every batch.
-# Set OTLP_TARGETS instead if you want traces to keep reaching OpenLIT.
-OBSERVABILITY_SAMPLING=0.0
+# Prometheus 2.x serves no /v1/traces, so switch the trace subscriber off.
+OBSERVABILITY_TRACES=false
+# Optional: OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS=10000 to see metrics sooner than 60 s.
 ```
 
 A ready-to-copy, secret-free block lives at `env/.env.observability.example`.
@@ -79,13 +78,25 @@ diagnostics: `docker/grafana/README.md`) — see each LLM request with tokens, U
 cost, latency, model, provider and, since FEAT-228, **agent**.
 
 For **traces**, OpenLIT remains a supported destination (the
-`ai-parrot-openlit-bridge` distribution and its collector are unchanged):
-set `OBSERVABILITY_SAMPLING=1.0` and either point `OTEL_EXPORTER_OTLP_ENDPOINT`
-back at OpenLIT's receiver, or set `OTLP_TARGETS` (a JSON list of
-`{"name","endpoint","headers"}`) to fan traces out to OpenLIT while metrics keep
-going to Prometheus — one `BatchSpanProcessor` is attached per target on the
-shared `TracerProvider`. `parrot-openlit-check http://localhost:4318` verifies
-OpenLIT's own receiver is reachable before pointing traces at it.
+`ai-parrot-openlit-bridge` distribution and its collector are unchanged): set
+`OBSERVABILITY_TRACES=true` and either point `OTEL_EXPORTER_OTLP_ENDPOINT` at
+OpenLIT's receiver, or list OpenLIT in `OTLP_TARGETS` (a JSON list of
+`{"name","endpoint","headers"}`). Either choice sends metrics there too; one
+`BatchSpanProcessor` and one `PeriodicExportingMetricReader` are attached per
+target. `parrot-openlit-check http://localhost:4318` verifies OpenLIT's own
+receiver is reachable before pointing signals at it.
+
+### Migrating split routing (FEAT-705)
+
+| Previous routing | FEAT-705 result |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` points to Prometheus and `OTLP_TARGETS` lists OpenLIT | OpenLIT receives both traces and metrics; Prometheus receives neither. |
+
+To keep metrics in Prometheus and traces in OpenLIT, run an OTLP collector with
+separate signal pipelines. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at that collector,
+leave `OTLP_TARGETS` unset, and set both signal switches to `true` with nonzero
+sampling. Listing Prometheus and OpenLIT together is not equivalent: Prometheus
+rejects `/v1/traces`.
 
 `OBSERVABILITY_BACKEND=prometheus` is a *different*, non-OTel path: it exposes
 `parrot_llm_*` counters via `prometheus_client` on `:9464` for Prometheus to
@@ -98,22 +109,21 @@ agent". Use it only if you specifically want that.
 |---|---|---|
 | `OBSERVABILITY_ENABLED` | master switch | `false` |
 | `OBSERVABILITY_BACKEND` | `none`·`logging`·`prometheus`·`otel` | `none` → `logging` when enabled |
-| `OTLP_TARGETS` | multi-endpoint OTLP export (JSON list) | `[]` → falls back to `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `OTLP_TARGETS` | multi-endpoint OTLP export of traces **and** metrics (JSON list); replaces `OTEL_EXPORTER_OTLP_ENDPOINT` when nonempty | `[]` |
 | `OBSERVABILITY_OPENLIT_RECORDER` / `_ENDPOINT` | additive `OpenLitUsageRecorder` (usage-only spans) | `false` / unset |
 | `OBSERVABILITY_OPENLIT` / `OBSERVABILITY_TRACELOOP` | **deprecated** — no-op, `DeprecationWarning` | `false` |
 | `OBSERVABILITY_CAPTURE_CONTENT` | capture prompts/completions (PII; dev only) | `false` |
 | `OBSERVABILITY_SERVICE_NAME` | `service.name` | `ai-parrot` |
 | `OBSERVABILITY_COST` | USD cost tracking | `true` |
-| `OBSERVABILITY_SAMPLING` | trace sampling ratio (0.0–1.0). **`0.0` is the only env-level way to switch traces off** — `enable_traces` is code-only (`config.py:132`) | `1.0` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP **base** URL — `/v1/metrics` and `/v1/traces` are appended by the exporter. Metrics use this endpoint *only*; `OTLP_TARGETS` redirects traces alone | `http://localhost:4318` |
+| `OBSERVABILITY_SAMPLING` | trace sampling ratio (0.0–1.0) | `1.0` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP **base** URL; the single implicit target for both signals when `OTLP_TARGETS` is empty; ignored when it is set | `http://localhost:4318` |
+| `OBSERVABILITY_TRACES` | trace subscriber switch | `true` |
+| `OBSERVABILITY_METRICS` | metrics subscriber switch | `true` |
+| `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` | metric export interval in milliseconds | `60000` |
 | `OBSERVABILITY_PROM_PORT` / `_ADDR` | Prometheus exposition | `9464` / `0.0.0.0` |
 | `PARROT_PRICING_PATH` | custom pricing dir | bundled tables |
 
-> **Not settable from the environment.** `enable_traces` / `enable_metrics`
-> (`config.py:132-133`) and `metric_export_interval_ms` (`config.py:211`,
-> default 60 s) are code-only fields — `from_env()` never reads them. To turn
-> traces off from `.env`, set `OBSERVABILITY_SAMPLING=0.0`. Expect up to a
-> minute before the first metrics appear.
+> Expect up to `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` (60 s by default) before the first metrics appear.
 >
 > A ready-to-copy block lives at `env/.env.observability.example`.
 

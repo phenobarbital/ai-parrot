@@ -34,7 +34,7 @@ async def list_available_tools() -> List[Dict[str, str]]:
 
     Two sources, merged:
 
-    * ``discover_from_registry()`` — the declarative ``TOOL_REGISTRY`` maps
+    * ``get_toolkit_resolver().registry_paths()`` — the declarative ``TOOL_REGISTRY`` maps
       published by installed packages (``parrot_tools`` and friends). Read
       without importing anything, so the full catalog is cheap.
     * the ``@tool``-decorated functions re-exported at the ``parrot.tools``
@@ -55,13 +55,13 @@ async def list_available_tools() -> List[Dict[str, str]]:
         ``description`` is empty for a registry entry that was not imported;
         resolving it would mean importing every tool in the catalog.
     """
-    from parrot.tools.discovery import discover_from_registry  # noqa: PLC0415
+    from parrot.tools.resolver import get_toolkit_resolver  # noqa: PLC0415
 
     import parrot.tools as parrot_tools
 
     merged: Dict[str, Dict[str, str]] = {}
 
-    for name, dotted_path in discover_from_registry().items():
+    for name, dotted_path in get_toolkit_resolver().registry_paths().items():
         merged[name] = {
             "name": name,
             "description": "",

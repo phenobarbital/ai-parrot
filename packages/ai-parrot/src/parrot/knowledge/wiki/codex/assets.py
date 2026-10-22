@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from parrot.knowledge.wiki.project import WikiRemoteConfig
     from parrot.mcp.toolkit_config import ToolkitSection
 
 AGENTS_BEGIN = "<!-- parrot:wiki:codex:begin -->"
@@ -46,6 +47,8 @@ The wiki is also persistent memory. Save durable facts, decisions, and lessons
 with `wikitoolkit remember "<fact>" --category <note|decision|lesson|concept>`.
 Use `wikitoolkit note`, `wikitoolkit link`, `wikitoolkit memories`, and
 `wikitoolkit audit` to maintain and review that knowledge.
+Use `wikitoolkit standup` for day/week/month briefs and `wikitoolkit entity`
+for typed authoring, listing and local-plane back-fill.
 """
 
 
@@ -90,7 +93,7 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
     return "\n\n".join(tables)
 
 
-def mcp_block(root: Path, toolkit_block: str = "") -> str:
+def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig | None" = None) -> str:
     """Return the managed project-scoped Codex MCP configuration.
 
     Args:
@@ -100,15 +103,28 @@ def mcp_block(root: Path, toolkit_block: str = "") -> str:
             managed marker block as the wikitoolkit table. Omitted
             (default ``""``) keeps the pre-feature wikitoolkit-only block
             byte-identical.
+        remote: When given, register the wikitoolkit table as a native HTTP
+            MCP (``url`` + ``bearer_token_env_var``, no ``command``/``args``)
+            instead of the local stdio server. Codex documents no custom
+            header key, so ``X-Wiki-Actor`` cannot be sent this way.
     """
-    command = json.dumps(resolve_binary(root, "wikitoolkit"))
-    lines = [
-        MCP_BEGIN,
-        f"[{MCP_TABLE}]",
-        f"command = {command}",
-        'args = ["mcp"]',
-        'default_tools_approval_mode = "approve"',
-    ]
+    if remote is not None:
+        lines = [
+            MCP_BEGIN,
+            f"[{MCP_TABLE}]",
+            f"url = {json.dumps(remote.url)}",
+            f"bearer_token_env_var = {json.dumps(remote.token_env)}",
+            'default_tools_approval_mode = "approve"',
+        ]
+    else:
+        command = json.dumps(resolve_binary(root, "wikitoolkit"))
+        lines = [
+            MCP_BEGIN,
+            f"[{MCP_TABLE}]",
+            f"command = {command}",
+            'args = ["mcp"]',
+            'default_tools_approval_mode = "approve"',
+        ]
     if toolkit_block:
         lines.append("")
         lines.append(toolkit_block)

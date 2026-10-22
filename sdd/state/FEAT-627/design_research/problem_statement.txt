@@ -1,0 +1,28 @@
+The LLM wiki already holds far more than code: authored memories
+(`note | decision | lesson | concept`), the Jira ticket corpus (`issues`
+namespace, FEAT-454), Obsidian vaults (meeting notes from FEAT-472 /
+FEAT-481), the SDD work ledger (open issues, specs, tasks) and the ADR
+plane. What it lacks is a **daily synthesis**: a one-page "what's on my
+plate today" that groups open tickets, recent and upcoming meetings,
+proposed decisions, in-progress tasks and drafts by project, surfaces
+blockers first, and tells the reader what changed since yesterday.
+
+Today that synthesis is done by hand (several `wikitoolkit query` /
+`ledger ready` / `adr why` calls) or not at all. The user's sketch
+(`wiki-daily-brief`, preserved verbatim below) describes the target
+output. The sketch assumes every page carries typed frontmatter
+(`type: project|meeting|ticket|decision|deliverable`, `status:`, dates,
+`owner:`). The wiki does **not** have that today: the `pages` table has
+no metadata column, vault frontmatter other than `summary`/`description`
+is dropped at ingest, and Jira frontmatter survives only as text inside
+the page body.
+
+So the feature has two halves: (1) make the wiki able to answer
+"which pages are tickets/meetings/decisions, with what status and date?"
+cheaply, and (2) a `standup` command that collects, groups, renders and
+stores the brief — deterministic by default, with an optional LLM
+one-paragraph summary.
+
+**Who is affected**: the wiki owner running it each morning (personal
+mode by default), teams using `--team`, and coding agents that get it as
+`/parrotwiki standup` and the `wiki_standup` MCP tool.

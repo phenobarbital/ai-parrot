@@ -2,7 +2,7 @@
 id: F020
 query_id: Q018
 type: wiki_query
-intent: DevLoopWikiSearch.build_research_context already folds ledger context; table: hits would be one more source
+intent: "DevLoopWikiSearch.build_research_context already folds ledger context; table: hits would be one more source"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

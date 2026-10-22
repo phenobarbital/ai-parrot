@@ -12,6 +12,12 @@ from parrot.knowledge.wiki.tools import (
     LedgerCloseInput,
     LedgerCloseTool,
     LedgerContextTool,
+    LedgerListInput,
+    LedgerListTool,
+    LedgerShowInput,
+    LedgerShowTool,
+    op_ledger_list,
+    op_ledger_show,
 )
 from parrot.tools.abstract import ToolResult
 
@@ -232,3 +238,41 @@ class TestLedgerTools:
         # This is a negative test - we verify by inspection that no such tool exists
         # The task explicitly states that acknowledge is human-only CLI
         assert not hasattr(LedgerOpenTool, "ledger_acknowledge")
+
+
+@pytest.mark.asyncio
+async def test_op_ledger_list_all_statuses(mock_ledger_service):
+    """all_statuses=True passes every IssueStatus to list_issues."""
+    issues = [{"issue_id": "issue:abc123"}]
+    mock_ledger_service.list_issues.return_value = issues
+
+    result = await op_ledger_list(mock_ledger_service, LedgerListInput(all_statuses=True))
+
+    assert result.data == {"issues": issues}
+    mock_ledger_service.list_issues.assert_called_once_with(
+        ("open", "claimed", "closed", "superseded"), kind=None, severity=None, about_prefix=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_op_ledger_show_unknown_is_error(mock_ledger_service):
+    """Unknown id → is_error=True and the text names the normalized id."""
+    mock_ledger_service.get_issue.return_value = None
+
+    result = await op_ledger_show(mock_ledger_service, LedgerShowInput(issue_id="abc123"))
+
+    assert result.is_error is True
+    assert "issue:abc123" in result.text
+
+
+def test_ledger_list_show_tool_names():
+    """Adapter names are fixed by the spec."""
+    assert LedgerListTool.name == "ledger_list"
+    assert LedgerShowTool.name == "ledger_show"
+
+
+def test_read_only_tools_include_list_show():
+    """Both reads are proxied by --remote."""
+    from parrot.knowledge.wiki.remote import READ_ONLY_TOOLS
+
+    assert {"ledger_list", "ledger_show"} <= READ_ONLY_TOOLS

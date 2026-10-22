@@ -19,6 +19,7 @@ import inspect
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.conf import AGENTS_DIR
 from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
@@ -27,12 +28,20 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig
 from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.discovery import discover_from_registry, resolve_class
+from parrot.tools.host_hooks import apply_exclude_tools
 from parrot.tools.infographic_toolkit import InfographicToolkit
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.tooling_policy import (
+    TenantToolingRefused,
+    ToolingSubject,
+    get_tenant_tooling_policy,
+)
+from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
 from ._base import StudioBaseView, resolve_safe_path
+from ._assign_params import _ServerManagedAssignMixin, _ToolkitAssignError
 from .agents import _StudioAgentsMixin
 from .models import StudioError
 
@@ -67,18 +76,6 @@ class ToolkitAssignRequest(BaseModel):
 
     slug: str
     params: dict[str, Any] = Field(default_factory=dict)
-
-
-class _ToolkitAssignError(Exception):
-    """Raised by the per-toolkit assignment helpers; mapped to a response
-    by the handler."""
-
-    def __init__(self, status: int, code: str, message: str, details: dict | None = None) -> None:
-        self.status = status
-        self.code = code
-        self.message = message
-        self.details = details
-        super().__init__(message)
 
 
 # ---------------------------------------------------------------------------
@@ -154,30 +151,17 @@ def _missing_required_params(cls: type, provided: dict) -> list[str]:
 
 
 def _resolve_toolkit_class(slug: str) -> type | None:
-    """Resolve a generic toolkit slug via ``TOOL_REGISTRY`` (case-insensitive).
+    """Resolve ``slug`` through the shared ToolkitResolver (FEAT-622 M2 shim)."""
+    return get_toolkit_resolver().resolve(slug)
 
-    Deliberately uses ``discover_from_registry`` (declarative
-    ``TOOL_REGISTRY`` dicts only) rather than the full ``discover_all``
-    walk — matches the Codebase Contract's explicit "resolve via
-    TOOL_REGISTRY" guidance for generic slugs.
 
-    Args:
-        slug: Candidate toolkit slug.
+_WIKI_TOOLKIT_KWARGS = ("confine_sources",)  # constructor switches of LLMWikiToolkit a host forces (PA-14), not WikiConfig
 
-    Returns:
-        The resolved class, or ``None`` if unknown/unresolvable.
-    """
-    registry = discover_from_registry()
-    dotted_path = registry.get(slug)
-    if dotted_path is None:
-        lowered = {key.lower(): value for key, value in registry.items()}
-        dotted_path = lowered.get(slug.lower())
-    if dotted_path is None:
-        return None
-    try:
-        return resolve_class(dotted_path)
-    except (ImportError, AttributeError):
-        return None
+
+def _split_wiki_params(params: dict) -> tuple[dict, dict]:
+    """``(WikiConfig fields, LLMWikiToolkit constructor switches)`` of the final (hooked) wiki params."""
+    toolkit_kwargs = {name: params[name] for name in _WIKI_TOOLKIT_KWARGS if name in params}
+    return {key: value for key, value in params.items() if key not in toolkit_kwargs}, toolkit_kwargs
 
 
 def _validate_wiki_storage_dir(raw: Path) -> Path:
@@ -218,7 +202,7 @@ def _validate_wiki_storage_dir(raw: Path) -> Path:
 
 @is_authenticated()
 @user_session()
-class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
+class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, StudioBaseView):
     """``/api/v1/astudio/toolkits/{slug}/schema`` and
     ``/api/v1/astudio/agents/{name}/toolkits``.
 
@@ -297,38 +281,34 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            owner = str(db_agent.created_by) if db_agent.created_by is not None else None
-        else:
-            registry = self._registry()
-            meta = registry.get_metadata(name) if registry is not None else None
-            if meta is None:
-                return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-            owner = self._registry_agent_owner(meta)
-
         user = await self._get_user()
-        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        if (refused := await self._assign_refusal(name, assign_request.slug, user)) is not None:
+            return refused  # 404 / 403 / tooling_not_permitted: all before any live-instance lookup or construction
 
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
 
-        bot = await manager.get_bot(name)
+        bot = await self._live_bot(manager, name)
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
 
         slug = assign_request.slug
         params = assign_request.params
+        subject = await self._assign_subject(bot, user)
         try:
+            self._refuse_server_managed(slug, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
-                registered_names, extra = await self._assign_wiki(bot, params)
+                params, exclude = self._host_params(slug, params, subject)  # PA-9: host hook, every assign path
+                registered_names, extra = await self._assign_wiki(bot, params, exclude)
             elif slug == "dataset_manager":
-                registered_names, extra = self._assign_dataset_manager(bot, params)
+                params, exclude = self._host_params(slug, params, subject)
+                registered_names, extra = self._assign_dataset_manager(bot, params, exclude)
             elif slug == "infographic":
-                registered_names, extra = self._assign_infographic(bot, params)
+                params, exclude = self._host_params(slug, params, subject)
+                registered_names, extra = self._assign_infographic(bot, params, exclude)
             else:
-                registered_names, extra = self._assign_generic(bot, slug, params)
+                registered_names, extra = self._assign_generic(bot, slug, params, subject=subject)
         except _ToolkitAssignError as exc:
             return self._error(exc.message, status=exc.status, code=exc.code, details=exc.details)
 
@@ -342,9 +322,35 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         response.update(extra)
         return self.json_response(response, status=200)
 
+    async def _assign_refusal(self, name: str, slug: str, user: Any):
+        """404 / 403 on the agent (access rule or FEAT-467 owner), then 422 ``tooling_not_permitted``; else ``None``."""
+        owner = await self._assign_owner(name)
+        if isinstance(owner, web.Response):
+            return owner
+        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        try:
+            await self._enforce_assign_policy(slug, user)
+        except _ToolkitAssignError as exc:
+            return self._error(exc.message, status=exc.status, code=exc.code, details=exc.details)
+        return None
+
+    async def _enforce_assign_policy(self, slug: str, user: Any) -> None:
+        """Tenant tooling policy for a live toolkit assignment (FEAT-622 M7, phase ``write``): before construction."""
+        part = await self._studio_partition()
+        policy = get_tenant_tooling_policy(self.request.app)
+        if part.tenant is None and not policy.apply_to_global:
+            return
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=user.user_id, phase="write")
+        try:
+            policy.check_tool(slug, subject=subject)
+        except TenantToolingRefused as exc:
+            raise _ToolkitAssignError(
+                422, exc.code, str(exc), details={"reason": exc.reason, "item": exc.item}
+            ) from exc
+
     # -- Per-toolkit assignment helpers ---------------------------------
 
-    async def _assign_wiki(self, bot, params: dict) -> tuple[list[str], dict]:
+    async def _assign_wiki(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         """Assign ``LLMWikiToolkit`` — reuse-else-build for pageindex/graphindex.
 
         Per TASK-2518 Codebase Contract: no bot-level capture attribute
@@ -357,8 +363,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         — so ``None`` is passed; OKF-specific wiki tools are unavailable
         until a real OKF toolkit is wired in separately.
         """
+        config_params, toolkit_kwargs = _split_wiki_params(params)
         try:
-            config = WikiConfig(**params)
+            config = WikiConfig(**config_params)
         except ValidationError as exc:
             raise _ToolkitAssignError(422, "invalid_config", f"Invalid WikiConfig: {exc}") from exc
 
@@ -397,14 +404,16 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
             None,
             config,
             agent_id=bot.name,
+            **toolkit_kwargs,
         )
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return (
             [t.name for t in registered],
             {"pageindex_source": pageindex_source, "graphindex_source": graphindex_source},
         )
 
-    def _assign_dataset_manager(self, bot, params: dict) -> tuple[list[str], dict]:
+    def _assign_dataset_manager(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         try:
             toolkit = DatasetManager(**params)
         except TypeError as exc:
@@ -415,10 +424,11 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
                 str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
-    def _assign_infographic(self, bot, params: dict) -> tuple[list[str], dict]:
+    def _assign_infographic(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         artifact_store = self.request.app.get("artifact_store")
         if artifact_store is None:
             raise _ToolkitAssignError(
@@ -437,13 +447,24 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
                 str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
-    def _assign_generic(self, bot, slug: str, params: dict) -> tuple[list[str], dict]:
+    def _refuse_server_managed(self, slug: str, params: dict) -> None:
+        """422 ``server_managed`` when the client sent a name the server fills (any slug, before construction)."""
+        known = _resolve_toolkit_class(slug)
+        if known is not None:
+            self._server_managed_inputs(known, params)
+
+    def _assign_generic(
+        self, bot, slug: str, params: dict, *, subject: ToolingSubject | None = None
+    ) -> tuple[list[str], dict]:
         cls = _resolve_toolkit_class(slug)
         if cls is None:
             raise _ToolkitAssignError(404, "not_found", f"Unknown toolkit '{slug}'.")
+        params = {**params, **self._server_managed_inputs(cls, params)}
+        params, exclude = self._host_params(slug, params, subject)  # PA-9: AFTER the server fill, BEFORE construction
         missing = _missing_required_params(cls, params)
         if missing:
             raise _ToolkitAssignError(
@@ -456,5 +477,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
             toolkit = cls(**params)
         except TypeError as exc:
             raise _ToolkitAssignError(422, "invalid_params", str(exc)) from exc
+        apply_exclude_tools(toolkit, exclude)
+        if isinstance(toolkit, AbstractTool):  # a standalone tool is registered as a tool, not as a toolkit
+            bot.tool_manager.register_tool(toolkit)
+            return [toolkit.name], {}
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}

@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS navigator.users_bots (
     permissions    JSONB DEFAULT '{}'::JSONB,
 
     -- Metadata
-    language       VARCHAR(10) DEFAULT 'en',
+    language       VARCHAR(10),
     disclaimer     TEXT,
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at     TIMESTAMPTZ DEFAULT NOW(),

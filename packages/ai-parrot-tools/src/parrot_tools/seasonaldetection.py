@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
 import json
+import re
 import pandas as pd
 import numpy as np
 import altair as alt
@@ -113,6 +114,41 @@ class SeasonalDetectionTool(AbstractTool):
     def _default_output_dir(self) -> Path:
         """Get the default output directory for seasonal detection outputs."""
         return self.static_dir / "reports" / "seasonal_detection"
+
+    _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+    def _safe_filename_component(self, value: str) -> str:
+        """
+        Reduce a caller-provided string to a filesystem-safe filename fragment.
+
+        Args:
+            value: Untrusted string (tool argument such as ``title``).
+
+        Returns:
+            The string with every path separator / unsafe character collapsed
+            to ``_`` and leading dots stripped, never empty.
+        """
+        cleaned = self._UNSAFE_FILENAME_CHARS.sub("_", value).lstrip(".")
+        return cleaned or "output"
+
+    def _safe_output_path(self, filename: str) -> Path:
+        """
+        Resolve ``filename`` inside ``output_dir``, rejecting path traversal.
+
+        Args:
+            filename: Candidate file name (no directory components allowed).
+
+        Returns:
+            The resolved path, guaranteed to live under ``output_dir``.
+
+        Raises:
+            ValueError: If the resolved path escapes ``output_dir``.
+        """
+        base = self.output_dir.resolve()
+        candidate = (base / filename).resolve()
+        if not candidate.is_relative_to(base):
+            raise ValueError(f"Unsafe output filename: {filename!r}")
+        return candidate
 
     def _validate_dataframe(self, df: Any) -> pd.DataFrame:
         """
@@ -506,7 +542,7 @@ class SeasonalDetectionTool(AbstractTool):
                 alt.hconcat(acf_chart, pacf_chart),
             ).properties(title="Time Series Stationarity Analysis")
 
-            main_plot_path = self.output_dir / f"{output_prefix}_stationarity_analysis.json"
+            main_plot_path = self._safe_output_path(f"{output_prefix}_stationarity_analysis.json")
             main_plot_path.write_text(json.dumps(combined.to_dict(), indent=2))
             generated_files.append(str(main_plot_path))
 
@@ -533,7 +569,7 @@ class SeasonalDetectionTool(AbstractTool):
 
                 decomp_chart = alt.vconcat(*component_charts).properties(title="Seasonal Decomposition")
 
-                decomp_plot_path = self.output_dir / f"{output_prefix}_seasonal_decomposition.json"
+                decomp_plot_path = self._safe_output_path(f"{output_prefix}_seasonal_decomposition.json")
                 decomp_plot_path.write_text(json.dumps(decomp_chart.to_dict(), indent=2))
                 generated_files.append(str(decomp_plot_path))
 
@@ -663,7 +699,10 @@ class SeasonalDetectionTool(AbstractTool):
             if generate_plots:
                 self.logger.info("Generating visualization plots...")
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_prefix = f"{title}_{value_column}_{timestamp}"
+                output_prefix = (
+                    f"{self._safe_filename_component(title)}_"
+                    f"{self._safe_filename_component(value_column)}_{timestamp}"
+                )
                 generated_files = self._create_visualizations(series, analysis_results, output_prefix)
 
                 # Convert file paths to URLs

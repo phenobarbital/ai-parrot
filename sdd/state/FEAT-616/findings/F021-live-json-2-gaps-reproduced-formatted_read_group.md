@@ -2,7 +2,7 @@
 id: F021
 query_id: L009
 type: rpc
-intent: live: reproduce JSON-2 mapping gaps
+intent: "live: reproduce JSON-2 mapping gaps"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

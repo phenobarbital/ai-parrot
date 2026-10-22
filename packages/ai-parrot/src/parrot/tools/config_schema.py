@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .server_params import constructor_server_params
+
 logger = logging.getLogger(__name__)
 
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
@@ -91,6 +93,7 @@ def _json_type(annotation: Any) -> dict[str, Any] | None:
 
 def introspect_config_schema(cls: type, *, server_managed: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Lift ``cls.__init__`` into a Draft 2020-12 object schema (see module notes)."""
+    server_managed = frozenset(server_managed) | constructor_server_params(cls)
     curated = frozenset(getattr(cls, "secret_params", frozenset()))
     overridable = frozenset(getattr(cls, "default_user_overridable", frozenset()))
     options = frozenset(getattr(cls, "options_params", frozenset()))
@@ -138,6 +141,10 @@ def model_config_schema(cls: type) -> dict[str, Any]:
         for prop_name, prop_schema in def_schema.get("properties", {}).items():
             if "x-secret" not in prop_schema and is_secret_name(prop_name):
                 prop_schema["x-secret"] = True
+
+    for name in constructor_server_params(cls):
+        if name in schema.get("properties", {}):
+            schema["properties"][name] = {"x-server-managed": True}
 
     schema["$schema"] = DRAFT_2020_12
     return schema

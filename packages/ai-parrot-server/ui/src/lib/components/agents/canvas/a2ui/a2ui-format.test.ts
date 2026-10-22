@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatA2UIValue } from './a2ui-format';
 
 const num = (n: number, opts: Intl.NumberFormatOptions = { maximumFractionDigits: 1 }) =>
-  new Intl.NumberFormat(undefined, opts).format(n);
+  new Intl.NumberFormat('en-US', opts).format(n);
 
 describe('formatA2UIValue', () => {
   it('percent treats the value as a ratio (max 1 decimal)', () => {

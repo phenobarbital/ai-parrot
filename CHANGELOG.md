@@ -9,6 +9,455 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.4] — 2026-10-22 — Per-tenant skills, Fireflies insights agent, Jira CLI, OTLP metrics fan-out
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.4`, `ai-parrot-server` to `1.3.3`,
+the other core-line packages to `1.2.4`, satellites to `0.4.4`). Satellites are re-pinned to `ai-parrot>=1.2.4`.
+
+### Migration
+
+- **`navigator.ai_bots` must be homologated with `BotModel`** — `sdd/migrations/ai-bots-homologate-botmodel.sql`.
+  `BotModel` is `Meta.strict = True`, so asyncdb selects every declared field by name and a missing column
+  (e.g. `toolkit_config`) fails *every* bot load. FEAT-716 restores tolerance for legacy columns via a kwargs
+  fold, but running the migration is the supported path.
+
+### Security
+
+- **Locale-directory traversal in the narration engine** (CWE-22): locale directories are now selected from a
+  directory listing instead of being built from the caller's locale string.
+- **Chat-level authorization in `FirefliesInsightsAgent`** (FEAT-715), plus revision supersede and Jira markup
+  escaping.
+- **Per-tenant skill isolation (FEAT-707).** Tenant skill hardening, rejected empty tenant ids, tool-less
+  tenant layers, and HTTP handlers that drop any client-supplied tenant before forwarding.
+- **Wiki clone origin** is parsed as a host before matching (CodeQL `cs:228`); project/shared root walks never
+  climb into the system temp directory.
+- **Prompt-injection guardrail (FEAT-714).** `ThreatLevel` gains a total ordering so threat comparisons cannot
+  silently mis-rank; malformed threat levels are surfaced at debug rather than swallowed.
+
+### Added
+
+- **Per-tenant skills for `SkillRegistryMixin` (FEAT-707).** `AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/`
+  shadows the global tree by name and `/trigger` per request (`global_only` skills cannot be shadowed, learned
+  skills stay global). `ask(tenant=...)` / `ask_stream(tenant=...)` binding hooks, a tenant-aware
+  `NarrativeMixin.narrate()`, and `parrot/skills/tenancy.py`. See `docs/skills/per-tenant-skills.md`.
+- **`FirefliesInsightsAgent` (FEAT-715)** — meeting-transcript insights with human-approved Jira ticket
+  creation — plus a wiki **inbox watcher** (`knowledge/wiki/inbox/watcher.py`) with a stability probe and a
+  lazy watchdog gate. Docs: `docs/agents/fireflies-insights.md`.
+- **Jira toolkit upgrades (FEAT-696).** Extracted 3LO OAuth helpers, a local token store and credential
+  resolver, a Jira Knowledge Base model (`jira_kb.py`, ruamel round-trip), and a `jira` CLI
+  (`auth`, `status`, `logout`, `sync-kb`). New dependency: `ruamel-yaml>=0.18`.
+- **Workday worker event history and job changes (FEAT-706).** `worker_event_history` / `worker_job_changes`
+  handlers and the `worker_event` model, plus `wd_get_position` and `wd_get_job_profile`. Docs:
+  `docs/tools/workday-worker-history.md`.
+- **OTLP metrics fan-out and env-level switches (FEAT-705).** `setup_telemetry()` now builds one metric
+  exporter per `otlp_targets` entry (with per-target headers), matching the trace path, and trace/metric
+  export can be toggled from the environment.
+- **Language-agnostic validation runners (FEAT-709).** A runner registry with pytest, vitest, cargo (stable
+  libtest text parser) and `parrot-e2e` adapters; verdict models and a `validation_failed` outcome; a
+  fail-closed task-tier gate with same-seat repair; a dispatcher `run_validation` tool; repo
+  `test_runners.toml` and UI vitest in the nightly matrix. Docs: `docs/dev_loop/validation-runners.md`.
+- **Contract-driven test selection (FEAT-699).** A Validation Contract in the spec template and `/sdd-spec`,
+  cached into the per-spec index header by `/sdd-task`; a content-addressed green cache across merges;
+  baseline-aware verdicts; a nightly full package-suite workflow on `dev` that fails on new reds. Docs:
+  `docs/sdd/test-selection-validation-contract.md`.
+- **Shared ledger event log (FEAT-694).** `sdd/ledger/events.jsonl` with managed `parrot-ledger` git hooks,
+  `/sdd-done` rotation, and a codex twin.
+- **`/sdd-brief` hotfix flow (FEAT-698).** Research-first briefs for hotfixes and single-issue fixes — no
+  FEAT/TASK ids, `HOTFIX-<KEY>-<N>` local ids, worktree provisioned via `ensure_worktree --brief-key`, and an
+  Antigravity twin that keeps each host's hand-off native.
+- **Parallel research for `/sdd-proposal` (FEAT-708).** Independent research lanes, citation-identity dedup
+  into canonical `F001+` findings, and citation verification through the new `sdd-contract-probe` agent
+  (which also gains a `file` check kind for `path:NN` citations).
+- **Code-enforced E2E closeout gate** in `/sdd-done` and both its twins; **ledger snapshot removal guard**
+  wired into CI (FEAT-712).
+- **GitHubReviewer and Jira standup.** Reports the tickets resolved or closed in the last 24 h, its own Google
+  key, open-only `today_pr`, a strict `/review_pr` gate. Docs: `docs/jira-standup.md`.
+
+### Changed
+
+- **`use_tools=False` is honoured** in `ask`, `ask_stream` and `conversation`, and in the generated prompt.
+- **dev-loop seats.** `luna` replaced by `sol` and `opus` added to the strong seat roster; in-process seat
+  `max_turns` scales with the task's declared file count; a `max_turns` overrun no longer suspends the seat.
+- **Scheduler.** The aiohttp Redis attachment is configurable via `SCHEDULER_REDIS`.
+- **Ledger audit (FEAT-717).** `claim_conflicts` is stateless; `live_claims()` filters superseded claims, and
+  `issue.superseded` supersedes a claim.
+
+### Fixed
+
+- **Images.** `parrot-formdesigner` applies EXIF orientation before generating thumbnails; zero-denominator
+  `IFDRational` and NaN/Inf convert to `None` for valid JSON (NAV-10288).
+- **Google Drive.** Download retry seeks back on `BinaryIO`; resumable chunks expose `Retry-After`.
+- **`AgentCrew.__init__`** honours all four Google credential signals.
+- **Telegram** renders a `/call` result as a code block, not as prose.
+- **Tool registration** keeps the class-name alias when every claimant is the same class.
+- **E2E `up`** keeps the detached daemon alive when the launcher exits.
+- **Wiki inbox** probes candidate stability concurrently.
+- **SDD infra.** Ledger snapshots are compared at the merge base; `sdd-contract-probe` is invocable on every
+  host; `check_task_graph` respects `parallelism_notes` that name the creator; `close_task.sh` resolves a
+  parrot-capable interpreter for its `task.closed` emission.
+
+---
+
+## [1.2.3] — 2026-10-16 — GraphIndex core seams, planogram appearance rules, Gemini upgrade
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.3`, `ai-parrot-server` to `1.3.2`,
+the other core-line packages to `1.2.3`, satellites to `0.4.3`). Satellites are re-pinned to `ai-parrot>=1.2.3`.
+
+### Removed
+
+- **GraphIndex legacy aliases (FEAT-540).** `OntologyGraphStore` and `execute_traversal` aliases are gone;
+  use `ArangoOntologyGraphStore` and its typed traversals. `persist.py` is now `persist_arango.py`
+  (`ArangoPersistence`).
+
+### Security
+
+- **Knowledge uploads are authorized before download** (Teams/Telegram, FEAT-647 follow-up).
+- **Google Drive `upload_file` path confinement** and conflict-behavior isolation (FEAT-690).
+- **Share-token viewers** get a proper viewer permission context on authenticated UI surfaces (FEAT-691).
+- **GitHub reviewer local repo wiki (FEAT-672).** Token-free git auth for private clone/pull, wiki build in
+  its own process group with group-wide kill (SIGKILL escalation), bounded wiki wait + shared read lease.
+
+### Added
+
+- **GraphIndex core seams (FEAT-540).** Graph backend registry, `NullPersistence`, `file_hashes`, conformance
+  suite; `WikiBackendSpec` registry with backend-neutral namespace dispatch; `query_templates` and
+  `ResolvedIntent` query/dialect; golden MCP manifests; SDK transport descriptors built from the operations
+  registry; actionable PG DSN errors.
+- **Planogram appearance rule (FEAT-683)** plus comparison-rule work: opt-in `visual_features` checklist and
+  superscript-cents prices on fact tags (FEAT-685), per-requirement text features (FEAT-687), fact-tag
+  end-to-end compare test (FEAT-674).
+- **Server web UI at site root.** `ai-parrot-server` serves navigator-auth login and the agent chat at `/`;
+  admin pages move under `/admin`.
+- **Wiki `ledger show` (FEAT-689)**; clock-safe, origin-checked last-writer-wins wiki sync with a cheap pull
+  page; chunked remote `wiki_sync_push` with a capped, locked server tool.
+- **`BasicAgent.setup_mcp_servers`.**
+
+### Changed
+
+- **Gemini upgrade (FEAT-688).** `google-genai` floor raised to `2.31.0`; `GoogleGenAIClient` routing gates.
+- **Scheduler (FEAT-676).** Deterministic interval/once trigger anchor for claims.
+- **`DatabaseAgent`** rejects unsupported `schema_plane` values (FEAT-679).
+- **Core `pydantic` pin relaxed** to `>=2.12.5,<3`.
+- **Dev tooling.** `flake8`, `black` and `py-spy` in the `ai-parrot` dev extra; flake8 config consolidated in
+  `.flake8` with 120-column lines.
+
+### Fixed
+
+- **Browsing/scraping executors (FEAT-681, FEAT-682, FEAT-684).** Obscura-safe load waits, page reads and a
+  CDP screenshot fallback in `PlaywrightDriver`; click text-contains and scroll-bottom height via
+  `driver.evaluate`; escaped text XPath, focused-element clearing, submit pseudo stripping.
+- **Compliance.** `TextMatcher` honours `match_type: "exact"`; out-of-vocabulary appearance answers coerce to
+  `unknown`.
+- **Decisions CLI (FEAT-675)** single-namespace `--ns` guard; narration engine fixes (FEAT-669).
+- **SDD infra.** `/sdd-done` closes ledger issues resolved by verified tasks (FEAT-671); hardened
+  `install_hooks` repo-root resolution; `sdd-next` workflow twin reconciled.
+
+---
+
+## [1.2.2] — 2026-10-14 — Voice-driven form filling, scheduler manager, wikitoolkit HTTP MCP
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.2`, `ai-parrot-server` to `1.3.1`,
+the other core-line packages to `1.2.2`, satellites to `0.4.2`). Satellites are re-pinned to `ai-parrot>=1.2.2`.
+
+### Rollback
+
+- **Do not downgrade below the audio-form voice post-processors (FEAT-653) once voice data exists.** Session
+  snapshots and `VoiceEvidenceEnvelope`s now carry `normalized_by` / `llm_confidence`; older models declare
+  `extra="forbid"` and reject them. No backward compatibility is provided.
+
+### Security
+
+- **Path traversal in the lexicon locale loader** (CWE-22): a crafted locale value could escape the lexicon
+  directory; the loader now validates against traversal.
+- **QuerySlug fetch-path authorization (FEAT-667).** Fail-closed slug authorization on the QuerySlugSource
+  fetch path.
+- **Tools hardening (PA-series).** Restricted `WeasyPrint` `url_fetcher` for PDF export; egress-guarded
+  resolver for HTTP sessions tools open themselves; confined screenshot destination and file name; per-tenant
+  built-in tool allow-list (`tenant_builtin_tools`); confined scraping/wiki/document_converter paths behind
+  host switches; no `trust_env` on guarded sessions.
+- **Studio hardening.** Per-tenant built-in/toolkit allow-lists enforced when a stored agent calls a tool;
+  host param hook receives the canonical slug; wiki assign route forwards host-forced constructor switches.
+
+### Added
+
+- **Voice-driven form filling (FEAT-649, FEAT-653, FEAT-654, FEAT-655, FEAT-656).** A complete audio-form
+  stack: protocol v2 events, voice evidence envelopes, narration engine (en/es lexicon), deterministic option
+  matcher + LLM refiner, answer plausibility checker, spoken value normalizers (number, phone, email, date,
+  time) with a calibration harness, WebSocket adapter rewrite, barge-in support with per-option narration
+  segments, active-session resume with split TTLs, client-submit mode, and DB migrations 009/010.
+- **Scheduler manager (FEAT-644).** `AgentSchedulerManager` with agent and crew resolvers, Redis-backed
+  coordination with namespaced prefixes, schedule state preserved across updates and lifecycle transitions,
+  and target-name-based callbacks.
+- **Teams and Telegram knowledge upload (FEAT-647).** Users can upload documents to the agent's knowledge
+  base through Teams and Telegram; `PageIndex` tree freshness check.
+- **Wikitoolkit HTTP MCP server (FEAT-569).** Remote wiki access: push/sync build/upsert/ingest, bulk ingest
+  tools, actor ContextVar, bearer auth, ArangoDB symbol plane, and `parrot claude install --remote` for Codex.
+- **Eval answer-accuracy metrics (FEAT-652).** LLM-as-judge scoring with rubrics, judge cache, baseline
+  store, and per-tag regression gating.
+- **Products-found for every planogram type (FEAT-648).** `products_found` on endcap and every
+  product-detecting type, with reporting docs and per-slot presence.
+- **A2UI lazy imports (FEAT-668).** PEP 562 deferred imports across `parrot.tools` and server handlers,
+  cutting cold-start time; import-isolation tests.
+- **Studio enhancements.** Per-request LLM-client credentials and `key_source`; catalogue decoration hook
+  with available/abstract flags; tenant-partitioned export store; host `TOOL_CALL` guardrails; host
+  toolkit-parameter hook; shared Redis conversation backend with TTL for Studio bots and the assistant;
+  model-param validation (Claude 5 unsupported params, Google anyOf/enum handling).
+
+### Changed
+
+- **Audio forms (FEAT-653):** the LLM value refiner can no longer turn a rules `confirm`/`rejected` into an
+  accepted answer (at most a confirm with the refined value); `llm_refine_timeout_s` is capped at 10 s;
+  relative dates/times never auto-accept without a valid session timezone; v1 `answer_accepted.value` stays a
+  string for numeric fields.
+
+### Fixed
+
+- **Planogram.** ProductCounter and GraphicPanelDisplay resolve their own layout profile (FEAT-651);
+  reference images skipped for types that do not use them.
+- **LSP.** Session source fixes and tests (FEAT-657); toolkit logging, canonical-root URI, and pyrightconfig
+  extends-chain follow (FEAT-658).
+- **SDD infra.** Bound `_run_subprocess` output in bytes (FEAT-663); AttemptRecord metrics populated from
+  trace, dead `result_limit` error code removed (FEAT-661); boundary-safe E2E bridge node-ID lookup
+  (FEAT-660); dead cap-escalation plumbing removed, ScopePlan dict fields frozen (FEAT-659); `ruff` B039/B904
+  in `openai_base.py` (FEAT-662).
+- **Transport JSON-2.** Wider create fallback detection; `get_views` mapping added (FEAT-664). Canvas
+  `InfographicCanvas` passes `shareToken` to `A2UISurface` (FEAT-666).
+- **Formdesigner.** Organization resolved from the authenticated user; PBAC setup is idempotent per app.
+- **Google client.** `anyOf` union values and optional-argument enum flattening preserved correctly.
+- **Studio.** Assistant keeps its conversation ID when the instance is missing on the worker; ending a test
+  session deletes its shared history; test/ask passes `user_id`/`session_id`.
+- **Jiratoolkit.** Import hygiene (FEAT-637 TASK-4137): test import-time side effects no longer shadow
+  `jira` / `parrot.interfaces.file`.
+- **STT language** pinned to the session locale, English by default.
+
+---
+
+## [1.2.1] — 2026-10-09 — Session files and document attachments, ink-wall planogram reporting, dependency security sweep
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.1`, the other core-line packages to `1.2.1`,
+satellites to `0.4.1`). Satellites are re-pinned to `ai-parrot>=1.2.1`.
+
+### Security
+
+- **`SessionFileToolkit.import_remote_file` no longer reads local files (FEAT-643).** Only remote backends are
+  accepted, so `fs`/`temp` are gone and a model can no longer pull files like `env/.env` from the server's working
+  directory into a Jira attachment. `remote_path` is validated (no traversal), and both write paths enforce a
+  per-file byte cap.
+- **Dependency advisories cleared.** About 50 Dependabot advisories are fixed: docling, asyncssh, pymongo, geopy,
+  `transformers>=5.3.0` (CVE-2026-4372), `weasyprint` 70.0, a `tinypool>=2.1.1` override, the admin UI (echarts 6,
+  vitest 4, uuid 13) and the WhatsApp bridge (`gorilla/websocket` 1.5.3).
+
+### Added
+
+- **Documents of any type reach the agent (FEAT-639).** `Agent.handle_files` now saves every upload, not only
+  tabular ones. An upload that comes with a prompt is ingested too. Telegram and MS Teams accept office documents,
+  and Jira attachments keep their original filename. A new `SessionFileToolkit` hands the files to tools, with
+  Jira attachment result models and a size limit. There are operator docs for the session file store.
+- **Ink-wall slot presence (FEAT-645).** Under an opt-in reporting policy, expected, found and missing products
+  are labelled by facing model or SKU, never by brand alone. Results include a per-slot presence list, and the
+  `sku` descriptor is kept.
+
+### Fixed
+
+- **Ink-wall registration and completeness (FEAT-646).** Bottom-shelf slots are no longer lost when price tags are
+  missing, and row blocks can span several bays. Completeness is graded, so one unresolved facing no longer makes
+  a whole ink-wall photo `inconclusive`.
+- Ink-wall reporting accepts SKUs given as integral floats. When `product` is `None`, the facing label is used.
+- The BotManager test-collection hang (FEAT-641) and order-dependent graph test collisions (FEAT-642) are fixed.
+- The jira-specialist daily standup greeting is localized, and its skip button works.
+- `sdd-coder`: a `run_chunk` handle is settled even when the runner finishes before registration.
+- The ledger's `close_issue` and `unclaim` are atomic, like `claim_issue`.
+- The deterministic E2E gate no longer blocks CI.
+
+---
+
+## [1.2.0] — 2026-10-08 — Agent Studio visibility and storage phase 2, scheduler delivery correctness, wikitoolkit lint/standup/inbox
+
+All twelve core-line distributions move one minor step (`ai-parrot-pipelines` to `1.3.0`, the rest to `1.2.0`).
+The seventeen satellites move to `0.4.0` and are re-pinned to `ai-parrot>=1.2.0`.
+
+Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope seam, `RequestScope`,
+`setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
+draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
+
+### Breaking / upgrade notes
+
+- **Host tools without a declared `access` now require a human confirmation on every path.** A tool or toolkit
+  method that belongs to the host (`plugins.tools`, declared in `TOOL_REGISTRY` or found by the deprecated walk
+  fallback) and does not declare `access = "read"` (standalone tools) or list the method in `read_tools`
+  (toolkits) is treated as a write tool: it is `confirmation_required` for registry/YAML agents, `AgentTalk`,
+  crews, A2A, voice and the scheduler too — not only for Studio-built agents. Before upgrading, annotate every
+  read-only host tool with `access = "read"` / `read_tools`; unannotated ones stop executing until confirmed.
+- **The `database` storage backend now requires schema level 8.** Run the Studio migrations (`0006`–`0008`;
+  `parrot-studio-migrate`, verify with `parrot-studio-migrate --verify`) BEFORE deploying this release. A host
+  still at level 5 (`1.1.0`) resolves the backend to `unavailable` and every database-mode Studio route answers
+  `503 studio_storage_unavailable`, whatever the `*_STORE` switches say.
+
+### Added
+
+- **Agent Studio — owner-controlled visibility (FEAT-605 W2+).** Per-record `visibility`
+  (`private | tenant | groups`) with `allowed_groups`, and three new routes —
+  `PATCH /astudio/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility`. Every route
+  follows one access rule (404 for an invisible record, identical to an absent one; 403 `not_manageable` for a
+  visible record the caller cannot manage), the assistant is partitioned by (tenant, user), and tool calls from
+  `test/ask`, chat and execute carry a `studio_scope`. Contract: `docs/agent_studio_api.md`; host guides
+  `docs/agentstudio/db-storage.md` and `docs/toolkits/host-toolkits.md`.
+- **Agent Studio database storage, waves 2–4 and phase 2 (FEAT-621).** Visibility columns and services over the
+  partitioned repositories, per-user LLM keys, credentials and toolkit overrides (migrations `0006`–`0008`).
+- **Agent Studio host toolkits, waves 2–4 (FEAT-622).** Tenant-bound tools and the scope gate, server-managed
+  parameters, strictly confirmed host write tools (walk-discovered host entries included) and the tenant tooling
+  policy on tooling writes.
+- New Studio error codes: `declarative_only`, `tenant_required`, `groups_required`, `groups_not_allowed` (422),
+  `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
+  `reserved_config_key` (400); `name_taken` (409) now also covers agents, draft saves and skills.
+- `PUT`/`DELETE /astudio/agents/{name}/toolkits/{slug}` and `PUT …/mcp-servers` return the agent's `version` after the
+  write when the agent is a database-backed Studio agent (additive).
+
+### Changed
+
+- **Agent Studio, plain hosts too (FEAT-605):** duplicate names on agents, draft saves and skills answer
+  `409 name_taken` (no owner, source or tenant in the body) — previously `duplicate` / `name_collision` /
+  `not_owner`. Every agent/draft/skill item gains additive `tenant`, `owner`, `visibility`, `allowed_groups`,
+  `access` (`"global"` without a resolver) and, on single-record reads, `can_manage`. Non-private visibility
+  without a tenant is `422 tenant_required`. Reload, files GET and tool execute keep their old, ungated behaviour
+  without a resolver.
+- **Agent Studio (FEAT-605):** the 403 for "visible but not manageable" on a database-backed Studio record is now
+  `not_manageable` (it was `forbidden`).
+- **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
+  the release); `parrot-studio-migrate --verify` checks versions 1-8.
+- **Agent Studio UI backend gaps (FEAT-634).** Agent reads return the full definition (`llm`, `description`,
+  `system_prompt`, `model_params`, `category`), the LLM-client catalog lists models, BYOK personal-key clients are
+  scoped to one ask, and the toolkit allow-list check is a delta (an unrelated edit is no longer blocked by a
+  held disabled toolkit).
+- **Tool registry:** 43 duplicate `TOOL_REGISTRY` slugs removed (no more resolver warning on every startup),
+  class-name aliases normalise to the canonical slug, and the resolver is re-entrant, so a host module that
+  instantiates tools at import time can no longer deadlock it.
+
+### Added (other)
+
+- **Google Drive file manager (FEAT-608).** A `FileManagerInterface` backend for Google Drive (service account
+  or OAuth user), with uploads, downloads limited to the target directory, error mapping, a `gdrive` extra and an
+  opt-in live test suite. Guides: `gdrive-filemanager.md`, `google-oauth2.md`.
+- **JiraToolkit templates (FEAT-637).** Descriptions and comment bodies can be rendered from a house template
+  (fixed sections, mandatory blocks) rather than passed verbatim. Jira attachments now support DOCX as well.
+- **JiraSpecialist language split (FEAT-638).** The agent answers in the user's language but writes summaries,
+  descriptions and comments in the team's configured Jira language. Operational messages come from a catalog
+  with protected placeholders.
+- **Linked A2UI Python transforms (FEAT-636).** A linked data source can declare `transform.python`, a
+  registered `@infographic_transformer` that the server applies after the query slug runs. A new per-source data
+  endpoint returns the transformed rows to the renderer.
+- **wikitoolkit `lint` (FEAT-625).** A lint engine that works on any backend, with rule packs for the SQLite
+  plane, ArangoDB, the markdown/OKF export and the memories/ADR plane. It is available as `wikitoolkit lint` and
+  the `wiki_lint` MCP tool and returns a `LintReport`. OKF lint is now one of the rule packs.
+- **wikitoolkit `standup` (FEAT-627).** A one-page summary of open tickets, meetings, proposed decisions and
+  in-progress work, available as `wikitoolkit standup` and the `wiki_standup` MCP tool. It is built on a new,
+  additive `page_attrs` entity-attribute table.
+- **wikitoolkit `inbox` (FEAT-626).** One command ingests every document in the git-tracked `inbox/` folder,
+  with no mode flag and no human checkpoint. It reuses the FEAT-402/451 ingestion pipeline.
+
+### Fixed
+
+- **Scheduler under multiple gunicorn workers (FEAT-631).** Job listeners now run on the aiohttp path, so
+  successful DB schedules stamp `last_run`/`run_count`/`last_result`/`next_run`, send `send_result` and run
+  `CALLBACK_REGISTRY` callbacks again. `_job_context` no longer leaks, and the multi-worker issues an external
+  integrator reported are fixed.
+- **Scheduler delivery status (FEAT-635).** Delivery callbacks report `"sent"` only when
+  `notification_succeeded()` confirms the send, and `"failed"` with the provider error otherwise. Callbacks are
+  isolated from each other, and delivery results are saved on the schedule row instead of being dropped.
+- **Agent Studio:** a build whose version is no longer the head is never installed. An agent edited during every
+  rebuild is still served. Tenant callers never fall through to the tooling of global legacy agents.
+  `POST /agents/{name}/tools` fills server-managed parameters the same way `/toolkits` does.
+- `IntegrationBotManager.shutdown()` closes the MS Teams wrapper sessions.
+- Seasonal-detection tool output paths are sanitised (code scanning #218, #219).
+
+---
+
+## [1.1.0] — 2026-10-02 — Agent Studio multi-tenant storage, linked-dashboard derived sources, planogram fact tags
+
+Eleven core-line distributions move to `1.1.0` (`ai-parrot-pipelines` to `1.2.0`).
+The seventeen satellites move to `0.3.0` and are re-pinned to `ai-parrot>=1.1.0`.
+
+### Added
+
+- **FEAT-621: Agent Studio database storage.** Studio agents, drafts, assets,
+  tooling and the skill catalog can live in a database instead of the
+  filesystem: partitioned repositories (`StudioAgentRepository`,
+  `StudioDraftRepository`, `StudioAssetRepository`, `StudioToolingRepository`,
+  `StudioSkillCatalogRepository`) behind a `StudioRepositories` container,
+  `studio_transaction` primitives, migrations `0001`–`0005` with a checksummed
+  manifest and the `parrot-studio-migrate` CLI, backend selection through
+  `ensure_studio_storage`, and an `InMemoryStudioRepositories` fake for
+  DB-free tests.
+- **FEAT-605: Agent Studio tenant visibility.** A request-scope seam, host
+  mount hooks, a Studio base scope, scope-only route gates and a capabilities
+  endpoint `GET /me`; the API contract is documented first.
+- **FEAT-622: Agent Studio host toolkits.** `ToolkitResolver`, a tool-scope
+  contract and a tenant tooling policy enforced by a build hook that runs the
+  policy and secret checks before hydration (`precheck_toolkit` /
+  `precheck_mcp`); unknown tool shapes are refused.
+- **Linked dashboards: dashboard-owned data sources and derived views.**
+  `parrot_data_sources` gains a second source kind, `derived`
+  (`{"kind": "derived", "from": "<sibling>", "transform": {"ops": […]}}`): a
+  view computed from a sibling source's full frame with the transform DSL,
+  never fetched, snapshotted like any source and recomputed whenever its
+  parent runs. The Python executor, `LinkedSurfaceService`, surface
+  validation, the admin UI lane and the example lane all understand it, and
+  every `query_slug` source is now fetched once per pass however many widgets
+  bind it. `qs_build_linked_dashboard` takes a `sources` map owned by the
+  dashboard; each widget declares one data origin — `source` (direct binding,
+  or a derived view with `transform`), `slug` (its own source, the previous
+  shape) or `data` (inline rows). The Polestar example loads with 4
+  QuerySource calls instead of 8. Contract: regenerated `LinkedSources`
+  schema/TS types, `envelopes/linked_dashboard_derived.json` and
+  `parity/derived_dashboard.json`. Definition-only linked surfaces render
+  from a one-row probe; a finance linked-dashboard example ships alongside.
+- **FEAT-623: infographic / A2UI display hints.** Model display hints lowered
+  losslessly by the adapter, typed table columns from dtypes, `format_cell`
+  parity with `formatA2UIValue`, and admin-UI chart axis mapping with a dual
+  value axis.
+- **FEAT-624: planogram fact-tag rule.** Fact and price tags become a
+  first-class compliance rule.
+- **Planogram detection and registration.** Fixture ROI before LLM detection
+  with native `box_2d` boxes; ROI components as observed zones
+  (`roi_zone_labels`) and ROI unit boxes that split stacked detections and
+  recover misses; free-order and tiered shelves; shape-is-slot fixtures keep
+  one row per shelf and fill empty columns; identity resolved by contained
+  name and matched reference; zone-crop phrases count as text evidence.
+- **Teams notifications:** a card can play a podcast it does not host.
+
+### Changed
+
+- **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
+  `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+- **A2UI:** single query slugs and linked surfaces fetch from
+  `/api/v2/services/queries` instead of MultiQS.
+- **FEAT-620: test-scope impact.** `source_fanin` counts direct importers
+  (threshold 30) and `CORE_PATHS` is re-derived from them (724 → 29 entries),
+  so merge-tier selection stops escalating whole package suites.
+- Dependencies: `onnxruntime>=1.30.0`; `coverage` 7.16.2 (dev).
+
+### Fixed
+
+- **Agent Studio D1:** `POST /astudio/drafts` no longer overwrites another user's draft file or row; it answers
+  `409 name_taken` before anything is written (superusers and the owner are unaffected).
+- **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
+  else, is refused (`409 name_taken`) unless the caller is a superuser.
+- **Agent Studio storage:** draft-ownership lookup errors fail closed; tooling
+  references key their sessions consistently; orphan deletes, atomic purge,
+  commit rollback and a `503` when storage is unavailable.
+- **Tooling policy** honours the global opt-in and requires host-toolkit
+  prefixes; a malformed dotted path resolves as unavailable.
+- **A2UI linked lane:** deadlock, stale derived joins, ignored params and
+  cycle-check findings fixed.
+- **Planogram:** surplus identities, foreign strays and mangled reference
+  labels; references never rename a product read as something else; oversized
+  fixture ROIs cut back; no synthesized bottom row once every shelf is
+  anchored; `reference_id` dropped without references; truncated responses
+  retried; converter no longer loses rules.
+- **Teams notifications:** no more `Action.OpenUrl` with a placeholder URL.
+
+---
+
 ## [1.0.7] — 2026-10-01 — A2UI linked surfaces, SharePoint file manager, Hooba and Odoo toolkits
 
 Twelve core-line distributions move to `1.0.7` (`ai-parrot-pipelines` to `1.1.1`).

@@ -6,6 +6,8 @@ Factory functions returning OTLP span and metric exporters configured from
 ``ObservabilityConfig``. Supports both ``http/protobuf`` (default) and
 ``grpc`` protocols. gRPC exporters are lazy-imported so users without
 ``grpcio`` installed are not broken when they choose the HTTP default.
+The plural ``make_span_exporters`` / ``make_metric_exporters`` build one
+exporter per ``OtlpTarget`` (FEAT-462, FEAT-705).
 
 Spec §3 Module 7.
 """
@@ -112,6 +114,59 @@ def make_span_exporter(config: ObservabilityConfig) -> Any:
     endpoint = f"{config.otlp_endpoint.rstrip('/')}/v1/traces"
     headers = config.otlp_headers or None
     return OTLPSpanExporter(endpoint=endpoint, headers=headers)
+
+
+def make_metric_exporters(
+    targets: list[OtlpTarget],
+    protocol: str = "http/protobuf",
+) -> list[Any]:
+    """Return one OTLP metric exporter per *targets* entry (FEAT-705).
+
+    Multi-endpoint counterpart to :func:`make_metric_exporter`, shaped
+    exactly like :func:`make_span_exporters`. ``setup_telemetry()`` wraps
+    each exporter in its own ``PeriodicExportingMetricReader`` on a single
+    shared ``MeterProvider``; there is no composite metric exporter.
+
+    Args:
+        targets: List of OTLP export destinations.
+        protocol: Shared transport protocol for all targets
+            (``"http/protobuf"`` or ``"grpc"``).
+
+    Returns:
+        A list of exporter instances, one per target, in the same order as
+        *targets*. Empty list when *targets* is empty.
+
+    Raises:
+        ImportError: When ``protocol="grpc"`` is requested but the gRPC
+            exporter package is not installed.
+    """
+    exporters: list[Any] = []
+    for target in targets:
+        if protocol == "grpc":
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (  # noqa: PLC0415
+                    OTLPMetricExporter as GrpcMetricExporter,
+                )
+            except ImportError as exc:
+                raise ImportError(
+                    "gRPC OTLP metric exporter requires the 'observability' extra with grpcio. "
+                    "Install with: pip install 'ai-parrot[observability]' grpcio"
+                ) from exc
+            headers = tuple(target.headers.items()) or None
+            exporters.append(GrpcMetricExporter(endpoint=target.endpoint, headers=headers))
+            continue
+
+        # Default: http/protobuf — same /v1/metrics suffixing as
+        # make_metric_exporter() so the single implicit target in
+        # setup_telemetry() is byte-for-byte the pre-FEAT-705 endpoint.
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (  # noqa: PLC0415
+            OTLPMetricExporter,
+        )
+
+        endpoint = f"{target.endpoint.rstrip('/')}/v1/metrics"
+        headers = target.headers or None
+        exporters.append(OTLPMetricExporter(endpoint=endpoint, headers=headers))
+    return exporters
 
 
 def make_metric_exporter(config: ObservabilityConfig) -> Any:

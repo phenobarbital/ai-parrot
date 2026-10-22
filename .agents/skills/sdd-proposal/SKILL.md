@@ -17,7 +17,7 @@ Use this skill when the user asks to run `sdd-proposal`, turn a ticket into a
 proposal, research a bug report before spec writing, or resume proposal
 research.
 
-Codex invocation: `$sdd-proposal <source> [--mode=investigation|enrichment] [--budget=tight|default|loose] [--no-gate]`.
+Codex invocation: `$sdd-proposal <source> [--mode=investigation|enrichment] [--budget=tight|default|loose] [--no-gate] [--no-parallel]`.
 
 ## Purpose
 
@@ -62,6 +62,10 @@ Budget profiles:
 | default | 40 | 25 | 10 | 2 | 300 |
 | loose | 100 | 60 | 20 | 3 | 900 |
 
+`default`/`loose` may split Phase 2 into codebase/git/wiki lanes on hosts with
+forks (Claude Code). Codex has no forks: research always runs sequentially and
+`--no-parallel` is accepted as a no-op.
+
 ## Workflow
 
 1. Resolve or resume:
@@ -86,6 +90,7 @@ Budget profiles:
    - Include wiki, grep, read, git log, and tree queries as appropriate.
    - Present the plan unless `--no-gate` was supplied.
 5. Execute research:
+   - Sequential here (no forks). Findings are `FNNN`; no lane merge step.
    - Wiki queries are free against the budget.
    - Use `rg` for grep-style searches.
    - Read files before citing symbols.

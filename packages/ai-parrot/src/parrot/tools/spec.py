@@ -56,14 +56,47 @@ class NormalizedTooling(BaseModel):
     mcp_servers: list[AgentMCPServerSpec] = Field(default_factory=list)
 
 
-def toolkit_vault_name(slug: str, agent_name: str) -> str:
-    """Return ``f"toolkit_{slug}_{agent_name}"``."""
-    return f"toolkit_{slug}_{agent_name}"
+def toolkit_vault_name(slug: str, agent_ref: str) -> str:
+    """Return ``f"toolkit_{slug}_{agent_ref}"`` (agent_ref = tooling ref; a legacy agent's ref is its name)."""
+    return f"toolkit_{slug}_{agent_ref}"
 
 
-def mcp_vault_name(server: str, agent_name: str) -> str:
-    """Return ``f"mcp_agent_{server}_{agent_name}"`` (never collides with per-user ``mcp_``)."""
-    return f"mcp_agent_{server}_{agent_name}"
+def mcp_vault_name(server: str, agent_ref: str) -> str:
+    """Return ``f"mcp_agent_{server}_{agent_ref}"`` (never collides with per-user ``mcp_``)."""
+    return f"mcp_agent_{server}_{agent_ref}"
+
+
+def toolkit_override_vault_name(slug: str, agent_ref: str) -> str:
+    """Per-user override vault name (spec §2.5c): ``f"toolkit_{slug}_{agent_ref}_user"``."""
+    return f"toolkit_{slug}_{agent_ref}_user"
+
+
+def agent_tooling_ref(bot: Any) -> str:
+    """Immutable tooling identity: ``bot._tooling_ref`` for Studio agents, else ``bot.name`` (legacy)."""
+    return getattr(bot, "_tooling_ref", None) or bot.name
+
+
+def _canonicalize_spec_slug(spec: ToolkitSpec) -> ToolkitSpec:
+    """Rewrite a class-name alias slug (``"JiraToolkit"``) to its canonical slug (``"jira"``).
+
+    Vault names (``toolkit_{slug}_{agent_ref}``) and tenant tooling policies key off
+    ``spec.slug``, so the alias is normalized where specs are created — resolution,
+    secret hydration and policy prechecks then all see one canonical slug. Unknown
+    slugs pass through untouched; they are reported at registration time.
+    """
+    # Local import: ``resolver`` imports ``discovery``/``toolkit`` which import this module.
+    from parrot.tools.resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
+
+    try:
+        canonical = get_toolkit_resolver().canonical_slug(spec.slug)
+    except Exception:  # resolver build problems must never break config normalization
+        logger.debug("Toolkit resolver unavailable while normalizing slug %r", spec.slug, exc_info=True)
+        return spec
+    if canonical is None or canonical == spec.slug:
+        return spec
+    if canonical.lower() != spec.slug.lower():
+        logger.warning("Toolkit slug %r normalized to canonical slug %r (class-name alias)", spec.slug, canonical)
+    return spec.model_copy(update={"slug": canonical})
 
 
 def normalize_tooling(
@@ -93,6 +126,7 @@ def normalize_tooling(
             logger.warning("Dropping invalid toolkit specification")
             return
 
+        spec = _canonicalize_spec_slug(spec)
         key = spec.slug.lower()
         if key in specs:
             logger.warning("Duplicate toolkit specification for slug %s; using the last entry", spec.slug)
@@ -186,6 +220,10 @@ async def hydrate_mcp(spec: AgentMCPServerSpec) -> dict[str, Any]:
     """Return ``MCPServerConfig`` kwargs with headers/auth_config/env restored from the vault."""
     base = spec.model_dump(exclude={"params", "secret_refs", "vault_owner"}, exclude_none=True)
     base.update(spec.params)
+    foreign = sorted(field for field in spec.secret_refs if field not in MCP_SECRET_FIELDS)
+    if foreign:
+        # FEAT-622: vault values may fill only headers/auth_config/env; never transport/command/etc.
+        raise ValueError(f"MCP secret_refs may only reference {MCP_SECRET_FIELDS}: {foreign}")
     grouped_fields: dict[str, list[str]] = {}
     for field, vault_name in spec.secret_refs.items():
         grouped_fields.setdefault(vault_name, []).append(field)

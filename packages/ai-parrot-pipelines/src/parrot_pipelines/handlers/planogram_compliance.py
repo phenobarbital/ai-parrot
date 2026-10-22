@@ -188,6 +188,9 @@ class PlanogramComplianceHandler(BaseView):
                     else:
                         shelf_results.append(str(cr))
                 serialisable["shelf_results"] = shelf_results
+                serialisable["products_found"] = [
+                    presence.model_dump(mode="json") for presence in result.get("products_found", [])
+                ]
 
                 return serialisable
             finally:

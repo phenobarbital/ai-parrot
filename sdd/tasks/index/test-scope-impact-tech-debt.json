@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-01T01:35:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-01T16:10:22+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,9 +24,10 @@
       "parallelism_notes": "No dependencies. Owns impact.py and the DEFAULT_CORE_FANIN_THRESHOLD line of policy.py; TASK-3920 also edits policy.py and depends on this task, so the two never run concurrently.",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3919-direct-importer-core-metric.md"
+      "started_at": "2026-10-01T01:28:56.968052+00:00",
+      "completed_at": "2026-10-01T01:30:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3919-direct-importer-core-metric.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3920",
@@ -35,17 +36,20 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3919"],
+      "depends_on": [
+        "TASK-3919"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-3919 (packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/policy.py), and its generator reproduces source_fanin's direct count from TASK-3919 (impact.py#source_fanin).",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3920-regenerate-core-paths.md"
+      "started_at": "2026-10-01T01:31:49.021209+00:00",
+      "completed_at": "2026-10-01T01:37:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3920-regenerate-core-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3921",
@@ -54,17 +58,20 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3920"],
+      "depends_on": [
+        "TASK-3920"
+      ],
       "parallel": true,
       "parallelism_notes": "Must state the regenerated CORE_PATHS entry count, which only exists after TASK-3920 runs its generator against policy.py.",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3921-core-detection-docs.md"
+      "started_at": "2026-10-01T01:37:45.699010+00:00",
+      "completed_at": "2026-10-01T01:39:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3921-core-detection-docs.md",
+      "verification": "verified"
     }
   ]
 }

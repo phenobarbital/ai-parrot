@@ -58,6 +58,7 @@ from ..parser import parse_response, ParsedResponse
 from ..media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ...auth.context import UserContext
 from ...models.outputs import OutputMode
+from parrot.skills.tenancy import set_active_skill
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -285,6 +286,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
+
+        # ─── Knowledge upload (FEAT-647) — before generic text/document handlers ───
+        self._knowledge_upload = None
+        if self.config.knowledge_upload.enabled:
+            from .knowledge_upload import TelegramKnowledgeUpload
+
+            self._knowledge_upload = TelegramKnowledgeUpload(self)
+            self._add_platform_commands(self._knowledge_upload.register(self.router))
 
         # ─── Operator Commands (FEAT-210) — before generic text handler ───
         # Must be registered here, before the generic message handler so that
@@ -1259,6 +1268,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         session: TelegramUserSession,
         chat_id: Optional[int] = None,
         bot_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
@@ -1292,7 +1302,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return None
         user_session = UserSession(
             user_id=str(session.telegram_id),
-            tenant_id="default",
+            tenant_id=tenant_id or "default",
             roles=frozenset(),
         )
         extra: Dict[str, Any] = {
@@ -1338,6 +1348,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             metadata["jira_account_id"] = session.jira_account_id
         if session.jira_cloud_id:
             metadata["jira_cloud_id"] = session.jira_cloud_id
+        if self.config.tenant:
+            metadata["tenant"] = self.config.tenant
         return UserContext(
             channel="telegram",
             user_id=session.user_id,
@@ -1478,7 +1490,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         agent, user_tm = await self._resolve_agent_for_request(session, message=message)
         chat_id = message.chat.id if message is not None else None
-        permission_context = self._build_permission_context(session, chat_id=chat_id, bot_id=self._bot_id)
+        permission_context = self._build_permission_context(
+            session,
+            chat_id=chat_id,
+            bot_id=self._bot_id,
+            tenant_id=self.config.tenant,
+        )
         enriched = self._enrich_question(question, session)
 
         timeout = self.config.agent_timeout
@@ -1510,6 +1527,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             memory=memory,
                             output_mode=output_mode,
                             permission_context=permission_context,
+                            tenant=self.config.tenant,
                             attachments=attachments,
                         ),
                         timeout=timeout,
@@ -1536,6 +1554,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 memory=memory,
                 output_mode=output_mode,
                 permission_context=permission_context,
+                tenant=self.config.tenant,
                 attachments=attachments,
             ),
             timeout=timeout,
@@ -1943,7 +1962,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         seen: set[str] = set()
 
         # File-based skills (SkillFileRegistry) — eager, synchronous listing.
-        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        view_fn = getattr(self.agent, "current_skill_view", None)
+        try:
+            file_registry = view_fn(self.config.tenant) if callable(view_fn) else None
+        except ValueError as exc:
+            self.logger.debug("Failed to resolve tenant skill view: %s", exc)
+            return skills
+        if file_registry is None:
+            file_registry = getattr(self.agent, "_skill_file_registry", None)
         if file_registry is not None and hasattr(file_registry, "list_skills"):
             try:
                 for skill in file_registry.list_skills():
@@ -1988,7 +2014,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         Tries an exact name match first, then a trigger match (with or without a
         leading ``/``). Returns ``None`` when no file skill matches.
         """
-        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        view_fn = getattr(self.agent, "current_skill_view", None)
+        try:
+            file_registry = view_fn(self.config.tenant) if callable(view_fn) else None
+        except ValueError as exc:
+            self.logger.debug("Failed to resolve tenant skill view: %s", exc)
+            return None
+        if file_registry is None:
+            file_registry = getattr(self.agent, "_skill_file_registry", None)
         if file_registry is None:
             return None
 
@@ -2072,10 +2105,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 if skill_def is not None:
                     # Activate the file skill so its body is injected as a
                     # transient prompt layer for this single ask().
-                    self.agent._active_skill = skill_def
+                    set_active_skill(skill_def)
                     response = await self.agent.ask(
                         question,
                         output_mode=OutputMode.TELEGRAM,
+                        tenant=self.config.tenant,
                     )
                 else:
                     # DB-backed skill: prepend the skill body as instruction.
@@ -2470,7 +2504,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Format and send result using parsed response
             parsed = self._parse_response(result)
-            await self._send_parsed_response(message, parsed, prefix=f"✅ *{method_name}* result:\n\n")
+            # The method name goes in a code span, not in ``*bold*``: a name
+            # like ``report_resolved_tickets`` is two italic markers to
+            # Markdown v1, which swallows the underscores (see
+            # :meth:`_parse_response`). The prefix is prepended verbatim, so
+            # it has to be written in the mode it will be sent in.
+            label = f"<code>{method_name}</code>" if self.config.use_html else f"`{method_name}`"
+            await self._send_parsed_response(message, parsed, prefix=f"✅ {label} result:\n\n")
 
         except Exception as e:
             typing_task.cancel()
@@ -3300,6 +3340,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if self._synthesizer is not None:
             await self._synthesizer.close()
             self._synthesizer = None
+        # FEAT-647: cancel running knowledge-upload jobs (their finally deletes staged files)
+        if getattr(self, "_knowledge_upload", None) is not None:
+            await self._knowledge_upload.shutdown()
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
@@ -3566,8 +3609,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     self.logger.debug("Could not delete temp file %s: %s", tmp_path, exc)
 
     def _parse_response(self, response: Any) -> ParsedResponse:
-        """Parse agent response into structured content."""
-        return parse_response(response)
+        """Parse agent response into structured content.
+
+        A raw ``dict``/``list``/``tuple`` result — what ``/call`` and the
+        agent's report methods return — is rendered as a **code block**
+        rather than as prose. Telegram's legacy Markdown parser reads the
+        ``_`` in a key like ``window_hours`` as an italic marker: an odd
+        number of them makes the API reject the whole message
+        ("Bad Request: can't parse entities: Can't find end of the entity
+        starting at byte offset N") and an even number silently eats the
+        underscores, so ``ticket_count`` arrives as ``ticketcount``. A code
+        block is inert in both parse modes and keeps the payload readable.
+
+        ``default=str`` so a payload holding a ``datetime`` (or any other
+        non-JSON value) still renders instead of raising.
+        """
+        parsed = parse_response(response)
+        if isinstance(response, (dict, list, tuple)) and not parsed.has_code:
+            try:
+                parsed.code = json.dumps(response, indent=2, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):  # pragma: no cover — defensive
+                parsed.code = repr(response)
+            parsed.code_language = "json"
+            parsed.text = ""
+        return parsed
 
     def _extract_response_text(self, response: Any) -> str:
         """Extract text content from agent response (backward compatibility)."""

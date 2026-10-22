@@ -27,15 +27,20 @@ Notes:
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Sequence, Union, Literal, TypedDict
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, TypedDict, Union
 import os
 import re
 import logging
 import asyncio
 import importlib
+import aiohttp
 from datetime import datetime
 from pydantic import BaseModel, Field
 import pandas as pd
+from jinja2 import TemplateNotFound  # noqa: F401
+from jinja2 import meta as jinja_meta  # noqa: F401
+from jinja2 import nodes as jinja_nodes
 
 try:
     # Optional config source; fall back to env vars if missing
@@ -50,11 +55,40 @@ except ImportError as e:  # pragma: no cover - optional
     raise ImportError("Please install the 'jira' package: pip install jira") from e
 
 from parrot.tools.manager import ToolManager
+from parrot.interfaces.file.session import SessionFileError, SessionFileStore
+from parrot.utils.helpers import current_context
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
+from .jira_kb import JiraKnowledgeBase
+from .jira_local_auth import FileTokenCredentialResolver
+from parrot.auth.jira_oauth import fetch_accessible_resources
+
+#: Suffix every Jira text template file carries.
+_TEMPLATE_SUFFIX = ".j2"
+#: Jira Cloud limit for description and comment text fields.
+_MAX_JIRA_TEXT_CHARS = 32_767
+#: Appended (inside the cap) when rendered text is truncated.
+_TRUNCATION_MARKER = "\n\n... (truncated)"
+#: Stdlib-only extensions: the engine default pulls undeclared third-party packages.
+_JIRA_TEMPLATE_EXTENSIONS = ("jinja2.ext.do", "jinja2.ext.loopcontrols")
+
+
+class JiraTemplateError(ValueError):
+    """A Jira text template could not be applied.
+
+    Raised for missing variables, an empty render, a conflicting
+    ``fields['description']``, an invalid name, or a template requested while
+    no templates are configured.
+    """
+
+
+class JiraTemplateNotFound(JiraTemplateError):
+    """An explicitly requested template name does not exist in any loader."""
+
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
@@ -358,11 +392,84 @@ class TransitionToInput(BaseModel):
     )
 
 
+#: Default pre-flight limit used only when discovery fails.
+DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+#: Maximum characters of Jira diagnostic text returned to the model.
+MAX_ATTACHMENT_DETAIL_CHARS = 500
+
+AttachmentErrorCode = Literal[
+    "unknown_handle",
+    "internal_error",
+    "no_session",
+    "outside_sandbox",
+    "missing_file",
+    "empty_file",
+    "too_large",
+    "forbidden",
+    "rejected",
+    "transport_error",
+]
+
+
+def _bounded_detail(text: Any) -> str:
+    """Collapse *text* to one bounded line safe to hand back to the model.
+
+    A Jira error body can be a multi-kilobyte HTML page; ``error_code`` is the stable
+    signal, this is only for a human reading the transcript.
+
+    Args:
+        text: Any diagnostic value; converted with ``str()``.
+
+    Returns:
+        A single-line string of at most ``MAX_ATTACHMENT_DETAIL_CHARS`` characters.
+    """
+    flat = " ".join(str(text).split())
+    if len(flat) > MAX_ATTACHMENT_DETAIL_CHARS:
+        flat = flat[: MAX_ATTACHMENT_DETAIL_CHARS - 1].rstrip() + "\u2026"
+    return flat
+
+
+class AttachmentResult(BaseModel):
+    """Outcome for exactly ONE input handle. One entry per input, order preserved."""
+
+    file_id: str
+    ok: bool
+    filename: Optional[str] = None
+    attachment_id: Optional[str] = None
+    size: Optional[int] = None
+    error_code: Optional[AttachmentErrorCode] = None
+    detail: Optional[str] = None
+
+
+class JiraAttachmentReport(BaseModel):
+    """Shared envelope returned by BOTH attachment-bearing tools."""
+
+    issue: str
+    attachments: List[AttachmentResult]
+    attached: int
+    failed: int
+
+
+class JiraCommentReport(BaseModel):
+    """jira_add_comment result: comment and attachment outcomes are INDEPENDENT."""
+
+    issue: str
+    comment: Dict[str, Any]
+    comment_ok: bool
+    attachments: List[AttachmentResult]
+    attached: int
+    failed: int
+
+
 class AddAttachmentInput(BaseModel):
     """Input for adding an attachment to an issue."""
 
     issue: str = Field(description="Issue key or id")
-    attachment: str = Field(description="Path to attachment file on disk")
+    file_ids: List[str] = Field(
+        description=(
+            "Session file handles to attach, from sf_list_session_files. " "Filesystem paths and URLs are not accepted."
+        )
+    )
 
 
 class AssignIssueInput(BaseModel):
@@ -403,6 +510,18 @@ class CreateIssueInput(BaseModel):
         description="Additional fields dict for custom or less common fields",
         json_schema_extra={"x-exclude-form": True},
     )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class UpdateIssueInput(BaseModel):
@@ -435,6 +554,18 @@ class UpdateIssueInput(BaseModel):
 
     # Generic fields for any other updates
     fields: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary field updates dict")
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class FindIssuesByAssigneeInput(BaseModel):
@@ -456,14 +587,27 @@ class AddCommentInput(BaseModel):
     """Input for adding a comment to an issue."""
 
     issue: str = Field(description="Issue key or id")
-    body: str = Field(description="Comment body text")
+    body: Optional[str] = Field(default=None, description="Comment body text (required unless a template applies)")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
-    attachments: Optional[List[str]] = Field(
+    file_ids: Optional[List[str]] = Field(
         default=None,
         description=(
-            "Optional list of file paths (images or other files) to attach to the issue "
-            "alongside this comment. Files are attached at the issue level."
+            "Optional session file handles to attach to the issue alongside this "
+            "comment, from sf_list_session_files. Files are attached at the issue "
+            "level. Filesystem paths and URLs are not accepted."
         ),
+    )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
     )
 
 
@@ -497,6 +641,12 @@ class SearchUsersInput(BaseModel):
 
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
+
+
+class ListTemplatesInput(BaseModel):
+    """Input for listing available Jira text templates."""
+
+    project: Optional[str] = Field(default=None, description="Only templates under this project folder, e.g. 'NAV'")
 
 
 class VerifyAuthInput(BaseModel):
@@ -583,6 +733,32 @@ class SetAcceptanceCriteriaInput(BaseModel):
     )
 
 
+class CreateIssueLinkInput(BaseModel):
+    """Input for creating a link between two Jira issues."""
+
+    inward_issue: str = Field(..., description="Issue key of the inward issue (e.g. 'PROJ-1')")
+    outward_issue: str = Field(..., description="Issue key of the outward issue (e.g. 'PROJ-2')")
+    link_type: str = Field("Relates", description="Link type name (e.g. 'Blocks', 'Relates')")
+    comment: Optional[str] = Field(None, description="Optional comment on the link")
+
+
+class GetCreateFieldsInput(BaseModel):
+    """Input for retrieving issue creation field metadata."""
+
+    issue_type: str = Field(..., description="Issue type name or id")
+    project: Optional[str] = Field(None, description="Project key (uses default_project if omitted)")
+
+
+class EditCommentInput(BaseModel):
+    """Input for replacing an existing Jira comment."""
+
+    issue: str = Field(..., description="Issue key (e.g. 'PROJ-123')")
+    comment_id: str = Field(..., description="Comment id to edit")
+    body: Optional[str] = Field(None, description="New comment body (plain text or ADF)")
+    template: Optional[str] = Field(None, description="Template name (FEAT-637)")
+    template_params: Optional[Dict[str, Any]] = Field(None, description="Template parameters")
+
+
 class ConfigureClientInput(BaseModel):
     """Input for re-configuring the Jira client."""
 
@@ -620,7 +796,7 @@ class JiraToolkit(AbstractToolkit):
     Recognized config/env keys:
         JIRA_SERVER_URL, JIRA_AUTH_TYPE, JIRA_USERNAME, JIRA_PASSWORD, JIRA_TOKEN,
         JIRA_OAUTH_CONSUMER_KEY, JIRA_OAUTH_KEY_CERT, JIRA_OAUTH_ACCESS_TOKEN,
-        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT
+        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT, JIRA_TEMPLATES_DIR
 
     Custom-workflow keys (used by :meth:`jira_transition_to`):
         JIRA_WORKFLOW_PATH — default ordered status chain for any project,
@@ -710,6 +886,9 @@ class JiraToolkit(AbstractToolkit):
         credential_resolver: Any = None,
         workflow_paths: Optional[Dict[str, Union[str, List[str]]]] = None,
         verify_credentials: bool = True,
+        templates_dir: Optional[Union[str, Path]] = None,
+        templates: Optional[Mapping[str, str]] = None,
+        knowledge_base: Optional[Union[str, Path, JiraKnowledgeBase]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -741,6 +920,14 @@ class JiraToolkit(AbstractToolkit):
         else:
             self.auth_type = None  # type: ignore[assignment]
 
+        if self.auth_type == "oauth2_local":
+            if credential_resolver is None:
+                credential_resolver = FileTokenCredentialResolver.from_env()
+            self.auth_type = "oauth2_3lo"
+            self._local_single_user = True
+        else:
+            self._local_single_user = False
+
         # For oauth2_3lo the server URL is resolved per-user at runtime via the
         # CredentialResolver, so ``server_url`` is optional. Explicit static
         # modes validate it in the client-init block below.
@@ -770,6 +957,50 @@ class JiraToolkit(AbstractToolkit):
         self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
+
+        # FEAT-637 — Jira text templates. Explicit kwarg > navconfig/env.
+        # A configured path that is not a directory is dropped with a WARNING
+        # so a typo is diagnosable but never breaks toolkit construction.
+        _tpl_dir = templates_dir or _cfg("JIRA_TEMPLATES_DIR")
+        self.templates_dir: Optional[Path] = None
+        if _tpl_dir:
+            _candidate = Path(_tpl_dir).expanduser()
+            if _candidate.is_dir():
+                self.templates_dir = _candidate.resolve()
+            else:
+                self.logger.warning("Jira templates_dir %s is not a directory; ignoring it", _candidate)
+        self._inline_templates: Dict[str, str] = dict(templates or {})
+        self._template_engine: Optional[TemplateEngine] = None
+        # Per-template undeclared-variable analysis: the variable names plus the
+        # loader ``uptodate`` probes of every source it was parsed from, so an
+        # edited file or overridden inline template invalidates the entry.
+        self._template_variables_cache: Dict[str, tuple[frozenset[str], tuple[Callable[[], bool], ...]]] = {}
+
+        # FEAT-696 — site structure cache. A KB is advisory: construction and
+        # live Jira access continue when its path is absent, invalid, or for a
+        # different site.
+        self._kb: Optional[JiraKnowledgeBase] = None
+        self._kb_path: Optional[str] = None
+        _kb_source = knowledge_base or _cfg("JIRA_KB_PATH")
+        if isinstance(_kb_source, JiraKnowledgeBase):
+            self._kb = _kb_source
+            self._kb_path = "<provided>"
+        elif _kb_source:
+            self._kb_path = str(_kb_source)
+            try:
+                self._kb = JiraKnowledgeBase.load(_kb_source)
+            except (OSError, ValueError) as exc:
+                self.logger.warning("Could not load Jira knowledge base %s: %s", _kb_source, exc)
+
+        if self._kb is not None and self.server_url:
+            if self._kb.site.rstrip("/") != self.server_url.rstrip("/"):
+                self.logger.warning(
+                    "Ignoring Jira knowledge base %s: site %s does not match server %s",
+                    self._kb_path,
+                    self._kb.site,
+                    self.server_url,
+                )
+                self._kb = None
 
         # Declared workflow paths — the ordered status chain for a project's
         # custom Jira workflow. Jira's API only exposes the transitions
@@ -852,6 +1083,27 @@ class JiraToolkit(AbstractToolkit):
         if verify_credentials:
             self._verify_static_credentials()
 
+    def _get_template_engine(self) -> Optional[TemplateEngine]:
+        """Return the lazily built Jira-safe template engine.
+
+        Returns:
+            ``None`` when neither ``templates_dir`` nor inline ``templates`` are
+            configured; otherwise a cached ``TemplateEngine`` with autoescape
+            disabled (Jira wiki markup is not HTML) and ``StrictUndefined``.
+        """
+        if self._template_engine is not None:
+            return self._template_engine
+        if self.templates_dir is None and not self._inline_templates:
+            return None
+        engine = TemplateEngine(
+            template_dirs=[self.templates_dir] if self.templates_dir else None,
+            config=JinjaConfig(autoescape=False, extensions=list(_JIRA_TEMPLATE_EXTENSIONS)),
+        )
+        if self._inline_templates:
+            engine.add_templates(self._inline_templates)
+        self._template_engine = engine
+        return engine
+
     def _verify_static_credentials(self) -> None:
         """Probe ``/myself`` and fail fast on rejected static credentials.
 
@@ -904,6 +1156,62 @@ class JiraToolkit(AbstractToolkit):
             "and update JIRA_USERNAME / JIRA_API_TOKEN, or pass "
             "verify_credentials=False to skip this check."
         )
+
+    async def _max_attachment_bytes(self) -> int:
+        """Resolve this deployment's attachment size limit, cached per client.
+
+        ``JIRA_MAX_ATTACHMENT_BYTES`` wins when set. Otherwise asks the live
+        deployment via ``self.jira.attachment_meta()["uploadLimit"]``, which is
+        correct for Cloud and Server/DC alike. A failed or malformed probe logs a
+        WARNING and falls back to ``DEFAULT_MAX_ATTACHMENT_BYTES``. Never raises.
+
+        Returns:
+            The maximum attachment size in bytes.
+        """
+        raw: Optional[str] = None
+        if (nav_config is not None) and hasattr(nav_config, "get"):
+            try:
+                val = nav_config.get("JIRA_MAX_ATTACHMENT_BYTES")
+                raw = str(val) if val is not None else None
+            except Exception:  # noqa: BLE001 - config lookup must never raise
+                raw = None
+        if raw is None:
+            raw = os.getenv("JIRA_MAX_ATTACHMENT_BYTES")
+        if raw:
+            try:
+                override = int(str(raw).strip())
+                if override > 0:
+                    return override
+            except (TypeError, ValueError):
+                self.logger.warning("Ignoring invalid JIRA_MAX_ATTACHMENT_BYTES=%r", raw)
+
+        client = getattr(self, "jira", None)
+        if client is None:
+            self.logger.warning(
+                "No Jira client to probe attachment limit; using default %d bytes",
+                DEFAULT_MAX_ATTACHMENT_BYTES,
+            )
+            return DEFAULT_MAX_ATTACHMENT_BYTES
+
+        cache = self.__dict__.setdefault("_attachment_limit_cache", {})
+        key = id(client)
+        cached = cache.get(key)
+        if cached is not None and cached[0] is client:
+            return cached[1]
+        try:
+            meta = await asyncio.to_thread(client.attachment_meta)
+            limit = int(meta["uploadLimit"])
+            if limit <= 0:
+                raise ValueError(f"non-positive uploadLimit {limit}")
+        except Exception as exc:  # noqa: BLE001 - discovery never raises
+            self.logger.warning(
+                "Attachment limit discovery failed (%s); using default %d bytes",
+                _bounded_detail(exc),
+                DEFAULT_MAX_ATTACHMENT_BYTES,
+            )
+            return DEFAULT_MAX_ATTACHMENT_BYTES
+        cache[key] = (client, limit)
+        return limit
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""
@@ -1018,30 +1326,45 @@ class JiraToolkit(AbstractToolkit):
             return None
 
         perm_ctx = kwargs.get("_permission_context")
-        if perm_ctx is None:
-            raise AuthorizationRequired(
-                tool_name=tool_name,
-                message=(
-                    "Permission context is required for Jira OAuth 2.0 (3LO) "
-                    "tools. The call must be routed through ToolManager with "
-                    "a populated PermissionContext."
-                ),
-                provider="jira",
-                scopes=list(self._OAUTH_SCOPES),
-            )
+        if self._local_single_user:
+            if perm_ctx is not None:
+                channel = getattr(perm_ctx, "channel", None) or "unknown"
+                if channel not in self.credential_resolver.allowed_channels:
+                    raise AuthorizationRequired(
+                        tool_name=tool_name,
+                        message="Local Jira OAuth credentials are not available for this channel.",
+                        provider="jira",
+                        scopes=list(self._OAUTH_SCOPES),
+                    )
+            channel = "cli"
+            user_id = "local"
+            user_key = "local:cli"
+            token_set = await self.credential_resolver.resolve(channel, user_id)
+        else:
+            if perm_ctx is None:
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message=(
+                        "Permission context is required for Jira OAuth 2.0 (3LO) "
+                        "tools. The call must be routed through ToolManager with "
+                        "a populated PermissionContext."
+                    ),
+                    provider="jira",
+                    scopes=list(self._OAUTH_SCOPES),
+                )
 
-        user_id = getattr(perm_ctx, "user_id", None)
-        channel = getattr(perm_ctx, "channel", None) or "unknown"
-        if not user_id:
-            raise AuthorizationRequired(
-                tool_name=tool_name,
-                message="Cannot resolve Jira credentials without a user_id.",
-                provider="jira",
-                scopes=list(self._OAUTH_SCOPES),
-            )
+            user_id = getattr(perm_ctx, "user_id", None)
+            channel = getattr(perm_ctx, "channel", None) or "unknown"
+            if not user_id:
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message="Cannot resolve Jira credentials without a user_id.",
+                    provider="jira",
+                    scopes=list(self._OAUTH_SCOPES),
+                )
 
-        user_key = f"{channel}:{user_id}"
-        token_set = await self.credential_resolver.resolve(channel, user_id)
+            user_key = f"{channel}:{user_id}"
+            token_set = await self.credential_resolver.resolve(channel, user_id)
         if token_set is None:
             try:
                 auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
@@ -1610,6 +1933,316 @@ class JiraToolkit(AbstractToolkit):
             return prefix.upper() or None
         return None
 
+    # ── FEAT-637: Jira text templates ─────────────────────────────────────
+    @staticmethod
+    def _validate_template_name(name: str) -> str:
+        """Reject traversal-shaped names; return the name unchanged otherwise.
+
+        Raises:
+            JiraTemplateError: name contains ``..``, starts with ``/`` or contains ``\\``.
+        """
+        if ".." in name or name.startswith("/") or "\\" in name:
+            raise JiraTemplateError(f"invalid Jira template name: {name!r}")
+        return name
+
+    @classmethod
+    def _template_candidates(
+        cls, kind: Literal["create", "update", "comment"], project: Optional[str], issuetype: Optional[str]
+    ) -> List[str]:
+        """Return ordered, lower-cased convention candidates for ``kind``.
+
+        ``project`` and ``issuetype`` become path segments of the candidate
+        names, so every candidate passes the same traversal check as an
+        explicit ``template=`` (defence in depth on top of Jinja's own
+        ``split_template_path`` rejection of ``..`` segments).
+
+        Args:
+            kind: Jira write operation being rendered.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type for create operations.
+
+        Returns:
+            Candidate template names in convention lookup order.
+
+        Raises:
+            JiraTemplateError: ``project`` or ``issuetype`` yields a traversal-shaped name.
+        """
+        project_name = project.lower() if project else None
+        issue_type_name = issuetype.lower() if issuetype else None
+        if kind == "create":
+            candidates = []
+            if project_name and issue_type_name:
+                candidates.append(f"{project_name}/{issue_type_name}{_TEMPLATE_SUFFIX}")
+            if project_name:
+                candidates.append(f"{project_name}/_default{_TEMPLATE_SUFFIX}")
+            candidates.append(f"_default{_TEMPLATE_SUFFIX}")
+        elif kind == "update":
+            candidates = (
+                [f"{project_name}/update{_TEMPLATE_SUFFIX}", f"update{_TEMPLATE_SUFFIX}"]
+                if project_name
+                else [f"update{_TEMPLATE_SUFFIX}"]
+            )
+        else:
+            candidates = (
+                [f"{project_name}/comment{_TEMPLATE_SUFFIX}", f"comment{_TEMPLATE_SUFFIX}"]
+                if project_name
+                else [f"comment{_TEMPLATE_SUFFIX}"]
+            )
+        return [cls._validate_template_name(candidate) for candidate in candidates]
+
+    @staticmethod
+    def _build_template_context(
+        call_fields: Dict[str, Any], template_params: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Build flat template context with params taking precedence.
+
+        Args:
+            call_fields: Frozen fields supplied by the Jira write path.
+            template_params: Optional caller-provided context overrides.
+
+        Returns:
+            A combined context suitable for template rendering.
+        """
+        context = dict(call_fields)
+        context.update(template_params or {})
+        return context
+
+    def _guard_text_length(self, text: str, *, field: str) -> str:
+        """Truncate ``text`` to the Jira cap with a marker inside the cap.
+
+        Args:
+            text: Rendered Jira text.
+            field: Jira field receiving the text, used in diagnostics.
+
+        Returns:
+            The original or safely truncated Jira text.
+        """
+        if len(text) <= _MAX_JIRA_TEXT_CHARS:
+            return text
+        self.logger.warning("Rendered Jira %s is %d chars > %d; truncating", field, len(text), _MAX_JIRA_TEXT_CHARS)
+        return text[: _MAX_JIRA_TEXT_CHARS - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
+
+    def _resolve_template_name(
+        self,
+        engine: TemplateEngine,
+        kind: str,
+        template: Optional[str],
+        project: Optional[str],
+        issuetype: Optional[str],
+    ) -> Optional[str]:
+        """Resolve an explicit or convention-based template name.
+
+        Args:
+            engine: Configured Jira template engine.
+            kind: Jira write operation being rendered.
+            template: Explicit template name, if supplied.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            The first existing logical template name, or ``None`` when no
+            convention candidate exists.
+
+        Raises:
+            JiraTemplateNotFound: An explicit template resolves to nothing.
+        """
+        if template is not None:
+            name = self._validate_template_name(template)
+            candidates = [name] if name.endswith(_TEMPLATE_SUFFIX) else [name, f"{name}{_TEMPLATE_SUFFIX}"]
+            for candidate in candidates:
+                try:
+                    engine.env.get_template(candidate)
+                except TemplateNotFound:
+                    continue
+                return candidate
+            raise JiraTemplateNotFound(f"Jira template {template!r} was not found")
+
+        for candidate in self._template_candidates(kind, project, issuetype):
+            try:
+                engine.env.get_template(candidate)
+            except TemplateNotFound:
+                continue
+            return candidate
+        return None
+
+    @staticmethod
+    def _collect_template_variables(
+        engine: TemplateEngine, name: str
+    ) -> tuple[frozenset[str], tuple[Callable[[], bool], ...]]:
+        """Parse ``name`` plus every ``include``/``extends`` target and collect undeclared variables.
+
+        Included and extended templates render with the parent's context, so
+        their variables are part of the parent's contract. ``import``/``from``
+        targets are *not* followed: macros do not receive the context unless
+        imported ``with context``, so their names would be false positives.
+        Synchronous (loader file I/O and Jinja parsing) — callers offload it.
+
+        Args:
+            engine: Configured Jira template engine.
+            name: Resolved logical template name.
+
+        Returns:
+            The undeclared variable names, and the loader ``uptodate`` probes
+            of every source that was parsed (for cache invalidation).
+
+        Raises:
+            JiraTemplateError: A statically named ``include``/``extends`` target does not exist.
+            TemplateNotFound: ``name`` itself does not exist.
+        """
+        env = engine.env
+        undeclared: set[str] = set()
+        probes: list[Callable[[], bool]] = []
+        seen: set[str] = set()
+        pending: list[tuple[str, bool]] = [(name, False)]
+        while pending:
+            current, optional = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            try:
+                source, _, uptodate = env.loader.get_source(env, current)
+            except TemplateNotFound:
+                if current == name:
+                    raise
+                if optional:  # ``{% include "x" ignore missing %}``
+                    continue
+                raise JiraTemplateError(f"template '{name}' references missing template '{current}'") from None
+            ast = env.parse(source, name=current)
+            undeclared |= jinja_meta.find_undeclared_variables(ast)
+            if uptodate is not None:
+                probes.append(uptodate)
+            for node in ast.find_all((jinja_nodes.Include, jinja_nodes.Extends)):
+                target = node.template
+                ignore_missing = bool(getattr(node, "ignore_missing", False))
+                if isinstance(target, jinja_nodes.Const) and isinstance(target.value, str):
+                    pending.append((target.value, ignore_missing))
+                elif isinstance(target, (jinja_nodes.List, jinja_nodes.Tuple)):
+                    # ``{% include ["a.j2", "b.j2"] %}`` — the first existing one renders.
+                    pending.extend(
+                        (item.value, True)
+                        for item in target.items
+                        if isinstance(item, jinja_nodes.Const) and isinstance(item.value, str)
+                    )
+                # Dynamic targets (``{% include var %}``) are only resolvable at render time.
+        return frozenset(undeclared), tuple(probes)
+
+    async def _assert_template_variables(self, engine: TemplateEngine, name: str, context: Dict[str, Any]) -> None:
+        """Reject templates whose undeclared variables are absent from context.
+
+        The analysis (including ``include``/``extends`` targets) is cached per
+        template name and re-done off the event loop only when a loader
+        ``uptodate`` probe reports a changed source.
+
+        Args:
+            engine: Configured Jira template engine.
+            name: Resolved logical template name.
+            context: Template rendering context.
+
+        Raises:
+            JiraTemplateError: One or more undeclared variables are missing, or a
+                referenced template does not exist.
+        """
+        cached = self._template_variables_cache.get(name)
+        if cached is None or not all(probe() for probe in cached[1]):
+            cached = await asyncio.to_thread(self._collect_template_variables, engine, name)
+            self._template_variables_cache[name] = cached
+        missing = sorted(cached[0] - set(context) - set(engine.env.globals))
+        if missing:
+            raise JiraTemplateError(f"template '{name}' is missing variables: {', '.join(missing)}")
+
+    async def _prepare_jira_template(
+        self,
+        kind: Literal["create", "update", "comment"],
+        *,
+        template: Optional[str],
+        template_params: Optional[Dict[str, Any]],
+        call_fields: Dict[str, Any],
+        project: Optional[str],
+        issuetype: Optional[str] = None,
+    ) -> Optional[tuple[TemplateEngine, str, Dict[str, Any]]]:
+        """Resolve the template and validate its variables without rendering or Jira I/O.
+
+        Args:
+            kind: Jira write operation being rendered.
+            template: Explicit template name, if supplied.
+            template_params: Optional caller-provided context overrides.
+            call_fields: Frozen fields supplied by the Jira write path.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            ``(engine, name, context)`` ready to render, or ``None`` when no
+            template applies and the caller's text passes through.
+
+        Raises:
+            JiraTemplateError: No configured engine, or missing variables.
+            JiraTemplateNotFound: An explicit template name cannot be resolved.
+        """
+        engine = self._get_template_engine()
+        if engine is None:
+            if template:
+                raise JiraTemplateError("a template was requested but no Jira templates are configured")
+            return None
+        name = self._resolve_template_name(engine, kind, template, project, issuetype)
+        if name is None:
+            return None
+        context = self._build_template_context(call_fields, template_params)
+        await self._assert_template_variables(engine, name, context)
+        return engine, name, context
+
+    async def _render_jira_text(
+        self,
+        kind: Literal["create", "update", "comment"],
+        *,
+        text: Optional[str],
+        template: Optional[str],
+        template_params: Optional[Dict[str, Any]],
+        call_fields: Dict[str, Any],
+        project: Optional[str],
+        issuetype: Optional[str] = None,
+    ) -> Optional[str]:
+        """Compose Jira text from a template without performing Jira I/O.
+
+        Args:
+            kind: Jira write operation being rendered.
+            text: Original Jira text for passthrough when no template applies.
+            template: Explicit template name, if supplied.
+            template_params: Optional caller-provided context overrides.
+            call_fields: Frozen fields supplied by the Jira write path.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            Rendered Jira text, or the original text when no template applies.
+
+        Raises:
+            JiraTemplateError: No configured engine, missing variables, a render-time
+                template error (undefined attribute, missing dynamic include, …), or empty render.
+            JiraTemplateNotFound: An explicit template name cannot be resolved.
+        """
+        prepared = await self._prepare_jira_template(
+            kind,
+            template=template,
+            template_params=template_params,
+            call_fields=call_fields,
+            project=project,
+            issuetype=issuetype,
+        )
+        if prepared is None:
+            return text
+        engine, name, context = prepared
+        try:
+            rendered = await engine.render(name, context)
+        except ValueError as exc:
+            # TemplateEngine.render wraps every jinja2.TemplateError (UndefinedError
+            # on a nested attribute, a dynamic include that does not exist, …) in
+            # ValueError; surface it under the toolkit's own error type.
+            raise JiraTemplateError(f"template '{name}' failed to render: {exc.__cause__ or exc}") from exc
+        if not rendered.strip():
+            raise JiraTemplateError(f"template '{name}' rendered empty Jira text")
+        self.logger.debug("Rendered Jira %s from template %s", kind, name)
+        return self._guard_text_length(rendered, field="body" if kind == "comment" else "description")
+
     def _workflow_path_for(self, issue: str) -> Optional[List[str]]:
         """Return the declared workflow path for *issue*'s project, or the default."""
         project = self._project_of(issue)
@@ -1743,19 +2376,213 @@ class JiraToolkit(AbstractToolkit):
                 ) from exc
         return result
 
+    def _session_store(self) -> SessionFileStore:
+        """Lazily build the session store shared by this toolkit instance.
+
+        The store is stateless per session, so one cached instance is safe.
+        """
+        store = getattr(self, "_session_file_store", None)
+        if store is None:
+            store = SessionFileStore()
+            self._session_file_store = store
+        return store
+
+    async def _preflight_session_files(
+        self,
+        file_ids: Sequence[str],
+    ) -> List[AttachmentResult]:
+        """Resolve and validate each handle WITHOUT uploading.
+
+        Shared preflight for both ``_attach_session_files`` (which continues
+        with the upload) and ``jira_add_comment`` (which bails early on any
+        failure so a comment is never published promising a file the upload
+        would reject).
+
+        Returns one ``AttachmentResult`` per handle, order-preserved. Successful
+        entries have ``ok=True``; callers that need the resolved ``Path`` should
+        call ``store.resolve()`` again — it is a cheap cache hit.
+        """
+        ctx = current_context()
+        session_id = getattr(ctx, "session_id", None) if ctx else None
+        if not session_id:
+            return [
+                AttachmentResult(
+                    file_id=fid,
+                    ok=False,
+                    error_code="no_session",
+                    detail="No session is bound to this request.",
+                )
+                for fid in file_ids
+            ]
+        limit = await self._max_attachment_bytes()
+        store = self._session_store()
+        results: List[AttachmentResult] = []
+        for fid in file_ids:
+            try:
+                record, _ = await store.resolve(session_id, fid)
+            except SessionFileError as exc:
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        error_code=exc.code,
+                        detail=_bounded_detail(exc),
+                    )
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                self.logger.warning("Session file resolve failed: %s", type(exc).__name__)
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        error_code="internal_error",
+                        detail=_bounded_detail(exc),
+                    )
+                )
+                continue
+            if record.size == 0:
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=record.filename,
+                        size=0,
+                        error_code="empty_file",
+                        detail="The file is empty; Jira rejects empty attachments.",
+                    )
+                )
+                continue
+            if record.size > limit:
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=record.filename,
+                        size=record.size,
+                        error_code="too_large",
+                        detail=f"File is {record.size} bytes; the attachment limit is {limit} bytes.",
+                    )
+                )
+                continue
+            results.append(
+                AttachmentResult(
+                    file_id=fid,
+                    ok=True,
+                    filename=record.filename,
+                    size=record.size,
+                )
+            )
+        return results
+
+    async def _attach_session_files(self, issue: str, file_ids: Sequence[str]) -> List[AttachmentResult]:
+        """Resolve, pre-flight and upload each handle. Best-effort, never raises.
+
+        Pre-flights via ``_preflight_session_files``, then uploads the valid
+        handles. Jira failures map to forbidden / rejected / transport_error
+        with a bounded, sanitized detail. Returns exactly one AttachmentResult
+        per input, order preserved.
+
+        Args:
+            issue: Issue key to attach to.
+            file_ids: Session file handles.
+
+        Returns:
+            One AttachmentResult per input handle, in input order.
+        """
+        preflight = await self._preflight_session_files(file_ids)
+        if all(not r.ok for r in preflight):
+            return preflight
+
+        ctx = current_context()
+        session_id = getattr(ctx, "session_id", None) if ctx else None
+        store = self._session_store()
+        results: List[AttachmentResult] = []
+        for pf in preflight:
+            if not pf.ok:
+                results.append(pf)
+                continue
+            fid = pf.file_id
+            try:
+                record, path = await store.resolve(session_id, fid)
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=pf.filename,
+                        size=pf.size,
+                        error_code="internal_error",
+                        detail=_bounded_detail(exc),
+                    )
+                )
+                continue
+            try:
+                uploaded = await asyncio.to_thread(
+                    self.jira.add_attachment, issue=issue, attachment=str(path), filename=record.filename
+                )
+            except JIRAError as exc:
+                status = getattr(exc, "status_code", None)
+                if status in (401, 403):
+                    code = "forbidden"
+                elif isinstance(status, int) and 400 <= status < 500:
+                    code = "rejected"
+                else:
+                    code = "transport_error"
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=record.filename,
+                        size=record.size,
+                        error_code=code,
+                        detail=_bounded_detail(f"HTTP {status}: {getattr(exc, 'text', '') or exc}"),
+                    )
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=record.filename,
+                        size=record.size,
+                        error_code="transport_error",
+                        detail=_bounded_detail(exc),
+                    )
+                )
+                continue
+            att_id = getattr(uploaded, "id", None)
+            size = getattr(uploaded, "size", None)
+            results.append(
+                AttachmentResult(
+                    file_id=fid,
+                    ok=True,
+                    filename=getattr(uploaded, "filename", None) or record.filename,
+                    attachment_id=str(att_id) if att_id is not None else None,
+                    size=size if isinstance(size, int) else record.size,
+                )
+            )
+        return results
+
     @requires_permission("jira.write")
     @tool_schema(AddAttachmentInput)
-    async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
-        """Add an attachment to an issue. Requires jira.write permission.
+    async def jira_add_attachment(self, issue: str, file_ids: List[str]) -> Dict[str, Any]:
+        """Attach one or more session files to an issue. Requires jira.write permission.
 
-        Example: jira.add_attachment(issue=issue, attachment='/path/to/file.txt')
+        file_ids come from sf_list_session_files. Returns a report with one entry per
+        handle; a per-file failure is reported, never raised — read
+        attachments[].error_code.
+
+        Example: jira_add_attachment(issue='NAV-123', file_ids=['Ab3...'])
         """
-
-        def _run():
-            return self.jira.add_attachment(issue=issue, attachment=attachment)
-
-        await asyncio.to_thread(_run)
-        return {"ok": True, "issue": issue, "attachment": attachment}
+        results = await self._attach_session_files(issue, file_ids)
+        return JiraAttachmentReport(
+            issue=issue,
+            attachments=results,
+            attached=sum(result.ok for result in results),
+            failed=sum(not result.ok for result in results),
+        ).model_dump()
 
     @requires_permission("jira.write")
     @tool_schema(AssignIssueInput)
@@ -1792,6 +2619,8 @@ class JiraToolkit(AbstractToolkit):
         parent: Optional[str] = None,
         original_estimate: Optional[str] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a new issue. Requires jira.write permission.
 
@@ -1831,10 +2660,20 @@ class JiraToolkit(AbstractToolkit):
                 issuetype='Sub-task',
                 parent='NAV-123'
             )
+
+            # Create a bug description from a Jira template
+            jira_create_issue(
+                project='NAV',
+                summary='Login button not working',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
         # Apply configured defaults for omitted fields
         project = project or self.default_project or "NAV"
         issuetype = issuetype or self.default_issue_type or "Task"
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
         if labels is None and self.default_labels:
             labels = list(self.default_labels)
         if components is None and self.default_components:
@@ -1850,10 +2689,52 @@ class JiraToolkit(AbstractToolkit):
         if original_estimate is None and self.default_estimate:
             original_estimate = self.default_estimate
 
+        # FEAT-637 (AC8) — an unknown template or missing variables must fail
+        # before *any* Jira request, so resolve and validate the template first.
+        # The render itself happens below with the canonical issue type in the
+        # context (only its casing can differ, and the variable set is cached).
+        template_fields = {
+            "project": project,
+            "summary": summary,
+            "issuetype": issuetype,
+            "description": description,
+            "assignee": assignee,
+            "priority": priority,
+            "labels": labels,
+            "components": components,
+            "due_date": due_date,
+            "parent": parent,
+            "original_estimate": original_estimate,
+        }
+        await self._prepare_jira_template(
+            "create",
+            template=template,
+            template_params=template_params,
+            call_fields=template_fields,
+            project=project,
+            issuetype=issuetype,
+        )
+
         # Validate issuetype against the project's actual issue type scheme
         # so we return a useful error (with valid names) to the agent instead
         # of opaque "HTTP 400: The issue type selected is invalid.".
         canonical_issuetype = await self._validate_issue_type(project, issuetype)
+
+        # FEAT-637 — compose the description from a template, if one applies.
+        rendered_description = await self._render_jira_text(
+            "create",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={**template_fields, "issuetype": canonical_issuetype},
+            project=project,
+            issuetype=canonical_issuetype,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
 
         # Build fields dict
         issue_fields: Dict[str, Any] = {
@@ -1889,6 +2770,8 @@ class JiraToolkit(AbstractToolkit):
 
         # Merge with additional fields if provided
         if fields:
+            if self._kb is not None:
+                fields = {self._kb.resolve_field(name): value for name, value in fields.items()}
             issue_fields.update(fields)
 
         def _run():
@@ -1928,6 +2811,8 @@ class JiraToolkit(AbstractToolkit):
         issuetype: Optional[Dict[str, str]] = None,
         priority: Optional[Dict[str, str]] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update an existing issue. Requires jira.write permission.
 
@@ -1946,7 +2831,39 @@ class JiraToolkit(AbstractToolkit):
 
             # Change issue type
             jira_update_issue(issue='NAV-123', issuetype={'name': 'Bug'})
+
+            # Render the description from a Jira template
+            jira_update_issue(
+                issue='NAV-123',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
+        # FEAT-637 — compose the description from a template, if one applies.
+        project = self._project_of(issue)
+        rendered_description = await self._render_jira_text(
+            "update",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={
+                "issue": issue,
+                "project": project,
+                "summary": summary,
+                "description": description,
+                "labels": labels,
+                "due_date": due_date,
+                "priority": priority,
+                "issuetype": issuetype,
+            },
+            project=project,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
+
         update_kwargs: Dict[str, Any] = {}
         update_fields: Dict[str, Any] = {}
 
@@ -1982,6 +2899,8 @@ class JiraToolkit(AbstractToolkit):
 
         # Merge with arbitrary fields if provided
         if fields:
+            if self._kb is not None:
+                fields = {self._kb.resolve_field(name): value for name, value in fields.items()}
             update_fields.update(fields)
 
         if update_fields:
@@ -2027,9 +2946,11 @@ class JiraToolkit(AbstractToolkit):
     async def jira_add_comment(
         self,
         issue: str,
-        body: str,
+        body: Optional[str] = None,
         is_internal: bool = False,
-        attachments: Optional[List[str]] = None,
+        file_ids: Optional[List[str]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Add a comment to an issue, optionally attaching files. Requires jira.write permission.
 
@@ -2042,9 +2963,40 @@ class JiraToolkit(AbstractToolkit):
             jira.jira_add_comment(
                 'JRA-1330',
                 'See attached screenshot',
-                attachments=['/path/to/screenshot.png']
+                file_ids=['Ab3xYz...']
+            )
+
+        Example using a template:
+            jira.jira_add_comment(
+                'JRA-1330',
+                template='comment',
+                template_params={'author': 'bot'}
             )
         """
+        preflight: List[AttachmentResult] = []
+        if file_ids:
+            preflight = await self._preflight_session_files(file_ids)
+            if any(not r.ok for r in preflight):
+                return JiraCommentReport(
+                    issue=issue,
+                    comment={},
+                    comment_ok=False,
+                    attachments=preflight,
+                    attached=0,
+                    failed=sum(not r.ok for r in preflight),
+                ).model_dump()
+
+        project = self._project_of(issue)
+        body = await self._render_jira_text(
+            "comment",
+            text=body,
+            template=template,
+            template_params=template_params,
+            call_fields={"issue": issue, "project": project, "body": body, "is_internal": is_internal},
+            project=project,
+        )
+        if body is None:
+            raise ValueError("jira_add_comment: body is required when no template applies")
 
         def _run():
             return self.jira.add_comment(issue, body, is_internal=is_internal)
@@ -2052,33 +3004,17 @@ class JiraToolkit(AbstractToolkit):
         comment = await asyncio.to_thread(_run)
         result = self._issue_to_dict(comment)
 
-        # Upload attachments if provided
-        if attachments:
-            uploaded: List[Dict[str, Any]] = []
-            for file_path in attachments:
-                if not await asyncio.to_thread(os.path.isfile, file_path):
-                    uploaded.append({"file": file_path, "error": "File not found"})
-                    self.logger.warning(f"Attachment file not found: {file_path}")
-                    continue
-
-                def _upload(fp: str = file_path) -> Any:
-                    return self.jira.add_attachment(issue=issue, attachment=fp)
-
-                try:
-                    att = await asyncio.to_thread(_upload)
-                    att_info: Dict[str, Any] = {
-                        "filename": getattr(att, "filename", os.path.basename(file_path)),
-                        "id": getattr(att, "id", None),
-                        "size": getattr(att, "size", None),
-                        "mimeType": getattr(att, "mimeType", None),
-                    }
-                    uploaded.append(att_info)
-                except Exception as exc:
-                    uploaded.append({"file": file_path, "error": str(exc)})
-                    self.logger.error(f"Failed to attach {file_path}: {exc}")
-            result["attachments"] = uploaded
-
-        return result
+        attachments_out: List[AttachmentResult] = []
+        if file_ids:
+            attachments_out = await self._attach_session_files(issue, file_ids)
+        return JiraCommentReport(
+            issue=issue,
+            comment=result,
+            comment_ok=True,
+            attachments=attachments_out,
+            attached=sum(attachment.ok for attachment in attachments_out),
+            failed=sum(not attachment.ok for attachment in attachments_out),
+        ).model_dump()
 
     @requires_permission("jira.write")
     @tool_schema(AddWorklogInput)
@@ -2113,6 +3049,20 @@ class JiraToolkit(AbstractToolkit):
         Example: jira.jira_get_issue_types(project='PROJ')
         """
 
+        if project and self._kb is not None:
+            kb_project = self._kb.projects.get(project)
+            if kb_project is not None:
+                return [
+                    {"id": issue_type.id, "name": name, "description": ""}
+                    for name, issue_type in kb_project.issue_types.items()
+                ]
+            self.logger.warning("jira KB stale: project %s not found in %s", project, self._kb_path)
+
+        return await self._list_issue_types_live(project)
+
+    async def _list_issue_types_live(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List issue types straight from Jira, bypassing the knowledge base."""
+
         def _run():
             if project:
                 proj = self.jira.project(project)
@@ -2146,8 +3096,21 @@ class JiraToolkit(AbstractToolkit):
             ValueError: When ``issuetype`` doesn't match any type for the
                 project. The message contains all valid names.
         """
+        requested = issuetype.strip().lower()
+        use_live = False
+        if self._kb is not None:
+            kb_project = self._kb.projects.get(project)
+            if kb_project is not None:
+                for kb_name in kb_project.issue_types:
+                    if kb_name.lower() == requested:
+                        return kb_name  # KB hit: no Jira lookup (FEAT-696 AC7)
+                self.logger.warning("jira KB stale: issue type %s not found in %s", issuetype, self._kb_path)
+                use_live = True
         try:
-            valid = await self.jira_get_issue_types(project=project)
+            if use_live:
+                valid = await self._list_issue_types_live(project)
+            else:
+                valid = await self.jira_get_issue_types(project=project)
         except Exception as exc:  # noqa: BLE001 — don't block create on probe failure
             # If we can't list types (permissions, transient error), skip
             # validation and let the real POST produce whatever error Jira
@@ -2267,6 +3230,31 @@ class JiraToolkit(AbstractToolkit):
                 result["response_preview"] = text[:400]
         return result
 
+    @tool_schema(ListTemplatesInput)
+    async def jira_list_templates(self, project: Optional[str] = None) -> Dict[str, Any]:
+        """List the Jira text templates usable with jira_create_issue, jira_update_issue and jira_add_comment.
+
+        Pass a returned name as ``template=`` to a write tool. Without ``template=``
+        the write tools apply a convention template automatically when one exists:
+        ``<project>/<issuetype>.j2`` → ``<project>/_default.j2`` → ``_default.j2`` for
+        issues, ``<project>/comment.j2`` → ``comment.j2`` for comments.
+
+        Returns:
+            ``{"ok": True, "templates": [names], "has_templates_dir": bool}`` —
+            logical names only; the filesystem location is never exposed.
+        """
+        engine = self._get_template_engine()
+        names: List[str] = []
+        if engine is not None:
+            names = sorted(name for name in engine.env.list_templates() if name.endswith(_TEMPLATE_SUFFIX))
+        if project is not None:
+            names = [name for name in names if name.startswith(f"{project.lower()}/")]
+        return {
+            "ok": True,
+            "templates": names,
+            "has_templates_dir": self.templates_dir is not None,
+        }
+
     @tool_schema(GetProjectsInput)
     async def jira_get_projects(self) -> Dict[str, Any]:
         """List all accessible projects.
@@ -2287,6 +3275,10 @@ class JiraToolkit(AbstractToolkit):
             AuthorizationRequired: When the empty list is caused by failed
                 authentication (expired/revoked token, wrong username).
         """
+        if self._kb is not None and self._kb.projects:
+            projects = [{"key": key, "name": project.name} for key, project in self._kb.projects.items()]
+            return {"projects": projects, "count": len(projects), "authenticated": True, "source": "kb"}
+
         # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
         # same client.projects() call this method used to make directly.
         # A JiraAuthError here (unresolved auth_type, direct call bypassing
@@ -2353,6 +3345,11 @@ class JiraToolkit(AbstractToolkit):
         proj = project or self.default_project
         if not proj:
             raise ValueError("Project key is required for listing components")
+
+        if self._kb is not None and self._kb.components:
+            return [{"id": name, "name": name, "description": ""} for name in self._kb.components]
+        if self._kb is not None:
+            self.logger.warning("jira KB stale: components not found in %s", self._kb_path)
 
         def _run():
             return self.jira.project_components(proj)
@@ -3372,6 +4369,190 @@ class JiraToolkit(AbstractToolkit):
         """List all status changes (transitions) for a ticket."""
         changelog = await self._get_full_changelog(issue)
         return self._extract_field_history(changelog, "status")
+
+    @requires_permission("jira.write")
+    @tool_schema(CreateIssueLinkInput)
+    async def jira_create_issue_link(
+        self,
+        inward_issue: str,
+        outward_issue: str,
+        link_type: str = "Relates",
+        comment: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Link two issues (e.g. 'Blocks', 'Relates'). Use jira_get_link_types for valid names."""
+
+        def _run() -> Any:
+            return self.jira.create_issue_link(link_type, inward_issue, outward_issue, comment=comment)
+
+        try:
+            await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira create_issue_link timed out after {self.request_timeout + 5:.0f}s") from exc
+        return {
+            "ok": True,
+            "inward_issue": inward_issue,
+            "outward_issue": outward_issue,
+            "link_type": link_type,
+        }
+
+    @tool_schema(TicketIdInput)
+    async def jira_get_link_types(self) -> List[Dict[str, Any]]:
+        """List issue link types: name, inward and outward descriptions."""
+
+        def _run() -> Any:
+            return self.jira.issue_link_types()
+
+        try:
+            link_types = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira issue_link_types timed out after {self.request_timeout + 5:.0f}s") from exc
+        return [
+            {
+                "id": getattr(link_type, "id", None),
+                "name": getattr(link_type, "name", ""),
+                "inward": getattr(link_type, "inward", ""),
+                "outward": getattr(link_type, "outward", ""),
+            }
+            for link_type in link_types
+        ]
+
+    @tool_schema(GetCreateFieldsInput)
+    async def jira_get_create_fields(self, issue_type: str, project: Optional[str] = None) -> Dict[str, Any]:
+        """Fields (id, name, required, schema, allowedValues) to create an issue of this type."""
+        project_key = project or self.default_project
+        if not project_key:
+            raise ValueError("Project key is required for create field metadata")
+
+        issue_type_id: Optional[str] = None
+        kb_hit = False
+        if self._kb is not None:
+            entry = self._kb.resolve_issue_type(project_key, issue_type)
+            if entry is not None:
+                issue_type_id = entry.id
+                kb_hit = True
+            else:
+                self.logger.warning("jira KB stale: issue type %s not found in %s", issue_type, self._kb_path)
+
+        if issue_type_id is None:
+
+            def _live_issue_types() -> Any:
+                return self.jira.project(project_key).issueTypes
+
+            try:
+                issue_types = await asyncio.wait_for(
+                    asyncio.to_thread(_live_issue_types), timeout=self.request_timeout + 5
+                )
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(f"Jira list issue_types timed out after {self.request_timeout + 5:.0f}s") from exc
+            for candidate in issue_types:
+                candidate_id = str(getattr(candidate, "id", ""))
+                candidate_name = getattr(candidate, "name", "")
+                if issue_type in (candidate_id, candidate_name):
+                    issue_type_id = candidate_id
+                    break
+        if issue_type_id is None:
+            raise ValueError(f"Issue type '{issue_type}' is not available for project '{project_key}'")
+
+        def _run() -> Any:
+            return self.jira.project_issue_fields(project_key, issue_type_id)
+
+        try:
+            field_values = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira project_issue_fields timed out after {self.request_timeout + 5:.0f}s") from exc
+        fields = [getattr(value, "raw", value) for value in field_values]
+        return {
+            "project": project_key,
+            "issue_type": issue_type_id,
+            "fields": fields,
+            "source": "kb" if kb_hit else "live",
+        }
+
+    @requires_permission("jira.write")
+    @tool_schema(EditCommentInput)
+    async def jira_edit_comment(
+        self,
+        issue: str,
+        comment_id: str,
+        body: Optional[str] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Replace the body of an existing comment."""
+        project = self._project_of(issue)
+        body = await self._render_jira_text(
+            "comment",
+            text=body,
+            template=template,
+            template_params=template_params,
+            call_fields={"issue": issue, "project": project, "body": body},
+            project=project,
+        )
+        if body is None:
+            raise ValueError("jira_edit_comment: body is required when no template applies")
+
+        def _run() -> Any:
+            comment = self.jira.comment(issue, comment_id)
+            comment.update(body=body)
+            return comment
+
+        try:
+            comment = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira edit_comment timed out after {self.request_timeout + 5:.0f}s") from exc
+        return {"ok": True, "issue": issue, "comment": self._issue_to_dict(comment)}
+
+    async def jira_get_accessible_resources(self) -> Dict[str, Any]:
+        """Return {cloud_id, site_url, sites, source} in any auth mode."""
+        options = getattr(self.jira, "_options", {}) if self.jira is not None else {}
+        headers = options.get("headers", {}) if isinstance(options, dict) else {}
+        if not isinstance(headers, dict):
+            headers = {}
+        authorization = headers.get("Authorization", "")
+        if authorization.lower().startswith("bearer "):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    sites = await fetch_accessible_resources(session, authorization[7:])
+                first = sites[0] if sites else {}
+                return {
+                    "cloud_id": first.get("id"),
+                    "site_url": first.get("url"),
+                    "sites": sites,
+                    "source": "oauth2_3lo",
+                }
+            except Exception as exc:  # noqa: BLE001 -- resource discovery must be best-effort
+                self.logger.warning("Could not fetch accessible Jira resources: %s", exc)
+
+        if self._kb is not None:
+            return {
+                "cloud_id": self._kb.cloud_id,
+                "site_url": self._kb.site,
+                "sites": [{"id": self._kb.cloud_id, "url": self._kb.site}],
+                "source": "kb",
+            }
+
+        def _tenant_info() -> Dict[str, Any]:
+            session = getattr(self.jira, "_session", None)
+            if session is None or not self.server_url:
+                return {}
+            response = session.get(f"{self.server_url.rstrip('/')}/_edge/tenant_info")
+            if getattr(response, "status_code", 0) != 200:
+                return {}
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+
+        try:
+            tenant = await asyncio.wait_for(asyncio.to_thread(_tenant_info), timeout=self.request_timeout + 5)
+        except Exception as exc:  # noqa: BLE001 -- tenant info is undocumented and best-effort
+            self.logger.warning("Could not fetch Jira tenant info: %s", exc)
+            tenant = {}
+        cloud_id = tenant.get("cloudId") or tenant.get("cloud_id") or tenant.get("id")
+        return {
+            "cloud_id": cloud_id,
+            "site_url": self.server_url or None,
+            "sites": [{"id": cloud_id, "url": self.server_url}] if cloud_id else [],
+            "source": "tenant_info" if cloud_id else "unavailable",
+        }
 
     @tool_schema(ListHistoryInput)
     async def jira_list_assignees(self, issue: str) -> List[Dict[str, Any]]:

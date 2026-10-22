@@ -58,7 +58,7 @@ def extract_form_uid(request: web.Request) -> _uuid.UUID:
         raise web.HTTPBadRequest(
             text=json.dumps({"error": f"Invalid form_uid: {raw!r} is not a valid UUID"}),
             content_type="application/json",
-        )
+        ) from None
 
 
 def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
@@ -86,7 +86,7 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
         raise web.HTTPBadRequest(
             text=json.dumps({"error": f"Invalid {param}: {raw!r} is not a valid UUID"}),
             content_type="application/json",
-        )
+        ) from None
 
 
 if TYPE_CHECKING:
@@ -101,6 +101,7 @@ if TYPE_CHECKING:
     from ..services.question_bank import QuestionBankService
     from ..services.rbac import RBACService
     from ..services.sinks.factory import SinkFactory
+    from ..services.submission_pipeline import SubmissionPipeline
     from ..services.submissions import FormSubmissionStorage
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
@@ -214,37 +215,133 @@ class FormAPIHandler:
             return None
         return self._client
 
+    async def optimize_voice(self, request: web.Request) -> web.Response:
+        """POST /api/v1/{tenant}/forms/{form_uid}/voice/optimize — voice hint proposals (never writes, FEAT-649)."""
+        from ..audio.narration.engine import Narrator
+        from ..audio.narration.lexicon import load_lexicon
+        from ..tools.voice_optimizer import VoiceOptimizer
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_uid, tenant=tenant)
+        if form is None:
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "Request body must be a JSON object"}, status=400)
+        locale = str(body.get("locale") or "en")
+        fields = body.get("fields")
+        if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) for f in fields)):
+            return JSONResponse({"error": "'fields' must be a list of field_id strings"}, status=400)
+        style = body.get("style", "concise")
+        if not isinstance(style, str):
+            return JSONResponse({"error": "'style' must be a string"}, status=400)
+        max_words = body.get("max_hint_words", 20)
+        if isinstance(max_words, bool) or not isinstance(max_words, int) or max_words < 1:
+            return JSONResponse({"error": "'max_hint_words' must be a positive integer"}, status=400)
+        lexicon = load_lexicon(locale)
+        client = self._get_llm_client()
+        if client is None:
+            return JSONResponse({"error": "LLM client unavailable", "self_test": []}, status=503)
+        optimizer = VoiceOptimizer(client, Narrator)
+        proposals, preview = await optimizer.propose(
+            form, locale=locale, fields=set(fields) if fields else None, style=style, max_hint_words=max_words
+        )
+        return JSONResponse(
+            {
+                "proposals": [p.model_dump(mode="json") for p in proposals],
+                "narration_preview": preview,
+                "self_test": optimizer.self_test(form, lexicon),
+            }
+        )
+
+    def _build_submission_pipeline(self, form: FormSchema | None = None) -> "SubmissionPipeline":
+        """Build the shared submit pipeline from the handler's CURRENT collaborators (FEAT-649).
+
+        Built per call on purpose: tests (and hosts) replace ``self.validator`` /
+        ``self._submission_storage`` / ``self._sink_factory`` after construction. A plausibility
+        checker is attached only when ``form`` enables ``llm_validation`` on some field, so a
+        disabled form never instantiates the lazy LLM client.
+        """
+        from ..core.llm_validation import LLMValidationConfig, llm_validation_enabled
+        from ..services.plausibility import AnswerPlausibilityChecker
+        from ..services.submission_pipeline import SubmissionPipeline
+
+        checker = None
+        if form is not None and any(llm_validation_enabled(form, f) for f in form.iter_fields_recursive()):
+            checker = AnswerPlausibilityChecker(
+                self._get_llm_client(), config=form.llm_validation or LLMValidationConfig()
+            )
+        return SubmissionPipeline(
+            validator=self.validator,
+            submission_storage=self._submission_storage,
+            forwarder=self._forwarder,
+            partial_store=self._partial_store,
+            plausibility=checker,
+            sink_factory=self._sink_factory,
+            logger=self.logger,
+            dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
+        )
+
     # ------------------------------------------------------------------
     # User context helpers (navigator-auth integration)
     # ------------------------------------------------------------------
 
-    def _get_org_id(self, request: web.Request) -> int | None:
-        """Extract org_id from the authenticated user's first organization.
+    def _get_org_ids(self, request: web.Request) -> list[int]:
+        """Read organization IDs from the authenticated user's organizations.
 
-        Reads ``request.user.organizations[0].org_id`` as set by the
-        ``@user_session()`` decorator from navigator-auth and normalises it
-        to an integer (the DB primary key type).
-
-        Args:
-            request: Incoming HTTP request with ``user`` attribute attached
-                by the navigator-auth ``user_session`` decorator.
-
-        Returns:
-            The ``org_id`` as an integer from the first organization, or
-            ``None`` if the user has no organizations, the user is not set,
-            or the value cannot be converted to an integer.
+        navigator-auth owns organization normalization; entries are Organization
+        objects exposing ``org_id``. No database lookup is performed here.
+        Missing or invalid organization context returns an empty list.
         """
         user = getattr(request, "user", None)
-        if user and user.organizations:
+        organizations = getattr(user, "organizations", None) or []
+        try:
+            return list(dict.fromkeys(int(org.org_id) for org in organizations))
+        except (AttributeError, TypeError, ValueError):
+            self.logger.warning("Invalid organizations in authenticated user")
+            return []
+
+    def _get_org_id(self, request: web.Request) -> int | None:
+        """Read the first session organization for existing form consumers."""
+        org_ids = self._get_org_ids(request)
+        return org_ids[0] if org_ids else None
+
+    def _resolve_org_id(self, request: web.Request) -> tuple[int | None, web.Response | None]:
+        """Select a session organization for the ``/org/*`` endpoints.
+
+        One organization is selected automatically. Multiple organizations
+        require ``?org_id=``; a selection outside the user's organizations
+        returns 403. Missing organizations also return 403; malformed or
+        ambiguous selections return 400. Resolution is independent of which
+        application services are configured.
+        """
+        requested = request.query.get("org_id")
+        if requested is not None:
             try:
-                return int(user.organizations[0].org_id)
-            except (TypeError, ValueError):
-                self.logger.warning(
-                    "org_id value %r is not a valid integer",
-                    user.organizations[0].org_id,
-                )
-                return None
-        return None
+                if not requested.isascii() or not requested.isdigit():
+                    raise ValueError("org_id must be an integer")
+                requested = int(requested)
+            except ValueError:
+                return None, JSONResponse({"error": "org_id must be an integer"}, status=400)
+
+        org_ids = self._get_org_ids(request)
+        if requested is not None:
+            if requested in org_ids:
+                return requested, None
+            return None, JSONResponse({"error": f"user is not a member of organization {requested}"}, status=403)
+        if len(org_ids) == 1:
+            return org_ids[0], None
+        if not org_ids:
+            return None, JSONResponse({"error": "user belongs to no organization"}, status=403)
+        return None, JSONResponse(
+            {"error": "user belongs to several organizations; pass ?org_id=", "org_ids": org_ids},
+            status=400,
+        )
 
     def _get_programs(self, request: web.Request) -> list[str]:
         """Extract programs (tenant context) from the user session.
@@ -1053,8 +1150,25 @@ class FormAPIHandler:
             a2ui_surface_id = submission_in.surface_id
             body = submission_in.answers
 
+        from ..services.plausibility import PlausibilityBlocked
+
+        # Opt-in plausibility check; popped BEFORE visit-context extraction so the flag is
+        # never reported as an unknown field.
+        llm_opt_in = request.query.get("llm_validation", "").lower() == "true"
+        if isinstance(body, dict) and body.pop("llm_validation", None) is True:
+            llm_opt_in = True
         data, visit_context = self._extract_visit_context(form, body)
-        result = await self.validator.validate(form, data, visit_context=visit_context)
+        pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
+        try:
+            result, plausibility = await pipeline.validate(
+                form, data, locale="en", auth_context=None, llm_validation=llm_opt_in, visit_context=visit_context
+            )
+        except PlausibilityBlocked as exc:
+            return JSONResponse(
+                {"error": f"Answer plausibility check unavailable: {exc.reason}", "code": "PLAUSIBILITY_UNAVAILABLE"},
+                status=503,
+                headers={"Retry-After": "30"},
+            )
 
         errors = dict(result.errors)
         if form.unknown_fields == UnknownFieldsPolicy.REJECT and result.extra_data:
@@ -1067,10 +1181,10 @@ class FormAPIHandler:
                 return a2ui_wire.a2ui_response([], status=200)
             return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
 
-        return JSONResponse(
-            {"is_valid": is_valid, "errors": errors},
-            status=200 if is_valid else 422,
-        )
+        payload: dict[str, Any] = {"is_valid": is_valid, "errors": errors}
+        if plausibility is not None:
+            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+        return JSONResponse(payload, status=200 if is_valid else 422)
 
     async def create_blank_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/blank — Create an empty form without an LLM (FEAT-389).
@@ -1537,16 +1651,6 @@ class FormAPIHandler:
         7. If merge was performed, delete the cached partial on success.
         8. Return composite result — always 200, even when forwarding fails.
         """
-        import uuid
-        from datetime import datetime, timezone
-
-        from ..core.schema import UnknownFieldsPolicy
-        from ..services.metadata_enricher import (
-            MetadataResolutionError,
-            enrich_submission,
-        )
-        from ..services.submissions import FormSubmission
-        from ..services.unknown_fields import ExtrasCapExceeded, enforce_extras_cap
 
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
@@ -1619,353 +1723,92 @@ class FormAPIHandler:
         # (spec §3 Module 5) — `data` is pure answers from here on.
         data, visit_context = self._extract_visit_context(form, body)
 
-        # lifecycle: outer envelope for onError dispatch on any exception.
-        # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
-        # directly — it is never routed through onError (spec §7).
-        # _auth_ctx is computed lazily on first dispatch call to avoid
-        # breaking tests that mock request.headers as a generic MagicMock.
-        _auth_ctx = None
-
+        # lifecycle: onError / onBeforeSubmit / validation / sinks / onAfterSubmit are owned by
+        # SubmissionPipeline (FEAT-649); it dispatches onError once and sets request["_lifecycle_user_message"].
+        # _auth_ctx is computed here to avoid breaking tests that mock request.headers generically.
         try:
-            try:
-                _auth_ctx = self._build_auth_context(request)
-            except Exception:
-                _auth_ctx = AuthContext(scheme="none")
+            _auth_ctx = self._build_auth_context(request)
+        except Exception:
+            _auth_ctx = AuthContext(scheme="none")
 
-            # Optional: merge cached partial answers into submitted data
-            # (?merge_partials=true — submitted values take precedence)
-            _merge_session_id: str | None = None
-            merge_partials = request.query.get("merge_partials", "").lower() == "true"
-            if merge_partials and self._partial_store is not None:
-                _merge_session_id = self._extract_session_id(request)
-                if _merge_session_id:
-                    try:
-                        cached = await self._partial_store.get(str(form_uid), _merge_session_id)
-                        if cached:
-                            # Stored data is field_uid-keyed (TASK-2003) — map
-                            # back to CURRENT field_ids before merging into
-                            # the field_id-keyed submission payload.
-                            cached = self._remap_partial_to_field_ids(form, cached)
-                            # cached values fill gaps; submitted values win on overlap
-                            data = {**cached.data, **data}
-                            self.logger.debug(
-                                "Merged %d cached partial fields into submit for %s/%s",
-                                len(cached.data),
-                                form_uid,
-                                _merge_session_id,
-                            )
-                    except Exception as exc:
-                        self.logger.warning(
-                            "Failed to load partial for merge %s/%s: %s",
+        # Optional: merge cached partial answers into submitted data
+        # (?merge_partials=true — submitted values take precedence)
+        _merge_session_id: str | None = None
+        merge_partials = request.query.get("merge_partials", "").lower() == "true"
+        if merge_partials and self._partial_store is not None:
+            _merge_session_id = self._extract_session_id(request)
+            if _merge_session_id:
+                try:
+                    cached = await self._partial_store.get(str(form_uid), _merge_session_id)
+                    if cached:
+                        # Stored data is field_uid-keyed (TASK-2003) — map
+                        # back to CURRENT field_ids before merging into
+                        # the field_id-keyed submission payload.
+                        cached = self._remap_partial_to_field_ids(form, cached)
+                        # cached values fill gaps; submitted values win on overlap
+                        data = {**cached.data, **data}
+                        self.logger.debug(
+                            "Merged %d cached partial fields into submit for %s/%s",
+                            len(cached.data),
                             form_uid,
                             _merge_session_id,
-                            exc,
                         )
-
-            # lifecycle: onBeforeSubmit — may mutate payload or abort
-            try:
-                resolution = await dispatch(
-                    "onBeforeSubmit",
-                    form=form,
-                    request=request,
-                    tenant=tenant,
-                    auth_context=_auth_ctx,
-                    payload=data,
-                )
-                if resolution.payload is not None:
-                    data = dict(resolution.payload)
-            except FormEventAbort as exc:
-                # Abort is a controlled flow — do NOT route through onError.
-                return JSONResponse(
-                    {"error": exc.user_message, "reason": exc.reason},
-                    status=exc.status_code,
-                )
-
-            # Validate submission data against form schema
-            result = await self.validator.validate(form, data, visit_context=visit_context)
-            if not result.is_valid:
-                _validation_exc = ValueError(f"Validation failed: {result.errors}")
-                # dispatch onError (best-effort) before the early 422 return
-                try:
-                    _err_res = await dispatch(
-                        "onError",
-                        form=form,
-                        request=request,
-                        tenant=tenant,
-                        auth_context=_auth_ctx,
-                        error=_validation_exc,
-                    )
-                except Exception as _meta_exc:
-                    self.logger.exception("onError handler raised during validation: %s", _meta_exc)
-                return _reply(
-                    {"is_valid": False, "errors": result.errors},
-                    status=422,
-                )
-
-            # FEAT-458 — apply the unknown-fields policy to the payload-side
-            # diff the validator reported (and never judged). The ORDER here
-            # is load-bearing and already guaranteed by the code above:
-            # `result.extra_data` was computed from `data` AFTER
-            # _extract_visit_context and AFTER onBeforeSubmit may have
-            # replaced the payload — do not move this branch earlier.
-            policy = form.unknown_fields
-            extras: dict[str, Any] = {}
-
-            if result.extra_data:
-                if policy == UnknownFieldsPolicy.REJECT:
-                    _unknown_exc = ValueError(f"Unknown fields rejected: {sorted(result.extra_data)}")
-                    try:
-                        await dispatch(
-                            "onError",
-                            form=form,
-                            request=request,
-                            tenant=tenant,
-                            auth_context=_auth_ctx,
-                            error=_unknown_exc,
-                        )
-                    except Exception as _meta_exc:
-                        self.logger.exception("onError handler raised during unknown-field reject: %s", _meta_exc)
-                    return _reply(
-                        {"is_valid": False, "errors": {"__unknown__": sorted(result.extra_data)}},
-                        status=422,
-                    )
-                if policy == UnknownFieldsPolicy.KEEP:
-                    try:
-                        enforce_extras_cap(result.extra_data)
-                    except ExtrasCapExceeded as exc:
-                        try:
-                            await dispatch(
-                                "onError",
-                                form=form,
-                                request=request,
-                                tenant=tenant,
-                                auth_context=_auth_ctx,
-                                error=exc,
-                            )
-                        except Exception as _meta_exc:
-                            self.logger.exception("onError handler raised during extras cap rejection: %s", _meta_exc)
-                        return _reply(
-                            {
-                                "is_valid": False,
-                                "errors": {
-                                    "__unknown__": [f"extras {exc.limit} cap exceeded: {exc.actual} > {exc.maximum}"]
-                                },
-                            },
-                            status=422,
-                        )
-                    extras = result.extra_data
-                else:  # DROP — today's behaviour, but no longer silent
-                    self.logger.debug(
-                        "Discarded %d undeclared field(s) for form %s (unknown_fields=drop)",
-                        len(result.extra_data),
-                        form.form_id,
-                    )
-
-            # Storage/wire asymmetry is DELIBERATE: extras are stored in
-            # their own column but flat-merged into the outbound payload,
-            # because the integrator's/lifecycle-handler's contract is the
-            # caller's own payload shape. Declared answers win a key
-            # collision (defensive, not load-bearing — extras cannot
-            # collide with a declared field_id by construction).
-            outbound = {**result.sanitized_data, **extras} if extras else result.sanitized_data
-
-            # Build submission record. FormSubmission.form_uid is required
-            # (TASK-1979) — form.form_uid is the loaded form's stable
-            # identity; form.form_id is its (possibly renamed) slug.
-            submission = FormSubmission(
-                submission_id=str(uuid.uuid4()),
-                form_uid=form.form_uid,
-                form_id=form.form_id,
-                form_version=form.version,
-                data=result.sanitized_data,
-                is_valid=True,
-                created_at=datetime.now(timezone.utc),
-                extra_data=extras or None,
-            )
-
-            # Metadata enrichment runs between validation and storage so the
-            # resolved values are persisted alongside the answers.
-            if form.metadata:
-                try:
-                    core_overrides, extra_flat = await enrich_submission(
-                        request=request,
-                        form=form,
-                        submission=submission,
-                        answers=result.sanitized_data,
-                        auth_context=_auth_ctx,
-                    )
-                except MetadataResolutionError as exc:
-                    # dispatch onError (best-effort) before the early 422 return
-                    try:
-                        await dispatch(
-                            "onError",
-                            form=form,
-                            request=request,
-                            tenant=tenant,
-                            auth_context=_auth_ctx,
-                            error=exc,
-                        )
-                    except Exception as _meta_exc:
-                        self.logger.exception("onError handler raised during metadata: %s", _meta_exc)
-                    return _reply(
-                        {"is_valid": False, "errors": {"_metadata": str(exc)}},
-                        status=422,
-                    )
-                if core_overrides:
-                    submission = submission.model_copy(update=core_overrides)
-                if extra_flat:
-                    submission.data = {**submission.data, **extra_flat}
-
-            # Persist the submission (FEAT-457): a form declaring
-            # `persistence` writes EXCLUSIVELY to its own sink —
-            # `submission_storage` is never called for it, and a sink
-            # failure never falls back to the generic table. A form
-            # without `persistence` takes today's path, unchanged.
-            if form.persistence is not None:
-                from ..services.sinks.base import (
-                    SinkNotCapableError,
-                    SinkTargetMismatchError,
-                    SinkUnavailableError,
-                )
-                from ..services.sinks.mapper import flatten_submission, nest_submission
-
-                async def _dispatch_on_error_best_effort(error: Exception) -> None:
-                    try:
-                        await dispatch(
-                            "onError",
-                            form=form,
-                            request=request,
-                            tenant=tenant,
-                            auth_context=_auth_ctx,
-                            error=error,
-                        )
-                    except Exception:
-                        self.logger.exception("onError handler raised during sink write")
-
-                try:
-                    if self._sink_factory is None:
-                        raise SinkUnavailableError(
-                            "Form declares persistence but no sink_factory " "is configured on this handler"
-                        )
-                    sink = await self._sink_factory.get(form, tenant=tenant)
-                    await sink.ensure_target(form)
-                    payload = (
-                        nest_submission(form, submission)
-                        if sink.family == "document"
-                        else flatten_submission(form, submission)
-                    )
-                    await sink.write(submission, payload)
-                except SinkUnavailableError as exc:
-                    await _dispatch_on_error_best_effort(exc)
-                    return _reply(
-                        {"error": str(exc)},
-                        status=503,
-                        headers={"Retry-After": "30"},
-                    )
-                except SinkTargetMismatchError as exc:
-                    await _dispatch_on_error_best_effort(exc)
-                    return _reply({"error": str(exc)}, status=422)
-                except SinkNotCapableError as exc:
-                    await _dispatch_on_error_best_effort(exc)
-                    return _reply({"error": str(exc)}, status=501)
-            elif self._submission_storage is not None:
-                await self._submission_storage.store(submission)
-            else:
-                self.logger.debug(
-                    "No submission_storage configured — skipping local storage for %s",
-                    submission.submission_id,
-                )
-
-            # Forward to endpoint (if form has endpoint action and forwarder configured).
-            # FEAT-458: `outbound` flat-merges extras on top of the validated
-            # answers under `keep` — split at rest (its own column), flat on
-            # the wire, DELIBERATELY: the integrator's contract is its own
-            # payload shape. Do not "fix" this asymmetry.
-            forwarded = False
-            forward_status = None
-            forward_error = None
-            if form.submit is not None and form.submit.action_type == "endpoint" and self._forwarder is not None:
-                fwd_result = await self._forwarder.forward(outbound, form.submit)
-                forwarded = fwd_result.success
-                forward_status = fwd_result.status_code
-                forward_error = fwd_result.error
-                if not forwarded:
-                    self.logger.warning(
-                        "Forward failed for submission %s: %s",
-                        submission.submission_id,
-                        forward_error,
-                    )
-
-            # Cleanup: delete cached partial after successful submission
-            if merge_partials and _merge_session_id and self._partial_store is not None:
-                try:
-                    await self._partial_store.delete(str(form_uid), _merge_session_id)
-                    self.logger.debug(
-                        "Deleted cached partial for %s/%s after successful submit",
-                        form_uid,
-                        _merge_session_id,
-                    )
                 except Exception as exc:
                     self.logger.warning(
-                        "Failed to delete partial after submit %s/%s: %s",
+                        "Failed to load partial for merge %s/%s: %s",
                         form_uid,
                         _merge_session_id,
                         exc,
                     )
 
-            # lifecycle: onAfterSubmit — side-effects only; failures routed via onError.
-            # FEAT-458: under `keep`, a lifecycle handler sees the same merged
-            # view the endpoint sees — `{**submission.data, **extra_data}`.
-            # Based on `submission.data` (not `result.sanitized_data`) so any
-            # metadata-enrichment `extra_flat` merge (:1610-1613 pre-FEAT-458)
-            # is preserved exactly as before under `drop`.
-            after_submit_payload = {**submission.data, **extras} if extras else submission.data
-            await dispatch(
-                "onAfterSubmit",
-                form=form,
-                request=request,
+        from ..services.plausibility import PlausibilityBlocked
+        from ..services.submission_pipeline import SubmitSinkError, ValidationFailed
+
+        pipeline = self._build_submission_pipeline(form)
+        try:
+            outcome = await pipeline.submit(
+                form,
+                data,
                 tenant=tenant,
+                user_id=None,
+                locale="en",
+                context=None,
+                extra_data=None,
                 auth_context=_auth_ctx,
-                payload=after_submit_payload,
+                merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
+                request=request,
+                visit_context=visit_context,
             )
-
+        except FormEventAbort as exc:
+            # Abort is a controlled flow — never routed through onError.
+            return JSONResponse({"error": exc.user_message, "reason": exc.reason}, status=exc.status_code)
+        except ValidationFailed as exc:
+            return _reply({"is_valid": False, "errors": exc.errors}, status=422)
+        except SubmitSinkError as exc:
+            return _reply({"error": str(exc)}, status=exc.status, headers=exc.headers or None)
+        except PlausibilityBlocked as exc:
             return _reply(
-                {
-                    "submission_id": submission.submission_id,
-                    "is_valid": True,
-                    "forwarded": forwarded,
-                    "forward_status": forward_status,
-                    "forward_error": forward_error,
-                },
-                status=200,
+                {"error": f"Answer plausibility check unavailable: {exc.reason}", "code": "PLAUSIBILITY_UNAVAILABLE"},
+                status=503,
+                headers={"Retry-After": "30"},
             )
-
-        except FormEventAbort:
-            # Already handled above — re-raise so it surfaces correctly
-            # if there is an outer handler.
-            raise
-        except Exception as exc:
-            # lifecycle: onError — dispatch and then re-raise original exception.
-            # The original status code (422 for validation, 500 for unexpected)
-            # is preserved because we re-raise.
-            _user_message: str | None = None
+        # Cleanup: delete the cached partial after a successful submission (keyed by the request's form_uid,
+        # exactly as the merge read above).
+        if merge_partials and _merge_session_id and self._partial_store is not None:
             try:
-                _err_res = await dispatch(
-                    "onError",
-                    form=form,
-                    request=request,
-                    tenant=tenant,
-                    auth_context=_auth_ctx,
-                    error=exc,
-                )
-                _user_message = _err_res.user_message
-            except Exception as meta_exc:
-                self.logger.exception("onError handler itself raised: %s", meta_exc)
-            if _user_message:
-                # Surface friendly message in the request for outer error handlers
-                request["_lifecycle_user_message"] = _user_message
-            self.logger.exception("submit_data failed for form %r: %s", form_uid, exc)
-            raise
+                await self._partial_store.delete(str(form_uid), _merge_session_id)
+            except Exception as exc:
+                self.logger.warning("Failed to delete partial after submit %s/%s: %s", form_uid, _merge_session_id, exc)
+        body_out: dict[str, Any] = {
+            "submission_id": outcome.submission_id,
+            "is_valid": True,
+            "forwarded": outcome.forwarded,
+            "forward_status": outcome.forward_status,
+            "forward_error": outcome.forward_error,
+        }
+        if outcome.plausibility is not None:
+            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+        return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/from-db — Load a form from database definition.
@@ -2362,23 +2205,25 @@ class FormAPIHandler:
     async def get_org_graph(self, request: web.Request) -> web.Response:
         """GET /api/v1/org/graph — Return the org graph for the session's org.
 
-        Calls ``OrgGraphService.get_graph()`` using the org_id extracted from
-        the navigator-auth session (``request.user.organizations[0].org_id``).
+        Calls ``OrgGraphService.get_graph()`` with the caller's org, resolved
+        from ``request.user.organizations`` by :meth:`_resolve_org_id`.
 
         Args:
             request: Incoming HTTP request with navigator-auth session.
+                Optional query ``org_id`` picks one of several memberships.
 
         Returns:
             200: Serialized ``OrgGraph`` as JSON.
-            400: Missing org_id in session.
+            400: A non-integer ``org_id``, or several organizations and no selection.
+            403: The user belongs to no organization, or not to ``org_id``.
             501: OrgGraphService not configured.
         """
         if self._org_graph_service is None:
             return JSONResponse({"error": "OrgGraphService not configured"}, status=501)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2436,9 +2281,9 @@ class FormAPIHandler:
         # C-4 (write isolation): org_id comes from the authenticated session,
         # NEVER from the request body — a caller cannot create a project under
         # another tenant's org.
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2666,9 +2511,9 @@ class FormAPIHandler:
             return JSONResponse({"error": "VenueService not configured"}, status=501)
 
         store_id = request.match_info.get("store_id", "")
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2715,9 +2560,9 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2755,9 +2600,9 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid site_id: {site_id_str!r}"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2816,9 +2661,9 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2861,9 +2706,9 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid location_id: {location_id_str!r}"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:

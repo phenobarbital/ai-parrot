@@ -149,6 +149,95 @@ def quantize_int8(fp32_path: Path) -> Path:
     return int8_path
 
 
+def fetch_hub_graph(model_id: str, graph_path_in_repo: str, output_dir: Path) -> Path:
+    """Fetch a graph the model repo *already ships* into ``output_dir/model.onnx``.
+
+    Some classifiers publish their own ONNX export (wolf-defender ships
+    ``onnx/onnx_fp32/model.onnx``). Re-exporting those from the torch
+    weights would benchmark a graph nobody deploys — the production
+    guardrail loads the published one straight from the HF snapshot. This
+    copies that exact file into the flat layout the harness expects.
+
+    Args:
+        model_id: HuggingFace model id.
+        graph_path_in_repo: Path of the graph inside the repo, e.g.
+            ``onnx/onnx_fp32/model.onnx``.
+        output_dir: Destination directory (created if absent).
+
+    Returns:
+        Path to the fetched fp32 graph.
+
+    Raises:
+        RuntimeError: If the graph cannot be resolved from the hub or cache.
+    """
+    from huggingface_hub import hf_hub_download
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    graph_path = output_dir / "model.onnx"
+    if graph_path.exists():
+        logger.info("graph already present: %s", graph_path)
+        return graph_path
+
+    try:
+        source = hf_hub_download(model_id, graph_path_in_repo)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary, re-raised uniformly
+        raise RuntimeError(
+            f"Could not fetch {graph_path_in_repo!r} from {model_id!r}: {exc}"
+        ) from exc
+
+    # Copy rather than symlink: the harness may run with the HF cache
+    # unavailable, and a dangling link would fail at session construction
+    # instead of here, where the error is attributable.
+    shutil.copy2(source, graph_path)
+    logger.info("fetched %s -> %s", graph_path_in_repo, graph_path)
+
+    # A published graph may keep its weights in external-data files.
+    # `hf_hub_download` fetched only the graph, so probing the local cache
+    # for a conventionally-named sidecar would silently miss them and
+    # report success on an unloadable graph. Ask the graph itself which
+    # files it references, then download each one by name.
+    for relative in _external_data_files(graph_path):
+        target = graph_path.parent / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        repo_path = f"{Path(graph_path_in_repo).parent / relative}".lstrip("./")
+        try:
+            fetched = hf_hub_download(model_id, repo_path)
+        except Exception as exc:  # noqa: BLE001 - CLI boundary, re-raised uniformly
+            raise RuntimeError(
+                f"Graph {graph_path_in_repo!r} references external data "
+                f"{relative!r}, but {repo_path!r} could not be fetched from "
+                f"{model_id!r}: {exc}"
+            ) from exc
+        shutil.copy2(fetched, target)
+        logger.info("fetched external-data file %s -> %s", repo_path, target)
+    return graph_path
+
+
+def _external_data_files(graph_path: Path) -> list[str]:
+    """Return the external-data filenames *graph_path* references.
+
+    Reads the graph without materialising its weights, so it works on a
+    graph whose external data is not present yet.
+
+    Args:
+        graph_path: Path to a local ``.onnx`` graph.
+
+    Returns:
+        Relative filenames the graph expects beside it, de-duplicated and
+        in first-seen order. Empty when the graph is self-contained.
+    """
+    import onnx
+
+    model = onnx.load(str(graph_path), load_external_data=False)
+    names: list[str] = []
+    for initializer in model.graph.initializer:
+        if initializer.HasField("data_location") and initializer.data_location == onnx.TensorProto.EXTERNAL:
+            for entry in initializer.external_data:
+                if entry.key == "location" and entry.value not in names:
+                    names.append(entry.value)
+    return names
+
+
 def copy_tokenizer_and_config(model_id: str, output_dir: Path) -> None:
     """Materialise tokenizer + config into *output_dir* for offline loads.
 
@@ -193,6 +282,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Destination directory for the ONNX graphs",
     )
     parser.add_argument("--skip-int8", action="store_true", help="Export fp32 only")
+    parser.add_argument(
+        "--from-hub-graph",
+        default=None,
+        metavar="PATH_IN_REPO",
+        help=(
+            "Fetch a graph the model repo already publishes (e.g. "
+            "onnx/onnx_fp32/model.onnx) instead of exporting from the torch "
+            "weights. Implies --skip-int8: quantizing someone else's export "
+            "would measure a graph that is not the one shipped."
+        ),
+    )
     parser.add_argument("--force", action="store_true", help="Re-export even if graphs exist")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -207,9 +307,12 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(args.output_dir)
 
     try:
-        fp32 = export_fp32(args.model, args.output_dir)
-        if not args.skip_int8:
-            quantize_int8(fp32)
+        if args.from_hub_graph:
+            fetch_hub_graph(args.model, args.from_hub_graph, args.output_dir)
+        else:
+            fp32 = export_fp32(args.model, args.output_dir)
+            if not args.skip_int8:
+                quantize_int8(fp32)
         copy_tokenizer_and_config(args.model, args.output_dir)
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         logger.error("Export failed: %s", exc)

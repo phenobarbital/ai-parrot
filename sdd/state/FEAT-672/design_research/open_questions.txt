@@ -1,0 +1,2 @@
+- [ ] Exact setting names and defaults (cache dir, plane dir, enable flag, build timeout) — *Owner: Jesus Lara*
+- [ ] Prompt wording for the base-branch caveat, so the LLM never reports a symbol *added by the PR* as nonexistent. Needs an acceptance criterion. — *Owner: Jesus Lara*

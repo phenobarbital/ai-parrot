@@ -84,6 +84,51 @@ class WorkerType(WorkdayTypeBase):
             },
         }
 
+    async def _fetch_single_worker(self, worker_id: str, id_types: List[str]) -> Any:
+        """Fetch one worker, trying each Worker_Reference ID type in order.
+
+        A reference Workday rejects as invalid for a type moves on to the next
+        type immediately; any other error is retried up to ``max_retries``.
+
+        Args:
+            worker_id: Worker identifier value.
+            id_types: Worker_Reference ID types to try, in order.
+
+        Returns:
+            The raw Get_Workers response.
+        """
+        last_invalid: Exception | None = None
+        for id_type in id_types:
+            payload = {
+                **self.request_payload,
+                "Request_References": {
+                    "Worker_Reference": [
+                        {"ID": {"type": id_type, "_value_1": worker_id}}
+                    ]
+                },
+            }
+            self._logger.info(f"🔍 Fetching worker {worker_id} using ID type: {id_type}")
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    return await self.service.call_operation(operation="Get_Workers", **payload)
+                except Exception as exc:
+                    if "Invalid ID value" in str(exc):
+                        self._logger.info(f"[Get_Workers] {worker_id} is not a valid {id_type}")
+                        last_invalid = exc
+                        break
+                    self._logger.warning(
+                        f"[Get_Workers] Error fetching worker {worker_id} as {id_type} "
+                        f"(attempt {attempt}/{self.max_retries}): {exc}"
+                    )
+                    if attempt == self.max_retries:
+                        self._logger.error(
+                            f"[Get_Workers] Failed to fetch worker {worker_id} as {id_type} after "
+                            f"{self.max_retries} attempts."
+                        )
+                        raise
+                    await asyncio.sleep(self.retry_delay)
+        raise last_invalid
+
     async def execute(self, **kwargs) -> pd.DataFrame:
         """
         Execute the Get_Workers operation and return a pandas DataFrame.
@@ -92,12 +137,16 @@ class WorkerType(WorkdayTypeBase):
         fetches all pages in batches of at most `max_parallel` concurrent requests.
 
         Args:
-            worker_id: Optional specific worker Employee_ID to fetch
+            worker_id: Optional specific worker ID to fetch
+            worker_id_type: Optional Worker_Reference ID type for ``worker_id``
+                (``Employee_ID`` or ``Contingent_Worker_ID``); when omitted both
+                are tried, Employee_ID first
             document_directory: Optional base directory to save worker documents (defaults to /tmp/workday_worker_documents)
             start_date: Optional ISO datetime string for incremental load (Transaction_Log_Criteria_Data Updated_From)
             end_date: Optional ISO datetime string for incremental load upper bound; defaults to UTC now minus 5 min
         """
         worker_id = kwargs.pop("worker_id", None)
+        worker_id_type = kwargs.pop("worker_id_type", None)
         document_directory = kwargs.pop("document_directory", None)
         start_date = kwargs.pop("start_date", None)
         end_date = kwargs.pop("end_date", None) or (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -120,41 +169,12 @@ class WorkerType(WorkdayTypeBase):
         pagination_info = {"total_results": None, "total_pages": None}
 
         if worker_id:
-            # Detect ID type: Employee_ID (numeric) vs Contingent_Worker_ID (alphanumeric)
-            # Employee_ID examples: "889", "12345"
-            # Contingent_Worker_ID examples: "TD0ATVE10", "OSVO2HSHP"
-            id_type = "Employee_ID" if worker_id.isdigit() else "Contingent_Worker_ID"
+            # Employee IDs are not always numeric (e.g. "T0000005001147"), so the
+            # ID type cannot be inferred from the value: try Employee_ID first and
+            # fall back to Contingent_Worker_ID when Workday rejects the reference.
+            id_types = [worker_id_type] if worker_id_type else ["Employee_ID", "Contingent_Worker_ID"]
+            raw = await self._fetch_single_worker(worker_id, id_types)
 
-            # Single‐worker request
-            payload = {
-                **self.request_payload,
-                "Request_References": {
-                    "Worker_Reference": [
-                        {"ID": {"type": id_type, "_value_1": worker_id}}
-                    ]
-                },
-            }
-            
-            # Use retry for single worker request
-            raw = None
-            self._logger.info(f"🔍 Fetching worker {worker_id} using ID type: {id_type}")
-            for attempt in range(1, self.max_retries + 1):
-                try:
-                    raw = await self.service.call_operation(operation="Get_Workers", **payload)
-                    break
-                except Exception as exc:
-                    self._logger.warning(
-                        f"[Get_Workers] Error fetching worker {worker_id} as {id_type} "
-                        f"(attempt {attempt}/{self.max_retries}): {exc}"
-                    )
-                    if attempt == self.max_retries:
-                        self._logger.error(
-                            f"[Get_Workers] Failed to fetch worker {worker_id} as {id_type} after "
-                            f"{self.max_retries} attempts."
-                        )
-                        raise
-                    await asyncio.sleep(self.retry_delay)
-            
             data = self.service.serialize_object(raw)
             items = data.get("Response_Data", {}).get("Worker", [])
             workers_raw = [items] if isinstance(items, dict) else items or []

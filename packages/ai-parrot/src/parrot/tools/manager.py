@@ -393,6 +393,10 @@ class ToolManager(MCPToolManagerMixin):
 
         # Confirmation guard for per-call HITL review (optional — FEAT-235)
         self._confirmation_guard: Optional["ConfirmationGuard"] = None
+        # PA-9: host toolkit-parameter hook bound to this manager, see parrot.tools.host_hooks
+        self._toolkit_param_binding: Optional[tuple[Callable[..., Any], Any]] = None
+        # Mapping (the aiohttp app) the server-managed ``source="app"`` constructor params are filled from.
+        self._server_param_source: Optional[Any] = None
 
         # Execution policy: declarative tool → remote-executor routing.
         self._execution_policy = None
@@ -573,6 +577,85 @@ class ToolManager(MCPToolManagerMixin):
             The ConfirmationGuard instance, or None if no guard is configured.
         """
         return self._confirmation_guard
+
+    # ── Host toolkit-parameter hook (PA-9) ─────────────────────────────────────
+
+    def set_toolkit_param_hook(self, hook: Optional[Callable[..., Any]], subject: Any = None) -> None:
+        """Bind (or clear, with ``None``) the host hook every toolkit this manager constructs goes through.
+
+        ``subject`` is the :class:`~parrot.tools.tooling_policy.ToolingSubject` handed to the hook; see
+        :mod:`parrot.tools.host_hooks` for the hook contract.
+        """
+        self._toolkit_param_binding = None if hook is None else (hook, subject)
+
+    def hooked_toolkit_params(
+        self, slug: str, params: Dict[str, Any], *, phase: Optional[str] = None
+    ) -> tuple[Dict[str, Any], tuple[str, ...]]:
+        """``(final constructor params, forced exclude_tools)`` of ``slug`` after the host hook.
+
+        Without a bound hook the params come back unchanged. Raises ``ToolParamRefused`` (a ``TenantToolingRefused``)
+        when the hook refuses; ``phase`` overrides the bound subject's phase (e.g. ``attach`` for a live assignment).
+        """
+        if self._toolkit_param_binding is None:
+            return dict(params), ()
+        from .host_hooks import run_toolkit_param_hook, split_exclude_tools
+
+        slug = self._canonical_slug(slug)  # the hook is keyed by the canonical slug, never the caller's spelling
+        hook, subject = self._toolkit_param_binding
+        if phase is not None and subject is not None:
+            subject = subject.model_copy(update={"phase": phase})
+        return split_exclude_tools(run_toolkit_param_hook(hook, slug, params, subject))
+
+    def set_server_param_source(self, source: Optional[Any]) -> None:
+        """Bind the mapping (the aiohttp app) every tool/toolkit this manager constructs gets its server-managed
+        ``source="app"`` constructor params from (e.g. ``artifact_store``), whichever path builds it."""
+        self._server_param_source = source
+
+    def server_filled_params(self, cls: type) -> Dict[str, Any]:
+        """Constructor values the server owns for ``cls``: ``source="app"`` params found in the bound source."""
+        source = self._server_param_source
+        declared = getattr(cls, "server_managed_params", None) or {}
+        if source is None or not declared:
+            return {}
+        from .server_params import constructor_server_params
+
+        return {
+            name: source[declared[name].key]
+            for name in constructor_server_params(cls)
+            if declared[name].source == "app" and source.get(declared[name].key) is not None
+        }
+
+    def build_toolkit(self, cls: type, slug: str, params: Dict[str, Any], *, phase: Optional[str] = None) -> Any:
+        """Construct ``cls(**params)`` for a toolkit OR a standalone tool: server-managed params filled, then the
+        host hook (forced values applied, ``exclude_tools`` set on the instance). Identical to ``cls(**params)``
+        when neither a hook nor a server-param source is bound."""
+        from .host_hooks import apply_exclude_tools
+
+        params = {**params, **self.server_filled_params(cls)}
+        final, exclude = self.hooked_toolkit_params(slug, params, phase=phase)
+        instance = cls(**final)
+        apply_exclude_tools(instance, exclude)
+        return instance
+
+    @staticmethod
+    def _canonical_slug(name: str) -> str:
+        """The canonical (lower-case registry) slug of ``name``: a case variant or class-name alias is resolved
+        (``RSS_Feed_Reader`` / ``RSSFeedReader`` → ``rss_feed_reader``); an unknown name is lower-cased."""
+        try:
+            from .resolver import get_toolkit_resolver
+
+            return get_toolkit_resolver().canonical_slug(name) or name.lower()
+        except Exception:  # pylint: disable=broad-except
+            return name.lower()
+
+    def _slug_of_class(self, cls: type) -> str:
+        """Best-effort registry slug of ``cls`` (class-name alias), else its lower-cased name."""
+        try:
+            from .resolver import get_toolkit_resolver
+
+            return get_toolkit_resolver().canonical_slug(cls.__name__) or cls.__name__.lower()
+        except Exception:  # pylint: disable=broad-except
+            return cls.__name__.lower()
 
     # ── Tool Search ────────────────────────────────────────────────────────────
 
@@ -1050,7 +1133,7 @@ class ToolManager(MCPToolManagerMixin):
         try:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
             cls = getattr(module, tool_name)
-            instance = cls(**kwargs)
+            instance = self.build_toolkit(cls, tool_name, kwargs)
             self.register_tool(instance)
             return True
         except (ImportError, AttributeError) as e:
@@ -1076,6 +1159,7 @@ class ToolManager(MCPToolManagerMixin):
         """
         from .discovery import discover_from_registry, resolve_class
         from .toolkit import AbstractToolkit
+        from .tooling_policy import ToolParamRefused
 
         registry = discover_from_registry()
         dotted_path = registry.get(tool_name)
@@ -1093,10 +1177,12 @@ class ToolManager(MCPToolManagerMixin):
 
         try:
             if isinstance(cls, type) and issubclass(cls, AbstractToolkit):
-                self.register_toolkit(cls, **kwargs)
+                self.register_toolkit(self.build_toolkit(cls, tool_name, kwargs))
             else:
-                self.register_tool(cls(**kwargs))
+                self.register_tool(self.build_toolkit(cls, tool_name, kwargs))
             return True
+        except ToolParamRefused:
+            raise  # a host refusal is not a "could not load" (the caller maps it to a 422 / failed build)
         except Exception as e:  # noqa: BLE001
             self.logger.error("Error instantiating tool %r (%s): %s", tool_name, dotted_path, e)
             return False
@@ -1145,7 +1231,7 @@ class ToolManager(MCPToolManagerMixin):
                 available = ToolkitRegistry.list_toolkits()
                 raise ValueError(f"Unknown toolkit: '{toolkit}'. " f"Available toolkits: {available}")
             try:
-                toolkit_instance = toolkit_class(**kwargs)
+                toolkit_instance = self.build_toolkit(toolkit_class, toolkit, kwargs)
             except Exception as e:
                 self.logger.error("Error instantiating toolkit %r: %s", toolkit, e)
                 raise
@@ -1154,7 +1240,7 @@ class ToolManager(MCPToolManagerMixin):
             # It's a toolkit class, instantiate it
             toolkit_name = toolkit.__name__
             try:
-                toolkit_instance = toolkit(**kwargs)
+                toolkit_instance = self.build_toolkit(toolkit, self._slug_of_class(toolkit), kwargs)
             except Exception as e:
                 self.logger.error("Error instantiating toolkit class %r: %s", toolkit_name, e)
                 raise
@@ -1575,6 +1661,56 @@ class ToolManager(MCPToolManagerMixin):
     def invocation_observer(self) -> Optional[Any]:
         """The installed invocation observer, or ``None``."""
         return self._invocation_observer
+
+    async def _confirm_call(
+        self,
+        tool: Any,
+        tool_name: str,
+        tool_kind: str,
+        parameters: Dict[str, Any],
+        permission_context: Any,
+    ) -> tuple[Optional[ToolResult], Dict[str, Any], bool]:
+        """Run the optional ConfirmationGuard (FEAT-235) for one ``AbstractTool`` dispatch.
+
+        Honors the ``@tool(requires_confirmation=True)`` API (FEAT-474 G2). Purely additive: without a
+        configured guard nothing changes and the call is not approved.
+
+        Returns:
+            ``(refusal, parameters, approved)`` — ``refusal`` is a ``ToolResult`` when the human declined
+            (the dispatch must stop), ``parameters`` may have been edited by the human, and ``approved`` is
+            True only when a guard decided ``confirmed`` (FEAT-622 M8: that binds the approval token).
+        """
+        if self._confirmation_guard is None:
+            return None, parameters, False
+        decision = await self._confirmation_guard.confirm(
+            tool=tool, parameters=parameters, permission_context=permission_context
+        )
+        if not decision.allowed:
+            self._log_enforcement(tool_name, tool_kind, "confirmation", "deny", permission_context, decision.reason)
+            refusal = ToolResult(
+                success=False,
+                status=decision.status,  # "cancelled" | "timeout"
+                error=f"Confirmation {decision.status}: {decision.reason}",
+                result=None,
+            )
+            return refusal, parameters, False
+        self._log_enforcement(tool_name, tool_kind, "confirmation", "allow", permission_context, decision.reason)
+        if decision.parameters is not None:
+            # Use the (possibly edited and re-validated) parameters
+            parameters = decision.parameters
+        return None, parameters, decision.status == "confirmed"
+
+    @staticmethod
+    async def _call_tool_execute(
+        tool: Any, exec_kwargs: Dict[str, Any], parameters: Dict[str, Any], approved: bool
+    ) -> Any:
+        """``tool.execute(**exec_kwargs)``, under the approval token only when a guard confirmed the call."""
+        if not approved:
+            return await tool.execute(**exec_kwargs)
+        from ..auth.confirmation import _approved_call  # pylint: disable=import-outside-toplevel
+
+        with _approved_call(tool, parameters):
+            return await tool.execute(**exec_kwargs)
 
     async def _observed(
         self,
@@ -2004,43 +2140,12 @@ class ToolManager(MCPToolManagerMixin):
                         )
                 # === End grant guard ===
 
-                # === Confirmation guard check (FEAT-235) ===
-                # If a ConfirmationGuard is configured and the tool requires
-                # confirmation, ask the human before dispatching to tool.execute().
-                # Dispatch order is locked: grant → confirm.
-                # This is purely additive: without a guard the path is unchanged.
-                if self._confirmation_guard is not None:
-                    confirm_decision = await self._confirmation_guard.confirm(
-                        tool=tool,
-                        parameters=parameters,
-                        permission_context=permission_context,
-                    )
-                    if not confirm_decision.allowed:
-                        self._log_enforcement(
-                            tool_name,
-                            tool_kind,
-                            "confirmation",
-                            "deny",
-                            permission_context,
-                            confirm_decision.reason,
-                        )
-                        return ToolResult(
-                            success=False,
-                            status=confirm_decision.status,  # "cancelled" | "timeout"
-                            error=f"Confirmation {confirm_decision.status}: {confirm_decision.reason}",
-                            result=None,
-                        )
-                    self._log_enforcement(
-                        tool_name,
-                        tool_kind,
-                        "confirmation",
-                        "allow",
-                        permission_context,
-                        confirm_decision.reason,
-                    )
-                    if confirm_decision.parameters is not None:
-                        # Use the (possibly edited and re-validated) parameters
-                        parameters = confirm_decision.parameters
+                # === Confirmation guard check (FEAT-235) — see _confirm_call ===
+                refusal, parameters, approved = await self._confirm_call(
+                    tool, tool_name, tool_kind, parameters, permission_context
+                )
+                if refusal is not None:
+                    return refusal
                 # === End confirmation guard ===
 
                 # Propagate permission context and resolver to tool.execute()
@@ -2058,7 +2163,9 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_channel", getattr(permission_context, "channel", "unknown"))
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
-                result = await self._observed(observation, tool_name, lambda: tool.execute(**exec_kwargs))
+                result = await self._observed(
+                    observation, tool_name, lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved)
+                )
 
                 if return_tool_result:
                     # Opt-in complete-result mode (TASK-2937): use the same
@@ -2677,6 +2784,11 @@ class ToolManager(MCPToolManagerMixin):
         # FEAT-264: carry the credential broker so cloned managers retain gating
         if self._broker is not None:
             new_tm._broker = self._broker
+        new_tm._server_param_source = self._server_param_source
+        new_tm._toolkit_param_binding = self._toolkit_param_binding  # PA-9: a clone keeps constructing through the hook
+        # PA-10: a per-session clone (user toolkit overrides) must keep the bot's TOOL_CALL guardrails: the pipeline is
+        # the bot's, shared by reference, so a clone can never be the way around a host guardrail
+        new_tm._tool_call_pipeline = self._tool_call_pipeline
         # Share tool references. Tools that respect the per-invocation
         # CredentialResolver contract are safe; stateful toolkits caching
         # tokens on ``self`` should implement their own per-user clone.

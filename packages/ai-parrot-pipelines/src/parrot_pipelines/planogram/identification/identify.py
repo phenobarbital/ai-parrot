@@ -6,14 +6,16 @@ import asyncio
 import json
 import logging
 import math
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import cv2
 import numpy as np
+from pydantic import BaseModel, Field, create_model
 
 from parrot.models.detections import DetectionBox
 from parrot_pipelines.planogram.comparison.definition import Descriptors
 from parrot_pipelines.planogram.contracts import (
+    AddedShape,
     CycleContext,
     Identification,
     IdentificationResponse,
@@ -49,6 +51,17 @@ _MARK_MIN_LABEL_PX = 11  # the pre-scaling size (font scale 0.5)
 _MARK_MAX_LABEL_PX = 64
 _HERSHEY_CAP_HEIGHT_PX = 22  # cv2.FONT_HERSHEY_SIMPLEX digit height at font scale 1.0
 _EMPTY_IDENTITY_TOKENS = frozenset({"", "none", "null", "unknown", "n/a", "na", "empty", "empty slot"})
+
+
+def _clean_reference_id(value: Optional[str], labels: Sequence[str]) -> Optional[str]:
+    """The offered label a returned ``reference_id`` stands for; ``None`` when the model declined."""
+    text = (value or "").strip()
+    if text.casefold() in _EMPTY_IDENTITY_TOKENS:
+        return None
+    if text in labels:
+        return text
+    prefixed = [label for label in labels if text.startswith(label)]
+    return prefixed[0] if len(prefixed) == 1 else text
 
 
 def _target_id(target: Target) -> str:
@@ -158,6 +171,38 @@ def render_marked_strip(image: np.ndarray, strip: PixelBox, marks: List[Tuple[in
     return encode_png(crop)
 
 
+def _without_reference_id() -> Type[BaseModel]:
+    """``IdentificationResponse`` whose area entries have no ``reference_id`` field.
+
+    A model fills every field its response schema offers, so a call that attaches no reference image must
+    not offer the field at all.
+    """
+    fields: Dict[str, Any] = {
+        name: (field.annotation, field) for name, field in Identification.model_fields.items() if name != "reference_id"
+    }
+    entry = create_model("UnreferencedIdentification", **fields)
+    return create_model(
+        "UnreferencedIdentificationResponse",
+        existing_identifications=(List[entry], Field(default_factory=list)),  # type: ignore[valid-type]
+        added_shapes=(List[AddedShape], Field(default_factory=list)),
+    )
+
+
+#: Response schema of a call without reference images.
+UNREFERENCED_RESPONSE: Type[BaseModel] = _without_reference_id()
+
+
+async def _ask_identify(
+    ctx: CycleContext, prompt: str, images: Sequence[bytes], referenced: bool
+) -> IdentificationResponse:
+    """One identify call; ``reference_id`` is part of the schema only when the call carries references."""
+    schema = IdentificationResponse if referenced else UNREFERENCED_RESPONSE
+    answer = await ctx.vision.ask(prompt, images, schema, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION)
+    if isinstance(answer, IdentificationResponse):
+        return answer
+    return IdentificationResponse.model_validate(answer.model_dump())
+
+
 def build_identify_prompt(
     targets: Sequence[Dict[str, Any]], vocabulary: Sequence[str], *, reference_labels: Sequence[str] = ()
 ) -> str:
@@ -186,6 +231,8 @@ def build_identify_prompt(
         "- occupancy is 'occupied' when a package or product body is visible, including a box seen from its "
         "side, tilted, dark, or with glare. Only shelf backing, a hook, divider, price tag or fixture parts is "
         "'empty'. Use 'unknown' only when the box itself is unreadable.\n"
+        "- A package whose body stands over a NEIGHBOURING area and only reaches into the edge of this box does "
+        "not make this area occupied: judge occupancy by the centre of the box (above its own price tag, if any).\n"
         "- ocr_text is NOT evidence of emptiness. Read the printed product code into text and product, correcting "
         "ocr_text when needed. Brand comes from the visible logo.\n"
         "- For each area report these descriptor fields inside descriptors: "
@@ -398,7 +445,12 @@ async def _run_call(
     target_ids = {_target_id(target) for target in targets}
     call_readings = {key: value for key, value in perception.ocr_readings.items() if key in target_ids}
     policy = ctx.layout.references if ctx.layout is not None else None
-    references, diagnostics = select_references(ctx.reference_bank, call_readings, policy) if policy else ([], [])
+    # Nothing to select when the type does not use references or none were loaded: skip the per-call
+    # selection instead of reporting the same diagnostic once per identify call.
+    if policy is not None and policy.enabled and ctx.reference_bank:
+        references, diagnostics = select_references(ctx.reference_bank, call_readings, policy)
+    else:
+        references, diagnostics = [], []
     labels = [reference.label for reference in references]
     prompt = build_identify_prompt(areas, vocabulary, reference_labels=labels)
     errors = []
@@ -411,9 +463,7 @@ async def _run_call(
     try:
         png = await ctx.executor.run(render_marked_strip, image, _as_tuple(strip), mark_list)
         images = [png, *(reference.image for reference in references)]
-        answer = await ctx.vision.ask(
-            prompt, images, IdentificationResponse, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION
-        )
+        answer = await _ask_identify(ctx, prompt, images, bool(labels))
     except VisionError as exc:
         source = _source_for(perception)
         message = f"identify_failed: {exc}"
@@ -429,15 +479,19 @@ async def _run_call(
             "existing_identifications entry for every requested area."
         )
         try:
-            answer = await ctx.vision.ask(
-                repair_prompt,
-                images,
-                IdentificationResponse,
-                stage=IDENTIFY_STAGE,
-                prompt_version=IDENTIFY_PROMPT_VERSION,
-            )
+            answer = await _ask_identify(ctx, repair_prompt, images, bool(labels))
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
+    # "null" / "none" spelled out is the model declining to match; a label with text run onto it
+    # ("ref-0004<hash>.jpg") is still that label.
+    answer = answer.model_copy(
+        update={
+            "existing_identifications": [
+                item.model_copy(update={"reference_id": _clean_reference_id(item.reference_id, labels)})
+                for item in answer.existing_identifications
+            ]
+        }
+    )
     invalid_references = [
         item
         for item in answer.existing_identifications

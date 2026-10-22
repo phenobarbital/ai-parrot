@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:09:35+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-05T23:19:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "graph root: sole writer of project.py in this feature (adds WikiRemoteConfig/resolve_remote); no imports from sibling tasks",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3351-remote-config-model.md"
+      "completed_at": "2026-10-05T22:02:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3351-remote-config-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3352",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "graph root: creates actor.py; first writer of tools.py in this feature (5 literal substitutions)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3352-actor-context-replaces-agent-mcp.md"
+      "completed_at": "2026-10-05T22:02:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3352-actor-context-replaces-agent-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3353",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "graph root: edits structural/service.py + structural/tools.py only; no sibling symbol needed",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3353-structural-read-repair-flag.md"
+      "completed_at": "2026-10-05T22:02:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3353-structural-read-repair-flag.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3354",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -78,8 +81,9 @@
       "parallelism_notes": "graph root: edits ledger/service.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3354-ledger-service-from-dir.md"
+      "completed_at": "2026-10-05T22:29:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3354-ledger-service-from-dir.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3355",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -96,8 +100,9 @@
       "parallelism_notes": "graph root: edits arango_store.py only; unit-tested with a fake AQL layer",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3355-arango-symbol-plane.md"
+      "completed_at": "2026-10-05T22:29:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3355-arango-symbol-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3356",
@@ -106,7 +111,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,8 +121,9 @@
       "parallelism_notes": "same file as TASK-3352 (tools.py) — serialized; also relies on the `current_actor` import TASK-3352 adds to tools.py",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3356-bulk-ingest-tools.md"
+      "completed_at": "2026-10-05T22:29:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3356-bulk-ingest-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3357",
@@ -126,7 +132,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -136,8 +142,9 @@
       "parallelism_notes": "extends `create_bulk_tools()` created by TASK-3356 (tools.py) and imports SourceSlicePayload/IngestBatchReport from it; same file",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3357-sync-push-pull-tools.md"
+      "completed_at": "2026-10-05T22:39:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3357-sync-push-pull-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3358",
@@ -146,7 +153,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -158,8 +165,9 @@
       "parallelism_notes": "calls create_structural_tools(read_repair=) from TASK-3353 (structural/tools.py); LedgerService.from_dir from TASK-3354 (ledger/service.py); create_bulk_tools from TASK-3357 (tools.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3358-wiki-tool-bundle-builder.md"
+      "completed_at": "2026-10-05T22:55:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3358-wiki-tool-bundle-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3359",
@@ -168,7 +176,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,8 +186,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3359-remote-wiki-client.md"
+      "completed_at": "2026-10-05T22:39:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3359-remote-wiki-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3360",
@@ -188,7 +197,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -198,8 +207,9 @@
       "parallelism_notes": "imports actor_scope from TASK-3352 (actor.py); creates serve.py",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3360-serve-config-auth-actor.md"
+      "completed_at": "2026-10-05T22:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3360-serve-config-auth-actor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3361",
@@ -208,7 +218,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -220,8 +230,9 @@
       "parallelism_notes": "imports abuild_wiki_tools/close_bundle from TASK-3358 (mcp_server.py); build_key_store/actor_middleware from TASK-3360 (serve.py, same file); edits cli.py after TASK-3363 (file overlap). EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (dependency manifest)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3361-serve-app-and-cli.md"
+      "completed_at": "2026-10-05T23:09:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3361-serve-app-and-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3362",
@@ -230,7 +241,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -241,8 +252,9 @@
       "parallelism_notes": "imports resolve_remote/WikiRemoteConfig from TASK-3351 (project.py) and RemoteWikiClient/RemoteWikiError from TASK-3359 (remote.py); first writer of cli.py in this feature",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3362-cli-remote-proxy-commands.md"
+      "completed_at": "2026-10-05T22:55:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3362-cli-remote-proxy-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3363",
@@ -251,7 +263,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -262,8 +274,9 @@
       "parallelism_notes": "extends remote_cli.py (remote_client/RemoteCliError) and cli.py written by TASK-3362 (same files); imports SourceSlicePayload/IngestBatchReport and tool names wiki_sync_push/pull from TASK-3357 (tools.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3363-cli-remote-build-push-and-sync.md"
+      "completed_at": "2026-10-05T23:03:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3363-cli-remote-build-push-and-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3364",
@@ -272,7 +285,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -283,8 +296,9 @@
       "parallelism_notes": "edits mcp_server.py after TASK-3358's builder extraction (same file; reuses create_wiki_mcp_server wrapper); imports RemoteWikiClient from TASK-3359 (remote.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3364-proxy-stdio-mcp-server.md"
+      "completed_at": "2026-10-05T23:03:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3364-proxy-stdio-mcp-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3365",
@@ -293,7 +307,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -303,8 +317,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py); edits claude_code/{assets,installer,cli}.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3365-claude-installer-remote.md"
+      "completed_at": "2026-10-05T22:55:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3365-claude-installer-remote.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3366",
@@ -313,7 +328,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -323,8 +338,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py); edits codex/{assets,installer,cli}.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3366-codex-installer-remote.md"
+      "completed_at": "2026-10-05T23:03:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3366-codex-installer-remote.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3367",
@@ -333,7 +349,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -348,8 +364,9 @@
       "parallelism_notes": "e2e exercises serve (TASK-3361, serve.py), build push + sync (TASK-3363, remote_cli.py), pass-through (TASK-3364, mcp_server.py), both installers (TASK-3365/3366) and documents the ArangoDB symbol plane (TASK-3355)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3367-remote-docs-and-e2e.md"
+      "completed_at": "2026-10-05T23:19:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3367-remote-docs-and-e2e.md",
+      "verification": "verified"
     }
   ]
 }

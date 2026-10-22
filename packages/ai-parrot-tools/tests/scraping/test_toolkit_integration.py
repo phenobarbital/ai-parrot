@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from parrot.tools.scraping.drivers.abstract import AbstractDriver
 from parrot.tools.scraping.plan import ScrapingPlan
 from parrot.tools.scraping.toolkit import WebScrapingToolkit
 from parrot.tools.scraping.toolkit_models import PlanSummary
@@ -67,12 +68,10 @@ def mock_llm_client():
 
 
 def _make_driver_mock():
-    """Build a mock Selenium-like driver."""
-    drv = MagicMock()
+    """Build a mock async driver implementing the AbstractDriver API."""
+    drv = AsyncMock(spec=AbstractDriver)
     type(drv).current_url = PropertyMock(return_value=SAMPLE_URL)
-    type(drv).page_source = PropertyMock(return_value=HTML_BODY)
-    drv.get = MagicMock()
-    drv.quit = MagicMock()
+    drv.get_page_source.return_value = HTML_BODY
     return drv
 
 
@@ -461,11 +460,13 @@ class TestCrawlDelegation:
         mock_engine_instance = MagicMock()
         mock_engine_instance.run = AsyncMock(return_value=MagicMock(pages=[]))
 
-        # Create a fake crawl_engine module so the dynamic import succeeds
-        fake_module = types.ModuleType("parrot.tools.scraping.crawl_engine")
+        # Create a fake crawl_engine module so the dynamic import succeeds.
+        # The toolkit imports it relatively, i.e. from the real
+        # ``parrot_tools`` package, not the legacy ``parrot.tools`` alias.
+        fake_module = types.ModuleType("parrot_tools.scraping.crawl_engine")
         fake_module.CrawlEngine = MagicMock(return_value=mock_engine_instance)
 
-        with patch.dict(sys.modules, {"parrot.tools.scraping.crawl_engine": fake_module}):
+        with patch.dict(sys.modules, {"parrot_tools.scraping.crawl_engine": fake_module}):
             await toolkit.crawl(SAMPLE_URL, depth=2, plan=sample_plan)
 
         mock_engine_instance.run.assert_called_once()

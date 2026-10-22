@@ -33,10 +33,11 @@ import re
 import sqlite3
 import struct
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal, Optional
 from urllib.parse import quote
 
 import aiosqlite
@@ -49,9 +50,24 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "3"
 
+#: Entity-attribute plane (FEAT-627). Additive: created on writable planes
+#: that lack it (see ``SQLiteWikiStore._migrate``) without a schema bump.
+#: ``ON DELETE CASCADE`` is documentation only — foreign keys are not
+#: enabled on these connections, so deletes are always explicit.
+_PAGE_ATTRS_SQL = """
+CREATE TABLE IF NOT EXISTS page_attrs (
+    concept_id TEXT NOT NULL REFERENCES pages(concept_id) ON DELETE CASCADE,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    PRIMARY KEY (concept_id, key)
+);
+CREATE INDEX IF NOT EXISTS idx_page_attrs_kv ON page_attrs(key, value);
+"""
+
 # Shared between WikiStore (async) and SourceCollectionManager (sync
 # sqlite3 connection to the same file) — WAL mode allows both.
-WIKI_TABLES_SQL = """
+WIKI_TABLES_SQL = (
+    """
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -108,6 +124,9 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE INDEX IF NOT EXISTS idx_pages_category ON pages(category);
 CREATE INDEX IF NOT EXISTS idx_pages_source   ON pages(source_id);
 CREATE INDEX IF NOT EXISTS idx_pages_node     ON pages(node_id);
+"""
+    + _PAGE_ATTRS_SQL
+    + """
 
 CREATE TABLE IF NOT EXISTS edges (
     src        TEXT NOT NULL,
@@ -153,6 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_symbols_name   ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_path   ON symbols(rel_path);
 CREATE INDEX IF NOT EXISTS idx_symbols_source ON symbols(source_id);
 """
+)
 
 #: FTS5 lexical indexes + the triggers that keep them in sync.
 #:
@@ -406,6 +426,10 @@ def _row_to_symbol_record(row: aiosqlite.Row) -> SymbolRecord:
     )
 
 
+class AttrsUnsupportedError(RuntimeError):
+    """Raised when a backend or plane cannot persist page attributes."""
+
+
 class WikiPageRecord(BaseModel):
     """A single wiki page row in the retrieval plane.
 
@@ -439,6 +463,9 @@ class WikiPageRecord(BaseModel):
             of the node text for ``sym:`` pages. ``None`` for pages that
             predate the freshness plane or are not backed by scanned
             source (e.g. ``dir:`` pages).
+        attrs: Entity attributes persisted to ``page_attrs`` in the same
+            transaction as the page (FEAT-627). On upsert the page's
+            previous attrs are replaced; an empty mapping clears them.
     """
 
     concept_id: str = Field(..., min_length=1)
@@ -453,6 +480,7 @@ class WikiPageRecord(BaseModel):
     asserted_by: Optional[str] = None
     updated_at: Optional[str] = None
     content_hash: Optional[str] = None
+    attrs: dict[str, str] = Field(default_factory=dict)
 
 
 def rank_by_cosine(
@@ -508,18 +536,162 @@ imported. See :func:`register_wiki_backend` and the dispatch in
 """
 
 
-def register_wiki_backend(name: str, factory: Callable[..., BaseWikiStore]) -> None:
-    """Register a satellite-provided wiki backend (FEAT-449 M7).
+class WikiBackendSpec(BaseModel):
+    """One wiki backend entry of the registry (FEAT-540 M7).
+
+    Attributes:
+        name: Backend name (``WikiNamespaceConfig.backend`` /
+            ``create_wiki_store(backend=...)``).
+        kind: ``"local"`` (on-disk plane under a storage dir) or ``"server"``
+            (server-hosted plane — no local directory).
+        factory: Store factory, or a lazy ``"module:attr"`` path to it.
+        resolve_options: Optional callable (or lazy ``"module:attr"`` path)
+            ``(cfg) -> dict`` turning a ``WikiNamespaceConfig`` into factory
+            keyword options. ``None`` keeps the legacy ArangoDB-params
+            behaviour (only ever used by satellites registered with the
+            two-argument form).
+        is_built: Optional lazy path of the "is this plane built" probe.
+        extra: Optional install extra that provides the backend.
+    """
+
+    name: str
+    kind: Literal["local", "server"]
+    factory: Any
+    resolve_options: Any = None
+    is_built: str | None = None
+    extra: str | None = None
+
+
+def _make_sqlite(*, storage_dir: Any = None, wiki_name: str = "", sqlite_policy: Any = None, **_: Any) -> BaseWikiStore:
+    """Build the ``sqlite`` plane under ``{storage_dir}/wiki.db``."""
+    return SQLiteWikiStore(Path(storage_dir) / "wiki.db", wiki_name=wiki_name, sqlite_policy=sqlite_policy)
+
+
+def _make_memory(*, storage_dir: Any = None, wiki_name: str = "", **_: Any) -> BaseWikiStore:
+    """Build the in-memory plane over the OKF bundle ``{storage_dir}/pages``."""
+    # Imported lazily — file_store imports export helpers which import this module.
+    from parrot.knowledge.wiki.file_store import InMemoryWikiStore
+
+    return InMemoryWikiStore(Path(storage_dir) / "pages", wiki_name=wiki_name)
+
+
+def _make_arangodb(*, wiki_name: str = "", **kwargs: Any) -> BaseWikiStore:
+    """Build the server-hosted ArangoDB plane."""
+    # Imported lazily — arango_store imports asyncdb, an optional dependency.
+    from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+
+    return ArangoDBWikiStore(
+        arango_params=kwargs.get("arango_params", {}),
+        database=kwargs.get("database", ""),
+        wiki_name=wiki_name,
+        text_analyzer=kwargs.get("text_analyzer", "text_en"),
+    )
+
+
+def _make_postgres(*, wiki_name: str = "", **kwargs: Any) -> BaseWikiStore:
+    """Build the server-hosted PostgreSQL plane (FEAT-520)."""
+    # Imported lazily — postgres_store imports asyncpg, an optional dependency.
+    from parrot.knowledge.graphindex.pg_schema import GRAPHINDEX_PG_DSN
+    from parrot.knowledge.wiki.postgres_store import PostgresWikiStore
+
+    return PostgresWikiStore(
+        dsn=kwargs.get("dsn") or GRAPHINDEX_PG_DSN,
+        wiki_name=wiki_name,
+        schema=kwargs.get("schema", "graphindex"),
+    )
+
+
+def _no_options(cfg: Any) -> dict[str, Any]:
+    """Factory options for a backend configured entirely from the environment."""
+    return {}
+
+
+_BUILTIN_WIKI_BACKENDS: dict[str, WikiBackendSpec] = {
+    "sqlite": WikiBackendSpec(name="sqlite", kind="local", factory=_make_sqlite, resolve_options=_no_options),
+    "memory": WikiBackendSpec(name="memory", kind="local", factory=_make_memory, resolve_options=_no_options),
+    "arangodb": WikiBackendSpec(name="arangodb", kind="server", factory=_make_arangodb),
+    "postgres": WikiBackendSpec(name="postgres", kind="server", factory=_make_postgres, resolve_options=_no_options),
+}
+"""Built-in wiki backends. Satellites add theirs via :func:`register_wiki_backend`."""
+
+_EXTRA_SPECS: dict[str, WikiBackendSpec] = {}
+"""Metadata (kind / resolve_options) of satellite backends; factories live in ``_EXTRA_BACKENDS``."""
+
+
+def register_wiki_backend(
+    name: str,
+    factory: Callable[..., BaseWikiStore],
+    *,
+    kind: Literal["local", "server"] = "server",
+    resolve_options: Callable[[Any], dict[str, Any]] | None = None,
+) -> None:
+    """Register a satellite-provided wiki backend (FEAT-449 M7, FEAT-540 M7).
 
     Args:
         name: Backend name (matches ``WikiNamespaceConfig.backend`` /
             ``create_wiki_store(backend=...)``). Must not collide with a
-            built-in name (``"sqlite"``, ``"memory"``, ``"arangodb"``).
+            built-in name (``"sqlite"``, ``"memory"``, ``"arangodb"``,
+            ``"postgres"``).
         factory: Callable constructing the store,
             ``factory(*, storage_dir=None, wiki_name="", **kwargs) ->
             BaseWikiStore``.
+        kind: ``"server"`` (default) or ``"local"``.
+        resolve_options: ``(WikiNamespaceConfig) -> dict`` of factory
+            options used when opening a federated namespace. ``None``
+            keeps the legacy behaviour of passing ArangoDB params
+            (backward compatibility for the two-argument form).
     """
     _EXTRA_BACKENDS[name] = factory
+    _EXTRA_SPECS[name] = WikiBackendSpec(name=name, kind=kind, factory=factory, resolve_options=resolve_options)
+
+
+def wiki_backend_names() -> list[str]:
+    """Return every known backend name (built-ins first, then satellites)."""
+    return [*_BUILTIN_WIKI_BACKENDS, *(n for n in _EXTRA_BACKENDS if n not in _BUILTIN_WIKI_BACKENDS)]
+
+
+def wiki_backend_spec(name: str) -> WikiBackendSpec:
+    """Return the :class:`WikiBackendSpec` for ``name``.
+
+    Raises:
+        ValueError: For an unknown backend, listing the known ones.
+    """
+    spec = _BUILTIN_WIKI_BACKENDS.get(name)
+    if spec is not None:
+        return spec
+    factory = _EXTRA_BACKENDS.get(name)
+    if factory is not None:
+        known = _EXTRA_SPECS.get(name)
+        if known is not None and known.factory is factory:
+            return known
+        # Registered by direct `_EXTRA_BACKENDS` assignment (legacy) or replaced since.
+        return WikiBackendSpec(name=name, kind="server", factory=factory)
+    known_names = ", ".join(repr(b) for b in wiki_backend_names())
+    raise ValueError(f"Unknown wiki storage backend {name!r} — expected one of {known_names}")
+
+
+def _lazy(target: Any) -> Any:
+    """Resolve a ``"module:attr"`` path lazily; pass callables through."""
+    if isinstance(target, str):
+        import importlib
+
+        module, _, attr = target.partition(":")
+        return getattr(importlib.import_module(module), attr)
+    return target
+
+
+def resolve_wiki_backend(name: str) -> Callable[..., BaseWikiStore]:
+    """Return the store factory registered for ``name``.
+
+    Raises:
+        ValueError: For an unknown backend.
+    """
+    return _lazy(wiki_backend_spec(name).factory)
+
+
+def is_server_backend(name: str) -> bool:
+    """Whether ``name`` is a server-hosted backend (no local storage dir)."""
+    return wiki_backend_spec(name).kind == "server"
 
 
 class BaseWikiStore(ABC):
@@ -538,6 +710,34 @@ class BaseWikiStore(ABC):
     (the name predates the second backend; semantics are
     backend-defined lexical ranking, not necessarily SQLite FTS).
     """
+
+    #: Whether this backend persists page attributes (FEAT-627). Backends
+    #: that do not keep the unsupported defaults below.
+    supports_attrs: bool = False
+
+    async def get_attrs(self, concept_id: str) -> dict[str, str]:
+        """Return persisted attrs, or an empty mapping when unsupported."""
+        return {}
+
+    async def list_by_attrs(
+        self,
+        filters: Mapping[str, str | Sequence[str]],
+        *,
+        date_key: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Return matching page stubs without bodies; unsupported stores return none."""
+        return []
+
+    async def upsert_attrs(self, concept_id: str, attrs: Mapping[str, str], *, replace: bool = True) -> int:
+        """Persist attrs only on supported writable stores.
+
+        Raises:
+            AttrsUnsupportedError: Always, on backends without attrs support.
+        """
+        raise AttrsUnsupportedError("This wiki backend does not support page attrs")
 
     # -- write -----------------------------------------------------------
     @abstractmethod
@@ -601,6 +801,20 @@ class BaseWikiStore(ABC):
 
     @abstractmethod
     async def broken_edges(self) -> list[dict[str, Any]]: ...
+
+    async def rebuild_index(self) -> dict[str, Any]:
+        """Rebuild derived search indexes and repair ``meta``.
+
+        Default is a no-op for backends without derived indexes.
+
+        Returns:
+            ``{"rebuilt": [<index names>]}``.
+        """
+        return {"rebuilt": []}
+
+    async def index_drift(self) -> dict[str, int]:
+        """Return ``{index_name: row_count_delta}`` for drifted indexes; ``{}`` when clean."""
+        return {}
 
     @abstractmethod
     async def missing_bodies(self) -> list[str]: ...
@@ -913,6 +1127,10 @@ class SQLiteWikiStore(BaseWikiStore):
     #: connection SUCCEEDS afterwards, so a resource-exhausted process
     #: fails the probe too and the original error propagates.
     _READONLY_ENV_CODES = frozenset({8, 264, 1544, 14})
+
+    #: Flipped to ``False`` on the instance when a probe finds a plane
+    #: without ``page_attrs`` that this handle cannot create (read-only).
+    supports_attrs: bool = True
 
     @classmethod
     def _is_readonly_env_error(cls, exc: sqlite3.OperationalError) -> bool:
@@ -1386,6 +1604,13 @@ class SQLiteWikiStore(BaseWikiStore):
         # below the early return — see the box at the top of this file.
         await self._migrate_fts(conn)
 
+        # FEAT-627: ``page_attrs`` is additive and the schema version does
+        # not change, so a current-version plane can still lack it. Probe
+        # BEFORE the early return below (a pure read when present).
+        if not await self._attrs_table_present(conn):
+            await conn.executescript(_PAGE_ATTRS_SQL)
+            self.supports_attrs = True
+
         missing, version_stale = await self._migration_needed(conn)
         if not missing and not version_stale:
             # Nothing to do — return WITHOUT writing or committing. This
@@ -1573,6 +1798,29 @@ class SQLiteWikiStore(BaseWikiStore):
                 for p in pages
             ],
         )
+        await self._replace_attrs_conn(conn, pages)
+
+    async def _attrs_table_present(self, conn: aiosqlite.Connection) -> bool:
+        """Whether ``page_attrs`` exists on this plane (pure read, no DDL)."""
+        async with conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'page_attrs'") as cur:
+            return (await cur.fetchone()) is not None
+
+    async def _replace_attrs_conn(self, conn: aiosqlite.Connection, pages: list[WikiPageRecord]) -> None:
+        """Replace the attrs of ``pages`` on the caller's transaction.
+
+        Previous rows are always deleted, so an empty ``attrs`` clears them.
+        Never opens its own writer context.
+        """
+        await conn.executemany(
+            "DELETE FROM page_attrs WHERE concept_id = ?",
+            [(p.concept_id,) for p in pages],
+        )
+        rows = [(p.concept_id, str(k), str(v)) for p in pages for k, v in p.attrs.items()]
+        if rows:
+            await conn.executemany(
+                "INSERT OR REPLACE INTO page_attrs (concept_id, key, value) VALUES (?, ?, ?)",
+                rows,
+            )
 
     async def _insert_edges_conn(
         self,
@@ -1716,6 +1964,10 @@ class SQLiteWikiStore(BaseWikiStore):
                         if row["src"] not in old_set and row["dst"] in new_ids
                     ]
                 await conn.executemany(
+                    "DELETE FROM page_attrs WHERE concept_id = ?",
+                    [(cid,) for cid in old_ids],
+                )
+                await conn.executemany(
                     "DELETE FROM embeddings WHERE concept_id = ?",
                     [(cid,) for cid in old_ids],
                 )
@@ -1764,12 +2016,146 @@ class SQLiteWikiStore(BaseWikiStore):
         async with self._write("delete_page") as conn:
             cur = await conn.execute("DELETE FROM pages WHERE concept_id = ?", (concept_id,))
             deleted = cur.rowcount > 0
+            await conn.execute("DELETE FROM page_attrs WHERE concept_id = ?", (concept_id,))
             await conn.execute("DELETE FROM embeddings WHERE concept_id = ?", (concept_id,))
             await conn.execute(
                 "DELETE FROM edges WHERE src = ? OR dst = ?",
                 (concept_id, concept_id),
             )
         return deleted
+
+    async def upsert_attrs(self, concept_id: str, attrs: Mapping[str, str], *, replace: bool = True) -> int:
+        """Write attrs for an EXISTING page in one immediate transaction.
+
+        Args:
+            concept_id: Page to annotate; unknown pages are not created.
+            attrs: Attribute mapping (values are stored as text).
+            replace: ``True`` replaces the page's whole attr set (an empty
+                mapping clears it); ``False`` merges, overwriting only the
+                given keys.
+
+        Returns:
+            Number of attr rows written; ``0`` when the page is missing.
+
+        Raises:
+            PermissionError: When the store is read-only.
+        """
+        self._assert_writable()
+        async with self._write("upsert_attrs") as conn:
+            async with conn.execute("SELECT 1 FROM pages WHERE concept_id = ?", (concept_id,)) as cur:
+                if (await cur.fetchone()) is None:
+                    return 0
+            if replace:
+                await conn.execute("DELETE FROM page_attrs WHERE concept_id = ?", (concept_id,))
+            rows = [(concept_id, str(k), str(v)) for k, v in attrs.items()]
+            if rows:
+                await conn.executemany(
+                    "INSERT OR REPLACE INTO page_attrs (concept_id, key, value) VALUES (?, ?, ?)",
+                    rows,
+                )
+        return len(rows)
+
+    async def _read_attrs_conn(self, conn: aiosqlite.Connection, concept_ids: list[str]) -> dict[str, dict[str, str]]:
+        """Fetch attrs for ``concept_ids`` on an open read connection.
+
+        Returns ``{}`` (and marks the handle unsupported) when the plane
+        has no ``page_attrs`` table.
+        """
+        out: dict[str, dict[str, str]] = {cid: {} for cid in concept_ids}
+        if not concept_ids:
+            return out
+        present = await self._attrs_table_present(conn)
+        self.supports_attrs = present
+        if not present:
+            return out
+        for start in range(0, len(concept_ids), 500):
+            chunk = concept_ids[start : start + 500]
+            marks = ",".join("?" for _ in chunk)
+            async with conn.execute(
+                f"SELECT concept_id, key, value FROM page_attrs WHERE concept_id IN ({marks})",  # noqa: S608
+                chunk,
+            ) as cur:
+                for row in await cur.fetchall():
+                    out[row["concept_id"]][row["key"]] = row["value"]
+        return out
+
+    async def get_attrs(self, concept_id: str) -> dict[str, str]:
+        """Return the persisted attrs of one page (empty when none/unsupported)."""
+        async with self._read() as conn:
+            return (await self._read_attrs_conn(conn, [concept_id]))[concept_id]
+
+    async def list_by_attrs(
+        self,
+        filters: Mapping[str, str | Sequence[str]],
+        *,
+        date_key: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """List page stubs (no bodies) whose attrs match every filter.
+
+        Filters are ANDed across keys; a non-string sequence value means
+        ``IN``. ``since``/``until`` are inclusive ISO-date bounds applied to
+        the attr named ``date_key``. With no filters and no date bounds,
+        every page that has at least one attr is returned. Keys and values
+        are always bound parameters.
+
+        Args:
+            filters: ``{key: value | [values]}``.
+            date_key: Attr key the date bounds apply to.
+            since: Inclusive lower ISO-date bound.
+            until: Inclusive upper ISO-date bound.
+            limit: Maximum rows (newest ``updated_at`` first).
+
+        Returns:
+            Stub dicts including an ``attrs`` mapping; ``[]`` on a plane
+            without ``page_attrs``.
+
+        Raises:
+            ValueError: A date bound was given without ``date_key``.
+        """
+        if (since is not None or until is not None) and not date_key:
+            raise ValueError("since/until require date_key")
+        clauses: list[str] = []
+        params: list[Any] = []
+        exists = "EXISTS (SELECT 1 FROM page_attrs a WHERE a.concept_id = p.concept_id AND a.key = ?"
+        for key, wanted in filters.items():
+            values = [wanted] if isinstance(wanted, str) else [str(v) for v in wanted]
+            if not values:
+                return []
+            marks = ",".join("?" for _ in values)
+            clauses.append(f"{exists} AND a.value IN ({marks}))")
+            params.extend([str(key), *values])
+        if date_key and (since is not None or until is not None):
+            sub = exists
+            params.append(date_key)
+            if since is not None:
+                sub += " AND a.value >= ?"
+                params.append(since)
+            if until is not None:
+                sub += " AND a.value <= ?"
+                params.append(until)
+            clauses.append(sub + ")")
+        if not clauses:
+            clauses.append("EXISTS (SELECT 1 FROM page_attrs a WHERE a.concept_id = p.concept_id)")
+        sql = (
+            "SELECT p.concept_id, p.node_id, p.title, p.category, p.summary, p.source_id,"
+            " p.token_count, p.updated_at, p.origin, p.asserted_by, p.content_hash"
+            " FROM pages p WHERE " + " AND ".join(clauses) + " ORDER BY p.updated_at DESC, p.concept_id LIMIT ?"
+        )
+        params.append(int(limit))
+        async with self._read() as conn:
+            present = await self._attrs_table_present(conn)
+            self.supports_attrs = present
+            if not present:
+                return []
+            async with conn.execute(sql, params) as cur:  # noqa: S608 - only bound params
+                rows = [dict(r) for r in await cur.fetchall()]
+            attrs = await self._read_attrs_conn(conn, [r["concept_id"] for r in rows])
+        for row in rows:
+            row["attrs"] = attrs[row["concept_id"]]
+        return rows
 
     async def upsert_embedding(
         self,
@@ -1969,8 +2355,7 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         async with self._write("set_meta") as conn:
             await conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                "INSERT INTO meta (key, value) VALUES (?, ?) " "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
 
@@ -2028,7 +2413,9 @@ class SQLiteWikiStore(BaseWikiStore):
                 ) as cur:
                     row = await cur.fetchone()
                 if row:
-                    return dict(row)
+                    page = dict(row)
+                    page["attrs"] = (await self._read_attrs_conn(conn, [page["concept_id"]]))[page["concept_id"]]
+                    return page
         return None
 
     async def list_pages(
@@ -2229,7 +2616,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """Aggregate counters for the wiki (single fast query set).
 
         Returns:
-            ``{"pages": N, "edges": M, "sources": S, "embeddings": E,
+            ``{"pages": N, "edges": M, "sources": S, "embeddings": E, "attrs_pages": A,
             "total_tokens": T, "categories": {...}}``
         """
         async with self._read() as conn:
@@ -2247,6 +2634,13 @@ class SQLiteWikiStore(BaseWikiStore):
                     out[key] = row[0] if row else 0
             async with conn.execute("SELECT category, COUNT(*) AS n FROM pages GROUP BY category") as cur:
                 out["categories"] = {row["category"]: row["n"] for row in await cur.fetchall()}
+            out["attrs_pages"] = 0
+            present = await self._attrs_table_present(conn)
+            self.supports_attrs = present
+            if present:
+                async with conn.execute("SELECT COUNT(DISTINCT concept_id) FROM page_attrs") as cur:
+                    row = await cur.fetchone()
+                    out["attrs_pages"] = row[0] if row else 0
         return out
 
     async def checkpoint(self, truncate: bool = True) -> dict[str, int | bool]:
@@ -2367,6 +2761,45 @@ class SQLiteWikiStore(BaseWikiStore):
             async with conn.execute("SELECT concept_id FROM pages WHERE body = ''") as cur:
                 return [row["concept_id"] for row in await cur.fetchall()]
 
+    async def rebuild_index(self) -> dict[str, Any]:
+        """Run FTS5 'rebuild' on pages_fts and symbols_fts and re-stamp schema_version.
+
+        Returns:
+            ``{"rebuilt": ["pages_fts", "symbols_fts"]}``.
+        """
+        rebuilt: list[str] = []
+        async with self._write("rebuild_index") as conn:
+            for table in ("pages_fts", "symbols_fts"):
+                await conn.execute(f"INSERT INTO {table}({table}) VALUES('rebuild')")
+                rebuilt.append(table)
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (SCHEMA_VERSION,),
+            )
+        return {"rebuilt": rebuilt}
+
+    async def index_drift(self) -> dict[str, int]:
+        """Compare content-table rows with indexed FTS documents.
+
+        The FTS tables are external-content, so ``COUNT(*)`` on them reads the
+        content table and can never drift; the ``<fts>_docsize`` shadow table
+        holds one row per actually-indexed document and is what is compared.
+
+        Returns:
+            ``{fts_table: content_count - indexed_count}`` for non-zero deltas only.
+        """
+        drift: dict[str, int] = {}
+        async with self._read() as conn:
+            for content, fts in (("pages", "pages_fts"), ("symbols", "symbols_fts")):
+                async with conn.execute(f"SELECT COUNT(*) FROM {content}") as cur:
+                    n_content = (await cur.fetchone())[0]
+                async with conn.execute(f"SELECT COUNT(*) FROM {fts}_docsize") as cur:
+                    n_index = (await cur.fetchone())[0]
+                if n_content != n_index:
+                    drift[fts] = n_content - n_index
+        return drift
+
 
 # Backwards-compatible alias — the SQLite plane was the only backend
 # before the pluggable-store refactor.
@@ -2411,45 +2844,10 @@ def create_wiki_store(
         ValueError: For an unknown ``backend`` value.
     """
     storage_dir = Path(storage_dir)
-    # Pop, never peek: `kwargs` is forwarded verbatim to satellite
-    # backends at the _EXTRA_BACKENDS branch, which would reject an
-    # unexpected `sqlite_policy` keyword.
+    # Pop, never peek: `kwargs` is forwarded verbatim to the backend factory,
+    # which (outside sqlite) would reject an unexpected `sqlite_policy` keyword.
     sqlite_policy = kwargs.pop("sqlite_policy", None)
+    factory = resolve_wiki_backend(backend)
     if backend == "sqlite":
-        return SQLiteWikiStore(
-            storage_dir / "wiki.db",
-            wiki_name=wiki_name,
-            sqlite_policy=sqlite_policy,
-        )
-    if backend == "memory":
-        # Imported lazily — file_store imports export helpers which
-        # import this module.
-        from parrot.knowledge.wiki.file_store import InMemoryWikiStore
-
-        return InMemoryWikiStore(storage_dir / "pages", wiki_name=wiki_name)
-    if backend == "arangodb":
-        # Imported lazily — arango_store imports asyncdb, an optional
-        # dependency not needed by the sqlite/memory paths.
-        from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
-
-        return ArangoDBWikiStore(
-            arango_params=kwargs.get("arango_params", {}),
-            database=kwargs.get("database", ""),
-            wiki_name=wiki_name,
-            text_analyzer=kwargs.get("text_analyzer", "text_en"),
-        )
-    if backend == "postgres":
-        # Imported lazily — postgres_store imports asyncpg, an optional
-        # dependency not needed by the sqlite/memory paths (FEAT-520).
-        from parrot.knowledge.graphindex.pg_schema import GRAPHINDEX_PG_DSN
-        from parrot.knowledge.wiki.postgres_store import PostgresWikiStore
-
-        return PostgresWikiStore(
-            dsn=kwargs.get("dsn") or GRAPHINDEX_PG_DSN,
-            wiki_name=wiki_name,
-            schema=kwargs.get("schema", "graphindex"),
-        )
-    if backend in _EXTRA_BACKENDS:
-        return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
-    known = ", ".join(["'sqlite'", "'memory'", "'arangodb'", "'postgres'", *(repr(b) for b in _EXTRA_BACKENDS)])
-    raise ValueError(f"Unknown wiki storage backend {backend!r} — expected one of {known}")
+        kwargs["sqlite_policy"] = sqlite_policy
+    return factory(storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)

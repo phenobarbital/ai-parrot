@@ -1,0 +1,19 @@
+Owner-confirmed (Rounds 0–2, 2026-10-05):
+
+- **v1 scope is the full stack**: bootstrap + launcher + `parrot self`, SDD asset install (`parrot sdd install`), toolkit install metadata, and the CI wheel matrix.
+- **Extend `scripts/install/install-parrot.{sh,ps1}`** with the uv/managed-global mode — do not create new root-level `install.sh`/`install.ps1`. FEAT-586's CI wiring (`ci.yml` bash -n / pwsh parse / `--dry-run`) and tests (`tests/docs/test_install_*.py`) must keep passing and grow with the new mode.
+- **All three console scripts** (`parrot`, `wikitoolkit`, `bookstore`) enter through the launcher; re-exec happens **only** when running from the managed venv.
+- **Host config default stays baked absolute paths; `--portable` is opt-in** (emits the bare launcher command). Deviation from the proposal's auto-detection.
+- **Three-host parity in v1**: Claude Code, Codex and Google/Gemini all get Windows paths, launcher-aware `--portable` emission, and the bookstore `sys.executable` pin replaced.
+- **Version skew: auto-migrate.** On store schema mismatch the runtime migrates the project store automatically (supersedes the proposal's "never migrate silently"). Safety rails (decided): pre-migration backup copy, single-writer locking, and a **min-runtime gate** stamped in the migrated store so an older runtime fails fast instead of corrupting it.
+- **SDD component is an asset installer, nothing more** (owner decision, revised 2026-10-05, overriding the earlier "absorb FEAT-583" answer): the flow is markdown files — package the `/sdd-*` commands, `sdd-*` agents, hooks, rules and `sdd/templates/` as package data and deploy them with `parrot sdd install [--host …]`. **No `ai-parrot-sdd` satellite, no `sdd` binary, no manifest/symlink machinery.** FEAT-583 (`portable-sdd-flow`, draft, not the owner's spec) is rejected and stamped superseded.
+- **Use the venv that is already there.** A project `.venv` with ai-parrot keeps working untouched; the managed venv is fallback only.
+- **One managed venv**, not per-component isolation (`uvx`-per-server out of scope).
+- **Venv chosen before the MCP handshake**; stdout is the JSON-RPC channel — diagnostics to stderr only (`mcp/local_cli.py::_configure_stderr_logging` precedent).
+- **Hook latency**: `wikitoolkit claude-hook` fast path (entry.py imports only `sys`) must stay stdlib-only through the launcher.
+- **Never modify a project's dependencies implicitly**; installing into a project venv is an explicit verb (`parrot self add --here`).
+- **No new prerequisites**: `uv` (pinned static binary) is the only non-wheel download.
+- **No signing work in v1.**
+- **Validation-first**: spikes (§Spike Gate) before `/sdd-spec`.
+
+---

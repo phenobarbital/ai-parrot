@@ -2,7 +2,7 @@
 id: F002
 query_id: Q002
 type: read
-intent: OdooToolkit class shape: config, init, transport, _execute chokepoint
+intent: "OdooToolkit class shape: config, init, transport, _execute chokepoint"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

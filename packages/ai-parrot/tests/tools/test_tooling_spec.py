@@ -70,3 +70,23 @@ def test_mask_spec_masks_every_ref():
     """Masked dumps never expose a value referenced by the vault."""
     spec = ToolkitSpec(slug="jira", params={"server_url": "u"}, secret_refs={"token": "v"}, vault_owner="1")
     assert mask_spec(spec)["params"]["token"] == SECRET_MASK
+
+
+def test_normalize_canonicalizes_class_name_slug():
+    """Legacy YAML `toolkits: ["JiraToolkit"]` lands as the canonical slug the vault/policy key off."""
+    tooling = normalize_tooling([], ["JiraToolkit"])
+    assert [spec.slug for spec in tooling.toolkits] == ["jira"]
+
+
+def test_normalize_dedupes_alias_with_canonical_slug():
+    """A class-name alias and its canonical slug are the same toolkit; the configured spec wins."""
+    tooling = normalize_tooling([], ["jira", {"slug": "JiraToolkit", "params": {"server_url": "https://x"}}])
+    assert len(tooling.toolkits) == 1
+    assert tooling.toolkits[0].slug == "jira"
+    assert tooling.toolkits[0].params == {"server_url": "https://x"}
+
+
+def test_normalize_unknown_slug_passes_through():
+    """Slugs the resolver does not know stay untouched; registration reports them later."""
+    tooling = normalize_tooling([], ["totally_unknown_toolkit"])
+    assert [spec.slug for spec in tooling.toolkits] == ["totally_unknown_toolkit"]

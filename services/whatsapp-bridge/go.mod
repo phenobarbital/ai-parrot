@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/mux v1.8.1
-	github.com/gorilla/websocket v1.5.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/mdp/qrterminal/v3 v3.2.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e

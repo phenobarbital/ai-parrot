@@ -40,7 +40,7 @@ import pytest
 from parrot.flows.dev_loop.sdd_coder import background as background_module
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 from parrot.flows.dev_loop.test_scope.select import changed_files
 
 FEATURE = "demo"
@@ -74,8 +74,10 @@ async def _merged_attempt(repo: Path, feature_branch: str, task_id: str, executi
 
 
 def _fast_plan(argv: tuple[str, ...]):
-    def _plan(*, worktree, changed_files, tier, declared=(), policy=None) -> ScopePlan:
-        invocation = PytestInvocation(distribution="root", argv=argv, targets=())
+    def _plan(
+        *, worktree, changed_files, tier, declared=(), policy=None, contract=None, registry=None, **_kw
+    ) -> ScopePlan:
+        invocation = Invocation(distribution="root", argv=argv, targets=())
         return ScopePlan(
             tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()
         )

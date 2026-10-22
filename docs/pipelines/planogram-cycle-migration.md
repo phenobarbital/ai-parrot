@@ -32,6 +32,14 @@ Store `layout_profile` inside `planogram_config`. Its validated overrides merge 
 default; lists replace rather than append, and unknown fields are rejected with a layout field
 path. Top-level `perception_mode` is an accepted alias only when it agrees with the nested value.
 
+A zone selector matches observed zones to one configured zone in one of three ways: `ordinal` (the
+n-th observed zone top to bottom; the count of observed zones must equal the count of selectors),
+`region` (a box in whole-photo coordinates), or `band` — `[y_start, y_end]` as fractions of the
+observed fixture height. With a band, every detected fragment whose centre falls in that slice is
+evidence of the zone, and fragments that do not share the fixture's column are off-fixture. The
+converter emits bands for a fixture made only of zones whose source shelves all carry
+`y_start_ratio` and `height_ratio`; otherwise it emits ordinals.
+
 For one release, `roi_detection_prompt`, `object_identification_prompt`, `detection_model`,
 `confidence_threshold`, and `detection_grid` are accepted but ignored. `reference_images` supports
 paths, stable path lists, and PIL images; valid entries are hydrated once per run into opaque

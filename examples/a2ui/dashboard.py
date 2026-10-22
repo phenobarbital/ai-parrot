@@ -1,4 +1,16 @@
-"""FEAT-610 — Polestar graduates linked dashboard widget specs and agent."""
+"""FEAT-610 — Polestar graduates linked dashboard: dashboard-owned data sources shared by its widgets.
+
+The dashboard (not each widget) owns the data sources. ``SOURCES`` are fetched once when the dashboard loads;
+``WIDGETS`` declare where their data comes from:
+
+* ``source: "kpis"`` — four KPICards read four aggregates computed by ONE query (one call instead of four);
+* ``source: "geo"`` + ``transform`` — two charts are *derived views* of one grouped query: the country and licensee
+  aggregations are computed client-side (and server-side for snapshots/refresh) with the transform DSL, no extra call;
+* ``slug`` — the pie chart and the server-paged grid keep their own sources (the grid pages on the server, so its
+  rows can never feed a derived view).
+
+Load cost: 4 QuerySource calls (+ the grid's page/count) instead of the 8 per-widget calls of the first version.
+"""
 
 from __future__ import annotations
 
@@ -13,43 +25,56 @@ SLUG = "polestar_graduates_directory"
 BY_COURSE_SLUG = "polestar_graduates_by_course"
 DEFAULT_LLM = "google:gemini-3.5-flash"
 
+SOURCES: dict[str, dict[str, Any]] = {
+    # One query computes every KPI (people): total, per-course counts over the JSONB diplomas, multi-graduates.
+    "kpis": {
+        "slug": SLUG,
+        "request": {
+            "fields": [
+                "count(*) as total",
+                'count(*) FILTER (WHERE graduation_details @> \'[{"course": "Pilates Studio"}]\') as studio',
+                'count(*) FILTER (WHERE graduation_details @> \'[{"course": "Pilates Mat"}]\') as mat',
+                "count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates",
+            ]
+        },
+    },
+    # One country × licensee matrix (a few thousand rows at most) feeds two derived charts.
+    "geo": {
+        "slug": SLUG,
+        "request": {"fields": ["country", "licensee", "count(*) as graduates"], "grouping": ["country", "licensee"]},
+    },
+}
+
 WIDGETS: list[dict[str, Any]] = [
     {
         "key": "kpi_total",
-        "slug": SLUG,
-        "request": {"fields": ["count(*) as total"]},
+        "source": "kpis",
         "component": {"component": "KPICard", "title": "Graduates (people)", "value": "total"},
     },
     {
         "key": "kpi_studio",
-        "slug": SLUG,
-        "request": {
-            "fields": ["count(*) as total"],
-            "filter": {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}},
-        },
-        "component": {"component": "KPICard", "title": "Pilates Studio graduates (people)", "value": "total"},
+        "source": "kpis",
+        "component": {"component": "KPICard", "title": "Pilates Studio graduates (people)", "value": "studio"},
     },
     {
         "key": "kpi_mat",
-        "slug": SLUG,
-        "request": {
-            "fields": ["count(*) as total"],
-            "filter": {"graduation_details": {"@>": [{"course": "Pilates Mat"}]}},
-        },
-        "component": {"component": "KPICard", "title": "Pilates Mat graduates (people)", "value": "total"},
+        "source": "kpis",
+        "component": {"component": "KPICard", "title": "Pilates Mat graduates (people)", "value": "mat"},
     },
     {
         "key": "kpi_multi",
-        "slug": SLUG,
-        "request": {
-            "fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]
-        },
+        "source": "kpis",
         "component": {"component": "KPICard", "title": "Multi-graduates (people)", "value": "multi_graduates"},
     },
     {
         "key": "by_country",
-        "slug": SLUG,
-        "request": {"fields": ["country", "count(*) as graduates"], "grouping": ["country"]},
+        "source": "geo",
+        "transform": {
+            "ops": [
+                {"op": "group_by", "by": ["country"], "aggregate": {"graduates": "sum"}},
+                {"op": "sort", "by": [{"column": "graduates", "direction": "desc"}]},
+            ]
+        },
         "component": {
             "component": "Chart",
             "type": "bar",
@@ -60,8 +85,13 @@ WIDGETS: list[dict[str, Any]] = [
     },
     {
         "key": "by_licensee",
-        "slug": SLUG,
-        "request": {"fields": ["licensee", "count(*) as graduates"], "grouping": ["licensee"]},
+        "source": "geo",
+        "transform": {
+            "ops": [
+                {"op": "group_by", "by": ["licensee"], "aggregate": {"graduates": "sum"}},
+                {"op": "sort", "by": [{"column": "graduates", "direction": "desc"}]},
+            ]
+        },
         "component": {
             "component": "Chart",
             "type": "bar",
@@ -110,8 +140,9 @@ def build_dashboard_agent(llm: str | None = None) -> Agent:
     """Build the deterministic Polestar dashboard agent."""
     toolkit = QuerysourceToolkit(programs=["polestar"])
     prompt = (
-        "You build dashboards. Call qs_build_linked_dashboard exactly once with the following widgets, unchanged, "
-        "and title 'Polestar graduates dashboard'. Then reply with one short sentence.\n" + json.dumps(WIDGETS)
+        "You build dashboards. Call qs_build_linked_dashboard exactly once with the following `sources` and "
+        "`widgets`, unchanged, and title 'Polestar graduates dashboard'. Then reply with one short sentence.\n"
+        f"sources: {json.dumps(SOURCES)}\nwidgets: {json.dumps(WIDGETS)}"
     )
     return Agent(
         name="polestar-dashboard",
@@ -122,8 +153,11 @@ def build_dashboard_agent(llm: str | None = None) -> Agent:
 
 
 def dashboard_question() -> str:
-    """Return the user turn that hands ``WIDGETS`` to the agent verbatim."""
-    return "Build the Polestar graduates dashboard with these widgets:\n" + json.dumps(WIDGETS)
+    """Return the user turn that hands ``SOURCES`` and ``WIDGETS`` to the agent verbatim."""
+    return (
+        "Build the Polestar graduates dashboard with these dashboard sources and widgets:\n"
+        f"sources: {json.dumps(SOURCES)}\nwidgets: {json.dumps(WIDGETS)}"
+    )
 
 
 def extract_envelope(response: AIMessage) -> dict[str, Any]:

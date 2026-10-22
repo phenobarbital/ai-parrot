@@ -1,0 +1,8 @@
+.claude/commands/sdd-done.md
+.agents/skills/sdd-done/SKILL.md
+packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py
+packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py
+packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/evidence.py
+packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/summary.py
+scripts/sdd/select_tests.py
+packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/select.py

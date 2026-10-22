@@ -1,0 +1,23 @@
+{
+  "feat_id": "FEAT-688",
+  "generated_at": "2026-10-15T17:35:00Z",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "intent": "Locate the Google GenAI client and the GoogleModel catalog", "params": {"question": "GoogleModel google genai client model catalog"}, "priority": 1},
+    {"id": "Q002", "type": "grep", "intent": "Find the declared google-genai version pin across all workspace pyprojects", "params": {"pattern": "google-genai", "glob": "**/pyproject.toml"}, "priority": 1},
+    {"id": "Q003", "type": "grep", "intent": "Find the GoogleModel definition and every consumer", "params": {"pattern": "GoogleModel"}, "priority": 1},
+    {"id": "Q004", "type": "read", "intent": "Read the GoogleModel catalog in full (members, aliases, defaults)", "params": {"path": "<resolved from Q003>"}, "priority": 1},
+    {"id": "Q005", "type": "grep", "intent": "Find every hardcoded gemini-* / models/gemini model id string in the repo", "params": {"pattern": "gemini-[0-9a-z.-]+"}, "priority": 1},
+    {"id": "Q006", "type": "read", "intent": "Read the Google client implementation (SDK call surface that an SDK bump could break)", "params": {"path": "packages/ai-parrot*/src/parrot/clients/google*.py"}, "priority": 2},
+    {"id": "Q007", "type": "grep", "intent": "Map the google.genai SDK API surface actually used (types.*, Client, generate_content)", "params": {"pattern": "from google import genai|google\\.genai|genai\\.types"}, "priority": 2},
+    {"id": "Q008", "type": "wiki_related", "intent": "Discover downstream consumers of the Google client page (embeddings, voice, dev-loop seats)", "params": {"id": "<page id from Q001>"}, "priority": 2},
+    {"id": "Q009", "type": "grep", "intent": "Find default model selection in settings/env (GOOGLE_MODEL, default model constants)", "params": {"pattern": "GOOGLE_MODEL|DEFAULT_GOOGLE|default_model"}, "priority": 2},
+    {"id": "Q010", "type": "grep", "intent": "Find tests and fixtures that assert on specific Gemini model ids (breakage surface)", "params": {"pattern": "gemini", "glob": "packages/*/tests/**"}, "priority": 2},
+    {"id": "Q011", "type": "grep", "intent": "Find model-window / token-budget tables keyed by Gemini model (FEAT-525/550 MODEL_WINDOWS)", "params": {"pattern": "MODEL_WINDOWS|context_window", "glob": "**/*.py"}, "priority": 2},
+    {"id": "Q012", "type": "git_log", "intent": "Recent history of the Google client + model catalog (who touched it, how model lists were curated before)", "params": {"path": "<google client paths>", "since": "120 days"}, "priority": 3},
+    {"id": "Q013", "type": "grep", "intent": "Find docs / examples / agent configs naming Gemini models that would go stale", "params": {"pattern": "gemini-", "glob": "{docs,examples}/**"}, "priority": 3},
+    {"id": "Q014", "type": "web_search", "intent": "EXTERNAL (out of plan schema, no budget cost): confirm the real Gemini 4.x Argon model ids, their deprecation list, and the current google-genai release. The repo cannot answer this.", "params": {"queries": ["Gemini 4 Argon model ids", "google-genai python SDK latest version changelog", "Gemini deprecated models retirement dates"]}, "priority": 1}
+  ]
+}

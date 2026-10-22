@@ -1,10 +1,15 @@
 """Tests for the FEAT-600 offline DDL producer."""
 
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from parrot.bots.database.models import Completeness
 from parrot.knowledge.wiki.schema.producers.ddl import fold_ddl, split_statements
 
+REPO_ROOT = Path(__file__).resolve().parents[6]
 DDL_CORPUS = Path("packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql")
 
 
@@ -71,3 +76,37 @@ def test_fold_ddl_task_memory_corpus() -> None:
         == ["file:packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql"]
         for record in records
     )
+
+
+def test_fold_ddl_dedupes_repeated_foreign_keys(tmp_path: Path) -> None:
+    """One relationship stated inline, table-level and via ALTER folds to a single FK entry."""
+    migration = tmp_path / "001.sql"
+    migration.write_text(
+        "CREATE TABLE p (id INT PRIMARY KEY);"
+        "CREATE TABLE c (pid INT REFERENCES p(id), FOREIGN KEY (pid) REFERENCES p(id));"
+        "ALTER TABLE c ADD CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES p(id);",
+        encoding="utf-8",
+    )
+
+    records, errors = fold_ddl([migration], origin="test", dialect="postgres", root=tmp_path)
+
+    assert errors == {}
+    child = next(record for record in records if record.metadata.tablename == "c")
+    assert child.metadata.foreign_keys == [
+        {"column": "pid", "ref_schema": "public", "ref_table": "p", "ref_column": "id"}
+    ]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git to enumerate the tracked corpus")
+def test_fold_ddl_repo_corpus_baseline() -> None:
+    """FEAT-600 AC4: every git-tracked .sql file folds to >= 20 tables and >= 329 columns."""
+    listed = subprocess.run(["git", "ls-files", "*.sql"], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    if listed.returncode != 0:
+        pytest.skip("not running inside a git checkout")
+    files = [REPO_ROOT / name for name in listed.stdout.split()]
+    assert len(files) >= 32
+
+    records, _errors = fold_ddl(files, origin="repo", dialect="postgres", root=REPO_ROOT)
+
+    assert len(records) >= 20
+    assert sum(len(record.metadata.columns) for record in records) >= 329

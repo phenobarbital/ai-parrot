@@ -30,6 +30,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from ..graphindex.schema import GraphUpdate, NodeKind, UniversalNode
+from ..graphindex.protocols import CapabilityUnavailable, TemporalGraphPersistence
 from .catalog import ContractCatalogStore, PublicationUnavailableError
 from .models import ContractCard, ContractVersion, PublicationRecord
 
@@ -358,10 +359,14 @@ class ContractTemporalPublisher:
         This is **not** ``contract_in_force``: it answers "what had we
         recorded by then", not "which wording was contractually in force".
         """
+        if not isinstance(self.persistence, TemporalGraphPersistence):
+            raise CapabilityUnavailable(type(self.persistence).__name__, "temporal")
         return await self.persistence.as_of(ctx, when)
 
     async def contract_history(self, ctx: Any, contract_id: str) -> Any:
         """Recorded-time version rows of one contract node."""
+        if not isinstance(self.persistence, TemporalGraphPersistence):
+            raise CapabilityUnavailable(type(self.persistence).__name__, "temporal")
         return await self.persistence.history(ctx, contract_node_id(contract_id))
 
     async def contract_diff(
@@ -372,6 +377,8 @@ class ContractTemporalPublisher:
         t2: datetime,
     ) -> Any:
         """Recorded-time diff of one contract node between two instants."""
+        if not isinstance(self.persistence, TemporalGraphPersistence):
+            raise CapabilityUnavailable(type(self.persistence).__name__, "temporal")
         return await self.persistence.diff(ctx, contract_node_id(contract_id), t1, t2)
 
     @staticmethod

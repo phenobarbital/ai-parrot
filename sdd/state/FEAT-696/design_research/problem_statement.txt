@@ -1,0 +1,16 @@
+## 0. Origin
+Inline request (2026-10-16). It has three parts:
+1. Compare JiraToolkit against the Atlassian MCP method list and add the methods it lacks.
+2. Add `parrot jiratoolkit auth`, which runs an OAuth2 3LO flow and stores the credentials.
+3. Add a YAML knowledge base describing the Jira site's structure (cloud_id, projects, issue types, priorities,
+   status_map, fields, limits, templates, components). The toolkit reads it instead of querying Jira for that
+   structure each time.
+
+## 1. Synthesis Summary
+JiraToolkit (`parrot_tools/jiratoolkit.py`) already covers 8 of the 12 MCP operations. Four are missing: issue
+linking, field metadata for creating an issue, comment editing, and cloud-id resolution as a tool [F001].
+3LO support exists, but `JiraOAuthManager` is built around the server: it needs Redis and an aiohttp callback,
+and stores tokens per chat (channel, user) [F002]. A CLI flow therefore needs a local loopback callback and its
+own file-based token store, connected to the toolkit through the existing `credential_resolver` hook. The toolkit
+has no knowledge base today: issue types and components are fetched live on every call [F004].
+

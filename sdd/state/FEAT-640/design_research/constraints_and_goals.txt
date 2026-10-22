@@ -1,0 +1,29 @@
+- **Hard tenant isolation is the FEAT-302/330 invariant**: every query on
+  `fieldsync.*` filters by `org_id`. The fix must make it impossible to create a
+  row whose `org_id` disagrees with its parent's.
+- **DDL doctrine stays "idempotent, no migration framework"**
+  (`fieldsync_schema.py:16-19`): `initialize()` must converge *both* a fresh
+  database and one that already has the v1 tables, and running it twice must be a
+  no-op (existing test `test_initialize_twice_no_error`).
+- **Service remains unit-testable with the fake pool** (`tests/unit/test_venue_service.py:46-66`):
+  a `MagicMock` conn with `fetchrow` / `fetch` `AsyncMock`s. No real Postgres
+  fixture exists in `parrot-formdesigner` tests (checked `tests/integration/conftest.py`
+  and `tests/fixtures/persistence.py` — the `survey_form_postgres` fixture is a
+  `FormSchema`, not a database).
+- **Error semantics**: cross-org or non-existent parent ⇒ `SiteNotFoundError` ⇒
+  404 (never 403/409, to avoid the existence oracle). Client not in org ⇒ 404 by
+  the same reasoning (mirrors `OrgGraphService.get_node` raising `KeyError`).
+  Bad geofence values ⇒ 400 with a field-specific message.
+- **`org_id` keeps coming from the session only** (`_get_org_id`,
+  `handlers.py:221-247`); never from the body.
+- **SQL stays 100 % parameterised with table names in constants**
+  (`venue_service.py:18`, enforced by `TestSQLSafety`).
+- **All three schemas (`auth.*`, `networkninja.*`, `fieldsync.*`) live in the
+  same database** — `OrgGraphService` already queries all three through one pool
+  (`org_graph.py:106-176`). The service-level membership check relies on this;
+  the DB role behind the `VenueService` pool needs `SELECT` on
+  `auth.organization_clients`.
+- **No new dependencies**: asyncpg + Pydantic v2 + aiohttp only.
+- **Issue #1005 closes with this feature's PR.** The upstream spec
+  (`Trocdigital/fieldsync` → `sdd/specs/store-venue-substructure.spec.md`, FEAT-330
+  v0.3) is read-only reference; this repo gets its own spec.

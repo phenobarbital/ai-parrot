@@ -2,7 +2,7 @@
 id: F006
 query_id: Q007
 type: read
-intent: code-reviewer agent + sdd-codereview + CLAUDE.md: the Adversarial Cross-Check pattern the request wants to mirror
+intent: "code-reviewer agent + sdd-codereview + CLAUDE.md: the Adversarial Cross-Check pattern the request wants to mirror"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 1100
 parent_id: null

@@ -36,7 +36,7 @@ from parrot.knowledge.graphindex.signals import relevance_neighborhood
 
 if TYPE_CHECKING:
     from parrot.knowledge.graphindex.communities import CommunitiesResult
-    from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
+    from parrot.knowledge.graphindex.protocols import Embedder
     from parrot.knowledge.graphindex.schema import UniversalNode
     from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
     from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
@@ -187,7 +187,7 @@ class GraphExpandedRetriever:
         self,
         graph: rustworkx.PyDiGraph,
         nodes: list["UniversalNode"],
-        embedder: Optional["GraphIndexEmbedder"] = None,
+        embedder: Optional["Embedder"] = None,
         hybrid_search: Optional["HybridPageIndexSearch"] = None,
         signal_config: Optional["SignalRelevanceConfig"] = None,
         communities: Optional["CommunitiesResult"] = None,
@@ -200,8 +200,7 @@ class GraphExpandedRetriever:
         """
         if embedder is None and hybrid_search is None:
             raise ValueError(
-                "GraphExpandedRetriever requires at least one of 'embedder' "
-                "or 'hybrid_search' — both are None."
+                "GraphExpandedRetriever requires at least one of 'embedder' " "or 'hybrid_search' — both are None."
             )
         self.graph = graph
         self.nodes = nodes
@@ -257,9 +256,7 @@ class GraphExpandedRetriever:
         Returns:
             Normalised ``ScoredNode`` list.
         """
-        raw: list[dict[str, Any]] = await self.hybrid_search.search(
-            query, top_k=top_k
-        )
+        raw: list[dict[str, Any]] = await self.hybrid_search.search(query, top_k=top_k)
         if not raw:
             return []
 
@@ -286,9 +283,7 @@ class GraphExpandedRetriever:
                 ScoredNode(
                     node_id=nid,
                     title=node_meta.title,
-                    kind=str(node_meta.kind.value)
-                    if hasattr(node_meta.kind, "value")
-                    else str(node_meta.kind),
+                    kind=str(node_meta.kind.value) if hasattr(node_meta.kind, "value") else str(node_meta.kind),
                     search_score=norm_score,
                     combined_score=norm_score,
                     is_seed=True,
@@ -318,9 +313,7 @@ class GraphExpandedRetriever:
         Returns:
             ``ScoredNode`` list sorted descending by similarity score.
         """
-        raw: list[tuple[str, float]] = await self.embedder.search_similar(
-            query, top_k=top_k
-        )
+        raw: list[tuple[str, float]] = await self.embedder.search_similar(query, top_k=top_k)
         if not raw:
             return []
 
@@ -339,9 +332,7 @@ class GraphExpandedRetriever:
                 ScoredNode(
                     node_id=nid,
                     title=node_meta.title,
-                    kind=str(node_meta.kind.value)
-                    if hasattr(node_meta.kind, "value")
-                    else str(node_meta.kind),
+                    kind=str(node_meta.kind.value) if hasattr(node_meta.kind, "value") else str(node_meta.kind),
                     search_score=similarity,
                     combined_score=similarity,
                     is_seed=True,
@@ -411,19 +402,12 @@ class GraphExpandedRetriever:
                 if parent_idx is None:
                     continue
 
-                allowed_kinds = (
-                    set(config.allowed_edge_kinds)
-                    if config.allowed_edge_kinds
-                    else None
-                )
+                allowed_kinds = set(config.allowed_edge_kinds) if config.allowed_edge_kinds else None
 
                 def _edge_allowed(payload: Any) -> bool:
                     if allowed_kinds is None:
                         return True
-                    return (
-                        isinstance(payload, dict)
-                        and payload.get("kind") in allowed_kinds
-                    )
+                    return isinstance(payload, dict) and payload.get("kind") in allowed_kinds
 
                 if parent_idx is not None:
                     out_neighbors = [
@@ -504,9 +488,7 @@ class GraphExpandedRetriever:
                     new_node = ScoredNode(
                         node_id=neighbor_id,
                         title=node_meta.title,
-                        kind=str(node_meta.kind.value)
-                        if hasattr(node_meta.kind, "value")
-                        else str(node_meta.kind),
+                        kind=str(node_meta.kind.value) if hasattr(node_meta.kind, "value") else str(node_meta.kind),
                         search_score=0.0,
                         signal_score=sr.combined,
                         decay_factor=decay,
@@ -585,9 +567,7 @@ class GraphExpandedRetriever:
                 centroid_node = ScoredNode(
                     node_id=centroid_id,
                     title=meta.title,
-                    kind=str(meta.kind.value)
-                    if hasattr(meta.kind, "value")
-                    else str(meta.kind),
+                    kind=str(meta.kind.value) if hasattr(meta.kind, "value") else str(meta.kind),
                     search_score=0.0,
                     signal_score=0.0,
                     decay_factor=0.0,

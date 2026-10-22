@@ -294,9 +294,9 @@ def _ref(task_id: str, *, parallel: bool = True, depends_on: list[str] | None = 
 
 - [ ] AC-1 (G1): With `"parallel_semantics": "exclusive"`, every `DevAgentPool.run_wave` call that includes an exclusive task receives exactly one task.
 - [ ] AC-2 (G2): Within a wave, rounds dispatch exclusive tasks first in ascending id, one per round, then the wave's parallel tasks together; the scheduler is re-planned after every round.
-- [ ] AC-3 (G3): `ChunkAssigner.assign` and `DevelopmentNode._execute_pool` both obtain batches from `partition_wave`; no other copy of the exclusive/parallel split remains (`grep -n "not t.parallel" packages/ai-parrot/src` finds only `task_scheduler.py`).
+- [ ] AC-3 (G3): `ChunkAssigner.assign` and `DevelopmentNode._execute_pool` both obtain batches from `partition_wave`; no other copy of the exclusive/parallel split remains (`grep -rnE "not [a-z_]+(\[0\])?\.parallel" packages/ai-parrot/src` finds only `task_scheduler.py`). *Amended 2026-10-16 (FEAT-693): the original grep string `not t.parallel` matched nothing — the code reads `not task.parallel`. `sdd_coder/roster.py` `ChunkAssigner.assign` still carries its own split (seat-width chunking); tracked as a separate ledger issue.*
 - [ ] AC-4 (G4): `should_fan_out` and `PlannerNode._resolve_pool` use `parallel_width`; a wave of only exclusive tasks sizes a 1-slot pool and does not fan out.
-- [ ] AC-5 (G5): For an index without the header, `run_wave` call arguments, pool size and `should_fan_out` results are identical to the pre-change behaviour (asserted by the legacy tests above and the unchanged existing suites).
+- [ ] AC-5 (G5): For an index without the header, the *set* of tasks passed to each `run_wave` call, the pool size and `should_fan_out` results are identical to the pre-change behaviour (asserted by the legacy tests above and the unchanged existing suites). The *order* of that list is not: `partition_wave` sorts every wave by `TaskRef.id` (§7), where the pre-change code passed `next_wave()`'s hash-ordered set, so positional worker assignment in `DevAgentPool.run_wave` can differ from pre-change runs. This is an intentional, accepted change (deterministic instead of hash-order dependent) — not a regression. *(Amended 2026-10-16, FEAT-693.)*
 - [ ] AC-6: In `isolated` mode, `merge_sequential` and `refresh_all` run after each round, so a task unblocked by an exclusive task starts from the integrated branch.
 - [ ] AC-7: Round logs identify an exclusive round (the word `exclusive` and the task id) so an operator can tell why other ready tasks waited.
 - [ ] AC-8: All tests pass: `pytest packages/ai-parrot/tests/flows/dev_loop/test_task_scheduler.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_roster.py packages/ai-parrot/tests/flows/dev_loop/test_development_node.py packages/ai-parrot/tests/flows/dev_loop/test_planner_node.py packages/ai-parrot/tests/flows/dev_loop/test_agent_pool.py packages/ai-parrot/tests/flows/dev_loop/integration -v`
@@ -465,3 +465,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-16 | Jesus Lara (with Claude) | Initial draft |
+| 0.2 | 2026-10-16 | Jesus Lara (sdd-fix, FEAT-693) | AC-3 grep corrected and roster.py split noted; AC-5 scoped to task set + pool sizing (id-sorted order is intentional, §7) |

@@ -1,0 +1,17 @@
+{
+  "feature_id": "GH-1574",
+  "feature_id_note": "provisional; /sdd-spec reserves FEAT-<NNN> via reserve_ids.py",
+  "phase": "committed",
+  "mode": "investigation",
+  "started_at": "2026-10-05T23:10:00Z",
+  "source": {"kind": "github_issue", "ref": "phenobarbital/ai-parrot#1574"},
+  "budget": {"profile": "default", "files_read": 40, "grep_calls": 25, "git_calls": 10, "depth": 2, "wall_seconds": 300},
+  "consumed": {"files_read": 6, "grep_calls": 6, "git_calls": 2, "depth_reached": 1, "truncated": false},
+  "wiki_available": true,
+  "phases": {
+    "plan": {"approved_by_user": false, "note": "auto mode; plan gate folded into the review gate"},
+    "research": {"findings": ["F001", "F002", "F003", "F004", "F005"]},
+    "qa": {"questions_total": 3, "questions_answered": 3},
+    "output": {"proposal_path": "sdd/proposals/gh-1574-scheduler-callback-delivery-status.proposal.md"}
+  }
+}

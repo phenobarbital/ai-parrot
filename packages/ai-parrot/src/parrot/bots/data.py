@@ -4,7 +4,7 @@ A specialized agent for data analysis using pandas DataFrames.
 """
 
 from __future__ import annotations
-from typing import Any, List, Dict, Tuple, Union, Optional
+from typing import Any, ClassVar, List, Dict, Tuple, Union, Optional
 import ast
 import asyncio
 import inspect
@@ -46,6 +46,7 @@ from ..bots.prompts.domain_layers import (
     DATA_INSTRUCTIONS_LAYER,
     DATAFRAME_CONTEXT_LAYER,
     STRICT_GROUNDING_LAYER,
+    TOOLLESS_DATA_GROUNDING_LAYER,
 )
 from parrot_tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
 from parrot_tools.prophetforecast import ProphetForecastTool
@@ -69,57 +70,11 @@ def _get_infographic_result_class() -> Optional[type]:
         return None
 
 
-Scalar = Union[str, int, float, bool, None]
+# PandasTable/Scalar live in parrot.models.tables (dependency-free) and are
+# re-exported here for backward compatibility.
+from ..models.tables import PandasTable, Scalar  # noqa: F401, E402
 
-try:
-    logger = logging.getLogger(__name__)
-except Exception:
-    logger = logging
-
-
-class PandasTable(BaseModel):
-    """Tabular data structure for PandasAgent responses."""
-
-    columns: List[str] = Field(description="Column names, in order")
-    rows: List[List[Scalar]] = Field(
-        description=(
-            "Rows as lists of scalar values, aligned with `columns`. "
-            "CRITICAL: All numeric values MUST be raw numbers without any formatting. "
-            "Do NOT include currency symbols ($, €, £), percent signs (%), "
-            "thousands separators (commas), or any other formatting characters. "
-            "Correct: [764539.74, 85.3] | Wrong: ['$764,539.74', '85.3%']"
-        )
-    )
-
-    @field_validator("rows")
-    @classmethod
-    def validate_rows_alignment(cls, v, info):
-        """Ensure rows align with columns."""
-        if "columns" in info.data:
-            num_cols = len(info.data["columns"])
-            if num_cols == 0:
-                return v
-            fixed_rows = []
-            mismatch_count = 0
-            for i, row in enumerate(v):
-                # Defensive: ensure row is a list
-                if not isinstance(row, list):
-                    row = [row]
-                if len(row) != num_cols:
-                    mismatch_count += 1
-                    if len(row) < num_cols:
-                        row = row + [None] * (num_cols - len(row))
-                    else:
-                        row = row[:num_cols]
-                fixed_rows.append(row)
-            if mismatch_count:
-                logger.warning(
-                    "PandasTable rows misaligned with columns: %d row(s) adjusted to %d columns.",
-                    mismatch_count,
-                    num_cols,
-                )
-            return fixed_rows
-        return v
+logger = logging.getLogger(__name__)
 
 
 class DatasetResult(BaseModel):
@@ -832,9 +787,26 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         return "\n".join(df_info_parts)
 
+    # Without tools the dataframe catalog and the tool-driven data rules are
+    # replaced by TOOLLESS_DATA_GROUNDING_LAYER (see _toolless_prompt_builder).
+    _TOOL_DEPENDENT_PROMPT_LAYERS: ClassVar[Tuple[str, ...]] = BasicAgent._TOOL_DEPENDENT_PROMPT_LAYERS + (
+        "dataframe_context",
+        "strict_grounding",
+        "data_instructions",
+    )
+
+    def _toolless_prompt_builder(self) -> PromptBuilder:
+        """Swap the tool-driven data layers for a tool-less grounding policy.
+
+        Returns:
+            A per-call clone without the tool-dependent layers, plus
+            ``TOOLLESS_DATA_GROUNDING_LAYER``.
+        """
+        return super()._toolless_prompt_builder().add(TOOLLESS_DATA_GROUNDING_LAYER)
+
     async def create_system_prompt(self, **kwargs):
         """Override to inject dataframe_schemas for the layer path."""
-        if self._prompt_builder and "dataframe_schemas" not in kwargs:
+        if self._prompt_builder and "dataframe_schemas" not in kwargs and kwargs.get("tools_enabled", True):
             kwargs["dataframe_schemas"] = self._build_dataframe_info()
         result = await super().create_system_prompt(**kwargs)
         if self._prompt_builder and self.logger.isEnabledFor(logging.DEBUG):
@@ -1303,13 +1275,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         output_mode: Any = None,
         format_kwargs: dict = None,
         return_structured: bool = True,
+        use_tools: bool = True,
         **kwargs,
     ) -> AIMessage:
         """
-        Override ask() method to ensure PythonPandasTool is always used.
+        Override ask() method to run the DataFrame analysis tool loop.
 
         This method is specialized for PandasAgent and differs from AbstractBot.ask():
-        - Always uses tools (specifically PythonPandasTool)
+        - Uses tools (specifically PythonPandasTool) unless ``use_tools=False``
         - Does NOT use vector search/knowledge base context
         - Returns AIMessage
         - Focuses on DataFrame analysis with the pre-loaded data
@@ -1325,6 +1298,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return_structured: Whether to return a default structured output (PandasAgentResponse)
             output_mode: Output formatting mode
             format_kwargs: Additional kwargs for formatter
+            use_tools: Whether to offer the agent's tools to the LLM. ``False``
+                sends no function declarations at all (no ToolManager tools,
+                no client-registered tools) — for prompts that already carry
+                every figure and want prose/tables back.
             **kwargs: Additional arguments (temperature, max_tokens, etc.)
 
         Returns:
@@ -1429,6 +1406,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 vector_context=vector_context,
                 metadata=vector_metadata,
                 user_context=user_context,
+                tools_enabled=use_tools,
                 **kwargs,
             )
             # Handle output mode in system prompt
@@ -1470,7 +1448,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # print(' :::: System Prompt:\n')
             # print(system_prompt)
             # print('\n:::: End System Prompt\n')
-            # Make the LLM call with tools ALWAYS enabled
+            # Make the LLM call. The client shares this agent's ToolManager by
+            # reference (sync_tools), so tools are switched off per call via the
+            # explicit ``use_tools`` flag — never by clearing the shared
+            # ToolManager, which would strip them from the agent itself and from
+            # any concurrent ask() on the same client.
             async with self._llm as client:
                 llm_kwargs = {
                     "prompt": question,
@@ -1478,20 +1460,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     "model": kwargs.get("model", self._llm_model),
                     "temperature": kwargs.get("temperature", 0.0),
                     "history": rendered_history,
-                    "use_tools": True,  # ALWAYS use tools for PandasAgent
+                    "use_tools": use_tools,
                 }
 
                 # Forward max_iterations only when the active LLM client
                 # advertises it (currently only the Google client). Other
                 # backends (OpenAI, Groq, etc.) have no **kwargs on ask(),
-                # so blindly forwarding would raise TypeError.
+                # so blindly forwarding would raise TypeError. Both only
+                # steer the tool loop, so a tool-less call skips them.
                 try:
                     ask_params = inspect.signature(client.ask).parameters
                 except (TypeError, ValueError):
                     ask_params = {}
-                if "max_iterations" in ask_params:
+                if use_tools and "max_iterations" in ask_params:
                     llm_kwargs["max_iterations"] = kwargs.get("max_iterations", self._max_iterations)
-                if "stop_tools" in ask_params:
+                if use_tools and "stop_tools" in ask_params:
                     llm_kwargs["stop_tools"] = kwargs.get("stop_tools", {"to_json"})
 
                 # Add max_tokens if specified
@@ -1537,8 +1520,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # Google's GenAI client). Asking the LLM to embed the
                 # structured JSON inline lets the client's fast-path
                 # parser skip the second reformat call.
+                # Without tools the client applies the schema natively in one
+                # call, so the in-band JSON hint is unnecessary.
                 structured_cfg = llm_kwargs.get("structured_output")
-                if structured_cfg is not None and self._client_uses_split_structured_with_tools(client):
+                if use_tools and structured_cfg is not None and self._client_uses_split_structured_with_tools(client):
                     output_type = getattr(structured_cfg, "output_type", None)
                     if isinstance(output_type, type) and issubclass(output_type, BaseModel):
                         addendum = self._build_fast_path_json_addendum(output_type)

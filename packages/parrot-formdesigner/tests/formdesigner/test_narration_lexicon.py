@@ -1,0 +1,136 @@
+"""Tests for the narration lexicon loader (FEAT-649, TASK-4213)."""
+
+import pytest
+
+from parrot_formdesigner.audio.narration import (
+    load_lexicon,
+    load_locale_document,
+    locale_chain,
+    locale_document_path,
+    normalize,
+)
+
+EXPECTED_KEYS = {
+    "question",
+    "question_with_prompt",
+    "hint_bridge",
+    "options_intro",
+    "option_item",
+    "options_count_only",
+    "boolean_prompt",
+    "required_mark",
+    "confirm_readback",
+    "confirm_option",
+    "no_match",
+    "required_reject",
+    "skipped",
+    "section_intro",
+    "computed_statement",
+    "review_intro",
+    "review_item",
+    "review_item_skipped",
+    "review_all_correct",
+    "review_edit_ack",
+    "plausibility_flag",
+    "plausibility_keep",
+    "submitted",
+    "resume_welcome",
+    "command_ack_repeat",
+    "command_ack_back",
+    "command_ack_skip",
+    "command_ack_help",
+    "command_ack_stop",
+    "command_ack_next",
+    "command_ack_send",
+    "command_ack_change",
+    "invalid_email",
+    "invalid_value",
+}
+COMMAND_KEYS = {"repeat", "back", "skip", "help", "stop", "next", "send", "change", "yes", "no"}
+
+
+class TestLexicon:
+    def test_locale_chain(self):
+        assert locale_chain("es-MX") == ["es-MX", "es", "en"]
+        assert locale_chain("en") == ["en"]
+
+    def test_fallback(self):
+        assert load_lexicon("es-MX").locale == "es"
+        assert load_lexicon("fr").locale == "en"
+
+    @pytest.mark.parametrize("bad", ["../../x", "..", ".", "", "a/b", "en\x00x", "es;rm"])
+    def test_locale_chain_rejects_traversal(self, bad):
+        """Traversal/malformed locales never become path components (CWE-22)."""
+        assert locale_chain(bad) == ["en"]
+
+    def test_locale_chain_salvages_valid_primary_subtag(self):
+        """A malformed tag whose primary subtag is shape-valid falls back through it."""
+        assert locale_chain("es-MX/../..") == ["es", "en"]
+
+    @pytest.mark.parametrize(
+        ("tag", "head"),
+        [("es-MX", "es-MX"), ("es_MX", "es_MX"), ("pt-BR", "pt-BR"), ("zh-Hant-TW", "zh-Hant-TW"), ("ast", "ast")],
+    )
+    def test_locale_chain_accepts_valid_tags(self, tag, head):
+        chain = locale_chain(tag)
+        assert chain[0] == head
+        assert chain[-1] == "en"
+
+    def test_load_locale_document_traversal_falls_back(self):
+        """A traversal-shaped locale resolves to the packaged ``en`` document, no exception."""
+        resolved, doc = load_locale_document("../../etc")
+        assert resolved == "en"
+        assert doc["templates"]
+
+    @pytest.mark.parametrize("candidate", ["../escape", "../..", "/etc", "en/../..", "..", ".", "", "fr"])
+    def test_locale_document_path_rejects_non_locale_candidates(self, tmp_path, candidate):
+        """Only a directory *named* exactly like the candidate can ever be returned (CWE-22)."""
+        (tmp_path / "root" / "en").mkdir(parents=True)
+        (tmp_path / "root" / "en" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        (tmp_path / "escape" / "narration.yaml").parent.mkdir(parents=True)
+        (tmp_path / "escape" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        assert locale_document_path(tmp_path / "root", candidate) is None
+
+    def test_locale_document_path_returns_installed_locale(self, tmp_path):
+        (tmp_path / "es-MX").mkdir()
+        (tmp_path / "es-MX" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        assert locale_document_path(tmp_path, "es-MX") == tmp_path.resolve() / "es-MX" / "narration.yaml"
+
+    def test_locale_document_path_skips_symlink_out_of_root(self, tmp_path):
+        """A locale directory symlinked outside the templates root is not served."""
+        outside = tmp_path / "outside"
+        (outside / "narration.yaml").parent.mkdir(parents=True)
+        (outside / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        base = tmp_path / "root"
+        base.mkdir()
+        (base / "en").symlink_to(outside, target_is_directory=True)
+        assert locale_document_path(base, "en") is None
+
+    def test_locale_document_path_missing_document(self, tmp_path):
+        (tmp_path / "en").mkdir()
+        assert locale_document_path(tmp_path, "en") is None
+
+    @pytest.mark.parametrize("locale", ["en", "es"])
+    def test_templates_and_commands_complete(self, locale):
+        _, doc = load_locale_document(locale)
+        assert set(doc["templates"]) == EXPECTED_KEYS
+        assert set(doc["lexicon"]["commands"]) == COMMAND_KEYS
+
+    @pytest.mark.parametrize("locale", ["en", "es"])
+    def test_yes_no_are_strings(self, locale):
+        lex = load_lexicon(locale)
+        assert lex.yes and lex.no
+        assert all(isinstance(x, str) for x in lex.yes + lex.no)
+        assert all(isinstance(x, str) for x in lex.commands["yes"] + lex.commands["no"])
+
+    def test_normalize_pipeline(self):
+        es = load_lexicon("es")
+        assert normalize("¡Sí, por favor!", es) == "si"
+        assert normalize("Opción   3", es) == "opcion 3"
+
+    def test_phrases_stored_normalised(self):
+        es = load_lexicon("es")
+        assert "atras" in es.commands["back"]
+        assert "septimo" in es.ordinals
+        assert "ultimo" in es.ordinals and es.ordinals["ultimo"] == -1
+        assert "por favor" in es.fillers

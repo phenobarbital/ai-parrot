@@ -1,0 +1,5 @@
+packages/ai-parrot-tools/src/parrot_tools/jira_config.py
+packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
+packages/ai-parrot-tools/tests/unit/test_jiratoolkit_delegation.py
+packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py
+packages/ai-parrot/src/parrot/template/engine.py

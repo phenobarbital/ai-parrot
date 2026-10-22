@@ -144,6 +144,38 @@ writing the code is mechanical".
 |---|---|
 | `test_end_to_end_flow` | Full pipeline from input to output |
 
+### Validation Contract
+
+> FEAT-699. Explicit pytest operands (repo-relative file or `file::node`) that gate this feature in ALL
+> tiers — task, merge, feature (`/sdd-done`) and QA. When present it REPLACES the heuristic breadth
+> (import impact, suite escalation); the nightly workflow covers everything else. Write
+> `none — fallback` to opt out explicitly (bounded fallback: tasks' own tests + direct importers).
+> Never list `real_llm` tests. `integration`/`e2e`-marked operands listed here DO run.
+> `/sdd-task` caches this list into the per-spec index header (`test_contract`).
+
+tests:
+- packages/<dist>/tests/path/test_file.py
+- packages/<dist>/tests/path/test_file.py::test_node
+markers: none
+
+> Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
+> (replace the flat lines; never write both). Kinds, tiers and settings come from `.parrot/test_runners.toml`;
+> the flat form stays valid and is lifted on read to one pytest runner.
+>
+>     runners:
+>     - kind: pytest
+>       tests:
+>       - packages/<dist>/tests/path/test_file.py
+>       markers: none
+>     - kind: vitest
+>       cwd: packages/ai-parrot-server/ui
+>       tests:
+>       - src/lib/path/file.test.ts
+>     - kind: cargo
+>       crate: <crate dir or package>
+>     - kind: parrot-e2e
+>       plan: sdd/state/FEAT-<NNN>/e2e-plan.md   # merge/feature tiers only — never task
+
 ### Test Data / Fixtures
 ```python
 # Key fixtures needed

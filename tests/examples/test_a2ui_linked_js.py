@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,8 +37,10 @@ const source = (over = {}) => ({
 });
 
 // --- routes -------------------------------------------------------------------------------------------------------
-assert.equal(queryUrl('https://h/', 'a b', null), 'https://h/api/v3/queries/a%20b');
+assert.equal(queryUrl('https://h/', 'a b', null), 'https://h/api/v2/services/queries/a%20b', 'single slug → v2 services');
+assert.equal(queryUrl('https://h', 's', null, true), 'https://h/api/v3/queries/s', 'MultiQuery pipeline slug → v3');
 assert.equal(queryUrl('https://h', 's', 'acme'), 'https://h/api/v1/acme/queries/s');
+assert.equal(queryUrl('https://h', 's', 'acme', true), 'https://h/api/v1/acme/queries/s', 'tenant wins over is_multiquery');
 
 // --- deriveConditions never emits lane-time keys --------------------------------------------------------------------
 const derived = deriveConditions({ placeholders: { refresh: true, querylimit: 1, a: 1 }, filter: {}, fields: [], ordering: [], grouping: [] }, {});
@@ -56,6 +60,15 @@ assert.ok(!('refresh' in calls[0].body));
 reset();
 responder = () => new Response('nope', { status: 404 });
 await assert.rejects(fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' }), SourceUnavailable);
+reset();
+await fetchSource(source({ is_multiquery: true }), {}, { baseUrl: 'https://h', token: 'T' });
+assert.equal(calls[0].url, 'https://h/api/v3/queries/polestar_graduates_directory', 'fetchSource routes a MultiQuery slug to v3');
+reset();
+await fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' });
+assert.equal(calls[0].url, 'https://h/api/v2/services/queries/polestar_graduates_directory', 'fetchSource routes a single slug to v2');
+reset();
+responder = () => new Response(null, { status: 204 });
+assert.deepEqual(await fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' }), [], 'a 204 Empty Result is zero rows, not an error');
 
 // --- lane: refreshSource is ONE request for its own key; refreshAll one per source ------------------------------------
 const sources = { a: source({ request: { ...source().request, fields: ['count(*) as total'] } }), b: source(), c: source() };
@@ -117,16 +130,123 @@ assert.equal(calls.length, 0, 'refreshSource on a paged key is a no-op');
 await plane.fetchPage('g', { refresh: true });
 assert.equal(calls.length, 2);
 assert.ok(calls.every((c) => c.body.refresh === true), 'page and count both bypass the cache');
+
+// --- linked dashboards: one shared parent fetch feeds N derived views; refresh cascades; params are ignored ------------
+const GEO = [
+  { country: 'US', licensee: 'a', graduates: 10 }, { country: 'MX', licensee: 'a', graduates: 5 },
+  { country: 'US', licensee: 'b', graduates: 20 }, { country: null, licensee: 'b', graduates: 1 },
+];
+const dsources = {
+  by_country: { kind: 'derived', from: 'geo', target: '/by_country/rows',
+    transform: { ops: [{ op: 'group_by', by: ['country'], aggregate: { graduates: 'sum' } }, { op: 'sort', by: [{ column: 'graduates', direction: 'desc' }] }] } },
+  geo: source({ kind: 'query_slug', request: { ...source().request, fields: ['country', 'licensee', 'count(*) as graduates'], grouping: ['country', 'licensee'] } }),
+  by_licensee: { kind: 'derived', from: 'geo', target: '/by_licensee/rows',
+    transform: { ops: [{ op: 'group_by', by: ['licensee'], aggregate: { graduates: 'sum' } }] } },
+  top: { kind: 'derived', from: 'by_country', target: '/top/rows', transform: { ops: [{ op: 'limit', n: 1 }] } },
+};
+reset();
+responder = () => GEO;
+const dupdates = [];
+const dlane = createLane(dsources, { baseUrl: 'https://h', token: 'T', onUpdate: (u) => dupdates.push(u) });
+dlane.start();
+await new Promise((r) => setTimeout(r, 20));
+assert.equal(calls.length, 1, 'start fetches the shared parent exactly once; derived views are never fetched');
+const readyKeys = dupdates.filter((u) => u.status === 'ready').map((u) => u.key);
+assert.deepEqual(readyKeys, ['geo', 'by_country', 'by_licensee', 'top'], 'parent first, then its derived views (chain included)');
+const rowsOf = (key) => dupdates.filter((u) => u.status === 'ready' && u.key === key).at(-1).rows;
+assert.deepEqual(rowsOf('by_country'), [{ country: 'US', graduates: 30 }, { country: 'MX', graduates: 5 }], 'group_by drops the NULL key, sort desc');
+assert.deepEqual(rowsOf('by_licensee'), [{ licensee: 'a', graduates: 15 }, { licensee: 'b', graduates: 21 }]);
+assert.deepEqual(rowsOf('top'), [{ country: 'US', graduates: 30 }]);
+calls.length = 0;
+dupdates.length = 0;
+await dlane.refreshSource('by_licensee');
+assert.equal(calls.length, 1, 'refreshing a derived view re-fetches its parent once');
+assert.equal(calls[0].body.refresh, true);
+assert.deepEqual(dupdates.filter((u) => u.status === 'ready').map((u) => u.key), ['geo', 'by_country', 'by_licensee', 'top'], 'the cascade recomputes every derived view');
+calls.length = 0;
+await dlane.refreshAll();
+assert.equal(calls.length, 1, 'refreshAll fetches only the query-slug source');
+calls.length = 0;
+await dlane.setParam('by_country', 'firstdate', '2026-01-01');
+assert.equal(calls.length, 0, 'a derived view takes no params');
+dupdates.length = 0;
+responder = () => new Response('nope', { status: 404 });
+await dlane.refreshSource('geo');
+assert.deepEqual(dupdates.filter((u) => u.status !== 'loading').map((u) => [u.key, u.status]).sort(),
+  [['by_country', 'error'], ['by_licensee', 'error'], ['geo', 'unavailable'], ['top', 'error']], 'a parent failure takes its derived views down, snapshots kept');
+await assert.rejects(dlane.fetchPage('by_country'), /unknown source/);
+
+// --- adversarial graphs: no deadlock, no stale joined frame, one fetch per parent per pass ------------------------------
+const withTimeout = (p, ms = 500) => Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms))]);
+const joinOps = (w) => ({ ops: [{ op: 'join', with: w, how: 'left', on: [{ left: 'k', right: 'k' }] }] });
+reset();
+let qv = 0;
+responder = (url) => (url.endsWith('/Q') ? [{ k: 1, qv: ++qv }] : [{ k: 1, v: url.split('/').pop() }]);
+const gupdates = [];
+const glatest = (key) => gupdates.filter((u) => u.status === 'ready' && u.key === key).at(-1)?.rows;
+// J (query) joins D (derived from P); P's cascade waits on D while J waits on D: must not deadlock.
+const graph = {
+  J: source({ slug: 'J', kind: 'query_slug', transform: joinOps('D') }),
+  P: source({ slug: 'P', kind: 'query_slug' }),
+  D: { kind: 'derived', from: 'P', target: '/D/rows', transform: { ops: [{ op: 'rename', mapping: { v: 'pv' } }] } },
+  Q: source({ slug: 'Q', kind: 'query_slug' }),
+  E: { kind: 'derived', from: 'P', target: '/E/rows', transform: joinOps('Q') },
+};
+const glane2 = createLane(graph, { baseUrl: 'https://h', token: 'T', onUpdate: (u) => gupdates.push(u) });
+glane2.start();
+await withTimeout(new Promise((resolve) => {
+  const tick = () => (gupdates.filter((u) => u.status === 'ready').length >= 5 ? resolve() : setTimeout(tick, 5));
+  tick();
+}));
+assert.deepEqual([...calls.map((c) => c.url.split('/').pop())].sort(), ['J', 'P', 'Q'], 'each source fetched once (J declared before P still joins P\'s fetch)');
+assert.equal(calls[0].url.split('/').pop(), 'P', 'dependencies first');
+assert.deepEqual(glatest('J'), [{ k: 1, v: 'J', pv: 'P' }]);
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 1 }]);
+calls.length = 0;
+await withTimeout(glane2.refreshSource('Q'));
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 2 }], 'a derived view joining a sibling is recomputed when the sibling changes');
+assert.equal(calls.length, 1);
+calls.length = 0;
+await withTimeout(glane2.refreshAll());
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 3 }], 'refreshAll never leaves a derived join on a stale sibling frame');
+assert.deepEqual([...calls.map((c) => c.url.split('/').pop())].sort(), ['J', 'P', 'Q'], 'refreshAll: one fetch per query-slug source');
+assert.equal(calls[0].url.split('/').pop(), 'P', 'refreshAll: dependencies first');
+
+// --- the DSL port passes EVERY shared golden fixture (contract/fixtures/dsl), error fixtures included --------------------
+const { applyTransform, TransformError } = await import('./dsl.js');
+const fixtures = JSON.parse(process.env.DSL_FIXTURES);
+for (const fx of fixtures) {
+  if (fx.error) {
+    assert.throws(() => applyTransform(fx.input, { ops: fx.ops }, fx.frames ?? {}), (err) => err instanceof TransformError && err.opIndex === fx.error.op_index, `dsl fixture ${fx.name}`);
+    continue;
+  }
+  const out = applyTransform(fx.input, { ops: fx.ops }, fx.frames ?? {});
+  assert.deepEqual(out, fx.expected, `dsl fixture ${fx.name}: ${fx.description}`);
+}
+assert.ok(fixtures.length >= 19, 'every golden DSL fixture was loaded');
 console.log('linked.js: all assertions passed');
 """
 
+FIXTURES = (
+    Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/outputs/a2ui/linked/contract/fixtures/dsl"
+)
+
 
 def test_linked_js_contract(tmp_path: Path) -> None:
-    """linked.js: routes, conditions, cap, refresh semantics (AC8) and server paging (AC9) with hard asserts."""
+    """linked.js: routes, conditions, cap, refresh semantics (AC8), server paging (AC9), derived views and the DSL port."""
     if shutil.which("node") is None:
         pytest.skip("node not found")
-    shutil.copy(STATIC / "linked.js", tmp_path / "linked.js")
+    for name in ("linked.js", "dsl.js"):
+        shutil.copy(STATIC / name, tmp_path / name)
+    fixtures = [{"name": path.name, **json.loads(path.read_text())} for path in sorted(FIXTURES.glob("*.json"))]
     (tmp_path / "test.mjs").write_text(HARNESS)
-    result = subprocess.run(["node", "test.mjs"], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        ["node", "test.mjs"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "DSL_FIXTURES": json.dumps(fixtures)},
+    )
     assert result.returncode == 0, f"node test failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     assert "all assertions passed" in result.stdout

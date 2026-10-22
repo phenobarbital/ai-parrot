@@ -1,0 +1,45 @@
+PR #998 (FEAT-330 "Store Venue Sub-Structure — Site/Location", merged to `dev`
+2026-07-10, then `#1004 → main`) shipped `fieldsync.sites` / `fieldsync.locations`
+and the `VenueService` CRUD without addressing two HIGH findings raised in the
+pre-merge code review. GitHub issue
+[#1005](https://github.com/phenobarbital/ai-parrot/issues/1005) tracks them so
+they are not lost. Verified on 2026-10-08: the last commit touching
+`venue_service.py` and `fieldsync_schema.py` is still the original FEAT-330
+merge (`810a521eb`), so **nothing has been fixed yet**.
+
+**Who is affected**: every tenant of the FieldSync deployment that consumes
+`parrot-formdesigner`. The venue tables are the system of record for the
+per-location geofence that gates visit check-ins (FEAT-303 §8 / FEAT-318 D5.7),
+so a cross-org write corrupts another organization's operational data.
+
+**The five findings (all in scope — Round 1 decision):**
+
+1. **HIGH — `create_location` allows cross-org writes.** `_INSERT_LOCATION_SQL`
+   (`venue_service.py:182-189`) inserts the caller-supplied `site_id` together with
+   the *session* `org_id` without checking that the parent site belongs to that
+   org. `site_id` is an enumerable `SERIAL`. Consequences: a name-existence oracle
+   across orgs via 409 (because `uq_locations_site_name` is org-agnostic), silent
+   cross-org data loss through `ON DELETE CASCADE`, and inconsistent rows
+   (`location.org_id ≠ site.org_id`) that neither org's graph can see.
+2. **HIGH — UNIQUE constraints omit `org_id`.** `uq_sites_store_name UNIQUE
+   (store_id, client_id, name)` (`fieldsync_schema.py:99`) and
+   `uq_locations_site_name UNIQUE (site_id, name)` (`:118`) collide across orgs
+   → name oracle + name squatting. The DDL is `CREATE TABLE IF NOT EXISTS`, so
+   editing the text alone never reaches an environment where the table already
+   exists.
+3. **MEDIUM — `client_id` is taken from the request body** in both
+   `create_site` (`handlers.py:2710-2716`) and `create_location`
+   (`:2811-2817`) with no check that the client belongs to the session org.
+4. **MEDIUM — no bounds on `latitude` / `longitude` / `geofence_radius_m`.**
+   The handler passes `body.get("latitude")` etc. straight through
+   (`handlers.py:2831-2833`); a string or out-of-range value surfaces as a 500
+   from asyncpg instead of a 400.
+5. **MEDIUM — `networkninja.stores_geographies` column names are unverified.**
+   `_SQL_GET_STORES_FOR_CLIENT` (`org_graph.py:157-161`) carries a NOTE saying
+   so; the upstream FEAT-330 spec (Q2) deferred the confirmation to coding time
+   and it never happened.
+
+**Why now**: the user confirmed (Round 1) that `FieldsyncSchemaManager.initialize()`
+has **not yet** run against any shared environment, so the tables are empty
+everywhere. Constraint changes are instantaneous today and need a data migration
+the moment rows land.

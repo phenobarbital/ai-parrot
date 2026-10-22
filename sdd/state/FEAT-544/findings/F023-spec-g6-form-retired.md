@@ -2,7 +2,7 @@
 id: F023
 query_id: Q022
 type: grep
-intent: Spec G6: Form retired
+intent: "Spec G6: Form retired"
 executed_at: 2026-09-10T00:39:55Z
 duration_ms: null
 parent_id: null

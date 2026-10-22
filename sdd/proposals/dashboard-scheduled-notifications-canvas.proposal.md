@@ -346,3 +346,15 @@ better position than the brainstorm assumed, given F007.
   (Q013) but not reached; the ETL question (Q6) remains open regardless.
 - Method: wiki-first for `ai-parrot` (`wikitoolkit query` → `page`), direct grep/read for
   the sibling repos, which are not wiki-indexed
+
+---
+
+> **Dependency note (2026-10-08).** This proposal describes `navigator.agents_scheduler`,
+> `AgentSchedule` and the `agent_name` / `agent_id` / `is_crew` / `scheduler_type` payload of
+> `AgentSchedulerManager.add_schedule`. The brainstorm
+> `sdd/proposals/scheduler-manager-base.brainstorm.md` (GitHub #1572) hard-cuts all of those:
+> the table becomes `navigator.service_scheduler` (`ServiceSchedule`, `target_kind` /
+> `target_name` / `target_id`, run state in dedicated columns, a `backend` axis `db | redis | code`),
+> and `AgentSchedulerManager` becomes a subclass of a target-agnostic `SchedulerManager`.
+> When this proposal goes through `/sdd-spec`, rebase every scheduler reference on that design
+> (or on its spec, once reserved) rather than on the current `manager.py`.

@@ -245,3 +245,289 @@ async def test_failed_verification_call_is_isolated():
     assert result[1] is resolved
     assert result[2].product == "ES-500"
     assert ctx.errors == ["verify s1: 503"]
+
+
+# ── fixture ROI before detection ──────────────────────────────────────────────
+
+
+def _roi_ctx(adapter) -> CycleContext:
+    return _ctx(adapter).model_copy(update={"roi_prompt": "find the endcap"})
+
+
+async def test_detection_runs_on_the_fixture_crop_and_returns_source_pixels():
+    from parrot_pipelines.planogram.identification.detector import ROI_STAGE
+
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(detections=[_det(0.25, 0.1, 0.75, 0.9, label="endcap", confidence=0.9)])
+    inside = Detections(detections=[_det(0.5, 0.5, 1.0, 1.0)])
+    adapter = StubAdapter(roi, inside)
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt=GENERIC_DETECTION_PROMPT)
+
+    assert [stage for stage, _ in adapter.calls] == [ROI_STAGE, "detect"]
+    assert adapter.calls[0][1] == "find the endcap"
+    # fixture 500..1500 x 100..900 padded 4% -> 460..1540 x 68..932; the lower-right quarter of that crop
+    box = shapes[0].box
+    assert (box.x1, box.y1, box.x2, box.y2) == (1000, 500, 1540, 932)
+
+
+async def test_roi_panel_becomes_the_zone_the_detector_missed():
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(
+        detections=[
+            _det(0.25, 0.3, 0.75, 0.9, label="endcap"),
+            _det(0.3, 0.1, 0.7, 0.3, label="poster_panel"),
+            _det(0.3, 0.1, 0.4, 0.15, label="brand_logo", content="ACME"),
+        ]
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.1, 0.5, 0.4, 0.8)]))
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt="p")
+
+    zone = shapes[0]
+    assert zone.kind == ShapeKind.ZONE and zone.shape_id == "img0:roi:panel" and zone.ocr_text == "ACME"
+    assert (zone.box.x1, zone.box.y1, zone.box.x2, zone.box.y2) == (600, 100, 1400, 300)
+    # The fixture box was stretched up to the panel, so product coordinates start at its top.
+    assert shapes[1].box.y1 > 300
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        VisionError("boom"),
+        Detections(detections=[]),
+        Detections(detections=[_det(0.4, 0.4, 0.45, 0.45, label="endcap")]),
+    ],
+)
+async def test_without_a_usable_roi_the_whole_image_is_detected(answer):
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    adapter = StubAdapter(answer, Detections(detections=[_det(0.0, 0.0, 0.5, 0.5)]))
+    ctx = _roi_ctx(adapter)
+
+    shapes = await llm_detect_shapes(image, "img0", ctx, prompt="p")
+
+    assert (shapes[0].box.x2, shapes[0].box.y2) == (1000, 500)
+    assert any(error.startswith("roi img0") for error in ctx.errors)
+
+
+def test_render_roi_prompt_fills_placeholders_and_survives_stray_braces():
+    from parrot_pipelines.planogram.identification.detector import render_roi_prompt
+
+    assert render_roi_prompt(None) is None and render_roi_prompt("  ") is None
+    rendered = render_roi_prompt("{brand}: {tag_hint} {image_size}", brand="Acme", tags=["b", "a", "a"])
+    assert rendered.startswith("Acme: 'a', 'b'\n\n") and "box_2d" in rendered
+    assert render_roi_prompt('return {"detections": []}').startswith('return {"detections": []}\n')
+
+
+async def test_roi_fixture_is_stretched_to_hold_its_components():
+    """A fixture box whose top edge is mislocated still includes the logo the same call located."""
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(
+        detections=[
+            _det(0.25, 0.65, 0.75, 0.95, label="endcap"),
+            _det(0.3, 0.65, 0.7, 0.45, label="poster_panel"),
+            _det(0.3, 0.1, 0.4, 0.15, label="brand_logo", content="ACME"),
+        ]
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.0, 0.0, 1.0, 1.0)]))
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt="p")
+
+    box = shapes[0].box
+    assert box.y1 < 100 and box.y2 > 950 and shapes[0].shape_id != "img0:roi:panel"
+
+
+async def test_a_small_zone_on_the_roi_panel_is_a_card():
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(
+        detections=[_det(0.0, 0.0, 1.0, 1.0, label="endcap"), _det(0.2, 0.0, 0.8, 0.4, label="poster_panel")]
+    )
+    found = Detections(
+        detections=[_det(0.2, 0.0, 0.8, 0.4, label="zone"), _det(0.3, 0.3, 0.4, 0.45, label="zone", content="SAVE")]
+    )
+    adapter = StubAdapter(roi, found)
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt="p")
+
+    assert [shape.kind for shape in shapes] == [ShapeKind.ZONE, ShapeKind.FACT_TAG]
+
+
+async def test_a_small_zone_on_the_largest_zone_is_a_card_without_roi():
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    found = Detections(detections=[_det(0.3, 0.3, 0.4, 0.45, label="zone"), _det(0.2, 0.0, 0.8, 0.4, label="zone")])
+    shapes = await llm_detect_shapes(image, "img0", _ctx(StubAdapter(found)), prompt="p")
+    assert sorted(shape.kind.value for shape in shapes) == ["fact_tag", "zone"]
+
+
+def test_detector_schema_uses_box_2d_and_requires_a_kind():
+    from pydantic import ValidationError
+
+    from parrot_pipelines.planogram.identification.detector import KindDetections, RoiDetections
+
+    answer = KindDetections.model_validate(
+        {"detections": [{"label": "box", "confidence": 0.9, "box_2d": [100, 250, 500, 750]}]}
+    )
+    assert answer.detections[0].pixel_box(2000, 1000) == (500, 100, 1500, 500)
+    unit = RoiDetections.model_validate(
+        {"detections": [{"label": "endcap", "confidence": 1, "box_2d": [0.1, 0.25, 0.5, 0.75]}]}
+    )
+    assert unit.detections[0].pixel_box(2000, 1000) == (500, 100, 1500, 500)
+    with pytest.raises(ValidationError):
+        KindDetections.model_validate({"detections": [{"confidence": 0.9, "box_2d": [1, 2, 3, 4]}]})
+    with pytest.raises(ValidationError):
+        KindDetections.model_validate({"detections": [{"label": "printer", "confidence": 0.9, "box_2d": [1, 2, 3, 4]}]})
+
+
+async def test_detector_reads_box_2d_answers_into_source_pixels():
+    from parrot_pipelines.planogram.identification.detector import KindDetections
+
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    answer = KindDetections.model_validate(
+        {"detections": [{"label": "product", "confidence": 0.9, "box_2d": [100, 250, 500, 750], "content": "X"}]}
+    )
+    shapes = await llm_detect_shapes(image, "img0", _ctx(StubAdapter(answer)), prompt="p")
+    box = shapes[0].box
+    assert (box.x1, box.y1, box.x2, box.y2) == (500, 100, 1500, 500) and shapes[0].kind == ShapeKind.PRODUCT
+
+
+async def test_named_roi_zones_are_observed_zones_without_a_fixture_box():
+    from parrot_pipelines.planogram.identification.detector import RoiDetections
+
+    class Layout:
+        roi_zone_labels = ["top_zone", "bottom_zone", "missing_zone"]
+
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = RoiDetections.model_validate(
+        {
+            "detections": [
+                {
+                    "label": "top_zone",
+                    "confidence": 0.9,
+                    "box_2d": [200, 300, 400, 700],
+                    "content": "Hello. Light: OFF",
+                },
+                {"label": "middle_zone", "confidence": 0.9, "box_2d": [400, 300, 700, 700], "content": "Table"},
+                {"label": "bottom_zone", "confidence": 0.9, "box_2d": [600, 300, 900, 700]},
+            ]
+        }
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.3, 0.0, 0.7, 0.2, label="zone", content="SIGN")]))
+    ctx = _roi_ctx(adapter).model_copy(update={"layout": Layout()})
+
+    shapes = await llm_detect_shapes(image, "img0", ctx, prompt="p")
+
+    assert [shape.shape_id for shape in shapes[:2]] == ["img0:roi:top_zone", "img0:roi:bottom_zone"]
+    top = shapes[0]
+    assert top.kind == ShapeKind.ZONE and top.ocr_text == "Hello. Light: OFF"
+    assert (top.box.x1, top.box.y1, top.box.x2, top.box.y2) == (600, 200, 1400, 400)
+    # No fixture label: the detector saw the whole image, and nothing is reported as an error.
+    assert (shapes[2].box.x1, shapes[2].box.x2) == (600, 1400) and not ctx.errors
+
+
+async def test_roi_fixture_running_past_its_components_is_cut_back_sideways():
+    """A fixture box that swallowed the neighbouring bay is narrowed to its own components plus a margin."""
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(
+        detections=[
+            _det(0.2, 0.1, 1.0, 0.9, label="endcap_roi"),
+            _det(0.25, 0.1, 0.7, 0.4, label="poster_panel"),
+            _det(0.25, 0.5, 0.75, 0.8, label="demo_unit"),
+        ]
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.0, 0.0, 1.0, 1.0, label="zone")]))
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt="p")
+
+    # components span x 500..1500; the right edge (2000) is cut to 1500 + 12% of 1000, then padded 4%.
+    box = shapes[0].box
+    assert 1620 <= box.x2 <= 1680 and box.x1 < 420
+
+
+async def test_a_tiered_fixture_asks_for_one_detection_per_stacked_product():
+    from parrot_pipelines.planogram.identification.detector import TIERED_DETECTION_HINT
+
+    class Layout:
+        tiered_shelves = True
+        roi_zone_labels: list = []
+
+    adapter = StubAdapter(Detections(detections=[_det(0.1, 0.1, 0.5, 0.5)]))
+    await llm_detect_shapes(IMAGE, "img0", _ctx(adapter).model_copy(update={"layout": Layout()}), prompt="p")
+    assert adapter.calls[0][1] == f"p {TIERED_DETECTION_HINT}"
+    plain = StubAdapter(Detections(detections=[_det(0.1, 0.1, 0.5, 0.5)]))
+    await llm_detect_shapes(IMAGE, "img0", _ctx(plain), prompt="p")
+    assert plain.calls[0][1] == "p"
+
+
+def _unit_layout():
+    class Layout:
+        tiered_shelves = False
+        roi_zone_labels: list = []
+        roi_product_labels = "_on_shelf$"
+
+    return Layout()
+
+
+def _roi_units(*boxes):
+    """ROI answer: a full-image fixture plus one ``*_on_shelf`` unit per box (x1, y1, x2, y2 in 0..1)."""
+    units = [_det(*box, label=f"unit{k}_on_shelf", content=f"NAME{k}") for k, box in enumerate(boxes)]
+    return Detections(detections=[_det(0.0, 0.0, 1.0, 1.0, label="endcap"), *units])
+
+
+async def _detect_with_units(roi, found):
+    image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    ctx = _roi_ctx(StubAdapter(roi, found)).model_copy(update={"layout": _unit_layout()})
+    return await llm_detect_shapes(image, "img0", ctx, prompt="p")
+
+
+async def test_a_box_drawn_around_a_stack_is_split_into_the_roi_units():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.18, 0.36, 0.48, 0.5), (0.6, 0.2, 0.9, 0.5))
+    found = Detections(detections=[_det(0.19, 0.2, 0.5, 0.5, content="A"), _det(0.6, 0.2, 0.9, 0.5, content="C")])
+
+    shapes = await _detect_with_units(roi, found)
+
+    boxes = sorted((s.box.x1, s.box.y1, s.box.x2, s.box.y2) for s in shapes)
+    assert boxes == [(180, 360, 480, 500), (200, 200, 500, 400), (600, 200, 900, 500)]
+    split = [s for s in shapes if s.profile == "roi"]
+    # Geometry only: the unit's label and text never reach the shape.
+    assert len(split) == 2 and all(s.ocr_text is None and s.kind == ShapeKind.PRODUCT for s in split)
+
+
+async def test_a_unit_no_product_box_covers_is_added_and_matching_boxes_are_kept():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.6, 0.2, 0.9, 0.5), (0.6, 0.55, 0.9, 0.6))
+    found = Detections(detections=[_det(0.21, 0.2, 0.5, 0.41, content="A"), _det(0.6, 0.2, 0.9, 0.5, content="C")])
+
+    shapes = await _detect_with_units(roi, found)
+
+    assert [s.ocr_text for s in shapes if s.profile != "roi"] == ["A", "C"]
+    added = [s for s in shapes if s.profile == "roi"]
+    assert [(s.box.x1, s.box.y1, s.box.x2, s.box.y2) for s in added] == [(600, 550, 900, 600)]
+
+
+async def test_units_are_ignored_without_the_layout_pattern():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.18, 0.36, 0.48, 0.5))
+    found = Detections(detections=[_det(0.19, 0.2, 0.5, 0.5, content="A")])
+    image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(StubAdapter(roi, found)), prompt="p")
+    assert len(shapes) == 1 and shapes[0].ocr_text == "A"
+
+
+async def test_two_labels_on_one_object_do_not_split_its_box():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.5), (0.21, 0.21, 0.5, 0.5))
+    found = Detections(detections=[_det(0.18, 0.18, 0.52, 0.52, content="A")])
+    shapes = await _detect_with_units(roi, found)
+    assert len(shapes) == 1 and shapes[0].ocr_text == "A"
+
+
+def test_a_box_cutting_into_the_upper_unit_of_a_stack_is_still_split():
+    """The box starts below the top of the upper unit (a partial merge) and is barely larger than it."""
+    from parrot_pipelines.planogram.contracts import Shape
+    from parrot_pipelines.planogram.identification.detector import _reconcile_units
+
+    merged = Shape(
+        shape_id="img0:llm:1",
+        image_id="img0",
+        kind=ShapeKind.PRODUCT,
+        box=DetectionBox(x1=316, y1=273, x2=621, y2=475, confidence=0.9),
+    )
+    shapes = _reconcile_units([merged], [(355, 226, 625, 408), (315, 346, 604, 480)], "img0")
+    assert sorted(s.box.y1 for s in shapes) == [226, 346] and all(s.profile == "roi" for s in shapes)

@@ -8,13 +8,17 @@
  * guess a number's meaning from its label. Values that are not numeric
  * (or formats this helper does not model, e.g. `email`/`uri`/`id`) pass
  * through unchanged.
+ *
+ * The locale is pinned to `'en-US'` (not the browser locale) so every lane —
+ * this helper and the Python `format_cell` — prints the same string
+ * (FEAT-623; shared fixture `display_format.json`).
  */
 
 /** Display formats this helper renders; any other hint passes the value through. */
 export type A2UINumberFormat = 'percent' | 'currency' | 'number';
 
-const ONE_DECIMAL_FMT = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-const CURRENCY_FMT = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' });
+const ONE_DECIMAL_FMT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+const CURRENCY_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 /** Return `value` as a finite number (numbers and fully-numeric strings), else `null`. */
 function toFiniteNumber(value: unknown): number | null {

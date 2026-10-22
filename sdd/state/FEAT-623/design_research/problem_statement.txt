@@ -1,0 +1,54 @@
+`InfographicToolkit` dual-emits every render: an HTML artifact and an A2UI
+v1.0 envelope, both built from the same `InfographicResponse`. The
+walkthrough (`examples/agents/a2ui/a2ui_dashboard_walkthrough.py`) presents
+them as "identical content by construction". **They are not.** The A2UI lane
+loses meaning that the HTML lane keeps, and the infographic model can't carry
+the display hints that the A2UI wire already supports.
+
+This came up while reviewing navigator-svelte's A2UI renderer polish
+brainstorm (`navigator-svelte: sdd/proposals/a2ui-renderer-visual-polish.brainstorm.md`,
+branch `chore/a2ui-parrot-envelope-compare`). That review rendered the
+walkthrough's `02_envelope_v1.json` and found that several "renderer defects"
+are really defects in the envelope:
+
+1. **`progress` is lowered lossily.** `ProgressItem.value` is, by contract,
+   a 0–100 completion percentage with an optional `target`
+   (`models/infographic.py:905-907`). The adapter's `_progress`
+   (`adapters/infographic.py:355`) emits a bare `KPICard{label, value}`
+   for each item. The block `title` ("Goal completion"), the percent meaning
+   and the target are all dropped. A consumer receives `ARR target: 90.4`
+   with no way to know it means 90.4 %. The HTML lane (`_render_progress`,
+   `infographic_html.py:1329`) renders the title, `90%`, a bar and the
+   target marker.
+2. **Progress items land in whatever section is open.** The adapter opens
+   sections only on `title`/`divider` blocks. In the walkthrough, the hero
+   card, both charts, the table and the three goal KPIs all end up in **one**
+   section. Renderers therefore cannot group the goals.
+3. **Tables carry no column semantics.** `ColumnDef` has `header`, `width`,
+   `align` and `color`, but no `type` or `format`
+   (`models/infographic.py:204`). `_table` (`adapters/infographic.py:295`)
+   also drops `align`. The wire's `TableColumn` already has `type` and
+   `format` (`models/outputs.py:557`), and both renderers honour them, but
+   nothing can reach them. So the walkthrough pre-formats cells
+   (`as_money(...)` → `"$794.1K"`, `f"{churn:.2f}"` → `"2.80"`), and a
+   renderer can't sort, align or reformat those strings.
+4. **There is no dual axis.** `ChartDataSeries` has `name`, `values` and
+   `color` only (`models/infographic.py:497`). The A2UI `Chart` schema
+   accepts `seriesAxes` and `yAxisLabels` (`models/outputs.py:397-410`,
+   `catalog/parrot/chart.py:38-44`), but an infographic chart can't ask for
+   them. "New MRR" (~50K) shares an axis with "MRR" (~1.2M) and sits flat
+   on the floor.
+5. **Hero values must be pre-formatted strings.** `HeroCardBlock.value: str`
+   (`models/infographic.py:335`). `KPICard` accepts `format` and `unit`
+   (`catalog/parrot/kpicard.py:43-63`, FEAT-611: "send a ratio as 0.683 with
+   format='percent', never as the string '68.3%'"). The infographic path
+   cannot follow that rule.
+6. **The adapter docstring is false.** It states that "nothing
+   presentation-relevant is dropped any more" (`adapters/infographic.py:52-55`).
+   Items 1 and 3 show otherwise.
+
+**Who is affected**: every consumer of `InfographicToolkit`'s A2UI lane:
+navigator-svelte (`[programs]/reporting`, shared surfaces), the parrot admin
+UI, and A2A peers. The renderers are currently asked to *guess* meaning
+(e.g. navigator-svelte's `isRatioLike()` label heuristic), which is exactly
+what FEAT-611 says renderers must never do.

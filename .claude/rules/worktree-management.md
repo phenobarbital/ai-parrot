@@ -24,7 +24,10 @@ how-to.
 source .venv/bin/activate
 python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/dev
 python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/main
+python -m scripts.sdd.ensure_worktree --slug <slug> --brief-key <KEY> --base-branch main|dev   # /sdd-brief → hotfix-<KEY>-<slug> / fix-<KEY>-<slug>
 ```
+
+`ensure()` clears the auto-set upstream of a fresh worktree branch (FEAT-698), so the first push is an explicit `git push -u origin <branch>`.
 
 - Created by whoever implements: `/sdd-start`, `sdd-worker`, and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
 - **Never** `claude --worktree` (it branches from `main`, which has no SDD artifacts) and never hand-build `git worktree add` for SDD work.
@@ -54,7 +57,7 @@ inside `<path>`* — never in the primary checkout.
 ## 5. Finish
 
 - Working tree clean, branch pushed.
-- SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, pushes, opens a PR feature → `base_branch` (`--merge` merges directly) and cleans up.
+- SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, pushes, opens a PR feature → `base_branch` (`main` included for a hotfix brief; `--merge` merges directly, but it never merges into `main`) and cleans up.
 - Ad-hoc lane: `gh pr create --base <base_branch> --head <branch> --title "..." --body "..."` — never against `main` for a feature. If `gh` is missing or unauthenticated, hand the user the exact commands instead.
 
 ## 6. Clean up

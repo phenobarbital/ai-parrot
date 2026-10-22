@@ -139,7 +139,30 @@ you reference in the brainstorm, you MUST:
    out not to exist, record it in the "Does NOT Exist" subsection. This is critical
    for preventing downstream agents from hallucinating these references.
 
+**Delegate the flat checks (FEAT-708).** Turn every reference you intend to put in
+Code Context into a probe check, then hand them to the shared read-only Haiku
+subagent `sdd-contract-probe` (the same one `/sdd-task` §3 uses; Haiku on Claude Code):
+
+| Claim | Probe check |
+|---|---|
+| `from parrot.X import Y` | `{"id": "cN", "kind": "import", "module": "parrot.X", "name": "Y"}` |
+| `path/file.py:42` | `{"id": "cN", "kind": "file", "path": "<repo-relative>", "line": 42}` |
+| `class Foo(Bar):` | `{"id": "cN", "kind": "symbol", "path": "<file>", "name": "Foo"}` — keep `expected` yourself |
+| `"Does NOT exist: X"` | `{"id": "cN", "kind": "absent", "name": "X", "scope": "<whole module dir>"}` |
+| `path:NN` + verbatim line | `{"id": "cN", "kind": "anchor", "path": "<file>", "anchor": "<line>"}` |
+
+Launch the probes in ONE message (groups of ≤ ~40 checks, grouped by file), each
+with only the repository root and its probe sheet:
+- Claude Code: `Agent({subagent_type: "sdd-contract-probe", description: "Verify codebase claims",
+  prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`;
+- Antigravity: ask the `sdd-contract-probe` subagent
+  (`.agents/agents/sdd-contract-probe/agent.md`) with that same prompt;
+- any other host (Codex included) has no probe agent: verify inline.
+Do not wait — continue with Step 5. With fewer than ~10 checks, or when your host
+cannot launch the probe, verify inline as above instead.
+
 ### 5. Generate Options
+If contract probes are running (Step 4), generate options now; their results are applied in Step 10.
 Produce **at least 3** distinct approaches. For each option:
 - Descriptive name and explanation (WHAT, not HOW).
 - Pros and cons (be honest about tradeoffs).
@@ -193,7 +216,23 @@ Evaluate the feature's decomposition potential for parallel development:
    but warns. `tags`: 2–6 lowercase kebab-case keywords. Never leave
    `projects: []` when the Code Context names code paths.
 3. Set `Status: exploration`.
-4. **Commit (ONLY the brainstorm file — NEVER unrelated changes):**
+4. **Collect the contract probes** (if launched in Step 4). Verify each report
+   with `/sdd-task` §3's rules for `sdd-contract-probe` (HEAD match, re-run
+   negatives + one `found` in ten; a non-reproducing re-run discards the report
+   and its checks run inline). Classify each claim:
+
+   | Probe result | Claim status |
+   |---|---|
+   | `import` `found`/`reexported`; `file` `found`; `anchor` `found`; `absent` `absent` | `verified` (evidence = `path:lines[0]`) |
+   | `symbol` `found` and `signature` == `expected` (whitespace-normalized) | `verified` |
+   | `symbol` `found` and `signature` ≠ `expected` | `stale` (evidence = actual `signature` + line) |
+   | `anchor` `ambiguous`; `absent` `present` (the "missing" thing exists) | `stale` |
+   | `import` `missing`/`module-missing`; `symbol`/`file`/`anchor` `missing`; `file` `short` | `missing` |
+
+   Then fix Code Context: add `lines` to verified refs, drop `missing` refs,
+   replace `stale` signatures with the probe's `signature`, and remove a
+   "Does NOT Exist" entry whose `absent` check came back `present`.
+5. **Commit (ONLY the brainstorm file — NEVER unrelated changes):**
    ```bash
    # Unstage everything first to ensure a clean staging area
    git reset HEAD

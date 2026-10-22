@@ -111,6 +111,7 @@ from ..handlers.credentials import setup_credentials_routes
 
 # Agent Studio — /api/v1/astudio/* route registration (FEAT-467)
 from ..handlers.studio import setup_studio_routes
+from ..handlers.scope import has_installed_resolver
 
 # CommCenter bulk notification sender (FEAT-417) — method-based handler,
 # mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
@@ -139,6 +140,9 @@ from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # when the app starts serving traffic.
 if TYPE_CHECKING:
     from parrot.integrations import IntegrationBotManager
+
+    from ..handlers.studio.storage.models import StudioAgentKey
+    from .studio_runtime import StudioAgentRuntime
 
 
 class AgentNotFoundError(ParrotError):
@@ -180,6 +184,31 @@ class ReloadResult(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+_REGISTRY_ONLY_APP_KEY = "_bot_manager_registry_only"
+
+_STUDIO_PREFIXES = ("studio:", "studio-agent:")
+_cleanup_logger = logging.getLogger("Parrot.Manager")
+
+
+async def cleanup_bot_instance(bot: "AbstractBot", *, label: str) -> bool:
+    """Run ``bot.cleanup()`` with ``BOT_CLEANUP_TIMEOUT`` and exception isolation. Never raises.
+
+    Shared by :meth:`BotManager._safe_cleanup` (name-guarded) and the Studio runtime (identity-guarded).
+
+    Returns:
+        ``True`` when the cleanup completed, ``False`` on timeout or exception.
+    """
+    try:
+        await asyncio.wait_for(bot.cleanup(), timeout=BOT_CLEANUP_TIMEOUT)
+    except asyncio.TimeoutError:
+        _cleanup_logger.warning("BotManager: cleanup of bot '%s' timed out after %ds", label, BOT_CLEANUP_TIMEOUT)
+        return False
+    except Exception:  # noqa: BLE001 — teardown must not raise
+        _cleanup_logger.exception("BotManager: cleanup of bot '%s' raised an unexpected exception", label)
+        return False
+    return True
+
+
 class BotManager:
     """BotManager.
 
@@ -218,6 +247,9 @@ class BotManager:
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
         self._cleaned_up: set[str] = set()  # Idempotency guard for _safe_cleanup
+        # Studio runtime (FEAT-621): installed by ``install_studio_runtime`` when the storage backend is ``database``.
+        # Its instances live in its own cache, never in ``_bots``/``_botdef``.
+        self.studio: "StudioAgentRuntime | None" = None
         self.logger = logging.getLogger(name="Parrot.Manager")
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
@@ -736,7 +768,13 @@ class BotManager:
         return chatbot
 
     def add_bot(self, bot: AbstractBot) -> None:
-        """Add a Bot to the manager."""
+        """Add a Bot to the manager.
+
+        Raises:
+            ValueError: ``bot`` is a Studio instance (``_studio_key``); those live in ``StudioRuntimeCache`` only.
+        """
+        if getattr(bot, "_studio_key", None) is not None:
+            raise ValueError("Studio agents live in StudioRuntimeCache, never in BotManager._bots")
         self._bots[bot.name] = bot
         # Store the class definition for future instance creation
         self._botdef[bot.name] = bot.__class__
@@ -763,6 +801,15 @@ class BotManager:
             AgentAccessDenied: When ``request`` is provided and the caller's
                 subject does not match the bot's PBAC policies.
         """
+        # Studio ids (qualified keys, session ids, tooling refs) never resolve here: before _bots/_botdef/registry.
+        if isinstance(name, str) and name.startswith(_STUDIO_PREFIXES):
+            return None
+        return await self._get_bot_legacy(name, new, session_id, request, **kwargs)
+
+    async def _get_bot_legacy(
+        self, name: str, new: bool, session_id: str, request: Optional[web.Request], **kwargs
+    ) -> Optional[AbstractBot]:
+        """The pre-FEAT-621 ``get_bot`` body (registry/``_bots`` lookup) plus the Studio GLOBAL tail fallback."""
         # Handle new instance creation
         if new:
             # FEAT-153: Enforce PBAC on the base name BEFORE constructing the new
@@ -865,7 +912,47 @@ class BotManager:
                 # AgentAccessDenied is NOT swallowed as "Failed to get bot instance".
                 await enforce_agent_access(self.registry.evaluator, name, request)
                 return bot_instance
-        return None
+        return await self._studio_global_fallback(name, request)
+
+    async def _studio_global_fallback(self, name: str, request: Optional[web.Request]) -> Optional[AbstractBot]:
+        """The only additive ``get_bot`` fallback (Q9): a GLOBAL (tenant NULL) Studio agent by bare name.
+
+        Only when the Studio runtime is installed (``database`` backend) and the app has no scope resolver
+        (a plain host); tenant rows are never reachable by name. The instance stays in the Studio cache.
+        """
+        if self.studio is None or has_installed_resolver(self.app):
+            return None
+        from ..handlers.studio.storage.models import StudioAgentKey
+
+        await enforce_agent_access(self.registry.evaluator, name, request)  # BEFORE any build (FEAT-153 order)
+        try:
+            return await self.studio.get(StudioAgentKey(None, name))
+        except Exception as exc:  # noqa: BLE001 — a refused/failed Studio build is "not served" on the legacy path
+            self.logger.warning("Studio fallback for '%s' failed: %r", name, exc)
+            return None
+
+    async def get_studio_bot(
+        self, key: "StudioAgentKey", *, new: bool = False, session_id: str = "", request: Optional[web.Request] = None
+    ) -> Optional[AbstractBot]:
+        """A Studio agent by qualified key, from the Studio runtime cache (never ``_bots``).
+
+        PBAC on ``key.qualified`` runs FIRST in both forms (before any build, the FEAT-153 ordering): ``new=False`` →
+        the revalidated base instance; ``new=True`` (test chat) → the session instance for ``session_id``.
+
+        Raises:
+            StudioStorageUnavailable: the Studio runtime is not installed (backend is not ``database``).
+            ValueError: ``new=True`` without a ``session_id``.
+        """
+        if self.studio is None:
+            from ..handlers.studio.storage.models import StudioStorageUnavailable
+
+            raise StudioStorageUnavailable("studio runtime is not installed")
+        if new and not session_id:
+            raise ValueError("get_studio_bot(new=True) requires a session_id")
+        await enforce_agent_access(self.registry.evaluator, key.qualified, request)  # BEFORE any build
+        if new:
+            return await self.studio.get_session(key, session_id)
+        return await self.studio.get(key)
 
     def remove_bot(self, name: str) -> None:
         """Remove a Bot by name."""
@@ -1737,20 +1824,7 @@ class BotManager:
         if name in self._cleaned_up:
             self.logger.debug("BotManager: bot '%s' already cleaned up", name)
             return True
-        try:
-            await asyncio.wait_for(bot.cleanup(), timeout=BOT_CLEANUP_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.logger.warning(
-                "BotManager: cleanup of bot '%s' timed out after %ds",
-                name,
-                BOT_CLEANUP_TIMEOUT,
-            )
-            return False
-        except Exception:  # noqa: BLE001 — teardown must not raise
-            self.logger.exception(
-                "BotManager: cleanup of bot '%s' raised an unexpected exception",
-                name,
-            )
+        if not await cleanup_bot_instance(bot, label=name):
             return False
         self._cleaned_up.add(name)
         return True
@@ -2244,11 +2318,15 @@ class BotManager:
         agent_mount_auth_template: Optional[MCPServerConfig] = None,
         agent_mount_pbac_resolver: Optional[PBACResolver] = None,
         agent_mount_audit_sink: Optional[AuditSink] = None,
+        studio_routes: bool = True,
     ) -> web.Application:
         """Register BotManager routes on `app`.
 
         Args:
             app: The aiohttp application to configure.
+            studio_routes: When ``False`` the default ``/api/v1/astudio``
+                mount is skipped (a host mounts Studio itself, e.g. under a
+                tenant prefix, via ``setup_studio_routes``).
             agent_mount_config: Optional FEAT-477 agent-as-MCP-server mount
                 configuration. When provided, one MCP endpoint per listed
                 agent (plus the optional aggregate) is registered alongside
@@ -2286,6 +2364,10 @@ class BotManager:
         # Register per-bot cleanup BEFORE shared-Redis cleanup so bots can
         # still use app['redis'] inside their own cleanup() coroutines.
         self.app.on_cleanup.append(self._cleanup_all_bots)
+        # Studio runtime (FEAT-621): hooks added once per app; a no-op at startup unless the backend is ``database``.
+        from .studio_runtime import add_studio_runtime_hooks
+
+        add_studio_runtime_hooks(self.app)
         # Publish a shared Redis client so every ai-parrot component that
         # expects ``app['redis']`` (navigator-auth refresh-token rotation,
         # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a
@@ -2339,6 +2421,7 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/refresh", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
@@ -2565,12 +2648,14 @@ class BotManager:
         # User credential management routes
         setup_credentials_routes(self.app)
         # Agent Studio — /api/v1/astudio/* management API (FEAT-467)
-        setup_studio_routes(self.app)
+        if studio_routes:
+            setup_studio_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
         setup_thales_routes(self.app)
-        # Embedded Admin UI (FEAT-468): mounts the compiled SPA when present,
+        # Embedded web UI (FEAT-468): mounts the compiled SPA (end-user pages at
+        # /, /login, /agents; administration under /admin) when present,
         # gracefully absent otherwise (install-from-git without Node build).
         setup_admin_ui(self.app)
         # CommCenter bulk notification sender routes (FEAT-417)
@@ -2736,6 +2821,67 @@ Available documentation UIs:
         for bot in self._bots.values():
             if getattr(bot, "_dataplane_guard", None) is None:
                 bot._dataplane_guard = guard  # noqa: SLF001
+
+    def setup_registry_only(
+        self, app: web.Application, *, import_modules: bool = False, load_definitions: bool = False
+    ) -> None:
+        """Mount the agent registry without ``setup()`` (no routes, no startup agents).
+
+        Idempotent per app. Appends exactly one ``on_startup``, one
+        ``on_shutdown`` and one ``on_cleanup`` hook; non-Studio bots only.
+        Also installs the Studio runtime hooks once (``add_studio_runtime_hooks``).
+
+        Args:
+            app: The aiohttp application.
+            import_modules: Import ``AGENTS_DIR`` modules at startup.
+            load_definitions: Load YAML agent definitions at startup.
+
+        Raises:
+            RuntimeError: When a scope resolver is installed on ``app`` and
+                either opt-in flag is True (tenant hosts never import
+                host-wide content).
+        """
+        if (import_modules or load_definitions) and has_installed_resolver(app):
+            raise RuntimeError("setup_registry_only: import_modules/load_definitions are refused in a tenant host")
+        if app.get(_REGISTRY_ONLY_APP_KEY):
+            self.logger.info("setup_registry_only: already installed on this app")
+            return
+        app[_REGISTRY_ONLY_APP_KEY] = {"import_modules": import_modules, "load_definitions": load_definitions}
+        self.app = app
+        app["bot_manager"] = self
+        app.on_startup.append(self._registry_only_startup)
+        app.on_shutdown.append(self._registry_only_shutdown)
+        app.on_cleanup.append(self._cleanup_all_bots)
+        from .studio_runtime import add_studio_runtime_hooks
+
+        add_studio_runtime_hooks(app)
+
+    async def _registry_only_startup(self, app: web.Application) -> None:
+        """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
+        opts = app[_REGISTRY_ONLY_APP_KEY]
+        if (opts["import_modules"] or opts["load_definitions"]) and has_installed_resolver(app):
+            raise RuntimeError("setup_registry_only: import_modules/load_definitions are refused in a tenant host")
+        if self.enable_registry_bots:
+            self.registry.setup(app)
+            if opts["import_modules"]:
+                await self.registry.load_modules()
+            if opts["load_definitions"]:
+                definitions_dir = self.registry.agents_dir / "agents"
+                if definitions_dir.is_dir():
+                    self.registry.load_agent_definitions(definitions_dir)
+        self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
+
+    async def _registry_only_shutdown(self, app: web.Application) -> None:
+        """Cancel the legacy expiry loop (mirrors ``on_shutdown``)."""
+        task = self._cleanup_task
+        self._cleanup_task = None
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            self.logger.info("Stopped background cleanup task")
 
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""

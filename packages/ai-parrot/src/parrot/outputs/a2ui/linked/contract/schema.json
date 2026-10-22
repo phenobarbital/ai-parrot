@@ -94,6 +94,54 @@
       "title": "DeriveBinary",
       "type": "object"
     },
+    "DerivedDataSource": {
+      "additionalProperties": false,
+      "description": "A dashboard-owned view computed from a sibling source's frame — never fetched (linked dashboards).\n\nThe base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),\nnot its ≤500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see\nthe computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the\nPython executor, which would break Python ↔ renderer parity.",
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "kind": {
+          "const": "derived",
+          "title": "Kind",
+          "type": "string"
+        },
+        "snapshot_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot At"
+        },
+        "snapshot_truncated": {
+          "default": false,
+          "title": "Snapshot Truncated",
+          "type": "boolean"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/$defs/TransformSpec"
+        }
+      },
+      "required": [
+        "kind",
+        "from",
+        "transform",
+        "target"
+      ],
+      "title": "DerivedDataSource",
+      "type": "object"
+    },
     "Filter": {
       "additionalProperties": false,
       "properties": {
@@ -444,6 +492,45 @@
       "title": "Pivot",
       "type": "object"
     },
+    "PythonTransform": {
+      "additionalProperties": false,
+      "description": "Server-side registered transformer applied to a fetched frame (G1: referenced by name, never code).\n\nRuns ONLY in the Python lanes (bake, persist, server refresh, the per-source data endpoint) — the mirror\nimage of ``transform.ref``, which runs only in the renderer.",
+      "properties": {
+        "input_alias": {
+          "default": "source",
+          "minLength": 1,
+          "title": "Input Alias",
+          "type": "string"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "transformer": {
+          "minLength": 1,
+          "title": "Transformer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transformer"
+      ],
+      "title": "PythonTransform",
+      "type": "object"
+    },
     "RefreshPolicy": {
       "additionalProperties": false,
       "description": "Renderer refresh policy: ``on_mount``, ``manual``, or ``interval``.",
@@ -651,7 +738,7 @@
     },
     "TransformSpec": {
       "additionalProperties": false,
-      "description": "Exactly one of inline DSL operations or a catalogued renderer module.",
+      "description": "Exactly one of inline DSL operations, a catalogued renderer module, or a server-side Python transformer.",
       "properties": {
         "ops": {
           "anyOf": [
@@ -714,6 +801,17 @@
           "default": null,
           "title": "Ops"
         },
+        "python": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PythonTransform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "ref": {
           "anyOf": [
             {
@@ -757,7 +855,21 @@
   "$id": "https://ai-parrot.dev/schemas/a2ui/linked-sources.v1.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
-    "$ref": "#/$defs/LinkedDataSource"
+    "discriminator": {
+      "mapping": {
+        "derived": "#/$defs/DerivedDataSource",
+        "query_slug": "#/$defs/LinkedDataSource"
+      },
+      "propertyName": "kind"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/LinkedDataSource"
+      },
+      {
+        "$ref": "#/$defs/DerivedDataSource"
+      }
+    ]
   },
   "description": "Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root.",
   "title": "LinkedSources",

@@ -1,8 +1,8 @@
 """Postgres persistence backend for GraphIndex (FEAT-520 Module 2).
 
 ``PostgresPersistence`` is the third GraphIndex backend, sitting next to
-``GraphIndexPersistence`` (ArangoDB, ``persist.py``) and ``SQLitePersistence``
-(``persist_sqlite.py``). Its public API mirrors ``GraphIndexPersistence``
+``ArangoPersistence`` (ArangoDB, ``persist_arango.py``) and ``SQLitePersistence``
+(``persist_sqlite.py``). Its public API mirrors ``ArangoPersistence``
 exactly (duck-typed, same as the SQLite sibling) so ``GraphPublisher`` and
 the builder pipeline work unchanged.
 
@@ -26,7 +26,7 @@ data (FEAT-392 precedent).
 
 FEAT-520 Module 3 adds the graph commit protocol (``apply_update``/
 ``get_commit``/``list_commits``/``revert_commit``), mirroring
-``GraphIndexPersistence``/``SQLitePersistence`` behaviorally
+``ArangoPersistence``/``SQLitePersistence`` behaviorally
 (``tests/knowledge/graphindex/test_persist_commit_protocol.py`` is the
 parity bar). Deviation from the ArangoDB sibling, worth calling out: on
 Postgres the pre-image capture, the ``commits``/``commit_items`` rows, and
@@ -45,7 +45,7 @@ every other write path in this module.
 
 FEAT-520 Module 4 adds the temporal READ contract (``as_of``/``history``/
 ``diff``, spec D5) — Postgres-only in v1. ``SQLitePersistence`` and
-``GraphIndexPersistence`` do NOT grow these methods; callers feature
+``ArangoPersistence`` do NOT grow these methods; callers feature
 -detect via ``hasattr``.
 
 FEAT-520 Module 6 adds ``upsert_embeddings`` — in-schema embeddings keyed
@@ -207,7 +207,7 @@ def _node_content_hash(node: UniversalNode) -> str:
 class PostgresPersistence:
     """Postgres-backed GraphIndex persistence over the shared ``graphindex.*`` schema.
 
-    Public API mirrors ``GraphIndexPersistence`` (``persist.py``) — duck
+    Public API mirrors ``ArangoPersistence`` (``persist_arango.py``) — duck
     -typed, same as ``SQLitePersistence`` — plus the temporal (TASK-2767)
     and hybrid-retrieval (TASK-2771) extensions added later in this file.
 
@@ -511,7 +511,7 @@ class PostgresPersistence:
             return None
 
     # ------------------------------------------------------------------
-    # Public API — mirrors GraphIndexPersistence
+    # Public API — mirrors ArangoPersistence
     # ------------------------------------------------------------------
 
     async def persist_graph(
@@ -641,6 +641,23 @@ class PostgresPersistence:
             len(edges),
         )
         return {"nodes_replaced": len(old_ids), "edges_replaced": len(edges)}
+
+    async def file_hashes(self, ctx: TenantContext) -> list[tuple[str, str]]:
+        """Return every ``(source_uri, sha1)`` from ``{schema}.files``, sorted by ``source_uri``.
+
+        The v1 schema is not tenant-partitioned: ``files`` is keyed by ``source_uri`` alone, so ``ctx`` is
+        accepted for contract parity and not used to filter.
+
+        Args:
+            ctx: Tenant context (unused).
+
+        Returns:
+            The sorted pairs.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(f"SELECT source_uri, sha1 FROM {self._schema}.files ORDER BY source_uri")
+        return [(row["source_uri"], row["sha1"]) for row in rows]
 
     async def is_stale(
         self,

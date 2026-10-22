@@ -2,7 +2,7 @@
 id: F002
 query_id: Q002
 type: wiki_query
-intent: Orient: locate WebBrowsingToolkit (catalogued Playwright/Selenium site actions).
+intent: "Orient: locate WebBrowsingToolkit (catalogued Playwright/Selenium site actions)."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

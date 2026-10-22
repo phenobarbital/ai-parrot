@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
 
 from .models import SuppressionRecord
@@ -31,7 +31,7 @@ class SuppressionLog:
         ctx: Tenant context to write into.
     """
 
-    def __init__(self, store: OntologyGraphStore, ctx: TenantContext) -> None:
+    def __init__(self, store: ArangoOntologyGraphStore, ctx: TenantContext) -> None:
         self._store = store
         self._ctx = ctx
         self._seq = 0

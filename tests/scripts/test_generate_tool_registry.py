@@ -113,3 +113,53 @@ def test_check_cli_exits_zero_on_repo():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_update_init_file_keeps_manual_key_over_scanned_duplicate(tmp_path):
+    """A class already registered under a manual slug must not gain a second scanned slug.
+
+    Two slugs for one class make the resolver drop the class-name alias as ambiguous
+    (``parrot.tools.resolver`` logs one warning per class at first resolution).
+    """
+    init_file = tmp_path / "__init__.py"
+    init_file.write_text(
+        textwrap.dedent(
+            '''
+            """Docstring."""
+
+            TOOL_REGISTRY: dict[str, str] = {
+                "aws_iam": "pkg.aws.iam.IAMToolkit",
+                "foo": "pkg.mod.Foo",
+            }
+            '''
+        )
+    )
+    scanned = {"iam": "pkg.aws.iam.IAMToolkit", "foo": "pkg.mod.Foo", "bar": "pkg.mod.Bar"}
+    changed, diff = gtr.update_init_file(init_file, "TOOL_REGISTRY", scanned)
+    assert changed is True
+    registry = gtr.read_existing_registry(init_file, "TOOL_REGISTRY")
+    assert registry == {"foo": "pkg.mod.Foo", "bar": "pkg.mod.Bar", "aws_iam": "pkg.aws.iam.IAMToolkit"}
+    assert "iam" not in registry
+    assert diff == ["  + bar: pkg.mod.Bar"]
+
+
+def test_update_init_file_keeps_manual_reexport_key_over_scanned_module_path(tmp_path):
+    """A manual slug pointing at a package re-export owns the class the scan finds in a submodule."""
+    init_file = tmp_path / "__init__.py"
+    init_file.write_text(
+        textwrap.dedent(
+            '''
+            """Docstring."""
+
+            TOOL_REGISTRY: dict[str, str] = {
+                "multi_store_search_toolkit": "pkg.multistoresearch.MultiStoreSearchToolkit",
+            }
+            '''
+        )
+    )
+    scanned = {"multi_store_search": "pkg.multistoresearch.toolkit.MultiStoreSearchToolkit"}
+    changed, diff = gtr.update_init_file(init_file, "TOOL_REGISTRY", scanned)
+    assert changed is False
+    assert diff == []
+    registry = gtr.read_existing_registry(init_file, "TOOL_REGISTRY")
+    assert registry == {"multi_store_search_toolkit": "pkg.multistoresearch.MultiStoreSearchToolkit"}

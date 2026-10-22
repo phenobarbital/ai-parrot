@@ -57,21 +57,25 @@ fallback) are added on top of the existing single-traversal logic.
 - ``"vector_only"``     — all graph paths were empty/unavailable; falls back
                           to vector store without graph context.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.auth.exceptions import AuthorizationRequired
 
 from .authorization import AuthorizationChecker
 from .cache import OntologyCache
+from .contracts import DynamicQuery
 from .entity_resolver import EntityAmbiguityError, EntityNotFoundError, EntityResolver
-from .graph_store import OntologyGraphStore
 from .intent import OntologyIntentResolver
 from .schema import ContextEnvelope, EnrichedContext, ResolvedIntent
 from .tenant import TenantOntologyManager
 from .tool_dispatcher import RenderError, ToolCallDispatcher
+
+if TYPE_CHECKING:
+    from .contracts import OntologyTraversalStore
 
 logger = logging.getLogger("Parrot.Ontology.Mixin")
 
@@ -102,7 +106,7 @@ class OntologyRAGMixin:
 
     Args:
         tenant_manager: TenantOntologyManager instance.
-        graph_store: OntologyGraphStore instance.
+        graph_store: OntologyTraversalStore instance.
         vector_store: Existing PgVector store for post-action vector search.
         cache: OntologyCache instance (Redis-backed).
         llm_client: LLM client for intent resolver's LLM path.
@@ -117,7 +121,7 @@ class OntologyRAGMixin:
     def __init__(
         self,
         tenant_manager: TenantOntologyManager | None = None,
-        graph_store: OntologyGraphStore | None = None,
+        graph_store: OntologyTraversalStore | None = None,
         vector_store: Any = None,
         cache: OntologyCache | None = None,
         llm_client: Any = None,
@@ -155,6 +159,11 @@ class OntologyRAGMixin:
     # ------------------------------------------------------------------
     # Main pipeline
     # ------------------------------------------------------------------
+
+    def _graph_dialect(self) -> str:
+        """Return the query dialect of the configured graph store (default ``aql``)."""
+        dialect = getattr(self._ont_graph_store, "dialect", None)
+        return dialect if isinstance(dialect, str) and dialect else "aql"
 
     async def ontology_process(
         self,
@@ -208,7 +217,8 @@ class OntologyRAGMixin:
         # 1. Resolve tenant
         try:
             tenant_ctx = self._ont_tenant_manager.resolve(
-                tenant_id, domain=domain,
+                tenant_id,
+                domain=domain,
             )
         except FileNotFoundError as e:
             logger.warning("Ontology not found for tenant '%s': %s", tenant_id, e)
@@ -221,6 +231,7 @@ class OntologyRAGMixin:
         resolver = OntologyIntentResolver(
             ontology=tenant_ctx.ontology,
             llm_client=self._ont_llm_client,
+            dialect=self._graph_dialect(),
         )
         try:
             intent = await resolver.resolve(query, merged_ctx)
@@ -247,23 +258,30 @@ class OntologyRAGMixin:
                 graph_store=self._ont_graph_store,
                 ontology=tenant_ctx.ontology,
                 llm_client=self._ont_llm_client,
-                vector_store=self._ont_vector_store,        # required for hybrid stage 2
-                concept_instances=list(                     # required for hybrid stage 1
+                vector_store=self._ont_vector_store,  # required for hybrid stage 2
+                concept_instances=list(  # required for hybrid stage 1
                     getattr(
                         tenant_ctx.ontology.entities.get("Concept"),
-                        "instances", None,
-                    ) or []
+                        "instances",
+                        None,
+                    )
+                    or []
                 ),
             )
             try:
                 resolved_entities = await entity_resolver.extract_and_resolve(
-                    pattern, query, merged_ctx, tenant_id,
+                    pattern,
+                    query,
+                    merged_ctx,
+                    tenant_id,
                 )
             except EntityAmbiguityError as exc:
                 logger.info(
-                    "Ontology pipeline: ambiguous entity rule=%s mention=%s "
-                    "candidates=%d tenant=%s",
-                    exc.rule_name, exc.mention, len(exc.candidates), tenant_id,
+                    "Ontology pipeline: ambiguous entity rule=%s mention=%s " "candidates=%d tenant=%s",
+                    exc.rule_name,
+                    exc.mention,
+                    len(exc.candidates),
+                    tenant_id,
                 )
                 return ContextEnvelope(
                     state="ambiguous",
@@ -276,7 +294,8 @@ class OntologyRAGMixin:
             except EntityNotFoundError as exc:
                 logger.info(
                     "Ontology pipeline: entity_not_found rule=%s tenant=%s",
-                    exc.rule_name, tenant_id,
+                    exc.rule_name,
+                    tenant_id,
                 )
                 return ContextEnvelope(
                     state="entity_not_found",
@@ -292,12 +311,17 @@ class OntologyRAGMixin:
         if pattern is not None and pattern.authorization is not None:
             auth_checker = AuthorizationChecker(graph_store=self._ont_graph_store)
             allowed, reason = await auth_checker.check(
-                pattern.authorization, merged_ctx, resolved_entities, tenant_id,
+                pattern.authorization,
+                merged_ctx,
+                resolved_entities,
+                tenant_id,
             )
             if not allowed:
                 logger.info(
                     "Ontology pipeline: denied reason=%r tenant=%s user=%s",
-                    reason, tenant_id, merged_ctx.get("user_id"),
+                    reason,
+                    tenant_id,
+                    merged_ctx.get("user_id"),
                 )
                 return ContextEnvelope(state="denied", denial_reason=reason)
 
@@ -305,7 +329,9 @@ class OntologyRAGMixin:
         user_id = merged_ctx.get("user_id", "anonymous")
         pattern_name = intent.pattern or "unknown"
         cache_key = OntologyCache.build_key(
-            tenant_id, user_id, pattern_name,
+            tenant_id,
+            user_id,
+            pattern_name,
             resolved_entities=resolved_entities,
         )
 
@@ -326,7 +352,7 @@ class OntologyRAGMixin:
             graph_result = None
             graph_source = None
         else:
-            is_authority_pattern = (intent.pattern == "authoritative_doc_for_topic")
+            is_authority_pattern = intent.pattern == "authoritative_doc_for_topic"
             graph_result = None
             graph_source = None
 
@@ -334,60 +360,67 @@ class OntologyRAGMixin:
                 # Level 1 — primary authority traversal
                 primary_params = {**intent.params, "authority_level": "primary"}
                 try:
-                    primary_result = await self._ont_graph_store.execute_traversal(
-                        ctx=tenant_ctx,
-                        aql=intent.aql,
-                        bind_vars=primary_params,
-                        collection_binds=intent.collection_binds,
+                    primary_result = await self._run_graph_query(
+                        tenant_ctx,
+                        intent,
+                        pattern,
+                        primary_params,
                     )
                     if primary_result:
                         graph_result = primary_result
                         graph_source = "graph:primary"
                         logger.debug(
                             "Degradation Level 1 hit (primary): tenant=%s pattern=%s rows=%d",
-                            tenant_id, intent.pattern, len(graph_result),
+                            tenant_id,
+                            intent.pattern,
+                            len(graph_result),
                         )
                 except Exception as exc:
                     logger.warning(
-                        "Level 1 (primary) traversal failed, trying secondary: %s", exc,
+                        "Level 1 (primary) traversal failed, trying secondary: %s",
+                        exc,
                     )
 
                 if not graph_result:
                     # Level 2 — secondary authority traversal
                     secondary_params = {**intent.params, "authority_level": "secondary"}
                     try:
-                        secondary_result = await self._ont_graph_store.execute_traversal(
-                            ctx=tenant_ctx,
-                            aql=intent.aql,
-                            bind_vars=secondary_params,
-                            collection_binds=intent.collection_binds,
+                        secondary_result = await self._run_graph_query(
+                            tenant_ctx,
+                            intent,
+                            pattern,
+                            secondary_params,
                         )
                         if secondary_result:
                             graph_result = secondary_result
                             graph_source = "graph:secondary"
                             logger.debug(
                                 "Degradation Level 2 hit (secondary): tenant=%s pattern=%s rows=%d",
-                                tenant_id, intent.pattern, len(graph_result),
+                                tenant_id,
+                                intent.pattern,
+                                len(graph_result),
                             )
                     except Exception as exc:
                         logger.warning(
-                            "Level 2 (secondary) traversal failed, degrading to vector: %s", exc,
+                            "Level 2 (secondary) traversal failed, degrading to vector: %s",
+                            exc,
                         )
             else:
                 # Standard single traversal for non-authority patterns
                 try:
-                    single_result = await self._ont_graph_store.execute_traversal(
-                        ctx=tenant_ctx,
-                        aql=intent.aql,
-                        bind_vars=intent.params,
-                        collection_binds=intent.collection_binds,
+                    single_result = await self._run_graph_query(
+                        tenant_ctx,
+                        intent,
+                        pattern,
+                        intent.params,
                     )
                     if single_result:
                         graph_result = single_result
                         graph_source = "ontology"
                 except Exception as exc:
                     logger.warning(
-                        "Graph traversal failed (degrading to vector_only): %s", exc,
+                        "Graph traversal failed (degrading to vector_only): %s",
+                        exc,
                     )
 
         # If we have graph results, proceed to post-action and tool dispatch
@@ -414,7 +447,9 @@ class OntologyRAGMixin:
                 if filtered_results:
                     logger.debug(
                         "Degradation Level 3 hit (vector:filtered): tenant=%s pattern=%s rows=%d",
-                        tenant_id, intent.pattern, len(filtered_results),
+                        tenant_id,
+                        intent.pattern,
+                        len(filtered_results),
                     )
                     enriched = EnrichedContext(
                         source="vector:filtered",
@@ -437,7 +472,9 @@ class OntologyRAGMixin:
                 if plain_results:
                     logger.debug(
                         "Degradation Level 4 hit (vector:plain): tenant=%s pattern=%s rows=%d",
-                        tenant_id, intent.pattern, len(plain_results),
+                        tenant_id,
+                        intent.pattern,
+                        len(plain_results),
                     )
                     enriched = EnrichedContext(
                         source="vector:plain",
@@ -457,7 +494,8 @@ class OntologyRAGMixin:
         # All levels exhausted — return vector_only shell
         logger.info(
             "All degradation levels exhausted: tenant='%s', pattern='%s'",
-            tenant_id, intent.pattern,
+            tenant_id,
+            intent.pattern,
         )
         return ContextEnvelope(
             state="ok",
@@ -467,6 +505,44 @@ class OntologyRAGMixin:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    async def _run_graph_query(
+        self,
+        tenant_ctx: Any,
+        intent: ResolvedIntent,
+        pattern: Any,
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Run the intent through the traversal contract.
+
+        Pattern intents go through ``execute_pattern`` so every backend picks
+        its own template; dynamic LLM queries use ``execute_query``.
+
+        Args:
+            tenant_ctx: Tenant context.
+            intent: The resolved intent.
+            pattern: The matched ``TraversalPattern`` (``None`` for dynamic).
+            params: Bind variables.
+
+        Returns:
+            Result rows.
+        """
+        if pattern is not None:
+            return await self._ont_graph_store.execute_pattern(
+                tenant_ctx,
+                pattern,
+                params,
+                intent.collection_binds,
+            )
+        return await self._ont_graph_store.execute_query(
+            tenant_ctx,
+            DynamicQuery(
+                dialect=intent.dialect,
+                text=intent.query or "",
+                bind_vars=params,
+                collection_binds=intent.collection_binds,
+            ),
+        )
 
     async def _build_and_dispatch(
         self,
@@ -508,7 +584,9 @@ class OntologyRAGMixin:
 
         if intent.post_action == "vector_search" and graph_result:
             vector_result = await self._do_vector_search(
-                graph_result, intent, tenant_ctx.pgvector_schema,
+                graph_result,
+                intent,
+                tenant_ctx.pgvector_schema,
             )
         elif intent.post_action == "tool_call" and graph_result:
             # Only build a lightweight hint if there is no full ToolCallSpec.
@@ -543,12 +621,15 @@ class OntologyRAGMixin:
                 dispatcher = ToolCallDispatcher(tool_manager=self._ont_tool_manager)
                 try:
                     tool_result = await dispatcher.dispatch(
-                        pattern.tool_call, graph_result, merged_ctx,
+                        pattern.tool_call,
+                        graph_result,
+                        merged_ctx,
                     )
                 except AuthorizationRequired as exc:
                     logger.info(
                         "Ontology pipeline: auth_required provider=%s tenant=%s",
-                        exc.provider, tenant_id,
+                        exc.provider,
+                        tenant_id,
                     )
                     return ContextEnvelope(
                         state="auth_required",
@@ -561,22 +642,22 @@ class OntologyRAGMixin:
                 except RenderError as exc:
                     logger.warning(
                         "Ontology pipeline: render_error field=%s tenant=%s: %s",
-                        exc.field, tenant_id, exc.message,
+                        exc.field,
+                        tenant_id,
+                        exc.message,
                     )
                     return ContextEnvelope(state="render_error", error=str(exc))
                 except Exception as exc:
-                    logger.warning(
-                        "Ontology: tool_failed tenant=%s: %s", tenant_id, exc
-                    )
+                    logger.warning("Ontology: tool_failed tenant=%s: %s", tenant_id, exc)
                     return ContextEnvelope(state="tool_failed", error=str(exc))
 
         # Cache the enriched context
         await self._ont_cache.set(cache_key, enriched)
 
         logger.info(
-            "Ontology pipeline complete: tenant='%s', pattern='%s', "
-            "graph_results=%d, source='%s', tool_result=%s",
-            tenant_id, intent.pattern,
+            "Ontology pipeline complete: tenant='%s', pattern='%s', " "graph_results=%d, source='%s', tool_result=%s",
+            tenant_id,
+            intent.pattern,
             len(graph_result) if graph_result else 0,
             graph_source,
             bool(tool_result),
@@ -671,6 +752,7 @@ class OntologyRAGMixin:
         """
         try:
             from parrot.conf import ENABLE_ONTOLOGY_RAG
+
             return bool(ENABLE_ONTOLOGY_RAG)
         except (ImportError, AttributeError):
             return False

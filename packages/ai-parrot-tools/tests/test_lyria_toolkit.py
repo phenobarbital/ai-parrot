@@ -206,8 +206,9 @@ class TestLyriaToolkit:
             await tk._get_client()
 
     def test_discovery_registry(self):
-        assert TOOL_REGISTRY["lyria"] == "parrot_tools.google.lyria.LyriaToolkit"
+        # One slug per class: a second slug makes the resolver drop the class-name alias as ambiguous.
         assert TOOL_REGISTRY["google_lyria"] == "parrot_tools.google.lyria.LyriaToolkit"
+        assert "lyria" not in TOOL_REGISTRY
 
 
 class TestLyriaToolkitReviewFixes:

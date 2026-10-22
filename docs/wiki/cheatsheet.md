@@ -46,6 +46,7 @@ wikitoolkit status                   # estadísticas, namespaces, staleness
 wikitoolkit status --json
 
 wikitoolkit upsert path/a/archivo.py path/b/otro.py   # re-ingesta puntual
+wikitoolkit inbox                                  # ingesta inbox/, verifica y archiva originales
 wikitoolkit upsert --changed --quiet                    # lo que tocó el último commit (git hook)
 ```
 
@@ -249,8 +250,17 @@ wikitoolkit ledger plan-fix [--severity major] [--lane fast|sdd] --json   # lote
 wikitoolkit ledger ingest-sdd        # specs + índices de tareas → nodos spec:/task:
 wikitoolkit ledger sync              # aplica eventos pendientes al índice
 wikitoolkit ledger rebuild           # reconstruye desde el log (re-ejecuta ingest-sdd después)
-wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> · wikitoolkit ledger compact
+wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> [--no-reconcile] · wikitoolkit ledger compact
 ```
+
+**Shared event log (FEAT-694).** `sdd/ledger/events.jsonl` (+ `sdd/ledger/archive/`) is a
+git-tracked, append-only copy of the ledger events, merged by git with `merge=union`
+(`.gitattributes`). The four `parrot-ledger` git hooks (pre-commit, post-merge, post-checkout,
+post-rewrite) import it into / export it from the local ledger automatically.
+Manual commands: `wikitoolkit ledger export-log`, `wikitoolkit ledger import-log`,
+`wikitoolkit ledger rotate-log --older-than-days N`. Rotation runs only in `/sdd-done`
+step 9.1, never in a hook. Existing checkouts: re-run `parrot claude install` once to
+install the hooks.
 
 Kinds: `bug | tech_debt | feature_gap | vulnerability`. Severidades:
 `critical | major | minor | low`. `--discovered-from`: `spec:<FEAT>`,
@@ -483,6 +493,25 @@ wikitoolkit adr review <decision_id> --action accept --expected-revision 1 --act
 wikitoolkit adr review <decision_id> --action link --documented-id <adr_id> --expected-revision 2 --actor human:jlara
 wikitoolkit adr export <decision_id>
 ```
+
+---
+
+## 11.1. Standup briefs y entidades
+
+```bash
+wikitoolkit standup                              # daily brief en inglés
+wikitoolkit standup --period week --language es  # weekly brief en español
+wikitoolkit standup --no-llm                     # sin resumen LLM
+wikitoolkit standup --out ./standups             # directorio del archivo (no un nombre de archivo)
+wikitoolkit standup --team                       # incluir todo el equipo
+wikitoolkit standup --no-store --no-file --json  # solo salida JSON, sin escribir nada
+wikitoolkit entity add <type> <title>            # crear entidad tipada
+wikitoolkit entity list                          # listar entidades
+wikitoolkit entity reindex --store <path>        # reindexar plano foráneo
+```
+
+Referencia completa: [standup.md](standup.md) (FEAT-627). Para cron y back-fill, consulta el [runbook de standup](../runbooks/wiki-standup.md).
+Referencia de lint: [lint.md](lint.md) (FEAT-625). Referencia del pipeline de inbox: [inbox.md](inbox.md) (FEAT-626).
 
 ---
 

@@ -1,0 +1,124 @@
+**Option B** — *sidemantic core + ai-parrot governance compiler on sqlglot, shipped as the opt-in
+`ai-parrot-semantic` satellite* — because:
+
+- It matches the discovery decisions (sidemantic for the semantic core, own sqlglot code where
+  control matters, satellite placement, full v1 governance scope) and the repo's prior **NO-GO on
+  Ibis** (TASK-1437), which rules out Option A as the primary path.
+- Governance is ours in every option; B gets the semantic core (metric types, symmetric aggregates,
+  Ossie/dbt/LookML import) for free and confines its only real cost — AGPL + maintainer risk — to
+  one opt-in distribution with an exact pin and a native fallback compiler as the exit.
+- Option C would spend the budget re-deriving sidemantic's hardest features; Option D moves the
+  problem into warehouse administration we do not control.
+
+What we trade off: a two-compiler parity surface, an AGPL package in the workspace, and a
+deliberate deviation from "toolkits live in `ai-parrot-tools`" (the license boundary is the
+reason, and it must be stated in the spec).
+
+Clarification carried into the spec: "no abstraction layer" (Round 2a) and "fallback native
+compiler" (Round 2b) are reconciled as **one internal `compile()` dispatch on `model.engine`
+(`sidemantic` | `native`)** — not a plugin protocol, not a third-party engine registry.
+
+---
+
+sidemantic (`==0.12.0`, AGPL accepted) owns **what the proposal calls "the hard semantic part"**:
+model/dimension/metric pydantic core (12 aggregations + ratio/derived/cumulative/time_comparison/
+conversion/retention/cohort), relationships with five cardinalities and **symmetric aggregates**
+(no double counting on one-to-many joins), `load_from_directory` auto-detecting 15 formats
+(**Apache Ossie included**, plus dbt MetricFlow, LookML, Cube…), `compile(metrics, dimensions,
+filters, order_by, limit, dialect)` → SQL with no warehouse connection, catalog/explain helpers.
+
+ai-parrot owns, on **sqlglot** (own code, full control):
+
+1. **`SemanticQuery`** pydantic contract (superset of Cube / dbt / Ossie query shapes: metrics,
+   dimensions, time dimensions with grain, typed filter tree with `and`/`or`, order, limit,
+   offset, timezone, `saved_query` XOR `metrics`). Compiles to sidemantic's `filters=[...]`
+   strings *or* to the native compiler's AST.
+2. **Governance compiler** — a post-compile AST pass over whatever SQL the engine produced:
+   - **RLS push-down**: every `exp.Table` matching an `RlsRule (driver, schema.table)` is
+     rewritten to a filtered scan (predicate rendered from `RlsRegistry.render(rule, ctx)` → typed
+     `exp.Literal`s) **below** any aggregation. Deny-by-default when the model is governed and no
+     `PermissionContext` is available.
+   - **Column masking**: projection rewrite per role (`null` / `hash` / `partial`) and catalog hiding.
+     Resolve column lineage through aliases, CTEs, subqueries and expressions before rewriting;
+     reject unauthorized sensitive-column use anywhere in the query. `ModelPolicy` declares
+     separate projection and usage rights; absent usage rights deny filters, joins, grouping,
+     ordering, windows and derived expressions over masked/hidden columns. Trusted model metric
+     definitions may explicitly grant an aggregate use without granting arbitrary raw-SQL use;
+     caller-supplied filters and expressions remain subject to the same restrictions. Only
+     compiler-injected RLS predicates and mask expressions have trusted provenance; callers cannot
+     label SQL as trusted. Unresolved lineage fails closed.
+   - **Positive guard**: `qualify` with the model-derived schema, allowlist of tables/columns/
+     functions, single `Select`, forced/capped `LIMIT`. Applied to compiled SQL (sanity) and to the
+     optional free-SQL `run_sql` tool (exploration path).
+3. **Role allowlist** over the catalog (`<model>.policy.yaml` side-file: `roles → metrics/dimensions`,
+   `mask`, `rls` bindings, `saved_queries` with `verified_by/verified_at`). The LLM only ever sees
+   the filtered catalog, which also shrinks the prompt.
+4. **Native fallback compiler** (`engine: native` per model, default `sidemantic`): metrics with
+   simple aggregations, dimensions, `DATE_TRUNC` grains, declared one-to-many joins (fan-out
+   rejected in v1), filter tree, order/limit — built as a sqlglot AST, so sidemantic can be
+   bypassed for a model or dropped later. Parity tests on DuckDB fixtures keep both engines honest.
+5. **Audit**: a signed `SemanticAuditEntry {structured_query, subject digest (user, tenant,
+   roles), model, engine, compiled_sql, dialect, row_count, duration_ms, outcome}` persisted
+   through the same `AbstractKMSSigner` + async `storage` callable contract `AuditLedger` uses.
+6. **Execution bridge** to `DatabaseQueryToolkit.get_source(driver).query(credentials, sql)`;
+   first resolve all physical resources and call `DataPlanePolicyGuard.authorize_source()`.
+   The satellite must require an available evaluator for governed models, because the existing
+   guard can fail open when the auth dependency is missing. RLS lookup is not authorization.
+   Credentials come from the model's named `connection` (env/navconfig), never from the LLM.
+7. **Surfaces**: `SemanticLayerToolkit(AbstractToolkit, tool_prefix="sl")`; `parrot mcp-local
+   semantic-layer` through a `.parrot/mcp-toolkits.yaml` section (no new server code — `mcp-local`
+   already serves any `AbstractToolkit` class path); `SemanticLayerHandler(BaseView)` under
+   `/api/v1/agents/semantic/{agent_id}` registered in `manager.py` like `DatasetManagerHandler`;
+   `sl_save_result_as_dataset` → a subject/session-scoped `DatasetManager.add_dataframe()` for
+   pandas/viz follow-ups; hosts unable to enforce this isolation do not expose the hand-off tool.
+
+✅ **Pros:**
+- Richest semantic core available in Python today, compile-only, three dialects, Ossie + dbt +
+  LookML import for free; its `docs/security.md` and `mcp_server.py` are the reference designs
+  for our own RLS and tool contract.
+- Everything security-relevant is **ours and engine-independent** (RLS, masking, guard, audit,
+  allowlist), so the AGPL dependency never becomes the authority on who sees what.
+- Native fallback gives an exit path without an abstraction layer: one internal
+  `compile(query, model, dialect)` that dispatches on `model.engine`.
+- AGPL blast radius confined to one opt-in distribution; `ai-parrot-tools` stays MIT-clean.
+- Reuses PBAC primitives that already exist (`PermissionContext`, `RlsRegistry`/`RlsRule`,
+  `DataPlanePolicyGuard`, `_pctx_var`) and the proven ContextVar pattern from `DatasetManager`.
+
+❌ **Cons:**
+- **AGPL-3.0** on a component linked in-process behind a network API: the network clause applies
+  (accepted by the user; the satellite's own `license` field still needs legal confirmation).
+- Single maintainer (130★, 0 open issues, "young, rough patches"); unlabeled breaking changes →
+  exact pin and an upgrade checklist are mandatory.
+- Pulls `duckdb`, `antlr4-python3-runtime`, `click`, `typer`, `jinja2` (duckdb and jinja2 already
+  in the venv; typer/click are new transitive deps for the satellite only).
+- Two compilers to keep in parity (native subset vs sidemantic) — extra test surface.
+- `SemanticLayer.compile` thread-safety is undocumented → one layer per toolkit plus a lock until verified.
+- Deviates from "concrete toolkits live in `ai-parrot-tools`" — justified by the license boundary; must be written down.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `sidemantic==0.12.0` | semantic model, 15-format import (Ossie), metric compile | **AGPL-3.0**, 2026-09-13, `python>=3.11`; deps: `antlr4-python3-runtime>=4.13.2`, `click>=8`, `duckdb>=1.0`, `jinja2>=3.1`, `pydantic>=2`, `pyyaml>=6`, `sqlglot>=30.1`, `typer>=0.18` (PyPI JSON 2026-10-19). The 0.12.0 wheel does **not** require `sidemantic-rs`; `main` does. |
+| `sqlglot>=30.1,<31` | AST guard, RLS push-down, masking, native compiler, transpile | MIT; venv has 30.23.0 (2026-10-14); core floor is `>=20.0` (`packages/ai-parrot/pyproject.toml:182`) |
+| `duckdb` | sidemantic hard dep + DuckDB dialect fixtures for parity tests | venv has 1.5.6; `DuckDBSource` exists |
+| `asyncpg`, `google-cloud-bigquery` | execution via existing sources | already installed (0.32.0 / 3.46.2) |
+| `jsonschema` | Ossie 0.1.1 document validation before handing to sidemantic | Ossie's own `validate.py` uses `jsonschema` + `pyyaml` + `sqlglot>=30.12` |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/tools/databasequery/base.py` — `AbstractDatabaseSource.query()` / `validate_query()` / `add_row_limit()`; `QueryResult`, `ValidationResult`.
+- `packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py` — `DatabaseQueryToolkit.get_source(driver)` (cached source instances; the execution bridge).
+- `packages/ai-parrot/src/parrot/auth/rls_registry.py` — `RlsRule`, `RlsPredicate`, `RlsRegistry.lookup()/render()` (predicate templates with `:subject.<attr>` placeholders).
+- `packages/ai-parrot/src/parrot/auth/dataplane_guard.py` — `DataPlanePolicyGuard.filter_tables()` / `rls_predicates()` for table-level PBAC decisions.
+- `packages/ai-parrot/src/parrot/auth/permission.py` — `UserSession`, `PermissionContext`, `to_eval_context()`.
+- `packages/ai-parrot/src/parrot/auth/context.py` — `_pctx_var` ContextVar (how `DatabaseQueryTool` reads the per-call context).
+- `packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py` — the `_pre_execute` → ContextVar → `_get_current_pctx()` pattern and `add_dataframe()` for the hand-off.
+- `packages/ai-parrot/src/parrot/security/query_validator.py` — `QueryValidator.validate_sql_ast()` (DDL/DML rejection, single statement) as the negative base the positive guard extends.
+- `packages/ai-parrot/src/parrot/security/audit_ledger.py` — `AbstractKMSSigner`, `LocalHMACSigner`, `AzureKeyVaultSigner`, the async `storage` callable contract.
+- `packages/ai-parrot/src/parrot/knowledge/common/sql_dialects.py` — `SQLGLOT_DIALECT_MAP` (driver → sqlglot dialect).
+- `packages/ai-parrot/src/parrot/mcp/local_cli.py` + `toolkit_config.py` — `parrot mcp-local <name>` serving any `class:` path from `.parrot/mcp-toolkits.yaml`.
+- `packages/ai-parrot-server/src/parrot/handlers/datasets.py` + `manager/manager.py:2571` — `BaseView` handler + `router.add_view` registration precedent.
+- `packages/ai-parrot-embeddings/pyproject.toml` — satellite packaging template (PEP 420, `dependencies = ["ai-parrot"]`, extras).
+
+---

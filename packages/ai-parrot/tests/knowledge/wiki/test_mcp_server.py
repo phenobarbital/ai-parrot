@@ -13,6 +13,7 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
+from tests.knowledge.wiki._tool_surface import LEDGER, LOCAL_NO_LEDGER
 
 # The worktree's own package sources must shadow whatever `parrot` is
 # installed (editable) into the active venv's site-packages — otherwise a
@@ -39,19 +40,19 @@ async def _seed_wiki(root: Path) -> None:
     save_project_config(root, config)
     storage = config.storage_path(root)
     storage.mkdir(parents=True, exist_ok=True)
-    store = create_wiki_store(
-        storage_dir=storage, wiki_name=config.wiki_name, backend=config.backend
+    store = create_wiki_store(storage_dir=storage, wiki_name=config.wiki_name, backend=config.backend)
+    await store.upsert_pages(
+        [
+            WikiPageRecord(
+                concept_id="page-1",
+                title="Test Page",
+                summary="A test page",
+                body="Full content here",
+                category="concept",
+                origin="ingest",
+            )
+        ]
     )
-    await store.upsert_pages([
-        WikiPageRecord(
-            concept_id="page-1",
-            title="Test Page",
-            summary="A test page",
-            body="Full content here",
-            category="concept",
-            origin="ingest",
-        )
-    ])
 
 
 class TestWikiMCPServerIntegration:
@@ -62,7 +63,9 @@ class TestWikiMCPServerIntegration:
         await _seed_wiki(tmp_path)
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "parrot.knowledge.wiki.mcp_server",
+            sys.executable,
+            "-m",
+            "parrot.knowledge.wiki.mcp_server",
             cwd=str(tmp_path),
             env=_subprocess_env(),
             stdin=asyncio.subprocess.PIPE,
@@ -70,6 +73,7 @@ class TestWikiMCPServerIntegration:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
+
             async def send(request: dict) -> dict:
                 proc.stdin.write((json.dumps(request) + "\n").encode())
                 await proc.stdin.drain()
@@ -77,25 +81,24 @@ class TestWikiMCPServerIntegration:
                 assert line, "no response — server exited early"
                 return json.loads(line)
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-            })
+            resp = await send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
             assert resp["result"]["protocolVersion"] == "2024-11-05"
             assert resp["result"]["serverInfo"]["name"] == "wikitoolkit"
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}
-            })
+            resp = await send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
             names = {t["name"] for t in resp["result"]["tools"]}
-            assert names == {
-                "wiki_query", "wiki_page", "wiki_related",
-                "wiki_remember", "wiki_note", "wiki_status",
-            }
+            # _seed_wiki creates tmp_path/.git, so find_shared_root() finds a repo and the
+            # ledger overlay is mounted by design (FEAT-566): local surface + ledger tools.
+            assert names == set(LOCAL_NO_LEDGER) | set(LEDGER)
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                "params": {"name": "wiki_status", "arguments": {}},
-            })
+            resp = await send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "wiki_status", "arguments": {}},
+                }
+            )
             assert resp["result"]["isError"] is False
         finally:
             proc.terminate()
@@ -110,7 +113,9 @@ class TestWikiMCPServerIntegration:
             [sys.executable, "-m", "parrot.knowledge.wiki.mcp_server"],
             cwd=str(tmp_path),
             env=_subprocess_env(),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             check=False,
         )
         assert result.returncode != 0
@@ -168,5 +173,5 @@ class TestCreateWikiMcpServerArangoBackend:
         mcp_server_module.create_wiki_mcp_server(tmp_path)
 
         assert captured["backend"] == "sqlite"
-        assert captured["kwargs"] == {}
+        assert set(captured["kwargs"]) == {"sqlite_policy"}
         assert config.storage_path(tmp_path).is_dir()

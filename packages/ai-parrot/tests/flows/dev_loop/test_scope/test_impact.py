@@ -83,3 +83,17 @@ def test_index_skips_syntax_errors(tmp_path):
     _write(root, "tests/test_broken.py", "def (\n")
     index = ImportIndex.build(root)
     assert "tests/test_broken.py" in index.skipped
+
+
+def test_source_fanin_does_not_inherit_hub_fanin(tmp_path):
+    """A leaf imported only by a hub must not inherit the hub's fan-in (FEAT-620)."""
+    _write(tmp_path, "packages/d/src/pd/__init__.py")
+    _write(tmp_path, "packages/d/src/pd/leaf.py", "X = 1\n")
+    _write(tmp_path, "packages/d/src/pd/hub.py", "from .leaf import X\n")
+    for i in range(40):
+        _write(tmp_path, f"packages/d/src/pd/user{i}.py", "from .hub import X\n")
+    index = ImportIndex.build(tmp_path)
+    leaf_fanin, _ = source_fanin(index, "pd.leaf")
+    hub_fanin, _ = source_fanin(index, "pd.hub")
+    assert leaf_fanin == 1, "leaf is imported only by hub"
+    assert hub_fanin == 40, "hub keeps its own direct fan-in"

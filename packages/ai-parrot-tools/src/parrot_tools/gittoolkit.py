@@ -25,9 +25,11 @@ import base64
 import datetime as _dt
 from datetime import datetime, timezone
 import os
+import re
 import shutil
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -42,7 +44,57 @@ from .toolkit import AbstractToolkit
 
 
 class GitToolkitError(RuntimeError):
-    """Raised when the toolkit cannot satisfy a request."""
+    """Raised when the toolkit cannot satisfy a request.
+
+    When the failure came from a GitHub API call the exception also carries the
+    HTTP context, so callers can branch on :attr:`status_code` instead of
+    sniffing the message, and can surface GitHub's own explanation to the
+    operator. ``str(exc)`` is unchanged, which keeps older callers working.
+
+    Attributes:
+        status_code: HTTP status returned by GitHub, or ``None`` for failures
+            raised before/without a request (e.g. unresolved repository).
+        url: The API URL that failed.
+        api_message: GitHub's own ``message`` field from the error body.
+        accepted_permissions: The ``x-accepted-github-permissions`` response
+            header, which names the fine-grained permission the endpoint wants
+            (e.g. ``repository_hooks=write``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        url: Optional[str] = None,
+        api_message: Optional[str] = None,
+        accepted_permissions: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
+        self.api_message = api_message
+        self.accepted_permissions = accepted_permissions
+
+
+class StatsNotReadyError(GitToolkitError):
+    """Raised when a ``/stats/*`` endpoint keeps answering 202.
+
+    GitHub computes repository statistics lazily: the first request for a cold
+    repo returns ``202 Accepted`` and only *starts* the computation, which can
+    take minutes on a large repository. Exhausting the 202 retries therefore
+    means "not ready yet", not "broken" — a distinct outcome callers should be
+    able to defer on instead of treating as an error. It stays a
+    :class:`GitToolkitError` so existing ``except GitToolkitError`` handlers
+    keep working.
+
+    Attributes:
+        attempts: How many requests were made before giving up.
+    """
+
+    def __init__(self, message: str, *, attempts: Optional[int] = None, url: Optional[str] = None) -> None:
+        super().__init__(message, status_code=202, url=url)
+        self.attempts = attempts
 
 
 class RepositoryCredential(BaseModel):
@@ -82,17 +134,11 @@ class RepositoryCredential(BaseModel):
     )
     private_key: Optional[str] = Field(
         default=None,
-        description=(
-            "PEM contents of the App's private key. Mutually exclusive with "
-            "private_key_path."
-        ),
+        description=("PEM contents of the App's private key. Mutually exclusive with " "private_key_path."),
     )
     private_key_path: Optional[str] = Field(
         default=None,
-        description=(
-            "Filesystem path to the App's private key PEM. Mutually exclusive "
-            "with private_key."
-        ),
+        description=("Filesystem path to the App's private key PEM. Mutually exclusive " "with private_key."),
     )
 
     @model_validator(mode="after")
@@ -107,14 +153,9 @@ class RepositoryCredential(BaseModel):
             if not self.installation_id:
                 raise ValueError("auth_type='github_app' requires installation_id")
             if self.private_key and self.private_key_path:
-                raise ValueError(
-                    "auth_type='github_app': set EITHER private_key OR "
-                    "private_key_path, not both."
-                )
+                raise ValueError("auth_type='github_app': set EITHER private_key OR " "private_key_path, not both.")
             if not self.private_key and not self.private_key_path:
-                raise ValueError(
-                    "auth_type='github_app' requires private_key or private_key_path"
-                )
+                raise ValueError("auth_type='github_app' requires private_key or private_key_path")
         return self
 
 
@@ -125,9 +166,7 @@ class GitToolkitInput(BaseModel):
         default=None,
         description="Default GitHub repository in 'owner/name' format.",
     )
-    default_branch: str = Field(
-        default="main", description="Fallback branch used for pull requests."
-    )
+    default_branch: str = Field(default="main", description="Fallback branch used for pull requests.")
     github_token: Optional[str] = Field(
         default=None,
         description="Personal access token with repo scope for GitHub calls.",
@@ -146,23 +185,16 @@ class GitToolkitInput(BaseModel):
     installation_id: Optional[int] = Field(
         default=None,
         description=(
-            "Installation ID for the org/account the App is installed in "
-            "(required when auth_type='github_app')."
+            "Installation ID for the org/account the App is installed in " "(required when auth_type='github_app')."
         ),
     )
     private_key: Optional[str] = Field(
         default=None,
-        description=(
-            "PEM contents of the App's private key. Mutually exclusive "
-            "with private_key_path."
-        ),
+        description=("PEM contents of the App's private key. Mutually exclusive " "with private_key_path."),
     )
     private_key_path: Optional[str] = Field(
         default=None,
-        description=(
-            "Filesystem path to the App's private key PEM. Mutually "
-            "exclusive with private_key."
-        ),
+        description=("Filesystem path to the App's private key PEM. Mutually " "exclusive with private_key."),
     )
     repositories: Optional[Dict[str, RepositoryCredential]] = Field(
         default=None,
@@ -242,9 +274,7 @@ class GitHubFileChange(BaseModel):
         default=None,
         description="New file content. Leave ``None`` to delete a file.",
     )
-    encoding: Literal["utf-8", "base64"] = Field(
-        default="utf-8", description="Encoding used for ``content``."
-    )
+    encoding: Literal["utf-8", "base64"] = Field(default="utf-8", description="Encoding used for ``content``.")
     message: Optional[str] = Field(
         default=None,
         description="Optional commit message just for this file change.",
@@ -277,12 +307,8 @@ class CreatePullRequestInput(BaseModel):
     )
     title: str = Field(description="Pull request title")
     body: Optional[str] = Field(default=None, description="Pull request description")
-    base_branch: Optional[str] = Field(
-        default=None, description="Branch into which the changes should merge."
-    )
-    head_branch: Optional[str] = Field(
-        default=None, description="Branch name to create and push changes onto."
-    )
+    base_branch: Optional[str] = Field(default=None, description="Branch into which the changes should merge.")
+    head_branch: Optional[str] = Field(default=None, description="Branch name to create and push changes onto.")
     commit_message: Optional[str] = Field(
         default=None,
         description="Commit message used for the updates (defaults to title).",
@@ -290,12 +316,8 @@ class CreatePullRequestInput(BaseModel):
     files: List[GitHubFileChange] = Field(
         description="List of file updates that compose the pull request.",
     )
-    draft: bool = Field(
-        default=False, description="Create the pull request as a draft if true."
-    )
-    labels: Optional[List[str]] = Field(
-        default=None, description="Optional labels to apply after PR creation."
-    )
+    draft: bool = Field(default=False, description="Create the pull request as a draft if true.")
+    labels: Optional[List[str]] = Field(default=None, description="Optional labels to apply after PR creation.")
 
 
 class GetPullRequestInput(BaseModel):
@@ -367,6 +389,26 @@ class SubmitPRReviewInput(BaseModel):
     )
 
 
+class GetPRChecksInput(BaseModel):
+    """Input payload for ``get_pr_checks``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
+class ConvertPRToDraftInput(BaseModel):
+    """Input payload for ``convert_pr_to_draft``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # PR context retrieval models (FEAT-182 — On-Demand Code Retrieval)
 # ---------------------------------------------------------------------------
@@ -375,12 +417,8 @@ class SubmitPRReviewInput(BaseModel):
 class GetFileContentInput(BaseModel):
     """Input payload for ``get_file_content_at_ref``."""
 
-    path: str = Field(
-        description="File path inside the repository, e.g. 'src/parrot/bots/agent.py'."
-    )
-    ref: str = Field(
-        description="Branch name, tag, or commit SHA at which to retrieve the file."
-    )
+    path: str = Field(description="File path inside the repository, e.g. 'src/parrot/bots/agent.py'.")
+    ref: str = Field(description="Branch name, tag, or commit SHA at which to retrieve the file.")
     repository: Optional[str] = Field(
         default=None,
         description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
@@ -396,9 +434,7 @@ class GetFileContentInput(BaseModel):
     end_line: Optional[int] = Field(
         default=None,
         ge=1,
-        description=(
-            "Last line to return (1-indexed, inclusive). Must be >= start_line when both are set."
-        ),
+        description=("Last line to return (1-indexed, inclusive). Must be >= start_line when both are set."),
     )
 
     @model_validator(mode="after")
@@ -413,9 +449,7 @@ class GetFileContentInput(BaseModel):
         """
         if self.start_line is not None and self.end_line is not None:
             if self.end_line < self.start_line:
-                raise ValueError(
-                    f"end_line ({self.end_line}) must be >= start_line ({self.start_line})"
-                )
+                raise ValueError(f"end_line ({self.end_line}) must be >= start_line ({self.start_line})")
         return self
 
 
@@ -459,18 +493,10 @@ class SearchRepoCodeInput(BaseModel):
 class FileContentResult(BaseModel):
     """Return payload for ``get_file_content_at_ref``."""
 
-    exists: bool = Field(
-        description="True when the file was found at the given ref; False on 404."
-    )
-    path: str = Field(
-        description="File path as requested."
-    )
-    ref: str = Field(
-        description="Ref (branch, tag, or SHA) that was used to resolve the file."
-    )
-    repository: str = Field(
-        description="Repository in 'owner/name' format."
-    )
+    exists: bool = Field(description="True when the file was found at the given ref; False on 404.")
+    path: str = Field(description="File path as requested.")
+    ref: str = Field(description="Ref (branch, tag, or SHA) that was used to resolve the file.")
+    repository: str = Field(description="Repository in 'owner/name' format.")
     content: Optional[str] = Field(
         default=None,
         description="Decoded UTF-8 text content of the file, or None when exists=False or error is set.",
@@ -507,41 +533,21 @@ class FileContentResult(BaseModel):
 class CompareVersionsResult(BaseModel):
     """Return payload for ``compare_pr_versions``."""
 
-    repository: str = Field(
-        description="Repository in 'owner/name' format."
-    )
-    pr_number: int = Field(
-        description="Pull request number."
-    )
-    path: str = Field(
-        description="File path that was compared."
-    )
-    base_sha: str = Field(
-        description="Full commit SHA of the PR base ref."
-    )
-    head_sha: str = Field(
-        description="Full commit SHA of the PR head ref."
-    )
-    base: FileContentResult = Field(
-        description="File content at the base ref (before the PR's changes)."
-    )
-    head: FileContentResult = Field(
-        description="File content at the head ref (after the PR's changes)."
-    )
+    repository: str = Field(description="Repository in 'owner/name' format.")
+    pr_number: int = Field(description="Pull request number.")
+    path: str = Field(description="File path that was compared.")
+    base_sha: str = Field(description="Full commit SHA of the PR base ref.")
+    head_sha: str = Field(description="Full commit SHA of the PR head ref.")
+    base: FileContentResult = Field(description="File content at the base ref (before the PR's changes).")
+    head: FileContentResult = Field(description="File content at the head ref (after the PR's changes).")
 
 
 class SearchCodeResult(BaseModel):
     """Return payload for ``search_repo_code``."""
 
-    repository: str = Field(
-        description="Repository in 'owner/name' format that was searched."
-    )
-    query: str = Field(
-        description="The original query string (without the auto-injected repo: qualifier)."
-    )
-    total_count: int = Field(
-        description="Total number of matching results as reported by GitHub Code Search."
-    )
+    repository: str = Field(description="Repository in 'owner/name' format that was searched.")
+    query: str = Field(description="The original query string (without the auto-injected repo: qualifier).")
+    total_count: int = Field(description="Total number of matching results as reported by GitHub Code Search.")
     items: List[Dict[str, Any]] = Field(
         description=(
             "Raw GitHub Code Search item list. Each item contains at minimum: "
@@ -685,11 +691,7 @@ class _GitHubAppTokenProvider:
         """
         with self._lock:
             now = _dt.datetime.now(_dt.timezone.utc)
-            if (
-                self._token is None
-                or self._expires_at is None
-                or self._expires_at - now <= self._REFRESH_LEEWAY
-            ):
+            if self._token is None or self._expires_at is None or self._expires_at - now <= self._REFRESH_LEEWAY:
                 self._refresh()
             return self._token  # type: ignore[return-value]
 
@@ -704,9 +706,7 @@ class _GitHubAppTokenProvider:
             integration = GithubIntegration(auth=auth)
             installation_auth = integration.get_access_token(self._installation_id)
         except Exception as exc:
-            raise GitToolkitError(
-                f"Failed to mint GitHub App installation token: {exc}"
-            ) from exc
+            raise GitToolkitError(f"Failed to mint GitHub App installation token: {exc}") from exc
         self._token = installation_auth.token
         self._expires_at = installation_auth.expires_at
         if self._expires_at is not None and self._expires_at.tzinfo is None:
@@ -720,10 +720,7 @@ def _load_pem(
 ) -> str:
     """Resolve a PEM from inline contents or file path (exactly one must be set)."""
     if private_key and private_key_path:
-        raise GitToolkitError(
-            "auth_type='github_app': set EITHER private_key OR "
-            "private_key_path, not both."
-        )
+        raise GitToolkitError("auth_type='github_app': set EITHER private_key OR " "private_key_path, not both.")
     if not private_key and not private_key_path:
         raise GitToolkitError(
             "auth_type='github_app' requires an explicit private_key or "
@@ -735,9 +732,7 @@ def _load_pem(
             with open(private_key_path, "r", encoding="utf-8") as fh:
                 pem = fh.read()
         except OSError as exc:
-            raise GitToolkitError(
-                f"Could not read GitHub App private key from {private_key_path}: {exc}"
-            ) from exc
+            raise GitToolkitError(f"Could not read GitHub App private key from {private_key_path}: {exc}") from exc
     # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
     return pem.replace("\\n", "\n")  # type: ignore[union-attr]
 
@@ -768,13 +763,9 @@ class _RepoConnection:
                 self._token_provider = token_provider
             else:
                 if not app_id:
-                    raise GitToolkitError(
-                        "auth_type='github_app' requires app_id."
-                    )
+                    raise GitToolkitError("auth_type='github_app' requires app_id.")
                 if not installation_id:
-                    raise GitToolkitError(
-                        "auth_type='github_app' requires installation_id."
-                    )
+                    raise GitToolkitError("auth_type='github_app' requires installation_id.")
                 pem = _load_pem(private_key, private_key_path)
                 self._token_provider = _GitHubAppTokenProvider(
                     app_id=app_id,
@@ -786,9 +777,7 @@ class _RepoConnection:
         """Return the bearer token for the next API call to this repo."""
         if self.auth_type == "github_app":
             if self._token_provider is None:
-                raise GitToolkitError(
-                    "BUG: _token_provider is None in github_app mode; internal error."
-                )
+                raise GitToolkitError("BUG: _token_provider is None in github_app mode; internal error.")
             return self._token_provider.get_token()
         if not self._github_token:
             raise GitToolkitError(
@@ -862,12 +851,14 @@ class _FileBlobCache:
             return
         try:
             from navconfig import config as _cfg
+
             ttl_raw = _cfg.get("GITHUB_REVIEWER_BLOB_CACHE_TTL", fallback=604800)
             self._ttl = int(ttl_raw)
         except Exception:  # noqa: BLE001
             self._ttl = 604800
         try:
             from cachetools import TTLCache
+
             self._lru = TTLCache(maxsize=self._LRU_MAXSIZE, ttl=self._ttl)
         except Exception:  # noqa: BLE001
             self._lru = {}
@@ -882,15 +873,16 @@ class _FileBlobCache:
                 return
             try:
                 from navconfig import config as _cfg
+
                 redis_url = _cfg.get("REDIS_URL")
                 if redis_url:
                     import redis.asyncio as aioredis
+
                     self._redis_pool = aioredis.from_url(redis_url, decode_responses=False)
             except Exception as exc:  # noqa: BLE001
                 import logging
-                logging.getLogger(__name__).warning(
-                    "_FileBlobCache: Redis unavailable (%s) — LRU-only mode", exc
-                )
+
+                logging.getLogger(__name__).warning("_FileBlobCache: Redis unavailable (%s) — LRU-only mode", exc)
                 self._redis_pool = None
             self._redis_initialised = True
 
@@ -1005,13 +997,9 @@ class GitToolkit(AbstractToolkit):
         super().__init__(**kwargs)
 
         self.default_repository = (
-            default_repository
-            or os.getenv("GIT_DEFAULT_REPOSITORY")
-            or os.getenv("GITHUB_REPOSITORY")
+            default_repository or os.getenv("GIT_DEFAULT_REPOSITORY") or os.getenv("GITHUB_REPOSITORY")
         )
-        self.default_branch = (
-            default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
-        )
+        self.default_branch = default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
         # No silent env-var fallback for credentials. The PAT must be passed
         # explicitly; otherwise the toolkit stays unauthenticated and raises a
         # clear GitToolkitError at call time (see ``_default_token`` /
@@ -1021,9 +1009,7 @@ class GitToolkit(AbstractToolkit):
 
         self.auth_type: Literal["pat", "github_app"] = auth_type
         if self.auth_type not in ("pat", "github_app"):
-            raise GitToolkitError(
-                f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'."
-            )
+            raise GitToolkitError(f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'.")
 
         # Always initialise these attributes; None in PAT mode. GitHub App
         # credentials must be passed explicitly — no silent env-var fallback.
@@ -1034,13 +1020,9 @@ class GitToolkit(AbstractToolkit):
 
         if self.auth_type == "github_app":
             if not self.app_id:
-                raise GitToolkitError(
-                    "auth_type='github_app' requires an explicit app_id."
-                )
+                raise GitToolkitError("auth_type='github_app' requires an explicit app_id.")
             if not self.installation_id:
-                raise GitToolkitError(
-                    "auth_type='github_app' requires an explicit installation_id."
-                )
+                raise GitToolkitError("auth_type='github_app' requires an explicit installation_id.")
 
             # Explicit-only: no GITHUB_APP_PRIVATE_KEY / _PATH env fallback.
             inline_pem = _load_pem(private_key, private_key_path)
@@ -1076,11 +1058,7 @@ class GitToolkit(AbstractToolkit):
                     "default_repository argument; use one or the other."
                 )
             for alias, value in repositories.items():
-                cred = (
-                    value
-                    if isinstance(value, RepositoryCredential)
-                    else RepositoryCredential.model_validate(value)
-                )
+                cred = value if isinstance(value, RepositoryCredential) else RepositoryCredential.model_validate(value)
                 self._connections[alias] = _RepoConnection(
                     repository=cred.repository,
                     default_branch=cred.default_branch,
@@ -1099,9 +1077,7 @@ class GitToolkit(AbstractToolkit):
         """Return the bearer token for the global/default credentials."""
         if self.auth_type == "github_app":
             if self._token_provider is None:
-                raise GitToolkitError(
-                    "BUG: _token_provider is None in github_app mode; this is an internal error."
-                )
+                raise GitToolkitError("BUG: _token_provider is None in github_app mode; this is an internal error.")
             return self._token_provider.get_token()
         # PAT mode
         if not self.github_token:
@@ -1117,10 +1093,7 @@ class GitToolkit(AbstractToolkit):
         if repository is None:
             conn = self._connections.get("default")
             if conn is None:
-                raise GitToolkitError(
-                    "A target repository is required (pass repository or "
-                    "configure default)."
-                )
+                raise GitToolkitError("A target repository is required (pass repository or " "configure default).")
             return conn
 
         # Fast path (no lock): alias hit from the pre-built registry.
@@ -1143,10 +1116,7 @@ class GitToolkit(AbstractToolkit):
             # Unknown slug -> ad-hoc connection from global/default creds.
             if self.auth_type == "github_app":
                 if self._token_provider is None:
-                    raise GitToolkitError(
-                        "No GitHub App credentials configured to access "
-                        f"{repository!r}."
-                    )
+                    raise GitToolkitError("No GitHub App credentials configured to access " f"{repository!r}.")
             elif not self.github_token:
                 raise GitToolkitError(
                     "A GitHub personal access token is required: pass "
@@ -1259,21 +1229,32 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Create a unified diff (and optional ``git apply`` snippet) from code blocks."""
 
-        return await asyncio.to_thread(
-            self._render_patch, files, context_lines, include_apply_snippet
-        )
+        return await asyncio.to_thread(self._render_patch, files, context_lines, include_apply_snippet)
 
     # ------------------------------------------------------------------
     # GitHub helpers
     # ------------------------------------------------------------------
-    def _prepare_github_context(
-        self, repository: Optional[str], base_branch: Optional[str]
-    ) -> _GitHubContext:
+    def _prepare_github_context(self, repository: Optional[str], base_branch: Optional[str]) -> _GitHubContext:
         conn = self._resolve_connection(repository)
         branch = base_branch or conn.default_branch
-        return _GitHubContext(
-            repository=conn.repository, base_branch=branch, token=conn.token()
-        )
+        return _GitHubContext(repository=conn.repository, base_branch=branch, token=conn.token())
+
+    @staticmethod
+    def _api_error_message(response: requests.Response) -> Optional[str]:
+        """Return GitHub's own ``message`` for a failed call, when present.
+
+        GitHub error bodies are JSON with a human-readable ``message`` ("Resource
+        not accessible by personal access token", "Bad credentials", ...), which
+        is far more actionable than the raw body. Non-JSON bodies yield ``None``.
+        """
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001 — HTML/empty error bodies are common
+            return None
+        if isinstance(payload, dict):
+            message = payload.get("message")
+            return str(message) if message else None
+        return None
 
     @staticmethod
     def _request(
@@ -1291,7 +1272,11 @@ class GitToolkit(AbstractToolkit):
         response = requests.request(method, url, headers=headers, timeout=30, **kwargs)
         if response.status_code != expected:
             raise GitToolkitError(
-                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}"
+                f"GitHub API call to {url} failed with status {response.status_code}: {response.text}",
+                status_code=response.status_code,
+                url=url,
+                api_message=GitToolkit._api_error_message(response),
+                accepted_permissions=(getattr(response, "headers", None) or {}).get("x-accepted-github-permissions"),
             )
         return response
 
@@ -1322,8 +1307,9 @@ class GitToolkit(AbstractToolkit):
             The ``requests.Response`` with status 200.
 
         Raises:
-            GitToolkitError: If the response is not 200/202, or after
-                exhausting all retries without seeing 200.
+            GitToolkitError: If the response is not 200/202.
+            StatsNotReadyError: After exhausting all retries without seeing
+                200 — the data is still being computed, not unavailable.
         """
         headers = {
             "Authorization": f"Bearer {token}",
@@ -1336,16 +1322,16 @@ class GitToolkit(AbstractToolkit):
                 return response
             if response.status_code != 202:
                 raise GitToolkitError(
-                    f"GitHub stats call to {url} failed with status "
-                    f"{response.status_code}: {response.text}"
+                    f"GitHub stats call to {url} failed with status " f"{response.status_code}: {response.text}"
                 )
             if attempt == max_retries:
                 break
-            delay = min(initial_delay * (2 ** attempt), max_delay)
+            delay = min(initial_delay * (2**attempt), max_delay)
             time.sleep(delay)
-        raise GitToolkitError(
-            f"GitHub stats call to {url} returned 202 after "
-            f"{max_retries + 1} attempts; giving up."
+        raise StatsNotReadyError(
+            f"GitHub stats call to {url} returned 202 after " f"{max_retries + 1} attempts; giving up.",
+            attempts=max_retries + 1,
+            url=url,
         )
 
     @staticmethod
@@ -1380,9 +1366,7 @@ class GitToolkit(AbstractToolkit):
         if response.status_code == 404:
             return None
         if response.status_code != 200:
-            raise GitToolkitError(
-                f"Unable to fetch metadata for {path}: {response.status_code} {response.text}"
-            )
+            raise GitToolkitError(f"Unable to fetch metadata for {path}: {response.status_code} {response.text}")
         payload = response.json()
         return payload.get("sha")
 
@@ -1423,9 +1407,7 @@ class GitToolkit(AbstractToolkit):
 
             if change.change_type == "delete":
                 if not sha:
-                    raise GitToolkitError(
-                        f"Cannot delete {change.path}: file does not exist in branch {branch_name}."
-                    )
+                    raise GitToolkitError(f"Cannot delete {change.path}: file does not exist in branch {branch_name}.")
                 url = f"https://api.github.com/repos/{ctx.repository}/contents/{change.path}"
                 json_payload = {
                     "message": change.message or commit_message,
@@ -1437,9 +1419,7 @@ class GitToolkit(AbstractToolkit):
 
             encoded = self._encode_content(change)
             if change.change_type == "modify" and not sha:
-                raise GitToolkitError(
-                    f"Cannot modify {change.path}: file does not exist in branch {branch_name}."
-                )
+                raise GitToolkitError(f"Cannot modify {change.path}: file does not exist in branch {branch_name}.")
 
             url = f"https://api.github.com/repos/{ctx.repository}/contents/{change.path}"
             json_payload = {
@@ -1527,6 +1507,7 @@ class GitToolkit(AbstractToolkit):
     def _display_slug(slug_or_url: str) -> str:
         """Best-effort ``owner/name`` for the return payload (never a token)."""
         from urllib.parse import urlparse
+
         parsed = urlparse(slug_or_url)
         if parsed.hostname and parsed.hostname in ("github.com", "www.github.com"):
             tail = parsed.path.lstrip("/").rstrip("/")
@@ -1549,9 +1530,27 @@ class GitToolkit(AbstractToolkit):
             return base_url, None
         token = self._resolve_token()
         if base_url.startswith("https://"):
-            rest = base_url[len("https://"):]
+            rest = base_url[len("https://") :]
             return f"https://x-access-token:{token}@{rest}", token
         return base_url, token
+
+    def _auth_env(self, url: str, token: str) -> Dict[str, str]:
+        """Return git env-config that authenticates ``url``'s host without persisting ``token``.
+
+        Requires git >= 2.31 (``GIT_CONFIG_COUNT``). The token lives only in the
+        child's environment: never in argv, never in ``.git/config``.
+        """
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        key = f"http.{parsed.scheme}://{parsed.hostname}/.extraheader"
+        header = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        return {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": key,
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {header}",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
 
     def _scrub(self, text: str, token: Optional[str] = None) -> str:
         """Redact known secrets from ``text`` (R2: tokens must never leak).
@@ -1563,6 +1562,9 @@ class GitToolkit(AbstractToolkit):
         ``token`` explicitly.
         """
         secrets = [token, self.github_token]
+        for raw in list(secrets):
+            if raw:
+                secrets.append(base64.b64encode(f"x-access-token:{raw}".encode()).decode())
         provider = getattr(self, "_token_provider", None)
         if provider is not None:
             secrets.append(getattr(provider, "_token", None))
@@ -1573,14 +1575,49 @@ class GitToolkit(AbstractToolkit):
         return redacted
 
     @staticmethod
-    async def _run_subprocess(argv: List[str]) -> tuple[int, str, str]:
-        """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``."""
+    async def _run_subprocess(
+        argv: List[str],
+        timeout: Optional[float] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> tuple[int, str, str]:
+        """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``.
+
+        ``env`` is extra environment merged over ``os.environ`` (auth headers);
+        it is never logged.
+
+        A timed-out or cancelled subprocess is terminated, given a bounded
+        grace period, killed if necessary, and reaped before this method
+        returns or re-raises cancellation.
+        """
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, **env} if env else None,
         )
-        out, err = await proc.communicate()
+
+        async def _stop_and_reap() -> None:
+            """Stop the child and drain its pipes before returning."""
+            if proc.returncode is None:
+                proc.terminate()
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.communicate()
+
+        try:
+            if timeout is None:
+                out, err = await proc.communicate()
+            else:
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            await _stop_and_reap()
+            return -9, "", f"<timed out after {timeout}s>"
+        except asyncio.CancelledError:
+            await asyncio.shield(_stop_and_reap())
+            raise
         return (
             proc.returncode if proc.returncode is not None else -1,
             out.decode(errors="replace"),
@@ -1595,6 +1632,8 @@ class GitToolkit(AbstractToolkit):
         *,
         private: bool = False,
         depth: Optional[int] = None,
+        timeout: Optional[float] = None,
+        prefer_gh: bool = True,
     ) -> Dict[str, Any]:
         """Clone ``repository`` to ``dest_dir``.
 
@@ -1609,6 +1648,8 @@ class GitToolkit(AbstractToolkit):
             branch: Optional branch to clone (``--branch``).
             private: When True, authenticate the clone (``gh`` or token-in-URL).
             depth: Optional shallow-clone depth (``--depth``).
+            timeout: Optional subprocess timeout in seconds.
+            prefer_gh: Whether to prefer ``gh repo clone`` for private clones.
 
         Returns:
             ``{"path", "repository", "branch", "updated"}``. Never contains a
@@ -1619,18 +1660,25 @@ class GitToolkit(AbstractToolkit):
         """
         if os.path.isdir(os.path.join(dest_dir, ".git")):
             # Already a clone → fast-forward instead of re-cloning (idempotent).
-            return await self.pull_repo(dest_dir, branch)
+            extra: Dict[str, Any] = {"private": True} if private else {}
+            if timeout is not None:
+                extra["timeout"] = timeout
+            return await self.pull_repo(dest_dir, branch, **extra)
 
         slug = self._clone_slug(repository)
         display = self._display_slug(slug)
         token: Optional[str] = None
+        env: Optional[Dict[str, str]] = None
 
-        if private and self._gh_available():
+        if private and prefer_gh and self._gh_available():
             argv = ["gh", "repo", "clone", display, dest_dir]
             if branch:
                 argv += ["--", "--branch", branch]
         else:
-            url, token = self._clone_url(slug, private)
+            url, _ = self._clone_url(slug, False)
+            if private:
+                token = self._resolve_token()
+                env = self._auth_env(url, token)
             argv = ["git", "clone"]
             if branch:
                 argv += ["--branch", branch]
@@ -1638,11 +1686,14 @@ class GitToolkit(AbstractToolkit):
                 argv += ["--depth", str(depth)]
             argv += [url, dest_dir]
 
-        rc, _out, err = await self._run_subprocess(argv)
+        kwargs: Dict[str, Any] = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        if env is not None:
+            kwargs["env"] = env
+        rc, _out, err = await self._run_subprocess(argv, **kwargs)
         if rc != 0:
-            raise GitToolkitError(
-                f"clone of {display!r} failed: {self._scrub(err, token)}"
-            )
+            raise GitToolkitError(f"clone of {display!r} failed: {self._scrub(err, token)}")
         return {
             "path": dest_dir,
             "repository": display,
@@ -1654,6 +1705,9 @@ class GitToolkit(AbstractToolkit):
         self,
         repo_path: str,
         branch: Optional[str] = None,
+        *,
+        timeout: Optional[float] = None,
+        private: bool = False,
     ) -> Dict[str, Any]:
         """Fast-forward an existing clone at ``repo_path`` to ``branch``.
 
@@ -1661,6 +1715,10 @@ class GitToolkit(AbstractToolkit):
             repo_path: Path to an existing git clone.
             branch: Optional branch to pull (``origin <branch>``); defaults to
                 the clone's current upstream.
+            timeout: Optional subprocess timeout in seconds.
+            private: Authenticate through the subprocess environment (git >= 2.31)
+                and first rewrite a credential-bearing ``origin`` URL (left by an
+                earlier clone) to its clean form.
 
         Returns:
             ``{"path", "branch", "updated"}``. Never contains a token.
@@ -1670,14 +1728,38 @@ class GitToolkit(AbstractToolkit):
         """
         if not os.path.isdir(os.path.join(repo_path, ".git")):
             raise GitToolkitError(f"{repo_path!r} is not a git clone")
+        env: Optional[Dict[str, str]] = None
+        token: Optional[str] = None
+        kwargs: Dict[str, Any] = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        if private:
+            from urllib.parse import urlparse
+
+            token = self._resolve_token()
+            rc, out, err = await self._run_subprocess(["git", "-C", repo_path, "remote", "get-url", "origin"], **kwargs)
+            if rc != 0:
+                raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
+            origin = out.strip()
+            parsed = urlparse(origin)
+            if parsed.scheme in ("http", "https") and (parsed.username or parsed.password):
+                host = parsed.hostname or ""
+                if parsed.port:
+                    host = f"{host}:{parsed.port}"
+                origin = parsed._replace(netloc=host).geturl()
+                rc, _o, err = await self._run_subprocess(
+                    ["git", "-C", repo_path, "remote", "set-url", "origin", origin], **kwargs
+                )
+                if rc != 0:
+                    raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
+            env = self._auth_env(origin, token)
+            kwargs["env"] = env
         argv = ["git", "-C", repo_path, "pull", "--ff-only"]
         if branch:
             argv += ["origin", branch]
-        rc, _out, err = await self._run_subprocess(argv)
+        rc, _out, err = await self._run_subprocess(argv, **kwargs)
         if rc != 0:
-            raise GitToolkitError(
-                f"pull of {repo_path!r} failed: {self._scrub(err)}"
-            )
+            raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
         return {"path": repo_path, "branch": branch, "updated": True}
 
     # ------------------------------------------------------------------
@@ -1706,9 +1788,7 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Fetch metadata for a GitHub pull request by number."""
 
-        return await asyncio.to_thread(
-            self._get_pull_request_sync, repository, pr_number
-        )
+        return await asyncio.to_thread(self._get_pull_request_sync, repository, pr_number)
 
     def _list_pull_requests_sync(
         self,
@@ -1733,9 +1813,7 @@ class GitToolkit(AbstractToolkit):
     ) -> List[Dict[str, Any]]:
         """List pull requests on a repository, defaulting to open ones."""
 
-        return await asyncio.to_thread(
-            self._list_pull_requests_sync, repository, state, per_page
-        )
+        return await asyncio.to_thread(self._list_pull_requests_sync, repository, state, per_page)
 
     def _get_pull_request_diff_sync(
         self,
@@ -1775,9 +1853,7 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Return the raw unified diff of a pull request, truncated to ``max_bytes``."""
 
-        return await asyncio.to_thread(
-            self._get_pull_request_diff_sync, repository, pr_number, max_bytes
-        )
+        return await asyncio.to_thread(self._get_pull_request_diff_sync, repository, pr_number, max_bytes)
 
     def _add_pr_comment_sync(
         self,
@@ -1788,9 +1864,7 @@ class GitToolkit(AbstractToolkit):
         conn = self._resolve_connection(repository)
         repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-        response = self._request(
-            "POST", url, token, expected=201, json={"body": body}
-        )
+        response = self._request("POST", url, token, expected=201, json={"body": body})
         data = response.json()
         return {"id": data.get("id"), "html_url": data.get("html_url")}
 
@@ -1803,9 +1877,7 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Add an issue-style comment to a pull request."""
 
-        return await asyncio.to_thread(
-            self._add_pr_comment_sync, repository, pr_number, body
-        )
+        return await asyncio.to_thread(self._add_pr_comment_sync, repository, pr_number, body)
 
     def _submit_pr_review_sync(
         self,
@@ -1836,9 +1908,379 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Submit a pull-request review (approve, request-changes or comment)."""
 
-        return await asyncio.to_thread(
-            self._submit_pr_review_sync, repository, pr_number, event, body
+        return await asyncio.to_thread(self._submit_pr_review_sync, repository, pr_number, event, body)
+
+    #: Check-run / commit-status conclusions that count as a pass.
+    _CHECK_SUCCESS = frozenset({"success", "neutral", "skipped"})
+    #: Conclusions that count as a hard failure.
+    _CHECK_FAILURE = frozenset({"failure", "timed_out", "action_required", "startup_failure", "stale", "error"})
+
+    @classmethod
+    def _classify_check(cls, status: Optional[str], conclusion: Optional[str]) -> str:
+        """Map a check run / commit status onto ``success|failure|pending``.
+
+        GitHub reports a check run's lifecycle in ``status`` and its outcome in
+        ``conclusion``: while it runs the conclusion is ``None``, so the
+        lifecycle decides. ``neutral`` and ``skipped`` are deliberately counted
+        as passes — a skipped job is not a broken one. ``cancelled`` is treated
+        as pending-unknown rather than a failure, because a cancelled run is
+        most often a superseded push, not a red test.
+        """
+        state = (status or "").lower()
+        verdict = (conclusion or "").lower()
+        if state in ("queued", "in_progress", "pending", "waiting", "requested") and not verdict:
+            return "pending"
+        if verdict in cls._CHECK_FAILURE:
+            return "failure"
+        if verdict in cls._CHECK_SUCCESS:
+            return "success"
+        return "pending"
+
+    def _get_pr_checks_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        head_sha: Optional[str],
+    ) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        sha = head_sha
+        if not sha:
+            pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+            pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+            sha = ((pr_data.get("head") or {}).get("sha")) or ""
+        if not sha:
+            raise GitToolkitError(
+                f"Cannot resolve the head SHA of {repo}#{pr_number}; check runs are unavailable.",
+                url=f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+            )
+
+        checks: List[Dict[str, Any]] = []
+        denied: List[str] = []
+        answered: List[str] = []
+        # endpoint -> GitHub's own ``x-accepted-github-permissions`` answer.
+        accepted: Dict[str, str] = {}
+
+        # GitHub Checks API — what GitHub Actions, and most CI apps, report to.
+        # A token may be allowed one of the two APIs and not the other (the
+        # fine-grained "Checks" and "Commit statuses" permissions are
+        # independent), so a denial on either is tolerated and reported rather
+        # than losing the evidence the token CAN read.
+        runs_url = f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs"
+        try:
+            runs = self._request("GET", runs_url, token, expected=200, params={"per_page": 100}).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("check_runs")
+            if exc.accepted_permissions:
+                accepted["check_runs"] = str(exc.accepted_permissions)
+            runs = {}
+        else:
+            answered.append("check_runs")
+        for run in runs.get("check_runs") or []:
+            checks.append(
+                {
+                    "name": str((run or {}).get("name") or ""),
+                    "status": (run or {}).get("status"),
+                    "conclusion": (run or {}).get("conclusion"),
+                    "state": self._classify_check((run or {}).get("status"), (run or {}).get("conclusion")),
+                    "url": (run or {}).get("html_url"),
+                    "source": "check_run",
+                }
+            )
+
+        # Actions workflow runs — the substitute when the Checks API is
+        # refused, which is the NORMAL case for a fine-grained PAT: GitHub does
+        # not offer them the `checks` permission at all (GitHub Apps only), so
+        # `actions=read` is the only way such a token can see an Actions
+        # pipeline. Queried only when check-runs failed, because every workflow
+        # run also surfaces as a check run and would otherwise be counted twice.
+        if "check_runs" in denied:
+            wf_url = f"https://api.github.com/repos/{repo}/actions/runs"
+            try:
+                workflows = (
+                    self._request(
+                        "GET",
+                        wf_url,
+                        token,
+                        expected=200,
+                        params={"head_sha": sha, "per_page": 100},
+                    ).json()
+                    or {}
+                )
+            except GitToolkitError as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+                denied.append("workflow_runs")
+                if exc.accepted_permissions:
+                    accepted["workflow_runs"] = str(exc.accepted_permissions)
+                workflows = {}
+            else:
+                answered.append("workflow_runs")
+            for wf in workflows.get("workflow_runs") or []:
+                wf = wf or {}
+                checks.append(
+                    {
+                        "name": str(wf.get("name") or wf.get("display_title") or ""),
+                        "status": wf.get("status"),
+                        "conclusion": wf.get("conclusion"),
+                        "state": self._classify_check(wf.get("status"), wf.get("conclusion")),
+                        "url": wf.get("html_url"),
+                        "source": "workflow_run",
+                    }
+                )
+
+        # Legacy Commit Status API — older integrations (Travis, Jenkins
+        # webhooks, custom scripts) only ever write here, so a repo can have
+        # a fully green pipeline and an empty check-runs list.
+        status_url = f"https://api.github.com/repos/{repo}/commits/{sha}/status"
+        try:
+            combined = self._request("GET", status_url, token, expected=200).json() or {}
+        except GitToolkitError as exc:
+            if exc.status_code not in (403, 404):
+                raise
+            denied.append("commit_statuses")
+            if exc.accepted_permissions:
+                accepted["commit_statuses"] = str(exc.accepted_permissions)
+            combined = {}
+        else:
+            answered.append("commit_statuses")
+        for st in combined.get("statuses") or []:
+            state = str((st or {}).get("state") or "").lower()
+            checks.append(
+                {
+                    "name": str((st or {}).get("context") or ""),
+                    "status": state,
+                    "conclusion": state,
+                    "state": (
+                        "success" if state == "success" else ("failure" if state in ("failure", "error") else "pending")
+                    ),
+                    "url": (st or {}).get("target_url"),
+                    "source": "commit_status",
+                }
+            )
+
+        counts = Counter(c["state"] for c in checks)
+        # Readable if ANY of the three sources answered. Nothing answering means
+        # "we do not know", which must never be mistaken for "green".
+        available = bool(answered)
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "head_sha": sha,
+            "checks": checks,
+            "total": len(checks),
+            "success": counts.get("success", 0),
+            "failure": counts.get("failure", 0),
+            "pending": counts.get("pending", 0),
+            "combined_state": combined.get("state"),
+            "available": available,
+            "answered": answered,
+            "denied": denied,
+            "denied_permissions": accepted,
+            "reason": self._denial_reason(denied, accepted) if denied else None,
+        }
+
+    #: API permission name -> the label the fine-grained-PAT UI shows for it.
+    #: Needed because GitHub answers ``checks=read`` while the settings page
+    #: calls it "Checks", and ``statuses=read`` is listed as "Commit statuses"
+    #: — an operator searching the UI for "statuses" or "Actions" finds the
+    #: wrong row otherwise.
+    _PERMISSION_LABELS = {
+        "actions": "Actions",
+        "checks": "Checks",
+        "contents": "Contents",
+        "issues": "Issues",
+        "metadata": "Metadata",
+        "pull_requests": "Pull requests",
+        "statuses": "Commit statuses",
+        "workflows": "Workflows",
+    }
+    #: Fallback when GitHub sends no ``x-accepted-github-permissions`` header.
+    _CHECK_PERMISSIONS = {
+        "check_runs": "checks=read",
+        "commit_statuses": "statuses=read",
+        "workflow_runs": "actions=read",
+    }
+    #: Permissions a fine-grained PAT can NEVER hold, whatever the endpoint's
+    #: own docs claim. GitHub disabled `checks` for PATs — only GitHub Apps can
+    #: read the Checks API — so telling an operator to "grant Checks" sends
+    #: them hunting for a row that does not exist in the token UI.
+    #: See https://github.com/orgs/community/discussions/129512
+    _APP_ONLY_PERMISSIONS = frozenset({"checks"})
+
+    @classmethod
+    def _describe_permission(cls, accepted: str) -> str:
+        """Turn ``"checks=read; contents=read"`` into UI-findable labels."""
+        labels: List[str] = []
+        for part in re.split(r"[;,]", accepted or ""):
+            part = part.strip()
+            if not part:
+                continue
+            name, _, level = part.partition("=")
+            label = cls._PERMISSION_LABELS.get(name.strip(), name.strip())
+            access = "Read-only" if (level.strip() or "read") == "read" else "Read and write"
+            labels.append(f"'{label}' ({access})")
+        return ", ".join(labels)
+
+    @classmethod
+    def _denial_reason(cls, denied: List[str], accepted: Optional[Dict[str, str]] = None) -> str:
+        """Explain each refused CI read in terms the operator can act on.
+
+        Prefers GitHub's own ``x-accepted-github-permissions`` header over any
+        static mapping: it is authoritative and survives API changes. But the
+        header alone is a trap — it answers ``checks=read`` for check runs, and
+        that permission cannot be granted to a fine-grained PAT at all, so the
+        advice has to say what to do INSTEAD of naming a row that is not in the
+        token UI.
+        """
+        accepted = accepted or {}
+        parts: List[str] = []
+        grantable = False
+        for name in denied:
+            raw = accepted.get(name) or cls._CHECK_PERMISSIONS.get(name, "")
+            slugs = {part.partition("=")[0].strip() for part in re.split(r"[;,]", raw or "") if part.strip()}
+            described = cls._describe_permission(raw)
+            if slugs & cls._APP_ONLY_PERMISSIONS:
+                parts.append(
+                    f"{name} needs [{raw}], which GitHub does NOT offer to fine-grained PATs "
+                    f"(GitHub Apps only) — grant 'Actions' (Read-only) so workflow runs stand in, "
+                    f"or use a classic PAT with the 'repo' scope, or a GitHub App with "
+                    f"'Checks' (Read-only)"
+                )
+            elif described:
+                grantable = True
+                parts.append(f"{name} needs {described} [{raw}] on the fine-grained PAT")
+            else:
+                parts.append(f"{name} denied")
+        reason = "; ".join(parts)
+        if grantable:
+            reason += " — on an org-owned repository that change may also need an owner's approval"
+        # Phrased to nest inside a caller's sentence, so it must not repeat
+        # "for this token" — the caller has already said whose token it is.
+        return reason
+
+    @tool_schema(GetPRChecksInput)
+    async def get_pr_checks(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+        head_sha: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return the CI checks reported for a pull request's head commit.
+
+        Merges the Checks API (``check-runs``) with the legacy Commit Status
+        API, because a repository may use either or both, and normalizes every
+        entry to ``state`` in ``success|failure|pending`` alongside the raw
+        GitHub fields. ``head_sha`` skips the extra PR lookup when the caller
+        already knows it.
+
+        The two APIs sit behind independent token permissions, so a 403/404 on
+        one does not discard the other: the denial is listed in ``denied`` and
+        explained in ``reason``, and ``available`` is False only when BOTH were
+        refused — "we do not know" must never read as "green".
+        """
+
+        return await asyncio.to_thread(self._get_pr_checks_sync, repository, pr_number, head_sha)
+
+    _CONVERT_TO_DRAFT_MUTATION = (
+        "mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) "
+        "{ pullRequest { number isDraft } } }"
+    )
+
+    def _convert_pr_to_draft_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+
+        pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        pr_data = self._request("GET", pr_url, token, expected=200).json() or {}
+        if pr_data.get("draft"):
+            return {
+                "status": "already_draft",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": True,
+            }
+        node_id = pr_data.get("node_id")
+        if not node_id:
+            raise GitToolkitError(
+                f"GitHub did not return a node_id for {repo}#{pr_number}; cannot convert it to draft.",
+                url=pr_url,
+            )
+        if (pr_data.get("state") or "").lower() != "open":
+            return {
+                "status": "not_open",
+                "repository": repo,
+                "pr_number": pr_number,
+                "is_draft": False,
+                "message": f"{repo}#{pr_number} is {pr_data.get('state')}; only an open PR can become a draft.",
+            }
+
+        # REST cannot flip the draft flag — PATCH /pulls ignores it. The
+        # GraphQL mutation is the only supported path, and it answers 200 with
+        # an ``errors`` array instead of an HTTP error code.
+        response = self._request(
+            "POST",
+            "https://api.github.com/graphql",
+            token,
+            expected=200,
+            json={"query": self._CONVERT_TO_DRAFT_MUTATION, "variables": {"id": node_id}},
         )
+        body = response.json() or {}
+        errors = body.get("errors") or []
+        if errors:
+            message = "; ".join(str((e or {}).get("message") or e) for e in errors)
+            raise GitToolkitError(
+                f"GraphQL convertPullRequestToDraft failed for {repo}#{pr_number}: {message}",
+                url="https://api.github.com/graphql",
+                api_message=message,
+            )
+        pull = (((body.get("data") or {}).get("convertPullRequestToDraft") or {}).get("pullRequest")) or {}
+        return {
+            "status": "converted",
+            "repository": repo,
+            "pr_number": pr_number,
+            "is_draft": bool(pull.get("isDraft", True)),
+        }
+
+    @tool_schema(ConvertPRToDraftInput)
+    async def convert_pr_to_draft(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Convert an open pull request into a draft so it cannot be merged.
+
+        Returns ``status`` in ``converted|already_draft|not_open``. Needs the
+        GraphQL mutation (REST has no writable ``draft`` field), so the token
+        must carry the same ``pull_requests: write`` permission used to submit
+        reviews.
+        """
+
+        return await asyncio.to_thread(self._convert_pr_to_draft_sync, repository, pr_number)
+
+    @staticmethod
+    def _webhook_failure(exc: GitToolkitError, *, operation: str) -> Dict[str, Any]:
+        """Translate a failed ``/hooks`` call into an ``ensure_webhook`` result.
+
+        403 and 404 both mean "this token cannot manage hooks here" — the
+        permission is missing, or the repository is invisible to it — and keep
+        the ``no_permission`` status callers already branch on. Anything else is
+        a plain error. The HTTP context rides along so the operator reads
+        GitHub's own explanation instead of a guess about which scope is
+        missing.
+        """
+        status = "no_permission" if exc.status_code in (403, 404) else "error"
+        return {
+            "status": status,
+            "message": str(exc),
+            "operation": operation,
+            "status_code": exc.status_code,
+            "api_message": exc.api_message,
+            "required_permission": exc.accepted_permissions,
+        }
 
     def _ensure_webhook_sync(
         self,
@@ -1850,7 +2292,10 @@ class GitToolkit(AbstractToolkit):
         """Idempotently register a GitHub webhook for ``webhook_url``.
 
         Returns a dict with ``status`` in {created, already_exists, no_permission, error}
-        plus the hook payload when available.
+        plus the hook payload when available. Failures also carry ``operation``
+        (``list``/``create``), ``status_code``, GitHub's own ``api_message`` and
+        ``required_permission`` (the ``x-accepted-github-permissions`` header),
+        so callers can report the real cause instead of assuming a scope.
         """
         conn = self._resolve_connection(repository)
         repo, token = conn.repository, conn.token()
@@ -1858,10 +2303,7 @@ class GitToolkit(AbstractToolkit):
         try:
             response = self._request("GET", list_url, token, expected=200)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="list")
 
         for hook in response.json() or []:
             cfg = (hook or {}).get("config") or {}
@@ -1882,14 +2324,9 @@ class GitToolkit(AbstractToolkit):
             "config": config,
         }
         try:
-            create = self._request(
-                "POST", list_url, token, expected=201, json=payload
-            )
+            create = self._request("POST", list_url, token, expected=201, json=payload)
         except GitToolkitError as exc:
-            message = str(exc)
-            if " 403" in message or " 404" in message:
-                return {"status": "no_permission", "message": message}
-            return {"status": "error", "message": message}
+            return self._webhook_failure(exc, operation="create")
         return {"status": "created", "hook": create.json()}
 
     async def ensure_webhook(
@@ -1901,9 +2338,13 @@ class GitToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Ensure a GitHub webhook pointing at ``webhook_url`` exists on the repo.
 
-        Idempotent. Falls back gracefully when the token lacks
-        ``admin:repo_hook`` (status ``"no_permission"``) so callers can run in
-        hybrid mode (auto when allowed, manual otherwise).
+        Idempotent. Falls back gracefully when GitHub refuses the hooks
+        endpoint (status ``"no_permission"``) so callers can run in hybrid mode
+        (auto when allowed, manual otherwise). That refusal is not always a
+        missing scope: repository webhooks require the **admin** role on the
+        repo, and a fine-grained token can never exceed its owner's role, so
+        the result also carries ``status_code``, ``api_message`` and
+        ``required_permission`` for the operator-facing log.
         """
 
         return await asyncio.to_thread(
@@ -1963,9 +2404,7 @@ class GitToolkit(AbstractToolkit):
         url = f"https://api.github.com/repos/{repo}/contents/{path}"
 
         try:
-            response = self._request(
-                "GET", url, token, expected=200, params={"ref": ref}
-            )
+            response = self._request("GET", url, token, expected=200, params={"ref": ref})
         except GitToolkitError as exc:
             # 404 → file does not exist at this ref
             msg = str(exc)
@@ -2058,7 +2497,7 @@ class GitToolkit(AbstractToolkit):
             lines = text_content.splitlines(keepends=True)
             total = len(lines)
             sl = max(0, (start_line or 1) - 1)  # 0-indexed, clamped
-            el = min(total, end_line or total)    # exclusive upper bound
+            el = min(total, end_line or total)  # exclusive upper bound
             text_content = "".join(lines[sl:el])
             truncated = True
 
@@ -2271,10 +2710,7 @@ class GitToolkit(AbstractToolkit):
         }
         response = requests.request("GET", url, headers=headers, params=params, timeout=30)
 
-        if (
-            response.status_code == 403
-            and response.headers.get("X-RateLimit-Remaining") == "0"
-        ):
+        if response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0":
             return SearchCodeResult(
                 repository=repo,
                 query=query,
@@ -2284,9 +2720,7 @@ class GitToolkit(AbstractToolkit):
             )
 
         if response.status_code != 200:
-            raise GitToolkitError(
-                f"GitHub Code Search failed: {response.status_code} {response.text}"
-            )
+            raise GitToolkitError(f"GitHub Code Search failed: {response.status_code} {response.text}")
 
         payload = response.json()
         return SearchCodeResult(
@@ -2350,9 +2784,7 @@ class GitToolkit(AbstractToolkit):
     # GitHub stats endpoints (FEAT-180 — Weekly Activity Report)
     # ------------------------------------------------------------------
 
-    def _get_contributor_stats_sync(
-        self, repository: Optional[str]
-    ) -> List[ContributorStats]:
+    def _get_contributor_stats_sync(self, repository: Optional[str]) -> List[ContributorStats]:
         """Fetch and parse contributor stats via the 202->200 polling helper.
 
         Args:
@@ -2407,13 +2839,9 @@ class GitToolkit(AbstractToolkit):
         Returns:
             List of :class:`ContributorStats` models with per-week breakdowns.
         """
-        return await asyncio.to_thread(
-            self._get_contributor_stats_sync, repository
-        )
+        return await asyncio.to_thread(self._get_contributor_stats_sync, repository)
 
-    def _get_weekly_commit_activity_sync(
-        self, repository: Optional[str]
-    ) -> List[Dict[str, Any]]:
+    def _get_weekly_commit_activity_sync(self, repository: Optional[str]) -> List[Dict[str, Any]]:
         """Fetch weekly commit activity (raw dicts) via the polling helper.
 
         Args:
@@ -2446,13 +2874,9 @@ class GitToolkit(AbstractToolkit):
             List of dicts, each with ``week`` (Unix epoch Sunday), ``total``, and
             ``days`` (list of 7 day counts, Sun-Sat).
         """
-        return await asyncio.to_thread(
-            self._get_weekly_commit_activity_sync, repository
-        )
+        return await asyncio.to_thread(self._get_weekly_commit_activity_sync, repository)
 
-    def _get_code_frequency_sync(
-        self, repository: Optional[str]
-    ) -> List[WeeklyCodeFrequency]:
+    def _get_code_frequency_sync(self, repository: Optional[str]) -> List[WeeklyCodeFrequency]:
         """Fetch per-week additions/deletions and parse into typed models.
 
         GitHub returns a list of 3-element lists ``[week_epoch, additions, deletions]``
@@ -2500,9 +2924,7 @@ class GitToolkit(AbstractToolkit):
         Returns:
             List of :class:`WeeklyCodeFrequency` models, oldest first.
         """
-        return await asyncio.to_thread(
-            self._get_code_frequency_sync, repository
-        )
+        return await asyncio.to_thread(self._get_code_frequency_sync, repository)
 
 
 __all__ = [
@@ -2519,6 +2941,7 @@ __all__ = [
     "AddPRCommentInput",
     "SubmitPRReviewInput",
     "GitToolkitError",
+    "StatsNotReadyError",
     # FEAT-180 stats models
     "ContributorWeek",
     "ContributorStats",
@@ -2535,4 +2958,3 @@ __all__ = [
     "SearchCodeResult",
     "_FileBlobCache",
 ]
-

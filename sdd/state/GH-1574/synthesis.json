@@ -1,0 +1,17 @@
+{
+  "summary_oneline": "Delivery callbacks check notification_succeeded and return status 'failed'; manager isolates each callback, collects outcomes and stamps metadata.last_delivery_status + last_callbacks",
+  "overall_confidence": "high",
+  "claims": [
+    {"id": "C1", "text": "send_email_report / send_notify_report return status 'sent' unconditionally", "confidence": "high", "evidence": ["F001"]},
+    {"id": "C2", "text": "NotificationMixin.notification_succeeded is the existing predicate; send_* never raise", "confidence": "high", "evidence": ["F002"]},
+    {"id": "C3", "text": "manager discards callback return values, aborts siblings on raise, ignores send_result status, stamps success before callbacks", "confidence": "high", "evidence": ["F003"]},
+    {"id": "C4", "text": "outcomes can be persisted in metadata JSONB with the existing stamp pattern, no DDL", "confidence": "high", "evidence": ["F004"]},
+    {"id": "C5", "text": "no behavioural callback tests exist", "confidence": "high", "evidence": ["F005"]}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "callback fail mode", "user_answer": "return status 'failed' (no raise)"},
+    {"id": "U2", "question": "persistence", "user_answer": "separate keys: last_delivery_status + last_callbacks; last_status stays the agent-run status"},
+    {"id": "U3", "question": "isolation", "user_answer": "continue; each callback isolated"}
+  ],
+  "recommended_next_command": {"command": "sdd-spec", "rationale": "high-confidence localization in 2 files, all design decisions resolved, ~2-3 tasks"}
+}

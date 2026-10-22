@@ -2,7 +2,7 @@
 id: F004
 query_id: Q004
 type: read
-intent: Existing AdaptiveCardRenderer: field mapping, submit action, warnings, gaps
+intent: "Existing AdaptiveCardRenderer: field mapping, submit action, warnings, gaps"
 executed_at: 2026-09-10T22:27:13Z
 duration_ms: 0
 parent_id: null

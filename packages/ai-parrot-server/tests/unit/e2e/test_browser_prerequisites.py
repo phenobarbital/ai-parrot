@@ -137,7 +137,9 @@ async def test_missing_node_blocks_ui_target_before_launch(monkeypatch: pytest.M
     assert excinfo.value.exit_code == EXIT_BLOCKED
 
 
-async def test_missing_ui_node_modules_blocks_target_real_state(tmp_path: Path) -> None:
+async def test_missing_ui_node_modules_blocks_target_real_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """This worktree's own real, unmocked state: the admin UI's dependencies are not installed.
 
     Confirms the exact prerequisite ``test_ui.py``'s combined scenario hits
@@ -147,6 +149,9 @@ async def test_missing_ui_node_modules_blocks_target_real_state(tmp_path: Path) 
     """
     if _UI_NODE_MODULES_INSTALLED:
         pytest.skip("packages/ai-parrot-server/ui/node_modules IS installed here; covered by the mocked test")
+    # Only node_modules is real host state here; the node/pnpm binaries are
+    # checked first and are absent on the CI runner, so stub their lookup.
+    monkeypatch.setattr("parrot.e2e.targets.ui.shutil.which", lambda _name: "/usr/bin/fake")
     adapter = build_ui_adapter()
     config = TargetConfig(kind="ui", options={"backend_url": "http://127.0.0.1:9"})
 

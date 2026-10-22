@@ -618,6 +618,116 @@ class TestObscuraModeSharesAbstractDriverSurface:
         mock_page.evaluate.assert_called_once_with("1 + 1")
 
 
+class _UtilityWorldError(Exception):
+    """Stands in for playwright's Error raised by a broken Obscura utility world."""
+
+
+# playwright's TimeoutError is matched by class name (the driver imports playwright lazily).
+TimeoutErrorByName = type("TimeoutError", (Exception,), {})
+
+
+class TestObscuraRendererNavigationWorkarounds:
+    """FEAT-686: after a renderer-initiated navigation Obscura 0.2.2 never fires
+    load/domcontentloaded and breaks Playwright's utility world, so the driver
+    polls `document.readyState` and reads through the main world instead."""
+
+    @pytest.fixture
+    def obscura_driver(self, mock_page, mock_context):
+        driver = PlaywrightDriver(PlaywrightConfig(engine="obscura"))
+        driver._page = mock_page
+        driver._context = mock_context
+        return driver
+
+    @pytest.mark.asyncio
+    async def test_wait_for_load_state_polls_ready_state(self, obscura_driver, mock_page):
+        mock_page.evaluate.side_effect = ["loading", _UtilityWorldError("swap"), "complete"]
+        with patch("parrot_tools.scraping.drivers.playwright_driver._READY_STATE_POLL_INTERVAL", 0):
+            await obscura_driver.wait_for_load_state("load", timeout=5)
+        assert mock_page.evaluate.call_count == 3
+        mock_page.evaluate.assert_called_with("document.readyState")
+        mock_page.wait_for_load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_navigation_accepts_interactive(self, obscura_driver, mock_page):
+        mock_page.evaluate.return_value = "interactive"
+        await obscura_driver.wait_for_navigation(timeout=5)
+        mock_page.evaluate.assert_called_once_with("document.readyState")
+        mock_page.wait_for_load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_load_state_times_out(self, obscura_driver, mock_page):
+        mock_page.evaluate.return_value = "loading"
+        with pytest.raises(TimeoutError, match="'load'"):
+            await obscura_driver.wait_for_load_state("load", timeout=0)
+
+    @pytest.mark.asyncio
+    async def test_networkidle_still_delegates(self, obscura_driver, mock_page):
+        await obscura_driver.wait_for_load_state("networkidle", timeout=20)
+        mock_page.wait_for_load_state.assert_called_once_with("networkidle", timeout=20000)
+        mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_page_source_falls_back_to_evaluate(self, obscura_driver, mock_page):
+        mock_page.content.side_effect = _UtilityWorldError("utilityScript.evaluate is not a function")
+        mock_page.evaluate.return_value = "<!DOCTYPE html><html></html>"
+        assert await obscura_driver.get_page_source() == "<!DOCTYPE html><html></html>"
+        assert "outerHTML" in mock_page.evaluate.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_get_text_falls_back_to_evaluate(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text.side_effect = _UtilityWorldError("injected.eval is not a function")
+        mock_page.evaluate.return_value = "Welcome, bob"
+        assert await obscura_driver.get_text("//h1") == "Welcome, bob"
+        assert mock_page.evaluate.call_args.args[1] == "xpath=//h1"
+
+    @pytest.mark.asyncio
+    async def test_get_text_fallback_without_match_raises(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text.side_effect = _UtilityWorldError("broken")
+        mock_page.evaluate.return_value = None
+        with pytest.raises(LookupError, match="#missing"):
+            await obscura_driver.get_text("#missing")
+
+    @pytest.mark.asyncio
+    async def test_timeouts_are_not_masked(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text.side_effect = TimeoutErrorByName("Timeout 10000ms exceeded.")
+        mock_page.content.side_effect = TimeoutErrorByName("Timeout 30000ms exceeded.")
+        with pytest.raises(TimeoutErrorByName):
+            await obscura_driver.get_text("h1")
+        with pytest.raises(TimeoutErrorByName):
+            await obscura_driver.get_page_source()
+        mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_screenshot_falls_back_to_cdp(self, obscura_driver, mock_page, mock_context, tmp_path):
+        mock_page.screenshot.side_effect = _UtilityWorldError("utilityScript.evaluate is not a function")
+        session = AsyncMock()
+        session.send.return_value = {"data": "iVBORw0KGgo="}
+        mock_context.new_cdp_session.return_value = session
+        target = tmp_path / "shot.png"
+
+        data = await obscura_driver.screenshot(str(target), full_page=True)
+
+        assert data == b"\x89PNG\r\n\x1a\n"
+        assert target.read_bytes() == data
+        session.send.assert_called_once_with("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True})
+        session.detach.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_playwright_engine_has_no_fallbacks(self, started_driver, mock_locator):
+        started_driver._page.content.side_effect = _UtilityWorldError("boom")
+        mock_locator.inner_text.side_effect = _UtilityWorldError("boom")
+        started_driver._page.screenshot.side_effect = _UtilityWorldError("boom")
+        with pytest.raises(_UtilityWorldError):
+            await started_driver.get_page_source()
+        with pytest.raises(_UtilityWorldError):
+            await started_driver.get_text("h1")
+        with pytest.raises(_UtilityWorldError):
+            await started_driver.screenshot("/tmp/x.png")
+        await started_driver.wait_for_load_state("load", timeout=3)
+        started_driver._page.wait_for_load_state.assert_called_once_with("load", timeout=3000)
+        started_driver._page.evaluate.assert_not_called()
+
+
 # ── Lazy Import ──────────────────────────────────────────────────
 
 
@@ -629,3 +739,25 @@ class TestLazyImport:
         )
 
         assert PD is not None
+
+
+class TestCdpScreenshotDetachGuard:
+    """A failing `session.detach()` must not mask a successful capture."""
+
+    @pytest.mark.asyncio
+    async def test_detach_failure_does_not_mask_result(self, mock_page, mock_context, tmp_path):
+        import base64 as _b64
+
+        driver = PlaywrightDriver(PlaywrightConfig(engine="obscura"))
+        driver._page = mock_page
+        driver._context = mock_context
+        png = b"\x89PNG-fake"
+        mock_page.screenshot = AsyncMock(side_effect=RuntimeError("utilityScript.evaluate is not a function"))
+        session = AsyncMock()
+        session.send = AsyncMock(return_value={"data": _b64.b64encode(png).decode()})
+        session.detach = AsyncMock(side_effect=RuntimeError("already detached"))
+        mock_context.new_cdp_session = AsyncMock(return_value=session)
+
+        out = tmp_path / "shot.png"
+        assert await driver.screenshot(str(out)) == png
+        assert out.read_bytes() == png

@@ -81,6 +81,56 @@ def pytest_target_for(path: str, worktree_path: str) -> str | None:
     return tests_root
 
 
+def pytest_file_targets(files: Sequence[str], worktree_path: str) -> list[str]:
+    """Map changed files to existing test files only, sorted and de-duplicated."""
+    return sorted({target for path in files if (target := pytest_file_target_for(path, worktree_path))})
+
+
+def pytest_file_target_for(path: str, worktree_path: str) -> str | None:
+    """Resolve one changed path to an existing test module, never a directory.
+
+    A changed test module maps to itself. A source module maps to the first
+    existing ``test_<name>.py`` at the corresponding package-test depth,
+    walking towards the distribution's tests root.
+
+    Args:
+        path: A repo-relative changed file path.
+        worktree_path: Root the path is relative to.
+
+    Returns:
+        An existing repo-relative test file, or ``None`` when no file maps.
+    """
+    parts = PurePosixPath(path).parts
+    if not parts or PurePosixPath(path).suffix != ".py" or parts[-1] == "__init__.py":
+        return None
+
+    changed_path = os.path.join(worktree_path, *parts)
+    if not os.path.isfile(changed_path):
+        return None
+
+    if parts[0] == "tests":
+        return "/".join(parts)
+    if len(parts) < 4 or parts[0] != "packages":
+        return None
+
+    tests_root = ("packages", parts[1], "tests")
+    rest = parts[2:]
+    if rest[0] == "tests":
+        return "/".join(parts)
+    if rest[0] != "src" or len(rest) < 3:
+        return None
+
+    source_parts = rest[1:]
+    test_name = f"test_{PurePosixPath(source_parts[-1]).stem}.py"
+    subdirs = source_parts[1:-1]
+    for depth in range(len(subdirs), -1, -1):
+        candidate_parts = (*tests_root, *subdirs[:depth], test_name)
+        candidate_path = os.path.join(worktree_path, *candidate_parts)
+        if os.path.isfile(candidate_path):
+            return "/".join(candidate_parts)
+    return None
+
+
 def deepest_existing_dir(tests_root: str, subdirs: tuple[str, ...], worktree_path: str) -> str:
     """Walk tests_root/subdirs upwards to the first existing directory (was qa.py:679).
 

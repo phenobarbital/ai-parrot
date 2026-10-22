@@ -20,6 +20,7 @@ TOP_OFFSET = 0.7  # see ref grid.py:18
 GAP_TOLERANCE = 0.25  # |d/pitch - k| allowed for gap filling         (ref grid.py:19)
 UNTAGGED_MIN_PITCH = 0.6  # ref grid.py:20
 FIRST_ROW_GAP_FALLBACK = 0.2  # ref grid.py:21
+COLUMN_HOLE_MIN_WIDTH = 0.3  # free width a SHAPE_IS_SLOT hole needs, in widths of its reference column
 
 _Line = Tuple[float, float]  # (slope, intercept) through anchor centres
 
@@ -79,6 +80,34 @@ def _columns(row: Sequence[ShapeCandidate], fill_gaps: bool) -> List[Tuple[float
     return columns
 
 
+def _fill_deficit(
+    columns: List[Tuple[float, Optional[ShapeCandidate]]], deficit: int
+) -> List[Tuple[float, Optional[ShapeCandidate]]]:
+    """Insert ``deficit`` virtual columns into the widest inter-column gaps.
+
+    Greedy: each insertion goes to the gap whose current sub-segment width
+    ``(right_cx - left_cx) / (inserted + 1)`` is largest (ties: leftmost); each gap is then split evenly.
+    Never inserts before the first or after the last column. ``deficit <= 0`` or fewer than two
+    columns ⇒ ``columns`` returned unchanged. Output stays sorted by centre.
+    """
+    if deficit <= 0 or len(columns) < 2:
+        return columns
+    inserted = [0] * (len(columns) - 1)
+    for _ in range(deficit):
+        gap = max(
+            range(len(inserted)),
+            key=lambda index: ((columns[index + 1][0] - columns[index][0]) / (inserted[index] + 1), -index),
+        )
+        inserted[gap] += 1
+    result: List[Tuple[float, Optional[ShapeCandidate]]] = []
+    for g, (cx, anchor) in enumerate(columns):
+        result.append((cx, anchor))
+        if g < len(inserted) and inserted[g]:
+            step = (columns[g + 1][0] - cx) / (inserted[g] + 1)
+            result.extend((cx + j * step, None) for j in range(1, inserted[g] + 1))
+    return result
+
+
 def _x_bounds(centres: Sequence[float], j: int, median_width: float) -> Tuple[float, float]:
     """Neighbour midpoints, row-end half widths, then the ±CLAMP_HALF_WIDTH clamp."""
     cx = centres[j]
@@ -97,6 +126,35 @@ def _clip(
     if x1 >= x2 or y1 >= y2:
         return None
     return DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2, confidence=max(0.0, min(1.0, confidence)))
+
+
+def _column_holes(
+    row: Sequence[Tuple[DetectionBox, Optional[str]]],
+    reference: Sequence[Tuple[DetectionBox, Optional[str]]],
+    image_size: Tuple[int, int],
+) -> List[DetectionBox]:
+    """Empty columns of a ``SHAPE_IS_SLOT`` row, read off the fullest row of the same fixture.
+
+    A column of ``reference`` is a hole of ``row`` when no slot of the row is centred in it and its own
+    centre lies in no slot of the row. The hole spans the row's height and the part of the column its
+    neighbours leave free; a remainder narrower than ``COLUMN_HOLE_MIN_WIDTH`` of the column is no hole.
+    """
+    if not row or len(row) >= len(reference):
+        return []
+    top, bottom = min(box.y1 for box, _ in row), max(box.y2 for box, _ in row)
+    holes: List[DetectionBox] = []
+    for column, _ in reference:
+        centre = (column.x1 + column.x2) / 2.0
+        if any(column.x1 <= (box.x1 + box.x2) / 2.0 <= column.x2 or box.x1 <= centre <= box.x2 for box, _ in row):
+            continue
+        left = max([column.x1, *(box.x2 for box, _ in row if box.x2 <= centre)])
+        right = min([column.x2, *(box.x1 for box, _ in row if box.x1 >= centre)])
+        if right - left < COLUMN_HOLE_MIN_WIDTH * (column.x2 - column.x1):
+            continue
+        hole = _clip((left, top, right, bottom), image_size, 0.0)
+        if hole is not None:
+            holes.append(hole)
+    return holes
 
 
 def _slot(image_id: str, row_index: int, slot_index: int, box: DetectionBox, anchor_id: Optional[str]) -> Slot:
@@ -120,6 +178,8 @@ def build_slots(
     rule: AnchorRule,
     fill_gaps: bool = True,
     untagged_bottom_row: bool = False,
+    max_rows: Optional[int] = None,
+    expected_facings: Optional[Sequence[int]] = None,
 ) -> List[Slot]:
     """Build every slot of one image. Reference: plancheck/grid.py:78.
 
@@ -128,9 +188,15 @@ def build_slots(
         image_size: ``(width, height)`` of the source image.
         image_id: Id of the image (slot ids and anchor ids).
         rule: How a slot derives from its anchor.
-        fill_gaps: Insert inferred slots for unambiguous holes (``TAG_BELOW_PRODUCT`` only).
+        fill_gaps: Insert inferred slots for unambiguous holes. ``TAG_BELOW_PRODUCT`` reads them off the
+            tag pitch of the row; ``SHAPE_IS_SLOT`` off the columns of the fullest row of the fixture.
         untagged_bottom_row: Synthesize a last row below the last anchored row when room remains
             (``TAG_BELOW_PRODUCT`` only).
+        max_rows: Rows the fixture is known to have (shelves of the definition). The bottom row is not
+            synthesized once that many anchored rows are visible: the room below them is not the fixture.
+        expected_facings: Facings per definition shelf, top→bottom. ``TAG_BELOW_PRODUCT`` only, and only when
+            the anchored rows count equals ``len(expected_facings)`` (a full-height photo): after the pitch
+            fill each row's deficit against its shelf is filled into its widest inter-tag gaps. Ignored otherwise.
 
     Returns:
         Slots ordered by row then left→right. ``slot_index`` is 1..n per row after gap filling;
@@ -140,24 +206,39 @@ def build_slots(
     width, height = image_size
     slots: List[Slot] = []
     if rule == AnchorRule.SHAPE_IS_SLOT:
-        for row_index, row in enumerate(rows):
-            index = 0
+        boxed: List[List[Tuple[DetectionBox, Optional[str]]]] = []
+        for row in rows:
+            entries: List[Tuple[DetectionBox, Optional[str]]] = []
             for candidate in sorted(row, key=lambda c: (_cx(c), c.y1)):
                 box = _clip((candidate.x1, candidate.y1, candidate.x2, candidate.y2), image_size, candidate.score)
-                if box is None:
-                    continue
-                index += 1
-                slots.append(_slot(image_id, row_index, index, box, candidate_shape_id(image_id, candidate)))
+                if box is not None:
+                    entries.append((box, candidate_shape_id(image_id, candidate)))
+            boxed.append(entries)
+        if fill_gaps:
+            reference = max(boxed, key=len, default=[])
+            boxed = [
+                sorted(
+                    [*entries, *((hole, None) for hole in _column_holes(entries, reference, image_size))],
+                    key=lambda entry: entry[0].x1,
+                )
+                for entries in boxed
+            ]
+        for row_index, entries in enumerate(boxed):
+            for index, (box, anchor_id) in enumerate(entries, start=1):
+                slots.append(_slot(image_id, row_index, index, box, anchor_id))
         return slots
 
     lines = [_fit_line(row) if row else None for row in rows]
     anchored = [r for r, row in enumerate(rows) if row]
+    full_height = expected_facings is not None and len(anchored) == len(expected_facings)
     last_columns: List[Tuple[float, float, float]] = []
     for r, row in enumerate(rows):
         if not row:
             continue
         line = lines[r]
         columns = _columns(row, fill_gaps)
+        if full_height:
+            columns = _fill_deficit(columns, expected_facings[anchored.index(r)] - len(columns))  # type: ignore[index]
         centres = [cx for cx, _ in columns]
         median_width = float(median(c.x2 - c.x1 for c in row))
         median_height = float(median(c.y2 - c.y1 for c in row))
@@ -186,7 +267,8 @@ def build_slots(
             anchor_id = candidate_shape_id(image_id, anchor) if anchor else None
             slots.append(_slot(image_id, r, index, box, anchor_id))
 
-    if untagged_bottom_row and len(anchored) >= 2 and last_columns:
+    room_for_row = max_rows is None or len(anchored) < max_rows
+    if untagged_bottom_row and room_for_row and len(anchored) >= 2 and last_columns:
         xc = width / 2
         pitches = [
             _line_y(lines[b], xc) - _line_y(lines[a], xc)  # type: ignore[arg-type]

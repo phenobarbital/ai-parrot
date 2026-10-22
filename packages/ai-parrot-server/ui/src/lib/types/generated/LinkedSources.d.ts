@@ -60,14 +60,22 @@ export type Op9 = "union";
  * @minItems 1
  */
 export type Sources = [string, ...string[]];
+export type InputAlias = string;
+export type Output = string | null;
+export type Transformer = string;
 export type Integrity = string;
 export type Name1 = string;
+export type From = string;
+export type Kind1 = "derived";
+export type SnapshotAt1 = string | null;
+export type SnapshotTruncated1 = boolean;
+export type Target1 = string;
 
 /**
  * Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root.
  */
 export interface LinkedSources {
-  [k: string]: LinkedDataSource;
+  [k: string]: LinkedDataSource | DerivedDataSource;
 }
 /**
  * One data source of a linked surface (spec §2 Data Models).
@@ -133,10 +141,11 @@ export interface Placeholders {
   [k: string]: unknown;
 }
 /**
- * Exactly one of inline DSL operations or a catalogued renderer module.
+ * Exactly one of inline DSL operations, a catalogued renderer module, or a server-side Python transformer.
  */
 export interface TransformSpec {
   ops?: Ops;
+  python?: PythonTransform | null;
   ref?: TransformRef | null;
 }
 export interface Select {
@@ -211,9 +220,40 @@ export interface Union_ {
   sources: Sources;
 }
 /**
+ * Server-side registered transformer applied to a fetched frame (G1: referenced by name, never code).
+ *
+ * Runs ONLY in the Python lanes (bake, persist, server refresh, the per-source data endpoint) — the mirror
+ * image of ``transform.ref``, which runs only in the renderer.
+ */
+export interface PythonTransform {
+  input_alias?: InputAlias;
+  output?: Output;
+  params?: Params1;
+  transformer: Transformer;
+}
+export interface Params1 {
+  [k: string]: unknown;
+}
+/**
  * Catalogued renderer-side transform: opaque ``name@semver`` id plus SRI pin.
  */
 export interface TransformRef {
   integrity: Integrity;
   name: Name1;
+}
+/**
+ * A dashboard-owned view computed from a sibling source's frame — never fetched (linked dashboards).
+ *
+ * The base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),
+ * not its ≤500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see
+ * the computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the
+ * Python executor, which would break Python ↔ renderer parity.
+ */
+export interface DerivedDataSource {
+  from: From;
+  kind: Kind1;
+  snapshot_at?: SnapshotAt1;
+  snapshot_truncated?: SnapshotTruncated1;
+  target: Target1;
+  transform: TransformSpec;
 }

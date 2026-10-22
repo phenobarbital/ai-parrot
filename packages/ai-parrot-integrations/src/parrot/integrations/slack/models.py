@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a heavy runtime import
     from parrot.integrations.devloop.models import DevLoopIntegrationConfig
@@ -58,6 +59,8 @@ class SlackAgentConfig:
     commands: Dict[str, str] = field(default_factory=dict)
     allowed_channel_ids: Optional[List[str]] = None
     allowed_user_ids: Optional[List[str]] = None
+    # Chat-driven knowledge upload (FEAT-647) — opt-in, disabled by default.
+    knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     webhook_path: Optional[str] = None
 
     # New fields for enhanced Slack integration
@@ -124,6 +127,7 @@ class SlackAgentConfig:
             commands=data.get("commands", {}),
             allowed_channel_ids=data.get("allowed_channel_ids"),
             allowed_user_ids=data.get("allowed_user_ids"),
+            knowledge_upload=KnowledgeUploadConfig.model_validate(data.get("knowledge_upload") or {}),
             webhook_path=data.get("webhook_path"),
             # New fields
             app_token=data.get("app_token"),

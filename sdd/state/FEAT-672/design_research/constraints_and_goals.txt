@@ -1,0 +1,34 @@
+Decided with the owner during discovery (Rounds 0–3):
+
+- **Flow**: `type: feature`, `base_branch: dev`.
+- **The graph is an enrichment, never a gate.** Clone or build failure ⇒ log
+  and fall back to today's diff-only review. Same degradation contract as
+  `DevLoopWikiSearch.from_project()` (`wiki_search.py:40`), which returns
+  `None` and lets every caller no-op.
+- **Build runs as a subprocess** (`wikitoolkit build --path <clone>`), not as
+  an in-process call. No refactor of wikitoolkit core in this feature.
+- **One persistent clone + one persistent plane per repository**, refreshed
+  incrementally — not a fresh clone per PR.
+- **The clone tracks the repository's base branch only.** PR head refs
+  (including fork heads) are out of scope; the proposed code still arrives as
+  the diff.
+- **Warm-up at startup**: clone + build kick off in `post_configure()`
+  (`github_reviewer.py:503`) without blocking agent startup; each PR event
+  refreshes incrementally before the review.
+- **The graph plane lives outside the clone**, at an absolute `storage_dir`,
+  so the reviewed repository's working tree is never polluted and its own
+  `.parrot/` is never touched.
+- **Builds are serialized per repository** (an `asyncio.Lock` per repo), because
+  `wiki_write_lock` (`project.py:76`) refuses a second concurrent writer and
+  `build` exits with status 1 when it cannot acquire it.
+- **The reviewer gets the full wiki surface**: `CodeStructuralToolkit` tools,
+  prompt-injected ranked context, *and* the complete `LLMWikiToolkit`
+  (`toolkit.py:43`) with no confinement — owner's explicit decision, recorded
+  as a risk in Open Questions rather than as a blocker.
+- No new runtime dependency: `wikitoolkit` is a core console script
+  (`pyproject.toml:204`), the build is deterministic and **offline** (no LLM —
+  see the `build` docstring, `cli.py:1573`), so enrichment costs CPU/IO, not tokens.
+- Must keep working for a reviewer whose repository is **private** (clone must
+  authenticate with the same PAT / GitHub App the toolkit already holds).
+
+---

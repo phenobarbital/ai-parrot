@@ -2,7 +2,7 @@
 id: F004
 query_id: Q004
 type: read
-intent: WikiProjectConfig: backend Literal stops at arangodb; DecisionConfig is the sub-config precedent; ledger_path/find_shared_root/is_linked_worktree exist
+intent: "WikiProjectConfig: backend Literal stops at arangodb; DecisionConfig is the sub-config precedent; ledger_path/find_shared_root/is_linked_worktree exist"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

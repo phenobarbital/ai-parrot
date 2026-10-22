@@ -10,8 +10,10 @@ from typing import List, Union, Dict, Any, Callable
 
 from parrot.mcp import MCPServerConfig
 from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.discovery import discover_from_registry, resolve_class
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.server_params import constructor_server_params
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
+from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject, ToolParamRefused
 
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
@@ -63,12 +65,13 @@ class ToolInterface:
                         self.logger.info(f"Successfully loaded tool: {tool}")
                         continue
 
+                    self._record_tooling_failure(tool, "unknown tool or toolkit")
                     self.logger.warning(f"Unknown tool or toolkit: {tool}")
 
                 elif isinstance(tool, type) and issubclass(tool, AbstractToolkit):
                     # It's a toolkit class, register it. Instantiate first so we
                     # can capture knowledge-index toolkits for the REST surface.
-                    instance = tool()
+                    instance = self.tool_manager.build_toolkit(tool, self.tool_manager._slug_of_class(tool), {})
                     self.tool_manager.register_toolkit(instance)
                     self._capture_knowledge_toolkit(instance)
                     self.logger.info(f"Registered toolkit class: {tool.__name__}")
@@ -104,6 +107,7 @@ class ToolInterface:
                     self.logger.warning(f"Unknown tool type: {type(tool)}")
 
             except Exception as e:
+                self._record_tooling_failure(str(getattr(tool, "__name__", tool)), f"{type(e).__name__}: {e}")
                 self.logger.error(f"Error initializing tool {tool}: {e}")
 
     # Knowledge-index capability surface (PageIndex / GraphIndex) ----------
@@ -175,18 +179,49 @@ class ToolInterface:
 
     @staticmethod
     def _resolve_spec_class(slug: str) -> type | None:
-        """Resolve a toolkit slug via TOOL_REGISTRY (case-insensitive); None when unknown."""
-        registry = discover_from_registry()
-        dotted = registry.get(slug) or {key.lower(): value for key, value in registry.items()}.get(slug.lower())
-        if dotted is None:
-            return None
-        try:
-            return resolve_class(dotted)
-        except (ImportError, AttributeError):
-            return None
+        """Resolve a toolkit slug through the shared ToolkitResolver (FEAT-622 M2)."""
+        return get_toolkit_resolver().resolve(slug)
 
-    async def apply_tooling_specs(self) -> list[str]:
+    def bind_tooling_policy(
+        self, policy: "TenantToolingPolicy | None", subject: "ToolingSubject", *, owner: str | None = None
+    ) -> None:
+        """Bind the build-time tenant tooling policy for the next ``configure()`` (FEAT-622, RC-9).
+
+        Raises:
+            RuntimeError: tooling was already applied; a late binding would police nothing.
+        """
+        if getattr(self, "_tooling_applied", False):
+            raise RuntimeError("bind_tooling_policy() called after tooling specs were applied")
+        self._tooling_policy = policy
+        self._tooling_subject = subject
+        self._tooling_owner = owner
+
+    def _resolve_tooling_binding(
+        self,
+        tooling_policy: "TenantToolingPolicy | None",
+        tooling_subject: "ToolingSubject | None",
+    ) -> "tuple[TenantToolingPolicy | None, ToolingSubject | None]":
+        """Explicit kwargs win over the bound values; a tenant subject without policy gets ``deny_all()``."""
+        policy = tooling_policy if tooling_policy is not None else getattr(self, "_tooling_policy", None)
+        subject = tooling_subject if tooling_subject is not None else getattr(self, "_tooling_subject", None)
+        if subject is None:
+            return None, None
+        if subject.tenant is None and (policy is None or not policy.apply_to_global):
+            return None, subject
+        if policy is None and subject.tenant is not None:
+            policy = TenantToolingPolicy.deny_all()
+        return policy, subject
+
+    async def apply_tooling_specs(
+        self,
+        *,
+        tooling_policy: "TenantToolingPolicy | None" = None,
+        tooling_subject: "ToolingSubject | None" = None,
+        tooling_owner: str | None = None,
+    ) -> list[str]:
         """Hydrate and register pending toolkit / MCP specs once (FEAT-593). Never raises."""
+        policy, subject = self._resolve_tooling_binding(tooling_policy, tooling_subject)
+        owner = tooling_owner if tooling_owner is not None else getattr(self, "_tooling_owner", None)
         toolkits: list[ToolkitSpec] = list(getattr(self, "_pending_toolkit_specs", None) or [])
         mcp_specs: list[AgentMCPServerSpec] = list(getattr(self, "_pending_mcp_specs", None) or [])
         self._tooling_revision = tooling_revision(toolkits, mcp_specs)
@@ -197,67 +232,136 @@ class ToolInterface:
         registered: list[str] = []
         for spec in toolkits:
             try:
-                cls = self._resolve_spec_class(spec.slug)
-                if cls is None:
-                    self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
-                    continue
-
-                params = await hydrate_params(spec)
-                if spec.slug.lower() == "dataset_manager":
-                    datasources = params.pop("datasources", [])
-                    existing = getattr(self, "_dataset_manager", None)
-                    if isinstance(existing, DatasetManager):
-                        dataset_manager = existing
-                    else:
-                        signature = inspect.signature(DatasetManager.__init__).parameters
-                        accepted = {
-                            name
-                            for name, parameter in signature.items()
-                            if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
-                        }
-                        dropped = sorted(set(params) - accepted)
-                        if dropped:
-                            self.logger.warning(
-                                "Toolkit spec '%s': dropped unknown constructor params: %s", spec.slug, dropped
-                            )
-                        filtered = {name: value for name, value in params.items() if name in accepted}
-                        dataset_manager = DatasetManager(**filtered)
-                        tools = self.tool_manager.register_toolkit(dataset_manager)
-                        self._capture_knowledge_toolkit(dataset_manager)
-                        self._dataset_manager = dataset_manager
-                        registered.extend(tool.name for tool in tools)
-                    await dataset_manager.replay_datasources(datasources)
-                    continue
-
-                signature = inspect.signature(cls.__init__).parameters
-                accepted = {
-                    name
-                    for name, parameter in signature.items()
-                    if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
-                }
-                dropped = sorted(set(params) - accepted)
-                if dropped:
-                    self.logger.warning("Toolkit spec '%s': dropped unknown constructor params: %s", spec.slug, dropped)
-                filtered = {name: value for name, value in params.items() if name in accepted}
-                instance = cls(**filtered)
-                tools = self.tool_manager.register_toolkit(instance)
-                self._capture_knowledge_toolkit(instance)
-                registered.extend(tool.name for tool in tools)
+                registered.extend(await self._register_toolkit_spec(spec, policy, subject, owner))
+            except ToolParamRefused as exc:  # the host hook refused the params: the toolkit is NOT built (fail closed)
+                self._record_tooling_failure(spec.slug, f"params refused by the host hook: {', '.join(exc.params) or '-'}")
+                self.logger.error(
+                    "Toolkit spec '%s' refused by the host param hook (params: %s); the toolkit is not registered",
+                    exc.item or spec.slug, ", ".join(exc.params) or "-",
+                )
+            except TenantToolingRefused as exc:
+                self._record_tooling_failure(spec.slug, f"refused by tenant policy: {exc.reason}")
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
-                self.logger.warning("Toolkit spec '%s' skipped: %s", spec.slug, type(exc).__name__)
+                self._record_tooling_failure(spec.slug, f"{type(exc).__name__}: {exc}")
+                self.logger.error("Toolkit spec '%s' could not be applied and is NOT registered: %s", spec.slug, exc)
 
         for mspec in mcp_specs:
             try:
-                kwargs = await hydrate_mcp(mspec)
-                config = MCPServerConfig(**kwargs)
-                if hasattr(self, "add_mcp_server"):
-                    registered.extend(await self.add_mcp_server(config))
+                registered.extend(await self._register_mcp_spec(mspec, policy, subject, owner))
+            except TenantToolingRefused as exc:
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
                 self.logger.warning("MCP server spec '%s' skipped: %s", mspec.name, type(exc).__name__)
 
         if registered and hasattr(self, "enable_tools"):
             self.enable_tools = True
         return registered
+
+    @property
+    def tooling_failures(self) -> list[dict[str, str]]:
+        """``[{"slug", "error"}]`` of the toolkit/tool specs the last build could not apply (never silently skipped)."""
+        return list(getattr(self, "_tooling_failures", None) or [])
+
+    def _record_tooling_failure(self, slug: str, error: str) -> None:
+        if getattr(self, "_tooling_failures", None) is None:
+            self._tooling_failures = []
+        self._tooling_failures.append({"slug": slug, "error": error})
+
+    def _strip_server_params(self, cls: type, slug: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Drop every stored key the class declares server-managed (stripped on load, with a warning)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        stripped = sorted(set(params) & set(declared))
+        if stripped:
+            self.logger.warning("Toolkit spec '%s': stripped server-managed params: %s", slug, stripped)
+        return {name: value for name, value in params.items() if name not in declared}
+
+    def _fill_server_params(self, cls: type) -> dict[str, Any]:
+        """Constructor params the server fills at build: ``source="app"`` from ``self.app`` (``"server"``: bespoke)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        app = getattr(self, "app", None)
+        filled: dict[str, Any] = {}
+        for name in constructor_server_params(cls):
+            param = declared[name]
+            if param.source == "app" and app is not None and app.get(param.key) is not None:
+                filled[name] = app[param.key]
+        return filled
+
+    def _filter_ctor_params(self, slug: str, init: Any, params: dict[str, Any]) -> dict[str, Any]:
+        """Keep only constructor parameters ``init`` accepts, warning about the dropped ones."""
+        signature = inspect.signature(init).parameters
+        accepted = {
+            name
+            for name, parameter in signature.items()
+            if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+        }
+        dropped = sorted(set(params) - accepted)
+        if dropped:
+            self.logger.warning("Toolkit spec '%s': dropped unknown constructor params: %s", slug, dropped)
+        return {name: value for name, value in params.items() if name in accepted}
+
+    async def _register_toolkit_spec(
+        self,
+        spec: ToolkitSpec,
+        policy: "TenantToolingPolicy | None",
+        subject: "ToolingSubject | None",
+        owner: str | None,
+    ) -> list[str]:
+        """Policy pre-check (before any vault read), hydrate, construct and register one toolkit spec."""
+        if policy is not None:
+            policy.precheck_toolkit(spec, subject=subject, owner=owner)
+        cls = self._resolve_spec_class(spec.slug)
+        if cls is None:
+            self._record_tooling_failure(spec.slug, "unknown slug")
+            self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
+            return []
+        params = self._strip_server_params(cls, spec.slug, await hydrate_params(spec))
+        if spec.slug.lower() == "dataset_manager":
+            return await self._register_dataset_manager(spec, params)
+        filtered = self._filter_ctor_params(spec.slug, cls.__init__, params)
+        # PA-9: the host parameter hook (a no-op without one) sees the final params, a refusal fails this spec closed
+        instance = self.tool_manager.build_toolkit(cls, spec.slug, {**filtered, **self._fill_server_params(cls)})
+        if isinstance(instance, AbstractTool):  # a standalone tool is registered as a tool, not as a toolkit
+            self.tool_manager.register_tool(instance)
+            return [instance.name]
+        tools = self.tool_manager.register_toolkit(instance)
+        self._capture_knowledge_toolkit(instance)
+        return [tool.name for tool in tools]
+
+    async def _register_dataset_manager(self, spec: ToolkitSpec, params: dict[str, Any]) -> list[str]:
+        """Build (or reuse) the bot's DatasetManager and replay its datasources."""
+        registered: list[str] = []
+        datasources = params.pop("datasources", [])
+        existing = getattr(self, "_dataset_manager", None)
+        if isinstance(existing, DatasetManager):
+            dataset_manager = existing
+        else:
+            filtered = self._filter_ctor_params(spec.slug, DatasetManager.__init__, params)
+            dataset_manager = self.tool_manager.build_toolkit(DatasetManager, spec.slug, filtered)
+            tools = self.tool_manager.register_toolkit(dataset_manager)
+            self._capture_knowledge_toolkit(dataset_manager)
+            self._dataset_manager = dataset_manager
+            registered.extend(tool.name for tool in tools)
+        await dataset_manager.replay_datasources(datasources)
+        return registered
+
+    async def _register_mcp_spec(
+        self,
+        mspec: AgentMCPServerSpec,
+        policy: "TenantToolingPolicy | None",
+        subject: "ToolingSubject | None",
+        owner: str | None,
+    ) -> list[str]:
+        """Pre-check, hydrate, re-check the final kwargs, connect one MCP server spec."""
+        if policy is not None:
+            policy.precheck_mcp(mspec, subject=subject, owner=owner)
+        kwargs = await hydrate_mcp(mspec)
+        if policy is not None:
+            kwargs = policy.resolve_mcp(kwargs, subject=subject)
+        config = MCPServerConfig(**kwargs)
+        if hasattr(self, "add_mcp_server"):
+            return list(await self.add_mcp_server(config))
+        return []
 
     def _capture_knowledge_toolkit(self, toolkit: Any) -> None:
         """Capture PageIndex / GraphIndex / LLMWiki toolkit instances on the bot.

@@ -7,11 +7,15 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from parrot_pipelines.planogram.contracts import APPEARANCE_VALUES
 
 logger = logging.getLogger(__name__)
 
-RuleKind = Literal["illumination", "text_requirements", "visual_features", "zone_present", "fact_tag_present"]
+RuleKind = Literal[
+    "illumination", "text_requirements", "visual_features", "zone_present", "fact_tag_present", "appearance"
+]
 ZoneKind = Literal[
     "header",
     "backlit",
@@ -35,6 +39,7 @@ _DESCRIPTOR_KEYS: Tuple[str, ...] = (
     "aliases",
     "price",
     "attributes",
+    "sku",
 )
 
 
@@ -42,10 +47,37 @@ class SlotsDefinitionError(ValueError):
     """Invalid slots definition or rule bindings (fail fast at construction time)."""
 
 
+REPORTING_META_KEY = "reporting"
+
+
+class ReportingPolicy(BaseModel):
+    """Control product labels and optional slot-presence reporting."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_label: Literal["display_name", "product"] = "display_name"
+    slot_presence: bool = False
+    misplaced_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+
+
+class CompletenessPolicy(BaseModel):
+    """Minimum resolved-facing fractions for a COMPLETE assessment (1.0 = every facing resolved).
+
+    ``min_coverage`` gates the global ``assessment_status``; ``min_shelf_coverage`` gates each shelf's
+    ``ComplianceResult.assessment``. Tolerance only changes completeness, never credits or scores.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_shelf_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class Descriptors(BaseModel):
     """Per-position product description. All optional; ``price`` is never required."""
 
     display_name: Optional[str] = None
+    sku: Optional[str] = None
     family: Optional[str] = None
     xl: Optional[bool] = None
     colors: List[str] = Field(default_factory=list)
@@ -54,6 +86,19 @@ class Descriptors(BaseModel):
     aliases: List[str] = Field(default_factory=list)
     price: Optional[float] = None
     attributes: Dict[str, AttributeValue] = Field(default_factory=dict)
+
+    @field_validator("sku", mode="before")
+    @classmethod
+    def _sku_to_str(cls, value: Any) -> Optional[str]:
+        """Normalize integer/integral-float/string SKUs; treat absent or blank values as missing."""
+        if value is None:
+            return None
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise ValueError("sku must be an integer or string")
+        sku = str(value).strip()
+        return sku or None
 
     @model_validator(mode="after")
     def _no_typed_collision(self) -> "Descriptors":
@@ -103,6 +148,9 @@ class ShelfDefinition(BaseModel):
     shelf_id: str
     shelf_number: int
     level: Optional[str] = None
+    #: False: the shelf must hold its products, in any left-to-right order (a product found on the shelf
+    #: is a match wherever it stands).
+    ordered: bool = True
     facings: List[FacingDefinition] = Field(default_factory=list)
 
 
@@ -133,9 +181,50 @@ class SlotsDefinition(BaseModel):
     shelves: List[ShelfDefinition] = Field(default_factory=list)
     zones: List[ZoneDefinition] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _check_reporting_meta(self) -> "SlotsDefinition":
+        """Validate a partial reporting object using normal Pydantic error handling.
+
+        Direct construction raises a pydantic ``ValidationError``; the definition loaders are the
+        boundary that converts it to ``SlotsDefinitionError``.
+        """
+        if REPORTING_META_KEY in self.meta:
+            ReportingPolicy.model_validate(self.meta[REPORTING_META_KEY])
+        return self
+
     def all_facings(self) -> List[FacingDefinition]:
         """Facings in shelf order, then (slot, facing_index)."""
         return [f for shelf in self.shelves for f in shelf.facings]
+
+
+def effective_reporting(layout: Optional[Any], definition: Optional[SlotsDefinition]) -> ReportingPolicy:
+    """Merge default/layout reporting with explicitly provided definition overrides.
+
+    Args:
+        layout: Optional layout-like object exposing a validated ``reporting`` policy.
+        definition: Optional slots definition whose metadata may provide partial overrides.
+
+    Returns:
+        The resolved reporting policy without mutating either input.
+    """
+    policy = ReportingPolicy()
+    layout_policy = getattr(layout, "reporting", None) if layout is not None else None
+    if layout_policy is not None:
+        policy = ReportingPolicy.model_validate(layout_policy)
+
+    reporting = None
+    if definition is not None and REPORTING_META_KEY in definition.meta:
+        reporting = definition.meta[REPORTING_META_KEY]
+        resolved = policy.model_dump()
+        resolved.update(reporting)
+        policy = ReportingPolicy.model_validate(resolved)
+
+    logger.debug(
+        "reporting policy resolved: layout=%s definition_override=%s",
+        layout_policy is not None,
+        reporting is not None,
+    )
+    return policy
 
 
 def _normalise_page1(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -359,6 +448,7 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
         SlotsDefinitionError: malformed binding, duplicate ``rule_id``, dangling ``target_id``, ambiguous
             ``target_id`` (present in more than one of facing / zone / shelf namespaces), a
             ``fact_tag_present`` rule that does not target a facing, a mandatory ``fact_tag_present`` rule,
+            an ``appearance`` rule that targets a facing or has an unknown attribute or value,
             a shelf with no facings that ends up with no mandatory bound rule, or a required zone without a
             mandatory ``zone_present`` binding targeting that zone.
     """
@@ -401,6 +491,54 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
             raise SlotsDefinitionError(
                 f"rule {binding.rule_id}: fact_tag_present is informative and cannot be mandatory"
             )
+
+    for binding in bindings:
+        if binding.kind != "appearance":
+            continue
+        if binding.target_id in namespaces["facing"]:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: appearance must target a zone or shelf")
+        if not binding.params:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: appearance needs at least one attribute")
+        for attribute, expected in binding.params.items():
+            if attribute not in APPEARANCE_VALUES:
+                allowed_attributes = ", ".join(sorted(APPEARANCE_VALUES))
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: unknown appearance attribute {attribute!r}; "
+                    f"expected one of {allowed_attributes}"
+                )
+            expected_values = expected if isinstance(expected, list) else [expected]
+            if not expected_values:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: appearance attribute {attribute!r} has no expected values"
+                )
+            invalid_values = [
+                value
+                for value in expected_values
+                if not isinstance(value, str) or value not in APPEARANCE_VALUES[attribute]
+            ]
+            if invalid_values:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: appearance attribute {attribute!r} has invalid value "
+                    f"{invalid_values[0]!r}"
+                )
+
+    for binding in bindings:
+        if binding.kind != "visual_features" or "checklist" not in binding.params:
+            continue
+        checklist = binding.params["checklist"]
+        if not isinstance(checklist, list) or not checklist:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist must be a non-empty list")
+        for item in checklist:
+            if not isinstance(item, dict):
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entries must be objects")
+            feature = item.get("feature")
+            if not isinstance(feature, str) or not feature.strip():
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entry needs a non-empty feature")
+            min_count = item.get("min_count", 1)
+            if isinstance(min_count, bool) or not isinstance(min_count, int) or min_count < 1:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: checklist feature {feature!r} needs an integer min_count >= 1"
+                )
 
     mandatory_targets = {b.target_id for b in bindings if b.mandatory}
     for shelf in definition.shelves:

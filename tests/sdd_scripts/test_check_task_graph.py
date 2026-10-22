@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.sdd.check_task_graph import check_graph, main, module_of, parse_declared_files
+from scripts.sdd.check_task_graph import _load_contract, check_graph, main, module_of, parse_declared_files
 
 _TASK = """# {tid}: demo
 
@@ -62,6 +62,19 @@ def _with_validation(tmp_path: Path, commands: list[str], required: bool, files:
 
 def _codes(report) -> list[str]:
     return sorted(f.code for f in report.findings)
+
+
+def _test_contract_header(tests: list[str]) -> dict:
+    """Build an index header with a valid cached test contract."""
+    contract = _load_contract()
+    normalized = contract.parse_spec_contract(
+        "### Validation Contract\n\n" + "tests:\n" + "\n".join(f"- {test}" for test in tests) + "\nmarkers: none\n"
+    )
+    assert normalized is not None
+    return {
+        "parallel_semantics": "exclusive",
+        "test_contract": contract.contract_to_header(normalized),
+    }
 
 
 def test_parse_declared_files_marks_create():
@@ -155,6 +168,30 @@ def test_missing_dependency_and_legacy_semantics_warned(tmp_path):
     assert _codes(report) == ["legacy-semantics", "possible-missing-dependency"]
 
 
+def test_missing_dependency_suppressed_when_notes_name_the_creator(tmp_path):
+    """A parallelism_notes that names the creating task argues the non-edge (issue 56ba2e9689cd)."""
+    tasks = [
+        {"id": "TASK-1", "files": {"pkg/models.py": "CREATE"}, "validation": _self_validation("TASK-1")},
+        {
+            "id": "TASK-2",
+            "files": {"pkg/api.py": "CREATE"},
+            "contract": "uses `pkg/models.py`",
+            "notes": "mentions pkg/models.py in prose only, so no edge to TASK-1",
+            "validation": _self_validation("TASK-2"),
+        },
+        {
+            "id": "TASK-3",
+            "files": {"pkg/cli.py": "CREATE"},
+            "contract": "uses `pkg/models.py`",
+            "notes": "no edge to TASK-10 (a different task)",
+            "validation": _self_validation("TASK-3"),
+        },
+    ]
+    report = check_graph(_repo(tmp_path, tasks), tmp_path)
+    missing = [f for f in report.findings if f.code == "possible-missing-dependency"]
+    assert [f.tasks for f in missing] == [["TASK-3", "TASK-1"]]
+
+
 def test_missing_validation_commands_error_when_required(tmp_path):
     index = _with_validation(tmp_path, [], required=True)
     report = check_graph(index, tmp_path)
@@ -227,3 +264,117 @@ def test_declared_or_existing_file_passes(tmp_path):
     }
     assert not (contract_codes & set(_codes(report)))
     assert main([str(index), "--root", str(tmp_path)]) == 0
+
+
+def test_test_contract_findings(tmp_path):
+    """A cached contract reports malformed, missing, real_llm, and uncovered operands."""
+    task_test = "tests/task_test.py"
+    missing = "tests/missing.py"
+    real_llm = "tests/real_llm/test_live.py"
+    (tmp_path / task_test).parent.mkdir()
+    (tmp_path / task_test).write_text("def test_task(): pass\n")
+    index = _repo(
+        tmp_path,
+        [
+            {
+                "id": "TASK-1",
+                "files": {"tests/declared.py": "CREATE"},
+                "validation": [f"pytest {task_test} -q"],
+            }
+        ],
+        header=_test_contract_header([missing, real_llm, "tests/declared.py"]),
+    )
+    findings = {finding.code: finding for finding in check_graph(index, tmp_path).findings}
+    assert findings["test-contract-operand-missing"].level == "error"
+    assert findings["test-contract-real-llm"].level == "error"
+    assert findings["test-contract-task-tests-uncovered"].level == "warning"
+    assert "tests/declared.py" not in findings["test-contract-operand-missing"].message
+
+    malformed = json.loads(index.read_text())
+    malformed["test_contract"] = {"schema": 1}
+    index.write_text(json.dumps(malformed))
+    malformed_findings = check_graph(index, tmp_path).findings
+    assert [(finding.level, finding.code) for finding in malformed_findings] == [("error", "test-contract-malformed")]
+
+
+def test_legacy_index_has_no_test_contract_findings(tmp_path):
+    """Indexes without a cached test contract retain their existing behavior."""
+    report = check_graph(
+        _repo(
+            tmp_path,
+            [{"id": "TASK-1", "files": {}, "validation": _self_validation("TASK-1")}],
+        ),
+        tmp_path,
+    )
+    assert not [finding for finding in report.findings if finding.code.startswith("test-contract-")]
+
+
+def _runner_header(runners: list[dict]) -> dict:
+    """Index header carrying a raw schema-2 runner payload (digest irrelevant to runner-level findings)."""
+    return {
+        "parallel_semantics": "exclusive",
+        "test_contract": {"schema": 2, "runners": runners, "digest": "x"},
+    }
+
+
+def _runner(kind: str, targets: list[str], settings: dict | None = None, tiers: list[str] | None = None) -> dict:
+    return {"kind": kind, "targets": targets, "settings": settings or {}, "tiers": tiers or ["task"]}
+
+
+def _contract_codes(tmp_path: Path, header: dict, validation: list[str] | None = None) -> dict:
+    task = {"id": "TASK-1", "files": {}, "validation": validation or []}
+    index = _repo(tmp_path, [task], header=header)
+    return {f.code: f for f in check_graph(index, tmp_path).findings}
+
+
+def test_unknown_runner_kind_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("jest", ["a.test.ts"])]))
+    assert found["test-contract-unknown-runner"].level == "error"
+    assert "test-contract-malformed" not in found
+
+
+def test_forbidden_tier_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("parrot-e2e", ["plan.md"], tiers=["task"])]))
+    assert found["test-contract-tier-forbidden"].level == "error"
+
+
+def test_invalid_runner_settings_is_error(tmp_path):
+    found = _contract_codes(tmp_path, _runner_header([_runner("cargo", [], settings={"crate": "crates/nowhere"})]))
+    assert found["test-contract-settings-invalid"].level == "error"
+
+
+def test_invalid_registry_toml_is_settings_error(tmp_path):
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot/test_runners.toml").write_text("[runners.pytest]\ntiers = ['bogus']\n")
+    found = _contract_codes(tmp_path, _test_contract_header(["tests/x.py"]))
+    assert found["test-contract-settings-invalid"].level == "error"
+
+
+def test_unimportable_extension_is_error(tmp_path):
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot/test_runners.toml").write_text('[extensions]\nzig = "no_such_module_xyz:Adapter"\n')
+    found = _contract_codes(tmp_path, _test_contract_header(["tests/x.py"]))
+    assert found["test-contract-extension-invalid"].level == "error"
+
+
+def test_unrecognised_validation_command_is_warning(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/x.py").write_text("def test_x(): pass\n")
+    found = _contract_codes(
+        tmp_path, _test_contract_header(["tests/x.py"]), validation=["make check", "pytest tests/x.py"]
+    )
+    assert found["validation-command-unrecognised"].level == "warning"
+    assert "test-contract-task-tests-uncovered" not in found
+
+
+def test_feat699_index_lints_clean_of_contract_errors():
+    root = Path(__file__).resolve().parents[2]
+    index = root / "sdd/tasks/index/tests-optimization-sdd-flow.json"
+    if not index.is_file():
+        import pytest
+
+        pytest.skip("FEAT-699 index not present")
+    errors = [
+        f for f in check_graph(index, root).findings if f.code.startswith("test-contract-") and f.level == "error"
+    ]
+    assert errors == []

@@ -15,6 +15,12 @@ from parrot.knowledge.wiki.cli import wiki
 from parrot.knowledge.wiki.project import load_project_config
 
 
+@pytest.fixture(autouse=True)
+def _set_arango_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolve_arango_params requires ARANGODB_HOST since FEAT-540."""
+    monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A small fake repository."""
@@ -108,8 +114,8 @@ class TestBuildBackendChoice:
         ):
             result = _build_arangodb(runner, repo, "--no-graph", "--no-export")
         assert result.exit_code == 0, result.output
-        mock_arango_driver._connection.create_view.assert_awaited_once()
-        assert mock_arango_driver.create_collection.await_count == 5
+        assert mock_arango_driver._connection.create_view.await_count == 2  # pages + symbols views
+        assert mock_arango_driver.create_collection.await_count == 6
 
     def test_sqlite_backend_still_works(self, runner, repo):
         result = runner.invoke(

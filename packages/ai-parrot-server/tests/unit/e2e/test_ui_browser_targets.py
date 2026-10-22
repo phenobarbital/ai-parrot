@@ -575,12 +575,15 @@ async def test_ui_prepare_raises_prerequisite_error_when_ui_dir_missing(
 
 
 async def test_ui_prepare_raises_prerequisite_error_when_node_modules_missing_real_state(
-    real_worktree: Path,
+    real_worktree: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Real repository state on this host: the admin UI's own `node_modules`
     is not installed in this worktree (confirmed directly)."""
     if _UI_NODE_MODULES_INSTALLED:
         pytest.skip("packages/ai-parrot-server/ui/node_modules IS installed here; covered by the mocked test")
+    # Only node_modules is real host state here; the node/pnpm binaries are
+    # checked first and are absent on the CI runner, so stub their lookup.
+    monkeypatch.setattr("parrot.e2e.targets.ui.shutil.which", lambda _name: "/usr/bin/fake")
     adapter = build_ui_adapter()
     config = TargetConfig(kind="ui", options={"backend_url": "http://127.0.0.1:5000"})
 

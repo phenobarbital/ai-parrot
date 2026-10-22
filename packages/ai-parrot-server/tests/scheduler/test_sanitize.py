@@ -11,6 +11,7 @@ which flowed unvalidated into ``RedisJobStore(port='')``.  redis-py builds
 connections lazily, so ``int(port)`` only ran on the first real command —
 inside APScheduler's job-processing loop, once per tick, forever.
 """
+
 from datetime import UTC, datetime
 
 import pytest
@@ -18,8 +19,10 @@ from parrot.scheduler.sanitize import (
     SchedulerConfigError,
     clean_bool,
     clean_int,
+    clean_method_name,
+    clean_misfire_grace_time,
     clean_str,
-    normalize_jobstore_alias,
+    normalize_backend,
     normalize_schedule_type,
     sanitize_redis_settings,
     sanitize_schedule_config,
@@ -170,37 +173,51 @@ class TestNormalizeScheduleType:
 
 
 # ---------------------------------------------------------------------------
-# normalize_jobstore_alias
+# Backend and job input sanitization
 # ---------------------------------------------------------------------------
-class TestNormalizeJobstoreAlias:
-    def test_blank_becomes_default(self):
-        assert normalize_jobstore_alias("", available={"default"}) == "default"
-        assert normalize_jobstore_alias(None, available={"default"}) == "default"
+class TestNormalizeBackend:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [(None, "db"), ("", "db"), (" DB ", "db"), ("redis", "redis")],
+    )
+    def test_normalize_backend_values(self, value, expected):
+        assert normalize_backend(value, redis_available=True) == expected
 
-    def test_trims_and_lowercases(self):
-        assert normalize_jobstore_alias(" REDIS ", available={"default", "redis"}) == "redis"
+    def test_strict_redis_requires_jobstore(self):
+        with pytest.raises(SchedulerConfigError, match="Redis backend"):
+            normalize_backend("redis", redis_available=False, strict=True)
 
-    def test_unregistered_alias_falls_back_to_default(self):
-        assert normalize_jobstore_alias("redis", available={"default"}) == "default"
+    def test_unknown_backend_raises(self):
+        with pytest.raises(SchedulerConfigError, match="memory"):
+            normalize_backend("memory", redis_available=True)
 
-    def test_registered_alias_is_kept(self):
-        assert normalize_jobstore_alias("redis", available={"default", "redis"}) == "redis"
+    def test_non_strict_unavailable_redis_falls_back_to_db(self):
+        assert normalize_backend("redis", redis_available=False) == "db"
 
-    def test_available_none_skips_registration_check(self):
-        assert normalize_jobstore_alias(" redis ", available=None) == "redis"
 
-    def test_strict_raises_for_unregistered_alias(self):
-        """An explicit request must not be silently downgraded to memory."""
-        with pytest.raises(SchedulerConfigError, match="redis"):
-            normalize_jobstore_alias("redis", available={"default"}, strict=True)
+class TestCleanMisfireGraceTime:
+    @pytest.mark.parametrize("value,expected", [(None, None), ("null", None), ("600", 600), (0, 0)])
+    def test_accepts_null_or_non_negative_integer(self, value, expected):
+        assert clean_misfire_grace_time(value) == expected
 
-    def test_strict_allows_registered_alias(self):
-        assert normalize_jobstore_alias(
-            "redis", available={"default", "redis"}, strict=True
-        ) == "redis"
+    @pytest.mark.parametrize("value", [-1, True, 1.5, "1.5", "invalid"])
+    def test_rejects_invalid_values(self, value):
+        with pytest.raises(SchedulerConfigError, match="misfire_grace_time"):
+            clean_misfire_grace_time(value)
 
-    def test_strict_blank_still_becomes_default(self):
-        assert normalize_jobstore_alias("", available={"default"}, strict=True) == "default"
+
+class TestCleanMethodName:
+    @pytest.mark.parametrize("value", ["run", "  run  ", "run_2"])
+    def test_accepts_public_identifier(self, value):
+        assert clean_method_name(value) == value.strip()
+
+    @pytest.mark.parametrize("value", ["_private", "__init__", "bad-name"])
+    def test_rejects_private_or_invalid_identifier(self, value):
+        with pytest.raises(SchedulerConfigError, match="public identifier"):
+            clean_method_name(value)
+
+    def test_null_is_none(self):
+        assert clean_method_name(None) is None
 
 
 # ---------------------------------------------------------------------------

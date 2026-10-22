@@ -2,7 +2,7 @@
 id: F016
 query_id: Q001
 type: wiki_query
-intent: Orient via the knowledge graph: sdd-spec location and Codex adversarial plumbing
+intent: "Orient via the knowledge graph: sdd-spec location and Codex adversarial plumbing"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 2000
 parent_id: null

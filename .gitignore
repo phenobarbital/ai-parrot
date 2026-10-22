@@ -11,6 +11,7 @@ __pycache__/
 etc/config/
 static/*
 plugins/*
+planogram_backups/*
 
 # data from examples:
 /outputs/**/*.html
@@ -33,6 +34,9 @@ examples/**/*.html
 # FEAT-610 A2UI linked-surfaces E2E example (server + static renderer) ships with the repo.
 !examples/a2ui/**/*.py
 !examples/a2ui/**/*.html
+# The finance twin of that example (definition-only surface, DatasetManager-backed check) ships too.
+!examples/a2ui_finance/**/*.py
+!examples/a2ui_finance/**/*.html
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
@@ -290,7 +294,13 @@ plugins/agents/
 # restored 2026-06-18 after FEAT-240 (odoo-pageindex-documentation-agent) landed.
 # Odoo agent files committed during the feature stay tracked (gitignore does not
 # untrack); only NEW agent files are ignored again.
-/agents/
+/agents/*
+!/agents/fireflies_insights/
+/agents/fireflies_insights/*
+!/agents/fireflies_insights/skills/
+!/agents/fireflies_insights/skills/**
+!/agents/fireflies_insights/templates/
+!/agents/fireflies_insights/templates/**
 # FEAT-240: generated Odoo doc PageIndex trees are large (tens of MB) and
 # regenerable via scripts/odoo_agent/build_rst_pageindex.py — never commit them.
 # Keep the directory placeholder; ignore the generated trees + content stores.
@@ -413,6 +423,8 @@ sdd/state/.design_research/
 sdd/state/e2e/
 # FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
 sdd/state/.intake/
+# FEAT-698: /sdd-brief draft staging; the committed brief lives only inside the worktree
+sdd/state/.brief/
 
 # Local Claude Code config: machine-specific settings and local-only skills
 .claude/settings.json

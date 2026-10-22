@@ -85,6 +85,33 @@ def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
     assert boot._SUBSCRIBER is None  # lightweight path not used
 
 
+def test_otel_backend_passes_env_switches_to_setup_telemetry(monkeypatch) -> None:
+    """FEAT-705 AC6: env switches reach setup_telemetry through auto-boot."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_BACKEND", "otel")
+    monkeypatch.setenv("OBSERVABILITY_TRACES", "false")
+    monkeypatch.setenv("OBSERVABILITY_METRICS", "true")
+    monkeypatch.setenv("OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS", "5000")
+
+    called = {}
+
+    def _fake_setup(config):
+        called["config"] = config
+        return None
+
+    import parrot.observability.setup as setup_mod
+
+    monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
+
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    config = called["config"]
+    assert config.enable_traces is False
+    assert config.enable_metrics is True
+    assert config.metric_export_interval_ms == 5000
+
+
 def test_openlit_flag_no_longer_escalates_to_otel(monkeypatch) -> None:
     """FEAT-462: OBSERVABILITY_OPENLIT=true is a deprecated no-op — it no
     longer escalates the backend to otel. With backend otherwise unset, the

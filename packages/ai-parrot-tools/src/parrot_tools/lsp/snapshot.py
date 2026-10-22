@@ -165,7 +165,50 @@ async def _build_manifest(repo_root: Path) -> tuple[set[str], set[str]]:
 
     manifest = {path for path in candidates if _is_manifest_relevant(path)}
     deleted_relevant = {path for path in deleted if _is_manifest_relevant(path)}
+    _follow_extends_chain(repo_root, manifest)
     return manifest, deleted_relevant
+
+
+_MAX_EXTENDS_DEPTH = 5
+
+
+def _follow_extends_chain(repo_root: Path, manifest: set[str]) -> None:
+    """Add files referenced by ``pyrightconfig.json`` ``extends`` keys to ``manifest``.
+
+    Follows the chain up to a depth of 5. JSON errors, unreadable or missing
+    files, and targets outside ``repo_root`` are silently skipped.
+    """
+    try:
+        root = repo_root.resolve()
+    except OSError:
+        return
+    seen: set[str] = set()
+    frontier = [p for p in manifest if PurePosixPath(p).name == "pyrightconfig.json"]
+    for _ in range(_MAX_EXTENDS_DEPTH):
+        next_frontier: list[str] = []
+        for rel in frontier:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            try:
+                data = json.loads((root / rel).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            extends = data.get("extends") if isinstance(data, dict) else None
+            if not isinstance(extends, str) or not extends:
+                continue
+            try:
+                target = ((root / rel).parent / extends).resolve()
+                target_rel = target.relative_to(root).as_posix()
+            except (OSError, ValueError):
+                continue
+            if not target.is_file():
+                continue
+            manifest.add(target_rel)
+            next_frontier.append(target_rel)
+        frontier = next_frontier
+        if not frontier:
+            break
 
 
 def _is_manifest_relevant(rel_path: str) -> bool:

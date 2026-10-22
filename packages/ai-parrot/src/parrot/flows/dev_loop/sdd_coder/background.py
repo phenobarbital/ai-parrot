@@ -33,21 +33,33 @@ import os
 import re
 import shlex
 import signal
+import subprocess
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus, EvidenceRef
-from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
+from parrot.flows.dev_loop.test_scope import baseline, green_cache
+from parrot.flows.dev_loop.test_scope import report as test_report
+from parrot.flows.dev_loop.test_scope.contract import (
+    contract_from_index_header,
+    load_index_header,
+    parse_validation_commands,
+)
+from parrot.flows.dev_loop.test_scope.datatypes import BaselineVerdict, RunReport, ValidationVerdict
+from parrot.flows.dev_loop.test_scope.runners.registry import RunnerRegistry, load_registry
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
+from parrot.flows.dev_loop.test_scope.verdict import build_verdict, verdict_from_json, verdict_to_json
+from parrot.flows.dev_loop.task_scheduler import iter_index_files
 from parrot.flows.dev_loop.worktree_environment import protected_argv
 
 if TYPE_CHECKING:  # never imported at runtime -- annotations only (deferred by `__future__`).
-    from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+    from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +76,8 @@ _EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 #: Same closed shape as `optimization_models._TASK_ID_PATTERN` (not imported --
 #: that module's validators are private to its own field declarations).
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
+#: FEAT-695: canonical feature id shape for test-result records.
+_FEATURE_ID_RE = re.compile(r"^(?:FEAT-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9._-]*)$")
 
 #: Spec R8: `coder_run_validation(..., timeout_seconds)` is mandatory, 1..7200.
 _MIN_TIMEOUT_SECONDS = 1
@@ -120,6 +134,12 @@ class BackgroundBudgetExceededError(TimeoutError):
     A timeout here is an explicit error, never a terminal state: the caller
     must not interpret it as `finished` or `unknown`.
     """
+
+
+class _VerdictArtifact(BaseModel):
+    """Pydantic envelope accepted by ``ExecutionEvidenceStore.put_artifact``."""
+
+    payload: dict[str, object]
 
 
 def _read_bounded_tail(path: Path, tail_bytes: int) -> Tuple[Optional[str], bool]:
@@ -451,20 +471,14 @@ class ValidationSupervisor:
     module's own docstring) and the in-process claim is released so a later
     retry under the SAME `request_id` is not permanently locked out.
 
-    Known, bounded scope decisions (flagged for review, not silently
-    invented): `task_ids` is validated for shape (`TASK-<1-5 digits>`,
-    non-empty) and folded into the payload hash, but --  since this task's
-    Codebase Contract closes the new-import list to `protected_argv` and
-    `plan_tests` -- it is never used to read a task's own declared
-    `Validation Commands` from disk; the selection is the selector's own
-    mirror/impact/core coverage over `changed_files`, exactly like
-    `scripts/sdd/select_tests.py` without `--task-file`. `changed_files` is
-    imported from the SAME already-verified `test_scope.select` module as
-    `plan_tests` (verified directly by reading that module, not guessed) --
-    without it, `plan_tests` cannot be called meaningfully at all. There is
-    no `base_ref` parameter on `start()`, so the diff base is the same fixed
-    `origin/dev` default `select_tests.py`'s own CLI already uses; a
-    hotfix's `origin/main` base is out of this task's scope.
+    Known, bounded scope decisions: `task_ids` is validated for shape
+    (`TASK-<1-5 digits>`, non-empty) and folded into the payload hash. When
+    the engine supplies `index_path`, the supervisor reads those tasks'
+    declared `Validation Commands` plus the index `test_contract`; legacy
+    callers without an index retain the bounded fallback selector. The diff
+    base remains server-derived and is deliberately excluded from the
+    caller payload hash. Baseline comparison uses the index header's
+    `base_branch`, falling back to `origin/dev` when unavailable.
     """
 
     def __init__(self, *, registry: BackgroundRegistry, store: ExecutionEvidenceStore) -> None:
@@ -483,6 +497,7 @@ class ValidationSupervisor:
         # this task's own test suite) can await it deterministically instead
         # of polling `coder_bg_status` in a tight loop.
         self._background_tasks: Dict[Tuple[str, str], "asyncio.Task[None]"] = {}
+        self._verdict_refs: Dict[Tuple[str, str], EvidenceRef] = {}
 
     async def start(
         self,
@@ -491,10 +506,12 @@ class ValidationSupervisor:
         worktree: Path,
         execution_id: str,
         task_ids: list[str],
-        tier: Literal["merge", "feature"],
+        tier: Literal["task", "merge", "feature"],
         timeout_seconds: int,
         request_id: str,
         base_ref: Optional[str] = None,
+        index_path: Optional[Path] = None,
+        attempt_uid: Optional[str] = None,
     ) -> BackgroundRegistration:
         """Admit only a declared, protected, idempotent selection; never await the suite.
 
@@ -515,6 +532,10 @@ class ValidationSupervisor:
         `request_id`, same declared payload) into a `BackgroundConflictError`
         as soon as another task merged in between.
 
+        `index_path` is likewise resolved by the engine from the feature
+        context and is not caller-declared payload, so it is deliberately
+        excluded from `_payload_hash`.
+
         Raises:
             ValueError: a malformed request (bad ids, tier, timeout, paths).
             BackgroundConflictError: `request_id` reused with a different payload.
@@ -526,8 +547,13 @@ class ValidationSupervisor:
             raise ValueError("feature must be a non-empty string")
         if not worktree.is_absolute():
             raise ValueError(f"worktree must be an absolute path, got {worktree!r}")
-        if tier not in ("merge", "feature"):
-            raise ValueError(f"tier must be 'merge' or 'feature', got {tier!r}")
+        if tier not in ("task", "merge", "feature"):
+            raise ValueError(f"tier must be 'task', 'merge' or 'feature', got {tier!r}")
+        if tier == "task":
+            if len(task_ids) != 1:
+                raise ValueError("tier='task' admits exactly one task id")
+            if not base_ref or not attempt_uid:
+                raise ValueError("tier='task' requires an explicit base_ref (fork SHA) and attempt_uid")
         if not (_MIN_TIMEOUT_SECONDS <= timeout_seconds <= _MAX_TIMEOUT_SECONDS):
             raise ValueError(
                 f"timeout_seconds must be within {_MIN_TIMEOUT_SECONDS}..{_MAX_TIMEOUT_SECONDS},"
@@ -545,7 +571,12 @@ class ValidationSupervisor:
 
         handle = request_id
         launch_id = self._payload_hash(
-            feature=feature, worktree=worktree, task_ids=task_ids, tier=tier, timeout_seconds=timeout_seconds
+            feature=feature,
+            worktree=worktree,
+            task_ids=task_ids,
+            tier=tier,
+            timeout_seconds=timeout_seconds,
+            attempt_uid=attempt_uid,
         )
         registration = BackgroundRegistration(
             handle=handle,
@@ -555,7 +586,7 @@ class ValidationSupervisor:
             kind="validation",
             authority="supervisor",
             worktree=str(worktree),
-            backend="pytest-subprocess",
+            backend="validation-subprocess",
             started_at=_utcnow(),
         )
         # Idempotent by construction: a `request_id` replayed with the SAME
@@ -571,31 +602,67 @@ class ValidationSupervisor:
             return registration
 
         try:
-            plan = await self._plan_selection(worktree=worktree, tier=tier, base_ref=base_ref)
+            feature_id = await asyncio.to_thread(self._resolve_feature_id, worktree, feature)
+            runner_registry = await asyncio.to_thread(load_registry, worktree)
+            plan = await self._plan_selection(
+                worktree=worktree,
+                tier=tier,
+                base_ref=base_ref,
+                index_path=index_path,
+                task_ids=task_ids,
+                feature_id=feature_id,
+                registry=runner_registry,
+            )
+            baseline_ref, contract_digest = await asyncio.to_thread(self._index_runtime_metadata, index_path)
+            namespace = await asyncio.to_thread(
+                green_cache.cache_namespace,
+                feature_id=feature_id,
+                base_ref=baseline_ref,
+                contract_digest=contract_digest,
+            )
             log_path = self._log_path(execution_id, handle)
             await asyncio.to_thread(log_path.parent.mkdir, parents=True, exist_ok=True)
 
+            if plan.cached:
+                head_sha = await asyncio.to_thread(self._head_sha, worktree)
+                for task_id in task_ids:
+                    await asyncio.to_thread(
+                        test_report.append_cached,
+                        feature_id,
+                        task_id,
+                        plan.cached,
+                        head_sha=head_sha,
+                        base_ref=baseline_ref,
+                        tier=tier,
+                        source="coder_run_validation",
+                    )
+
             if not plan.invocations:
-                await asyncio.to_thread(log_path.write_bytes, b"")
                 await asyncio.to_thread(
                     self._append_log,
                     log_path,
                     self._selection_header(plan) + "# no applicable pytest invocations for this selection\n",
                 )
-                await self.registry._record_transition(
-                    execution_id, handle, state="finished", outcome="completed", exit_code=0, log_path=log_path
+                await self._persist_verdict_and_settle(
+                    execution_id=execution_id,
+                    handle=handle,
+                    log_path=log_path,
+                    verdict=build_verdict(tier=tier, reports=(), cached=plan.cached, notes=plan.notes),
+                    outcome="completed",
+                    exit_code=0,
                 )
                 return registration
 
             first, *rest = plan.invocations
             await asyncio.to_thread(self._append_log, log_path, self._selection_header(plan))
-            sandboxed_argv = protected_argv(worktree, list(first.argv))
+            first, first_argv, first_report = self._prepare_invocation(feature_id, task_ids[0], first, 0)
+            sandboxed_argv = protected_argv(worktree, first_argv)
             await asyncio.to_thread(
                 self._append_log, log_path, f"# $ {shlex.join(first.argv)} (distribution={first.distribution})\n"
             )
             process = await asyncio.create_subprocess_exec(
                 *sandboxed_argv,
-                cwd=worktree,
+                cwd=worktree / first.cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,  # own process group -- a deadline can kill the whole owned tree.
@@ -613,6 +680,7 @@ class ValidationSupervisor:
             raise
 
         deadline = time.monotonic() + timeout_seconds
+        first_deadline = min(deadline, time.monotonic() + runner_registry.timeout_for(first.runner))
         task = asyncio.ensure_future(
             self._supervise(
                 execution_id=execution_id,
@@ -620,14 +688,52 @@ class ValidationSupervisor:
                 process=process,
                 log_path=log_path,
                 deadline=deadline,
+                invocation_deadline=first_deadline,
                 remaining_invocations=list(rest),
                 first_invocation=first,
                 plan=plan,
                 worktree=worktree,
+                feature_id=feature_id,
+                task_ids=list(task_ids),
+                tier=tier,
+                base_ref=baseline_ref,
+                cache_namespace=namespace,
+                first_report_path=first_report,
+                runner_registry=runner_registry,
             )
         )
         self._background_tasks[(execution_id, handle)] = task
         return registration
+
+    async def wait_verdict(self, execution_id: str, handle: str, timeout_s: float) -> "ValidationVerdict":
+        """Block until ``handle`` settles, then return its persisted validation verdict."""
+        await self.wait(execution_id, handle, timeout_s)
+        status = await self.registry.status(execution_id, handle, tail_bytes=_MAX_TAIL_BYTES)
+        if status.state != "finished":
+            raise asyncio.TimeoutError(f"validation handle {handle!r} did not settle within {timeout_s} seconds")
+
+        evidence_ref = self._verdict_refs.get((execution_id, handle))
+        if evidence_ref is None:
+            ref_path = self._verdict_ref_path(execution_id, handle)
+            try:
+                ref_payload = await asyncio.to_thread(json.loads, ref_path.read_text(encoding="utf-8"))
+                artifact_id = str(ref_payload["artifact_id"])
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise RuntimeError(f"validation handle {handle!r} settled without a verdict artifact") from exc
+            if not re.fullmatch(r"[0-9a-f]{64}", artifact_id):
+                raise RuntimeError(f"validation handle {handle!r} has an invalid verdict artifact id")
+        else:
+            artifact_id = evidence_ref.artifact_id
+
+        page = await self.store.read_artifact(execution_id, artifact_id, limit=16384)
+        if not page["eof"]:
+            raise RuntimeError(f"validation verdict artifact {artifact_id!r} exceeds the bounded read budget")
+        envelope = json.loads(str(page["content"]))
+        payload = envelope.get("payload") if isinstance(envelope, dict) else None
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"validation verdict artifact {artifact_id!r} has an invalid envelope")
+        verdict = verdict_from_json(payload)
+        return replace(verdict, evidence=(*verdict.evidence, artifact_id))
 
     async def wait(self, execution_id: str, handle: str, timeout_seconds: float) -> bool:
         """Block up to *timeout_seconds* for this handle's OWN settlement task, without cancelling it.
@@ -682,7 +788,15 @@ class ValidationSupervisor:
             self._claims.pop((execution_id, handle), None)
 
     @staticmethod
-    def _payload_hash(*, feature: str, worktree: Path, task_ids: list[str], tier: str, timeout_seconds: int) -> str:
+    def _payload_hash(
+        *,
+        feature: str,
+        worktree: Path,
+        task_ids: list[str],
+        tier: str,
+        timeout_seconds: int,
+        attempt_uid: Optional[str] = None,
+    ) -> str:
         """Deterministic identity for one validation request's own payload.
 
         Bound into `BackgroundRegistration.launch_id`: `BackgroundRegistry.register`
@@ -698,6 +812,7 @@ class ValidationSupervisor:
                 "task_ids": sorted(task_ids),
                 "tier": tier,
                 "timeout_seconds": timeout_seconds,
+                "attempt_uid": attempt_uid,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -705,21 +820,127 @@ class ValidationSupervisor:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     async def _plan_selection(
-        self, *, worktree: Path, tier: Literal["merge", "feature"], base_ref: Optional[str] = None
+        self,
+        *,
+        worktree: Path,
+        tier: Literal["task", "merge", "feature"],
+        base_ref: Optional[str] = None,
+        index_path: Optional[Path] = None,
+        task_ids: Sequence[str] = (),
+        feature_id: str = "",
+        registry: Optional[RunnerRegistry] = None,
     ) -> "ScopePlan":
-        """Build the tier-scoped selection from the existing selector -- never a free-form argv.
+        """Tier-scoped selection: task declarations plus spec contract; never a free-form argv.
 
-        `base_ref` defaults to `_DEFAULT_BASE_REF` (`select_tests.py`'s own CLI
-        default) whenever the caller could not resolve a narrower, merge-scoped
-        base -- the selection is then the historical cumulative one.
+        Raises:
+            ValueError: The index or its ``test_contract`` is malformed.
         """
         changed = await asyncio.to_thread(changed_files, worktree, base_ref or _DEFAULT_BASE_REF)
-        return await asyncio.to_thread(plan_tests, worktree=worktree, changed_files=changed, tier=tier)
+        declared: list[list[str]] = []
+        contract = None
+        baseline_ref = _DEFAULT_BASE_REF
+        if index_path is not None:
+            header = await asyncio.to_thread(load_index_header, index_path)
+            contract = await asyncio.to_thread(contract_from_index_header, header)
+            baseline_ref = self._base_ref_from_header(header)
+            declared = await asyncio.to_thread(self._load_declared_commands, index_path, worktree, task_ids)
+        if index_path is None:
+            return await asyncio.to_thread(
+                plan_tests, worktree=worktree, changed_files=changed, tier=tier, registry=registry
+            )
+        plan = await asyncio.to_thread(
+            plan_tests,
+            worktree=worktree,
+            changed_files=changed,
+            tier=tier,
+            declared=declared,
+            contract=contract,
+            registry=registry,
+        )
+        if tier == "merge":
+            namespace = await asyncio.to_thread(
+                green_cache.cache_namespace,
+                feature_id=feature_id,
+                base_ref=baseline_ref,
+                contract_digest=contract.digest if contract is not None else "",
+            )
+            plan = await asyncio.to_thread(
+                green_cache.filter_cached,
+                worktree,
+                plan,
+                namespace=namespace,
+                contract=contract,
+            )
+            self.logger.info(
+                "validation green cache feature=%s selected=%d cached=%d",
+                feature_id,
+                len(plan.invocations),
+                len(plan.cached),
+            )
+        return plan
+
+    @staticmethod
+    def _load_declared_commands(index_path: Path, worktree: Path, task_ids: Sequence[str]) -> list[list[str]]:
+        """Read selected task files from one per-spec index and parse their validation commands."""
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"unable to read task declarations from {index_path}") from exc
+        tasks = payload.get("tasks") if isinstance(payload, dict) else None
+        if not isinstance(tasks, list):
+            raise ValueError("index tasks must be a list")
+        by_id = {
+            item.get("id"): item.get("file")
+            for item in tasks
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("file"), str)
+        }
+        declared: list[list[str]] = []
+        for task_id in task_ids:
+            task_file = by_id.get(task_id)
+            if task_file is None:
+                raise ValueError(f"task {task_id!r} is not declared in {index_path}")
+            try:
+                task_markdown = (worktree / task_file).read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ValueError(f"unable to read task file {task_file!r} for {task_id}") from exc
+            declared.extend(parse_validation_commands(task_markdown))
+        return declared
+
+    @staticmethod
+    def _base_ref_from_header(header: dict[str, object]) -> str:
+        """Return ``origin/<base_branch>`` or the safe historical default."""
+        base_branch = header.get("base_branch")
+        if isinstance(base_branch, str) and base_branch.strip():
+            return f"origin/{base_branch.strip()}"
+        return _DEFAULT_BASE_REF
+
+    @classmethod
+    def _index_runtime_metadata(cls, index_path: Optional[Path]) -> tuple[str, str]:
+        """Return baseline ref and contract digest for cache/report wiring."""
+        if index_path is None:
+            return _DEFAULT_BASE_REF, ""
+        header = load_index_header(index_path)
+        contract = contract_from_index_header(header)
+        return cls._base_ref_from_header(header), contract.digest if contract is not None else ""
+
+    @staticmethod
+    def _head_sha(worktree: Path) -> str:
+        """Return the worktree HEAD SHA, or an empty string when unavailable."""
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, timeout=30, check=False
+        )
+        return done.stdout.strip() if done.returncode == 0 else ""
 
     def _log_path(self, execution_id: str, handle: str) -> Path:
         """Confined, opaque-named slot for this handle's supervised log (mirrors `_record_path`)."""
         digest = hashlib.sha256(handle.encode("utf-8")).hexdigest()
         return self.store.root / "executions" / execution_id / "background_logs" / f"{digest}.log"
+
+    def _verdict_ref_path(self, execution_id: str, handle: str) -> Path:
+        """Return the durable, handle-keyed link to a persisted verdict artifact."""
+        _validate_execution_id(execution_id)
+        digest = hashlib.sha256(handle.encode("utf-8")).hexdigest()
+        return self.store.root / "executions" / execution_id / "background_verdicts" / f"{digest}.json"
 
     # -- background supervision (never awaited by `start()` itself) ---------
 
@@ -731,88 +952,463 @@ class ValidationSupervisor:
         process: "asyncio.subprocess.Process",
         log_path: Path,
         deadline: float,
-        remaining_invocations: list["PytestInvocation"],
-        first_invocation: "PytestInvocation",
+        invocation_deadline: float,
+        remaining_invocations: list["Invocation"],
+        first_invocation: "Invocation",
         plan: "ScopePlan",
         worktree: Path,
+        feature_id: str = "",
+        task_ids: Optional[list[str]] = None,
+        tier: str = "merge",
+        base_ref: str = _DEFAULT_BASE_REF,
+        cache_namespace: str = "",
+        first_report_path: Optional[Path] = None,
+        runner_registry: RunnerRegistry,
     ) -> None:
-        """Drain the admitted process to its own deadline, run any remaining invocations, settle."""
-        outcome, exit_code = await self._await_one(process=process, log_path=log_path, deadline=deadline)
-        await self._record_invocation_outcome(
-            worktree=worktree, invocation=first_invocation, plan=plan, exit_code=exit_code
-        )
+        """Run every invocation with its own deadline under the overall cap, then settle."""
+        reports: list[RunReport] = []
+        baseline_verdicts: list[BaselineVerdict] = []
+        cache_candidates: list[tuple["Invocation", test_report.SuiteResult]] = []
+        invocation_records = [(first_invocation, process, first_report_path, invocation_deadline)]
+
         for invocation in remaining_invocations:
-            if outcome == "timed_out":
-                break
-            remaining_seconds = deadline - time.monotonic()
-            if remaining_seconds <= 0:
-                outcome, exit_code = "timed_out", 124
-                break
-            try:
-                sandboxed_argv = protected_argv(worktree, list(invocation.argv))
-                await asyncio.to_thread(
-                    self._append_log,
-                    log_path,
-                    f"# $ {shlex.join(invocation.argv)} (distribution={invocation.distribution})\n",
-                )
-                next_process = await asyncio.create_subprocess_exec(
-                    *sandboxed_argv,
-                    cwd=worktree,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            except Exception:
-                self.logger.exception(
-                    "validation supervisor failed to launch a chained invocation for handle=%s", handle
-                )
-                outcome, exit_code = "failed", 1
-                break
-            next_outcome, next_exit_code = await self._await_one(
-                process=next_process, log_path=log_path, deadline=deadline
-            )
-            await self._record_invocation_outcome(
-                worktree=worktree, invocation=invocation, plan=plan, exit_code=next_exit_code
-            )
-            if next_outcome == "timed_out":
-                outcome, exit_code = "timed_out", next_exit_code
-            elif next_outcome == "failed" and outcome != "timed_out":
-                outcome, exit_code = "failed", next_exit_code
+            invocation_records.append((invocation, None, None, 0.0))
 
-        await self.registry._record_transition(
-            execution_id, handle, state="finished", outcome=outcome, exit_code=exit_code, log_path=log_path
+        last_exit_code = 0
+        for ordinal, (invocation, owned_process, report_path, runner_deadline) in enumerate(invocation_records):
+            started = time.monotonic()
+            log_offset = await asyncio.to_thread(lambda: log_path.stat().st_size if log_path.exists() else 0)
+            if owned_process is None:
+                invocation, argv, report_path = self._prepare_invocation(
+                    feature_id, (task_ids or ["TASK-0"])[0], invocation, ordinal
+                )
+                if time.monotonic() >= deadline:
+                    report = await self._parse_invocation_report(
+                        registry=runner_registry,
+                        invocation=invocation,
+                        report_path=report_path,
+                        exit_code=124,
+                        duration_s=0.0,
+                        timed_out=True,
+                        stdout="",
+                    )
+                    reports.append(report)
+                    last_exit_code = 124
+                    continue
+                try:
+                    sandboxed_argv = protected_argv(worktree, argv)
+                    await asyncio.to_thread(
+                        self._append_log,
+                        log_path,
+                        f"# $ {shlex.join(invocation.argv)} (distribution={invocation.distribution})\n",
+                    )
+                    owned_process = await asyncio.create_subprocess_exec(
+                        *sandboxed_argv,
+                        cwd=worktree / invocation.cwd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                    runner_deadline = min(deadline, time.monotonic() + runner_registry.timeout_for(invocation.runner))
+                except Exception:
+                    self.logger.exception(
+                        "validation supervisor failed to launch a chained invocation for handle=%s", handle
+                    )
+                    report = await self._parse_invocation_report(
+                        registry=runner_registry,
+                        invocation=invocation,
+                        report_path=report_path,
+                        exit_code=1,
+                        duration_s=time.monotonic() - started,
+                        timed_out=False,
+                        stdout="",
+                    )
+                    reports.append(report)
+                    last_exit_code = 1
+                    continue
+
+            invocation_outcome, exit_code = await self._await_one(
+                process=owned_process, log_path=log_path, deadline=runner_deadline
+            )
+            stdout = await asyncio.to_thread(self._read_log_since, log_path, log_offset)
+            last_exit_code = exit_code
+            report = await self._parse_invocation_report(
+                registry=runner_registry,
+                invocation=invocation,
+                report_path=report_path,
+                exit_code=exit_code,
+                duration_s=time.monotonic() - started,
+                timed_out=invocation_outcome == "timed_out",
+                stdout=stdout,
+            )
+            report, invocation_baseline, suite_result = await self._record_run_report(
+                worktree=worktree,
+                feature_id=feature_id,
+                task_ids=task_ids or [],
+                invocation=invocation,
+                report=report,
+                tier=tier,
+                base_ref=base_ref,
+                deadline=deadline,
+            )
+            reports.append(report)
+            baseline_verdicts.extend(invocation_baseline)
+            if suite_result is not None:
+                cache_candidates.append((invocation, suite_result))
+
+        verdict = build_verdict(
+            tier=tier,
+            reports=reports,
+            baseline=baseline_verdicts,
+            cached=plan.cached,
+            notes=plan.notes,
+        )
+        if verdict.status != "timed_out":
+            for invocation, result in cache_candidates:
+                if invocation.runner == "pytest":
+                    await self._record_green_cache(
+                        worktree=worktree,
+                        namespace=cache_namespace,
+                        plan=plan,
+                        invocation=invocation,
+                        result=result,
+                    )
+
+        outcome: Literal["completed", "failed", "timed_out"]
+        if verdict.status == "passed":
+            outcome, last_exit_code = "completed", 0
+            if baseline_verdicts and all(item.status == "baseline_red" for item in baseline_verdicts):
+                await asyncio.to_thread(self._append_log, log_path, "# baseline: only baseline reds — gate passes\n")
+        elif verdict.status == "timed_out":
+            outcome = "timed_out"
+        else:
+            outcome = "failed"
+        await self._persist_verdict_and_settle(
+            execution_id=execution_id,
+            handle=handle,
+            log_path=log_path,
+            verdict=verdict,
+            outcome=outcome,
+            exit_code=last_exit_code,
         )
 
-    async def _record_invocation_outcome(
-        self, *, worktree: Path, invocation: "PytestInvocation", plan: "ScopePlan", exit_code: int
-    ) -> None:
-        """Record this invocation's escalation verdict in the per-worktree ledger.
+    def _prepare_invocation(
+        self, feature_id: str, task_id: str, invocation: "Invocation", ordinal: int
+    ) -> tuple["Invocation", list[str], Optional[Path]]:
+        """Attach a fresh adapter report path and return the executable argv."""
+        report_path: Optional[Path] = None
+        prepared = invocation
+        if invocation.report_path:
+            candidate = Path(invocation.report_path)
+            report_path = candidate if candidate.is_absolute() else Path(invocation.cwd) / candidate
+        elif invocation.report_format in {"junit", "json"}:
+            try:
+                suite = f"{invocation.runner}-{invocation.distribution}".replace("/", "-")
+                report_path = test_report.junit_path_for(feature_id, task_id, suite, ordinal)
+                if invocation.report_format == "json":
+                    report_path = report_path.with_suffix(".json")
+            except Exception:  # noqa: BLE001 — report setup must never alter the validation outcome
+                self.logger.warning(
+                    "could not prepare a %s report path for %s",
+                    invocation.runner,
+                    invocation.distribution,
+                    exc_info=True,
+                )
 
-        Green (exit 0) records the blobs that escalation covered; anything else
-        re-arms (`record_red_run`) — a timed-out suite proved nothing, so
-        re-running is the fail-open direction. An invocation with no escalated
-        target records nothing. Never raises: a ledger failure is logged and
-        swallowed — it degrades the NEXT selection, never THIS validation.
-        """
-        try:
-            is_core = any(t.reason == "core" for t in invocation.targets)
-            is_cap = any(t.reason == "escalated" for t in invocation.targets)
-            if not (is_core or is_cap):
-                return
-            dist = invocation.distribution
-            if exit_code != 0:
-                await asyncio.to_thread(record_red_run, worktree, [dist])
-                return
-            core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
-            impact_files = list(plan.cap_hits.get(dist, ()))
-            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
-            if not core_files and not impact_files:
-                return
+        prepared = replace(invocation, report_path=str(report_path) if report_path is not None else "")
+        argv = list(prepared.argv)
+        if prepared.runner == "pytest" and report_path is not None:
+            argv = list(test_report.with_report(prepared, report_path))
+        elif prepared.runner == "vitest" and report_path is not None:
+            argv = [
+                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument for argument in argv
+            ]
+            prepared = replace(prepared, argv=tuple(argv))
+        return prepared, argv, report_path
+
+    @staticmethod
+    async def _parse_invocation_report(
+        *,
+        registry: RunnerRegistry,
+        invocation: "Invocation",
+        report_path: Optional[Path],
+        exit_code: int,
+        duration_s: float,
+        timed_out: bool,
+        stdout: str,
+    ) -> RunReport:
+        """Parse one runner-owned report without blocking the event loop."""
+        adapter = registry.adapter_for_kind(invocation.runner)
+        suite = test_report.suite_name(invocation)
+        return await asyncio.to_thread(
+            adapter.parse_report,
+            report_path=report_path,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr="",
+            duration_s=duration_s,
+            timed_out=timed_out,
+            suite=suite,
+        )
+
+    @staticmethod
+    def _read_log_since(log_path: Path, offset: int) -> str:
+        """Return the bounded output appended by one invocation."""
+        with log_path.open("rb") as log_handle:
+            log_handle.seek(offset)
+            return log_handle.read(_MAX_SUPERVISED_LOG_BYTES).decode("utf-8", errors="replace")
+
+    async def _record_run_report(
+        self,
+        *,
+        worktree: Path,
+        feature_id: str,
+        task_ids: list[str],
+        invocation: "Invocation",
+        report: RunReport,
+        tier: str,
+        base_ref: str,
+        deadline: float,
+    ) -> tuple[RunReport, tuple[BaselineVerdict, ...], Optional[test_report.SuiteResult]]:
+        """Persist compatibility evidence and classify pytest failures against baseline."""
+        if invocation.runner != "pytest":
+            return report, (), None
+
+        failed_nodes = [nodeid for nodeid, status in report.nodes if status in ("failed", "error")]
+        verdicts: tuple[BaselineVerdict, ...] = ()
+        if report.exit_code != 0 and failed_nodes:
+            remaining = deadline - time.monotonic()
+            if remaining < 30:
+                verdicts = tuple(
+                    BaselineVerdict(nodeid, "unknown", "less than 30 seconds remained") for nodeid in failed_nodes
+                )
+            else:
+                try:
+                    verdicts = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            baseline.classify_failures,
+                            worktree=worktree,
+                            base_ref=base_ref,
+                            failed_nodeids=failed_nodes,
+                            timeout_s=max(1, int(remaining)),
+                        ),
+                        timeout=remaining,
+                    )
+                except asyncio.TimeoutError:
+                    verdicts = tuple(
+                        BaselineVerdict(nodeid, "unknown", "baseline classification timed out")
+                        for nodeid in failed_nodes
+                    )
+
+        suite_result = test_report.SuiteResult(
+            suite=report.suite,
+            tests=report.tests,
+            passed=report.passed,
+            failed=report.failed,
+            errors=report.errors,
+            skipped=report.skipped,
+            duration_s=report.duration_s,
+            exit_code=report.exit_code,
+            argv=tuple(invocation.argv),
+            status=report.status,
+            nodes=report.nodes,
+            unmapped=report.unmapped,
+            baseline=tuple((item.nodeid, item.status) for item in verdicts),
+        )
+        head_sha = await asyncio.to_thread(self._head_sha, worktree)
+        for task_id in task_ids:
             await asyncio.to_thread(
-                record_green_escalation, worktree, [dist], core_files, impact_files, impacted_hashes
+                test_report.append_suite,
+                feature_id,
+                task_id,
+                suite_result,
+                head_sha=head_sha,
+                base_ref=base_ref,
+                tier=tier,
+                source="coder_run_validation",
             )
-        except Exception:  # noqa: BLE001 — ledger writes must never fail a validation
-            self.logger.warning("could not record escalation outcome for %s", invocation.distribution, exc_info=True)
+        return report, verdicts, suite_result
+
+    async def _persist_verdict_and_settle(
+        self,
+        *,
+        execution_id: str,
+        handle: str,
+        log_path: Path,
+        verdict: ValidationVerdict,
+        outcome: Literal["completed", "failed", "timed_out"],
+        exit_code: int,
+    ) -> None:
+        """Persist the verdict and its receipt link before publishing terminal state."""
+        evidence_ref = await self.store.put_artifact(execution_id, _VerdictArtifact(payload=verdict_to_json(verdict)))
+        self._verdict_refs[(execution_id, handle)] = evidence_ref
+        await asyncio.to_thread(
+            _atomic_write_json,
+            self._verdict_ref_path(execution_id, handle),
+            {"artifact_id": evidence_ref.artifact_id},
+        )
+        await self.registry._record_transition(
+            execution_id,
+            handle,
+            state="finished",
+            outcome=outcome,
+            exit_code=exit_code,
+            log_path=log_path,
+        )
+
+    @staticmethod
+    def _resolve_feature_id(worktree: Path, feature: str) -> str:
+        """Resolve *feature* to ``FEAT-<NNN>``/``BRIEF-<KEY>`` via the feature or brief index header; fall back to the raw value."""
+        if _FEATURE_ID_RE.match(feature):
+            return feature
+        try:
+            for index_path in iter_index_files(worktree):
+                try:
+                    header = json.loads(index_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if not isinstance(header, dict):
+                    continue
+                feature_id = header.get("feature_id")
+                if (
+                    header.get("feature") == feature
+                    and isinstance(feature_id, str)
+                    and _FEATURE_ID_RE.match(feature_id)
+                ):
+                    return feature_id
+        except OSError:
+            pass
+        logger.warning(
+            "could not resolve feature %r to a FEAT-<NNN>/BRIEF-<KEY> id; recording under the raw value", feature
+        )
+        return feature
+
+    @staticmethod
+    def _argv_with_junit(
+        feature_id: str, task_id: str, invocation: "Invocation", ordinal: int, *, enabled: bool = True
+    ) -> Tuple[list[str], Optional[Path]]:
+        """Return the invocation argv plus a unique junit path; plain argv when the path is unavailable."""
+        if not enabled:
+            return list(invocation.argv), None
+        try:
+            junit = test_report.junit_path_for(feature_id, task_id, invocation.distribution, ordinal)
+            return list(test_report.with_report(invocation, junit)), junit
+        except Exception:  # noqa: BLE001 — recording setup must never block a validation
+            logger.warning("could not prepare a junit report path for %s", invocation.distribution, exc_info=True)
+            return list(invocation.argv), None
+
+    async def _record_test_results(
+        self,
+        *,
+        worktree: Path,
+        feature_id: str,
+        task_ids: list[str],
+        invocation: "Invocation",
+        junit_path: Path,
+        exit_code: int,
+        duration_s: float,
+        timed_out: bool,
+        tier: str,
+        base_ref: str,
+        deadline: float,
+    ) -> Optional[test_report.SuiteResult]:
+        """Write one test-report record per task id and return its parsed evidence."""
+        try:
+            head_sha = await asyncio.to_thread(self._head_sha, worktree)
+            suite = await asyncio.to_thread(test_report.suite_name, invocation)
+            result = await asyncio.to_thread(
+                test_report.parse_junit,
+                junit_path,
+                suite=suite,
+                argv=tuple(invocation.argv),
+                exit_code=exit_code,
+                duration_s=duration_s,
+                timed_out=timed_out,
+            )
+            failed_nodes = [nodeid for nodeid, status in result.nodes if status in ("failed", "error")]
+            if exit_code != 0 and failed_nodes:
+                remaining = deadline - time.monotonic()
+                if remaining < 30:
+                    self.logger.warning(
+                        "baseline classification skipped with %.1fs remaining for %s", remaining, result.suite
+                    )
+                    verdicts = tuple(
+                        baseline.BaselineVerdict(nodeid, "unknown", "less than 30 seconds remained")
+                        for nodeid in failed_nodes
+                    )
+                else:
+                    try:
+                        verdicts = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                baseline.classify_failures,
+                                worktree=worktree,
+                                base_ref=base_ref,
+                                failed_nodeids=failed_nodes,
+                                timeout_s=max(1, int(remaining)),
+                            ),
+                            timeout=remaining,
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning(
+                            "baseline classification exceeded the remaining deadline for %s", result.suite
+                        )
+                        verdicts = tuple(
+                            baseline.BaselineVerdict(nodeid, "unknown", "baseline classification timed out")
+                            for nodeid in failed_nodes
+                        )
+                result = replace(result, baseline=tuple((item.nodeid, item.status) for item in verdicts))
+            for task_id in task_ids:
+                await asyncio.to_thread(
+                    test_report.append_suite,
+                    feature_id,
+                    task_id,
+                    result,
+                    head_sha=head_sha,
+                    base_ref=base_ref,
+                    tier=tier,
+                    source="coder_run_validation",
+                )
+            return result
+        except Exception:  # noqa: BLE001 — recording must never fail a validation
+            self.logger.warning("could not record test results for %s", invocation.distribution, exc_info=True)
+            return None
+
+    async def _record_green_cache(
+        self,
+        *,
+        worktree: Path,
+        namespace: str,
+        plan: "ScopePlan",
+        invocation: "Invocation",
+        result: Optional[test_report.SuiteResult],
+    ) -> None:
+        """Record one invocation's node evidence without letting cache I/O affect the gate."""
+        if result is None:
+            return
+        baseline_reds = [nodeid for nodeid, status in result.baseline if status == "baseline_red"]
+        invocation_plan = replace(plan, invocations=(invocation,))
+        await asyncio.to_thread(
+            green_cache.record_green,
+            worktree,
+            namespace=namespace,
+            plan=invocation_plan,
+            nodes=result.nodes,
+            unmapped=result.unmapped,
+            baseline_reds=baseline_reds,
+        )
+
+    @staticmethod
+    def _only_baseline_reds(result: Optional[test_report.SuiteResult]) -> bool:
+        """True only when every observed failure was classified baseline-red."""
+        if result is None or result.unmapped:
+            return False
+        failed_nodes = {nodeid for nodeid, status in result.nodes if status in ("failed", "error")}
+        verdicts = dict(result.baseline)
+        return (
+            bool(failed_nodes)
+            and set(verdicts) == failed_nodes
+            and all(verdicts[nodeid] == "baseline_red" for nodeid in failed_nodes)
+        )
 
     async def _await_one(
         self, *, process: "asyncio.subprocess.Process", log_path: Path, deadline: float
@@ -879,12 +1475,9 @@ class ValidationSupervisor:
     @staticmethod
     def _selection_header(plan: "ScopePlan") -> str:
         """One `# selection …` line + one `# note: …` line per plan note (FEAT-604, OQ3)."""
-        lines = [
-            f"# selection tier={plan.tier}"
-            f" escalated=[{', '.join(plan.escalated)}]"
-            f" skipped_escalations=[{', '.join(plan.skipped_escalations)}]\n"
-        ]
+        lines = [f"# selection tier={plan.tier}\n"]
         lines += [f"# note: {note}\n" for note in plan.notes]
+        lines += [f"# cached: {target}\n" for target in plan.cached]
         return "".join(lines)
 
     @staticmethod

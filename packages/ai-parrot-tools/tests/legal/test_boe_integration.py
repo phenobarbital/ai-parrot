@@ -26,7 +26,7 @@ import parrot_tools.legal.boe  # noqa: F401 — registers "boe" with DataSourceF
 import pytest
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
@@ -282,7 +282,7 @@ def _arango_params_from_env() -> dict:
 
 @pytest.fixture
 def live_arango_ctx():
-    """A real ``OntologyGraphStore`` + ``TenantContext`` against a dev tenant.
+    """A real ``ArangoOntologyGraphStore`` + ``TenantContext`` against a dev tenant.
 
     Skips cleanly when ``ARANGODB_HOST``/``TEST_ARANGO_HOST`` is unset or
     the driver is unavailable; individual tests additionally skip on a
@@ -297,7 +297,7 @@ def live_arango_ctx():
         pytest.skip(f"ArangoDB driver unavailable: {exc}")
     manager = TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir())
     ctx = manager.resolve("legal_e2e_tenant", domain="legal")
-    store = OntologyGraphStore(arango_client=client)
+    store = ArangoOntologyGraphStore(arango_client=client)
     return store, ctx
 
 

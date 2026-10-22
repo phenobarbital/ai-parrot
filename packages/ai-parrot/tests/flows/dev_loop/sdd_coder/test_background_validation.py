@@ -35,7 +35,7 @@ from parrot.flows.dev_loop.sdd_coder.background import (
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
 
 def _make_supervisor(
@@ -52,7 +52,7 @@ def _make_supervisor(
 
 def _single_invocation_plan(argv: tuple[str, ...], *, tier: str = "merge") -> ScopePlan:
     """A `ScopePlan` carrying exactly one controlled, synthetic pytest-shaped invocation."""
-    invocation = PytestInvocation(distribution="root", argv=argv, targets=())
+    invocation = Invocation(distribution="root", argv=argv, targets=())
     return ScopePlan(tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=())
 
 
@@ -74,7 +74,9 @@ async def test_idempotent_launch_and_scope(tmp_path: Path, monkeypatch: pytest.M
 
     plan_calls: list[str] = []
 
-    def _fake_plan_tests(*, worktree: Path, changed_files: list[str], tier: str, declared=(), policy=None) -> ScopePlan:
+    def _fake_plan_tests(
+        *, worktree: Path, changed_files: list[str], tier: str, declared=(), contract=None, policy=None, registry=None
+    ) -> ScopePlan:
         plan_calls.append(tier)
         return _single_invocation_plan((sys.executable, "-c", "import sys; sys.exit(0)"), tier=tier)
 
@@ -104,7 +106,8 @@ async def test_idempotent_launch_and_scope(tmp_path: Path, monkeypatch: pytest.M
     # The idempotent replay never re-built a plan or spawned a second process.
     assert plan_calls == ["merge"]
     assert len(protected_calls) == 1
-    assert protected_calls[0][1] == (sys.executable, "-c", "import sys; sys.exit(0)")
+    assert protected_calls[0][1][:3] == (sys.executable, "-c", "import sys; sys.exit(0)")
+    assert protected_calls[0][1][-1].startswith("--junitxml=")
 
     await _settle(supervisor, execution_id, "req-1")
     settled: BackgroundStatus = await registry.status(execution_id, "req-1")
@@ -330,3 +333,93 @@ async def test_lost_owner_blocks_settlement(tmp_path: Path, monkeypatch: pytest.
     # Let the real (still-owned) process settle so no dangling subprocess
     # leaks out of this test session.
     await _settle(supervisor, execution_id, running_registration.handle)
+
+
+_JUNIT_CHILD = (
+    "import sys;"
+    "a=[x for x in sys.argv if x.startswith('--junitxml=')][0].split('=',1)[1];"
+    'open(a,\'w\').write(\'<testsuites><testsuite tests="3" failures="1" errors="0" skipped="0"/></testsuites>\');'
+    "sys.exit(1)"
+)
+
+
+def _patch_recording(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: tuple[str, ...]) -> None:
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(tmp_path / "reports"))
+    monkeypatch.setattr(
+        background_module,
+        "plan_tests",
+        lambda *, worktree, changed_files, tier, declared=(), contract=None, policy=None, registry=None: _single_invocation_plan(
+            argv, tier=tier
+        ),
+    )
+    monkeypatch.setattr(background_module, "protected_argv", lambda cwd, argv: list(argv))
+
+
+async def test_supervisor_records_per_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two task ids produce two coder_run_validation records with parsed counts."""
+    from parrot.flows.dev_loop.test_scope import report as test_report
+
+    supervisor, registry, _store, worktree = _make_supervisor(tmp_path)
+    _patch_recording(monkeypatch, tmp_path, (sys.executable, "-c", _JUNIT_CHILD))
+    execution_id = str(uuid.uuid4())
+    await supervisor.start(
+        feature="FEAT-900",
+        worktree=worktree,
+        execution_id=execution_id,
+        task_ids=["TASK-1", "TASK-2"],
+        tier="merge",
+        timeout_seconds=15,
+        request_id="rec-1",
+    )
+    await _settle(supervisor, execution_id, "rec-1")
+    records, _notes = test_report.load_records("FEAT-900")
+    assert sorted(records) == ["TASK-1", "TASK-2"]
+    for record in records.values():
+        assert record.source == "coder_run_validation"
+        suite = record.suites[0]
+        assert (suite.tests, suite.failed, suite.status) == (3, 1, "failed")
+    assert (await registry.status(execution_id, "rec-1")).exit_code == 1
+
+
+async def test_supervisor_timeout_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deadline overrun is recorded as timed_out."""
+    from parrot.flows.dev_loop.test_scope import report as test_report
+
+    supervisor, registry, _store, worktree = _make_supervisor(tmp_path)
+    _patch_recording(monkeypatch, tmp_path, (sys.executable, "-c", "import time; time.sleep(60)"))
+    execution_id = str(uuid.uuid4())
+    await supervisor.start(
+        feature="FEAT-901",
+        worktree=worktree,
+        execution_id=execution_id,
+        task_ids=["TASK-1"],
+        tier="merge",
+        timeout_seconds=1,
+        request_id="rec-2",
+    )
+    await _settle(supervisor, execution_id, "rec-2")
+    records, _notes = test_report.load_records("FEAT-901")
+    assert records["TASK-1"].suites[0].status == "timed_out"
+    assert (await registry.status(execution_id, "rec-2")).outcome == "timed_out"
+
+
+async def test_supervisor_unwritable_report_root_keeps_outcome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unusable report root never alters the validation outcome or exit code."""
+    supervisor, registry, _store, worktree = _make_supervisor(tmp_path)
+    _patch_recording(monkeypatch, tmp_path, (sys.executable, "-c", "import sys; sys.exit(0)"))
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(blocker / "sub"))
+    execution_id = str(uuid.uuid4())
+    await supervisor.start(
+        feature="FEAT-902",
+        worktree=worktree,
+        execution_id=execution_id,
+        task_ids=["TASK-1"],
+        tier="merge",
+        timeout_seconds=15,
+        request_id="rec-3",
+    )
+    await _settle(supervisor, execution_id, "rec-3")
+    status = await registry.status(execution_id, "rec-3")
+    assert (status.outcome, status.exit_code) == ("completed", 0)

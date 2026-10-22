@@ -136,6 +136,8 @@ class MetaClient(OpenAIBaseClient):
 
     client_type: str = "meta"
     client_name: str = "meta"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('META_API_KEY', 'MODEL_API_KEY')
     _default_model: str = MetaModel.MUSE_SPARK_1_3.value
     # Muse Spark is a reasoning model: a live one-word answer ("pong") spent
     # 199 of 210 completion tokens on reasoning. A conventional 60s timeout

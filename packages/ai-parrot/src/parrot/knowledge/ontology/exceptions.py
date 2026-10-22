@@ -24,7 +24,11 @@ class OntologyIntegrityError(OntologyError):
     """
 
 
-class AQLValidationError(OntologyError):
+class QueryValidationError(OntologyError):
+    """Dynamic query rejected because its dialect is unsafe or unsupported."""
+
+
+class AQLValidationError(QueryValidationError):
     """Raised when LLM-generated AQL fails safety validation.
 
     Examples:
@@ -33,6 +37,14 @@ class AQLValidationError(OntologyError):
         - Access to system collections (_system, _graphs)
         - Inline JavaScript execution attempts
     """
+
+
+class QueryDialectMismatch(OntologyError):
+    """Raised when a query dialect differs from the selected store dialect."""
+
+
+class TraversalPatternUnavailable(OntologyError):
+    """Raised when a traversal pattern has no template for the store dialect."""
 
 
 class UnknownDataSourceError(OntologyError):

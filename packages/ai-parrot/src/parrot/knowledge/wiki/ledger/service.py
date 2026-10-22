@@ -14,12 +14,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.knowledge.wiki.ledger.events import (
     IssueKind,
+    IssueSeverity,
     IssueOpenedPayload,
     LedgerEvent,
     SEVERITY_ORDER,
@@ -33,9 +35,16 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     sqlite_policy_from_config,
 )
-from parrot.knowledge.wiki.store import WikiStoreBusy, estimate_tokens
+from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy, estimate_tokens
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.ledger.shared_log import (
+        SharedLogExportReport,
+        SharedLogImportReport,
+        SharedLogRotateReport,
+    )
 
 
 def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
@@ -46,6 +55,35 @@ def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(new_content, encoding="utf-8")
     return True
+
+
+def _read_snapshot_rows(dest: Path) -> list[dict[str, Any]]:
+    """Blocking half of the reconciliation pre-pass — run via ``asyncio.to_thread``.
+
+    Returns the JSON rows already in ``dest`` (``[]`` when the file is missing). A line that
+    is not a JSON object carrying a string ``issue_id`` is logged at WARNING with its 1-based
+    line number and skipped — it is not a valid issue row and cannot be reconciled.
+    """
+    if not dest.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    skipped: list[int] = []
+    with dest.open(encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                skipped.append(lineno)
+                continue
+            if not isinstance(row, dict) or not isinstance(row.get("issue_id"), str):
+                skipped.append(lineno)
+                continue
+            rows.append(row)
+    if skipped:
+        logger.warning("Ledger snapshot %s: skipped %d malformed line(s) at %s", dest, len(skipped), skipped)
+    return rows
 
 
 def _scan_log_for_audit(log: LedgerLog, cursor_offset: int) -> tuple[dict[str, int], int, int, int]:
@@ -75,6 +113,19 @@ def _scan_log_for_audit(log: LedgerLog, cursor_offset: int) -> tuple[dict[str, i
     log_path = Path(log.path)
     log_size = log_path.stat().st_size if log_path.exists() else 0
     return event_counts, total_events, applied_count, log_size
+
+
+def normalize_issue_id(raw: str) -> str:
+    """Return ``raw`` prefixed with ``issue:`` unless it already is; strips whitespace.
+
+    Args:
+        raw: An issue id as typed by a user or agent (``a9514c9232ad`` or ``issue:a9514c9232ad``).
+
+    Returns:
+        The canonical ``issue:<hex>`` id.
+    """
+    value = raw.strip()
+    return value if value.startswith("issue:") else f"issue:{value}"
 
 
 def _issue_dict(issue_id: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +192,30 @@ class LedgerService:
         log = LedgerLog(str(ledger_dir / "events.jsonl"))
         index = LedgerIndex(store, log)
         return cls(index, store, log, shared_root)
+
+    @classmethod
+    def from_dir(cls, ledger_dir: Path, *, sqlite_policy: SQLitePragmaPolicy | None = None) -> "LedgerService":
+        """Open (creating if needed) a ledger at an explicit directory — no git root required (FEAT-569).
+
+        Used by ``wikitoolkit serve``: the server host has no checkout, so the
+        ledger location is configuration, not discovery. ``shared_root`` is
+        derived as ``ledger_dir.parent.parent`` (mirroring ``<root>/.parrot/ledger``);
+        :meth:`merge_blockers` therefore finds no per-spec index there and
+        returns ``[]`` — the merge gate keeps running on the shared checkout.
+
+        Args:
+            ledger_dir: Directory holding ``ledger.db`` and ``events.jsonl``.
+            sqlite_policy: Connection policy for the ledger's SQLite plane.
+
+        Returns:
+            A ready-to-use ``LedgerService``.
+        """
+        ledger_dir = ledger_dir.resolve()
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        store = LedgerStore(ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=sqlite_policy)
+        log = LedgerLog(str(ledger_dir / "events.jsonl"))
+        index = LedgerIndex(store, log)
+        return cls(index, store, log, ledger_dir.parent.parent)
 
     async def _sync_best_effort(self) -> None:
         """Sync the index, tolerating a busy writer lock (reads use a stale index instead)."""
@@ -214,8 +289,105 @@ class LedgerService:
         rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
         return rows
 
+    async def active_issues(self) -> list[dict[str, Any]]:
+        """Return every ``open`` or ``claimed`` issue (used for dedupe by lint routing)."""
+        await self._sync_best_effort()
+        issues = await self._all_issues()
+        return [
+            _issue_dict(issue_id, state) for issue_id, state in issues if state.get("status") in ("open", "claimed")
+        ]
+
+    async def list_issues(
+        self,
+        statuses: Sequence[str] = ("open", "claimed"),
+        *,
+        kind: IssueKind | None = None,
+        severity: IssueSeverity | None = None,
+        about_prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List issues by status, optional kind and about-path prefix, severity first.
+
+        Args:
+            statuses: Issue statuses to include (default open and claimed).
+            kind: Restrict to one issue kind when given.
+            severity: Restrict to one severity when given.
+            about_prefix: Keep issues having any ``about`` entry starting with this prefix.
+
+        Returns:
+            Public issue dicts (including ``claimed_by``) sorted by ``(SEVERITY_ORDER, issue_id)``.
+        """
+        await self._sync_best_effort()
+        wanted = set(statuses)
+        rows = []
+        for issue_id, state in await self._all_issues():
+            if state.get("status") not in wanted:
+                continue
+            if kind is not None and state.get("kind") != kind:
+                continue
+            if severity is not None and state.get("severity") != severity:
+                continue
+            row = _issue_dict(issue_id, state)
+            if about_prefix is not None and not any(str(a).startswith(about_prefix) for a in row["about"]):
+                continue
+            rows.append(row)
+        rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
+        return rows
+
+    async def get_issue(self, issue_id: str) -> dict[str, Any] | None:
+        """Return one issue's public dict plus its ``body``; ``None`` when unknown.
+
+        Args:
+            issue_id: Issue id, with or without the ``issue:`` prefix.
+
+        Returns:
+            The :func:`_issue_dict` shape with an added ``"body"`` key, or ``None``.
+        """
+        await self._sync_best_effort()
+        canonical = normalize_issue_id(issue_id)
+        state = await self._issue_state(canonical)
+        if state is None:
+            return None
+        row = _issue_dict(canonical, state)
+        row["body"] = state.get("body", "")
+        return row
+
+    async def issue_history(self, issue_id: str) -> list[dict[str, Any]]:
+        """Return the events whose ``subject`` is this issue, in log order.
+
+        Args:
+            issue_id: Issue id, with or without the ``issue:`` prefix.
+
+        Returns:
+            ``{"event_id", "kind", "actor", "ts", "payload"}`` dicts; ``[]`` for an unknown id.
+        """
+        canonical = normalize_issue_id(issue_id)
+
+        def _scan() -> list[dict[str, Any]]:
+            return [
+                {
+                    "event_id": event.event_id,
+                    "kind": event.kind,
+                    "actor": event.actor,
+                    "ts": event.ts,
+                    "payload": dict(event.payload),
+                }
+                for event, _offset in self.log.iter_events()
+                if event.subject == canonical
+            ]
+
+        return await asyncio.to_thread(_scan)
+
     async def claim(self, issue_id: str, actor: str) -> bool:
-        """Delegate to :meth:`LedgerIndex.claim_issue`."""
+        """Import the committed shared log first (FEAT-694 G8), then :meth:`LedgerIndex.claim_issue`."""
+        from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH
+
+        if (self.shared_root / SHARED_LOG_REL_PATH).exists():
+            try:
+                await self.import_shared_log()
+            except WikiStoreBusy:
+                pass
+            except Exception:  # noqa: BLE001 -- a broken checkout must never block a claim (AC15)
+                logger.warning("Shared ledger log import before claim failed; claiming anyway.", exc_info=True)
         return await self.index.claim_issue(issue_id, actor)
 
     async def acknowledge(self, issue_id: str, reason: str, actor: str) -> bool:
@@ -248,43 +420,12 @@ class LedgerService:
         return _decode_issue_body(row[0]) if row else None
 
     async def close_issue(self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None) -> bool:
-        """Close an issue, recording the resolver and the evidence reference (FEAT-572 S4/S5).
-
-        ``resolved_by`` is e.g. ``commit:<sha>`` (fast lane) or ``task:TASK-<NNN>`` (SDD lane)
-        and is carried into ``IssueClosedPayload.resolved_by``. Returns ``False`` WITHOUT
-        appending when the issue does not exist or its status is not ``open``/``claimed`` —
-        a double close is detectable instead of silent.
-        """
-        await self._sync_best_effort()
-        state = await self._issue_state(issue_id)
-        if state is None or state.get("status") not in ("open", "claimed"):
-            logger.warning(
-                "Refusing issue.closed for %s: missing or status=%r", issue_id, state and state.get("status")
-            )
-            return False
-        payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
-        if resolved_by is not None:
-            payload["resolved_by"] = resolved_by
-        event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
-        await asyncio.to_thread(self.log.append, event)
-        await self._sync_best_effort()
-        return True
+        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction)."""
+        return await self.index.close_issue(issue_id, actor, reason, resolved_by)
 
     async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
-        """Append ``issue.unclaimed``, returning a claimed issue to the ready pool (FEAT-572 M3).
-
-        Returns ``False`` without appending unless the issue exists with status ``claimed``.
-        """
-        await self._sync_best_effort()
-        state = await self._issue_state(issue_id)
-        if state is None or state.get("status") != "claimed":
-            return False
-        event = LedgerEvent(
-            kind="issue.unclaimed", subject=issue_id, actor=actor, payload={"unclaimed_by": actor, "reason": reason}
-        )
-        await asyncio.to_thread(self.log.append, event)
-        await self._sync_best_effort()
-        return True
+        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction)."""
+        return await self.index.unclaim_issue(issue_id, actor, reason)
 
     async def get_context(self, file_paths: list[str], max_tokens: int = 3000) -> str:
         """Return a token-budgeted rendering of open issues touching ``file_paths``.
@@ -388,20 +529,28 @@ class LedgerService:
         """
         return await asyncio.to_thread(self._feature_index_status_sync, set(feature_ids))
 
-    async def export_snapshot(self, dest: Path) -> bool:
-        """Write ``sdd/ledger/issues.jsonl`` deterministically.
+    async def export_snapshot(self, dest: Path, *, reconcile: bool = True) -> bool:
+        """Write ``sdd/ledger/issues.jsonl`` deterministically, reconciling against ``dest``.
 
-        One JSON object per issue with status ``open``, ``claimed``, or
-        closed/superseded but not yet compacted — keys sorted, rows sorted
-        by ``issue_id``, no volatile fields, so regenerating from the same
-        ledger state is byte-identical. Insights are excluded.
+        One JSON object per issue with status ``open``, ``claimed``, or closed/superseded but
+        not yet compacted — keys sorted, rows sorted by ``issue_id``, no volatile fields, so
+        regenerating from the same ledger state and the same ``dest`` is byte-identical.
+        Insights are excluded.
+
+        Local state is authoritative for every issue this ledger has recorded. With
+        ``reconcile=True`` (default) every row already in ``dest`` whose ``issue_id`` is
+        unknown to this ledger is carried forward unchanged, so an export from a machine whose
+        event log is behind never drops another machine's issues (FEAT-671).
+        ``reconcile=False`` rebuilds the snapshot from the local view only — destructive,
+        explicit opt-in.
 
         Args:
             dest: Destination path (created, with parents, if missing).
+            reconcile: Carry forward rows for issues unknown to this ledger.
 
         Returns:
-            ``True`` if the written content differs from what was already
-            on disk (or the file did not exist yet).
+            ``True`` if the written content differs from what was already on disk (or the
+            file did not exist yet).
         """
         await self._sync_best_effort()
         issues = await self._all_issues()
@@ -411,10 +560,84 @@ class LedgerService:
             for issue_id, state in issues
             if state.get("status") in ("open", "claimed") or not state.get("compacted", False)
         ]
+        if reconcile:
+            known = {issue_id for issue_id, _ in issues}
+            existing = await asyncio.to_thread(_read_snapshot_rows, dest)
+            carried = [row for row in existing if row["issue_id"] not in known]
+            if carried:
+                logger.info(
+                    "Ledger snapshot %s: carried forward %d issue(s) unknown to this ledger", dest, len(carried)
+                )
+            rows.extend(carried)
         rows.sort(key=lambda row: row["issue_id"])
         new_content = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
 
         return await asyncio.to_thread(_write_snapshot_if_changed, dest, new_content)
+
+    async def export_shared_log(self, repo_root: Path | None = None) -> "SharedLogExportReport":
+        """Append this machine's shareable events to the committed shared log.
+
+        Args:
+            repo_root: Checkout containing the shared ``sdd/ledger`` directory.
+
+        Returns:
+            The append-only export report.
+        """
+        from parrot.knowledge.wiki.ledger.shared_log import export_events
+
+        return await asyncio.to_thread(export_events, self.log, repo_root or self.shared_root)
+
+    async def import_shared_log(self, repo_root: Path | None = None, *, force: bool = False) -> "SharedLogImportReport":
+        """Append unknown committed events, incrementally sync, and report claim conflicts.
+
+        Args:
+            repo_root: Checkout containing the shared ``sdd/ledger`` directory.
+            force: Whether to bypass the digest-marker fast path.
+
+        Returns:
+            Import details, including a soft index-busy result when applicable.
+        """
+        from parrot.knowledge.wiki.ledger.shared_log import MARKER_FILENAME, ClaimConflict, import_events
+
+        marker = Path(self.log.path).parent / MARKER_FILENAME
+        report, claimed = await asyncio.to_thread(
+            import_events, self.log, repo_root or self.shared_root, marker, force=force
+        )
+        if report.fast_path or report.added == 0:
+            return report
+
+        try:
+            report.synced_events = await self.index.sync()
+        except WikiStoreBusy:
+            logger.warning("Ledger index sync skipped: writer lock busy; imported events remain durable.")
+            report.index_busy = True
+            report.synced_events = 0
+            return report
+
+        issues = dict(await self._all_issues())
+        for event in claimed:
+            state = issues.get(event.subject)
+            foreign_claimed_by = event.payload.get("claimed_by")
+            if state is not None and state.get("status") == "claimed" and state.get("claimed_by") != foreign_claimed_by:
+                report.claim_conflicts.append(
+                    ClaimConflict(
+                        issue_id=event.subject,
+                        local_claimed_by=state["claimed_by"],
+                        foreign_claimed_by=foreign_claimed_by,
+                        foreign_event_id=event.event_id,
+                    )
+                )
+        return report
+
+    async def rotate_shared_log(
+        self, repo_root: Path | None = None, *, older_than_days: int = 30, now: datetime | None = None
+    ) -> SharedLogRotateReport:
+        """Rotate the committed log (``/sdd-done`` 9.1 only). Never touches the local log or index."""
+        from parrot.knowledge.wiki.ledger.shared_log import rotate_events
+
+        return await asyncio.to_thread(
+            rotate_events, repo_root or self.shared_root, older_than_days=older_than_days, now=now
+        )
 
     async def compact(self, older_than_days: int = 30) -> int:
         """Delegate to :meth:`LedgerIndex.compact`."""
@@ -438,6 +661,7 @@ class LedgerService:
             ) as cur:
                 broken_row = await cur.fetchone()
         broken_edges = broken_row[0] if broken_row else 0
+        issues = dict(await self._all_issues())
 
         return {
             "log_size_bytes": log_size,
@@ -446,5 +670,58 @@ class LedgerService:
             "cursor_offset": offset,
             "cursor_lag_events": lag,
             "broken_edges": broken_edges,
+            "shared_log": await asyncio.to_thread(self._shared_log_audit, issues),
             "sqlite": await self.store.sqlite_settings(),
+        }
+
+    def _shared_log_audit(self, issues: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
+        """Blocking: compare the local log with the committed logical shared log.
+
+        Args:
+            issues: ``{issue_id: state}`` resolved by :meth:`audit` — this method cannot
+                await, so local issue state is passed in.
+
+        Returns:
+            The drift/marker keys plus ``claim_conflicts``: the number of live committed
+            claims whose claimant differs from a locally ``claimed`` issue's claimant.
+            Recomputed from the committed files on every call and NEVER read from a
+            ``SharedLogImportReport``, which the git hooks discard (FEAT-694 AC10/AC12).
+        """
+        from parrot.knowledge.wiki.ledger.shared_log import (
+            MARKER_FILENAME,
+            SHARED_LOG_REL_PATH,
+            digest_files,
+            is_shareable,
+            live_claims,
+            read_raw_events,
+            shared_log_files,
+        )
+
+        files = shared_log_files(self.shared_root)
+        committed_events = [event for path in files for _, event in read_raw_events(path)]
+        committed = {event.event_id for event in committed_events}
+        local_events = read_raw_events(Path(self.log.path))
+        local = {event.event_id for _, event in local_events if is_shareable(event)}
+        all_local_ids = {event.event_id for _, event in local_events}
+        marker = Path(self.log.path).parent / MARKER_FILENAME
+        if not marker.exists():
+            marker_state = "missing"
+        elif marker.read_text(encoding="utf-8") == digest_files(files):
+            marker_state = "ok"
+        else:
+            marker_state = "stale"
+        conflicts = 0
+        for event in live_claims(committed_events):
+            state = issues.get(event.subject)
+            if state is None or state.get("status") != "claimed":
+                continue
+            if state.get("claimed_by") != event.payload.get("claimed_by"):
+                conflicts += 1
+        return {
+            "path": str(self.shared_root / SHARED_LOG_REL_PATH),
+            "exists": (self.shared_root / SHARED_LOG_REL_PATH).exists(),
+            "local_only_events": len(local - committed),
+            "committed_unknown_events": len(committed - all_local_ids),
+            "marker": marker_state,
+            "claim_conflicts": conflicts,
         }

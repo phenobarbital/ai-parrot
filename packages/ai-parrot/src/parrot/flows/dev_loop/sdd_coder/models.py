@@ -36,6 +36,7 @@ TaskOutcome = Literal[
     "fidelity_violation",
     "retry_native",
     "not_dispatched",
+    "validation_failed",
 ]
 """`not_dispatched` (FEAT-559): a queued task lost its seat before admission --
 no synthetic attempt is recorded; the reason lives in `TaskResult.diagnostics`."""
@@ -184,11 +185,16 @@ class LintConfig(BaseModel):
         error_select: Correctness rules (syntax errors, undefined names) reported separately as
             ``LintReport.errors`` so the orchestrator fixes them; everything else is residual
             style debt left for the full pass in ``/sdd-done``. Never blocks the merge.
+        format_scope: ``changed-lines`` formats only the task's changed hunks (black
+            ``--line-ranges`` / ``ruff format --range``) so an unclean base file is not reformatted
+            wholesale under the task's name; ``file`` restores whole-file formatting. Files the
+            task added are always formatted whole (FEAT-702).
     """
 
     autofix: bool = True
     formatter: LintFormatter = "auto"
     error_select: List[str] = Field(default_factory=lambda: ["E9", "F63", "F7", "F82"])
+    format_scope: Literal["changed-lines", "file"] = "changed-lines"
 
 
 class LintReport(BaseModel):
@@ -211,6 +217,67 @@ class FeedbackConfig(BaseModel):
     max_age_days: int = Field(default=90, ge=1, le=365)
 
 
+class FailureModel(BaseModel):
+    """One failed test node inside a validation verdict (FEAT-709)."""
+
+    runner: str
+    nodeid: str
+    verdict: Literal["new_red", "baseline_red", "unknown"]
+    excerpt: str
+
+
+class RunnerSummaryModel(BaseModel):
+    """Per-runner counts inside a validation verdict (FEAT-709)."""
+
+    runner: str
+    suite: str
+    tests: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    cached: int
+    duration_s: float
+    exit_code: int
+    status: str
+
+
+class ValidationVerdictModel(BaseModel):
+    """Pydantic mirror of the kernel ValidationVerdict (FEAT-709)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_version: int = Field(alias="schema")
+    status: Literal["passed", "failed", "timed_out", "unavailable", "blocked"]
+    tier: Literal["task", "merge", "feature"]
+    runners: List[RunnerSummaryModel] = Field(default_factory=list)
+    failures: List[FailureModel] = Field(default_factory=list)
+    cached: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+    evidence: List[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_kernel(cls, verdict: Any) -> "ValidationVerdictModel":
+        """Build the model from a kernel ``ValidationVerdict`` dataclass.
+
+        Args:
+            verdict: A ``test_scope.datatypes.ValidationVerdict`` instance.
+
+        Returns:
+            The validated Pydantic mirror.
+        """
+        from parrot.flows.dev_loop.test_scope.verdict import verdict_to_json
+
+        return cls.model_validate(verdict_to_json(verdict))
+
+
+class RunnerConfig(BaseModel):
+    """Engine-owned task-tier validation gate settings (FEAT-709)."""
+
+    gate_overall_timeout_s: int = Field(default=600, ge=1, le=7200)
+    same_seat_repair: bool = True
+
+
 class RosterConfig(BaseModel):
     """Ordered roster + engine bounds (spec: wait ≤ 300 s)."""
 
@@ -221,6 +288,7 @@ class RosterConfig(BaseModel):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     complexity: ComplexityPolicy = Field(default_factory=ComplexityPolicy)
     suspension_policy: SuspensionPolicy = Field(default_factory=SuspensionPolicy)
+    runners: RunnerConfig = Field(default_factory=RunnerConfig)
     """FEAT-559: cooldown/summary-budget policy shared by every execution pool for this roster."""
 
 
@@ -349,6 +417,8 @@ class AttemptRecord(BaseModel):
     execution_id: str = ""
     """FEAT-559: the execution this attempt ran under. Empty for attempts
     recorded before this feature landed; new attempts always carry one."""
+    validation_status: str = ""
+    """FEAT-709: task-tier validation verdict status for this attempt; empty when no gate ran."""
 
 
 class TaskResult(BaseModel):
@@ -366,6 +436,8 @@ class TaskResult(BaseModel):
     lint: Optional[LintReport] = None
     native_retry: Optional["NativePrep"] = None
     """FEAT-588: native attempt-2 reservation for `retry_native` outcomes only."""
+    validation: Optional[ValidationVerdictModel] = None
+    """FEAT-709: engine task-tier validation verdict, when the gate ran."""
 
 
 class NativePrep(BaseModel):
@@ -379,6 +451,8 @@ class NativePrep(BaseModel):
     model: str = "haiku"
     attempt_uid: str = ""
     coder_feedback: str = ""
+    validation_verdict: str = ""
+    """FEAT-709: rendered verdict of the failed previous attempt (same-seat repair)."""
     assessment_id: str = ""
     """ComplexityAssessment ID for native attempts, enabling attribution."""
     execution_id: str = ""

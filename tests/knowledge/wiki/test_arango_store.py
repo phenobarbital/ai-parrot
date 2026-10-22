@@ -21,6 +21,7 @@ from parrot.knowledge.wiki.arango_store import (
     META_COLLECTION,
     PAGES_COLLECTION,
     SOURCES_COLLECTION,
+    SYMBOLS_COLLECTION,
     ArangoDBWikiStore,
 )
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
@@ -114,20 +115,23 @@ class TestArangoDBWikiStore:
             EMBEDDINGS_COLLECTION,
             SOURCES_COLLECTION,
             META_COLLECTION,
+            SYMBOLS_COLLECTION,
         }
         edge_call = next(c for c in mock_db.create_collection.call_args_list if c.args[0] == EDGES_COLLECTION)
         assert edge_call.kwargs.get("edge") is True
 
-        mock_db._connection.views.assert_awaited_once()
-        mock_db._connection.create_view.assert_awaited_once()
-        view_kwargs = mock_db._connection.create_view.call_args.kwargs
+        assert mock_db._connection.views.await_count == 2
+        assert mock_db._connection.create_view.await_count == 2  # pages + symbols views
+        view_kwargs = next(
+            c.kwargs for c in mock_db._connection.create_view.call_args_list if c.kwargs["name"] == "test_pages_view"
+        )
         assert view_kwargs["name"] == "test_pages_view"
         assert view_kwargs["view_type"] == "arangosearch"
         assert PAGES_COLLECTION in view_kwargs["properties"]["links"]
 
     @pytest.mark.asyncio
     async def test_initialize_skips_existing_view(self, store, mock_db):
-        mock_db._connection.views = AsyncMock(return_value=[{"name": "test_pages_view"}])
+        mock_db._connection.views = AsyncMock(return_value=[{"name": "test_pages_view"}, {"name": "test_symbols_view"}])
         await store.initialize()
         mock_db._connection.create_view.assert_not_awaited()
 
@@ -252,9 +256,9 @@ class TestArangoDBWikiStore:
             "pages_written": 1,
             "edges_written": 1,
         }
-        # 3 deletes (embeddings, edges, pages) + upsert_pages + add_edges(new)
-        # + add_edges(preserved) => 5 execute calls total.
-        assert mock_db.execute.await_count == 5
+        # 3 deletes (embeddings, edges, pages) + symbols delete + upsert_pages
+        # + add_edges(new) + add_edges(preserved) => 6 execute calls total.
+        assert mock_db.execute.await_count == 6
 
     @pytest.mark.asyncio
     async def test_replace_source_slice_no_old_pages(self, store, mock_db):

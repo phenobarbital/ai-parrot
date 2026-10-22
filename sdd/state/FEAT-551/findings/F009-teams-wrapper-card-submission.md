@@ -2,7 +2,7 @@
 id: F009
 query_id: Q009
 type: read
-intent: Teams wrapper: how Action.Submit payloads are routed
+intent: "Teams wrapper: how Action.Submit payloads are routed"
 executed_at: 2026-09-10T22:27:13Z
 duration_ms: 0
 parent_id: null

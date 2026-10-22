@@ -1,0 +1,32 @@
+Static/recipe A2UI surfaces aggregate data with Python transformers through
+`RecipeRunner`, but linked surfaces (FEAT-598) fetch rows client-side straight
+from QuerySource (`fetch.ts::fetchSource`) and their `TransformSpec` only
+admits the inline DSL v1 or renderer-side `transform.ref` modules — no Python
+path exists. The proposal: let a linked data-source descriptor declare a
+registered Python transformer; such a source fetches through a new per-source
+parrot-server endpoint on `UISurfacesHandler` (which already hosts both
+`_recipe_runner` and `_linked_service`) that executes the slug via the
+existing linked executor under the data-plane guard and applies the named
+transformer from `transformer_registry`. The Python bake/persist/refresh lane
+(`executor.py::execute_sources`) applies the same transformer, so Python-lane
+parity is intrinsic. Recommended next step: `/sdd-spec` — localization is
+high-confidence and the design decisions were resolved in Q&A (§5).
+
+Original request (verbatim):
+The original request, preserved verbatim (Spanish). The full source is at
+`sdd/state/FEAT-636/source.md`.
+
+> las surfaces a2ui estáticas pueden hacer agregación con transformadores en
+> python, pero las linked surfaces no (dependen de la invocación del query
+> slug) llaman a la URL de querysource, pero y si al definir la surface se
+> puede invocar o la URL del querysource o llaman a una URL dónde se decide
+> ejecutar el slug y luego pasar la data por un transformer, con lo cual los
+> linked surfaces ganan la flexibilidad de ganar data de manera dinámica y a
+> su vez de invocar transformaciones de las recipes (tal y como las static y
+> recipe definitions)
+
+**Initial signals** (extracted, not interpreted):
+- Verbs: "pueden / no pueden", "invocar", "pasar la data por" → capability-parity enhancement, not a bug
+- Named entities: "surfaces a2ui estáticas", "linked surfaces", "query slug", "querysource", "transformer", "recipes"
+- Components / labels: A2UI, QuerySource, recipe transformers
+- Acceptance criteria provided: no

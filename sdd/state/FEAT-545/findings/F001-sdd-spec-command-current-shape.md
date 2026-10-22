@@ -2,7 +2,7 @@
 id: F001
 query_id: Q003
 type: read
-intent: Current /sdd-spec command: guardrails, phases, where a research phase would slot in
+intent: "Current /sdd-spec command: guardrails, phases, where a research phase would slot in"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 900
 parent_id: null

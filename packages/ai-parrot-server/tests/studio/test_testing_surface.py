@@ -54,6 +54,18 @@ def _make_handler(
     return handler
 
 
+def _patch_registry(monkeypatch, mapping: dict) -> None:
+    """Point the Studio registry shim at ``mapping`` (FEAT-622 M2: the resolver replaced ``discover_all``)."""
+    from parrot.handlers.studio.testing import _helpers
+
+    class _Resolver:
+        def resolve(self, slug: str):
+            return {key.lower(): value for key, value in mapping.items()}.get(slug.lower())
+
+    monkeypatch.setattr(_helpers, "get_toolkit_resolver", lambda: _Resolver())
+
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -87,7 +99,7 @@ class _FakeTestBot:
     def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
-    async def ask(self, question: str):
+    async def ask(self, question: str, **kwargs):
         self.ask_calls.append(question)
         if self._ask_error is not None:
             raise self._ask_error
@@ -220,15 +232,24 @@ class TestTestAsk:
         create_mock = MagicMock(return_value=byok_client)
         monkeypatch.setattr(testing_module.LLMFactory, "create", create_mock)
 
+        default_client, served = bot.llm, []
+        plain_ask = bot.ask
+
+        async def _recording_ask(question, **kwargs):
+            served.append(bot.llm)
+            return await plain_ask(question, **kwargs)
+
+        bot.ask = _recording_ask
         response = await _unwrap(StudioTestingHandler.post)(handler)
 
         assert response.status == 200
+        assert served == [byok_client]                  # the personal key served this ask ...
         resolve_mock.assert_awaited_once()
         assert resolve_mock.await_args.args[1:] == ("1", "anthropic")
         create_mock.assert_called_once()
         assert create_mock.call_args.args[0] == "anthropic:claude-3-haiku"
         assert create_mock.call_args.kwargs["api_key"] == "sk-ant-byok-key"
-        assert bot.llm is byok_client
+        assert bot.llm is default_client                # ... and did not outlive it
 
     @pytest.mark.asyncio
     async def test_ask_byok_no_stored_key_is_noop(self, monkeypatch):
@@ -342,10 +363,9 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_zero_arg_tool(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_zero_arg_tool": _ZeroArgTool},
+        _patch_registry(
+            monkeypatch,
+            {"fake_zero_arg_tool": _ZeroArgTool},
         )
         handler = _make_handler(
             StudioToolExecuteHandler,
@@ -366,7 +386,7 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_unknown_slug_404(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(testing_module, "discover_all", dict)
+        _patch_registry(monkeypatch, {})
         handler = _make_handler(
             StudioToolExecuteHandler,
             app,
@@ -383,10 +403,9 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_server_managed_422(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_needs_dep_tool": _NeedsDepTool},
+        _patch_registry(
+            monkeypatch,
+            {"fake_needs_dep_tool": _NeedsDepTool},
         )
         handler = _make_handler(
             StudioToolExecuteHandler,
@@ -423,10 +442,9 @@ class TestToolAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
 
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_toolkit": _FakeToolkit},
+        _patch_registry(
+            monkeypatch,
+            {"fake_toolkit": _FakeToolkit},
         )
 
         handler = _make_handler(
@@ -482,7 +500,7 @@ class TestToolAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
 
-        monkeypatch.setattr(testing_module, "discover_all", dict)
+        _patch_registry(monkeypatch, {})
 
         handler = _make_handler(
             StudioToolAssignHandler,

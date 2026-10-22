@@ -1,0 +1,6 @@
+### 2.2 Constraints
+- `/sdd-done` §4 currently says re-running tests "adds latency without new signal". This proposal reverses that, because the final HEAD (after merges and the §4.5 lint pass) was never tested as a whole.
+- Never run a full-suite pytest by hand; use `select_tests --tier feature`.
+- Both twins (`.claude/commands` + `.agents/skills`) must change together.
+- E2E evidence (§4.6) stays a separate gate; don't merge it into this table.
+

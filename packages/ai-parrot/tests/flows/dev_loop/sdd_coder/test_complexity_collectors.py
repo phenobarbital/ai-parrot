@@ -17,6 +17,8 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     _collect_dependency_metrics,
     _collect_ruff_cyclomatic,
     _collect_wiki_blast,
+    _git_common_dir,
+    _resolve_wiki_plane_root,
     _run_subprocess,
     SubprocessResult,
 )
@@ -95,6 +97,11 @@ class SampleClass:
         }
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
+
+        # Tests on this fixture stub the wiki CLI, which presupposes a built
+        # plane: without one the collector short-circuits to plane-unavailable
+        # `unknown` and never shells out at all (FEAT-697).
+        (worktree / ".parrot" / "wiki").mkdir(parents=True)
 
         _init_git_repo(worktree)
 
@@ -526,37 +533,41 @@ def test_subprocess_result():
 
 @pytest.mark.asyncio
 async def test_run_subprocess():
-    """Test subprocess execution with limits."""
-    with patch("asyncio.create_subprocess_exec") as mock_create:
-        # Mock process
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output", b"errors"))
-        mock_proc.returncode = 0
-        mock_create.return_value = mock_proc
+    """Test subprocess execution with limits (real process, small output)."""
+    cmd = ["python", "-c", "import sys; sys.stdout.write('output'); sys.stderr.write('errors')"]
+    result = await _run_subprocess(cmd, Path("."), 30, 1000)
 
-        result = await _run_subprocess(["echo", "test"], Path("."), 10, 1000)
-
-        assert result.returncode == 0
-        assert result.stdout == "output"
-        assert result.stderr == "errors"
+    assert result.returncode == 0
+    assert result.stdout == "output"
+    assert result.stderr == "errors"
 
 
 @pytest.mark.asyncio
 async def test_run_subprocess_timeout():
-    """Test subprocess timeout handling."""
-    with patch("asyncio.create_subprocess_exec") as mock_create:
-        # Mock process
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-        mock_proc.kill = Mock()  # real asyncio.subprocess.Process.kill() is sync, not a coroutine
-        mock_proc.wait = AsyncMock()
-        mock_create.return_value = mock_proc
+    """Test subprocess timeout handling: raises and reaps the child (AC4)."""
+    with pytest.raises(asyncio.TimeoutError):
+        await _run_subprocess(["sleep", "10"], Path("."), 1, 1000)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await _run_subprocess(["sleep", "10"], Path("."), 1, 1000)
 
-        # Verify process was killed
-        mock_proc.kill.assert_called_once()
+@pytest.mark.asyncio
+async def test_run_subprocess_bounds_stdout_during_capture():
+    """Output beyond max_output_bytes is discarded during capture (AC1, AC3)."""
+    cmd = ["python", "-c", "import sys; sys.stdout.write('x' * 1_000_000)"]
+    result = await _run_subprocess(cmd, Path("."), 30, 1024)
+    assert result.returncode == 0  # child ran to completion despite exceeding the bound
+    assert len(result.stdout.encode("utf-8")) <= 1024
+    assert result.stdout == "x" * 1024
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_bound_is_bytes_not_chars():
+    """The bound applies to bytes pre-decode; a split code point must not raise (AC2)."""
+    # 'é' is 2 bytes in UTF-8; an odd byte bound splits the final code point.
+    cmd = ["python", "-c", "import sys; sys.stdout.buffer.write('é'.encode() * 100)"]
+    result = await _run_subprocess(cmd, Path("."), 30, 33)
+    assert result.returncode == 0
+    # 16 whole 'é' (32 bytes) + 1 dangling lead byte -> U+FFFD replacement char.
+    assert result.stdout == "é" * 16 + "�"
 
 
 # --- Post-review regression coverage: three defects a feature-wide adversarial
@@ -678,3 +689,211 @@ async def test_modify_target_syntax_error_is_unknown_not_zero():
 
     assert metrics["cyclomatic_max"].state == "unknown"
     assert "src/broken.py" in metrics["cyclomatic_max"].reason
+
+
+# ---------------------------------------------------------------------------
+# FEAT-697 / issue:9448f28680e0 -- wiki plane resolution (TASK-4423)
+#
+# `.parrot/wiki` is git-ignored and built only in the main checkout, so every
+# linked worktree lacks one. Pointing `symbols blast --path` at the worktree
+# made the CLI exit 1 and demoted every contract-symbol task to `unknown`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_prefers_a_local_plane(tmp_path):
+    """T1: a worktree with its own plane resolves to itself and never shells out."""
+    (tmp_path / ".parrot" / "wiki").mkdir(parents=True)
+
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir") as mock_git:
+        resolved = await _resolve_wiki_plane_root(tmp_path, ComplexityPolicy())
+
+    assert resolved == tmp_path
+    mock_git.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_falls_back_to_the_main_checkout(tmp_path):
+    """T2: no plane in the worktree, one in the main checkout -> the main checkout."""
+    main = tmp_path / "main"
+    (main / ".parrot" / "wiki").mkdir(parents=True)
+    worktree = tmp_path / "main" / ".claude" / "worktrees" / "feat-x"
+    worktree.mkdir(parents=True)
+
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir",
+        return_value=f"{main}/.git",
+    ):
+        resolved = await _resolve_wiki_plane_root(worktree, ComplexityPolicy())
+
+    assert resolved == main.resolve()
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_returns_none_without_any_plane(tmp_path):
+    """T3 (resolver half): no plane in either location -> None, no exception."""
+    main = tmp_path / "main"
+    worktree = main / "wt"
+    worktree.mkdir(parents=True)
+
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir",
+        return_value=f"{main}/.git",
+    ):
+        assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        {"side_effect": FileNotFoundError("git")},
+        {"side_effect": subprocess.TimeoutExpired("git", 1)},
+        {"return_value": subprocess.CompletedProcess([], 128, "", "not a git repository")},
+        {"return_value": subprocess.CompletedProcess([], 0, "   \n", "")},
+    ],
+    ids=["git-missing", "git-timeout", "git-nonzero", "git-empty-stdout"],
+)
+async def test_plane_resolver_degrades_to_none_on_git_failure(tmp_path, failure):
+    """T6: every git failure mode yields None rather than propagating.
+
+    Patches `subprocess.run` itself, so the real `_git_common_dir` error
+    handling is what is under test.
+    """
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors.subprocess.run", **failure):
+        assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-697 / issue:9448f28680e0 -- the collector must query the resolved plane
+# root, not the worktree (TASK-4424).
+# ---------------------------------------------------------------------------
+
+_BLAST_CONTRACT = ComplexityContract(
+    targets=(ComplexityTarget(path="src/sample.py", action="MODIFY"),),
+    contract_symbols=("sym:src/sample.py#SampleClass",),
+)
+
+_BLAST_JSON = json.dumps(
+    {
+        "root": {"symbol_id": "sym:src/sample.py#SampleClass", "stale": False},
+        "impacted": [
+            {"symbol": {"symbol_id": "sym:src/other.py#caller", "stale": False}, "distance": 1},
+        ],
+        "files": ["src/other.py"],
+        "truncated": False,
+    }
+)
+
+
+def _add_linked_worktree(main: Path, worktree: Path) -> None:
+    """Attach a real linked worktree to `main` (sync: ASYNC221 forbids this in a test body)."""
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree)], cwd=main, check=True)
+
+
+async def _run_blast(worktree, plane_root, subprocess_mock):
+    """Drive `_collect_wiki_blast` with the plane resolver and CLI both stubbed."""
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._resolve_wiki_plane_root",
+        new=AsyncMock(return_value=plane_root),
+    ):
+        with patch(
+            "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+            new=subprocess_mock,
+        ):
+            metrics, _, _, _, _ = await _collect_wiki_blast(
+                worktree, _BLAST_CONTRACT, ComplexityPolicy(), asyncio.Semaphore(1)
+            )
+    return metrics["blast_symbols"]
+
+
+@pytest.mark.asyncio
+async def test_blast_without_any_plane_is_unknown_and_spawns_nothing(tmp_path):
+    """T3: no plane anywhere -> plane-unavailable unknown, zero subprocesses."""
+    run_mock = AsyncMock()
+
+    evidence = await _run_blast(tmp_path, None, run_mock)
+
+    assert evidence.state == "unknown"
+    assert evidence.reason == "Wiki plane unavailable (no .parrot/wiki in worktree or main checkout)"
+    run_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_blast_in_a_worktree_uses_the_main_checkout_plane(tmp_path):
+    """T4: the regression this feature exists to fix.
+
+    Plane only in the main checkout -> the measurement succeeds (`ok`) and the
+    CLI is invoked against the PLANE root, never the worktree. Before the fix
+    this produced `unknown` with "exit 1" for every contract symbol.
+    """
+    main = tmp_path / "main"
+    worktree = main / ".claude" / "worktrees" / "feat-x"
+    worktree.mkdir(parents=True)
+    run_mock = AsyncMock(return_value=SubprocessResult(0, _BLAST_JSON, ""))
+
+    evidence = await _run_blast(worktree, main, run_mock)
+
+    assert evidence.state == "ok"
+    assert evidence.value == 1
+
+    cmd, cwd = run_mock.await_args.args[0], run_mock.await_args.args[1]
+    assert cmd[cmd.index("--path") + 1] == str(main)
+    assert str(worktree) not in cmd
+    assert cwd == main
+
+
+@pytest.mark.asyncio
+async def test_blast_keeps_failing_closed_when_the_cli_exits_nonzero(tmp_path):
+    """T5: a resolved plane does not weaken the fail-closed rule."""
+    run_mock = AsyncMock(return_value=SubprocessResult(1, "", "boom"))
+
+    evidence = await _run_blast(tmp_path, tmp_path, run_mock)
+
+    assert evidence.state == "unknown"
+    assert "exit 1" in evidence.reason
+
+
+@pytest.mark.asyncio
+async def test_blast_symbol_missing_from_a_present_plane_is_still_unknown(tmp_path):
+    """AC5: plane-absent and symbol-absent stay separable."""
+    missing_root = json.dumps({"root": None, "impacted": [], "files": [], "truncated": False})
+    run_mock = AsyncMock(return_value=SubprocessResult(0, missing_root, ""))
+
+    evidence = await _run_blast(tmp_path, tmp_path, run_mock)
+
+    assert evidence.state == "unknown"
+    assert "missing root" in evidence.reason
+    assert evidence.reason != "Wiki plane unavailable (no .parrot/wiki in worktree or main checkout)"
+
+
+@pytest.mark.asyncio
+async def test_blast_resolves_a_real_linked_worktree_to_its_main_checkout(tmp_path):
+    """T7: end-to-end plane resolution over a real `git worktree`, CLI stubbed.
+
+    Exercises the unmocked resolver -- the git-common-dir derivation that the
+    unit tests stub out -- against an actual linked worktree.
+    """
+    main = tmp_path / "main"
+    main.mkdir()
+    (main / "seed.txt").write_text("seed")
+    _init_git_repo(main)
+    (main / ".parrot" / "wiki").mkdir(parents=True)
+
+    worktree = tmp_path / "linked"
+    _add_linked_worktree(main, worktree)
+    assert not (worktree / ".parrot" / "wiki").exists()
+
+    resolved = await _resolve_wiki_plane_root(worktree, ComplexityPolicy())
+    assert resolved == main.resolve()
+
+    run_mock = AsyncMock(return_value=SubprocessResult(0, _BLAST_JSON, ""))
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess", new=run_mock):
+        metrics, _, _, _, _ = await _collect_wiki_blast(
+            worktree, _BLAST_CONTRACT, ComplexityPolicy(), asyncio.Semaphore(1)
+        )
+
+    assert metrics["blast_symbols"].state == "ok"

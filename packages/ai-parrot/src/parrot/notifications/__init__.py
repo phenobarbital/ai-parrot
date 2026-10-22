@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import tempfile
 from typing import Union, List, Optional, Dict, Any, Tuple, TYPE_CHECKING
@@ -129,6 +130,7 @@ class NotificationMixin:
         sections: Optional[List[Dict[str, Any]]] = None,
         actions: Optional[List[Dict[str, Any]]] = None,
         files: Optional[List[Path]] = None,
+        media: Optional[List[Dict[str, Any]]] = None,
         version: str = "1.5",
     ) -> TeamsCard:
         """Build a ``TeamsCard`` from simple parameters.
@@ -148,6 +150,10 @@ class NotificationMixin:
                 ``data``).
             files: Optional file paths to append as "View <name>" OpenUrl
                 actions (useful when Graph-upload share links are available).
+            media: Optional players to embed, each ``{url, mimeType?, poster?}``.
+                Teams renders the ``Media`` element for video only, and only
+                from OneDrive, SharePoint, YouTube, Dailymotion or Vimeo — an
+                audio source draws a black frame, so pass an MP4.
             version: Adaptive Card schema version (default ``"1.5"``).
 
         Returns:
@@ -179,6 +185,23 @@ class NotificationMixin:
                     title=f"📎 {p.name}",
                     url=str(p),
                 )
+
+        # `body_objects` is the only route for a raw element: to_adaptative()
+        # extends the body with it verbatim, after the sections.
+        for item in media or []:
+            url = item.get("url")
+            if not url:
+                continue
+            element: Dict[str, Any] = {
+                "type": "Media",
+                "sources": [{
+                    "mimeType": item.get("mimeType") or "video/mp4",
+                    "url": url,
+                }],
+            }
+            if item.get("poster"):
+                element["poster"] = item["poster"]
+            card.body_objects.append(element)
 
         return card
 
@@ -1023,10 +1046,11 @@ class NotificationMixin:
             # rendered to MP4 and the card points at that rendition instead.
             # Only the card path does this: plain text is a list of links, and
             # a link to the original file is the better one.
+            # Rendered for every card, not only when Graph can upload it: the
+            # MP4 is also what an HTTP-served card plays from, and that path
+            # never touches Graph.
             scratch = (
-                tempfile.TemporaryDirectory(prefix="parrot-teams-")
-                if is_card and self._teams_graph_configured()
-                else None
+                tempfile.TemporaryDirectory(prefix="parrot-teams-") if is_card else None
             )
             try:
                 if scratch is not None:
@@ -1140,12 +1164,7 @@ class NotificationMixin:
                     len(files),
                 )
             else:
-                for file_path in files:
-                    card.addAction(
-                        type="Action.OpenUrl",
-                        title=f"📎 {file_path.name}",
-                        url="#",
-                    )
+                card.body_objects.append(self._teams_filename_block(files))
                 self.logger.warning(
                     "A2UI degraded delivery: Teams card listing %d filename(s) "
                     "without download links.",
@@ -1176,12 +1195,7 @@ class NotificationMixin:
                     "url": a2ui_url,
                 })
             else:
-                for file_path in files:
-                    actions.append({
-                        "type": "Action.OpenUrl",
-                        "title": f"📎 {file_path.name}",
-                        "url": "#",
-                    })
+                body.append(self._teams_filename_block(files))
             return card
 
         # JSON string — parse, inject, re-serialize
@@ -1350,6 +1364,9 @@ class NotificationMixin:
         of one podcast in the recipient's drive. Delivery of the original file
         is the e-mail channel's job.
 
+        It is written beside the source when that directory allows it, so a
+        card that links to an HTTP-served directory can point at it.
+
         Args:
             files: Files the card was asked to carry.
             out_dir: Scratch directory for the renditions.
@@ -1364,13 +1381,42 @@ class NotificationMixin:
             if self._classify_file(file_path) is not FileType.AUDIO:
                 upload.append(file_path)
                 continue
-            rendition = await self._audio_as_video(file_path, out_dir)
+            # Prefer writing beside the source. When the podcast directory is
+            # served over HTTP, the MP4 has to survive this call to be
+            # reachable by URL; `out_dir` is scratch and is deleted. Falling
+            # back to scratch keeps read-only directories working.
+            target_dir = file_path.parent if os.access(file_path.parent, os.W_OK) else out_dir
+            rendition = await self._audio_as_video(file_path, target_dir)
             if rendition is None:
                 upload.append(file_path)
                 continue
             upload.append(rendition)
             origins[rendition] = file_path
         return upload, origins
+
+    @staticmethod
+    def _teams_filename_block(files: List[Path]) -> Dict[str, Any]:
+        """Name the files in the card body when no link can be offered.
+
+        The previous downgrade added one ``Action.OpenUrl`` per file with
+        ``url="#"``. That is not a URL, and Teams rejects the entire card with
+        ``InvalidParameter (400)`` — so a failed Graph upload took the whole
+        notification down with it, message and all. A TextBlock carries the
+        same information and always renders.
+
+        Args:
+            files: The files the card was asked to carry.
+
+        Returns:
+            A TextBlock element listing the file names.
+        """
+        names = "\n".join(f"- {Path(f).name}" for f in files)
+        return {
+            "type": "TextBlock",
+            "text": f"**Attached files** (no download link available)\n{names}",
+            "wrap": True,
+            "isSubtle": True,
+        }
 
     @staticmethod
     def _teams_media_element(file_path: Path, url: str) -> Dict[str, Any]:

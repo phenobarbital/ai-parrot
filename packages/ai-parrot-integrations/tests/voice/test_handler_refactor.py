@@ -741,3 +741,40 @@ class TestAssistantTranscriptDedup:
         sent = [c.args[0] for c in connection.ws.send_json.await_args_list if c.args]
         assistant = [m["text"] for m in sent if m["type"] == "transcription" and not m["is_user"]]
         assert assistant == ["Hello! How", " can I help?"]
+
+
+class TestStaleRecordingReopensTurn:
+    """Nova closes its stream after every reply, ending the VoiceSession turn
+    on its own; the browser drops the mic on the first response_chunk without
+    sending stop_recording, so ``is_recording`` stays ``True``. The next
+    turn's audio must open a fresh turn instead of being dropped."""
+
+    @staticmethod
+    def _streaming(connection, turn_open: bool) -> MagicMock:
+        voice_session = MagicMock()
+        voice_session.turn_open = turn_open
+        voice_session.start_turn = AsyncMock()
+        voice_session.push_audio = AsyncMock()
+        connection.voice_session = voice_session
+        connection.streaming_mode = "streaming"
+        connection.session_active = True
+        connection.is_recording = True
+        return voice_session
+
+    @pytest.mark.asyncio
+    async def test_audio_after_provider_closed_turn_starts_new_turn(self, handler, connection):
+        voice_session = self._streaming(connection, turn_open=False)
+
+        await handler._handle_audio_data(connection, {"data": "AAAA"})
+
+        voice_session.start_turn.assert_awaited_once()
+        voice_session.push_audio.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_audio_into_open_turn_does_not_restart_it(self, handler, connection):
+        voice_session = self._streaming(connection, turn_open=True)
+
+        await handler._handle_audio_data(connection, {"data": "AAAA"})
+
+        voice_session.start_turn.assert_not_awaited()
+        voice_session.push_audio.assert_awaited_once()

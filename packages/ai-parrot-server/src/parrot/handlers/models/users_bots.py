@@ -9,7 +9,6 @@ plaintext via :meth:`get_mcp_config` / :meth:`get_tools_config` and accepts
 plaintext via :meth:`set_mcp_config` / :meth:`set_tools_config`; encryption
 happens transparently at write time.
 """
-from __future__ import annotations
 
 import uuid
 from datetime import datetime
@@ -104,7 +103,7 @@ class UserBotModel(Model):
     permissions: dict = Field(required=False, default_factory=dict)
 
     # Metadata
-    language: str = Field(required=False, default="en")
+    language: Optional[str] = Field(required=False, default=None)
     disclaimer: Optional[str] = Field(required=False, default=None)
     created_at: datetime = Field(required=False, default=datetime.now)
     updated_at: datetime = Field(required=False, default=datetime.now)

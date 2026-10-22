@@ -119,3 +119,24 @@ def test_no_legacy_columns_leaves_model_config_untouched() -> None:
     """Without legacy columns, model_config stays as provided (no spurious keys)."""
     m = BotModel(name="plain")
     assert m.model_config == {}
+
+
+def test_legacy_columns_are_not_model_fields() -> None:
+    """The legacy names are tolerated as kwargs but must never become columns.
+
+    A declared column is emitted in the driver's ``INSERT ... RETURNING``
+    clause, which would break every environment where the fold migrations
+    already dropped it.
+    """
+    for name in ("model_name", "temperature", "max_tokens", "top_k", "top_p", "embedding_model"):
+        assert name not in BotModel.__fields__
+        assert name not in BotModel.__columns__
+
+
+def test_legacy_fold_does_not_mutate_caller_dict() -> None:
+    """Folding a legacy column must not mutate the caller's model_config dict."""
+    caller_config = {"temperature": 0.9}
+    m = BotModel(name="legacy", model_name="gemini-2.5-pro", model_config=caller_config)
+    assert caller_config == {"temperature": 0.9}
+    assert m.model_config["model_name"] == "gemini-2.5-pro"
+    assert m.model_config["temperature"] == 0.9

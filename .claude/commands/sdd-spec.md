@@ -5,7 +5,7 @@ Scaffold a new Feature Specification using the SDD methodology.
 
 ## Usage
 ```
-/sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
+/sdd-spec [<feature-slug>] [--type feature] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
 ```
 
 `--type` / `--base-branch` are explicit overrides for the flow resolved in
@@ -183,17 +183,10 @@ TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 ```
 
-**Validation (hotfix/main):** `resolve_flow()` enforces `type='hotfix' ⇒
-base_branch='main'` internally (it returns a `FlowMeta`, whose own
-cross-field validator raises `ValueError` — this is NOT re-derived as a
-separate bash check). The `python -c` call above therefore exits non-zero
-and prints a traceback when a `--type hotfix --base-branch dev`-style
-combination (or hotfix frontmatter with a non-`main` base) is resolved. On
-that failure, abort with the same message as before:
+**Hotfixes are not specs (FEAT-698):** if `--type hotfix` was passed, or the exploration
+doc's frontmatter says `type: hotfix`, abort before resolving the flow:
 ```
-⚠️  type='hotfix' requires base_branch='main' (got base_branch='<value>').
-   Fix the brainstorm/proposal frontmatter (or --base-branch flag) and
-   re-run /sdd-spec.
+⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).
 ```
 
 **Validation (feature/not-main):** `FlowMeta` does NOT reject
@@ -204,7 +197,7 @@ manual bash condition after the resolver returns successfully. If
 ```
 ⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
    or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+   main, use /sdd-brief <source> (FEAT-698).
 ```
 
 Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
@@ -286,17 +279,7 @@ if [ -z "$SKIP_REASON" ]; then
 fi
 if command -v codex >/dev/null 2>&1; then
   CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
-  PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
-  python -c "
-import json, sys
-json.dump({
-    'model': sys.argv[1],
-    'codex_cli_version': sys.argv[2],
-    'reasoning_effort': 'high',
-    'timeout_s': 600,
-    'probe_output': sys.argv[3],
-}, open(sys.argv[4], 'w'), indent=2)
-" "$MODEL" "$CODEX_VERSION" "$PROBE_OUTPUT" "$DR/run.json"
+  python -m scripts.sdd.spec_tools init-run "$DR" --model "$MODEL" --codex-version "$CODEX_VERSION" --probe-file "$DR/probe.txt"
 fi
 ```
 
@@ -322,22 +305,7 @@ In intake mode, sources come from `synthesis.json` (FEAT-577):
 
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  python - "$DR" <<'PY' || SKIP_REASON="brief rendering failed"
-import sys
-from pathlib import Path
-
-dr = Path(sys.argv[1])
-template = Path("sdd/templates/design_research.prompt.md").read_text(encoding="utf-8")
-names = [
-    "problem_statement", "constraints_and_goals", "recommended_option_or_scope",
-    "code_context_paths", "open_questions", "question",
-]
-for name in names:
-    value = (dr / f"{name}.txt").read_text(encoding="utf-8").strip()
-    template = template.replace("{{" + name + "}}", value)
-assert "{{" not in template, "unfilled placeholder remains"
-(dr / "brief.md").write_text(template, encoding="utf-8")
-PY
+  python -m scripts.sdd.spec_tools render-brief "$DR" || SKIP_REASON="brief rendering failed"
 fi
 ```
 FORBIDDEN in the brief: anything you have written for this spec, your
@@ -359,14 +327,7 @@ if [ -z "$SKIP_REASON" ]; then
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
   ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
   if [ -f "$DR/run.json" ]; then
-    python -c "
-import json, sys
-d = json.load(open(sys.argv[1]))
-d['started_at'] = sys.argv[2]
-d['ended_at'] = sys.argv[3]
-d['exit_code'] = int(sys.argv[4])
-json.dump(d, open(sys.argv[1], 'w'), indent=2)
-" "$DR/run.json" "$STARTED_AT" "$ENDED_AT" "$rc"
+    python -m scripts.sdd.spec_tools stamp-run "$DR" --started-at "$STARTED_AT" --ended-at "$ENDED_AT" --exit-code "$rc"
   fi
 fi
 ```
@@ -378,23 +339,14 @@ concurrency is provided for you.
 #### 3b.4 Validate and triage
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  python -c "
-import json, sys, jsonschema
-s = json.load(open('sdd/templates/design_research.schema.json'))
-d = json.load(open('$DR/suggestions.json'))
-jsonschema.Draft202012Validator(s).validate(d)
-print(len(d['suggestions']), 'suggestions')" || SKIP_REASON="suggestions.json failed schema validation"
+  python -m scripts.sdd.spec_tools validate-suggestions "$DR" || SKIP_REASON="suggestions.json failed schema validation"
 fi
 ```
 For each suggestion (when not skipped), for every `affected_paths` entry:
 1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
    stays inside it —
    ```bash
-   python -c "
-import os, sys
-p = os.path.realpath(sys.argv[1])
-root = os.path.realpath('$REPO_ROOT')
-sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" "<path>" \
+   python -m scripts.sdd.spec_tools check-path "<path>" --root "$REPO_ROOT" \
      || REASON="REJECT — path outside repository: <path>"
    ```
    A path that fails containment is `REJECT — path outside repository: <path>` and is
@@ -498,8 +450,8 @@ stay with the thinking model — eligibility never delegates a design choice.
      match this shape exactly:
      ```yaml
      ---
-     type: feature        # or: hotfix
-     base_branch: dev     # or: main (mandatory for hotfix)
+     type: feature
+     base_branch: dev     # or: staging (release freeze)
      projects: [ai-parrot]  # FEAT-576 — parts of the codebase; carried from the brainstorm/proposal
      tags: [memory]         # FEAT-576 — 2–6 kebab-case keywords; carried from the brainstorm/proposal
      # reuse_feature_id: FEAT-<NNN>   # OPTIONAL — only for an intentional
@@ -511,22 +463,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      exploration doc, derive projects from §4 research (mapping in
      `/sdd-brainstorm` §10) and propose 2–6 tags. Vocabulary: `KNOWN_PROJECTS`
      in `scripts/sdd/sdd_meta.py` (unknown values warn).
-   - **Feature ID — SKIP ENTIRELY when `TYPE == "hotfix"` (FEAT-466).** A
-     bugfix is not a feature and reserves no `FEAT-<NNN>`: ledger ids exist
-     for features and the brainstorm → spec → task SDD flow, and a hotfix is
-     identified by its **Jira issue key** instead. Do NOT call
-     `reserve_ids.py --kind feature` on the hotfix path — write no
-     `FEAT-<NNN>` anywhere in the spec, and use the Jira key as the
-     document's identity line (`**Jira**: <KEY>` in place of `**Feature
-     ID**: FEAT-<NNN>`). This is not an oversight to fix later: it is the
-     whole point — the allocator's "current branch must equal
-     `--base-branch`" precondition (`reserve_ids.py`, `_assert_safe_to_reserve`)
-     would otherwise be
-     unreachable for a hotfix that has to reserve on `main` while another
-     worktree already has `main` checked out. Skipping reservation removes
-     the problem rather than solving it.
-
-     For `TYPE == "feature"`, **first check whether this slug already owns
+   - **Feature ID.** **First check whether this slug already owns
      an ID**. A slug has ONE feature ID for its lifetime: re-running
      `/sdd-spec` over an existing spec must REUSE that number, never
      reserve a second one. A second reservation forks the feature's
@@ -539,11 +476,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      `formfield-content-type` (FEAT-488 → FEAT-489), and cost a full run.
 
      ```bash
-     EXISTING=$(python -c "
-     from pathlib import Path
-     from scripts.sdd.reserve_ids import existing_feature_id
-     found = existing_feature_id(Path('.'), '<feature-name>')
-     print(found[0] if found else '')")
+     EXISTING=$(python -m scripts.sdd.spec_tools existing-feature-id "<feature-name>")
      ```
 
      If `$EXISTING` is non-empty, **use it verbatim as this spec's Feature
@@ -605,6 +538,20 @@ Include a `## Worktree Strategy` section in the spec with:
   `parallel: false`.
 - Cross-feature dependencies: list any specs that must be merged first.
 
+**Validation Contract hint (FEAT-699 — mandatory subsection, may be `none — fallback`):**
+Fill §4 `### Validation Contract` with the integration tests that prove THIS feature works: start from the
+§3 modules' existing test files and the §4 Integration Tests table, prefer files over node ids, never a
+directory, never a `real_llm` test. It replaces heuristic test breadth in every tier, so under-declaring
+narrows local coverage (the nightly workflow is the backstop). Write `none — fallback` only when no
+existing test exercises the feature yet; the selector then uses its bounded fallback.
+
+**Runners, tiers and lift-on-read (FEAT-709):** the contract may also use the multi-runner `runners:` form
+(`- kind: pytest|vitest|cargo|parrot-e2e` blocks, see `sdd/templates/spec.md`) when the feature has
+non-pytest tests. Kinds, eligible tiers and settings come from the runner registry (built-ins merged with
+`.parrot/test_runners.toml`); `parrot-e2e` is merge/feature tier only, never task. The flat
+`tests:`/`markers:` form stays valid and is lifted on read to one pytest runner; `/sdd-task` always caches
+schema 2.
+
 **E2E plan hint (new section in spec, FEAT-581 — optional):**
 Only add this when the feature exercises the deterministic E2E gate
 (`parrot e2e run` / `parrot e2e verify`); otherwise omit both the
@@ -663,14 +610,7 @@ fi
 # Intake mode promotion (FEAT-577)
 if [ -d "$STAGE" ]; then
   # Set feat_id and phase: committed in intake.json BEFORE staging
-  python -c "
-import json, sys
-d = json.load(open(sys.argv[1]))
-d['feat_id'] = sys.argv[2]
-d['phase'] = 'committed'
-d['updated_at'] = __import__('datetime').datetime.utcnow().isoformat() + '+00:00'
-json.dump(d, open(sys.argv[1], 'w'), indent=2)
-" "$STAGE/intake.json" "$FEAT_ID"
+  python -m scripts.sdd.spec_tools commit-intake "$STAGE/intake.json" --feat-id "$FEAT_ID"
   
   INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
   if [ -e "$INTAKE_PROMOTED" ]; then
@@ -694,7 +634,6 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 
 ### 7. Output
 
-**`TYPE == "feature"`:**
 ```
 ✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
 
@@ -713,26 +652,6 @@ Next:
   1. Review the spec — check Acceptance Criteria and Architectural Design.
   2. Mark status: approved when ready.
   3. Run /sdd-task sdd/specs/<feature-name>.spec.md
-```
-
-**`TYPE == "hotfix"` (FEAT-466 — no id reserved):**
-```
-✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
-
-   Identity: Jira <KEY> (no FEAT-<NNN> reserved — a bugfix is not a feature)
-   Base branch: main
-
-   To create the worktree (origin/main, never HEAD/dev):
-     git worktree add -b hotfix-<KEY>-<feature-name> \
-       .claude/worktrees/hotfix-<KEY>-<feature-name> origin/main
-
-Next:
-  1. Review the spec — check Acceptance Criteria and Architectural Design.
-  2. Mark status: approved when ready.
-  3. Normally: skip /sdd-task and dispatch straight to development (the
-     single-agent path handles a one-or-two-commit hotfix directly from
-     the spec). Only run /sdd-task if this hotfix genuinely needs
-     decomposition — it will not reserve TASK-<NNN> ids either.
 ```
 
 ## Reference

@@ -654,8 +654,8 @@ class FakeGraphStore:
         self.rows = rows
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def execute_traversal(self, ctx, aql, bind_vars=None, collection_binds=None):
-        self.calls.append((aql, dict(bind_vars or {})))
+    async def execute_pattern(self, ctx, pattern, params, collection_binds=None):
+        self.calls.append((pattern, dict(params)))
         return self.rows
 
 
@@ -664,9 +664,9 @@ async def test_only_allowlisted_patterns_may_be_executed(retrieval):
     retrieval.ontology = FakeOntology()
     retrieval.graph_store = FakeGraphStore([])
 
-    assert retrieval.aql_for("signatories_of")
+    assert retrieval.pattern_for("signatories_of")
     with pytest.raises(AuthorizationDenied, match="not an allowlisted pattern"):
-        retrieval.aql_for("FOR doc IN contract REMOVE doc IN contract")
+        retrieval.pattern_for("FOR doc IN contract REMOVE doc IN contract")
 
 
 @pytest.mark.asyncio
@@ -706,8 +706,8 @@ async def test_a_current_projection_is_accepted_with_bound_values(retrieval):
     rows = await retrieval.execute_graph(plan, reader_context())
 
     assert len(rows) == 1
-    aql, binds = store.calls[0]
-    assert "signatories_of" in aql
+    pattern, binds = store.calls[0]
+    assert "signatories_of" in pattern.query_template
     assert binds == {"contract_id": "acme-msa"}
 
 

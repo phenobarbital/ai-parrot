@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from .comparison.definition import SlotsDefinition
+from .comparison.definition import CompletenessPolicy, ReportingPolicy, SlotsDefinition
 from .contracts import IdentifyStrategy, ShapeKind
 from .perception.profiles import ShapeProfile
 from .perception.slots import AnchorRule
@@ -40,10 +40,18 @@ class ZoneSelector(BaseModel):
     kind: Optional[str] = None
     ordinal: Optional[int] = Field(default=None, ge=0)
     region: Optional[Tuple[float, float, float, float]] = None
+    #: ``(y_start, y_end)`` as fractions of the observed fixture height: every zone fragment whose centre
+    #: falls in the band belongs to this zone (see ``perception.bands``).
+    band: Optional[Tuple[float, float]] = None
 
     @model_validator(mode="after")
     def _check(self) -> "ZoneSelector":
-        """Validate kind and normalized, non-reversed region bounds."""
+        """Validate kind, normalized non-reversed region bounds, and the fixture band."""
+        if self.band is not None:
+            if self.region is not None or self.ordinal is not None:
+                raise ValueError("band: cannot be combined with region or ordinal")
+            if not 0.0 <= self.band[0] < self.band[1] <= 1.0:
+                raise ValueError("band: 0 <= y_start < y_end <= 1 is required")
         if self.kind is not None and self.kind not in _SHAPE_KINDS:
             raise ValueError(f"kind: {self.kind!r} is not a ShapeKind value")
         if self.region is not None:
@@ -64,8 +72,20 @@ class LayoutProfile(BaseModel):
     anchor_rule: AnchorRule = AnchorRule.SHAPE_IS_SLOT
     fill_gaps: bool = False
     untagged_bottom_row: bool = False
+    #: Fill each full-height row up to the facings its definition shelf expects (TAG_BELOW_PRODUCT only).
+    definition_gap_fill: bool = False
+    #: A shelf holds tiers of different products: shapes stacked in one column are slots of their own
+    #: (default: a stack in one column is one slot, e.g. cartons piled two high).
+    tiered_shelves: bool = False
     identify_strategy: IdentifyStrategy = IdentifyStrategy.FULL_IMAGE
     perception_mode: Literal["cv", "llm_detector"] = "cv"
+    #: Locate the fixture with the configuration's ROI prompt before any LLM detection.
+    roi_detection: bool = True
+    #: Labels of the ROI prompt whose detections are observed zones (e.g. ``top_zone``), with their text.
+    roi_zone_labels: List[str] = Field(default_factory=list)
+    #: Regular expression of the ROI labels that box one product unit each (e.g. ``_on_shelf$``). Their
+    #: boxes split a detection drawn around a stack and recover a product the detector missed.
+    roi_product_labels: Optional[str] = None
     min_usable_shapes: int = Field(default=1, ge=0)
     min_row_items: int = Field(default=1, ge=1)
     max_row_slope: float = Field(default=0.12, ge=0.0)
@@ -76,6 +96,8 @@ class LayoutProfile(BaseModel):
     required_descriptor_fields: List[str] = Field(default_factory=list)
     ocr_targets: List[Literal["slot", "tag", "zone"]] = Field(default_factory=lambda: ["slot", "tag", "zone"])
     references: ReferencePolicy = Field(default_factory=ReferencePolicy)
+    reporting: ReportingPolicy = Field(default_factory=ReportingPolicy)
+    completeness: CompletenessPolicy = Field(default_factory=CompletenessPolicy)
     zone_selectors: List[ZoneSelector] = Field(default_factory=list)
 
     @model_validator(mode="after")

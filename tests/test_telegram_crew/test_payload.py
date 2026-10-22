@@ -175,4 +175,5 @@ class TestDataPayload:
         p = DataPayload(temp_dir="/tmp/test_default")
         assert "text/csv" in p.allowed_mime_types
         assert "application/json" in p.allowed_mime_types
-        assert len(p.allowed_mime_types) == 7
+        assert "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in p.allowed_mime_types
+        assert len(p.allowed_mime_types) == 12

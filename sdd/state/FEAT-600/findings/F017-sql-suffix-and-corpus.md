@@ -2,7 +2,7 @@
 id: F017
 query_id: Q017/Q021
 type: read+grep
-intent: `.sql` is scanned into file: pages; 32 tracked .sql files form the DDL-ingest corpus
+intent: "`.sql` is scanned into file: pages; 32 tracked .sql files form the DDL-ingest corpus"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

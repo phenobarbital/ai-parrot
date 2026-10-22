@@ -75,13 +75,13 @@ class TestClassify:
 class TestGraph:
     """Graph and fallback execution maintain their authorization boundaries."""
 
-    def test_aql_for_allowlist(self):
+    def test_pattern_for_allowlist(self):
         """Only declared graph patterns expose query templates."""
         retrieval = _retrieval(ontology=FakeOntology({"procedure_steps": FakePattern("FOR s IN step RETURN s")}))
-        assert retrieval.aql_for("procedure_steps").startswith("FOR")
+        assert retrieval.pattern_for("procedure_steps").query_template.startswith("FOR")
         for bad in ("lookup", "drop_everything"):
             with pytest.raises(AuthorizationDenied):
-                retrieval.aql_for(bad)
+                retrieval.pattern_for(bad)
 
     async def test_execute_graph_denies_before_traversal(self):
         """A tenant denial occurs before calling the graph store."""

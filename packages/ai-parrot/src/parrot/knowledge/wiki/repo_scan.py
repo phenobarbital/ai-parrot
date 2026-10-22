@@ -569,6 +569,16 @@ def _markdown_summary(content: str) -> str:
     return ""
 
 
+def _document_attrs(content: str) -> dict[str, str]:
+    """Normalize leading document frontmatter without altering the source body."""
+    from parrot.knowledge.wiki.entities import normalize_frontmatter, parse_leading_yaml
+
+    frontmatter = parse_leading_yaml(content)
+    if frontmatter is None:
+        return {}
+    return normalize_frontmatter(frontmatter, source="markdown").to_rows()
+
+
 def build_file_slice(
     root: Path,
     rel_path: str,
@@ -659,6 +669,8 @@ def build_file_slice(
         token_count=estimate_tokens(body),
         content_hash=content_hash,
     )
+    if suffix in DOC_SUFFIXES:
+        record.attrs = _document_attrs(content)
     return FileSlice(
         rel_path=rel_path,
         record=record,

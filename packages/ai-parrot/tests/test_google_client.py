@@ -1,5 +1,6 @@
 import pytest
 
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 from PIL import Image
 from parrot.clients.google import GoogleGenAIClient
@@ -347,7 +348,7 @@ class TestSupportsCombinedToolsAndSchema:
     DEFAULT_PREFIXES = GoogleGenAIClient._default_combined_call_prefixes
 
     def test_is_staticmethod(self):
-        """Helper is a @staticmethod (matches the _is_gemini3_model pattern)."""
+        """Helper is a @staticmethod (matches the _is_modern_gemini_model pattern)."""
         descriptor = GoogleGenAIClient.__dict__["_supports_combined_tools_and_schema"]
         assert isinstance(descriptor, staticmethod)
 
@@ -359,6 +360,7 @@ class TestSupportsCombinedToolsAndSchema:
             "gemini-3.1-flash-lite-preview",
             # also matches longer suffixes the API may publish later
             "gemini-3.5-flash-001",
+            "gemini-4-argon",
         ],
     )
     def test_whitelisted_returns_true(self, model):
@@ -371,6 +373,7 @@ class TestSupportsCombinedToolsAndSchema:
             "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-3-flash-preview",  # NOT in the prefix list — 3-flash without the .5
+            "gemini-3.7-pro",  # retired upstream (FEAT-688) — no longer whitelisted
         ],
     )
     def test_unwhitelisted_returns_false(self, model):
@@ -392,6 +395,37 @@ class TestSupportsCombinedToolsAndSchema:
     def test_empty_prefixes_disables_combined_mode(self):
         """Passing an empty prefix tuple is the documented kill switch."""
         assert GoogleGenAIClient._supports_combined_tools_and_schema("gemini-3.5-flash", ()) is False
+
+
+class TestModernGeminiGates:
+    """FEAT-688: generation predicate, cache key and thinking gates for Gemini 4.x."""
+
+    @pytest.mark.parametrize("model", ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-4-argon"])
+    def test_is_modern_gemini_model_true(self, model):
+        assert GoogleGenAIClient._is_modern_gemini_model(model) is True
+
+    @pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-flash-latest", "", None])
+    def test_is_modern_gemini_model_false(self, model):
+        assert GoogleGenAIClient._is_modern_gemini_model(model) is False
+
+    def test_is_modern_gemini_model_accepts_enum(self):
+        assert GoogleGenAIClient._is_modern_gemini_model(GoogleModel.GEMINI_3_5_FLASH) is True
+
+    def test_old_predicate_removed(self):
+        assert not hasattr(GoogleGenAIClient, "_is_gemini3_model")
+
+    def test_model_class_key_separates_generations(self):
+        client = GoogleGenAIClient(api_key="fake")
+        assert client._model_class_key("gemini-4-argon") != client._model_class_key("gemini-3.5-flash")
+        assert client._model_class_key("gemini-4-argon").startswith("gemini4_")
+        assert client._model_class_key("gemini-2.5-pro") == "default"
+
+    def test_argon_is_not_thinking_only(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-4-argon") is False
+        assert GoogleGenAIClient._rejects_zero_thinking_budget("gemini-4-argon") is False
+
+    def test_gemini_3_7_pro_no_longer_thinking_gated(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-3.7-pro") is False
 
 
 class TestCombinedCallPrefixesResolution:
@@ -1040,6 +1074,94 @@ class TestAskStreamCombinedModeGate:
 
         # Two-phase: reformat call should fire.
         assert m["models.generate_content"].call_count >= 1
+
+
+class TestCleanGoogleSchemaOptionalEnum:
+    """An optional enum argument keeps its allowed values.
+
+    Pydantic v2 emits ``Optional[Literal[...]]`` / ``Optional[SomeEnum]`` as
+    ``anyOf: [{type: string, enum: [...]}, {type: null}]``. Flattening the
+    union must carry ``enum`` out of the chosen branch, or Gemini sees a free
+    string and guesses values the tool then refuses (``complete`` for
+    ``completed``).
+    """
+
+    def _clean(self, schema):
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        return client.clean_google_schema(schema)
+
+    def test_optional_literal_keeps_enum(self):
+        schema = {
+            "anyOf": [{"enum": ["scheduled", "completed"], "type": "string"}, {"type": "null"}],
+            "default": None,
+            "title": "Status",
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["type"] == "string"
+        assert cleaned["enum"] == ["scheduled", "completed"]
+        assert "anyOf" not in cleaned
+
+    def test_optional_enum_ref_keeps_enum(self):
+        schema = {
+            "$defs": {"Color": {"enum": ["red", "blue"], "title": "Color", "type": "string"}},
+            "type": "object",
+            "properties": {
+                "color": {"anyOf": [{"$ref": "#/$defs/Color"}, {"type": "null"}], "default": None},
+            },
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["properties"]["color"]["enum"] == ["red", "blue"]
+
+    def test_optional_numeric_literal_is_not_given_an_enum(self):
+        """The SDK types Schema.enum as list[str]: a numeric enum would make the declaration invalid."""
+        schema = {"anyOf": [{"enum": [1, 2], "type": "integer"}, {"type": "null"}], "default": None}
+        cleaned = self._clean(schema)
+        assert "enum" not in cleaned
+        from google.genai import types
+
+        types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"n": cleaned}},
+        )
+
+    def test_optional_literal_declaration_is_valid_for_the_sdk(self):
+        schema = {"anyOf": [{"enum": ["a", "b"], "type": "string"}, {"type": "null"}], "default": None}
+        from google.genai import types
+
+        decl = types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"s": self._clean(schema)}},
+        )
+        assert decl.parameters.properties["s"].enum == ["a", "b"]
+
+    def test_optional_plain_string_has_no_enum(self):
+        cleaned = self._clean({"anyOf": [{"type": "string"}, {"type": "null"}], "default": None})
+        assert cleaned["type"] == "string" and "enum" not in cleaned
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            Literal["scheduled", "completed"] | str,
+            Literal["scheduled", "completed"] | str | None,
+            Literal["scheduled", "completed"] | Literal["cancelled", "pending"],
+            Literal["scheduled", "completed"] | Literal["cancelled", "pending"] | None,
+        ],
+    )
+    def test_multiple_non_null_branches_do_not_restrict_enum(self, annotation: object) -> None:
+        """Values allowed by later union branches remain available to Gemini."""
+        from google.genai import types
+        from pydantic import create_model
+
+        args_model = create_model("UnionArgs", status=(annotation, ...))
+        assert args_model(status="cancelled").status == "cancelled"
+
+        cleaned = self._clean(args_model.model_json_schema())
+        assert cleaned["properties"]["status"]["type"] == "string"
+        assert "enum" not in cleaned["properties"]["status"]
+        declaration = types.FunctionDeclaration(name="probe", parameters=cleaned)
+        assert declaration.parameters.properties["status"].enum is None
 
 
 class TestCleanGoogleSchemaArrayItems:

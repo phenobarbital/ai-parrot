@@ -9,7 +9,7 @@ the *real* Obscura CDP endpoint with Playwright's own
 ``chromium.connect_over_cdp()`` (the exact attachment pattern
 ``parrot.mcp.obscura``'s own module docstring documents) to perform a fixed
 navigation between this app's two real, already-shipped routes (``/admin/``
-and ``/admin/login``, per ``Login.svelte``'s own routing comment) and assert
+and ``/login``, per ``Login.svelte``'s own routing comment) and assert
 the declared console/network invariants: no console message of severity
 ``error``, and no network response with a server-error (5xx) status.
 "Health alone is not browser evidence" (spec §2): only this real
@@ -42,9 +42,9 @@ from parrot.e2e.targets.botmanager import build_botmanager_adapter
 from parrot.e2e.targets.browser import build_browser_adapter
 from parrot.e2e.targets.ui import build_ui_adapter
 
-_ADMIN_TITLE = "AI-Parrot Admin"
+_ADMIN_TITLE = "AI-Parrot"
 _ADMIN_HOME_PATH = "/admin/"
-_ADMIN_LOGIN_PATH = "/admin/login"
+_ADMIN_LOGIN_PATH = "/login"
 _NAVIGATION_TIMEOUT_MS = 20_000
 
 

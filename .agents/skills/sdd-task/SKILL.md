@@ -106,6 +106,12 @@ Use one backticked pytest command per bullet, targeting test files or node IDs;
 never bare pytest or directory-wide test operands. Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
 
+Each task lists its OWN test files only; the spec-wide contract is cached once with
+`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
+and the FEAT-709 `runners:` forms and always writes schema 2 (schema 1 is lifted on read to one pytest runner);
+runner kinds, tiers and settings are checked against `.parrot/test_runners.toml`, and `check_task_graph.py` flags
+unknown runners, forbidden tiers, invalid settings/extensions and unrecognised validation commands.
+
 #### Delegation Contract (optional, per task)
 
 Emit a `## Delegation Contract` packet ONLY for a task whose design is
@@ -114,7 +120,7 @@ complete. `design_complete: true` is a declaration the task author signs.
 - List every target file with its `action` (`create`/`modify`), and give each
   `modify` target a REAL `expected_sha256` — compute it, never guess:
   `sha256sum <path>` or
-  `python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <path>`.
+  `shasum -a 256 <path>` on macOS (both print the hash first; take the first field).
 - Every `create` target needs a block tagged `path=<target>` holding the new
   file's full content; every referenced block id must exist in the task file.
 - Never leave placeholders (`...`, `TODO`, `FIXME`, `XXX`, `<angle>`,
@@ -170,7 +176,7 @@ Example:
      not the issue ID. Preserve the selected FixPlan/claimed issue passed by
      `$sdd-fix`; a fresh ready-work query would omit that claimed issue.
      For standalone promotion locate the issue in `wikitoolkit ledger plan-fix --json`.
-     Record `discovered_from: <issue-id>`. Filing a task is not resolution:
+     Record `` **Discovered-from**: `issue:<id>` `` (`$sdd-done` closes the issue through it). Filing a task is not resolution:
      run `wikitoolkit ledger close <issue-id>` separately only after implementation
      and validation, with the two-key evidence required by `$sdd-fix`.
      Deprecated (FEAT-572): prefer `sdd-fix <issue-id>`, which routes the issue's group to

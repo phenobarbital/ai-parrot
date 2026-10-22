@@ -551,8 +551,8 @@ class QANode(DevLoopNode):
     ) -> List[AcceptanceCriterion]:
         """Derive one executable criterion for a run that declared none.
 
-        Runs pytest scoped to the narrowest existing test directory that
-        mirrors each changed file (see :meth:`_pytest_targets`) — the
+        Runs pytest scoped to the existing test files that mirror each
+        changed file (file-level, FEAT-699; see :meth:`_pytest_targets`) — the
         whole-monorepo suite is minutes of wall clock, and so is the full
         test tree of ``ai-parrot`` itself (1250+ test modules), for a
         change that usually lands in one subsystem.
@@ -578,7 +578,7 @@ class QANode(DevLoopNode):
             research: Upstream research output, for the worktree path.
 
         Returns:
-            One ``ShellCriterion`` per feature-tier ``PytestInvocation``
+            One ``ShellCriterion`` per feature-tier ``Invocation``
             (FEAT-563) — never a bare, unscoped ``pytest`` — or an empty
             list when nothing pytest-shaped changed or nothing mapped.
         """
@@ -608,7 +608,7 @@ class QANode(DevLoopNode):
             core = any(t.reason in ("core", "escalated") for t in inv.targets)
             criteria.append(
                 ShellCriterion(
-                    name=f"pytest[{inv.distribution}]" + (" (core escalation)" if core else ""),
+                    name=f"pytest[{inv.distribution}]" + (" (escalation)" if core else ""),
                     command=shlex.join(inv.argv),
                 )
             )
@@ -618,49 +618,36 @@ class QANode(DevLoopNode):
     async def _record_green_escalations(
         self, shared: Dict[str, Any], research: ResearchOutput, report: QAReport
     ) -> None:
-        """Record passed core and cap escalation criteria in the test-scope ledger. Never raises."""
+        """Record passed core escalation criteria in the test-scope ledger. Never raises."""
         plan = shared.get("test_scope_plan")
-        if plan is None or (not plan.core_hits and not getattr(plan, "cap_hits", {})):
+        if plan is None or not plan.core_hits:
             return
         try:
             for result in report.criterion_results:
-                if not result.passed or not result.name.endswith(" (core escalation)"):
+                if not result.passed or not result.name.endswith(" (escalation)"):
                     continue
                 dist = result.name[len("pytest[") : result.name.index("]")]
                 core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
-                impact_files = list(getattr(plan, "cap_hits", {}).get(dist, ()))
-                impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in getattr(plan, "cap_impacted", {}) else {}
-                if not core_files and not impact_files:
+                if not core_files:
                     continue
                 await asyncio.to_thread(
                     record_green_escalation,
                     Path(research.worktree_path),
                     [dist],
                     core_files,
-                    impact_files,
-                    impacted_hashes,
                 )
         except Exception as exc:  # noqa: BLE001 — ledger recording must never fail QA
             self.logger.warning("Could not record green escalations for %s: %s", research.feat_id, exc)
 
     @classmethod
     def _pytest_targets(cls, files: List[str], worktree_path: str) -> List[str]:
-        """Delegates to test_scope.mirror.pytest_targets (FEAT-563)."""
-        return _scope_mirror.pytest_targets(files, worktree_path)
+        """Delegates to test_scope.mirror.pytest_file_targets (FEAT-699 file-level mirror)."""
+        return _scope_mirror.pytest_file_targets(files, worktree_path)
 
     @classmethod
     def _pytest_target_for(cls, path: str, worktree_path: str) -> Optional[str]:
-        """Delegates to test_scope.mirror.pytest_target_for (FEAT-563)."""
-        return _scope_mirror.pytest_target_for(path, worktree_path)
-
-    @staticmethod
-    def _deepest_existing_dir(
-        tests_root: str,
-        subdirs: Tuple[str, ...],
-        worktree_path: str,
-    ) -> str:
-        """Delegates to test_scope.mirror.deepest_existing_dir (FEAT-563)."""
-        return _scope_mirror.deepest_existing_dir(tests_root, subdirs, worktree_path)
+        """Delegates to test_scope.mirror.pytest_file_target_for (FEAT-699 file-level mirror)."""
+        return _scope_mirror.pytest_file_target_for(path, worktree_path)
 
     @staticmethod
     def _prune_nested(targets: set) -> List[str]:

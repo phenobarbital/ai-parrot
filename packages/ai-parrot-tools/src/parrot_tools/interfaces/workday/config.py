@@ -48,6 +48,7 @@ from parrot.conf import (
     WORKDAY_WSDL_PATH,
     WORKDAY_WSDL_PAYROLL,
     WORKDAY_WSDL_RECRUITING,
+    WORKDAY_WSDL_STAFFING,
     WORKDAY_WSDL_TIME,
     WORKDAY_WSDL_TIME_BLOCK_REPORT,
 )
@@ -93,6 +94,12 @@ _WSDL_ROUTING: dict[str, Any] = {
     "get_payroll_balances": WORKDAY_WSDL_PAYROLL,
     "get_payroll_results": WORKDAY_WSDL_PAYROLL,
     "get_company_payment_dates": WORKDAY_WSDL_PAYROLL,
+    # Staffing read ops — Get_Positions is not in the Human Resources WSDL
+    "get_positions": WORKDAY_WSDL_STAFFING,
+    "get_job_profiles": WORKDAY_WSDL_HUMAN_RESOURCES,
+    # FEAT-706: worker event history + job changes — Get_Worker_Event_History is HR-only
+    "get_worker_event_history": WORKDAY_WSDL_HUMAN_RESOURCES,
+    "get_worker_job_changes": WORKDAY_WSDL_HUMAN_RESOURCES,
 }
 
 

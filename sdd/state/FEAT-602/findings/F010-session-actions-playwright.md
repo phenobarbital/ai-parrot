@@ -2,7 +2,7 @@
 id: F010
 query_id: Q024
 type: read
-intent: Session actions: authenticate + CredentialResolverFn contract; Playwright driver.
+intent: "Session actions: authenticate + CredentialResolverFn contract; Playwright driver."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

@@ -12,6 +12,7 @@ separate checkouts of older branches and legitimately hold the old text.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CREATORS: dict[str, bool] = {
     ".claude/commands/sdd-task.md": False,
     ".claude/commands/sdd-start.md": True,
+    ".claude/commands/sdd-brief.md": True,
     ".claude/agents/sdd-worker.md": True,
     ".claude/agents/sdd-planner.md": True,
     ".claude/agents/sdd-research.md": True,
@@ -95,3 +97,32 @@ def test_no_legacy_naming_template_remains() -> None:
             offenders.append(md_file.relative_to(_REPO_ROOT))
 
     assert not offenders, f"Legacy template `{_LEGACY_TEMPLATE}` found in: " + ", ".join(str(p) for p in offenders)
+
+
+_SHIPPED_WITH_INLINE_PYTHON_BAN = (
+    ".claude/commands/sdd-spec.md",
+    ".agent/workflows/sdd-spec.md",
+    ".claude/commands/sdd-task.md",
+    ".agent/workflows/sdd-task.md",
+    ".agents/skills/sdd-task/SKILL.md",
+)
+# `python -c "` one-liners and `python - … <<` heredocs; prose mentions of `python -c` in
+# backticks without an opening quote are not invocations and are not matched.
+_INLINE_PY = re.compile(r'python3?\s+(?:-c\s+"|-\s+(?:"\$\w+"\s+)?<<)')
+
+
+@pytest.mark.parametrize("rel", _SHIPPED_WITH_INLINE_PYTHON_BAN)
+def test_shipped_commands_have_no_inline_python(rel: str) -> None:
+    """FEAT-633 Q1 (TASK-4334): a shipped command never embeds Python — only the ``sdd_meta``
+    one-liners remain, and TASK-4089 rule 6 retires those (then the allowance below is
+    exercised zero times and this test still passes)."""
+    lines = (_REPO_ROOT / rel).read_text(encoding="utf-8").splitlines()
+    offenders = []
+    for i, line in enumerate(lines):
+        if not _INLINE_PY.search(line):
+            continue
+        window = "\n".join(lines[i : i + 4])
+        if "scripts.sdd.sdd_meta" in window:
+            continue  # TASK-4299 gives sdd_meta a CLI; TASK-4089 rewrites these by hand
+        offenders.append(f"{rel}:{i + 1}: {line.strip()[:80]}")
+    assert not offenders, offenders

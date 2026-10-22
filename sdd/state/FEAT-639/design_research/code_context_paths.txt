@@ -1,0 +1,13 @@
+.venv/lib/python3.12/site-packages/jira/client.py
+packages/ai-parrot-server/src/parrot/handlers/agent.py
+packages/ai-parrot-tools/pyproject.toml
+packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
+packages/ai-parrot/pyproject.toml
+packages/ai-parrot/src/parrot/bots/agent.py
+packages/ai-parrot/src/parrot/conf.py
+packages/ai-parrot/src/parrot/interfaces/jira.py
+packages/ai-parrot/src/parrot/interfaces/jira/client.py
+packages/ai-parrot/src/parrot/tools/filemanager.py
+packages/ai-parrot/src/parrot/tools/working_memory/tool.py
+packages/ai-parrot/tests/test_jira_comment_attachments.py
+packages/ai-parrot/tests/test_jiratoolkit_permissions.py

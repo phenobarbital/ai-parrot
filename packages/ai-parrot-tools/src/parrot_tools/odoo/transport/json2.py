@@ -165,6 +165,14 @@ class Json2Transport(AbstractOdooTransport):
             body.setdefault("operation", args[0])
             return body
 
+        if method == "get_views":
+            if not args or len(args) > 2:
+                raise OdooRPCError("JSON-2 get_views requires views and optional options arguments.")
+            body.setdefault("views", args[0])
+            if len(args) > 1:
+                body.setdefault("options", args[1])
+            return body
+
         if method == "load":
             if len(args) != 2:
                 raise OdooRPCError("JSON-2 load requires fields and data arguments.")
@@ -195,6 +203,8 @@ class Json2Transport(AbstractOdooTransport):
     def _is_create_signature_error(exc: OdooRPCError) -> bool:
         """True when Odoo rejected a JSON-2 ``create`` because of its argument name (422/500)."""
         text = str(exc)
+        if "vals_list" in text and "unexpected keyword argument" in text:
+            return True
         if ".create:" not in text:
             return False
         return "missing a required argument" in text or "unexpected keyword argument" in text

@@ -45,7 +45,7 @@ graph TB
         IR["OntologyIntentResolver<br/>intent.py:48"]
         ER["EntityResolver<br/>entity_resolver.py:93"]
         AZ["AuthorizationChecker<br/>authorization.py:43"]
-        GS["OntologyGraphStore<br/>graph_store.py:33"]
+        GS["ArangoOntologyGraphStore<br/>graph_store.py:56"]
         TD["ToolCallDispatcher<br/>tool_dispatcher.py:247"]
     end
 
@@ -238,18 +238,27 @@ framework-level entities.
 
 ## 9.4 Graph store — ArangoDB per-tenant isolation
 
-`OntologyGraphStore` (`graph_store.py:33`) wraps `python-arango-async`
-with tenant isolation: each tenant gets its own ArangoDB database.
+`ArangoOntologyGraphStore` (`graph_store.py:56`) wraps `python-arango-async`
+with tenant isolation: each tenant gets its own ArangoDB database. It implements the
+`GraphDocumentStore` and `OntologyTraversalStore` ABCs (see `docs/graphindex/core-seams.md`);
+the older free-form `execute_traversal(ctx, aql, bind_vars)` entry point was removed in favour
+of typed traversal operations.
 
 ### Key operations
 
 | Method | Line | Behaviour |
 |--------|------|-----------|
-| `initialize_tenant(ctx)` | 71 | Create DB, vertex/edge collections, persistent indexes, named graph |
-| `execute_traversal(ctx, aql, bind_vars)` | 185 | Run AQL with validation (see §9.9) |
-| `upsert_nodes(ctx, collection, nodes, key_field)` | 225 | Batch upsert with `_active` flag |
-| `create_edges(ctx, edge_collection, edges)` | 312 | Create edges with dedup by `(_from, _to)` |
-| `soft_delete_nodes(ctx, collection, keys)` | 413 | Mark nodes `_active: false` |
+| `initialize_tenant(ctx)` | 96 | Create DB, vertex/edge collections, persistent indexes, named graph |
+| `is_reachable(ctx, ...)` | 336 | Typed reachability check between two documents |
+| `get_document_by_id(ctx, doc_id)` | 377 | Fetch one document by id |
+| `find_by_field(ctx, ...)` | 390 | Equality lookup on a field |
+| `search_by_name(ctx, ...)` | 423 | Name search |
+| `execute_pattern(ctx, ...)` | 458 | Run a resolved traversal pattern |
+| `execute_query(ctx, query: DynamicQuery)` | 488 | Run a `DynamicQuery` (GraphDocumentStore) |
+| `_execute_aql(...)` | 276 | Private AQL runner; read-only validation applies (see §9.9) |
+| `upsert_nodes(ctx, collection, nodes, key_field)` | 507 | Batch upsert with `_active` flag |
+| `create_edges(ctx, edge_collection, edges)` | 607 | Create edges with dedup by `(_from, _to)` |
+| `soft_delete_nodes(ctx, collection, keys)` | 713 | Mark nodes `_active: false` |
 
 All AQL is read-only validated before execution (see §9.9).  The
 `TenantContext` model (`schema.py:406`) carries `tenant_id`, `arango_db`,
@@ -267,7 +276,7 @@ graph TB
         NG["Named graph<br/>(connects all)"]
     end
 
-    GS["OntologyGraphStore<br/>graph_store.py:33"] --> PerTenant
+    GS["ArangoOntologyGraphStore<br/>graph_store.py:56"] --> PerTenant
 
     classDef gs   fill:#ede7f6,stroke:#5e35b1;
     classDef data fill:#e8f5e9,stroke:#2e7d32;
@@ -346,7 +355,7 @@ sequenceDiagram
     participant ER as EntityResolver<br/>entity_resolver.py:93
     participant AZ as AuthorizationChecker<br/>authorization.py:43
     participant Cache as OntologyCache<br/>cache.py:38
-    participant GS as OntologyGraphStore<br/>graph_store.py:33
+    participant GS as ArangoOntologyGraphStore<br/>graph_store.py:56
     participant TD as ToolCallDispatcher<br/>tool_dispatcher.py:247
 
     Bot->>Mix: ontology_process(query, user_context, tenant_id)
@@ -378,7 +387,7 @@ sequenceDiagram
                 Cache-->>Mix: cached EnrichedContext
                 Mix-->>Bot: ContextEnvelope(state="ok")
             else cache miss
-                Mix->>GS: execute_traversal(ctx, aql, bind_vars)
+                Mix->>GS: execute_pattern(ctx, ...) / execute_query(ctx, query)
                 GS-->>Mix: graph_result
 
                 alt post_action = tool_call
@@ -728,7 +737,7 @@ Jesús?"* (What is Jesús's team working on?)
  7. OntologyCache.build_key(…) → "parrot:ontology:tenant1:alice:team_work_in_progress:e=target_employee_id=employee/123"
     → Cache MISS
 
- 8. OntologyGraphStore.execute_traversal(aql, {target_employee_id: "employee/123"})
+ 8. ArangoOntologyGraphStore.execute_pattern(ctx, …, {target_employee_id: "employee/123"})
     → [employee/456, employee/789] (Jesús's direct reports)
 
  9. ToolCallDispatcher.dispatch(spec, graph_result, user_context)
@@ -801,7 +810,7 @@ graph LR
 | Entity resolution | `knowledge/ontology/entity_resolver.py:135` (`extract_and_resolve`) |
 | Authorization | `knowledge/ontology/authorization.py:62` (`check`) |
 | Tool dispatch | `knowledge/ontology/tool_dispatcher.py:280` (`dispatch`) |
-| Graph operations | `knowledge/ontology/graph_store.py:185` (`execute_traversal`) |
+| Graph operations | `knowledge/ontology/graph_store.py:458` (`execute_pattern`), `:488` (`execute_query`) |
 | Store routing | `registry/routing/store_router.py:79` (`route`) |
 | Multi-tenancy | `knowledge/ontology/tenant.py:92` (`resolve`) |
 | Curation overlays | `knowledge/ontology/concept_catalog/service.py`, `schema_overlay/service.py` |

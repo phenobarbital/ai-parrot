@@ -1,0 +1,50 @@
+`sdd-worker` (merge tier, after every chunk merge), every `sdd-coder` seat
+(task tier) and `/sdd-done` (feature tier re-run and lint-fix checks) each run
+pytest through the FEAT-563 test-scope kernel. For a real feature the
+accumulated cost is very large. `/sdd-done` for FEAT-698
+(`feat-FEAT-698-sdd-brief-hotfix-flow`, 15 tasks, PR #1715) reported:
+
+```
+Suite      Tests   Passed  Failed  Skipped  Errors  Duration
+ai-parrot  11096   10948   100     48       0       1302.67s
+root       176     176     0       0        0       36.56s
+Total (per-task invocation totals)  11272 ... 1339.24s
+re-run skipped (15 tasks > 10)
+```
+
+**What actually happened (measured 2026-10-18, this brainstorm):** the full
+suite was *never* run, and no escalation fired. Reproducing the plans on the
+FEAT-698 tip (`d7e03cb93`) against its fork point (`49806c49f`) with
+`python -m scripts.sdd.select_tests --tier merge|feature --no-ledger --json`:
+
+| tier | escalated | core_hits | cap_hits | ai-parrot targets | ai-parrot tests collected |
+|---|---|---|---|---|---:|
+| merge (cumulative diff) | [] | [] | {} | 22 files/dirs (mirror + depth-1 import) | **2990** |
+| feature | [] | [] | {} | 1 dir: `packages/ai-parrot/tests/flows/dev_loop` | **2562** |
+
+None of FEAT-698's 47 changed files is in `CORE_PATHS`. The 11,096 figure is
+the **sum of 15 per-chunk merge-tier runs** (≈740 tests / ≈87 s each) that
+re-executed largely the *same* `flows/dev_loop` tests over and over. The
+feature-tier plan picks a whole test *directory* because the mirror rule
+(`mirror.deepest_existing_dir`) walks up to the deepest existing tests dir.
+
+So the root causes are:
+
+1. **Breadth by heuristic** — mirror (directory-level) + depth-1 import
+   impact select thousands of tests that the feature's author never declared
+   relevant. Nothing lets the spec say "these are the integration tests that
+   matter for this feature".
+2. **Redundancy across merges** — each merge re-runs tests whose test file and
+   imported source are unchanged since a previous green run in the same
+   feature. The FEAT-604 escalation ledger dedupes only *suite escalations*,
+   not ordinary selected tests.
+3. **Verdict noise** — ~100 tests are red on the `dev` baseline; they fail every
+   merge and every feature run, so a red table does not mean the feature broke
+   anything.
+4. **No real safety net** — `.github/workflows/ci.yml` runs only the repo-root
+   `tests/` (`--ignore=tests/tools`); **no `packages/*/tests` runs in CI at
+   all**, and `e2e.yml` is nightly e2e only. Narrowing local selection without
+   a net would hide regressions.
+
+Affected: everyone running `sdd-worker` / `/sdd-done` (wall clock, tokens in
+seat outputs, retry multipliers) and reviewers reading an always-red table.

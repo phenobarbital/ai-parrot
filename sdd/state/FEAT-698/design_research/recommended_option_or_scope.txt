@@ -1,0 +1,15 @@
+CLI: /sdd-brief <source> [--base-branch main|dev|staging] [--no-interview] [--split] [--research full|light]
+
+Source auto-detection: code-scanning URL/number (gh api), GitHub issue/PR URL, Jira key, work-ledger issue id (wikitoolkit ledger show + plan-fix, then ledger claim; always base dev), free text or file path (default base main).
+
+Phases: 1) Research (fetch source artifact, locate code, root cause with file:line evidence); 2) bounded Q&A (<=5 questions, skippable); 3) worktree creation from origin/<base> (hotfix-<KEY>-<slug> for main, fix-<id>-<slug> for dev/ledger); 4) brief document written inside the worktree; 5) handoff instructions.
+
+The brief: sdd/briefs/<slug>.brief.md with frontmatter (kind: brief, slug, base_branch, source, jira_issue_key, ledger_issue, created). Body: Problem, Root cause, Research findings, Decisions/Assumptions, Fix plan, Validation commands.
+
+Task materialization: /sdd-brief materializes STANDARD task files (the sdd/templates/task.md shape: Codebase Contract, Acceptance Criteria, Validation Commands) under sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-N-<task-slug>.md inside the worktree — one for the single-task case, several when --split. A per-brief index at sdd/briefs/<slug>.index.json reuses the per-spec index schema (feature_id: null, tasks[].file pointing at the materialized task files). It deliberately does NOT live in sdd/tasks/index/ so repo-wide task tooling and CI never ingest HOTFIX-* ids, and a merged hotfix syncing main->dev cannot pollute the feature board. Task closure flips index status and fills the Completion Note in place — no active/->completed/ move.
+
+Downstream unchanged: sdd-worker's planner and the parrot-sdd-coder MCP chunker/fidelity-gate consume the same task-file shape as today, zero Python changes in the coder pipeline.
+
+Changes to existing commands: /sdd-spec removes --type hotfix; /sdd-done resolves briefs by slug/KEY via worktree scan, verifies via the per-brief index + brief Validation Commands, opens the PR itself against base_branch (main included), keeps refusing --merge into main, prints the ledger close command next to the PR link (closing only when the fix is confirmed merged); policy docs (CLAUDE.md, sdd-done.md, docs/sdd/WORKFLOW.md) change wording from "never opens a PR against main" to "never merges into main; opens the PR".
+
+Dev-loop autonomous lane migration (in scope, hard cut): sdd-research prompt twins (.claude/agents/sdd-research.md AND packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md) replace the literal "/sdd-spec <slug> --type hotfix --base-branch main --no-interview" invocation with the /sdd-brief equivalent; dev_loop/nodes/development.py hotfix code paths (built on "hotfix => no per-spec index, feat_id == ''") are re-pointed at the per-brief index + materialized task files; dev_loop Pydantic contracts keep shape where possible, learning the brief's base_branch where hotfix=>main is hardcoded; final sweep removes every reference to --type hotfix; dev-loop hotfix-mode tests move to the brief shape in the same change.

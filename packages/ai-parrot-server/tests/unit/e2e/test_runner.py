@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from parrot.e2e.models import E2EPlan, ProcessIdentity, RunState, ScenarioSpec, SourceIdentity, TargetConfig
+from parrot.e2e.live import LIVE_BUDGET_ENV
+from parrot.e2e.models import (
+    E2EPlan,
+    LiveBudget,
+    ProcessIdentity,
+    RunState,
+    ScenarioSpec,
+    SourceIdentity,
+    TargetConfig,
+)
 from parrot.e2e import runner
 
 
@@ -63,6 +72,18 @@ def test_live_lane_requires_opt_in_and_provider_key(monkeypatch: pytest.MonkeyPa
     assert runner._live_enabled() is True
 
 
+def test_live_budget_context_child_env_carries_plan_budget() -> None:
+    """The run context hands the validated plan budget to children through one env var (spec AC2)."""
+    plan = _plan(_scenario()).model_copy(update={"budget": LiveBudget(timeout_s=90)})
+
+    env = runner._LiveBudgetContext(plan=plan).child_env()
+
+    assert set(env) == {LIVE_BUDGET_ENV}
+    assert env[LIVE_BUDGET_ENV] == plan.budget.model_dump_json()
+    assert LiveBudget.model_validate_json(env[LIVE_BUDGET_ENV]) == plan.budget
+    assert LiveBudget.model_validate_json(env[LIVE_BUDGET_ENV]).timeout_s == 90
+
+
 def test_unmet_prerequisite_is_recorded_as_blocked() -> None:
     """Coverage is retained as BLOCKED instead of silently dropping a scenario."""
     scenario = _scenario(prerequisites=["setup"])
@@ -104,6 +125,12 @@ async def test_run_plan_executes_declared_nodes_and_cleans_targets(
         worktree=str(tmp_path.resolve()),
     )
     stopped: list[str] = []
+    recorded_env: list[dict[str, str]] = []
+
+    def fake_create_subprocess_exec(*_args: object, **kwargs: object) -> object:
+        """Record the pytest child's env instead of spawning it."""
+        recorded_env.append(dict(kwargs["env"]))  # type: ignore[arg-type]
+        return _process_async()
 
     class FakeSupervisor:
         """Minimal lifecycle fake with observable start/stop calls."""
@@ -155,7 +182,7 @@ async def test_run_plan_executes_declared_nodes_and_cleans_targets(
     monkeypatch.setattr(runner, "load_plan", lambda *_args, **_kwargs: plan)
     monkeypatch.setattr(runner, "capture_identity", lambda *_args, **_kwargs: _identity_async(identity))
     monkeypatch.setattr(runner, "E2ESupervisor", FakeSupervisor)
-    monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", lambda *_args, **_kwargs: _process_async())
+    monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
     monkeypatch.setattr(
         runner,
         "_load_bridge",
@@ -183,6 +210,9 @@ async def test_run_plan_executes_declared_nodes_and_cleans_targets(
     assert verdict.cleanup_results == {"run-target-a": True}
     assert stopped == ["run-target-a"]
     assert (tmp_path / "sdd/state/FEAT-581/e2e/latest.json").is_file()
+    assert len(recorded_env) == 1
+    assert recorded_env[0][LIVE_BUDGET_ENV] == plan.budget.model_dump_json()
+    assert recorded_env[0]["PARROT_TEST_E2E"] == "1"
 
 
 async def _identity_async(identity: SourceIdentity) -> SourceIdentity:

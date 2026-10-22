@@ -15,7 +15,9 @@ the G8 forbidden-import list — only DatasetManager/agents/LLM clients are).
 
 from __future__ import annotations
 
+import importlib
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -68,8 +70,36 @@ class TransformerRegistry:
     function under an already-used name raises.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, builtins_module: str | None = None) -> None:
+        """Create a registry.
+
+        Args:
+            builtins_module: Dotted module whose import registers the built-in
+                transformers (side effect). Imported once, lazily, on the first
+                register/get/manifest/list call. ``None`` = no built-ins.
+        """
         self._transformers: dict[str, RegisteredTransformer] = {}
+        self._builtins_module = builtins_module
+        self._builtins_loaded = builtins_module is None
+        self._builtins_lock = threading.RLock()
+
+    def _ensure_builtins(self) -> None:
+        """Import ``builtins_module`` exactly once (thread-safe, re-entrant safe).
+
+        The loaded flag is set before the import so the decorator calls made by
+        the built-ins module (which call ``register``) do not recurse.
+        """
+        if self._builtins_loaded:
+            return
+        with self._builtins_lock:
+            if self._builtins_loaded:
+                return
+            self._builtins_loaded = True
+            try:
+                importlib.import_module(self._builtins_module)
+            except Exception:
+                self._builtins_loaded = False
+                raise
 
     def register(
         self,
@@ -97,6 +127,7 @@ class TransformerRegistry:
             ValueError: If ``name`` is already registered to a DIFFERENT
                 function.
         """
+        self._ensure_builtins()
         existing = self._transformers.get(name)
         if existing is not None and existing.func is not func:
             raise ValueError(
@@ -126,13 +157,12 @@ class TransformerRegistry:
         Raises:
             KeyError: If ``name`` is not registered; lists available names.
         """
+        self._ensure_builtins()
         try:
             return self._transformers[name]
         except KeyError as exc:
             available = sorted(self._transformers)
-            raise KeyError(
-                f"Unknown transformer {name!r}; registered transformers: {available!r}"
-            ) from exc
+            raise KeyError(f"Unknown transformer {name!r}; registered transformers: {available!r}") from exc
 
     def manifest(self, name: str) -> TransformerManifest:
         """Return the :class:`TransformerManifest` for a registered transformer.
@@ -154,11 +184,12 @@ class TransformerRegistry:
         Returns:
             One :class:`TransformerManifest` per registered transformer.
         """
+        self._ensure_builtins()
         return [entry.manifest for entry in self._transformers.values()]
 
 
-#: Process-wide transformer registry (module import side effect populates this).
-transformer_registry = TransformerRegistry()
+#: Process-wide transformer registry; built-ins load lazily on first use (FEAT-668).
+transformer_registry = TransformerRegistry(builtins_module="parrot.outputs.a2ui.recipes.library")
 
 
 def infographic_transformer(

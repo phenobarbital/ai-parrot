@@ -14,6 +14,7 @@ In Antigravity CLI, the SDD workflow is exposed through two complementary surfac
 |---|---|---|
 | `/sdd-brainstorm` | `sdd-brainstorm` | Explore a feature idea, compare options, and write a brainstorm. |
 | `/sdd-proposal` | `sdd-proposal` | Research a Jira issue, inline request, or notes file before writing a spec. |
+| `/sdd-brief` | `sdd-brief` | Research a bug or alert and create a worktree with a brief and local HOTFIX tasks. |
 | `/sdd-spec` | `sdd-spec` | Convert a brainstorm, proposal, or direct request into a formal spec. |
 | `/sdd-task` | `sdd-task` | Decompose an approved spec into atomic task files and a per-spec index. |
 | `/sdd-start` | `sdd-start` | Implement and close one task inside the feature worktree. |
@@ -36,6 +37,27 @@ AI-Parrot configures three surfaces for Antigravity CLI:
 | Workflows (Slash Commands) | `.agent/workflows/sdd-*.md` | TUI slash commands invoked as `/sdd-*`. |
 | Repo Skills | `.agents/skills/sdd-*/SKILL.md` | Modular procedural runbooks loaded via progressive disclosure. |
 | Custom Agents | `.agents/agents/<name>/agent.md` | Specialized autonomous workers (e.g. `sdd-worker`, `sdd-planner`). |
+
+## Start From A Single Bug Or Alert
+
+Use `/sdd-brief` for a single issue or hotfix; it replaces `sdd-spec --type hotfix`.
+
+```text
+/sdd-brief NAV-9001
+/sdd-brief cs:123 --research light --no-interview
+/sdd-brief issue:<hex> --split
+```
+
+The flow fetches the source, verifies a root cause and a `path:line` anchor,
+then provisions a worktree through `scripts.sdd.ensure_worktree`. Non-ledger
+sources default to `main`; ledger sources always use `dev` and refuse an
+explicit `--base-branch main`. It commits and pushes only the new brief branch,
+never `main`. Tasks use local `HOTFIX-<KEY>-<N>` IDs without FEAT/TASK reservation.
+
+Open the returned worktree for manual implementation or ask its `sdd-worker`
+agent to implement `<KEY>`, then run `/sdd-done <KEY>`.
+
+For agy, follow `.agent/workflows/sdd-brief.md`; the shared skill's Codex runtime adaptations do not apply to this host.
 
 ## End-to-End Flow
 

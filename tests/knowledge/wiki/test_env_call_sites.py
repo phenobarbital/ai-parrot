@@ -234,6 +234,7 @@ class TestOfflineDegradation:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _HangingArango)
+        monkeypatch.setenv("ARANGODB_HOST", "fake.invalid")
         monkeypatch.delenv("WIKI_ENV", raising=False)
         monkeypatch.delenv("ENV", raising=False)
         # Effective config for `tmp_path` (no base wiki.json): defaults to

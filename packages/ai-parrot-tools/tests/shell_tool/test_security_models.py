@@ -82,7 +82,7 @@ class TestValidationResult:
     def test_str_allowed(self):
         r = ValidationResult(verdict=CommandVerdict.ALLOWED, command="git status")
         text = str(r)
-        assert "✅" in text
+        assert "[OK]" in text
         assert "allowed" in text
         assert "git status" in text
         assert "OK" in text
@@ -95,7 +95,7 @@ class TestValidationResult:
             risk_score=0.9,
         )
         text = str(r)
-        assert "❌" in text
+        assert "[DENIED]" in text
         assert "denied" in text
         assert "rm -rf /" in text
         assert "command 'rm' is denied" in text

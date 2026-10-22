@@ -88,7 +88,9 @@ class RSSFeedReaderToolkit(AbstractToolkit):
             raise RuntimeError(
                 "feedparser is not installed — install ai-parrot-tools[rss]"
             )
-        self._session = aiohttp.ClientSession()
+        from parrot.tools.egress import egress_session
+
+        self._session = egress_session()
         self._fetcher = ArticleFetcher(
             session=self._session,
             http_semaphore=asyncio.Semaphore(self.concurrency),

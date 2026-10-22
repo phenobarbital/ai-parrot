@@ -1,0 +1,8 @@
+{"feat_id":null,"slug":"wiki-ledger-show","phase":"proposal_drafted","started_at":"2026-10-16","mode":"enrichment",
+ "budget":{"profile":"default","files_read":40,"grep_calls":25,"git_calls":10,"depth":2,"wall_seconds":300},
+ "consumed":{"files_read":9,"grep_calls":12,"git_calls":3,"wiki_queries":1},"truncated":false,"wiki_available":true,
+ "source":{"kind":"inline","summary_oneline":"wikitoolkit ledger has no list or show commands"},
+ "phases":{"plan":{"approved_by_user":false,"note":"plan gate folded into single review/Q&A gate"},
+  "qa":{"questions_total":2,"questions_answered":2},
+  "output":{"proposal_path":"sdd/proposals/wiki-ledger-show.proposal.md"}},
+ "notes":"FEAT-ID not allocated by scanning (CLAUDE.md: reserve via scripts.sdd.reserve_ids); /sdd-spec reserves it."}

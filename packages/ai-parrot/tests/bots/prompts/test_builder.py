@@ -1,13 +1,20 @@
 """Unit tests for PromptBuilder class."""
+
 import pytest
 from parrot.bots.prompts.builder import PromptBuilder
 from parrot.bots.prompts.layers import (
-    PromptLayer, LayerPriority, RenderPhase,
-    IDENTITY_LAYER, SECURITY_LAYER, KNOWLEDGE_LAYER,
-    USER_SESSION_LAYER, TOOLS_LAYER, OUTPUT_LAYER,
-    BEHAVIOR_LAYER, PRE_INSTRUCTIONS_LAYER,
+    PromptLayer,
+    LayerPriority,
+    RenderPhase,
+    IDENTITY_LAYER,
+    SECURITY_LAYER,
+    KNOWLEDGE_LAYER,
+    USER_SESSION_LAYER,
+    TOOLS_LAYER,
+    OUTPUT_LAYER,
+    BEHAVIOR_LAYER,
+    PRE_INSTRUCTIONS_LAYER,
 )
-
 
 # ── Shared test contexts ───────────────────────────────────────
 
@@ -52,7 +59,7 @@ class TestPromptBuilderFactories:
 
     def test_default_has_eight_layers(self):
         builder = PromptBuilder.default()
-        assert len(builder.layer_names) == 8
+        assert len(builder.layer_names) == 9  # FEAT-638 adds output_language
 
     def test_minimal_has_three_layers(self):
         builder = PromptBuilder.minimal()
@@ -232,8 +239,9 @@ class TestTwoPhaseRendering:
         builder = PromptBuilder.default()
         # has_tools=False, rationale="" -> tools and behavior layers skipped
         builder.configure(CONFIGURE_CTX)
-        prompt = builder.build({"knowledge_content": "", "user_context": "",
-                                "chat_history": "", "output_instructions": ""})
+        prompt = builder.build(
+            {"knowledge_content": "", "user_context": "", "chat_history": "", "output_instructions": ""}
+        )
         assert "<tool_policy>" not in prompt
         assert "<response_style>" not in prompt
         assert "<knowledge_context>" not in prompt
@@ -241,8 +249,9 @@ class TestTwoPhaseRendering:
     def test_conditional_layers_included_when_true(self):
         builder = PromptBuilder.default()
         builder.configure({**CONFIGURE_CTX, "has_tools": True, "rationale": "Be concise"})
-        prompt = builder.build({"knowledge_content": "facts", "user_context": "",
-                                "chat_history": "", "output_instructions": "Use JSON"})
+        prompt = builder.build(
+            {"knowledge_content": "facts", "user_context": "", "chat_history": "", "output_instructions": "Use JSON"}
+        )
         assert "<tool_policy>" in prompt
         assert "<response_style>" in prompt
         assert "<knowledge_context>" in prompt
@@ -368,12 +377,16 @@ class TestEdgeCases:
     def test_builder_with_all_conditions_false_after_configure(self):
         """All layers have false conditions → empty prompt."""
         layer1 = PromptLayer(
-            name="a", priority=10, template="<a>x</a>",
+            name="a",
+            priority=10,
+            template="<a>x</a>",
             phase=RenderPhase.CONFIGURE,
             condition=lambda ctx: False,
         )
         layer2 = PromptLayer(
-            name="b", priority=20, template="<b>y</b>",
+            name="b",
+            priority=20,
+            template="<b>y</b>",
             condition=lambda ctx: False,
         )
         builder = PromptBuilder([layer1, layer2])
@@ -402,12 +415,14 @@ class TestEdgeCases:
         builder = PromptBuilder.default()
         large_knowledge = "fact " * 10000
         builder.configure(CONFIGURE_CTX)
-        prompt = builder.build({
-            "knowledge_content": large_knowledge,
-            "user_context": "",
-            "chat_history": "",
-            "output_instructions": "",
-        })
+        prompt = builder.build(
+            {
+                "knowledge_content": large_knowledge,
+                "user_context": "",
+                "chat_history": "",
+                "output_instructions": "",
+            }
+        )
         assert "fact " in prompt
         assert "<knowledge_context>" in prompt
 
@@ -419,7 +434,8 @@ class TestWhitespaceNormalization:
 
     def test_trailing_whitespace_stripped_per_line(self):
         layer = PromptLayer(
-            name="ws", priority=10,
+            name="ws",
+            priority=10,
             template="<a>line one   \nline two\t\nline three</a>",
         )
         builder = PromptBuilder([layer])
@@ -430,7 +446,8 @@ class TestWhitespaceNormalization:
 
     def test_blank_line_runs_collapsed(self):
         layer = PromptLayer(
-            name="ws", priority=10,
+            name="ws",
+            priority=10,
             template="<a>para one\n\n\n\n\npara two</a>",
         )
         builder = PromptBuilder([layer])
@@ -440,7 +457,8 @@ class TestWhitespaceNormalization:
 
     def test_single_blank_line_preserved(self):
         layer = PromptLayer(
-            name="ws", priority=10,
+            name="ws",
+            priority=10,
             template="<a>para one\n\npara two</a>",
         )
         builder = PromptBuilder([layer])
@@ -457,13 +475,11 @@ class TestWhitespaceNormalization:
     def test_yaml_style_backstory_trailing_ws_cleaned(self):
         """Backstory with trailing whitespace and blank-line runs is cleaned."""
         backstory = (
-            "You are an expert in AI.   \n"
-            "You specialize in NLP.\t\n"
-            "\n\n\n"
-            "Your main goal is to help users."
+            "You are an expert in AI.   \n" "You specialize in NLP.\t\n" "\n\n\n" "Your main goal is to help users."
         )
         layer = PromptLayer(
-            name="identity", priority=10,
+            name="identity",
+            priority=10,
             phase=RenderPhase.CONFIGURE,
             template="<agent>\n$backstory\n</agent>",
         )
@@ -485,7 +501,8 @@ class TestWhitespaceNormalization:
 
     def test_normalization_applies_to_segments(self):
         layer = PromptLayer(
-            name="ws", priority=10,
+            name="ws",
+            priority=10,
             template="<a>line one   \n\n\n\nline two</a>",
         )
         builder = PromptBuilder([layer], prompt_caching=True)

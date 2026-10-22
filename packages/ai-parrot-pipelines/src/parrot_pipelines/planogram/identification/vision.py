@@ -13,6 +13,8 @@ import cv2
 import numpy as np
 from pydantic import BaseModel, ValidationError
 
+from parrot.exceptions import TruncatedResponseError
+
 from parrot_pipelines.planogram.backend import ResolvedBackend
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,10 @@ KNOWN_KWARGS: FrozenSet[str] = frozenset().union(*SUPPORTED_KWARGS.values())
 
 class VisionError(RuntimeError):
     """Vision call failed, timed out, or stayed invalid after the repair retry."""
+
+
+class VisionTruncatedError(VisionError):
+    """The provider cut the answer at the output-token limit."""
 
 
 def normalise_kwargs(client_name: str, requested: Dict[str, Any]) -> Dict[str, Any]:
@@ -141,6 +147,7 @@ class VisionAdapter:
         max_tokens: int = 8192,
         timeout: float = 120.0,
         repair_retries: int = 1,
+        truncation_retries: int = 1,
     ) -> None:
         """Bind a client and its resolved backend.
 
@@ -152,6 +159,8 @@ class VisionAdapter:
             max_tokens: Output budget of every call.
             timeout: Per-call timeout in seconds.
             repair_retries: Repair prompts after an invalid answer (0 disables).
+            truncation_retries: Identical re-sends after an answer cut at the output-token limit (0 disables).
+                A truncated answer is a runaway generation far more often than a real lack of budget.
 
         Raises:
             VisionError: when the client has no ``ask_to_image``.
@@ -168,6 +177,7 @@ class VisionAdapter:
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.repair_retries = repair_retries
+        self.truncation_retries = truncation_retries
         self.logger = logging.getLogger(__name__)
 
     async def ask(
@@ -218,7 +228,7 @@ class VisionAdapter:
         attempt_prompt = prompt
         last_error: Optional[Exception] = None
         for attempt in range(self.repair_retries + 1):
-            message = await self._call(attempt_prompt, images, schema, system_prompt, stage)
+            message = await self._call_untruncated(attempt_prompt, images, schema, system_prompt, stage)
             try:
                 result = self._extract(message, schema)
             except (ValidationError, ValueError) as exc:
@@ -240,6 +250,24 @@ class VisionAdapter:
         if system_prompt and "system_prompt" not in SUPPORTED_KWARGS.get(self.client_name, _COMMON):
             return f"{system_prompt}\n\n{prompt}"
         return prompt
+
+    async def _call_untruncated(
+        self,
+        prompt: str,
+        images: Sequence[bytes],
+        schema: Type[T],
+        system_prompt: Optional[str],
+        stage: str = "",
+    ) -> Any:
+        """``_call`` re-sent unchanged while the provider truncates the answer, up to ``truncation_retries``."""
+        for attempt in range(self.truncation_retries + 1):
+            try:
+                return await self._call(prompt, images, schema, system_prompt, stage)
+            except VisionTruncatedError:
+                if attempt == self.truncation_retries:
+                    raise
+                self.logger.warning("vision answer truncated (stage=%s, attempt=%d): retrying", stage, attempt + 1)
+        raise AssertionError("unreachable")
 
     async def _call(
         self,
@@ -271,6 +299,8 @@ class VisionAdapter:
                 raise VisionError(f"vision call timed out after {self.timeout}s (stage {stage!r})") from exc
             except asyncio.CancelledError:
                 raise
+            except TruncatedResponseError as exc:
+                raise VisionTruncatedError(f"vision call failed (stage {stage!r}): {exc}") from exc
             except Exception as exc:  # noqa: BLE001 - every provider failure becomes a VisionError
                 raise VisionError(f"vision call failed (stage {stage!r}): {exc}") from exc
 

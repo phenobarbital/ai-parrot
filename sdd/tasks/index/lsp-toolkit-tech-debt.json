@@ -1,0 +1,41 @@
+{
+  "feature": "lsp-toolkit-tech-debt",
+  "feature_id": "FEAT-658",
+  "spec": "sdd/specs/lsp-toolkit-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-14T00:55:00+00:00",
+  "completed_at": "2026-10-13T23:02:50+00:00",
+  "tasks": [
+    {
+      "id": "TASK-4272",
+      "feature_id": "FEAT-658",
+      "feature": "lsp-toolkit-tech-debt",
+      "status": "done",
+      "depends_on": [],
+      "file": "sdd/tasks/completed/TASK-4272-lsp-toolkit-logging.md",
+      "completed_at": "2026-10-13T23:02:46+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4273",
+      "feature_id": "FEAT-658",
+      "feature": "lsp-toolkit-tech-debt",
+      "status": "done",
+      "depends_on": [],
+      "file": "sdd/tasks/completed/TASK-4273-lsp-toolkit-path-symmetry.md",
+      "completed_at": "2026-10-13T23:02:48+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4274",
+      "feature_id": "FEAT-658",
+      "feature": "lsp-toolkit-tech-debt",
+      "status": "done",
+      "depends_on": [],
+      "file": "sdd/tasks/completed/TASK-4274-lsp-snapshot-extends-chain.md",
+      "completed_at": "2026-10-13T23:02:50+00:00",
+      "verification": "verified"
+    }
+  ]
+}

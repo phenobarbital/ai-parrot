@@ -1,0 +1,99 @@
+Recommendation:
+**Option A, combined with Option B's cache**, plus two cross-cutting pieces the
+discovery made mandatory: a baseline-aware verdict and a nightly full-suite net.
+
+- A fixes **breadth** (the 2,990 / 2,562 plans) by letting the spec name what
+  matters, and by demoting mirror to file level; B fixes **redundancy** (15×
+  re-runs) with no author burden. Each alone misses a target: A without B still
+  re-runs the contract every merge; B without A still pays ~3k tests on the
+  first merge and the directory at closeout.
+- C is the most precise but adds a stateful, opaque dependency that fights the
+  multi-worktree + shared-venv setup; it stays a possible future replacement
+  for the fallback heuristic, not for the contract.
+- D is the cheap interim, but it misses the `/sdd-done` target and adds no
+  signal quality.
+
+What we trade off: local runs no longer prove "nothing else in the package
+broke". That guarantee moves to the nightly full-suite workflow (new), which
+today does not exist for `packages/*/tests` at all — so the net actually
+*improves* coverage of package suites versus today, just later (≤ 24 h).
+
+Option A: Spec-declared Validation Contract
+Spec-declared Validation Contract (authoritative selection)
+
+`/sdd-spec` gains a mandatory-but-skippable `### Validation Contract`
+subsection in §4 (Test Specification) listing the feature's critical
+integration tests as explicit pytest operands (`path` or `path::node`) plus
+optional marker names. `/sdd-task` caches the contract into the per-spec index
+header (like `type`/`base_branch`) and makes each task's `## Validation
+Commands` reference its own tests. The kernel's `plan_tests()` gains a
+`contract` input: when present, merge = chunk tasks' declared tests ∪
+contract; feature = all tasks' declared tests ∪ contract; mirror is used only
+at **file** level (a changed `foo.py` → an existing `test_foo.py`), never a
+directory; no impact selection, no core/cap suite escalation. Without a
+contract, the bounded fallback applies. `check_task_graph.py` lints that every
+contract operand exists.
+
+✅ **Pros:**
+- Puts the decision where the knowledge is — the spec author knows which
+  integration paths the feature touches.
+- Deterministic, reviewable, diffable; plans shrink from thousands to
+  tens/hundreds of tests.
+- Same contract drives all four phases → one source of truth.
+
+❌ **Cons:**
+- Quality depends on the spec author; an under-declared contract silently
+  narrows coverage (mitigated by the nightly net and file-level mirror).
+- Does not remove re-execution of the same declared tests on every merge.
+- Touches several command/agent docs (`sdd-spec`, `sdd-task`, `sdd-done`,
+  `sdd-worker`, `qa-runner`) plus their `.agent/` twins.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pytest` | runner | 9.1.1 installed; `-m` marker expressions, nodeid operands |
+| `pytest-xdist` | parallelism | 3.3.1 installed; only for `XDIST_SAFE_DISTRIBUTIONS` (ai-parrot is NOT in it) |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/select.py` — `plan_tests()` tier entry point (extend with `contract`)
+- `.../test_scope/contract.py` — `parse_validation_commands()`, `_pytest_operands()` (reuse to parse contract operands)
+- `.../test_scope/mirror.py` — `pytest_target_for()` (restrict to file level)
+- `scripts/sdd/check_task_graph.py` — `_check_validation_contract()` (extend to the spec contract)
+- `sdd/templates/spec.md` §4 — add the subsection next to "Integration Tests"
+
+Option B: Content-addressed green cache across merges
+Content-addressed green cache across merges (dedupe)
+
+Extend the FEAT-604 ledger idea from "suite escalations" to **every selected
+test file**: after a green (or baseline-red-only) run, record per test file a
+key = hash(test file blob, conftest chain blobs, blobs of the source modules
+it imports at depth ≤ N via `ImportIndex`, marker expression, Python version).
+On the next merge in the same feature, a selected test whose key matches is
+skipped and reported as `cached`. Stored in the worktree git dir next to the
+existing escalation ledger (`context.py`). No spec change.
+
+✅ **Pros:**
+- Directly removes the 15× re-execution measured on FEAT-698, whatever the
+  selection rule is.
+- Zero author burden; pure kernel change; reuses `ImportIndex` and blob helpers.
+
+❌ **Cons:**
+- Alone it does not shrink breadth: the first merge still runs ~3k tests, the
+  feature tier still runs a directory.
+- Key correctness matters: dynamic imports, fixtures in shared conftests, data
+  files and env-driven behavior can invalidate a cache hit; depth bound is a
+  tradeoff (FEAT-620 showed transitive closure saturates).
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| stdlib `hashlib`, `json` | key + store | same style as `LedgerEntry.impacted_hash` |
+
+🔗 **Existing Code to Reuse:**
+- `.../test_scope/context.py` — `read_ledger()`, `record_green_escalation()`, `pending_escalations()`, `_blob()`, `_atomic_write_json()`
+- `.../test_scope/impact.py` — `ImportIndex.load_or_build()`, `_expand_modules()`
+- `.../test_scope/report.py` — `parse_junit()` (per-file outcome to decide what is green)

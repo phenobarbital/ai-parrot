@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 # Extensions treated as documentation/configuration (spec §2 item 1:
 # "Documentation/configuration gives not_applicable"), as opposed to a
 # programming-language source file Ruff cannot analyze (which is "unknown").
+#: Reason recorded when NO wiki plane exists in either the worktree or the
+#: main checkout. Deliberately distinct from "Blast radius incomplete (...)"
+#: and from a per-symbol "missing root" so telemetry can tell a missing
+#: PLANE apart from a missing SYMBOL.
+_PLANE_UNAVAILABLE_REASON = "Wiki plane unavailable (no .parrot/wiki in worktree or main checkout)"
+
+#: Location of the wiki plane relative to a checkout root. Git-ignored, and
+#: built only in the main checkout -- never inside a linked worktree.
+_WIKI_PLANE_RELPATH = Path(".parrot") / "wiki"
+
 _DOC_CONFIG_EXTENSIONS = frozenset(
     {".md", ".markdown", ".txt", ".rst", ".yaml", ".yml", ".json", ".toml", ".cfg", ".ini", ".csv", ".xml", ".html"}
 )
@@ -588,6 +598,98 @@ async def _collect_ruff_syntax(
             return ({}, {}, {}, {"ruff": "unknown"}, {})
 
 
+def _has_wiki_plane(root: Path) -> bool:
+    """Return whether `root` holds a built wiki plane.
+
+    Blocking filesystem probe — callers inside `async def` must off-load it
+    (ASYNC240); this module keeps no blocking path calls on the event loop.
+    """
+    return (root / _WIKI_PLANE_RELPATH).is_dir()
+
+
+def _git_common_dir(worktree: Path, timeout_seconds: int) -> Optional[str]:
+    """Return git's `--git-common-dir` for `worktree`, or `None` on any failure.
+
+    Deliberately NOT routed through `_run_subprocess`. That helper is the
+    collectors' *evidence* surface — callers and tests treat its calls as the
+    ordered sequence of analysis commands — whereas this is infrastructure
+    discovery that must not appear in, or consume from, that sequence.
+
+    Blocking (`subprocess.run`); callers inside `async def` must off-load it.
+
+    Args:
+        worktree: Directory to run git from.
+        timeout_seconds: Hard bound on the probe.
+
+    Returns:
+        The absolute path git reports, or `None` if git is missing, fails,
+        times out or reports nothing.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("Wiki plane resolution: git rev-parse failed for %s: %s", worktree, exc)
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    return result.stdout.strip() or None
+
+
+def _plane_root_from_common_dir(common_dir: str) -> Optional[Path]:
+    """Return the main checkout behind `common_dir` when it holds a wiki plane.
+
+    `common_dir` is git's `--git-common-dir`: the MAIN repository's `.git`, so
+    its parent is that checkout's root. Blocking (`resolve` + `is_dir`) —
+    callers inside `async def` must off-load it (ASYNC240).
+    """
+    main_checkout = Path(common_dir).resolve().parent
+    return main_checkout if _has_wiki_plane(main_checkout) else None
+
+
+async def _resolve_wiki_plane_root(worktree: Path, policy: ComplexityPolicy) -> Optional[Path]:
+    """Resolve the directory whose wiki plane the blast query must read.
+
+    `.parrot/wiki` is git-ignored and is built only in the MAIN checkout, so a
+    linked worktree has no plane of its own. Querying `symbols blast` with the
+    worktree path makes the CLI exit 1 ("Wiki not built yet for <path>"), which
+    would demote every contract-symbol task to `unknown` and route it to the
+    strong-model seats. Resolution order, first hit wins:
+
+    1. `<worktree>/.parrot/wiki` — a genuinely local plane (main-checkout runs,
+       test fixtures) keeps the previous behaviour unchanged.
+    2. the main checkout derived from `git rev-parse --path-format=absolute
+       --git-common-dir`, which resolves to the MAIN repository's `.git` even
+       when run from inside a linked worktree. Same technique as
+       `telemetry.resolve_durable_root`, which derives its root for the same
+       reason; nothing is imported from that module.
+    3. nothing — the caller reports a plane-unavailable `unknown`.
+
+    Args:
+        worktree: Absolute path of the worktree being assessed.
+        policy: Supplies the subprocess timeout and the output byte bound.
+
+    Returns:
+        The directory to hand the wiki CLI's `--path`, or `None` when neither
+        location holds a plane. Never raises: any git failure means "no plane".
+    """
+    if await asyncio.to_thread(_has_wiki_plane, worktree):
+        return worktree
+
+    common_dir = await asyncio.to_thread(_git_common_dir, worktree, policy.timeout_seconds)
+    if common_dir is None:
+        return None
+
+    return await asyncio.to_thread(_plane_root_from_common_dir, common_dir)
+
+
 async def _collect_wiki_blast(
     worktree: Path, contract: ComplexityContract, policy: ComplexityPolicy, semaphore: asyncio.Semaphore
 ) -> Tuple[Dict[str, MetricEvidence], Dict[str, Optional[str]], Dict[str, str], Dict[str, str], Dict[str, object]]:
@@ -611,6 +713,27 @@ async def _collect_wiki_blast(
                         "blast_symbols": MetricEvidence(
                             state=state,
                             reason=reason,
+                            source="wiki_collector",
+                        )
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                )
+
+            # The wiki plane is git-ignored and built only in the MAIN checkout,
+            # so a linked worktree has none of its own (issue:9448f28680e0).
+            # Resolve it ONCE here: pointing `--path` at the worktree made the
+            # CLI exit 1 for every symbol, turning each assessment into a false
+            # `unknown` that ComplexityPolicy then routed like `complex`.
+            plane_root = await _resolve_wiki_plane_root(worktree, policy)
+            if plane_root is None:
+                return (
+                    {
+                        "blast_symbols": MetricEvidence(
+                            state="unknown",
+                            reason=_PLANE_UNAVAILABLE_REASON,
                             source="wiki_collector",
                         )
                     },
@@ -647,10 +770,13 @@ async def _collect_wiki_blast(
                         "symbols",
                         "blast",
                         "--path",
-                        # `worktree` is already required to be absolute
-                        # (validated in `collect_complexity`); `.absolute()`
-                        # is a redundant blocking pathlib call (ASYNC240).
-                        str(worktree),
+                        # The PLANE root, not the worktree: a linked worktree
+                        # has no `.parrot/wiki` and would make the CLI exit 1.
+                        # Already absolute (`collect_complexity` validates the
+                        # worktree; the git-derived root is resolved), so
+                        # `.absolute()` would be a redundant blocking pathlib
+                        # call (ASYNC240).
+                        str(plane_root),
                         "--depth",
                         "2",
                         "--no-inferred",
@@ -659,7 +785,7 @@ async def _collect_wiki_blast(
                         symbol,
                     ]
 
-                    result = await _run_subprocess(cmd, worktree, policy.timeout_seconds, policy.max_output_bytes)
+                    result = await _run_subprocess(cmd, plane_root, policy.timeout_seconds, policy.max_output_bytes)
 
                     if result.returncode != 0:
                         any_root_unreliable = True
@@ -1054,9 +1180,33 @@ class SubprocessResult:
         self.stderr = stderr
 
 
+_SUBPROCESS_READ_CHUNK = 65536
+
+
+async def _read_bounded(stream: asyncio.StreamReader, max_bytes: int) -> bytes:
+    """Drain `stream` to EOF, retaining at most `max_bytes` bytes.
+
+    Reads fixed chunks; once `max_bytes` is reached, later chunks are
+    discarded but the stream keeps being drained so the child process
+    never blocks on a full pipe (spec FEAT-663 §7).
+    """
+    buf = bytearray()
+    while True:
+        chunk = await stream.read(_SUBPROCESS_READ_CHUNK)
+        if not chunk:
+            return bytes(buf)
+        if len(buf) < max_bytes:
+            buf.extend(chunk[: max_bytes - len(buf)])
+
+
 async def _run_subprocess(cmd: List[str], cwd: Path, timeout_seconds: int, max_output_bytes: int) -> SubprocessResult:
-    """Run a subprocess with bounded output and timeout."""
-    # Create subprocess
+    """Run a subprocess with output bounded in bytes during capture.
+
+    stdout/stderr drains and the process wait run concurrently under one
+    timeout. The byte bound is applied while reading (never buffering the
+    full output), and decoding happens after the bound with
+    errors="replace" so a split multibyte sequence cannot raise.
+    """
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
@@ -1065,14 +1215,19 @@ async def _run_subprocess(cmd: List[str], cwd: Path, timeout_seconds: int, max_o
     )
 
     try:
-        # Wait for completion with timeout
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-
-        # Decode output, limiting size
-        stdout_str = stdout.decode("utf-8", errors="replace")[:max_output_bytes]
-        stderr_str = stderr.decode("utf-8", errors="replace")[:max_output_bytes]
-
-        return SubprocessResult(proc.returncode, stdout_str, stderr_str)
+        stdout_b, stderr_b, _ = await asyncio.wait_for(
+            asyncio.gather(
+                _read_bounded(proc.stdout, max_output_bytes),
+                _read_bounded(proc.stderr, max_output_bytes),
+                proc.wait(),
+            ),
+            timeout=timeout_seconds,
+        )
+        return SubprocessResult(
+            proc.returncode,
+            stdout_b.decode("utf-8", errors="replace"),
+            stderr_b.decode("utf-8", errors="replace"),
+        )
 
     except (asyncio.TimeoutError, asyncio.CancelledError):
         # Kill and reap on EITHER a timeout OR the awaiting task being

@@ -22,6 +22,7 @@ import os
 import re
 import types
 
+import importlib
 import importlib.util
 
 import pytest
@@ -196,40 +197,54 @@ try:
     _nuf_abstract.FileMetadata = _FileMetadata
     sys.modules.setdefault("navigator.utils.file.abstract", _nuf_abstract)
 
-    # parrot.interfaces.file shim
-    _parrot_interfaces_file = types.ModuleType("parrot.interfaces.file")
-    _parrot_interfaces_file.FileManagerInterface = _FileManagerInterface
-    _parrot_interfaces_file.FileMetadata = _FileMetadata
-    _parrot_interfaces_file.LocalFileManager = _LocalFileManager
-    _parrot_interfaces_file.TempFileManager = _TempFileManager
-    _parrot_interfaces_file.S3FileManager = type(
-        "S3FileManager", (_FileManagerInterface,), {}
-    )
-    _parrot_interfaces_file.GCSFileManager = type(
-        "GCSFileManager", (_FileManagerInterface,), {}
-    )
-    sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
+    # issue:265b7797ae9b — only shim parrot.interfaces.file when the REAL
+    # package cannot be imported.  The shim is a plain ModuleType, i.e. not a
+    # package, so once it is registered every later
+    # `from parrot.interfaces.file.<sub> import ...` fails with
+    # "'parrot.interfaces.file' is not a package" — and whether it fails
+    # depends on pytest's collection order.  The navigator.utils.file
+    # back-fill above is what makes the real import succeed, so probe AFTER it.
+    try:
+        import parrot.interfaces.file as _real_parrot_interfaces_file  # noqa: F401
+        _parrot_interfaces_file_is_real = True
+    except Exception:  # noqa: BLE001
+        _parrot_interfaces_file_is_real = False
 
-    # parrot.interfaces.file.abstract sub-module stub (required by overflow.py)
-    _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
-    _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
-    _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
-    sys.modules.setdefault("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
+    if not _parrot_interfaces_file_is_real:
+        # parrot.interfaces.file shim
+        _parrot_interfaces_file = types.ModuleType("parrot.interfaces.file")
+        _parrot_interfaces_file.FileManagerInterface = _FileManagerInterface
+        _parrot_interfaces_file.FileMetadata = _FileMetadata
+        _parrot_interfaces_file.LocalFileManager = _LocalFileManager
+        _parrot_interfaces_file.TempFileManager = _TempFileManager
+        _parrot_interfaces_file.S3FileManager = type(
+            "S3FileManager", (_FileManagerInterface,), {}
+        )
+        _parrot_interfaces_file.GCSFileManager = type(
+            "GCSFileManager", (_FileManagerInterface,), {}
+        )
+        sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
 
-    # parrot.interfaces.file.s3 sub-module stub (required by s3_overflow.py)
-    _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
-    _parrot_interfaces_file_s3.S3FileManager = _parrot_interfaces_file.S3FileManager
-    sys.modules.setdefault("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
+        # parrot.interfaces.file.abstract sub-module stub (required by overflow.py)
+        _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
+        _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
+        _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
+        sys.modules.setdefault("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
 
-    # parrot.interfaces.file.local sub-module stub (required by various modules)
-    _parrot_interfaces_file_local = types.ModuleType("parrot.interfaces.file.local")
-    _parrot_interfaces_file_local.LocalFileManager = _LocalFileManager
-    sys.modules.setdefault("parrot.interfaces.file.local", _parrot_interfaces_file_local)
+        # parrot.interfaces.file.s3 sub-module stub (required by s3_overflow.py)
+        _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
+        _parrot_interfaces_file_s3.S3FileManager = _parrot_interfaces_file.S3FileManager
+        sys.modules.setdefault("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
 
-    # parrot.interfaces.file.gcs sub-module stub
-    _parrot_interfaces_file_gcs = types.ModuleType("parrot.interfaces.file.gcs")
-    _parrot_interfaces_file_gcs.GCSFileManager = _parrot_interfaces_file.GCSFileManager
-    sys.modules.setdefault("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
+        # parrot.interfaces.file.local sub-module stub (required by various modules)
+        _parrot_interfaces_file_local = types.ModuleType("parrot.interfaces.file.local")
+        _parrot_interfaces_file_local.LocalFileManager = _LocalFileManager
+        sys.modules.setdefault("parrot.interfaces.file.local", _parrot_interfaces_file_local)
+
+        # parrot.interfaces.file.gcs sub-module stub
+        _parrot_interfaces_file_gcs = types.ModuleType("parrot.interfaces.file.gcs")
+        _parrot_interfaces_file_gcs.GCSFileManager = _parrot_interfaces_file.GCSFileManager
+        sys.modules.setdefault("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
 
     # parrot.tools.filemanager stub
     _parrot_tools_fm = types.ModuleType("parrot.tools.filemanager")
@@ -243,8 +258,6 @@ except Exception:  # noqa: BLE001
 # test conftest registers its stub via setdefault).  The test conftest's
 # _install_parrot_stubs() uses setdefault so it won't override a module
 # that's already present.
-import importlib as _importlib
-
 # ── Cython extension stubs (compiled .so files absent in git worktrees) ─────
 # Worktrees contain only the .pyx sources, not the compiled .so modules.
 # Inject minimal pure-Python stubs so that package __init__ files can import
@@ -294,7 +307,7 @@ for _mod_name in (
 ):
     if _mod_name not in sys.modules:
         try:
-            _importlib.import_module(_mod_name)
+            importlib.import_module(_mod_name)
         except ImportError:
             pass  # noqa: S110 — some deps may not be available in all envs
 

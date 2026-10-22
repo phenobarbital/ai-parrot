@@ -227,7 +227,7 @@ Staging Postgres was unreachable from the workstation, so the live tier ran on `
 `epson_e2e_*` slugs.
 
 **Results**
-- `run_e2e.py`: 32/32 PASS, exit 0.
+- `run_e2e.py`: 32/32 PASS, exit 0 (33 checks since S5 also probes the browser's v2 route, `s5.v2_route`).
 - `pytest -m staging`: 4/4 PASS.
 - Evidence: `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`.
 

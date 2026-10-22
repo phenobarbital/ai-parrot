@@ -25,15 +25,12 @@ Design notes:
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.okf.graph import KnowledgeGraph
-from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
-from parrot.knowledge.pageindex.utils import structure_to_list
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +107,8 @@ def lint_knowledge_base(
     Returns:
         :class:`LintReport` with all findings categorised.
     """
-    nodes = structure_to_list(tree.get("structure", []))
+    from parrot.knowledge.lint.packs.okf import okf_findings
+
     tree_name = (
         tree.get("tree_name")
         or tree.get("doc_name")
@@ -119,107 +117,23 @@ def lint_knowledge_base(
     )
 
     report = LintReport(tree_name=tree_name)
-    known_concepts = graph.concepts()
-    report.total_concepts = len(known_concepts)
+    report.total_concepts = len(graph.concepts())
 
-    # ------------------------------------------------------------------
-    # Check 1: Orphan detection (zero inbound edges)
-    # ------------------------------------------------------------------
-    # Build an inbound-edge count by iterating over every concept's outbound
-    # edges.  Any concept that nobody points to is an orphan.
-    inbound_count: dict[str, int] = {cid: 0 for cid in known_concepts}
-    for src_cid in known_concepts:
-        for edge in graph.neighbors(src_cid):
-            target = edge.get("concept", "")
-            if target in inbound_count:
-                inbound_count[target] += 1
-
-    for cid in sorted(known_concepts):
-        if inbound_count.get(cid, 0) == 0:
-            report.orphans.append(
-                LintFinding(
-                    kind="orphan",
-                    concept_id=cid,
-                    detail=f"Concept '{cid}' has zero inbound edges.",
-                    severity="warning",
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # Check 2: Broken link audit (from KnowledgeGraph._broken)
-    # ------------------------------------------------------------------
-    for broken in graph.broken_links():
-        src = broken.get("source", "")
-        target = broken.get("concept", "")
-        rel = broken.get("rel", "")
-        report.broken_links.append(
+    buckets = {
+        "orphan": report.orphans,
+        "broken_link": report.broken_links,
+        "missing_concept": report.missing_concepts,
+        "stale": report.stale_claims,
+    }
+    for f in okf_findings(graph, tree, content_store, stale_days):
+        buckets[f.data["kind"]].append(
             LintFinding(
-                kind="broken_link",
-                concept_id=src,
-                detail=(
-                    f"Edge from '{src}' → '{target}' (rel: {rel}) targets an "
-                    f"unknown concept_id."
-                ),
-                severity="error",
+                kind=f.data["kind"],
+                concept_id=f.data["concept_id"],
+                detail=f.message,
+                severity=f.severity,
             )
         )
 
-    # ------------------------------------------------------------------
-    # Check 3: Missing concept pages
-    # For each known concept_id, verify that a sidecar body exists in the
-    # content_store.  Concepts without bodies are present in the graph but
-    # have no associated content page.
-    # ------------------------------------------------------------------
-    for cid in sorted(known_concepts):
-        flat_key = flatten_concept_id_for_filename(cid)
-        if not content_store.has(tree_name, flat_key):
-            report.missing_concepts.append(
-                LintFinding(
-                    kind="missing_concept",
-                    concept_id=cid,
-                    detail=(
-                        f"Concept '{cid}' exists in the knowledge graph but "
-                        f"has no sidecar page in the content store."
-                    ),
-                    severity="warning",
-                )
-            )
-
-    # ------------------------------------------------------------------
-    # Check 4: Stale claims (timestamp older than stale_days)
-    # ------------------------------------------------------------------
-    cutoff = datetime.now(tz=timezone.utc)
-    for node in nodes:
-        cid = node.get("concept_id", "")
-        ts_raw = node.get("timestamp", "")
-        if not ts_raw or not cid:
-            continue
-        try:
-            ts_str = str(ts_raw).replace("Z", "+00:00")
-            ts = datetime.fromisoformat(ts_str)
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            age_days = (cutoff - ts).days
-            if age_days > stale_days:
-                report.stale_claims.append(
-                    LintFinding(
-                        kind="stale",
-                        concept_id=cid,
-                        detail=(
-                            f"Concept '{cid}' timestamp '{ts_raw}' is "
-                            f"{age_days} days old (threshold: {stale_days})."
-                        ),
-                        severity="warning",
-                    )
-                )
-        except (ValueError, TypeError) as exc:
-            logger.debug("Cannot parse timestamp for %r: %s", cid, exc)
-
-    # Tally
-    report.total_findings = (
-        len(report.orphans)
-        + len(report.broken_links)
-        + len(report.missing_concepts)
-        + len(report.stale_claims)
-    )
+    report.total_findings = sum(len(b) for b in buckets.values())
     return report

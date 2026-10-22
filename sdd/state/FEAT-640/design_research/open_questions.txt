@@ -1,0 +1,3 @@
+- [ ] Does the DB role behind the **VenueService** pool have `SELECT` on `auth.organization_clients`? (`OrgGraphService` uses `FIELDSYNC_AUTH_RO_DSN`; the venue pool is wired by the FieldSync app, not this repo.) If not, the grant is a deployment prerequisite to document in the spec. — *Owner: Jesus Lara / FieldSync ops*
+- [ ] Is a manual run of `initialize()` against a disposable Postgres (v1 DDL applied first, then v2) acceptable as the validation evidence for the ALTER block, given there is no Postgres test fixture in this package? — *Owner: Jesus Lara*
+- [ ] Should the upstream `Trocdigital/fieldsync` FEAT-330 spec receive an errata note pointing at this feature, or is the GitHub issue closure enough? — *Owner: Jesus Lara*

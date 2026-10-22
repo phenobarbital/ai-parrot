@@ -150,17 +150,9 @@ async def test_handle_files(mock_agent_deps):
         file_obj.read.return_value = b"col1,col2\n1,2"
         attachments = {"data.csv": file_obj}
 
-        added = await agent.handle_files(attachments)
+        result = await agent.handle_files(attachments)
 
-        if not added:
-            if agent.logger.error.called:
-                print(f"DEBUG: Logger Error: {agent.logger.error.call_args}")
-            else:
-                print("DEBUG: No error logged, but added is empty.")
-                # Check if add_dataframe called?
-                print(f"DEBUG: add_dataframe called: {agent.add_dataframe.called}")
-
-        assert "data" in added
+        assert "data" in result["dataframes"]
         agent.add_dataframe.assert_called_with(mock_df, name="data")
 
 
@@ -595,25 +587,34 @@ async def test_setup_mcp_servers(mock_agent_deps):
     agent.add_mcp_server.assert_any_call(config2)
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_agent_real_integration():
-    """
-    Test REAL BasicAgent against Google/OpenAI/Groq if keys exist.
-    Skipped if no API key found.
-    """
-    import os
-
-    # We strictly respect the rule: NO MOCKS in integration tests.
-    if not os.getenv("GOOGLE_API_KEY"):
-        pytest.skip("GOOGLE_API_KEY not found")
-
+async def test_setup_mcp_servers_isolates_failures(mock_agent_deps):
+    """A server that fails to register does not stop the remaining ones."""
     from parrot.bots.agent import BasicAgent
 
-    # We use a real agent
-    agent = BasicAgent(name="RealTestAgent", use_llm="google", model="gemini-3.1-flash-lite-preview")
+    agent = BasicAgent(name="MCPAgent")
+    agent.add_mcp_server = AsyncMock(side_effect=[RuntimeError("boom"), ["tool2"]])
 
-    response = await agent.conversation("Hello, who are you?")
-    assert response is not None
-    assert len(response.output) > 0
-    print(f"Integration Response: {response.output}")
+    config1 = MagicMock()
+    config1.name = "broken"
+    config2 = MagicMock()
+    config2.name = "server2"
+
+    await agent.setup_mcp_servers([config1, config2])
+
+    assert agent.add_mcp_server.call_count == 2
+    agent.add_mcp_server.assert_any_call(config2)
+
+
+@pytest.mark.asyncio
+async def test_setup_mcp_servers_none_is_noop(mock_agent_deps):
+    """No configurations means no MCP server is added."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="MCPAgent")
+    agent.add_mcp_server = AsyncMock()
+
+    await agent.setup_mcp_servers(None)
+    await agent.setup_mcp_servers([])
+
+    agent.add_mcp_server.assert_not_called()

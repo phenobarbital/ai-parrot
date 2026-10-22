@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import aiosqlite
 
@@ -19,6 +20,29 @@ CREATE TABLE IF NOT EXISTS columns (
 CREATE INDEX IF NOT EXISTS idx_columns_name ON columns(name);
 CREATE INDEX IF NOT EXISTS idx_columns_fk ON columns(fk_target);
 """
+
+
+def _page_content(body: str) -> tuple[dict[str, Any], str]:
+    """Extract the JSON frontmatter and DDL section from a rendered page."""
+    frontmatter_text, _, remainder = body.partition("\n\n## DDL\n\n")
+    ddl, _, _ = remainder.partition("\n\n## Columns\n")
+    return json.loads(frontmatter_text), ddl
+
+
+def _page_source(page: dict[str, Any]) -> str:
+    """Read the ``source`` frontmatter key from a stored table page.
+
+    Args:
+        page: Stored table-page mapping including its rendered body.
+
+    Returns:
+        The source marker, or ``"unknown"`` if it is absent or malformed.
+    """
+    try:
+        frontmatter, _ = _page_content(str(page.get("body", "")))
+    except (json.JSONDecodeError, TypeError):
+        return "unknown"
+    return str(frontmatter.get("source", "unknown"))
 
 
 class SchemaStore(SQLiteWikiStore):
@@ -198,3 +222,48 @@ class SchemaStore(SQLiteWikiStore):
                 old_table_ids | new_table_ids,
             )
         return report
+
+    async def fold_ddl_table(
+        self,
+        page: WikiPageRecord,
+        columns: list[ColumnRecord],
+        edges: list[tuple[str, str, str, str]],
+        *,
+        changed_only: bool = False,
+    ) -> Literal["created", "updated", "unchanged"]:
+        """Fold one DDL-derived table page, never overwriting a live page.
+
+        The existing-page check and the resulting write share one immediate
+        transaction, so a concurrent live sync cannot commit in between and
+        then be overwritten by DDL facts.
+
+        Args:
+            page: Rendered DDL table page.
+            columns: Column rows for the table.
+            edges: ``(src, dst, rel, provenance)`` edges rendered with the page.
+            changed_only: Skip the write when the stored content hash matches.
+
+        Returns:
+            ``"unchanged"`` when a live page was kept (only ``defined_in`` edges
+            are added) or the content hash matched under ``changed_only``;
+            otherwise ``"created"`` or ``"updated"``.
+        """
+        self._assert_writable()
+        normalized_edges = [(src, dst, rel) for src, dst, rel, _provenance in edges]
+        async with self._write("fold_ddl_table") as conn:
+            async with conn.execute(
+                "SELECT body, content_hash FROM pages WHERE concept_id = ? LIMIT 1",
+                (page.concept_id,),
+            ) as cur:
+                row = await cur.fetchone()
+            existing = dict(row) if row is not None else None
+            if existing is not None and _page_source(existing) != "ddl":
+                await self._insert_edges_conn(conn, [edge for edge in normalized_edges if edge[2] == "defined_in"])
+                return "unchanged"
+            if changed_only and existing is not None and existing.get("content_hash") == page.content_hash:
+                return "unchanged"
+            await self._ensure_columns_table(conn)
+            await self._upsert_pages_conn(conn, [page])
+            await self._replace_columns_conn(conn, columns, {page.concept_id})
+            await self._insert_edges_conn(conn, normalized_edges)
+        return "updated" if existing is not None else "created"

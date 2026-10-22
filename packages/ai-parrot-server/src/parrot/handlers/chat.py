@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union
 from collections import defaultdict
 import re
 import uuid
@@ -31,8 +31,8 @@ except ImportError:
     AbstractLoader = None  # type: ignore[assignment,misc]
 
 from .models import BotModel
-
-
+from .scope import resolve_request_tenant
+from .studio.access import studio_scope_kwargs
 
 
 
@@ -451,8 +451,14 @@ class ChatHandler(BaseView):
         stream = data.pop('stream', False)
         if isinstance(stream, str):
             stream = stream.lower() == 'true'
+        if data.pop('tenant', None) is not None:
+            self.logger.warning(
+                "Ignoring client-supplied 'tenant' for chatbot %s (FEAT-707)", getattr(chatbot, 'name', chatbot)
+            )
+        tenant = await resolve_request_tenant(app, self.request)
         try:
-            async with chatbot.session(request=self.request, app=app, llm=llm) as bot:
+            async with chatbot.session(request=self.request, app=app, llm=llm,
+                                       **await studio_scope_kwargs(app, self.request, chatbot)) as bot:
                 # Prioritize session_id from request data (conversation-specific)
                 # Generate new UUID if not provided - never use browser session
                 session_id = data.pop('session_id', None) or uuid.uuid4().hex
@@ -536,6 +542,7 @@ class ChatHandler(BaseView):
                             model=model,
                             return_sources=return_sources,
                             return_context=return_context,
+                            tenant=tenant,
                             request=self.request,
                             **data
                         ):
@@ -562,6 +569,7 @@ class ChatHandler(BaseView):
                     model=model,
                     return_sources=return_sources,
                     return_context=return_context,
+                    tenant=tenant,
                     request=self.request,
                     **data
                 )
@@ -736,7 +744,7 @@ class BotManagement(BaseView):
         except Exception as exc:
             return self.error(
                 response={
-                    "message": f"Error retrieving chatbots.",
+                    "message": "Error retrieving chatbots.",
                     "exception": str(exc),
                     "stacktrace": str(exc.__traceback__)
                 },

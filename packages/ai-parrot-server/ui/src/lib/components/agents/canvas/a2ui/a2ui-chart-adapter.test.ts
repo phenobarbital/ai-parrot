@@ -83,4 +83,29 @@ describe('toChartBlockData', () => {
     expect(result.labels).toEqual([]);
     expect(result.series).toEqual([{ name: '2026', values: [] }]);
   });
+
+  const base = { type: 'line', x: 'label', y: ['2026', '2025'], data: { path: '/charts/chart-0' } };
+
+  it('maps seriesAxes onto each series, parallel to y', () => {
+    const result = toChartBlockData({ ...base, seriesAxes: ['left', 'right'] }, dataModel);
+    expect(result.series.map((s) => s.axis)).toEqual(['left', 'right']);
+  });
+
+  it('omits axis for null / unknown / missing entries', () => {
+    const odd = toChartBlockData({ ...base, seriesAxes: [null, 'up'] }, dataModel);
+    expect(odd.series.every((s) => !('axis' in s))).toBe(true);
+    const short = toChartBlockData({ ...base, seriesAxes: ['right'] }, dataModel);
+    expect(short.series[0].axis).toBe('right');
+    expect('axis' in short.series[1]).toBe(false);
+    const none = toChartBlockData(base, dataModel);
+    expect(none.series.every((s) => !('axis' in s))).toBe(true);
+  });
+
+  it('forwards yAxisLabels as [left, right], coercing non-strings to null', () => {
+    const result = toChartBlockData({ ...base, yAxisLabel: 'Solo', yAxisLabels: ['USD', 7] }, dataModel);
+    expect(result.y_axis_labels).toEqual(['USD', null]);
+    expect(result.y_axis_label).toBe('Solo');
+    const absent = toChartBlockData(base, dataModel);
+    expect('y_axis_labels' in absent).toBe(false);
+  });
 });

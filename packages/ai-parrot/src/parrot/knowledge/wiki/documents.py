@@ -582,12 +582,14 @@ class DocumentAcquirer:
         # a module only URL acquisition needs.
         import aiohttp
 
+        from parrot.tools.egress import EgressBlocked, egress_session
+
         timeout = aiohttp.ClientTimeout(total=self.fetch_timeout)
         tmp_path: Path | None = None
         success = False
         try:
             async with (
-                aiohttp.ClientSession(timeout=timeout) as session,
+                egress_session(timeout=timeout) as session,
                 session.get(url) as resp,
             ):
                 if not (200 <= resp.status < 300):
@@ -609,7 +611,7 @@ class DocumentAcquirer:
                         await asyncio.to_thread(tmp.write, chunk)
             success = True
             return tmp_path, suffix
-        except (aiohttp.ClientError, TimeoutError) as exc:
+        except (aiohttp.ClientError, TimeoutError, EgressBlocked) as exc:
             raise DocumentAcquisitionError(f"{url}: fetch failed: {exc}") from exc
         finally:
             if not success and tmp_path is not None:

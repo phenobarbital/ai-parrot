@@ -47,6 +47,8 @@ class ZaiClient(OpenAIBaseClient):
 
     client_type: str = "zai"
     client_name: str = "zai"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('ZAI_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("zai", "z.ai")

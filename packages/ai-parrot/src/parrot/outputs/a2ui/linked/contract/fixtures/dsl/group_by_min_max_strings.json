@@ -1,0 +1,6 @@
+{
+  "description": "min/max aggregate string columns lexically (ISO dates order correctly), not only numbers — a derived 'latest date per category' view",
+  "input": [{"cat": "a", "d": "2026-03-04", "n": "x"}, {"cat": "a", "d": "2026-01-15", "n": "z"}, {"cat": "b", "d": "2025-12-31", "n": null}, {"cat": "a", "d": null, "n": "y"}],
+  "ops": [{"op": "group_by", "by": ["cat"], "aggregate": {"d": "max", "n": "min"}}],
+  "expected": [{"cat": "a", "d": "2026-03-04", "n": "x"}, {"cat": "b", "d": "2025-12-31", "n": null}]
+}

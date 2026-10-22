@@ -1,0 +1,503 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-637",
+  "mode": "enrichment",
+  "summary_oneline": "JiraToolkit gains Jinja2 template composition for issue descriptions and comment bodies, reusing the core TemplateEngine with a Jira-safe config (no autoescape) and a templates_dir / JIRA_TEMPLATES_DIR config knob.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit.jira_create_issue",
+      "lines": "1781-1914",
+      "role": "create entrypoint; description is set verbatim at L1872-1873 \u2014 the composition insertion point",
+      "evidence": [
+        "F002",
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit.jira_add_comment",
+      "lines": "2027-2092",
+      "role": "comment entrypoint; body passed verbatim to jira.add_comment at L2049-2053",
+      "evidence": [
+        "F002",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit.jira_update_issue",
+      "lines": "1916-2000",
+      "role": "update entrypoint; description passed verbatim at L1955-1958 (optional scope)",
+      "evidence": [
+        "F002",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "CreateIssueInput",
+      "lines": "375-405",
+      "role": "tool-schema for create; where template / template_params params would be declared",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "AddCommentInput",
+      "lines": "455-467",
+      "role": "tool-schema for comment; where template / template_params params would be declared",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit.__init__",
+      "lines": "698-853",
+      "role": "config resolution via _cfg(); JIRA_DEFAULT_* and workflow_paths precedents for a templates_dir / JIRA_TEMPLATES_DIR knob",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jira_config.py",
+      "symbol": "JiraToolkitConfig",
+      "lines": "12-24",
+      "role": "Agent Studio config surface (extra=forbid) \u2014 must gain templates_dir if operators configure it there",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/template/engine.py",
+      "symbol": "TemplateEngine",
+      "lines": "47-242",
+      "role": "shared async Jinja2 engine to reuse (render / render_string / add_templates / add_template_dir)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/template/engine.py",
+      "symbol": "JinjaConfig",
+      "lines": "26-44",
+      "role": "engine config; defaults StrictUndefined + select_autoescape \u2014 autoescape must be disabled for Jira markup",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/unit/test_jiratoolkit_delegation.py",
+      "symbol": "INIT_PARAMS_BASELINE",
+      "lines": "23-39",
+      "role": "pins the exact __init__ signature; must be updated when templates_dir kwarg is added",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py",
+      "symbol": "ResearchNode._render_body",
+      "lines": "959-978",
+      "role": "existing hand-built description (f-string) \u2014 reference consumer, candidate for later migration (non-goal)",
+      "evidence": [
+        "F011",
+        "F015"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Description and comment body are passed to pycontribs JIRA unchanged; there is no markdown\u2192wiki-markup/ADF conversion stage in the toolkit path",
+      "evidence": [
+        "F005",
+        "F006",
+        "F014"
+      ],
+      "implication": "rendered template output IS the final Jira wiki-markup/plain text; rendering must not HTML-escape and nothing downstream reformats it"
+    },
+    {
+      "statement": "TemplateEngine defaults to select_autoescape keyed on file extension (.j2/.jinja/.html\u2026) and StrictUndefined; its __init__ raises ValueError if a template dir does not exist",
+      "evidence": [
+        "F008"
+      ],
+      "implication": "the Jira engine must be built with JinjaConfig(autoescape=False), choose an explicit undefined policy, and be constructed lazily / tolerate a missing dir so toolkit construction never fails"
+    },
+    {
+      "statement": "jinja2>=3.1 is already a hard dependency of ai-parrot and ai-parrot-tools",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "no new dependency; no optional-extra gating needed"
+    },
+    {
+      "statement": "ai-parrot-tools house style is a `templates_dir: Optional[Path]` constructor kwarg (msword/powerpoint/pdfprint); core style is TemplateEngine with template_dirs + in-memory templates (infographic_toolkit)",
+      "evidence": [
+        "F010"
+      ],
+      "implication": "expose `templates_dir` (+ optional in-memory `templates` mapping) on JiraToolkit and delegate to TemplateEngine internally"
+    },
+    {
+      "statement": "Constructor settings resolve through _cfg() (navconfig \u2192 env), with JIRA_DEFAULT_* defaults and a per-project JIRA_WORKFLOW_PATH_<PROJECT> override map keyed by upper-cased project",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "a JIRA_TEMPLATES_DIR env/navconfig key fits the precedent; per-project/per-issuetype template selection can mirror the workflow_paths lookup pattern"
+    },
+    {
+      "statement": "test_init_signature_unchanged pins the exact __init__ parameter tuple",
+      "evidence": [
+        "F013"
+      ],
+      "implication": "adding templates_dir is an intentional baseline change and must update INIT_PARAMS_BASELINE in the same task"
+    },
+    {
+      "statement": "All 10 external call sites of jira_create_issue / jira_add_comment use keyword arguments and never pass template-related params",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "new OPTIONAL params (template, template_params) are backward compatible; existing callers keep today's verbatim behaviour"
+    },
+    {
+      "statement": "ResearchNode enforces a 30 000-char description cap against Atlassian's 32 767 limit with summarize-then-truncate degradation",
+      "evidence": [
+        "F015"
+      ],
+      "implication": "a template can easily exceed the cap when given log excerpts; the toolkit renderer should at least guard/truncate or surface the length"
+    },
+    {
+      "statement": "JiraToolkitConfig (Agent Studio) is extra=forbid and lists only auth/project fields",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "if operators must set templates from Agent Studio, the model needs a templates_dir field; otherwise env/kwarg only"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "whats_new": [
+      "A template rendering seam inside JiraToolkit: a lazily built parrot.template.TemplateEngine (JinjaConfig(autoescape=False)) loaded from `templates_dir` / JIRA_TEMPLATES_DIR plus optional in-memory `templates` mapping",
+      "Optional `template` (name) and `template_params` (dict) parameters on jira_create_issue / jira_add_comment (and optionally jira_update_issue); when `template` is set, the body is rendered with a context = call fields (project, summary, issuetype, labels, description, issue\u2026) \u222a template_params, and the rendered string replaces description/body",
+      "A `jira_list_templates` read tool so an agent can discover available template names (LLM-facing)",
+      "Unit tests for rendering, strict/lenient undefined policy, autoescape-off, missing template error, and backward-compat (no template \u2192 unchanged behaviour)"
+    ],
+    "what_changes": [
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+        "symbol": "jira_create_issue",
+        "change": "render description via template before `issue_fields[\"description\"]` is set",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+        "symbol": "jira_add_comment",
+        "change": "render body via template before `_run()`",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+        "symbol": "CreateIssueInput / AddCommentInput",
+        "change": "add optional `template`, `template_params` fields",
+        "evidence": [
+          "F005",
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+        "symbol": "JiraToolkit.__init__",
+        "change": "add `templates_dir` (and `templates`) kwargs resolved via _cfg('JIRA_TEMPLATES_DIR')",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jira_config.py",
+        "symbol": "JiraToolkitConfig",
+        "change": "add `templates_dir: str | None` (only if Agent Studio exposure is wanted \u2014 see U1)",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/tests/unit/test_jiratoolkit_delegation.py",
+        "symbol": "INIT_PARAMS_BASELINE",
+        "change": "extend the baseline tuple with the new kwarg(s)",
+        "evidence": [
+          "F013"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Markdown\u2192ADF or wiki-markup conversion (none exists today; templates emit final markup)",
+      "Changing JiraInterface (read-only) or the pycontribs client",
+      "Migrating ResearchNode._render_body or /sdd-tojira to templates (possible follow-up)",
+      "Templating `summary` or other non-text fields"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "Lazy TemplateEngine on the toolkit with JinjaConfig override (infographic_toolkit L307-321)",
+        "evidence": [
+          "F010",
+          "F008"
+        ]
+      },
+      {
+        "pattern": "_cfg() + JIRA_DEFAULT_* precedence (explicit kwarg > navconfig > env)",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "pattern": "workflow_paths per-project map with _DEFAULT sentinel for convention-based selection",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "pattern": "_FakeJIRA / AsyncMock test doubles in tests/unit",
+        "evidence": [
+          "F013"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "HTML-escaping Jira markup",
+        "impact": "`{code}`, `*bold*`, `<` rendered as entities; mitigation: JinjaConfig(autoescape=False) + a test asserting raw markup survives",
+        "evidence": [
+          "F008",
+          "F014"
+        ]
+      },
+      {
+        "risk": "StrictUndefined with LLM-supplied template_params",
+        "impact": "a missing key raises \u2192 tool call fails with a ValueError('Template error\u2026'); mitigation: surface the missing-variable names in the tool error, or choose a lenient Undefined (decision U3)",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "risk": "Template names come from the LLM",
+        "impact": "arbitrary file access attempt; mitigation: names are resolved only through the engine's loader (FileSystemLoader/DictLoader), never joined to a path by the toolkit, and listed via jira_list_templates",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "risk": "Rendered description > 32 767 chars",
+        "impact": "Jira 400; mitigation: reuse a cap like ResearchNode's _MAX_DESCRIPTION_CHARS or return a clear error",
+        "evidence": [
+          "F015"
+        ]
+      },
+      {
+        "risk": "Signature-pin test",
+        "impact": "test_init_signature_unchanged fails; mitigation: update INIT_PARAMS_BASELINE deliberately in the same task",
+        "evidence": [
+          "F013"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "The only places description/body are shaped are jira_create_issue L1872-1873, jira_update_issue L1955-1958 and jira_add_comment L2049-2053; all pass strings verbatim",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of all three methods"
+    },
+    {
+      "id": "C2",
+      "statement": "A shared async Jinja2 TemplateEngine exists in core (parrot.template) and is already used by three core consumers",
+      "evidence": [
+        "F008",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "file read + consumer grep"
+    },
+    {
+      "id": "C3",
+      "statement": "No new dependency is required (jinja2>=3.1 declared in core and tools)",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "pyproject grep"
+    },
+    {
+      "id": "C4",
+      "statement": "TemplateEngine's default autoescape would corrupt Jira markup for templates named *.j2/*.jinja; the Jira engine must disable it",
+      "evidence": [
+        "F008",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "select_autoescape([... 'j2','jinja','jinja2']) read directly; no conversion stage exists"
+    },
+    {
+      "id": "C5",
+      "statement": "Adding optional template/template_params params is backward compatible with all 10 external callers",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "every call site uses kwargs and none passes those names"
+    },
+    {
+      "id": "C6",
+      "statement": "The `templates_dir` kwarg + JIRA_TEMPLATES_DIR env is the convention-consistent config surface",
+      "evidence": [
+        "F007",
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "two coexisting conventions (tools: templates_dir; core: template_dirs); choice is a judgment call"
+    },
+    {
+      "id": "C7",
+      "statement": "Adding a constructor kwarg requires updating INIT_PARAMS_BASELINE",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "assertion read directly"
+    },
+    {
+      "id": "C8",
+      "statement": "A length guard against the 32 767-char Jira cap belongs in the renderer",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "medium",
+      "reasoning": "cap is enforced today only in ResearchNode; whether the toolkit should own it is a design choice"
+    },
+    {
+      "id": "C9",
+      "statement": "Agent Studio operators will want templates_dir in JiraToolkitConfig",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "low",
+      "reasoning": "FEAT-593 surface exists but nothing indicates templates must be operator-configurable there"
+    },
+    {
+      "id": "C10",
+      "statement": "Per-project/per-issuetype auto-selection (mirroring workflow_paths) is wanted in addition to explicit template names",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "low",
+      "reasoning": "source says 'user requires following certain rules' \u2014 could mean mandatory per-project templates or opt-in; precedent exists but intent unknown"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Where do templates live and how are they configured \u2014 filesystem directory only (templates_dir kwarg + JIRA_TEMPLATES_DIR), also in-memory `templates` mapping for programmatic use, and/or exposed in Agent Studio (JiraToolkitConfig)?",
+      "blocks_claims": [
+        "C6",
+        "C9"
+      ],
+      "plausible_answers": [
+        "filesystem dir via kwarg/env only (simplest, mirrors msword/powerpoint)",
+        "filesystem dir + in-memory mapping (mirrors infographic_toolkit)",
+        "both of the above + templates_dir in JiraToolkitConfig for Agent Studio"
+      ],
+      "ask_user": true,
+      "user_answer": "Dir + in-memory mapping \u2014 `templates_dir` kwarg / JIRA_TEMPLATES_DIR env for files, plus an optional `templates={name: source}` mapping for programmatic use (mirrors infographic_toolkit). Agent Studio exposure not required."
+    },
+    {
+      "id": "U2",
+      "question": "How is a template selected \u2014 only explicitly by name per call (`template='bug'`), automatically by convention (`<PROJECT>/<issuetype>.j2` with a `_default`, like workflow_paths), or both (explicit wins, convention as fallback)?",
+      "blocks_claims": [
+        "C10"
+      ],
+      "plausible_answers": [
+        "explicit name only",
+        "both: explicit name wins, else per-project/issuetype convention, else no template",
+        "convention only (templates are mandatory rules)"
+      ],
+      "ask_user": true,
+      "user_answer": "Explicit wins, convention fallback \u2014 `template='bug'` when given; otherwise look up `<PROJECT>/<issuetype>` then `_default` (like workflow_paths); otherwise no template."
+    },
+    {
+      "id": "U3",
+      "question": "What should happen when a template references a placeholder the caller did not provide \u2014 fail the tool call with the missing names (StrictUndefined), or render leniently (blank / leave `{{ name }}` visible)?",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "strict: fail with a clear error listing missing variables (engine default)",
+        "lenient: missing \u2192 empty string",
+        "lenient-visible: leave the placeholder text so the reviewer sees the gap"
+      ],
+      "ask_user": true,
+      "user_answer": "Strict \u2014 fail with names: the tool call fails with a clear error listing the missing variables (StrictUndefined)."
+    },
+    {
+      "id": "U4",
+      "question": "Should the LLM agent be able to discover and pick templates (a `jira_list_templates` tool + `template` as a tool parameter), or is templating operator-only configuration applied automatically?",
+      "blocks_claims": [
+        "C5"
+      ],
+      "plausible_answers": [
+        "LLM-facing: list tool + template param (agent decides)",
+        "operator-only: auto-applied, no new tool params",
+        "both: auto-applied default, agent may override by name"
+      ],
+      "ask_user": true,
+      "user_answer": "Both \u2014 operator config auto-applies a default; the agent may list templates (`jira_list_templates`) and override by name via a `template` tool parameter."
+    },
+    {
+      "id": "U5",
+      "question": "Scope: besides create (description) and add_comment (body), should jira_update_issue's description also accept a template?",
+      "blocks_claims": [
+        "C1"
+      ],
+      "plausible_answers": [
+        "create + comment only (as requested)",
+        "create + comment + update description"
+      ],
+      "ask_user": true,
+      "user_answer": "Create + comment + update \u2014 same `template` / `template_params` seam on all three write paths."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (three verbatim pass-through points, one shared engine to reuse, no new dependency); the remaining decisions are product choices (U1\u2013U5), not architectural forks requiring a brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015"
+    ],
+    "findings_unused": [],
+    "notes": "Wall-clock exceeded the 300s profile budget (~420s) but every planned query completed and none were skipped; truncated=false. Confidence held at medium because five product decisions remain open."
+  }
+}

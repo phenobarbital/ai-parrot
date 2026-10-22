@@ -1,0 +1,73 @@
+{
+  "feature": "gemini-upgrade",
+  "feature_id": "FEAT-688",
+  "spec": "sdd/specs/gemini-upgrade.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T21:40:16+00:00",
+  "completed_at": "2026-10-15T22:20:18+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4369",
+      "slug": "googlemodel-catalogue-refresh",
+      "title": "GoogleModel catalogue refresh — add Gemini 4 Argon, delete the four dead ids",
+      "feature_id": "FEAT-688",
+      "feature": "gemini-upgrade",
+      "spec": "sdd/specs/gemini-upgrade.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-10-15T22:08:36+00:00",
+      "completed_at": "2026-10-15T22:16:26+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task. Owns models.py, tests/test_google_models.py and tests/test_llm_factory.py; no other task touches them. Independent of TASK-4370 because its tests use the enum only.",
+      "file": "sdd/tasks/completed/TASK-4369-googlemodel-catalogue-refresh.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4370",
+      "slug": "google-client-routing-gates",
+      "title": "GoogleGenAIClient routing gates — whitelist Argon, drop gemini-3.7-pro, widen the generation predicate",
+      "feature_id": "FEAT-688",
+      "feature": "gemini-upgrade",
+      "spec": "sdd/specs/gemini-upgrade.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-10-15T22:08:36+00:00",
+      "completed_at": "2026-10-15T22:16:28+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task. Owns client.py and tests/test_google_client.py; gate tests use string ids, so it does not need GEMINI_4_ARGON from TASK-4369 and runs concurrently with it.",
+      "file": "sdd/tasks/completed/TASK-4370-google-client-routing-gates.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4371",
+      "slug": "google-genai-floor",
+      "title": "Align the google-genai floor across ai-parrot-client-google and ai-parrot-embeddings",
+      "feature_id": "FEAT-688",
+      "feature": "gemini-upgrade",
+      "spec": "sdd/specs/gemini-upgrade.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-10-15T22:08:36+00:00",
+      "completed_at": "2026-10-15T22:17:35+00:00",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4369",
+        "TASK-4370"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: edits two pyproject.toml manifests and uv.lock shared by the whole workspace. Depends on TASK-4369 (its validation runs tests/test_google_models.py, which TASK-4369 rewrites) and TASK-4370 (its validation runs tests/test_google_client.py, which TASK-4370 rewrites) so the floor is exercised against the finished code.",
+      "file": "sdd/tasks/completed/TASK-4371-google-genai-floor.md",
+      "verification": "verified"
+    }
+  ]
+}

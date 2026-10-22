@@ -115,3 +115,24 @@ def test_done_variants_keep_release_gates(tmp_path: Path) -> None:
     done_skill = (repo_root / ".agents/skills/sdd-done/SKILL.md").read_text(encoding="utf-8")
     assert "Stamp verification" in done_skill
     assert "remove the worktree only after successful push/PR or merge path" in done_skill
+
+
+@pytest.mark.parametrize("rel_path", _DONE_TWINS)
+def test_done_twins_carry_test_report_step(rel_path: str) -> None:
+    """Every /sdd-done mirror wires the FEAT-695 test report (render, re-run decision, ledger-free re-run)."""
+    body = (_repo_root() / rel_path).read_text(encoding="utf-8")
+    for marker in ("test_report render", "decide-rerun", "--no-ledger"):
+        assert marker in body, f"{rel_path} is missing {marker!r}"
+
+
+@pytest.mark.parametrize(
+    "rel_path",
+    (
+        ".claude/agents/sdd-worker.md",
+        "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md",
+    ),
+)
+def test_sdd_worker_twins_pass_report_task(rel_path: str) -> None:
+    """Both sdd-worker twins record fallback-lane results via --report-task."""
+    body = (_repo_root() / rel_path).read_text(encoding="utf-8")
+    assert "--report-task" in body, f"{rel_path} is missing --report-task"

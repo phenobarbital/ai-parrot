@@ -2,7 +2,7 @@
 id: F015
 query_id: Q016
 type: read
-intent: Depth-1 follow-up: does https://api.hooba.com/api/doc serve a machine-readable OpenAPI document, and which endpoints cover the three requested capabilities?
+intent: "Depth-1 follow-up: does https://api.hooba.com/api/doc serve a machine-readable OpenAPI document, and which endpoints cover the three requested capabilities?"
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

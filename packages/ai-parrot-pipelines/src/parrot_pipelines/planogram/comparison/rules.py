@@ -12,7 +12,9 @@ from parrot.models.detections import TextRequirement
 from parrot_pipelines.planogram.comparison.definition import RuleBinding, SlotsDefinition, ZoneDefinition
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
 from parrot_pipelines.planogram.comparison.tags import slot_above, tag_price, tag_text
+from parrot_pipelines.planogram.perception.bands import banded_zones
 from parrot_pipelines.planogram.contracts import (
+    APPEARANCE_UNDETERMINED,
     CycleContext,
     FixtureMembership,
     Identification,
@@ -32,8 +34,8 @@ logger = logging.getLogger(__name__)
 ZONE_REGION_TARGET = "{image_id}:zone-region:{zone_id}"
 
 
-def normalize_text(text: str) -> str:
-    """Normalize OCR text using the ProductOnShelves comparison semantics."""
+def _normalize(text: str, keep_case: bool) -> str:
+    """De-accent, replace every non-alphanumeric character with a space and collapse whitespace."""
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
@@ -44,7 +46,27 @@ def normalize_text(text: str) -> str:
         text,
     )
     text = re.sub(r"[^A-Za-z0-9 ]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip().lower()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if keep_case else text.lower()
+
+
+def normalize_text(text: str) -> str:
+    """Normalize OCR text using the ProductOnShelves comparison semantics."""
+    return _normalize(text, keep_case=False)
+
+
+def _requirement_features(requirement: TextRequirement, raw: Sequence[str]) -> List[str]:
+    """Prepare raw text features for one requirement, so its match type sees what it needs.
+
+    ``regex`` and ``exact`` get the original text (NFKC only; ``TextMatcher`` normalizes ``exact`` itself), a
+    case-sensitive ``contains`` gets the text normalized with its case kept (its needle is normalized the same way),
+    and every other requirement gets the lowercased ``normalize_text`` features.
+    """
+    if requirement.match_type in ("regex", "exact"):
+        return [unicodedata.normalize("NFKC", feature) for feature in raw]
+    if requirement.case_sensitive:
+        return [_normalize(TextMatcher._strip_ocr_prefix(feature), keep_case=True) for feature in raw]
+    return [normalize_text(feature) for feature in raw]
 
 
 def visual_feature_match(expected: Sequence[str], detected: Sequence[str]) -> float:
@@ -178,15 +200,26 @@ def _zone_matches(
     definition: SlotsDefinition,
     selectors: Sequence[object],
 ) -> List[Tuple[str, ZoneDefinition, Optional[Shape], str]]:
-    """Return one selector decision for every definition zone and image."""
+    """Return the selector decisions for every definition zone and image.
+
+    A band selector yields one ``matched`` entry per observed fragment of its zone; any other zone
+    yields exactly one entry.
+    """
     zones = [zone for zone in definition.zones if zone.zone_id == target_id]
     if not zones:
         zones = [zone for zone in definition.zones if zone.shelf_id == target_id]
-    return [
-        (perception.image_id, zone, *match_zone(zone, perception, definition, selectors))
-        for perception in perceptions
-        for zone in zones
-    ]
+    banded = {getattr(item, "zone_id", None) for item in selectors if getattr(item, "band", None) is not None}
+    matches: List[Tuple[str, ZoneDefinition, Optional[Shape], str]] = []
+    for perception in perceptions:
+        for zone in zones:
+            if zone.zone_id not in banded:
+                matches.append((perception.image_id, zone, *match_zone(zone, perception, definition, selectors)))
+                continue
+            fragments = banded_zones(perception.zones, zone.zone_id)
+            matches.extend((perception.image_id, zone, fragment, "matched") for fragment in fragments)
+            if not fragments:
+                matches.append((perception.image_id, zone, None, "not_observed"))
+    return matches
 
 
 def _rule_observations(
@@ -266,6 +299,15 @@ def _entity_texts(
                         if text:
                             features.extend([f"ocr:{text}", text])
                     refs.append(_ref(image_id, identification.shape_id, identification.source))
+            # Phrases read off the zone's own crop (logos, headlines, inserts) are text evidence too.
+            for observation in result.rule_observations:
+                if (
+                    observation.target_id == shape.shape_id
+                    and observation.kind == "visual_features"
+                    and observation.assessed
+                    and isinstance(observation.value, (list, tuple))
+                ):
+                    features.extend(str(phrase) for phrase in observation.value if phrase)
     for image_id, identification in _registered_identifications(
         binding.target_id,
         registrations,
@@ -277,7 +319,7 @@ def _entity_texts(
             if text:
                 features.extend([f"ocr:{text}", text])
         refs.append(_ref(image_id, identification.shape_id, identification.source))
-    return observed, [normalize_text(feature) for feature in features if feature], _dedupe_refs(refs)
+    return observed, [feature for feature in features if feature], _dedupe_refs(refs)
 
 
 def _rule_zone_present(
@@ -331,6 +373,21 @@ def _rule_zone_present(
     return _unassessed(binding, "zone visibility unknown")
 
 
+def _majority_state(votes: Sequence[Tuple[str, ObservationRef, int]]) -> List[Tuple[str, ObservationRef]]:
+    """Reduce the fragments of one zone in one image to the state covering the most area.
+
+    A tie keeps every vote, so the caller reports the conflict instead of picking a side.
+    """
+    totals: Dict[str, int] = {}
+    for state, _, area in votes:
+        totals[state] = totals.get(state, 0) + area
+    best = max(totals.values())
+    winners = {state for state, total in totals.items() if total == best}
+    if len(winners) != 1:
+        return [(state, ref) for state, ref, _area in votes]
+    return [(state, ref) for state, ref, _area in votes if state in winners]
+
+
 def _rule_illumination(
     binding: RuleBinding,
     perceptions: Sequence[PerceptionResult],
@@ -340,15 +397,18 @@ def _rule_illumination(
 ) -> RuleOutcome:
     """Evaluate illumination states already collected by the identification stage."""
     matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
-    states: List[Tuple[str, ObservationRef]] = []
+    votes: Dict[str, List[Tuple[str, ObservationRef, int]]] = {}
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
+        area = (shape.box.x2 - shape.box.x1) * (shape.box.y2 - shape.box.y1)
         for observation in _rule_observations(observations, image_id, [shape.shape_id], "illumination"):
             if isinstance(observation.value, str):
-                states.append(
-                    (observation.value.strip().lower(), _ref(image_id, observation.target_id, observation.source))
-                )
+                ref = _ref(image_id, observation.target_id, observation.source)
+                votes.setdefault(image_id, []).append((observation.value.strip().lower(), ref, area))
+    states: List[Tuple[str, ObservationRef]] = []
+    for image_votes in votes.values():
+        states.extend(_majority_state(image_votes))
     if not states:
         return _unassessed(binding, "illumination target not observed")
     distinct = {state for state, _ in states}
@@ -378,6 +438,69 @@ def _rule_illumination(
     )
 
 
+def _rule_appearance(
+    binding: RuleBinding,
+    perceptions: Sequence[PerceptionResult],
+    observations: Sequence[RuleObservation],
+    definition: SlotsDefinition,
+    selectors: Sequence[object],
+) -> RuleOutcome:
+    """Evaluate closed-vocabulary zone appearance collected by the identification stage.
+
+    Each configured attribute is decided by an area-weighted majority per image; an undetermined value
+    never votes, and a tie or a disagreement across images leaves that attribute unassessed.
+    """
+    expected: Dict[str, List[str]] = {
+        attribute: [value] if isinstance(value, str) else list(value) for attribute, value in binding.params.items()
+    }
+    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
+    votes: Dict[str, Dict[str, List[Tuple[str, ObservationRef, int]]]] = {attribute: {} for attribute in expected}
+    refs: List[ObservationRef] = []
+    for image_id, _zone, shape, status in matched:
+        if status != "matched" or shape is None:
+            continue
+        area = (shape.box.x2 - shape.box.x1) * (shape.box.y2 - shape.box.y1)
+        for observation in _rule_observations(observations, image_id, [shape.shape_id], "appearance"):
+            if not isinstance(observation.value, dict):
+                continue
+            ref = _ref(image_id, observation.target_id, observation.source)
+            for attribute in expected:
+                value = observation.value.get(attribute)
+                if not isinstance(value, str) or value in APPEARANCE_UNDETERMINED:
+                    continue
+                votes[attribute].setdefault(image_id, []).append((value, ref, area))
+                refs.append(ref)
+
+    matched_count = 0
+    assessed_count = 0
+    details: List[str] = []
+    for attribute, accepted in expected.items():
+        states: List[Tuple[str, ObservationRef]] = []
+        for image_votes in votes[attribute].values():
+            states.extend(_majority_state(image_votes))
+        distinct = {state for state, _ in states}
+        if len(distinct) != 1:
+            details.append(f"{attribute}: not assessed")
+            continue
+        assessed_count += 1
+        state = next(iter(distinct))
+        if state in accepted:
+            matched_count += 1
+            continue
+        details.append(f"{attribute}: {state} (expected {'|'.join(accepted)})")
+
+    if not assessed_count:
+        return _unassessed(binding, "appearance not observed")
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=matched_count == assessed_count,
+        score=matched_count / len(expected),
+        detail="; ".join(details) if details else None,
+        observations=_dedupe_refs(refs),
+    )
+
+
 def _rule_text(
     binding: RuleBinding,
     perceptions: Sequence[PerceptionResult],
@@ -401,7 +524,7 @@ def _rule_text(
     results = [
         TextMatcher.check_text_match(
             required_text=requirement.required_text,
-            visual_features=features,
+            visual_features=_requirement_features(requirement, features),
             match_type=requirement.match_type,
             case_sensitive=requirement.case_sensitive,
             confidence_threshold=requirement.confidence_threshold,
@@ -433,11 +556,19 @@ def _rule_visual(
     definition: SlotsDefinition,
     selectors: Sequence[object],
 ) -> RuleOutcome:
-    """Evaluate visual features from neutral observations and text evidence."""
+    """Evaluate visual features from neutral observations and text evidence.
+
+    A binding with ``params["checklist"]`` is scored on the counted checklist observations instead
+    (see ``_score_checklist``); ``expected`` and ``threshold`` are then ignored.
+    """
+    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
+    checklist = binding.params.get("checklist")
+    if checklist:
+        return _score_checklist(binding, checklist, matched, observations)
     observed, detected, refs = _entity_texts(
         binding, perceptions, identifications, registrations, definition, selectors
     )
-    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
+    detected = [normalize_text(feature) for feature in detected]
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
@@ -455,6 +586,61 @@ def _rule_visual(
         assessed=True,
         passed=score >= float(binding.params.get("threshold", 0.5)),
         score=max(0.0, min(1.0, score)),
+        observations=_dedupe_refs(refs),
+    )
+
+
+def _score_checklist(
+    binding: RuleBinding,
+    checklist: Sequence[Dict[str, object]],
+    matched: Sequence[Tuple[str, ZoneDefinition, Optional[Shape], str]],
+    observations: Sequence[RuleObservation],
+) -> RuleOutcome:
+    """Score an opt-in ``visual_features`` checklist from counted zone observations.
+
+    Each feature's count is the highest assessed count (>= 0) over the matched zones of every image: a
+    photo or fragment may miss a figure but never invents one. The rule passes when every feature is
+    assessed and reaches its ``min_count``.
+
+    Args:
+        binding: The ``visual_features`` binding.
+        checklist: Its validated ``params["checklist"]`` entries (``feature``, optional ``min_count``).
+        matched: ``_zone_matches`` result for the binding's target.
+        observations: Every neutral rule observation of the run.
+
+    Returns:
+        The outcome; unassessed when no feature was counted.
+    """
+    counts: Dict[str, int] = {}
+    refs: List[ObservationRef] = []
+    for image_id, _zone, shape, status in matched:
+        if status != "matched" or shape is None:
+            continue
+        for observation in _rule_observations(observations, image_id, [shape.shape_id], "visual_checklist"):
+            if not isinstance(observation.value, dict):
+                continue
+            refs.append(_ref(image_id, observation.target_id, observation.source))
+            for feature, count in observation.value.items():
+                if isinstance(count, int) and count >= 0:
+                    counts[feature] = max(count, counts.get(feature, -1))
+    if not counts:
+        return _unassessed(binding, "checklist not observed")
+    satisfied = 0
+    details: List[str] = []
+    for item in checklist:
+        feature = str(item["feature"])
+        minimum = int(item.get("min_count", 1))
+        count = counts.get(feature)
+        if count is not None and count >= minimum:
+            satisfied += 1
+            continue
+        details.append(f"{feature}: {'unknown' if count is None else count} (expected >= {minimum})")
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=satisfied == len(checklist),
+        score=satisfied / len(checklist),
+        detail="; ".join(details) if details else None,
         observations=_dedupe_refs(refs),
     )
 
@@ -560,6 +746,8 @@ def evaluate_rules(
                 outcome = _rule_visual(
                     binding, perceptions, identifications, registrations, observations, definition, selectors
                 )
+            elif binding.kind == "appearance":
+                outcome = _rule_appearance(binding, perceptions, observations, definition, selectors)
             elif binding.kind == "fact_tag_present":
                 outcome = _rule_fact_tag(binding, perceptions, identifications, registrations)
             else:

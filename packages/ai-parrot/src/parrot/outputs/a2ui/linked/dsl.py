@@ -275,6 +275,24 @@ def _op_derive(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFram
 _AGGS = {"sum": "sum", "avg": "mean", "count": "count", "min": "min", "max": "max"}
 
 
+def _agg_callable(fn: str) -> Any:
+    """pandas aggregator for a DSL aggregate; ``min``/``max`` skip nulls on ANY dtype (strings, ISO dates included).
+
+    pandas' native ``min``/``max`` raise on an object column holding ``None`` next to strings, so those two are
+    evaluated over the non-null values (``None`` when every value is null) — the same rule every renderer applies.
+    """
+    if fn not in ("min", "max"):
+        return _AGGS[fn]
+
+    def _extreme(series: "pd.Series") -> Any:
+        values = series.dropna()
+        if values.empty:
+            return None
+        return values.min() if fn == "min" else values.max()
+
+    return _extreme
+
+
 def _sibling(frames: Mapping[str, "pd.DataFrame"], key: str, index: int, op_name: str) -> "pd.DataFrame":
     """Return an already-executed sibling frame or raise a location-aware error."""
     if key not in frames:
@@ -288,7 +306,9 @@ def _op_group_by(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFr
     by = list(op.by)
     aggregate = dict(op.aggregate)
     _require_columns(frame, by + list(aggregate), index, "group_by")
-    out = frame.groupby(by, sort=False, dropna=True).agg({column: _AGGS[fn] for column, fn in aggregate.items()})
+    out = frame.groupby(by, sort=False, dropna=True).agg(
+        {column: _agg_callable(fn) for column, fn in aggregate.items()}
+    )
     return out.reset_index()[by + list(aggregate)]
 
 

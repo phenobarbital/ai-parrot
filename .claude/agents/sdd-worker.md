@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, SendMessage, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_bg_wait, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch, mcp__wikitoolkit__ledger_open, mcp__wikitoolkit__ledger_context
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, SendMessage, Monitor, TaskStop, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_bg_wait, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch, mcp__wikitoolkit__ledger_open, mcp__wikitoolkit__ledger_context
 hooks:
   PreToolUse:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
@@ -211,6 +211,26 @@ Extract from the per-spec index header: `feature_id`, `feature` slug,
 `spec` path. Task list in dependency order is the `tasks[]` array filtered
 to status `"pending"` and topologically sorted on `depends_on`.
 
+### 1b. Brief Lane (FEAT-698)
+
+Also consider `sdd/briefs/*.index.json` after the feature indexes; a feature
+index wins a tie. A match whose header has `"type": "brief"` is a **brief**:
+it exists only inside its worktree.
+
+- `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
+- §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
+- `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
+- Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+
+  ```bash
+  jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
+    '(.tasks[] | select(.id == $id) | .status) = "done" |
+     (.tasks[] | select(.id == $id) | .completed_at) = $now' \
+    "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+
+  # Fill in the Completion Note in <task file> without moving it.
+  git add "$INDEX" "<task file>"
+  ```
 ### 2. Never Write Task State on `BASE_BRANCH`
 
 Do NOT mark tasks `in-progress` (or commit anything under `sdd/`) on
@@ -362,8 +382,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json)`, then
      `coder_run_validation(feature, worktree, execution_id, task_ids=<this chunk's merged task ids>, tier="merge",
      timeout_seconds=<explicit budget>, request_id=<stable id, e.g. "<execution_id>:<task_id>:merge">)`
-     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with
-     sibling merges can break them). Wait on its `bg_handle` with `coder_bg_wait` per step 3 until
+     (the plan is the chunk tasks' Validation Commands ∪ the spec `test_contract` — fallback: the tasks' own tests + direct importers, never a suite; unchanged green targets are skipped as `cached`; a red verdict means a NEW red vs `origin/<base_branch>`). Wait on its `bg_handle` with `coder_bg_wait` per step 3 until
      `state="finished"`; `outcome="completed"`
      is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
      treated as green and is never inferred from an empty log or a vanished process.
@@ -388,6 +407,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    - `failed` with `diagnostics` starting `empty_delivery:` → the seat delivered no file change (the engine never
      answers `merged` for an empty branch). On `coder_run_chunk` the retry ladder already ran; treat as `failed` below.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/tasks/`/`sdd/ledger/` or unlisted files — a declared `sdd/` doc such as `sdd/WORKFLOW.md` is fine —, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
+   - `validation_failed` → the task's validation gate was red; `coder_run_validation(tier="task")` is available to iterate before merge. The engine re-dispatches the **same seat** once in a fresh session with the verdict under `## Validation verdict`; fix exactly those failures.
    - `failed` → attempt 3 is yours, but **only for a `standard` classification with confirmed evidence**: implement the
      task in THIS worktree with steps c)–f) of the Fallback loop, then (g). **DO NOT automatically implement a task
      yourself** when it is blocked with `complex_model_unavailable` or its complexity assessment is unavailable — wait
@@ -534,8 +554,8 @@ If ANY check fails, fix or STOP.
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
-  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).

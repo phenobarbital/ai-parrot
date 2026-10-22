@@ -1,0 +1,101 @@
+**Option B** is recommended.
+
+It is the only option that satisfies every stated constraint without bending
+one of them. Option A satisfies C6 by putting wiki infrastructure inside a bot,
+which trades a permanent layering violation for a few days of saved design —
+and the cost lands on the next producer that wants folder ingestion, not on
+this feature. Option C buys a genuinely better human-in-the-loop model
+(`InteractiveDecisionNode` is a real fit for C8), but it does not satisfy C1–C4
+on its own: we would still need the bot, so C's machinery is additive rather
+than substitutive.
+
+**What Option B trades away, honestly:**
+
+- **Scope.** Two modules across `bots/` and `knowledge/wiki/` instead of one
+  class. The spec is bigger and the worktree touches two subsystems. Accepted
+  because the split falls on an existing, well-defined seam.
+- **The best answer for C8.** Hand-rolled Telegram confirmation state is
+  weaker than `InteractiveDecisionNode`. Accepted for now because the
+  confirmation is a single yes/no on a short-lived insight batch, and
+  `GitHubReviewer` already demonstrates this pattern working in production over
+  the same transport. If the confirmation flow grows (multi-step triage,
+  assignment, re-prompting), revisit Option C.
+- **Watcher timing risk.** The quiescence heuristic is the one genuinely novel
+  piece of logic and needs its own tests and acceptance criteria rather than
+  being treated as plumbing.
+
+---
+
+### Option B: Agent + a first-class `InboxWatcher` service in the wiki package
+
+Two clearly separated pieces, both delivered by this feature:
+
+1. **`InboxWatcher`** — a new service in `parrot/knowledge/wiki/inbox/watcher.py`.
+   A `watchdog` observer over the configured inbox directory, debounced and
+   quiescence-gated (a file is only a candidate once its size and mtime have
+   been stable for N seconds), that coalesces bursts into a **single serialized
+   `InboxProcessor.run()`**, built on the **already-public, click-free**
+   `parrot.knowledge.wiki.runtime.build_ingest_runtime()` rather than
+   re-assembling the 14 bound services of `InboxRuntime` by hand. That module
+   exists precisely so "async servers can construct the charter triage and
+   ingest services without importing CLI code or starting a nested event loop",
+   so **no CLI refactor is needed**. The watcher is source-agnostic: Fireflies,
+   a scanned PDF or a manual drop are all the same. It ships in two shapes from
+   one implementation — a startable/stoppable service object, and a
+   `wikitoolkit inbox --watch` CLI mode.
+
+2. **`FirefliesInsightsAgent`** — a `SkillRegistryMixin` + `Agent` in
+   `parrot/bots/fireflies_insights.py`. It pulls transcripts *with* the native
+   Fireflies summary over MCP, writes each meeting as one document into the
+   inbox directory (atomically: temp file + rename, so the watcher never sees a
+   partial write), and **independently** runs its insight method over the
+   transcript + summary it already holds. Insights go to the configured Telegram
+   channel; a Telegram confirmation turns a selected insight into a Jira ticket
+   via `JiraToolkit`.
+
+The agent may optionally own the watcher's lifecycle as a managed background
+task, but it does not contain it — and the watcher runs perfectly well without
+any agent.
+
+✅ **Pros:**
+- Respects the repo's layering: the wiki owns wiki ingestion; the bot owns the
+  meeting workflow. Each is independently testable.
+- Any future producer (audio notes, email, Drive) gets folder ingestion free.
+- Satisfies C5 structurally: the insight path never touches the watcher, so
+  neither can block or break the other.
+- Atomic writes + quiescence gate + serialized runs directly answer C11.
+- Closes a real gap already filed in the work ledger (`f7477bd7bba4` asks for
+  the inbox to be reachable beyond the CLI).
+- The reusable seam it needs (`runtime.build_ingest_runtime`) **already exists
+  and is public**, so the wiki-side cost is one new module plus a CLI flag.
+
+❌ **Cons:**
+- Two modules in two packages' trees instead of one class — more surface to
+  spec, and the feature spans `bots/` and `knowledge/wiki/`.
+- The watcher's quiescence heuristic is genuinely tricky: too short and it
+  ingests a partial file, too long and ingestion feels laggy. Needs its own
+  acceptance criteria.
+- The `--watch` flag still touches `knowledge/wiki/cli.py`, the one file this
+  feature shares with other in-flight wiki work.
+
+📊 **Effort:** Medium–High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `watchdog>=4.0` | Filesystem events, cross-platform | Already declared in `packages/ai-parrot/pyproject.toml` |
+| `pydantic` v2 | Insight / watcher-report models | Repo standard |
+| `click` | `--watch` flag on the existing `wiki inbox` command | Already the wiki CLI's framework |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/knowledge/wiki/inbox/processor.py` — `InboxProcessor.run()`, `InboxLockBusy`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/runtime.py` — `build_ingest_runtime()`, `build_novelty_scorer()`, `build_triage_adapters()` (public, click-free)
+- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` — the `inbox` command, extended with `--watch`
+- `packages/ai-parrot/src/parrot/agents/meeting_registry.py` — `MeetingRegistry` id-keyed dedup, watermark and fingerprints
+- `packages/ai-parrot/src/parrot/agents/obsidian.py` — Fireflies MCP fetch, `include_summary`, response parsing
+- `packages/ai-parrot/src/parrot/bots/github_reviewer.py` — `set_wrapper()`, `_get_telegram_bot()`, HTML escaping, 4096-char chunking, `@telegram_command`, `post_configure()` toolkit wiring
+- `packages/ai-parrot/src/parrot/skills/mixin.py` — `SkillRegistryMixin`
+- `packages/ai-parrot/src/parrot/tools/working_memory/` — `WorkingMemoryToolkit`
+- `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` — `JiraToolkit`
+
+---

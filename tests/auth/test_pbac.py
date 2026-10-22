@@ -635,12 +635,12 @@ class TestToolFilteringIntegration:
         """Verify post() calls _filter_tools_for_user after ToolManager load."""
         path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
         source = path.read_text()
-        # Should call filter after session_key = f"{agent.name}_tool_manager"
+        # Should call filter after session_key = f"{agent_tooling_ref(agent)}_tool_manager"
         assert "_filter_tools_for_user" in source
         assert "session_key" in source
         # Should come after the session manager load
         filter_idx = source.index("await self._filter_tools_for_user(")
-        session_idx = source.index('session_key = f"{agent.name}_tool_manager"')
+        session_idx = source.index('session_key = f"{agent_tooling_ref(agent)}_tool_manager"')
         assert filter_idx > session_idx, \
             "_filter_tools_for_user should come after session ToolManager load"
 

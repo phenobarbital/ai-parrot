@@ -4,8 +4,9 @@
     GET /api/v1/astudio/catalog/llm-clients
     GET /api/v1/astudio/catalog/tools
     GET /api/v1/astudio/catalog/vector-stores
+    GET /api/v1/astudio/catalog/model-params
 
-All four reuse existing sources of truth (no new registries), mirroring
+The first four reuse existing sources of truth (no new registries), mirroring
 ``tools_catalog.py``'s pattern: module-level cache built on first
 request, best-effort imports with swallowed failures, sorted stable
 output. The ``tools`` catalog reuses ``tools_catalog._CATALOG_CACHE``
@@ -18,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
+import re
 from typing import Any
 
 import parrot.bots as bots_module
@@ -26,10 +29,16 @@ from parrot.clients.factory import LLMFactory
 from parrot.stores import supported_stores
 
 import parrot.handlers.tools_catalog as tools_catalog_module
-from parrot.handlers.tools_catalog import _build_catalog
+from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
+
+from parrot.handlers.catalog_decorator import decorate_rows
 
 from ._base import StudioBaseView
+from .key_source import STUDIO_CATALOG_USABLE_ONLY, credentials_for, user_byok_providers
+from .storage.models import StudioModelParams, StudioPartition
 from .models import StudioError
+
+logger = logging.getLogger(__name__)
 
 _BASE_CLASSES_CACHE: list[dict] | None = None
 _LLM_CLIENTS_CACHE: list[dict] | None = None
@@ -93,6 +102,11 @@ def _introspect_configurable_params(cls: type) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _is_abstract(cls: type) -> bool:
+    """A class that cannot be instantiated as an agent: ``inspect.isabstract`` or an own ``studio_abstract = True``."""
+    return inspect.isabstract(cls) or cls.__dict__.get("studio_abstract") is True
+
+
 def _build_base_classes_catalog() -> list[dict]:
     """Introspect ``parrot.bots.__all__`` into a catalog of base-class rows.
 
@@ -115,6 +129,7 @@ def _build_base_classes_catalog() -> list[dict]:
                     "name": name,
                     "lazy": is_lazy,
                     "available": False,
+                    "abstract": False,
                     "error": str(exc),
                 }
             )
@@ -128,9 +143,53 @@ def _build_base_classes_catalog() -> list[dict]:
                 "params": _introspect_configurable_params(cls),
                 "lazy": is_lazy,
                 "available": True,
+                "abstract": _is_abstract(cls),
             }
         )
     return rows
+
+
+def _provider_models(provider: str) -> tuple[list[str], list[str]]:
+    """``(active, deprecated)`` model ids of ``provider`` via ``LLMFactory.list_models``; ``([], [])`` on any failure."""
+    try:
+        listing = LLMFactory.list_models(provider)
+        return [str(m) for m in listing.get("active") or []], [str(m) for m in listing.get("deprecated") or []]
+    except Exception:  # pylint: disable=broad-except
+        # the llm-clients catalogue is cached per process: this runs once per provider, so a warning cannot flood
+        logger.warning("model listing unavailable for provider %r; reporting no models", provider, exc_info=True)
+        return [], []
+
+
+def _unsupported_params(provider: str, model: str) -> list[str]:
+    """Model params ``provider``'s client rejects for ``model`` (``[]`` when it declares none or cannot be loaded)."""
+    try:
+        cls = LLMFactory.supported_clients().get(provider.lower())
+        cls = cls() if cls is not None and not isinstance(cls, type) else cls
+        return list(cls.unsupported_params(model)) if hasattr(cls, "unsupported_params") else []
+    except Exception:  # pylint: disable=broad-except
+        logger.warning("unsupported-params lookup failed for %r", provider, exc_info=True)
+        return []
+
+
+IMPORT_FAILED = "import_failed"
+_DATED_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def _normalise_default_model(default: Any, models: list[str]) -> str | None:
+    """``default`` as a member of ``models`` (resolving a dated alias either way), else ``None``.
+
+    ``claude-sonnet-4-5`` resolves to ``claude-sonnet-4-5-20250929`` (the newest dated member) and a dated default
+    resolves to its undated member; a default that is not listed at all is ``None``, never a made-up value.
+    """
+    if not isinstance(default, str) or not default:
+        return None
+    if default in models:
+        return default
+    dated = sorted(m for m in models if m.startswith(f"{default}-") and _DATED_SUFFIX.fullmatch(m[len(default) :]))
+    if dated:
+        return dated[-1]
+    undated = _DATED_SUFFIX.sub("", default)
+    return undated if undated != default and undated in models else None
 
 
 def _build_llm_clients_catalog() -> list[dict]:
@@ -153,23 +212,37 @@ def _build_llm_clients_catalog() -> list[dict]:
         is_lazy = callable(value) and not isinstance(value, type)
         try:
             cls = value() if is_lazy else value
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except
+            # the raw exception text can name paths/packages: it goes to the log, never to a tenant (PA-3)
+            logger.warning("LLM client for provider %r failed to import", provider, exc_info=True)
             rows.append(
                 {
                     "provider": provider,
+                    "class_name": None,
                     "lazy": True,
                     "available": False,
-                    "error": str(exc),
+                    "error": IMPORT_FAILED,
+                    "default_model": None,
+                    "models": [],
+                    "deprecated_models": [],
+                    "credentials": [],
                 }
             )
             continue
+        if getattr(cls, "studio_offered", True) is False:
+            continue  # e.g. a realtime voice client: it cannot run a Studio agent
+        models, deprecated_models = _provider_models(provider)
         rows.append(
             {
                 "provider": provider,
                 "class_name": cls.__name__,
                 "lazy": is_lazy,
                 "available": True,
-                "default_model": getattr(cls, "_default_model", None),
+                "error": None,
+                "default_model": _normalise_default_model(getattr(cls, "_default_model", None), models),
+                "models": models,
+                "deprecated_models": deprecated_models,
+                "credentials": [],
             }
         )
     return rows
@@ -203,13 +276,20 @@ class StudioCatalogHandler(StudioBaseView):
     async def get(self):
         kind = self.request.match_info.get("kind")
         if kind == "base-classes":
-            return self.json_response(await self._get_base_classes())
+            return self.json_response(await self._base_classes_for_caller())
         if kind == "llm-clients":
-            return self.json_response(await self._get_llm_clients())
+            return self.json_response(await self._llm_clients_for_caller())
         if kind == "tools":
-            return self.json_response(await self._get_tools())
+            return await self._tools_for_caller()
         if kind == "vector-stores":
             return self.json_response(await self._get_vector_stores())
+        if kind == "model-params":
+            # the bounds the 422 ``invalid_config`` details are checked against, so a UI can validate client-side
+            schema = StudioModelParams.model_json_schema()
+            provider, model = self.request.query.get("provider"), self.request.query.get("model")
+            if provider and model:
+                schema["unsupported"] = _unsupported_params(provider, model)
+            return self.json_response(schema)
         return self._error(f"Unknown catalog '{kind}'.", status=404, code="not_found")
 
     @staticmethod
@@ -219,12 +299,70 @@ class StudioCatalogHandler(StudioBaseView):
             _BASE_CLASSES_CACHE = await asyncio.to_thread(_build_base_classes_catalog)
         return _BASE_CLASSES_CACHE
 
+    async def _base_classes_for_caller(self) -> list[dict]:
+        """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13)."""
+        from .access import StudioTenantRequired
+        from .storage.services._common import StudioClassAllowlist
+
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            part = StudioPartition.GLOBAL  # additive: a caller with no tenant keeps getting the catalogue (as before)
+        allow = StudioClassAllowlist.from_app(self.request.app)
+        cached = await self._get_base_classes()
+        rows = [{**row, "allowed": allow.allows(part, row["name"])} for row in cached]
+        exported = set(bots_module.__all__)
+        # host additions are a tenant-partition concept: the global partition never sees them
+        for name in sorted(allow.names() - exported if part.tenant is not None else ()):
+            rows.append(
+                {
+                    "name": name,
+                    "available": True,
+                    "allowed": True,
+                    "host": True,
+                    "abstract": False,
+                    "module": None,
+                    "docstring": None,
+                    "params": {},
+                    "lazy": False,
+                }
+            )
+        return decorate_rows(self.request.app, "base-classes", rows)
+
     @staticmethod
     async def _get_llm_clients() -> list[dict]:
         global _LLM_CLIENTS_CACHE
         if _LLM_CLIENTS_CACHE is None:
             _LLM_CLIENTS_CACHE = await asyncio.to_thread(_build_llm_clients_catalog)
         return _LLM_CLIENTS_CACHE
+
+    async def _llm_clients_for_caller(self) -> list[dict]:
+        """Copies of the cached rows with the caller's ``credentials``; rows with none are omitted (PA-2).
+
+        ``credentials`` is a per-request fact (the caller's BYOK keys, the server's keys as of NOW), so it is
+        computed here on copies and never stored in the process-wide cache. Rows with none are omitted only when the
+        host opted in to :data:`STUDIO_CATALOG_USABLE_ONLY` (and ``?usable=0`` keeps them: diagnostics); by default
+        every row is returned. Never returns key material or environment-variable names.
+        """
+        user = await self._get_user()
+        byok = await user_byok_providers(self.request.app, user.user_id)
+        rows = [{**row, "credentials": credentials_for(row["provider"], byok)} for row in await self._get_llm_clients()]
+        if self.request.app.get(STUDIO_CATALOG_USABLE_ONLY) and self.request.query.get("usable") != "0":
+            rows = [row for row in rows if row["credentials"]]
+        return decorate_rows(self.request.app, "llm-clients", rows)
+
+    async def _tools_for_caller(self):
+        """The tools catalogue filtered by the tenant tooling policy for the caller's partition (FEAT-622 M7)."""
+        from parrot.tools.tooling_policy import ToolingSubject
+
+        from .access import StudioTenantRequired
+
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            return self._tenant_required()
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=None, phase="attach")
+        return self.json_response(filter_catalog_for(self.request.app, subject, await self._get_tools()))
 
     @staticmethod
     async def _get_tools() -> list[dict]:

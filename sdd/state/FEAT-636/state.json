@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-636",
+  "feature_slug": "linked-a2ui-recipes-transforms",
+  "started_at": "2026-10-06T00:00:00+00:00",
+  "updated_at": "2026-10-06T00:50:00+00:00",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-636/source.md",
+    "fetched_at": "2026-10-06T00:00:00+00:00",
+    "summary_oneline": "Linked A2UI surfaces should optionally route through a server endpoint that executes the query slug and applies recipe transformers"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:00:00+00:00",
+      "completed_at": "2026-10-06T00:00:00+00:00",
+      "duration_seconds": 1
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:05:00+00:00",
+      "completed_at": "2026-10-06T00:08:00+00:00",
+      "duration_seconds": 180,
+      "queries_total": 11,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-636/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:08:00+00:00",
+      "completed_at": "2026-10-06T00:25:00+00:00",
+      "duration_seconds": 1020,
+      "queries_executed": 11,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 6,
+      "grep_calls": 10,
+      "git_calls": 0,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:25:00+00:00",
+      "completed_at": "2026-10-06T00:30:00+00:00",
+      "duration_seconds": 300,
+      "synthesis_path": "sdd/state/FEAT-636/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 7,
+      "claims_high_conf": 5,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:35:00+00:00",
+      "completed_at": "2026-10-06T00:40:00+00:00",
+      "duration_seconds": 300,
+      "questions_total": 4,
+      "questions_answered": 4
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-06T00:40:00+00:00",
+      "completed_at": "2026-10-06T00:45:00+00:00",
+      "duration_seconds": 300,
+      "proposal_path": "sdd/proposals/linked-a2ui-recipes-transforms.proposal.md",
+      "commit_sha": "2e5231702",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization; all primitives exist and converge on known seams; design decisions resolved in Q&A"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 6,
+    "grep_calls": 10,
+    "git_calls": 0,
+    "wall_seconds": 280
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-636 (reserve the definitive id via reserve_ids.py)"
+  }
+}

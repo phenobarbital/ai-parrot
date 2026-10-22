@@ -40,6 +40,18 @@ import parrot.bots.abstract as _bots_abstract  # noqa: F401
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _fake_resolver(mapping):
+    """Fake ToolkitResolver exposing ``mapping`` (slug -> dotted path) as parrot_tools entries."""
+    from parrot.tools.resolver import ToolkitEntry
+
+    resolver = MagicMock()
+    resolver.entries.return_value = [
+        ToolkitEntry(slug=k, dotted_path=v, source="parrot_tools") for k, v in mapping.items()
+    ]
+    resolver.resolve.return_value = None
+    return resolver
+
+
 def _make_concrete_bot(name: str = "test_bot", policy_rules=None):
     """Create a minimal AbstractBot subclass."""
     class ConcreteBot(AbstractBot):
@@ -340,7 +352,7 @@ class TestScenario4ToolListFilter:
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
              patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
-             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver(mock_tools)):
             await handler.get()
 
         handler.json_response.assert_called_once()

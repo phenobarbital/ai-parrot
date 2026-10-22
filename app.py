@@ -4,8 +4,6 @@ from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
-from querysource.services import QuerySource
-from parrot.scheduler import AgentSchedulerManager
 from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
 from parrot.auth.pbac import setup_pbac
@@ -37,7 +35,6 @@ from parrot.handlers.flow_authoring import FlowAuthoringHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.mediagen import MediaGen
-from parrot.handlers.stores import VectorStoreHandler
 # AgentCrew handlers are registered inside BotManager.setup() (gated on
 # ENABLE_CREWS); no direct import/registration is needed here.
 ## Jira Integration:
@@ -50,17 +47,48 @@ from parrot.conf import (
     default_dsn
 )
 from parrot.clients.factory import LLMFactory
-from parrot.bots.github_reviewer import GitHubReviewer
-from parrot_formdesigner.api import setup_form_api
-from parrot_formdesigner.ui import setup_form_ui
-from parrot_formdesigner.services.registry import FormRegistry
-from parrot_formdesigner.services.storage import PostgresFormStorage
-# Audio form voice modes (FEAT-224/FEAT-236): STT transcriber + WS JWT validator.
-# TokenValidator is shared WS auth infra in parrot.core (not parrot.voice.handler)
-# so we don't drag in the VoiceBot / Gemini Live stack.
-from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
-from parrot.core.ws_auth import TokenValidator
-from parrot_pipelines.handlers import PlanogramComplianceHandler
+
+# --- Optional components ---------------------------------------------------
+# Everything below ships from an optional extra or a sibling distribution.
+# A minimal install (ai-parrot + ai-parrot-server + ai-parrot-integrations)
+# must still boot with `python run.py` (login + agents + chat UI), so each
+# block is registered in Main.configure() only when its import succeeded.
+_SKIPPED: dict[str, str] = {}
+
+try:  # ai-parrot[db]
+    from querysource.services import QuerySource
+except ImportError as exc:
+    QuerySource = None
+    _SKIPPED['QuerySource'] = str(exc)
+try:  # ai-parrot-server[scheduler]
+    from parrot.scheduler import AgentSchedulerManager
+    from parrot.bots.github_reviewer import GitHubReviewer
+except ImportError as exc:
+    AgentSchedulerManager = GitHubReviewer = None
+    _SKIPPED['AgentScheduler/GitHubReviewer'] = str(exc)
+try:  # ai-parrot-loaders
+    from parrot.handlers.stores import VectorStoreHandler
+except ImportError as exc:
+    VectorStoreHandler = None
+    _SKIPPED['VectorStoreHandler'] = str(exc)
+try:  # parrot-formdesigner
+    from parrot_formdesigner.api import setup_form_api
+    from parrot_formdesigner.ui import setup_form_ui
+    from parrot_formdesigner.services.registry import FormRegistry
+    from parrot_formdesigner.services.storage import PostgresFormStorage
+    # Audio form voice modes (FEAT-224/FEAT-236): STT transcriber + WS JWT
+    # validator. TokenValidator is shared WS auth infra in parrot.core (not
+    # parrot.voice.handler) so we don't drag in the VoiceBot / Gemini Live stack.
+    from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
+    from parrot.core.ws_auth import TokenValidator
+except ImportError as exc:
+    FormRegistry = None
+    _SKIPPED['FormDesigner'] = str(exc)
+try:  # ai-parrot-pipelines
+    from parrot_pipelines.handlers import PlanogramComplianceHandler
+except ImportError as exc:
+    PlanogramComplianceHandler = None
+    _SKIPPED['PlanogramComplianceHandler'] = str(exc)
 
 
 class Main(AppHandler):
@@ -86,6 +114,8 @@ class Main(AppHandler):
 
     def configure(self):
         super(Main, self).configure()
+        for component, reason in _SKIPPED.items():
+            self.logger.info("Optional component %s not installed, skipping: %s", component, reason)
         # Serve Telegram integration assets (azure_login.html, login_multi.html,
         # etc.) straight from the source tree so the HTMLs never drift from the
         # package. Uses a dedicated /telegram/ prefix to avoid colliding with
@@ -106,8 +136,9 @@ class Main(AppHandler):
             queue_size=5
         )
         # Loading QUerySource
-        qry = QuerySource(lazy=False)
-        qry.setup(self.app)
+        if QuerySource is not None:
+            qry = QuerySource(lazy=False)
+            qry.setup(self.app)
         # Chatbot System
         self.bot_manager = BotManager(enable_database_bots=True)
         self.bot_manager.setup(self.app)
@@ -123,10 +154,11 @@ class Main(AppHandler):
 
         ## End of Jira OAuth setup.
         # Scheduler Manager (after bot manager):
-        self._scheduler = AgentSchedulerManager(
-            bot_manager=self.bot_manager
-        )
-        self._scheduler.setup(app=self.app)
+        if AgentSchedulerManager is not None:
+            self._scheduler = AgentSchedulerManager(
+                bot_manager=self.bot_manager
+            )
+            self._scheduler.setup(app=self.app)
         # Configure Job Manager (with Redis persistence)
         configure_job_manager(self.app, use_redis=True)
 
@@ -212,7 +244,8 @@ class Main(AppHandler):
         ## Natural-language workflow authoring (Crew/Flow definitions):
         FlowAuthoringHandler.setup(self.app)
         ## Vector Store Handler API:
-        VectorStoreHandler.setup(self.app)
+        if VectorStoreHandler is not None:
+            VectorStoreHandler.setup(self.app)
         # AgentCrew Handlers are registered by BotManager.setup() when
         # ENABLE_CREWS is True (see manager.py). It owns the full crew route
         # set — CrewHandler (/api/v1/crew), CrewExecutionHandler
@@ -225,7 +258,8 @@ class Main(AppHandler):
             "/api/v1/google/generation/music", LyriaMusicHandler
         )
         # Planogram Compliance:
-        PlanogramComplianceHandler.setup(self.app)
+        if PlanogramComplianceHandler is not None:
+            PlanogramComplianceHandler.setup(self.app)
 
         # Artifact persistence + public infographic HTML serving (FEAT-197).
         # - list/detail: session-scoped, authenticated CRUD over artifacts.
@@ -249,6 +283,80 @@ class Main(AppHandler):
             name='artifacts_public_html',
         )
 
+        if FormRegistry is not None:
+            self._setup_form_designer()
+        # GitHub Reviewer webhook route — must be registered here, while
+        github_hook = (
+            GitHubReviewer.setup_webhook_route(self.app)
+            if GitHubReviewer is not None else None
+        )
+
+        ### Auth System
+        # create a new instance of Auth System
+        auth = AuthHandler()
+        auth.setup(self.app)  # configure this Auth system into App.
+
+        # FEAT-197: the public infographic HTML route authorises requests with
+        # an HMAC signature, not a session — exclude it from the auth/ABAC
+        # middlewares so the frontend can embed it in an <iframe> without a
+        # session cookie. fnmatch pattern; '*' spans the signature + id.html.
+        auth.add_exclude_list('/api/docs*')
+        auth.add_exclude_list('/api/v1/artifacts/public/*')
+        if github_hook is not None:
+            auth.add_exclude_list(github_hook.url)
+        # FEAT-236: the audio form WebSocket authenticates itself via the
+        # Sec-WebSocket-Protocol subprotocol (a browser WS cannot send an
+        # Authorization: Bearer header). Exclude it from the auth/ABAC chain so
+        # the upgrade reaches AudioFormWSHandler, which does its own JWT check.
+        auth.add_exclude_list('/api/v1/forms/*/audio/ws')
+        # MS Agent SDK (Bot Framework) messaging endpoints authenticate inbound
+        # requests with a Bot Framework JWT or an API key (x-api-key) inside
+        # MSAgentSDKWrapper.handle_request — NOT a navigator session/ABAC
+        # identity. Exclude them so ABAC does not flag Copilot Studio / Teams /
+        # Emulator POSTs as unauthenticated. Covers every msagentsdk bot's
+        # canonical route (/api/msagentsdk/<safe_id>/messages) plus the fixed
+        # ``/api/messages`` path that Microsoft Copilot Studio requires (the
+        # standard Bot Framework endpoint a bot exposes via ``endpoint``).
+        # Exclude the whole MS Agent SDK surface, not just the messaging
+        # endpoints: health/manifest/card probes and any future sub-routes
+        # authenticate themselves (Bot Framework JWT / x-api-key) rather than
+        # via the navigator session/ABAC chain.
+        auth.add_exclude_list('/api/msagentsdk/*')
+        auth.add_exclude_list('/api/messages')
+        # A2A protocol + discovery surface. These static patterns cover the
+        # default ``/a2a`` base_path and the root-level well-known URIs.
+        # Non-default base_paths (custom config or collision-avoidance
+        # suffixes) are added dynamically by IntegrationBotManager when each
+        # A2A agent is mounted — see ``_start_a2a_bot()`` in manager.py.
+        auth.add_exclude_list('/a2a')
+        auth.add_exclude_list('/a2a/*')
+        auth.add_exclude_list('/.well-known/*')
+
+        # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
+        # BotManager.setup(app) above already ran setup_pbac() (via
+        # setup_dataplane_guard, using PARROT_PBAC_POLICY_DIR), so app['abac']
+        # is registered before AgentRegistry.setup(app) reads it on startup.
+        # setup_pbac() is idempotent per app: this call reuses that PDP and
+        # its evaluator (policy_dir/cache_ttl below only apply if it did not).
+        policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
+        pdp, evaluator, guardian = setup_pbac(
+            self.app,
+            policy_dir=policy_dir,
+            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
+        )
+        if evaluator is not None:
+            resolver = PBACPermissionResolver(evaluator=evaluator)
+            self.app['pbac_resolver'] = resolver
+            self.logger.info(
+                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
+            )
+        else:
+            self.logger.info(
+                "PBAC not configured — using default resolver (AllowAll)."
+            )
+
+    def _setup_form_designer(self):
+        """Mount parrot-formdesigner (only called when it is installed)."""
         # parrot-formdesigner: shared FormRegistry + REST API + HTML/Telegram UI.
         # protect_pages=False — page auth is handled client-side via JWT in
         # localStorage (see examples/forms/form_server.py).
@@ -288,68 +396,6 @@ class Main(AppHandler):
             base_path="",
             protect_pages=False,
         )
-        # GitHub Reviewer webhook route — must be registered here, while
-        github_hook = GitHubReviewer.setup_webhook_route(self.app)
-
-        ### Auth System
-        # create a new instance of Auth System
-        auth = AuthHandler()
-        auth.setup(self.app)  # configure this Auth system into App.
-
-        # FEAT-197: the public infographic HTML route authorises requests with
-        # an HMAC signature, not a session — exclude it from the auth/ABAC
-        # middlewares so the frontend can embed it in an <iframe> without a
-        # session cookie. fnmatch pattern; '*' spans the signature + id.html.
-        auth.add_exclude_list('/api/docs*')
-        auth.add_exclude_list('/api/v1/artifacts/public/*')
-        auth.add_exclude_list(github_hook.url)
-        # FEAT-236: the audio form WebSocket authenticates itself via the
-        # Sec-WebSocket-Protocol subprotocol (a browser WS cannot send an
-        # Authorization: Bearer header). Exclude it from the auth/ABAC chain so
-        # the upgrade reaches AudioFormWSHandler, which does its own JWT check.
-        auth.add_exclude_list('/api/v1/forms/*/audio/ws')
-        # MS Agent SDK (Bot Framework) messaging endpoints authenticate inbound
-        # requests with a Bot Framework JWT or an API key (x-api-key) inside
-        # MSAgentSDKWrapper.handle_request — NOT a navigator session/ABAC
-        # identity. Exclude them so ABAC does not flag Copilot Studio / Teams /
-        # Emulator POSTs as unauthenticated. Covers every msagentsdk bot's
-        # canonical route (/api/msagentsdk/<safe_id>/messages) plus the fixed
-        # ``/api/messages`` path that Microsoft Copilot Studio requires (the
-        # standard Bot Framework endpoint a bot exposes via ``endpoint``).
-        # Exclude the whole MS Agent SDK surface, not just the messaging
-        # endpoints: health/manifest/card probes and any future sub-routes
-        # authenticate themselves (Bot Framework JWT / x-api-key) rather than
-        # via the navigator session/ABAC chain.
-        auth.add_exclude_list('/api/msagentsdk/*')
-        auth.add_exclude_list('/api/messages')
-        # A2A protocol + discovery surface. These static patterns cover the
-        # default ``/a2a`` base_path and the root-level well-known URIs.
-        # Non-default base_paths (custom config or collision-avoidance
-        # suffixes) are added dynamically by IntegrationBotManager when each
-        # A2A agent is mounted — see ``_start_a2a_bot()`` in manager.py.
-        auth.add_exclude_list('/a2a')
-        auth.add_exclude_list('/a2a/*')
-        auth.add_exclude_list('/.well-known/*')
-
-        # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
-        # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
-        # app['abac'] is registered before AgentRegistry.setup(app) reads it.
-        policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
-        pdp, evaluator, guardian = setup_pbac(
-            self.app,
-            policy_dir=policy_dir,
-            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
-        )
-        if evaluator is not None:
-            resolver = PBACPermissionResolver(evaluator=evaluator)
-            self.app['pbac_resolver'] = resolver
-            self.logger.info(
-                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
-            )
-        else:
-            self.logger.info(
-                "PBAC not configured — using default resolver (AllowAll)."
-            )
 
     async def on_startup(self, app):
         """

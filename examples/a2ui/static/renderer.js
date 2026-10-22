@@ -5,7 +5,9 @@
 //   { surfaceId, components: [{id, component, ...}], dataModel: {key: {rows}},
 //     metadata: {extensions: {parrot_data_sources: {key: source}}} }
 // Bindings: Chart/DataTable `data.path` = "/<key>/rows"; KPICard `value.path` = "/<key>/rows/0/<column>".
-import { createLane } from './linked.js';
+// Linked dashboards: a data-model root is a dashboard-owned source shared by ANY number of widgets (several KPICards
+// over one `kpis` source), a `kind: "derived"` view computed from a sibling's frame, or inline rows (no descriptor).
+import { createLane, isDerived, isQuerySlug } from './linked.js';
 
 const TOKEN_KEY = 'ai_parrot_token';
 const UNASSIGNED = 'Unassigned';
@@ -29,7 +31,12 @@ export function parseBinding(binding) {
   return { key: parts[0], column: parts.length >= 4 ? parts[3] : null };
 }
 
-/** Index the envelope: components by id, the linked sources, and the baked snapshot rows per source key. */
+/**
+ * Index the envelope: components by id, the linked sources, the baked snapshot rows per data-model root, and the
+ * server-paged keys. A key is paged (fetched only through `fetchPage`, never as a bounded lane frame) when it is a
+ * query-slug source read by DataTables ONLY: as soon as another widget binds it or a derived view is computed from
+ * it, the lane fetches its bounded frame like any shared source and the grid keeps paging on the server on its own.
+ */
 export function planDashboard(envelope) {
   const byId = {};
   for (const component of envelope.components ?? []) byId[component.id] = component;
@@ -38,7 +45,19 @@ export function planDashboard(envelope) {
   for (const [key, value] of Object.entries(envelope.dataModel ?? {})) {
     snapshot[key] = Array.isArray(value?.rows) ? value.rows : [];
   }
-  return { byId, rootId: byId.root ? 'root' : (envelope.components?.[0]?.id ?? 'root'), sources, snapshot };
+  const nodes = Object.values(byId);
+  const boundBy = (node) => parseBinding(node.component === 'KPICard' ? node.value : node.data)?.key;
+  const sharedKeys = new Set(nodes.filter((node) => node.component !== 'DataTable').map(boundBy).filter(Boolean));
+  for (const source of Object.values(sources)) if (isDerived(source)) sharedKeys.add(source.from);
+  const pagedKeys = [
+    ...new Set(
+      nodes
+        .filter((node) => node.component === 'DataTable')
+        .map(boundBy)
+        .filter((key) => key && sources[key] && isQuerySlug(sources[key]) && !sharedKeys.has(key)),
+    ),
+  ];
+  return { byId, rootId: byId.root ? 'root' : (envelope.components?.[0]?.id ?? 'root'), sources, snapshot, pagedKeys };
 }
 
 /** The KPI number: the bound column of the first row, formatted for display. */
@@ -49,7 +68,7 @@ export function kpiText(rows, column) {
   return Number.isFinite(number) ? number.toLocaleString('en-US') : String(value);
 }
 
-/** Build the ECharts option for a Chart node (`type`: bar | pie | donut, `x` category column, `y` value columns). */
+/** Build the ECharts option for a Chart node (`type`: bar | line | pie | donut, `x` category column, `y` value columns). */
 export function chartOption(node, rows) {
   const x = node.x;
   const ys = Array.isArray(node.y) ? node.y : node.y ? [node.y] : [];
@@ -74,7 +93,11 @@ export function chartOption(node, rows) {
     legend: ys.length > 1 ? {} : undefined,
     xAxis: { type: 'category', data: rows.map((row) => label(row[x])), axisLabel: { interval: 0, rotate: 45 } },
     yAxis: { type: 'value' },
-    series: ys.map((column) => ({ name: column, type: 'bar', data: rows.map((row) => Number(row[column])) })),
+    series: ys.map((column) => ({
+      name: column,
+      type: node.type === 'line' ? 'line' : 'bar',
+      data: rows.map((row) => Number(row[column])),
+    })),
   };
 }
 
@@ -130,11 +153,11 @@ function toolbar(doc, lane, key, onRefresh) {
   return { bar, status };
 }
 
-function makeKpi(doc, node, key, binding, lane) {
+function makeKpi(doc, node, key, binding, lane, sourceKey = key) {
   const box = el(doc, 'div', 'kpi-card');
   box.dataset.widget = key;
   const value = el(doc, 'div', 'kpi-value', '—');
-  const bar = toolbar(doc, lane, key, () => lane.refreshSource(key));
+  const bar = toolbar(doc, lane, key, () => lane.refreshSource(sourceKey));
   box.append(el(doc, 'div', 'kpi-title', node.title ?? key), value, el(doc, 'div', 'kpi-description', node.description ?? ''), bar.bar);
   return {
     element: box,
@@ -145,10 +168,10 @@ function makeKpi(doc, node, key, binding, lane) {
   };
 }
 
-function makeChart(doc, node, key, lane) {
+function makeChart(doc, node, key, lane, sourceKey = key) {
   const box = el(doc, 'div', 'chart-container');
   box.dataset.widget = key;
-  const bar = toolbar(doc, lane, key, () => lane.refreshSource(key));
+  const bar = toolbar(doc, lane, key, () => lane.refreshSource(sourceKey));
   const canvas = el(doc, 'div', 'chart');
   box.append(bar.bar, canvas);
   let instance = null;
@@ -280,6 +303,36 @@ function makeGrid(doc, node, key, source, lane) {
   };
 }
 
+/** A DataTable over a derived view or inline rows: painted from the lane's frame / the snapshot, never server-paged. */
+function makeTable(doc, node, key, lane) {
+  const box = el(doc, 'div', 'datatable-container');
+  box.dataset.widget = key;
+  const bar = toolbar(doc, lane, key, () => lane.refreshSource(key));
+  const table = el(doc, 'table', 'grid');
+  const head = el(doc, 'thead');
+  const titleRow = el(doc, 'tr');
+  const body = el(doc, 'tbody');
+  head.append(titleRow);
+  table.append(head, body);
+  box.append(bar.bar, table);
+  let columns = gridColumns(node, null, []);
+  return {
+    element: box,
+    update(rows, status) {
+      if (status) bar.status.textContent = status;
+      if (!rows) return;
+      if (columns.length === 0 && rows.length > 0) columns = Object.keys(rows[0]);
+      titleRow.replaceChildren(...columns.map((column) => el(doc, 'th', '', column)));
+      body.replaceChildren();
+      for (const row of rows) {
+        const tr = el(doc, 'tr');
+        for (const column of columns) tr.append(el(doc, 'td', '', row[column] === null || row[column] === undefined ? '' : String(row[column])));
+        body.append(tr);
+      }
+    },
+  };
+}
+
 function renderNode(doc, id, ctx) {
   const node = ctx.plan.byId[id];
   if (!node) return null;
@@ -299,16 +352,19 @@ function renderNode(doc, id, ctx) {
     case 'KPICard': {
       const binding = parseBinding(node.value);
       if (!binding) return el(doc, 'div', 'notice', `KPICard '${id}' has no data binding`);
-      return register(ctx, binding.key, makeKpi(doc, node, binding.key, binding, ctx.lane));
+      return register(ctx, binding.key, makeKpi(doc, node, id, binding, ctx.lane, binding.key));
     }
     case 'Chart': {
       const binding = parseBinding(node.data);
       if (!binding) return el(doc, 'div', 'notice', `Chart '${id}' has no data binding`);
-      return register(ctx, binding.key, makeChart(doc, node, binding.key, ctx.lane));
+      return register(ctx, binding.key, makeChart(doc, node, id, ctx.lane, binding.key));
     }
     case 'DataTable': {
       const binding = parseBinding(node.data);
       if (!binding) return el(doc, 'div', 'notice', `DataTable '${id}' has no data binding`);
+      if (!ctx.plan.pagedKeys.includes(binding.key)) {
+        return register(ctx, binding.key, makeTable(doc, node, binding.key, ctx.lane));
+      }
       const widget = makeGrid(doc, node, binding.key, ctx.plan.sources[binding.key], ctx.lane);
       ctx.grids.push(widget);
       return register(ctx, binding.key, widget);
@@ -318,8 +374,9 @@ function renderNode(doc, id, ctx) {
   }
 }
 
+/** Widgets are registered per data-model root: one source update fans out to every widget bound to it. */
 function register(ctx, key, widget) {
-  ctx.widgets[key] = widget;
+  (ctx.widgets[key] ??= []).push(widget);
   return widget.element;
 }
 
@@ -327,25 +384,27 @@ function register(ctx, key, widget) {
  * Render the envelope into `container` and start the lane.
  *
  * @returns {{lane: object, widgets: object, refreshAll: Function}} The running lane, the widget registry keyed by
- * source key, and a refresh-everything helper.
+ * data-model root (an array of widgets per key), and a refresh-everything helper.
  */
 export function mountDashboard(envelope, { doc = document, container, token, baseUrl, laneFactory = createLane }) {
   const plan = planDashboard(envelope);
   const ctx = { plan, widgets: {}, grids: [], lane: null };
-  const pagedKeys = Object.values(plan.byId)
-    .filter((node) => node.component === 'DataTable')
-    .map((node) => parseBinding(node.data)?.key)
-    .filter(Boolean);
   const lane = laneFactory(plan.sources, {
     baseUrl,
     token,
-    pagedKeys,
-    onUpdate: (update) => ctx.widgets[update.key]?.update(update.rows, update.status),
+    pagedKeys: plan.pagedKeys,
+    onUpdate: (update) => {
+      for (const widget of ctx.widgets[update.key] ?? []) widget.update(update.rows, update.status);
+    },
   });
   ctx.lane = lane;
   const root = renderNode(doc, plan.rootId, ctx);
   if (root) container.append(root);
-  for (const [key, widget] of Object.entries(ctx.widgets)) widget.update(plan.snapshot[key] ?? [], null); // baked snapshot first
+  for (const [key, widgets] of Object.entries(ctx.widgets)) {
+    // Baked snapshot first. An inline root (no descriptor) is never updated by the lane: it is ready as soon as painted.
+    const status = plan.sources[key] ? null : 'ready';
+    for (const widget of widgets) widget.update(plan.snapshot[key] ?? [], status);
+  }
   lane.start();
   for (const grid of ctx.grids) grid.start();
   // "Refresh all" re-fetches every linked source, then each server-paged grid reloads its current page (cache-bypassing).

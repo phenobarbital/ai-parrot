@@ -1,0 +1,39 @@
+parrot-formdesigner (née "formbuilder") predates ai-parrot's A2UI v1.0 support,
+yet the two concepts are nearly identical: a `FormSchema` is served as a JSON
+document and a frontend "renderer" turns it into HTML controls. The dialect
+that is served today — `GET /forms/{uid}` returns the raw `FormSchema` dump and
+`GET /forms/{uid}/schema` returns the `JsonSchemaRenderer` output with `x-*`
+extensions — is **not** A2UI, so the existing A2UI renderers (admin UI,
+`ssr_html`, `interactive_html`, Adaptive Cards bridge) cannot render a
+FormDesigner form natively.
+
+FEAT-544 (merged 2026-09-10, all 8 tasks `done`) already closed the first half
+of the gap: `A2UIFormRenderer` lowers a `FormSchema` into a `createSurface`
+envelope, `GET /forms/{uid}/render/a2ui` serves it, and `/data` + `/validate`
+are dual-wire (legacy JSON **and** A2UI `action` envelopes). What is still
+missing — and what this brainstorm scopes — is the **dialect layer around it**:
+
+1. **A flag that makes the main form endpoints speak A2UI.** Today a client
+   has to know about `/render/a2ui`. Consumers that fetch `/forms/{uid}` or
+   `/forms/{uid}/schema` keep getting the legacy dialect with no way to opt
+   in, and a form cannot declare "serve me as A2UI by default".
+2. **A bulk export.** There is no way to export every form of a tenant as
+   A2UI surfaces (library, API or CLI) — only one form at a time via HTTP.
+3. **A translator from the legacy JSON-Schema dialect to A2UI.** Consumers
+   such as Fieldsync hold the `JsonSchemaRenderer` output (with `x-field-type`,
+   `x-section`, `x-options`, …), not a `FormSchema`. `JsonSchemaExtractor`
+   exists but does not read `x-section`/`x-subsection`/`x-placeholder`/
+   `x-read-only`, so a JSON-Schema → FormSchema → A2UI pipeline would silently
+   flatten sections today.
+4. **The reverse direction: A2UI surface → `FormSchema`.** Nothing exists.
+   An A2UI form authored elsewhere (an agent, another A2UI producer, a
+   hand-written surface) cannot become a FormDesigner form.
+
+The legacy dialect **must not change**: Fieldsync and other consumers keep
+reading `FormSchema` JSON / JSON Schema exactly as today. The A2UI dialect is
+additive and opt-in.
+
+**Who is affected**: frontend teams that already have an A2UI renderer (they
+get FormDesigner forms for free), Fieldsync (must see zero change), operators
+migrating forms between systems (bulk export, A2UI import), and agents that
+author forms as A2UI surfaces.

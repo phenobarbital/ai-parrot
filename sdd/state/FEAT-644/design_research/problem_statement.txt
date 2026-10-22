@@ -1,0 +1,58 @@
+`AgentSchedulerManager` (`packages/ai-parrot-server/src/parrot/scheduler/manager.py`, 2,219 lines)
+is the only scheduler in AI-Parrot, and it is hard-wired to `BotManager`:
+
+- `add_schedule()` requires `agent_name` and validates the target through the **private**
+  `bot_manager._bots` dict plus `bot_manager.registry.get_instance()` (`manager.py:1168-1184`).
+- `_execute_agent_job()` resolves the target the same way at fire time (`manager.py:681-688`).
+- `on_startup()` falls back to `app["bot_manager"]` and scans its bots (`manager.py:2062-2066`).
+
+Everything else in the class — APScheduler wiring, jobstores, Redis fire coordination (FEAT-631),
+DB persistence, `run_schedule_now`, `start_headless`/`stop_headless`, event listeners, delivery
+callbacks (FEAT-635), `_update_schedule_run` — is target-agnostic. Roughly 90% of the class is
+reusable by any job, yet nobody can reuse it without faking a `BotManager`.
+
+**Who is affected:**
+
+- **External packages** (issue #1572 was filed while integrating `reportbuilder`): to schedule a
+  non-LLM job they must register a fake bot, and `BotManagement.get` then returns 400 for it.
+- **agentd** inside this repo already carries the same workaround:
+  `SingleAgentManager` in `packages/ai-parrot-integrations/src/parrot/integrations/agentd/service.py:240`
+  is a stand-in that exposes exactly `_bots`, `registry.get_instance()` and `get_crew()` so the
+  scheduler will accept a single agent.
+- **Operators**: a schedule whose target is missing logs an ERROR with a traceback on every tick
+  and is never disabled.
+
+**Run state is mixed into the call arguments (confirmed in code):**
+
+- `_execution_fields()` passes `dict(schedule.metadata)` as the `metadata` kwarg
+  (`manager.py:1473`), and `_execute_agent_job` → `_prepare_call_arguments` turns that dict into
+  the **call kwargs** of the target method (`manager.py:412`).
+- `_update_schedule_run()` writes `last_error`, `last_error_time`, `last_status`, `last_result`,
+  `last_result_time` into that same `metadata` dict (`manager.py:1022-1031`), and
+  `_stamp_delivery_outcome()` adds `last_callbacks`, `last_delivery_status`, `last_delivery_time`
+  (`manager.py:970-972`). On the next tick all of them are replayed as kwargs to the target.
+- `last_error` is never cleared after a later success (the success branch only sets
+  `last_result*`/`last_status`).
+- Every timestamp is a naive `datetime.now()` — including `last_run` (`manager.py:1011`), so the
+  issue understates it: nothing is timezone-aware, and the `TIMESTAMP WITH TIME ZONE` columns
+  take whatever the session timezone is.
+
+**Latent crew bug found during research:** `BotManager.get_crew()` is `async`
+(`manager/manager.py:3019`), but both scheduler call sites invoke it without `await`
+(`manager.py:681`, `manager.py:1170`). Against a real `BotManager` the walrus test sees a coroutine
+object (always truthy) and `crew_entry[0]` / `_, crew_def = crew_entry` raise `TypeError`; only
+agentd's `SingleAgentManager.get_crew()` (sync, returns `None`) and test doubles work. The new
+`CrewResolver` fixes this by construction.
+
+**Redis persistence is redundant today, and there is no Redis-only path.** `scheduler_type='redis'`
+only chooses which APScheduler jobstore holds the job (`_safe_jobstore`, `manager.py:1857`); the
+schedule row still lives in Postgres and `load_schedules_from_db()` re-adds every enabled row with
+`replace_existing=True` on each start (`manager.py:1378`). A job cannot exist without a Postgres row,
+so an API consumer that only has Redis (or does not want a DB row per job) has nothing to call. The
+global `misfire_grace_time=300` (`manager.py:398`) also means that a restart longer than five
+minutes silently drops the missed fire of every job, whatever its jobstore.
+
+**Why now:** the table `navigator.agents_scheduler` is barely used in deployments, so a hard-cut
+(new table, new columns, no row migration) is cheap today and gets more expensive with every
+schedule written. FEAT-631 and FEAT-635 both landed in the last week and are closed, so the
+scheduler is quiescent — no in-flight spec touches `manager.py`.

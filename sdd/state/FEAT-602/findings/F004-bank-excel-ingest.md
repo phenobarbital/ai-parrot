@@ -2,7 +2,7 @@
 id: F004
 query_id: Q004
 type: wiki_query
-intent: Orient: existing bank-statement Excel ingestion machinery.
+intent: "Orient: existing bank-statement Excel ingestion machinery."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

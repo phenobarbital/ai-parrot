@@ -58,9 +58,15 @@ class ToolkitRegistry:
 
     @classmethod
     def get(cls, name: str) -> Type["AbstractToolkit"]:
-        """Get a toolkit class by name."""
+        """Get a toolkit class by canonical registry name or class name."""
         registry = cls.get_registry()
-        return registry.get(name.lower())
+        key = name.lower()
+        if key in registry:
+            return registry[key]
+        for toolkit_cls in registry.values():
+            if toolkit_cls.__name__.lower() == key:
+                return toolkit_cls
+        return None
 
     @classmethod
     def list_toolkits(cls) -> list:

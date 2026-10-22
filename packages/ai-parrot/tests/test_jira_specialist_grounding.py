@@ -124,6 +124,11 @@ def _load_prompts_module():
     domain_mod = _load_direct("parrot.bots.prompts.domain_layers", _prompts_root / "domain_layers.py")
 
     prompts_pkg = _mk("parrot.bots.prompts")
+    # FEAT-638: jira_specialist imports parrot.bots.jira_messages, which imports
+    # parrot.bots.prompts.language. Register both real modules after the synthetic
+    # package exists — language first, because jira_messages imports it.
+    _load_direct("parrot.bots.prompts.language", _prompts_root / "language.py")
+    _load_direct("parrot.bots.jira_messages", _prompts_root.parent / "jira_messages.py")
     # Expose names that jira_specialist._build_jira_prompt_builder needs
     for attr in ("PromptBuilder", "PromptLayer", "LayerPriority", "RenderPhase"):
         val = getattr(layers_mod, attr, None) or MagicMock()
@@ -197,8 +202,11 @@ JiraSpecialist = _js_mod.JiraSpecialist  # type: ignore[attr-defined]
 # ---------------------------------------------------------------------------
 # Sentinel phrases guaranteed by JIRA_GROUNDING_LAYER (TASK-945)
 # ---------------------------------------------------------------------------
-SENTINEL_NOT_FOUND = "No results found for"
-SENTINEL_ERROR = "Jira lookup failed"
+# FEAT-638: single source of truth; the REAL domain_layers module was registered in
+# sys.modules by _load_prompts_module() above (the parrot.bots.prompts package is synthetic).
+GROUNDING_SENTINELS = sys.modules["parrot.bots.prompts.domain_layers"].GROUNDING_SENTINELS
+SENTINEL_NOT_FOUND = GROUNDING_SENTINELS["en"]["not_found"]
+SENTINEL_ERROR = GROUNDING_SENTINELS["en"]["error"]
 
 # Values a grounding-compliant agent must never invent when toolkit returns
 # not_found or empty.

@@ -36,7 +36,7 @@ from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration
 from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 from parrot.flows.dev_loop.models import DevelopmentOutput, LLMCodeDispatchProfile
 
 
@@ -122,8 +122,10 @@ async def _second_sandbox(base_path: Path) -> Path:
 
 
 def _fast_plan_tests(argv: tuple[str, ...]):
-    def _plan(*, worktree, changed_files, tier, declared=(), policy=None) -> ScopePlan:
-        invocation = PytestInvocation(distribution="root", argv=argv, targets=())
+    def _plan(
+        *, worktree, changed_files, tier, declared=(), policy=None, contract=None, registry=None, **_kw
+    ) -> ScopePlan:
+        invocation = Invocation(distribution="root", argv=argv, targets=())
         return ScopePlan(
             tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()
         )
@@ -439,3 +441,54 @@ async def test_native_and_logical_authorities(
 
     # -- budgets por wire: the response stays within the spec's 8 KiB envelope. --
     assert len(finished.model_dump_json().encode("utf-8")) <= 8192
+
+
+async def test_run_chunk_settles_handle_when_runner_beats_registration(
+    tmp_path: Path, git_sandbox_feature, three_seat_roster, noop_probe, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The job runner is scheduled before the handle is registered; a runner that
+    finishes first must still settle the handle instead of leaving it `running`."""
+    _worktree, _branch, base_path, _index_path = git_sandbox_feature
+    worktree2 = await _second_sandbox(base_path)
+    engine = SddCoderEngine(
+        roster=three_seat_roster,
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=_mcp_builder(),
+        telemetry_dir=str(tmp_path / "telemetry-race"),
+    )
+    execution_id = str(uuid.uuid4())
+    await engine.begin_execution("FEAT-9001", str(worktree2), execution_id)
+    # This test is about handle registration, not validation: bypass the task-tier gate (FEAT-709).
+    engine._validation_supervisor = None
+
+    registry = engine._background_registry  # noqa: SLF001
+    original_register = registry.register
+    dispatch_done = asyncio.Event()
+    original_run_task = engine._run_task  # noqa: SLF001
+
+    async def tracking_run_task(*args, **kwargs):
+        try:
+            return await original_run_task(*args, **kwargs)
+        finally:
+            dispatch_done.set()
+
+    async def slow_register(registration):
+        # Hold registration until the dispatched task work has completed, so the
+        # runner reaches its settlement step before the handle exists.
+        await asyncio.wait_for(dispatch_done.wait(), 30)
+        await asyncio.sleep(0.05)
+        return await original_register(registration)
+
+    monkeypatch.setattr(engine, "_run_task", tracking_run_task)
+    monkeypatch.setattr(registry, "register", slow_register)
+
+    job = await asyncio.wait_for(
+        engine.run_chunk("FEAT-9001", str(worktree2), ["TASK-9001"], execution_id=execution_id), 60
+    )
+    assert job.bg_handle == job.job_id
+    await engine.wait(job.job_id, 30)
+
+    status = await engine.bg_status(execution_id, job.bg_handle)
+    assert status.state == "finished"
+    assert status.outcome == "completed"

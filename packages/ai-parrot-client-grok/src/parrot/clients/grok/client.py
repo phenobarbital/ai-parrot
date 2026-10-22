@@ -44,6 +44,8 @@ class GrokClient(AbstractClient):
 
     client_type: str = "xai"
     client_name: str = "grok"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('XAI_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("grok", "xai")
@@ -225,6 +227,11 @@ class GrokClient(AbstractClient):
         _lc_t0_grok2 = _lc_time_grok2.perf_counter()
 
         # 3. Initialize Chat
+        chat_kwargs: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
 

@@ -78,6 +78,10 @@ class SkillDefinition(BaseModel):
         default=None,
         description="Filesystem dir for composite skills; None for single-file.",
     )
+    global_only: bool = Field(
+        default=False,
+        description="Tenant skill trees may not shadow this skill by name or trigger (FEAT-707).",
+    )
 
     MAX_TOKENS: ClassVar[int] = 1000
 

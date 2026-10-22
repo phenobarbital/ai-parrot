@@ -121,6 +121,61 @@ def _bucket_table(per_bucket: dict[str, dict[str, float]]) -> list[str]:
     return lines
 
 
+def _language_table(
+    per_language: dict[str, dict[str, dict[str, Any]]],
+) -> list[str]:
+    """Build the per-language false-positive / recall table.
+
+    Exists because ``per_bucket`` segments by attack *shape*, which is
+    orthogonal to language: a model that is clean in English and unusable
+    in Spanish shows up there only as a mild aggregate dip. This table is
+    the standing gate for that failure mode.
+    """
+    if not per_language:
+        return []
+    languages = sorted({lang for tiers in per_language.values() for lang in tiers})
+    header = (
+        "| Tier | "
+        + " | ".join(f"{lang} benign FP | {lang} recall" for lang in languages)
+        + " |"
+    )
+    sep = "|---" * (2 * len(languages) + 1) + "|"
+    lines = [
+        "## 4. Per-language quality",
+        "",
+        header,
+        sep,
+    ]
+    for tier, by_language in per_language.items():
+        cells: list[str] = []
+        for lang in languages:
+            stats = by_language.get(lang) or {}
+            benign_n = stats.get("benign_n") or 0
+            attack_n = stats.get("attack_n") or 0
+            fp = stats.get("fp")
+            fp_rate = stats.get("fp_rate")
+            recall = stats.get("recall")
+            cells.append(
+                f"{fp}/{benign_n} ({_pct(fp_rate)})" if benign_n else "—"
+            )
+            cells.append(
+                f"{_pct(recall)} (n={attack_n})" if attack_n else "—"
+            )
+        lines.append(f"| `{tier}` | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        "Benign false-positive count/rate and attack recall, per sample "
+        "language, at each tier's production threshold. **Lower FP, higher "
+        "recall is better.** `mixed` is the single deliberately bilingual "
+        "obfuscation sample. A language column that is far worse than the "
+        "others is the regression this table exists to catch — it is how the "
+        "v1→v2 Spanish false-positive regression had to be hand-derived from "
+        "a flipped-sample table before this gate existed.",
+        "",
+    ]
+    return lines
+
+
 def _parity_table(parity: dict[str, Any] | None) -> list[str]:
     """Build the numerical-parity table for alternate classifier backends."""
     if not parity:
@@ -167,7 +222,7 @@ def _tiering_table(tiering: dict[str, Any] | None) -> list[str]:
     """Build the composed-pipeline / escalation table."""
     if not tiering:
         return [
-            "## 4. Tiering",
+            "## 5. Tiering",
             "",
             "_Skipped — needs `regex`, an `embed-cosine-*`, and a `clf-*` tier in the "
             "same run._",
@@ -175,7 +230,7 @@ def _tiering_table(tiering: dict[str, Any] | None) -> list[str]:
         ]
     solo = tiering["classifier_alone_p50_ms"]
     lines = [
-        "## 4. Tiering — does the classifier earn its keep?",
+        "## 5. Tiering — does the classifier earn its keep?",
         "",
         f"Composed: `{tiering['regex_tier']}` → `{tiering['cosine_tier']}` → "
         f"`{tiering['classifier_tier']}` @ {tiering['clf_threshold']}.",
@@ -248,6 +303,7 @@ def build_report(payload: dict[str, Any]) -> str:
     lines += _quality_table(results)
     lines += _parity_table(payload.get("parity"))
     lines += _bucket_table(payload.get("per_bucket", {}))
+    lines += _language_table(payload.get("per_language", {}))
     lines += _tiering_table(payload.get("tiering"))
 
     lines += [

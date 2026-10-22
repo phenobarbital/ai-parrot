@@ -289,10 +289,11 @@ function groupByOp(rows: Row[], op: Op, frames: Record<string, Row[]>, opIndex: 
           newRow[col] = values.length;
           break;
         case 'min':
-          newRow[col] = values.length > 0 ? Math.min(...values as number[]) : null;
+          // Plain `<` comparison: numbers AND strings (ISO dates order lexically), like pandas min/max on any dtype.
+          newRow[col] = values.length > 0 ? values.reduce((a, b) => ((b as number) < (a as number) ? b : a)) : null;
           break;
         case 'max':
-          newRow[col] = values.length > 0 ? Math.max(...values as number[]) : null;
+          newRow[col] = values.length > 0 ? values.reduce((a, b) => ((b as number) > (a as number) ? b : a)) : null;
           break;
         default:
           throw new TransformError(`group_by: unsupported aggregate function ${aggFn}`, null, opIndex);

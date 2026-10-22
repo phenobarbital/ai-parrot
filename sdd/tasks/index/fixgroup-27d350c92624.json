@@ -1,0 +1,32 @@
+{
+  "feature": "fixgroup-27d350c92624",
+  "feature_id": "FEAT-701",
+  "spec": "sdd/specs/fixgroup-27d350c92624.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-18T21:40:00+00:00",
+  "completed_at": "2026-10-18T21:40:10+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4458",
+      "slug": "live-budget-handoff",
+      "title": "Hand the E2E plan's live budget to the fixture agent through one forwarded env var",
+      "feature_id": "FEAT-701",
+      "feature": "fixgroup-27d350c92624",
+      "spec": "sdd/specs/fixgroup-27d350c92624.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task in this feature; touches e2e/live.py, e2e/runner.py and their unit tests",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
+      "completed_at": "2026-10-18T21:38:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4458-live-budget-handoff.md",
+      "verification": "verified"
+    }
+  ]
+}

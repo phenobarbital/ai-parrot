@@ -18,10 +18,12 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -224,10 +226,9 @@ class WikiNamespaceConfig(BaseModel):
             "Backend for a `store`/`database` entry. Built-in values: "
             "'sqlite', 'memory', 'arangodb'. Also accepts a name "
             "registered via wiki/store.py's register_wiki_backend "
-            "(FEAT-449 M7) — not validated against the registry here "
-            "(core must not import a satellite package at validation "
-            "time); an unknown name surfaces as a ValueError when the "
-            "namespace is actually opened."
+            "(FEAT-449 M7). Validated against the wiki backend registry "
+            "when the config is loaded; an unknown name raises a "
+            "ValueError listing the registered backends."
         ),
     )
     database: str | None = Field(default=None, description="ArangoDB database name")
@@ -258,10 +259,12 @@ class WikiNamespaceConfig(BaseModel):
             raise ValueError(
                 "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
-        if self.database and self.backend in ("sqlite", "memory"):
+        if self.database and ("backend" not in self.model_fields_set or self.backend in ("sqlite", "memory")):
             # A `database` entry is ArangoDB by construction — UNLESS the
             # caller explicitly named a non-built-in (satellite-registered,
-            # FEAT-449 M7) backend, which survives untouched.
+            # FEAT-449 M7) backend, which survives untouched. A local kind
+            # (sqlite/memory, e.g. the CLI default) cannot open a `database`
+            # source, so it is coerced as well.
             object.__setattr__(self, "backend", "arangodb")
         return self
 
@@ -278,6 +281,78 @@ class WikiNamespaceConfig(BaseModel):
     def target(self) -> str:
         """The value of the active source field (path / store / db / vault)."""
         return str(getattr(self, self.kind))
+
+
+class InboxConfig(BaseModel):
+    """Repository-contained inbox, archive and projection settings (FEAT-626)."""
+
+    dir: str = Field(default="inbox", description="Inbox directory, absolute or relative to the project root.")
+    archive_dir: str = Field(
+        default=f"{PARROT_DIR}/archive", description="Archive directory, absolute or relative to the project root."
+    )
+    rejected_subdir: str = Field(default="rejected", description="Single-segment rejected folder under the archive.")
+    markdown_dir: str | None = Field(
+        default=None, description="Markdown projection directory; defaults to <storage_dir>/inbox."
+    )
+    date_format: str = Field(default="%Y-%m-%d", description="strftime format for dated archive folders.")
+    stage_git: bool = Field(default=True, description="Stage archived and projected files in git.")
+    max_candidates: int = Field(default=20, ge=1, le=100, description="Maximum candidates per run.")
+    lock_timeout: float = Field(default=30.0, ge=0.0, description="Seconds to wait for the inbox lock.")
+    stability_window: float = Field(
+        default=3.0,
+        ge=0.0,
+        le=300.0,
+        description="Seconds a candidate's size and mtime must stay unchanged before ingestion (0 disables the gate).",
+    )
+    stability_poll_interval: float = Field(
+        default=1.5,
+        gt=0.0,
+        le=60.0,
+        description="Seconds between the size/mtime samples that prove a candidate is stable.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_layout(self) -> "InboxConfig":
+        """Reject empty paths and unsafe rejected subdirectory names."""
+        if not self.dir.strip():
+            raise ValueError("inbox.dir must not be empty")
+        if not self.archive_dir.strip():
+            raise ValueError("inbox.archive_dir must not be empty")
+        rejected = self.rejected_subdir
+        if not rejected.strip() or "/" in rejected or "\\" in rejected or ".." in rejected:
+            raise ValueError("inbox.rejected_subdir must be a single path segment without separators or '..'")
+        if self.stability_window > 0 and self.stability_poll_interval > self.stability_window:
+            raise ValueError("inbox.stability_poll_interval must not exceed inbox.stability_window")
+        return self
+
+
+def validate_inbox_paths(root: Path, inbox: Path, archive: Path, markdown: Path) -> None:
+    """Validate that inbox, archive and markdown paths are safe and disjoint.
+
+    Pure path arithmetic (symlinks are resolved, nothing is created).
+
+    Args:
+        root: Repository root.
+        inbox: Resolved inbox directory.
+        archive: Resolved archive directory.
+        markdown: Resolved markdown projection directory.
+
+    Raises:
+        WikiConfigError: When a path escapes ``root`` or two paths are equal or nested.
+    """
+    resolved_root = root.resolve()
+    named = {"inbox": inbox.resolve(), "archive": archive.resolve(), "markdown": markdown.resolve()}
+    for name, path in named.items():
+        if path != resolved_root and not path.is_relative_to(resolved_root):
+            raise WikiConfigError(f"inbox config: {name} path {path} escapes the repository root {resolved_root}")
+        if path == resolved_root:
+            raise WikiConfigError(f"inbox config: {name} path must not be the repository root")
+    names = list(named)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            a, b = named[first], named[second]
+            if a == b or a.is_relative_to(b) or b.is_relative_to(a):
+                raise WikiConfigError(f"inbox config: {first} ({a}) and {second} ({b}) must not be equal or nested")
 
 
 class ObsidianSyncConfig(BaseModel):
@@ -379,6 +454,137 @@ class GlobalWikiRegistry(BaseModel):
         return value
 
 
+DEFAULT_TICKET_STATUS_MAP: dict[str, str] = {
+    "To Do": "open",
+    "Open": "open",
+    "Backlog": "open",
+    "In Progress": "in-progress",
+    "Blocked": "blocked",
+    "In Review": "in-review",
+    "Code Review": "in-review",
+    "Done": "closed",
+    "Closed": "closed",
+    "Resolved": "closed",
+}
+
+# Canonical ticket statuses (mirror of ``entities.STATUS_BY_TYPE["ticket"]``). Duplicated here on purpose so this
+# module never imports the entities/standup packages on the startup/hook fast path.
+_CANONICAL_TICKET_STATUSES: frozenset[str] = frozenset({"open", "in-progress", "blocked", "in-review", "closed"})
+
+
+class StandupIdentityConfig(BaseModel):
+    """Explicit non-secret wiki/Jira identity and task-assignment aliases.
+
+    Attributes:
+        wiki: Wiki identity (``human:<user>``); resolved automatically when omitted.
+        jira_account_id: Jira account id used for personal ticket filtering.
+        jira_display_name: Jira display name, used as a fallback match only.
+        aliases: Extra ``assigned_to`` values treated as "me" in the task index.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    wiki: str | None = None
+    jira_account_id: str | None = None
+    jira_display_name: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+
+
+class StandupConfig(BaseModel):
+    """Daily and period brief settings, safe to import on the hook fast path.
+
+    Attributes:
+        default_language: Brief language (``en`` or ``es``).
+        horizon_days: Look-ahead/look-back window in days (1-90).
+        timezone: IANA timezone name; ``None`` means system local.
+        week_start: First day of the week for period briefs.
+        out_dir: Output directory for brief files; ``None`` uses the default.
+        me: Personal identity used to filter briefs.
+        ticket_status_map: Raw Jira status name to canonical ticket status.
+        project_map: Jira key / SDD slug to project page id or label.
+        stale_ticket_days: Days after which an untouched ticket is stale.
+        stale_decision_days: Days after which a proposed decision is stale.
+        llm_env: Environment variable naming the lightweight summarisation model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_language: Literal["en", "es"] = "en"
+    horizon_days: int = Field(default=7, ge=1, le=90)
+    timezone: str | None = None
+    week_start: Literal["monday", "sunday"] = "monday"
+    out_dir: str | None = None
+    me: StandupIdentityConfig = Field(default_factory=StandupIdentityConfig)
+    ticket_status_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_TICKET_STATUS_MAP))
+    project_map: dict[str, str] = Field(default_factory=dict)
+    stale_ticket_days: int = 10
+    stale_decision_days: int = 14
+    llm_env: str = "WIKI_LIGHTWEIGHT_MODEL"
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        """Reject names that are not valid IANA timezones."""
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+                raise ValueError(f"Invalid IANA timezone {value!r}") from exc
+        return value
+
+    @field_validator("ticket_status_map")
+    @classmethod
+    def _validate_ticket_status_map(cls, value: dict[str, str]) -> dict[str, str]:
+        """Require every mapped value to be a canonical ticket status."""
+        bad = sorted({v for v in value.values() if v not in _CANONICAL_TICKET_STATUSES})
+        if bad:
+            raise ValueError(
+                f"Non-canonical ticket status value(s) {bad}; allowed: {sorted(_CANONICAL_TICKET_STATUSES)}"
+            )
+        return value
+
+
+class WikiRemoteConfig(BaseModel):
+    """Remote wikitoolkit MCP server this repository proxies to (FEAT-569).
+
+    Attributes:
+        url: Absolute ``http(s)`` URL of ONE wiki mount, e.g.
+            ``https://wiki.example.com/mcp/parrot`` (trailing slash stripped).
+        token_env: Environment variable holding the bearer token.
+        timeout: Per-call timeout in seconds.
+        actor: Explicit ``X-Wiki-Actor`` value; ``None`` derives it from the
+            local identity at call time.
+        verify_tls: Whether the client verifies the server certificate.
+    """
+
+    url: str
+    token_env: str = Field(default="WIKITOOLKIT_TOKEN", min_length=1)
+    timeout: float = Field(default=30.0, ge=1.0, le=600.0)
+    actor: str | None = None
+    verify_tls: bool = True
+
+    @field_validator("url")
+    @classmethod
+    def _absolute_http_url(cls, value: str) -> str:
+        """Require an absolute ``http://`` / ``https://`` URL."""
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"remote.url must be an absolute http(s) URL, got {value!r}")
+        return value.rstrip("/")
+
+
+def _check_backend_name(value: str | None) -> str | None:
+    """Validate a backend name against the wiki backend registry (``None`` passes through)."""
+    if value is None:
+        return None
+    from parrot.knowledge.wiki.store import wiki_backend_names  # lazy: avoid import cycle
+
+    names = wiki_backend_names()
+    if value not in names:
+        raise ValueError(f"Unknown wiki storage backend {value!r} — expected one of {', '.join(map(repr, names))}")
+    return value
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -396,6 +602,7 @@ class WikiProjectConfig(BaseModel):
         sync_graph: When ``True``, authoring commands (``remember`` /
             ``link``) also mirror their writes into the project's
             GraphIndex plane (``.parrot/graph/``) as audited commits.
+        remote: Remote wikitoolkit MCP server configuration.
         arango_database: ArangoDB database name for the ``arangodb``
             backend; defaults to ``wiki_{wiki_name}`` when omitted.
         arango_credentials_env: Env var prefix used to resolve ArangoDB
@@ -415,19 +622,24 @@ class WikiProjectConfig(BaseModel):
             budget. Generation is disabled by default.
         schema_plane: SQL schema plane settings (FEAT-600); read from and
             written to the ``"schema"`` key of ``wiki.json``.
+        standup: Daily/period brief settings (FEAT-627).
     """
 
     model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, serialize_by_alias=True)
 
     wiki_name: str = Field(default="codebase")
     storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")
-    backend: Literal["sqlite", "memory", "arangodb"] = Field(default="sqlite")
+    backend: str = Field(default="sqlite")
     include_suffixes: list[str] = Field(default_factory=list)
     exclude_dirs: list[str] = Field(default_factory=list)
     body_max_chars: int = Field(default=16_000, ge=1_000)
     max_file_kb: int = Field(default=512, ge=1)
     claude: ClaudeIntegrationConfig = Field(default_factory=ClaudeIntegrationConfig)
     sync_graph: bool = Field(default=False)
+    remote: WikiRemoteConfig | None = Field(
+        default=None,
+        description="Proxy every tool-backed command to this remote wikitoolkit MCP server (FEAT-569).",
+    )
     arango_database: str | None = Field(
         default=None,
         description="ArangoDB database name; defaults to wiki_{wiki_name}",
@@ -495,6 +707,10 @@ class WikiProjectConfig(BaseModel):
         alias="schema",
         description="SQL schema plane settings (FEAT-600): declared sources (env NAMES only), staleness policy.",
     )
+    standup: StandupConfig = Field(
+        default_factory=StandupConfig,
+        description="Daily/period standup brief settings (FEAT-627).",
+    )
     sqlite_busy_timeout: float = Field(
         default=15.0,
         ge=1.0,
@@ -515,6 +731,10 @@ class WikiProjectConfig(BaseModel):
             "(busy_timeout, synchronous=NORMAL, 64 MiB journal_size_limit) "
             "are always applied and are not gated by this flag."
         ),
+    )
+    inbox: InboxConfig = Field(
+        default_factory=InboxConfig,
+        description="Inbox autonomous-ingestion settings (FEAT-626).",
     )
 
     @field_validator("namespaces")
@@ -561,21 +781,52 @@ class WikiProjectConfig(BaseModel):
         """Path of the SQLite retrieval plane (sqlite backend)."""
         return self.storage_path(root) / "wiki.db"
 
+    def inbox_path(self, root: Path) -> Path:
+        """Resolve inbox.dir against the repository root."""
+        path = Path(self.inbox.dir)
+        return path if path.is_absolute() else root / path
+
+    def archive_path(self, root: Path) -> Path:
+        """Resolve inbox.archive_dir against the repository root."""
+        path = Path(self.inbox.archive_dir)
+        return path if path.is_absolute() else root / path
+
+    def inbox_markdown_path(self, root: Path) -> Path:
+        """Resolve the explicit projection path, or ``storage_path(root)/inbox`` when unset."""
+        if self.inbox.markdown_dir is None:
+            return self.storage_path(root) / "inbox"
+        path = Path(self.inbox.markdown_dir)
+        return path if path.is_absolute() else root / path
+
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str) -> str:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)  # type: ignore[return-value]
+
     def is_built(self, root: Path) -> bool:
         """Whether the retrieval plane exists for this repo.
 
-        ``sqlite``/``memory`` are on-disk backends, so this is a cheap
-        local file/directory probe. ``arangodb`` is server-hosted — there
-        is no local artifact to check, and probing the server here would
-        turn a synchronous config check into a network round-trip. The
-        real "is it built" signal for ``arangodb`` is deferred to the
-        store's own (idempotent) ``initialize()`` connection, which
-        creates the database/collections/view on first use if missing.
+        Driven by the registered backend's ``kind``: an optional
+        ``is_built`` hook (lazy ``"module:attr"`` path, called as
+        ``hook(config, root)``) wins; ``server`` backends are hosted
+        remotely so there is no local artifact to probe (their store's
+        idempotent ``initialize()`` creates the plane on first use);
+        ``local`` backends probe the sqlite file or the markdown bundle.
         """
+        from parrot.knowledge.wiki.store import wiki_backend_spec  # lazy: avoid import cycle
+
+        spec = wiki_backend_spec(self.backend)
+        if spec.is_built:
+            import importlib
+
+            module_name, _, attr = spec.is_built.partition(":")
+            hook = getattr(importlib.import_module(module_name), attr)
+            return bool(hook(self, root))
+        if spec.kind == "server":
+            return True
         if self.backend == "sqlite":
             return self.db_path(root).exists()
-        if self.backend == "arangodb":
-            return True
         return (self.storage_path(root) / "pages").exists()
 
 
@@ -609,8 +860,44 @@ def _navconfig() -> Any | None:
     return nav_config
 
 
+def resolve_setting(
+    key: str,
+    *,
+    default: Any = None,
+    explicit: Any = None,
+    project_defaults: Mapping[str, Any] | None = None,
+) -> Any:
+    """Resolve a setting from explicit, environment, navconfig, project, and default values.
+
+    ``None`` means that a source does not provide the setting. Falsey values
+    such as ``False``, ``0``, and ``""`` are preserved. navconfig remains an
+    optional, lazy dependency; failures there are handled by :func:`_navconfig`.
+
+    Args:
+        key: Setting name to resolve.
+        default: Value returned when no source provides ``key``.
+        explicit: Explicit caller-supplied value.
+        project_defaults: Optional defaults already read by the caller.
+
+    Returns:
+        The first non-``None`` value in precedence order.
+    """
+    if explicit is not None:
+        return explicit
+    if key in os.environ:
+        return os.environ[key]
+    nav_config = _navconfig()
+    if nav_config is not None:
+        value = nav_config.get(key)
+        if value is not None:
+            return value
+    if project_defaults is not None and project_defaults.get(key) is not None:
+        return project_defaults[key]
+    return default
+
+
 def _env_credential(key: str, default: Any) -> Any:
-    """Resolve one credential key: ``os.environ``, then navconfig, then default.
+    """Resolve one credential key through :func:`resolve_setting`.
 
     ``os.environ`` wins so an explicit ``export`` (or a test's
     ``monkeypatch.setenv`` / ``delenv``) always overrides what the env
@@ -624,18 +911,7 @@ def _env_credential(key: str, default: Any) -> Any:
     Returns:
         The resolved value, or ``default``.
     """
-    value = os.environ.get(key)
-    if value is not None:
-        return value
-    nav_config = _navconfig()
-    if nav_config is not None:
-        # navconfig's `get` may return None for a missing key even with a
-        # fallback argument, so coalesce explicitly (same guard as
-        # graphindex/loader.py).
-        value = nav_config.get(key)
-        if value is not None:
-            return value
-    return default
+    return resolve_setting(key, default=default)
 
 
 def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
@@ -649,7 +925,8 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
 
     Each variable resolves through :func:`_env_credential`:
     ``os.environ`` first, then navconfig (which is what loads
-    ``env/.env``), then the built-in default.
+    ``env/.env``), then the built-in default. The host is required so a
+    missing setting never silently selects loopback.
 
     Args:
         config: Project config carrying the ArangoDB backend settings.
@@ -661,8 +938,11 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
         field a ``str`` except the ``int`` port.
     """
     prefix = config.arango_credentials_env
+    host = _env_credential(f"{prefix}_HOST", None)
+    if host is None:
+        raise ValueError(f"Missing required ArangoDB setting: {prefix}_HOST")
     return {
-        "host": str(_env_credential(f"{prefix}_HOST", "127.0.0.1")),
+        "host": str(host),
         "port": int(_env_credential(f"{prefix}_PORT", 8529)),
         "protocol": str(_env_credential(f"{prefix}_PROTOCOL", "http")),
         "username": str(_env_credential(f"{prefix}_USERNAME", "root")),
@@ -742,12 +1022,37 @@ def config_path(root: Path) -> Path:
     return root / PARROT_DIR / CONFIG_FILENAME
 
 
+def _is_temp_root(candidate: Path) -> bool:
+    """True when ``candidate`` is the system temp directory or one of its ancestors.
+
+    The upward walks in :func:`find_project_root` and :func:`find_shared_root` stop
+    there: a stray ``/tmp/.git`` (or ``/tmp/.parrot``) left by an unrelated process
+    must never turn every ``tmp_path``-based test — or any scratch checkout under the
+    temp dir — into a child of a ``/tmp`` "project" (issue:1270bc83b087). Projects
+    *below* the temp dir are unaffected; only the temp dir itself and its parents
+    (``/``) are excluded.
+
+    Args:
+        candidate: A resolved directory from the upward walk.
+
+    Returns:
+        Whether the walk must stop at ``candidate`` without inspecting it.
+    """
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+    except (OSError, RuntimeError):
+        return False
+    return candidate == temp_root or candidate in temp_root.parents
+
+
 def find_project_root(start: Path | None = None) -> Path | None:
     """Walk upwards from ``start`` to the nearest configured repo root.
 
     A directory is a wiki project root when it contains
     ``.parrot/wiki.json``; as a fallback, the nearest ``.git`` root is
-    returned so ``wikitoolkit build`` can bootstrap a fresh repo.
+    returned so ``wikitoolkit build`` can bootstrap a fresh repo. The walk
+    never inspects the system temp directory or its ancestors
+    (:func:`_is_temp_root`).
 
     Args:
         start: Directory to start from (defaults to CWD).
@@ -758,6 +1063,8 @@ def find_project_root(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     git_root: Path | None = None
     for candidate in (current, *current.parents):
+        if _is_temp_root(candidate):
+            break
         if config_path(candidate).exists():
             return candidate
         if git_root is None and (candidate / ".git").exists():
@@ -844,11 +1151,13 @@ class WikiEnvOverlay(BaseModel):
         include_suffixes: Scanned file suffixes override.
         exclude_dirs: Extra pruned directory names override.
         claude: Claude Code integration settings override.
+        remote: Remote wikitoolkit MCP server configuration override.
+        standup: Standup settings override (replaced wholesale).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: Literal["sqlite", "memory", "arangodb"] | None = None
+    backend: str | None = None
     storage_dir: str | None = None
     arango_database: str | None = None
     arango_credentials_env: str | None = None
@@ -862,6 +1171,15 @@ class WikiEnvOverlay(BaseModel):
     include_suffixes: list[str] | None = None
     exclude_dirs: list[str] | None = None
     claude: ClaudeIntegrationConfig | None = None
+    remote: WikiRemoteConfig | None = None
+    standup: StandupConfig | None = None
+    inbox: InboxConfig | None = None
+
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str | None) -> str | None:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)
 
     @field_validator("namespaces")
     @classmethod
@@ -928,6 +1246,28 @@ def resolve_wiki_env(env: str | None = None) -> str:
 def overlay_path(root: Path, env: str) -> Path:
     """Return the per-environment overlay config path for a repo root."""
     return root / PARROT_DIR / f"wiki.{env}.json"
+
+
+REMOTE_URL_ENV = "WIKITOOLKIT_REMOTE_URL"
+
+
+def resolve_remote(config: WikiProjectConfig) -> WikiRemoteConfig | None:
+    """Return the effective remote for this repository, or ``None`` for local mode.
+
+    Precedence: ``WIKITOOLKIT_REMOTE_URL`` (overrides only the URL; the other
+    fields come from ``config.remote`` when set, else defaults) > ``config.remote`` > ``None``.
+
+    Args:
+        config: The already-merged effective project config.
+
+    Returns:
+        The remote to proxy to, or ``None`` when the CLI/MCP must stay local.
+    """
+    override = os.environ.get(REMOTE_URL_ENV, "").strip()
+    if override:
+        base = config.remote.model_dump() if config.remote is not None else {}
+        return WikiRemoteConfig(**{**base, "url": override})
+    return config.remote
 
 
 def load_effective_config(root: Path, env: str | None = None) -> WikiEffectiveConfig:
@@ -1221,7 +1561,9 @@ def find_shared_root(start: Path | None = None) -> Path | None:
     """Find the shared root directory for parrot state, tolerating failures.
 
     Walks upward from start to find the Git root, then resolves to the
-    main checkout's .git directory even in linked worktrees.
+    main checkout's .git directory even in linked worktrees. The walk never
+    inspects the system temp directory or its ancestors (:func:`_is_temp_root`),
+    so a stray ``/tmp/.git`` cannot become everyone's shared ledger root.
 
     Args:
         start: Directory to start from (defaults to CWD).
@@ -1235,6 +1577,8 @@ def find_shared_root(start: Path | None = None) -> Path | None:
 
         # First, find the nearest git root
         for candidate in (current, *current.parents):
+            if _is_temp_root(candidate):
+                break
             git_path = candidate / ".git"
             if git_path.exists():
                 git_root = candidate

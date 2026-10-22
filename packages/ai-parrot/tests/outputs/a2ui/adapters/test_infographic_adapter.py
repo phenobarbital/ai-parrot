@@ -479,8 +479,10 @@ class TestBlockTypeRemap:
             )
         )
         components = _sections(envelope)[0]["components"]
-        assert [c["component"] for c in components] == ["KPICard", "KPICard"]
-        assert components[0]["properties"]["label"] == "Onboarding"
+        assert [c["component"] for c in components] == ["Row"]
+        cards = components[0]["properties"]["children"]
+        assert [c["component"] for c in cards] == ["KPICard", "KPICard"]
+        assert cards[0]["properties"]["label"] == "Onboarding"
 
     def test_bullet_list_maps_to_list_of_text(self):
         envelope = infographic_response_to_envelope(
@@ -812,8 +814,8 @@ class TestMalformedNestedItemsDegradeGracefully:
                 ],
             }
         )
-        components = _sections(envelope)[0]["components"]
-        assert [c["properties"]["label"] for c in components] == ["Real"]
+        row = _sections(envelope)[0]["components"][0]
+        assert [c["properties"]["label"] for c in row["properties"]["children"]] == ["Real"]
 
     def test_checklist_with_malformed_item_does_not_raise(self):
         envelope = infographic_response_to_envelope(
@@ -1036,3 +1038,176 @@ class TestLowering:
         # Lowering is pure: the nested KPICard/Chart children resolved through
         # their own registered lower() without raising.
         assert tree.child is not None
+
+
+class TestDisplayHints:
+    """FEAT-623: hints reach the envelope; progress lowers losslessly."""
+
+    def test_progress_titled_is_group_in_current_section(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {"type": "title", "title": "T"},
+                    {"type": "hero_card", "label": "R", "value": "1"},
+                    {"type": "progress", "title": "Goal completion", "items": [{"label": "A", "value": 90.4}]},
+                ]
+            )
+        )
+        sections = _sections(envelope)
+        assert len(sections) == 1
+        components = sections[0]["components"]
+        assert [c["component"] for c in components] == ["KPICard", "Column"]
+        column = components[1]["properties"]["children"]
+        assert column[0] == {"component": "Text", "properties": {"text": "Goal completion"}}
+        assert column[1]["component"] == "Row"
+        assert [c["component"] for c in column[1]["properties"]["children"]] == ["KPICard"]
+
+    def test_progress_untitled_is_bare_row(self):
+        envelope = infographic_response_to_envelope(
+            _response(blocks=[{"type": "progress", "items": [{"label": "A", "value": 10}]}])
+        )
+        components = _sections(envelope)[0]["components"]
+        assert [c["component"] for c in components] == ["Row"]
+
+    def test_progress_item_ratio_percent_and_target(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "progress",
+                        "items": [
+                            {"label": "A", "value": 90.4, "target": 80, "color": "#112233"},
+                            {"label": "B", "value": 50},
+                        ],
+                    }
+                ]
+            )
+        )
+        cards = _sections(envelope)[0]["components"][0]["properties"]["children"]
+        a, b = cards[0]["properties"], cards[1]["properties"]
+        assert a["value"] == pytest.approx(0.904) and a["format"] == "percent"
+        assert a["comparisonPeriod"] == "vs 80% target"
+        assert a["color"] == "#112233"
+        assert "delta" not in a
+        assert "comparisonPeriod" not in b and "delta" not in b
+
+    def test_progress_zero_and_full(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "progress",
+                        "items": [
+                            {"label": "Z", "value": 0, "target": 0},
+                            {"label": "F", "value": 100, "target": 99.5},
+                        ],
+                    }
+                ]
+            )
+        )
+        cards = _sections(envelope)[0]["components"][0]["properties"]["children"]
+        assert cards[0]["properties"]["value"] == 0.0
+        assert cards[0]["properties"]["comparisonPeriod"] == "vs 0% target"
+        assert cards[1]["properties"]["value"] == 1.0
+        assert cards[1]["properties"]["comparisonPeriod"] == "vs 99.5% target"
+
+    @pytest.mark.parametrize("value", [0, 0.0])
+    def test_hero_numeric_zero_preserved(self, value):
+        envelope = infographic_response_to_envelope(
+            _response(blocks=[{"type": "hero_card", "label": "R", "value": value, "format": "number"}])
+        )
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["value"] == 0 and props["value"] != ""
+
+    def test_hero_forwards_format_unit(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {"type": "hero_card", "label": "R", "value": 3, "format": "number", "unit": "visits"},
+                    {"type": "hero_card", "label": "S", "value": "$1.2M"},
+                ]
+            )
+        )
+        comps = _sections(envelope)[0]["components"]
+        assert comps[0]["properties"]["format"] == "number" and comps[0]["properties"]["unit"] == "visits"
+        assert "format" not in comps[1]["properties"] and "unit" not in comps[1]["properties"]
+        assert comps[1]["properties"]["value"] == "$1.2M"
+
+    def test_table_forwards_type_format(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "table",
+                        "columns": [
+                            {"header": "MRR", "type": "number", "format": "currency", "align": "right", "width": "9px"},
+                            {"header": "Name"},
+                        ],
+                        "rows": [[1.5, "a"]],
+                    }
+                ]
+            )
+        )
+        columns = _sections(envelope)[0]["components"][0]["properties"]["columns"]
+        assert columns[0] == {"name": "MRR", "title": "MRR", "type": "number", "format": "currency"}
+        assert columns[1] == {"name": "Name", "title": "Name"}
+
+    def test_chart_series_axes_parallel_to_y(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "chart",
+                        "chart_type": "line",
+                        "labels": ["a"],
+                        "series": [{"name": "x", "values": [1]}, {"name": "y", "values": [2], "axis": "right"}],
+                        "y_axis_labels": ["L", "R"],
+                    },
+                    {"type": "chart", "chart_type": "line", "labels": ["a"], "series": [{"name": "x", "values": [1]}]},
+                ]
+            )
+        )
+        first, second = (c["properties"] for c in _sections(envelope)[0]["components"])
+        assert first["seriesAxes"] == ["left", "right"] and first["y"] == ["x", "y"]
+        assert first["yAxisLabels"] == ["L", "R"]
+        assert "seriesAxes" not in second and "yAxisLabels" not in second
+
+    def test_display_hints_envelope(self):
+        """Envelope half of the lanes-agree fixture (HTML half: TASK-3997)."""
+        envelope = infographic_response_to_envelope(display_hints_response())
+        validate_envelope(envelope, origin=ProducerOrigin.TOOL)
+        assert len(_sections(envelope)) == 1
+
+    def test_module_docstring_no_longer_claims_lossless(self):
+        from parrot.outputs.a2ui.adapters import infographic as mod
+
+        assert "nothing presentation-relevant is dropped" not in mod.__doc__
+        assert "ColumnDef.align" in mod.__doc__
+
+
+def display_hints_response() -> InfographicResponse:
+    """Shared fixture: numeric hero, typed table, titled progress, right-axis chart."""
+    return InfographicResponse(
+        template="basic",
+        blocks=[
+            {"type": "title", "title": "Hints"},
+            {"type": "hero_card", "label": "Revenue", "value": 1203456, "format": "currency"},
+            {
+                "type": "table",
+                "columns": [
+                    {"header": "Plan"},
+                    {"header": "MRR", "type": "number", "format": "currency"},
+                    {"header": "Churn", "type": "number", "format": "percent"},
+                ],
+                "rows": [["Pro", 1234.5, 0.683]],
+            },
+            {"type": "progress", "title": "Goal completion", "items": [{"label": "NPS", "value": 90.4, "target": 80}]},
+            {
+                "type": "chart",
+                "chart_type": "bar",
+                "labels": ["Jan", "Feb"],
+                "series": [{"name": "MRR", "values": [1, 2]}, {"name": "New", "values": [3, 4], "axis": "right"}],
+                "y_axis_labels": ["MRR (USD)", "New MRR (USD)"],
+            },
+        ],
+    )

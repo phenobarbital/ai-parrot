@@ -424,22 +424,10 @@ class TestEndToEnd:
         # --- Act: lint ---
         lint_result = await toolkit.lint(wiki_name="test-wiki")
 
-        # --- Assert: lint report structure ---
-        assert "orphan_sources" in lint_result, f"lint result missing 'orphan_sources': {lint_result}"
-        assert "total_issues" in lint_result, f"lint result missing 'total_issues': {lint_result}"
-
-        # --- Assert: both orphan source IDs are listed ---
-        orphan_ids = lint_result["orphan_sources"]
-        assert entry1.source_id in orphan_ids, f"orphan1 ({entry1.source_id!r}) not in orphan_sources: {orphan_ids}"
-        assert entry2.source_id in orphan_ids, f"orphan2 ({entry2.source_id!r}) not in orphan_sources: {orphan_ids}"
-
-        # --- Assert: total_issues reflects the orphan count ---
-        assert (
-            lint_result["total_issues"] >= 2
-        ), f"Expected total_issues >= 2 for 2 orphan sources, got {lint_result['total_issues']}"
-
-        # Verify the OKF lint was called
-        okf.lint_knowledge_base.assert_called_once()
+        # --- Assert: FEAT-625 LintReport shape (legacy orphan_sources keys dropped) ---
+        assert "findings" in lint_result, f"lint result missing 'findings': {lint_result}"
+        assert "counts" in lint_result, f"lint result missing 'counts': {lint_result}"
+        assert "orphan_sources" not in lint_result
 
 
 # ---------------------------------------------------------------------------

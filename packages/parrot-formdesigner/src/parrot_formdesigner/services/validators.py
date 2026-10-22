@@ -21,7 +21,7 @@ from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
-from ..core.voice_answer import VoiceAnswerEnvelope
+from ..core.voice_answer import VoiceAnswerEnvelope, VoiceEvidenceEnvelope, is_voice_envelope
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 from .unknown_fields import compute_extra_data
@@ -280,9 +280,13 @@ class FormValidator:
         # accepted, and a visible field behaves exactly as before.
         from .rule_evaluator import RuleEvaluator  # noqa: PLC0415
 
+        # FEAT-649: rules and cross-field validators see the unwrapped scalar
+        # of a spoken answer, never the envelope (persistence keeps envelopes).
+        scalar_data = self._scalar_view(all_fields, data)
+
         resolution = await RuleEvaluator().resolve(
             form,
-            data,
+            scalar_data,
             locale=locale,
             location_vars=location_vars,
             visit_context=visit_context,
@@ -296,7 +300,7 @@ class FormValidator:
             field_errors = await self.validate_field(
                 field,
                 data.get(field.field_id),
-                all_data=data,
+                all_data=scalar_data,
                 locale=locale,
                 auth_context=auth_context,
                 required=effective_required,
@@ -316,9 +320,21 @@ class FormValidator:
                     if submitted is not None:
                         sanitized[field.field_id] = submitted
                 else:
-                    coerced = self._coerce_value(data.get(field.field_id), field)
-                    if coerced is not None:
-                        sanitized[field.field_id] = coerced
+                    raw = data.get(field.field_id)
+                    if self._is_evidence_envelope_value(field, raw):
+                        envelope = (
+                            raw if isinstance(raw, VoiceEvidenceEnvelope) else VoiceEvidenceEnvelope.model_validate(raw)
+                        )
+                        scalar = self._coerce_value(envelope.answer, field)
+                        # An empty optional spoken answer is kept only when it references audio.
+                        if scalar is not None or envelope.blob_ref:
+                            sanitized[field.field_id] = envelope.model_copy(update={"answer": scalar}).model_dump(
+                                mode="json"
+                            )
+                    else:
+                        coerced = self._coerce_value(raw, field)
+                        if coerced is not None:
+                            sanitized[field.field_id] = coerced
 
         # FEAT-458 — payload-side diff, reported (not judged) into extra_data.
         #
@@ -386,6 +402,23 @@ class FormValidator:
         # REST: validate the submitted {answer, blob_ref, status?} shape
         if field.field_type == FieldType.REST:
             return self._validate_rest_field(field, value, label, is_required)
+
+        # FEAT-649: a spoken answer on any field type arrives as a VoiceEvidenceEnvelope —
+        # validate its scalar with this field's normal rules (unwrap -> validate -> re-fold at sanitize time).
+        if self._is_evidence_envelope_value(field, value):
+            if isinstance(value, dict):
+                try:
+                    VoiceEvidenceEnvelope.model_validate(value)
+                except PydanticValidationError:
+                    return [f"{label} has an invalid voice answer"]
+            return await self.validate_field(
+                field,
+                value.get("answer") if isinstance(value, dict) else value.answer,
+                all_data=all_data,
+                locale=locale,
+                auth_context=auth_context,
+                required=required,
+            )
 
         # Required check. FEAT-488: a dict answer needs its own emptiness
         # rule — `is_empty` used to only recognise None and blank strings, so
@@ -542,10 +575,39 @@ class FormValidator:
     @staticmethod
     def _is_voice_envelope_field(field: FormField) -> bool:
         """Whether `field` declares its dict answer as a VoiceAnswerEnvelope."""
-        return (
-            field.answer_envelope == "voice"
-            and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
-        )
+        return field.answer_envelope == "voice" and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
+
+    _EVIDENCE_KEYS = frozenset(
+        {
+            "source",
+            "confidence",
+            "audio_mime",
+            "duration_ms",
+            "language",
+            "plausibility",
+            "normalized_by",
+            "llm_confidence",
+        }
+    )
+
+    @classmethod
+    def _scalar_view(cls, fields: list[FormField], data: dict[str, Any]) -> dict[str, Any]:
+        """Return ``data`` with FEAT-649 spoken-answer envelopes replaced by their ``answer``."""
+        view = dict(data)
+        for field in fields:
+            raw = data.get(field.field_id)
+            if cls._is_evidence_envelope_value(field, raw):
+                view[field.field_id] = raw.get("answer") if isinstance(raw, dict) else raw.answer
+        return view
+
+    @classmethod
+    def _is_evidence_envelope_value(cls, field: FormField, value: Any) -> bool:
+        """Whether `value` is a FEAT-649 spoken-answer envelope on a field outside the FEAT-488 TEXT path.
+
+        FEAT-488 declared TEXT/TEXT_AREA envelope fields keep their own handling; every other field
+        type answered by voice carries a VoiceEvidenceEnvelope whose ``answer`` is validated as the scalar.
+        """
+        return is_voice_envelope(value) and not cls._is_voice_envelope_field(field)
 
     def _is_empty_dict_answer(self, value: dict[str, Any], field: FormField) -> bool:
         """Whether a dict answer counts as "not answered" for the required check.
@@ -630,8 +692,9 @@ class FormValidator:
                 # The field declared a typed envelope, so the shape IS
                 # checkable — enforce it and return the canonical dump so
                 # consumers always see blob_ref/data_url present.
+                model = VoiceEvidenceEnvelope if self._EVIDENCE_KEYS & value.keys() else VoiceAnswerEnvelope
                 try:
-                    return VoiceAnswerEnvelope.model_validate(value).model_dump()
+                    return model.model_validate(value).model_dump()
                 except PydanticValidationError as exc:
                     raise ValueError(
                         f"{field.field_id} expects a voice answer envelope "
@@ -661,7 +724,7 @@ class FormValidator:
                 s = str(value).strip()
                 return int(s) if ft == FieldType.INTEGER else float(s)
             except (ValueError, TypeError):
-                raise ValueError(f"'{value}' is not a valid number")
+                raise ValueError(f"'{value}' is not a valid number") from None
 
         elif ft == FieldType.BOOLEAN:
             if isinstance(value, bool):
@@ -707,7 +770,7 @@ class FormValidator:
             try:
                 return int(str(value).strip())
             except (ValueError, TypeError):
-                raise ValueError(f"'{value}' is not a valid integer")
+                raise ValueError(f"'{value}' is not a valid integer") from None
 
         elif ft == FieldType.LOCATION:
             return str(value).strip().upper()
@@ -841,7 +904,7 @@ class FormValidator:
             try:
                 json.dumps(value)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}")
+                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}") from exc
             return value
 
         # FEAT-448 (TASK-2334) — credit_card REJECTS cardholder data, it does
@@ -1623,7 +1686,7 @@ class FormValidator:
 
         # DFS cycle detection
         UNVISITED, VISITING, VISITED = 0, 1, 2
-        state: dict[str, int] = {field_uid: UNVISITED for field_uid in graph}
+        state: dict[str, int] = dict.fromkeys(graph, UNVISITED)
         cycles: list[str] = []
 
         def dfs(node: str, path: list[str]) -> None:

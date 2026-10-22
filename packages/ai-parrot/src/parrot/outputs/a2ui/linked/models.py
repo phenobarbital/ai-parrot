@@ -175,17 +175,32 @@ TransformOp = Annotated[
 ]
 
 
+class PythonTransform(BaseModel):
+    """Server-side registered transformer applied to a fetched frame (G1: referenced by name, never code).
+
+    Runs ONLY in the Python lanes (bake, persist, server refresh, the per-source data endpoint) — the mirror
+    image of ``transform.ref``, which runs only in the renderer.
+    """
+
+    model_config = _CFG
+    transformer: str = Field(min_length=1)
+    params: dict[str, Any] = Field(default_factory=dict)
+    input_alias: str = Field(default="source", min_length=1)
+    output: str | None = None
+
+
 class TransformSpec(BaseModel):
-    """Exactly one of inline DSL operations or a catalogued renderer module."""
+    """Exactly one of inline DSL operations, a catalogued renderer module, or a server-side Python transformer."""
 
     model_config = _CFG
     ops: list[TransformOp] | None = None
     ref: TransformRef | None = None
+    python: PythonTransform | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _xor(self) -> TransformSpec:
-        if (self.ops is None) == (self.ref is None):
-            raise ValueError("TransformSpec requires exactly one of 'ops' or 'ref'")
+        if sum(member is not None for member in (self.ops, self.ref, self.python)) != 1:
+            raise ValueError("TransformSpec requires exactly one of 'ops', 'ref' or 'python'")
         return self
 
 
@@ -223,8 +238,70 @@ class LinkedDataSource(BaseModel):
         return self
 
 
-class LinkedSources(RootModel[dict[str, LinkedDataSource]]):
+class DerivedDataSource(BaseModel):
+    """A dashboard-owned view computed from a sibling source's frame — never fetched (linked dashboards).
+
+    The base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),
+    not its ≤500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see
+    the computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the
+    Python executor, which would break Python ↔ renderer parity.
+    """
+
+    model_config = _CFG
+    kind: Literal["derived"]
+    from_: str = Field(alias="from")
+    transform: TransformSpec
+    target: str
+    snapshot_at: datetime | None = None
+    snapshot_truncated: bool = False
+
+    @field_validator("target")
+    @classmethod
+    def _check_target(cls, value: str) -> str:
+        if not value or not is_valid_pointer(value):
+            raise ValueError(f"target {value!r} must be a non-empty absolute JSON pointer")
+        return value
+
+    @field_validator("from_")
+    @classmethod
+    def _check_from(cls, value: str) -> str:
+        if not value.isidentifier():
+            raise ValueError(f"from {value!r} must name a sibling source key (identifier)")
+        return value
+
+    @model_validator(mode="after")
+    def _ops_only(self) -> DerivedDataSource:
+        if self.transform.ref is not None or self.transform.python is not None or not self.transform.ops:
+            raise ValueError(
+                "a derived source requires inline transform.ops (transform.ref and transform.python are not allowed)"
+            )
+        return self
+
+
+LinkedSource = Annotated[Union[LinkedDataSource, DerivedDataSource], Field(discriminator="kind")]
+
+
+class LinkedSources(RootModel[dict[str, LinkedSource]]):
     """Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_kind(cls, value: Any) -> Any:
+        """Descriptors written before the ``derived`` kind existed carry no ``kind``: they are ``query_slug``.
+
+        A kind-less descriptor that carries ``from`` can only be a derived view, so it is tagged as such — the
+        validation error then names the derived shape instead of "from: extra forbidden".
+        """
+        if isinstance(value, dict):
+            return {
+                key: (
+                    {"kind": "derived" if "from" in src else "query_slug", **src}
+                    if isinstance(src, dict) and "kind" not in src
+                    else src
+                )
+                for key, src in value.items()
+            }
+        return value
 
     @model_validator(mode="after")
     def _check_keys(self) -> LinkedSources:
@@ -232,4 +309,26 @@ class LinkedSources(RootModel[dict[str, LinkedDataSource]]):
             target_key = source.target.split("/")[1].replace("~1", "/").replace("~0", "~")
             if not key.isidentifier() or target_key != key:
                 raise ValueError(f"source key {key!r} must match target root token {target_key!r}")
+        return self
+
+    @model_validator(mode="after")
+    def _python_terminal(self) -> LinkedSources:
+        """A python-transformed source is terminal in v1 (FEAT-636 U3): no sibling may consume its frame."""
+        python_keys = {
+            key for key, src in self.root.items() if src.transform is not None and src.transform.python is not None
+        }
+        if not python_keys:
+            return self
+        for key, src in self.root.items():
+            consumed = {src.from_} if isinstance(src, DerivedDataSource) else set()
+            if src.transform is not None and src.transform.ops is not None:
+                for operation in src.transform.ops:
+                    if isinstance(operation, Join):
+                        consumed.add(operation.with_)
+                    elif isinstance(operation, Union_):
+                        consumed.update(operation.sources)
+            for name in consumed & python_keys:
+                raise ValueError(
+                    f"source {key!r} consumes python-transformed source {name!r}; python transforms are terminal"
+                )
         return self

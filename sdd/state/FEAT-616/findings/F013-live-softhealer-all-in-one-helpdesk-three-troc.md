@@ -2,7 +2,7 @@
 id: F013
 query_id: L002
 type: rpc
-intent: live: installed helpdesk/softhealer/troc modules
+intent: "live: installed helpdesk/softhealer/troc modules"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

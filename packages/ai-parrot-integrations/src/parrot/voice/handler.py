@@ -1200,6 +1200,10 @@ class VoiceChatHandler:
                         # for the same auto-start-on-first-chunk case.
                         if connection.streaming_mode == "streaming" and connection.voice_session is not None:
                             await connection.voice_session.start_turn()
+                    elif self._voice_turn_closed(connection):
+                        # Stale is_recording — see _handle_audio_data().
+                        connection.recording_start_time = datetime.now()
+                        await connection.voice_session.start_turn()
                     connection.is_recording = True
 
                     if connection.session_active and not connection.stop_audio_sending:
@@ -2121,6 +2125,22 @@ class VoiceChatHandler:
             await self._handle_voice_binary_complete(connection, connection.audio_buffer)
             connection.audio_buffer = b""
 
+    @staticmethod
+    def _voice_turn_closed(connection: WebSocketConnection) -> bool:
+        """Whether a streaming connection has no open VoiceSession turn.
+
+        Args:
+            connection: The connection receiving audio.
+
+        Returns:
+            ``True`` when audio would be dropped because no turn is open.
+        """
+        return (
+            connection.streaming_mode == "streaming"
+            and connection.voice_session is not None
+            and not connection.voice_session.turn_open
+        )
+
     async def _handle_audio_data(self, connection: WebSocketConnection, message: Dict[str, Any]) -> None:
         """
         Receive audio chunk (base64).
@@ -2141,6 +2161,14 @@ class VoiceChatHandler:
             # start_turn() runs, TASK-2149).
             if connection.streaming_mode == "streaming" and connection.voice_session is not None:
                 await connection.voice_session.start_turn()
+        elif self._voice_turn_closed(connection):
+            # is_recording is stale: the provider ended the previous turn on
+            # its own (Nova closes its stream after every reply) and the
+            # client never sent stop_recording for it — the browser drops
+            # the mic on the first response_chunk without one. Without a
+            # fresh turn this audio, and the next end_turn(), go nowhere.
+            connection.recording_start_time = datetime.now()
+            await connection.voice_session.start_turn()
 
         connection.is_recording = True
 

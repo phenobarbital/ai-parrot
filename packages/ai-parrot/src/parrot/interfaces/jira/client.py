@@ -28,7 +28,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from .errors import JiraAuthError, JiraDependencyError
-from .parse import parse_issue
+from .models import JiraPerson
+from .parse import _person, parse_issue
 
 try:
     # Optional config source; fall back to env vars if missing — same
@@ -417,6 +418,15 @@ class JiraInterface:
             "status_code": status,
             "seraph_login_reason": seraph,
         }
+        if authenticated:
+            try:
+                person = _person(response.json())
+            except Exception as exc:  # noqa: BLE001 — response decoding must not escape the probe
+                result["error"] = f"{type(exc).__name__}: unable to decode /myself response"
+            else:
+                if person is not None:
+                    result["account_id"] = person.account_id
+                    result["display_name"] = person.display_name
         if not authenticated:
             result["error"] = f"HTTP {status}" + (f" — {seraph}" if seraph else "")
         return result
@@ -481,6 +491,25 @@ class JiraInterface:
                 "result set was not trusted as proof of an empty scope."
             )
         return result
+
+    async def myself(self) -> JiraPerson:
+        """Return the authenticated user projected to G9-safe identity fields.
+
+        Raises:
+            JiraAuthError: If authentication fails or Jira returns an unusable
+                current-user identity.
+        """
+        await self._ensure_client()
+        result = await self._probe_myself()
+        person = _person(
+            {
+                "accountId": result.get("account_id"),
+                "displayName": result.get("display_name"),
+            }
+        )
+        if person is None or not person.account_id or not person.display_name:
+            raise JiraAuthError("Jira /myself response did not contain a usable accountId and displayName.")
+        return person
 
     async def verify_auth(self) -> dict[str, Any]:
         """Verify the interface is authenticated against Jira. Never raises.

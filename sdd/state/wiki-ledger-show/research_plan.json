@@ -1,0 +1,7 @@
+{"queries":[
+ {"id":"Q001","type":"wiki_query","params":"ledger cli commands ready context claim","intent":"locate ledger CLI","priority":1},
+ {"id":"Q002","type":"grep","params":"@ledger.command in wiki/cli.py","intent":"enumerate subcommands","priority":1},
+ {"id":"Q003","type":"read","params":"ledger/service.py read API","intent":"find reusable list/get methods","priority":1},
+ {"id":"Q004","type":"read","params":"ledger/index.py _apply_issue_opened","intent":"issue state shape","priority":2},
+ {"id":"Q005","type":"grep","params":"ledger_ready across transport/remote/tools","intent":"MCP+remote wiring surfaces","priority":2},
+ {"id":"Q006","type":"grep","params":"sdd-fix/sdd-start ledger usage","intent":"consumers/workarounds","priority":3}]}

@@ -87,6 +87,48 @@ def test_relative_path_is_resolved_against_cwd(workspace):
     assert _run(_read_payload("small.py"), cwd=workspace) == ""
 
 
+@pytest.mark.parametrize("content", ["instruction\n" * 400, "instruction " * 6000])
+@pytest.mark.parametrize("absolute", [False, True])
+def test_sdd_command_full_read_is_allowed(tmp_path: Path, content: str, absolute: bool) -> None:
+    """Complete SDD instructions may exceed either threshold in both host tools."""
+    command = tmp_path / ".claude/commands/sdd-task.md"
+    command.parent.mkdir(parents=True)
+    command.write_text(content)
+    path = command if absolute else command.relative_to(tmp_path)
+    assert _run(_read_payload(path), cwd=tmp_path) == ""
+    assert _run(_bash_payload(f"cat {path}"), cwd=tmp_path) == ""
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["sdd-task.md", ".claude/commands/other.md", ".claude/commands/sdd-task.py", ".claude/commands/sub/sdd-task.md"],
+)
+def test_sdd_exception_is_limited_to_command_markdown(tmp_path: Path, relative: str) -> None:
+    """Similar names and nested files retain the normal read limits."""
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("line\n" * 400)
+    assert _run(_read_payload(path), cwd=tmp_path) != ""
+    assert _run(_bash_payload(f"cat {path}"), cwd=tmp_path) != ""
+
+
+def test_sdd_command_symlink_does_not_exempt_source(workspace: Path) -> None:
+    """An SDD-named symlink cannot exempt an ordinary large source file."""
+    command = workspace / ".claude/commands/sdd-task.md"
+    command.parent.mkdir(parents=True)
+    command.symlink_to(workspace / "big.py")
+    assert _run(_read_payload(command), cwd=workspace) != ""
+    assert _run(_bash_payload(f"cat {command}"), cwd=workspace) != ""
+
+
+def test_sdd_command_does_not_exempt_other_operands(workspace: Path) -> None:
+    """A mixed shell read still denies its ordinary large file operand."""
+    command = workspace / ".claude/commands/sdd-task.md"
+    command.parent.mkdir(parents=True)
+    command.write_text("instruction\n" * 400)
+    assert _run(_bash_payload(f"cat {command} big.py"), cwd=workspace) != ""
+
+
 # --------------------------------------------------------------------------- #
 # Shell subset
 # --------------------------------------------------------------------------- #

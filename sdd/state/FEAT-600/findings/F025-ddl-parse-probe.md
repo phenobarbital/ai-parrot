@@ -2,7 +2,7 @@
 id: F025
 query_id: (probe)
 type: read
-intent: sqlglot 30.18.0 over the 32 .sql files: 26 parse, 6 fail whole-file; 20 CREATE TABLE / 329 columns / 4 PK / 3 FK / 15 ALTER recovered
+intent: "sqlglot 30.18.0 over the 32 .sql files: 26 parse, 6 fail whole-file; 20 CREATE TABLE / 329 columns / 4 PK / 3 FK / 15 ALTER recovered"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

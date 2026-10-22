@@ -1,12 +1,14 @@
 """Tests for SecurityPolicy dataclass and defaults (TASK-256)."""
 
+from parrot.security.command_sanitizer import (
+    _DEFAULT_DENIED_COMMANDS,
+    _MODERATE_SAFE_DEFAULTS,
+    _default_command_rules,
+)
 from parrot.tools.shell_tool.security import (
     CommandRule,
     SecurityLevel,
     SecurityPolicy,
-    _DEFAULT_DENIED_COMMANDS,
-    _MODERATE_SAFE_DEFAULTS,
-    _default_command_rules,
 )
 
 

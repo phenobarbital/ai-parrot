@@ -40,6 +40,8 @@ CREATE TABLE navigator.ai_bots (
     auto_tool_detection BOOLEAN DEFAULT TRUE,
     tool_threshold DOUBLE PRECISION DEFAULT 0.7,
     tools JSONB DEFAULT '[]'::JSONB,
+    toolkit_config JSONB DEFAULT '{}'::JSONB,
+    mcp_servers JSONB DEFAULT '[]'::JSONB,
     operation_mode VARCHAR DEFAULT 'adaptive',
 
     -- Knowledge base
@@ -67,8 +69,8 @@ CREATE TABLE navigator.ai_bots (
     -- Security and permissions
     permissions JSONB DEFAULT '{}'::JSONB,
 
-    -- Metadata
-    language VARCHAR(10) DEFAULT 'en',
+    -- Metadata (language: NULL means "mirror the user" — FEAT-638 dropped the DEFAULT)
+    language VARCHAR(10),
     disclaimer TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     created_by INTEGER,

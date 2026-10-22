@@ -12,6 +12,7 @@ from parrot_pipelines.planogram.perception.profiles import ShapeCandidate
 from parrot_pipelines.planogram.perception.rows import detect_shelf_edges, group_rows
 from parrot_pipelines.planogram.perception.slots import (
     AnchorRule,
+    _fill_deficit,
     build_slots,
     candidate_shape_id,
     from_strip_norm,
@@ -101,6 +102,14 @@ def test_untagged_bottom_row_only_with_room():  # AC-5
     assert not [s for s in slots if s.row_index == 3]
 
 
+def test_untagged_bottom_row_never_exceeds_known_rows():
+    """No row is synthesized below a fixture whose rows are all anchored: that room is the floor."""
+    rows = group_rows(_tag_rows(n_rows=2), W)
+    options = dict(image_id="img", rule=AnchorRule.TAG_BELOW_PRODUCT, untagged_bottom_row=True)
+    assert {s.row_index for s in build_slots(rows, (W, H), max_rows=2, **options)} == {0, 1}
+    assert {s.row_index for s in build_slots(rows, (W, H), max_rows=3, **options)} == {0, 1, 2}
+
+
 def test_shape_is_slot_rule():  # AC-6
     """SHAPE_IS_SLOT: one slot per candidate, same box, anchored to the candidate id."""
     rows = group_rows(_tag_rows(), W)
@@ -170,3 +179,128 @@ def test_detect_shelf_edges_synthetic_and_blank():  # AC-9
 def test_public_functions_are_picklable():  # AC-10
     for fn in (group_rows, detect_shelf_edges, build_slots, strip_box, to_strip_norm, from_strip_norm):
         pickle.dumps(fn)
+
+
+def _product(x1: int, y1: int, x2: int, y2: int) -> ShapeCandidate:
+    return ShapeCandidate(profile="product_box", kind="box", x1=x1, y1=y1, x2=x2, y2=y2, score=0.9)
+
+
+def _shelf_rows(cartons):
+    """Three printers above a row of cartons (a two-shelf ``SHAPE_IS_SLOT`` fixture)."""
+    printers = [_product(348, 406, 595, 569), _product(591, 386, 850, 583), _product(850, 381, 1135, 573)]
+    return [printers, cartons]
+
+
+def _shape_slots(cartons, **options):
+    return build_slots(_shelf_rows(cartons), (W, H), image_id="img", rule=AnchorRule.SHAPE_IS_SLOT, **options)
+
+
+def test_shape_is_slot_fills_an_empty_column_between_two_cartons():
+    """A column the row above has and this row leaves free becomes one inferred, anchor-less slot."""
+    cartons = [_product(349, 682, 655, 988), _product(792, 675, 1138, 990)]
+    row = [s for s in _shape_slots(cartons, fill_gaps=True) if s.row_index == 1]
+    assert [(s.slot_index, s.inferred) for s in row] == [(1, False), (2, True), (3, False)]
+    hole = row[1]
+    assert hole.anchor_shape_id is None
+    assert (hole.box.x1, hole.box.y1, hole.box.x2, hole.box.y2) == (655, 675, 792, 990)
+    assert len([s for s in _shape_slots(cartons, fill_gaps=False) if s.row_index == 1]) == 2
+
+
+def test_shape_is_slot_fills_an_empty_column_at_the_row_end():
+    cartons = [_product(349, 682, 600, 988), _product(605, 675, 845, 990)]
+    row = [s for s in _shape_slots(cartons, fill_gaps=True) if s.row_index == 1]
+    assert [s.inferred for s in row] == [False, False, True]
+    assert (row[2].box.x1, row[2].box.x2) == (850, 1135)
+
+
+def test_shape_is_slot_leaves_wide_slots_and_full_rows_alone():
+    """A wide carton under two printers hides no column, and the fullest row is never filled."""
+    wide = [_product(349, 682, 850, 988), _product(860, 675, 1138, 990)]
+    slots = _shape_slots(wide, fill_gaps=True)
+    assert not [s for s in slots if s.inferred]
+    assert len(slots) == 5
+
+
+def test_shape_is_slot_ignores_a_sliver_between_cartons():
+    cartons = [_product(349, 682, 700, 988), _product(750, 675, 1138, 990)]
+    assert not [s for s in _shape_slots(cartons, fill_gaps=True) if s.inferred]
+
+
+ROW0 = [670, 851.5, 1040.5, 1229.5, 1420.5, 1589, 1752.5, 1928, 2177.5, 2395, 2596, 2812, 3390, 3609.5, 3808.5]
+ROW5 = [259, 697, 814, 1117, 1594, 1784, 1947, 2168, 2478, 3268, 3564]
+EXPECTED_FACINGS = [17, 18, 18, 18, 18, 15]
+BBY_W, BBY_H = 4032, 3024
+
+
+def _centred_row(centres, y: int, w: int = 100, h: int = 50) -> list[ShapeCandidate]:
+    """Tags of one row at the recorded centre x positions."""
+    return [_tag(round(cx - w / 2), y, w=w, h=h) for cx in centres]
+
+
+def test_fill_deficit_widest_gaps():
+    columns = [(cx, None) for cx in ROW5]
+    filled = _fill_deficit(columns, 4)
+    new_centres = [cx for cx, _ in filled if cx not in ROW5]
+    assert len(filled) == len(columns) + 4
+    assert new_centres == pytest.approx([478, 1355.5, 2741.3333333333335, 3004.6666666666665])
+    assert [cx for cx, _ in filled] == sorted(cx for cx, _ in filled)
+    assert [cx for cx, _ in filled if cx in ROW5] == ROW5
+
+
+def test_fill_deficit_noop():
+    columns = [(100.0, None), (300.0, None)]
+    assert _fill_deficit(columns, 0) is columns
+    assert _fill_deficit(columns, -2) is columns
+    one_column = [(100.0, None)]
+    assert _fill_deficit(one_column, 3) is one_column
+
+
+def test_fill_deficit_interior_only():
+    columns = [(100.0, None), (200.0, None), (1000.0, None)]
+    filled = _fill_deficit(columns, 20)
+    centres = [cx for cx, _ in filled]
+    assert min(centres) == 100.0 and max(centres) == 1000.0
+    assert centres == sorted(centres)
+
+
+def test_build_slots_expected_facings_full_height():
+    rows = [
+        _centred_row(ROW0, 200),
+        _centred_row(range(200, 3620, 180), 600),
+        _centred_row(range(200, 3620, 180), 1000),
+        _centred_row(range(200, 3440, 180), 1400),
+        _centred_row(range(200, 3620, 180), 1800),
+        _centred_row(ROW5, 2200),
+    ]
+    options = dict(
+        image_id="bby560",
+        rule=AnchorRule.TAG_BELOW_PRODUCT,
+        untagged_bottom_row=True,
+        max_rows=6,
+    )
+    baseline = build_slots(rows, (BBY_W, BBY_H), **options)
+    filled = build_slots(rows, (BBY_W, BBY_H), expected_facings=EXPECTED_FACINGS, **options)
+    assert [len([slot for slot in filled if slot.row_index == index]) for index in range(6)] == [17, 19, 19, 18, 19, 15]
+    for row_index in range(5):
+        baseline_row = [slot.model_dump() for slot in baseline if slot.row_index == row_index]
+        filled_row = [slot.model_dump() for slot in filled if slot.row_index == row_index]
+        assert filled_row[: len(baseline_row)] == baseline_row
+    for row_index in range(6):
+        row_slots = [slot for slot in filled if slot.row_index == row_index]
+        assert [slot.slot_index for slot in row_slots] == list(range(1, len(row_slots) + 1))
+        assert all(slot.inferred and slot.anchor_shape_id is None for slot in row_slots if slot.anchor_shape_id is None)
+
+
+def test_build_slots_expected_facings_not_full_height():
+    rows = [_centred_row(ROW0, 200), _centred_row(range(200, 3620, 180), 600)]
+    options = dict(image_id="bby560", rule=AnchorRule.TAG_BELOW_PRODUCT, max_rows=6)
+    baseline = build_slots(rows, (BBY_W, BBY_H), **options)
+    guarded = build_slots(rows, (BBY_W, BBY_H), expected_facings=EXPECTED_FACINGS, **options)
+    assert [slot.model_dump() for slot in guarded] == [slot.model_dump() for slot in baseline]
+
+
+def test_build_slots_expected_facings_shape_is_slot():
+    cartons = [_product(349, 682, 655, 988), _product(792, 675, 1138, 990)]
+    baseline = _shape_slots(cartons, fill_gaps=True)
+    with_expected = _shape_slots(cartons, fill_gaps=True, expected_facings=[3, 3])
+    assert [slot.model_dump() for slot in with_expected] == [slot.model_dump() for slot in baseline]

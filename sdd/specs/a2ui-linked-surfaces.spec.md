@@ -70,6 +70,10 @@ ui_surfaces plane (FEAT-492: refreshable by descriptor, not only by recipe).
 - G3 **The renderer fetches QuerySource directly with the viewer's JWT** on
   `POST /api/v3/queries/{slug}` (or `POST /api/v1/{tenant}/queries/{slug}`
   when `source.tenant` is set); ai-parrot-server never proxies the fetch.
+  *Amended 2026-10-01*: a regular (non-multiquery, no-tenant) source goes to
+  `POST /api/v2/services/queries/{slug}` (plain `QS()`); v3 is MultiQS — a
+  pipeline/ETL lane that favours availability over latency — and is used only
+  when `source.is_multiquery` is true. The tenant route is unchanged.
 - G4 **Server-side execution is the alternative lane** (FEAT-492 refresh,
   save-time snapshot, scheduled delivery): the Python executor runs the same
   descriptor in-process with tenant-aware plumbing and an explicit
@@ -1134,6 +1138,9 @@ None open. Every question was resolved in the brainstorm and is carried forward 
 - [x] Snapshot/execution path — *Resolved in brainstorm*: Python executor via `QuerySlugSource`; builder always executes once. → M4, M5, AC3.
 - [x] Column types — *Resolved in brainstorm*: from the mandatory execution's dtypes. → §7 axis validation.
 - [x] Fetch endpoint — *Resolved in brainstorm*: `POST /api/v3/queries/{slug}` / `/api/v1/{tenant}/queries/{slug}`; v2 legacy. → G3.
+  *Superseded 2026-10-01*: v3 is MultiQS (slow by design: definition load, threads, up to 3 retries); the renderer now uses
+  `POST /api/v2/services/queries/{slug}` by default and v3 only for `is_multiquery` sources. See G3 amendment and
+  `docs/outputs/a2ui-linked-surfaces.md` §3.
 - [x] `conditions` shape — *Resolved in brainstorm*: raw + structured `request`. → M1, AC3.
 - [x] Sequencing — *Resolved in brainstorm*: QuerySource 5.0.0 in production; floor bump is a task here. → AC12.
 

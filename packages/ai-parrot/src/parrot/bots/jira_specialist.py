@@ -20,18 +20,26 @@ Workflow:
 
     CRON 10:00 → escalate_non_responders()
         → Check Redis for who responded
-        → Notify manager about non-responders
-        → Optionally nudge the developer directly
+        → Nudge each silent developer directly
+        → Post ONE list of the non-responders to the shared Telegram channel
+          (JIRA_TELEGRAM_PUBLIC_CHANNEL_ID), where the managers read it
+
+HITL lane (ask_human instead of inline keyboards), fanned out over the
+``JIRA_DEVELOPERS`` roster, one private chat per developer:
+
+    SCHEDULER → dispatch_morning_standup() / dispatch_eod_standup()
+    /standup  → standup_command()  (the caller's own morning standup)
 """
 
 import asyncio
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 import redis.asyncio as redis
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from navconfig import config
 from parrot.bots import Agent
 from parrot.bots._types import AgentDispatcher
+from parrot.bots.jira_messages import render_message
 from parrot.integrations.telegram.callbacks import (
     telegram_callback,
     CallbackContext,
@@ -40,10 +48,17 @@ from parrot.integrations.telegram.callbacks import (
 )
 from parrot.conf import JIRA_USERS
 from parrot.conf import JIRA_ALLOWED_REPORTERS, JIRA_DEFAULT_REPORTER
+from parrot.conf import JIRA_TELEGRAM_PUBLIC_CHANNEL_ID
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
 from parrot.tools.reminder import ReminderToolkit
-from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
+from parrot.integrations.telegram import (
+    TelegramHumanTool,
+    get_current_telegram_chat_id,
+    telegram_chat_scope,
+    telegram_command,
+)
+from parrot.scheduler import ScheduleType, schedule
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
 
@@ -115,6 +130,11 @@ class Developer(BaseModel):
     name: str = Field(..., description="Display name")
     username: str = Field(..., description="Internal Username")
     jira_username: str = Field(..., description="Jira account username/email")
+    # The morning-standup JQL addresses the developer by accountId instead of
+    # currentUser(), so the roster entry's `jira_account_id` must survive model
+    # parsing — Pydantic drops unknown keys, and reading it off the model used
+    # to raise AttributeError mid-instruction.
+    jira_account_id: Optional[str] = Field(None, description="Jira Cloud accountId, used in JQL")
     telegram_chat_id: int = Field(..., description="Telegram private chat ID")
     manager_chat_id: Optional[int] = Field(None, description="Manager's Telegram chat ID for escalation")
 
@@ -167,7 +187,10 @@ class JiraSpecialist(Agent):
         * Button-driven (Redis-tracked) flow:
           :meth:`dispatch_daily_tickets` → :meth:`escalate_non_responders`.
         * HITL flow via ``ask_human``:
-          :meth:`run_morning_standup` / :meth:`run_eod_standup`.
+          :meth:`run_morning_standup` / :meth:`run_eod_standup`, fanned out
+          over the roster by the scheduled :meth:`dispatch_morning_standup` /
+          :meth:`dispatch_eod_standup`, and triggerable per developer with
+          the ``/standup`` Telegram command (:meth:`standup_command`).
     - Callback handlers for ticket selection.
 
     Prompt architecture (FEAT-138):
@@ -192,6 +215,12 @@ class JiraSpecialist(Agent):
     #: ``default_project`` are filled from env when absent. Leave ``None``
     #: to use the env/OAuth auto-selection in :meth:`_configure_jira`.
     _credentials: Optional[Dict[str, Any]] = None
+
+    #: Telegram channel/group that receives the standup digests (today: the
+    #: single non-responder list). ``None`` falls back to the
+    #: ``JIRA_TELEGRAM_PUBLIC_CHANNEL_ID`` env var; subclasses or deployments
+    #: may set it explicitly.
+    public_channel_id: Optional[Any] = None
 
     @staticmethod
     def _build_jira_prompt_builder():
@@ -543,6 +572,64 @@ class JiraSpecialist(Agent):
             developers = [d for d in developers if d.id == developer_id]
         return developers
 
+    def _app_developer_roster(self) -> List[Dict[str, Any]]:
+        """Return the application-owned ``JIRA_DEVELOPERS`` roster.
+
+        That list belongs to the *application* (``settings/settings.py`` in a
+        navigator deployment) and navconfig does not expose it, so the only way
+        to reach it is importing the app's settings module. A bare library
+        install has no such module — hence the guarded, call-time import, which
+        also makes the roster easy to stub in tests.
+
+        Returns:
+            The roster as plain dicts, or an empty list when the app settings
+            module is missing or does not define ``JIRA_DEVELOPERS``.
+        """
+        try:
+            from settings.settings import JIRA_DEVELOPERS  # type: ignore[import-not-found]
+        except Exception as exc:  # noqa: BLE001 - app settings are optional
+            self.logger.debug("JIRA_DEVELOPERS is unavailable (%s); falling back to JIRA_USERS", exc)
+            return []
+        if not isinstance(JIRA_DEVELOPERS, (list, tuple)):
+            self.logger.warning("JIRA_DEVELOPERS is not a list (%s); ignoring it", type(JIRA_DEVELOPERS).__name__)
+            return []
+        return [dict(entry) for entry in JIRA_DEVELOPERS if isinstance(entry, dict)]
+
+    def _standup_roster(self, developer_id: Optional[str] = None) -> List[Developer]:
+        """Resolve the roster the standup lanes iterate over.
+
+        Preference order:
+
+        1. ``JIRA_DEVELOPERS`` from the app settings module — a developers-only
+           roster, so **every** entry counts.
+        2. ``STANDUP_DEVELOPERS`` (navconfig) or :data:`JIRA_USERS` — mixed
+           rosters that also carry managers and QA, so only entries flagged
+           ``is_developer: true`` count (see :meth:`_load_developers_sync`).
+
+        Args:
+            developer_id: Keep only this developer when given.
+
+        Returns:
+            The developers to run a standup for. Malformed roster entries are
+            skipped with a warning rather than failing the whole fan-out.
+        """
+        raw = self._app_developer_roster()
+        if not raw:
+            return self._load_developers_sync(developer_id=developer_id)
+        developers: List[Developer] = []
+        for entry in raw:
+            try:
+                developers.append(Developer(**entry))
+            except ValidationError as exc:
+                self.logger.warning(
+                    "Skipping malformed JIRA_DEVELOPERS entry %r: %s",
+                    entry.get("name") or entry.get("id"),
+                    exc,
+                )
+        if developer_id:
+            developers = [d for d in developers if d.id == developer_id]
+        return developers
+
     async def _run_standup_for_dev(
         self,
         developer: Developer,
@@ -583,6 +670,50 @@ class JiraSpecialist(Agent):
                 "error": str(exc),
             }
 
+    def _morning_standup_instruction(self, dev: Developer, today: str) -> str:
+        """Build the morning check-in instruction for one developer.
+
+        Shared by :meth:`run_morning_standup` (manual / ``/standup``) and
+        :meth:`dispatch_morning_standup` (scheduler) so both lanes speak to the
+        LLM with exactly the same words.
+        """
+        assignee = dev.jira_account_id or dev.jira_username
+        escalate_to = dev.manager_chat_id or dev.telegram_chat_id
+        return (
+            f"Run the morning standup for {dev.name} "
+            f"(jira_username={dev.jira_username}, date={today}).\n"
+            f"Follow the 'Morning check-in' section of your system prompt. "
+            f'Build the JQL using assignee = "{assignee}" '
+            f"instead of currentUser(). "
+            f"If blockers escalate to a manager, use "
+            f'target_humans=["{escalate_to}"]. '
+            f"End by posting a short confirmation message to the developer "
+            f"summarizing what you did (ticket picked, plan captured, "
+            f"or that they skipped)."
+        )
+
+    def _eod_standup_instruction(self, dev: Developer, today: str) -> str:
+        """Build the end-of-day wrap instruction for one developer.
+
+        Shared by :meth:`run_eod_standup` and :meth:`dispatch_eod_standup`.
+        """
+        escalate_to = dev.manager_chat_id or dev.telegram_chat_id
+        return (
+            f"Run the end-of-day standup wrap for {dev.name} "
+            f"(jira_username={dev.jira_username}, date={today}).\n"
+            f"Follow the 'End-of-day wrap' section of your system prompt. "
+            f'Use assignee = "{dev.jira_username}" in the JQL. '
+            f'Collect the status via ask_human with interaction_type="form" '
+            f"and form_schema properties 'done_today', 'plan_tomorrow', "
+            f"'blockers' (required: done_today, plan_tomorrow). "
+            f"Post the answers as a single comment on the primary ticket "
+            f"worked today under header "
+            f"'**Daily Standup {today}**'. "
+            f"If blockers are non-empty, transition the ticket to "
+            f"'Blocked' when that status exists and notify the manager "
+            f'with target_humans=["{escalate_to}"].'
+        )
+
     async def run_morning_standup(
         self,
         developer: Optional[dict] = None,
@@ -607,7 +738,7 @@ class JiraSpecialist(Agent):
         if developer is not None:
             developers = [Developer(**developer)]
         else:
-            developers = self._load_developers_sync(developer_id=developer_id)
+            developers = self._standup_roster(developer_id=developer_id)
             if not developers:
                 self.logger.warning("run_morning_standup: no developers configured")
                 return []
@@ -615,19 +746,11 @@ class JiraSpecialist(Agent):
         today = date.today().isoformat()
 
         async def _one(dev: Developer) -> Dict[str, Any]:
-            instruction = (
-                f"Run the morning standup for {dev.name} "
-                f"(jira_username={dev.jira_username}, date={today}).\n"
-                f"Follow the 'Morning check-in' section of your system prompt. "
-                f'Build the JQL using assignee = "{dev.jira_account_id}" '
-                f"instead of currentUser(). "
-                f"If blockers escalate to a manager, use "
-                f'target_humans=["{dev.manager_chat_id or dev.telegram_chat_id}"]. '
-                f"End by posting a short confirmation message to the developer "
-                f"summarizing what you did (ticket picked, plan captured, "
-                f"or that they skipped)."
+            return await self._run_standup_for_dev(
+                dev,
+                self._morning_standup_instruction(dev, today),
+                session_prefix="standup-morning",
             )
-            return await self._run_standup_for_dev(dev, instruction, session_prefix="standup-morning")
 
         results = await asyncio.gather(
             *(_one(d) for d in developers),
@@ -655,7 +778,7 @@ class JiraSpecialist(Agent):
         Returns:
             List of per-developer result dicts.
         """
-        developers = self._load_developers_sync(developer_id=developer_id)
+        developers = self._standup_roster(developer_id=developer_id)
         if not developers:
             self.logger.warning("run_eod_standup: no developers configured")
             return []
@@ -663,22 +786,11 @@ class JiraSpecialist(Agent):
         today = date.today().isoformat()
 
         async def _one(dev: Developer) -> Dict[str, Any]:
-            instruction = (
-                f"Run the end-of-day standup wrap for {dev.name} "
-                f"(jira_username={dev.jira_username}, date={today}).\n"
-                f"Follow the 'End-of-day wrap' section of your system prompt. "
-                f'Use assignee = "{dev.jira_username}" in the JQL. '
-                f'Collect the status via ask_human with interaction_type="form" '
-                f"and form_schema properties 'done_today', 'plan_tomorrow', "
-                f"'blockers' (required: done_today, plan_tomorrow). "
-                f"Post the answers as a single comment on the primary ticket "
-                f"worked today under header "
-                f"'**Daily Standup {today}**'. "
-                f"If blockers are non-empty, transition the ticket to "
-                f"'Blocked' when that status exists and notify the manager "
-                f'with target_humans=["{dev.manager_chat_id or dev.telegram_chat_id}"].'
+            return await self._run_standup_for_dev(
+                dev,
+                self._eod_standup_instruction(dev, today),
+                session_prefix="standup-eod",
             )
-            return await self._run_standup_for_dev(dev, instruction, session_prefix="standup-eod")
 
         results = await asyncio.gather(
             *(_one(d) for d in developers),
@@ -686,6 +798,199 @@ class JiraSpecialist(Agent):
         )
         self.logger.info("EOD standup completed for %d developer(s)", len(results))
         return list(results)
+
+    # ──────────────────────────────────────────────────────────
+    # CRON Jobs: HITL standup fan-out (one private chat per developer)
+    # ──────────────────────────────────────────────────────────
+
+    async def _dispatch_standup_lane(
+        self,
+        *,
+        lane: str,
+        developer_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run one standup lane for every developer on the roster.
+
+        Each developer is handled inside their own Telegram chat scope, so the
+        conversation lands in their **private** chat; the developers are run
+        concurrently, and one failure never cancels the others.
+
+        Only the ``morning`` lane touches the Redis bookkeeping
+        (``standup:dispatched`` / ``standup:responded``) that
+        :meth:`escalate_non_responders` reads — the two lanes share one
+        ``responded`` key per day, so an end-of-day run must not overwrite the
+        morning answer.
+
+        Args:
+            lane: ``"morning"`` or ``"eod"``.
+            developer_id: Restrict the fan-out to a single developer.
+
+        Returns:
+            Summary dict: ``lane``, ``date``, ``developers``, ``ok``,
+            ``errors`` and the per-developer ``results``.
+        """
+        builders = {
+            "morning": self._morning_standup_instruction,
+            "eod": self._eod_standup_instruction,
+        }
+        if lane not in builders:
+            raise ValueError(f"Unknown standup lane: {lane!r}")
+        build_instruction = builders[lane]
+        track_responses = lane == "morning"
+
+        today = date.today().isoformat()
+        developers = self._standup_roster(developer_id=developer_id)
+        summary: Dict[str, Any] = {
+            "lane": lane,
+            "date": today,
+            "developers": len(developers),
+            "ok": 0,
+            "errors": 0,
+            "results": [],
+        }
+        if not developers:
+            self.logger.warning("%s standup: no developers configured", lane)
+            return summary
+
+        async def _one(dev: Developer) -> Dict[str, Any]:
+            if track_responses:
+                await self._mark_dispatched(dev, lane)
+            outcome = await self._run_standup_for_dev(
+                dev,
+                build_instruction(dev, today),
+                session_prefix=f"standup-{lane}",
+            )
+            outcome["developer"] = dev.name
+            if track_responses and outcome.get("status") == "ok":
+                # The developer walked the ask_human conversation to the end,
+                # which is this lane's equivalent of pressing a ticket button.
+                # Same rule as the dispatch key: bookkeeping must never take
+                # the standup down with it.
+                try:
+                    await self._mark_responded(
+                        dev.id,
+                        dev.telegram_chat_id,
+                        ticket_key=None,
+                        source=f"hitl-{lane}",
+                    )
+                except Exception as exc:  # noqa: BLE001 - see above
+                    self.logger.warning("Could not record the standup answer for %s: %s", dev.name, exc)
+            return outcome
+
+        results = await asyncio.gather(*(_one(d) for d in developers))
+        summary["results"] = list(results)
+        summary["ok"] = sum(1 for r in results if r.get("status") == "ok")
+        summary["errors"] = len(results) - summary["ok"]
+        self.logger.info(
+            "%s standup fan-out: %d developer(s), %d ok, %d error(s).",
+            lane,
+            summary["developers"],
+            summary["ok"],
+            summary["errors"],
+        )
+        return summary
+
+    async def _mark_dispatched(self, dev: Developer, lane: str) -> bool:
+        """Record that today's standup went out to one developer.
+
+        Writes the same ``standup:dispatched:{date}:{id}`` key the
+        button-driven lane writes, which is what :meth:`escalate_non_responders`
+        reads to tell "never asked" apart from "asked and ignored". A Redis
+        outage is logged and swallowed: the standup conversation matters more
+        than its bookkeeping.
+
+        Returns:
+            True when the key was written.
+        """
+        key = f"standup:dispatched:{date.today().isoformat()}:{dev.id}"
+        try:
+            r = await self._get_redis()
+            await r.set(key, f"hitl:{lane}", ex=self._standup_config.redis_ttl_seconds)
+            return True
+        except Exception as exc:  # noqa: BLE001 - bookkeeping must not break the standup
+            self.logger.warning("Could not record the standup dispatch for %s: %s", dev.name, exc)
+            return False
+
+    # NOTE: 2-minute interval while this lane is being validated. Replace the
+    # decorator with ``@schedule_daily_report`` (and import it) to turn it into
+    # a once-a-day job driven by the ``{AGENT_ID}_DAILY_REPORT`` env var.
+    @schedule(schedule_type=ScheduleType.INTERVAL, minutes=2)
+    async def dispatch_morning_standup(self, developer_id: Optional[str] = None) -> Dict[str, Any]:
+        """Scheduler entry point: private morning standup for every developer.
+
+        Iterates the roster — ``JIRA_DEVELOPERS`` from the app settings module,
+        see :meth:`_standup_roster` — and runs the "Morning check-in" section of
+        the system prompt for each one inside their own Telegram chat, so every
+        developer gets their standup as a private message.
+
+        Marks each developer as dispatched and, once they finish the
+        conversation, as having responded, so :meth:`escalate_non_responders`
+        can report whoever stayed silent.
+
+        Args:
+            developer_id: Run for a single developer instead of the whole roster.
+
+        Returns:
+            Summary dict (see :meth:`_dispatch_standup_lane`).
+        """
+        return await self._dispatch_standup_lane(lane="morning", developer_id=developer_id)
+
+    # NOTE: same test cadence as the morning lane — see the note above.
+    @schedule(schedule_type=ScheduleType.INTERVAL, minutes=2)
+    async def dispatch_eod_standup(self, developer_id: Optional[str] = None) -> Dict[str, Any]:
+        """Scheduler entry point: private end-of-day wrap for every developer.
+
+        The end-of-day counterpart of :meth:`dispatch_morning_standup`: for each
+        developer on the roster it runs the "End-of-day wrap" section of the
+        system prompt in their private chat, collecting ``done_today`` /
+        ``plan_tomorrow`` / ``blockers`` and posting them to Jira.
+
+        Writes no response bookkeeping — the ``standup:responded`` key tracks
+        the morning answer and the two lanes share one key per day.
+
+        Args:
+            developer_id: Run for a single developer instead of the whole roster.
+
+        Returns:
+            Summary dict (see :meth:`_dispatch_standup_lane`).
+        """
+        return await self._dispatch_standup_lane(lane="eod", developer_id=developer_id)
+
+    @telegram_command(
+        "standup",
+        description="Run your morning standup now",
+        parse_mode="keyword",
+    )
+    async def standup_command(self, developer_id: Optional[str] = None, **kwargs: Any) -> str:
+        """Run the morning standup on demand, for whoever typed ``/standup``.
+
+        The Telegram wrapper invokes agent commands inside the caller's chat
+        scope, so the developer is resolved from the live chat id. Pass
+        ``/standup developer_id=35`` to target someone else explicitly.
+
+        Args:
+            developer_id: Roster id to run for; defaults to the calling chat.
+
+        Returns:
+            A localized one-line confirmation, sent back to the caller's chat.
+        """
+        if kwargs:
+            self.logger.debug("/standup: ignoring unexpected arguments %s", sorted(kwargs))
+        chat_id = get_current_telegram_chat_id()
+        roster = self._standup_roster(developer_id=developer_id)
+        if developer_id:
+            target = roster[0] if roster else None
+        else:
+            target = next((d for d in roster if str(d.telegram_chat_id) == str(chat_id)), None)
+        if target is None:
+            self.logger.warning("/standup: no roster entry for chat %s (developer_id=%s)", chat_id, developer_id)
+            return render_message("standup_not_in_roster", self.language, chat_id=str(chat_id or "?"))
+
+        results = await self.run_morning_standup(developer=target.model_dump())
+        outcome = results[0] if results else {}
+        if outcome.get("status") == "ok":
+            return render_message("standup_command_done", self.language, name=target.name)
+        return render_message("standup_command_failed", self.language, name=target.name)
 
     # ──────────────────────────────────────────────────────────
     # CRON Job: Daily Ticket Dispatch
@@ -844,11 +1149,7 @@ class JiraSpecialist(Agent):
         cfg = self._standup_config
 
         # Message text
-        text = (
-            f"☀️ Buenos días, *{dev.name}*!\n\n"
-            f"Tienes *{len(tickets)}* tickets asignados. "
-            f"¿Cuál trabajarás hoy?\n"
-        )
+        text = render_message("standup_greeting", self.language, name=dev.name, count=len(tickets))
 
         # Build buttons — one per ticket
         buttons = []
@@ -888,7 +1189,7 @@ class JiraSpecialist(Agent):
         buttons.append(
             [
                 {
-                    "text": "⏭️ Ya tengo plan para hoy",
+                    "text": render_message("standup_skip_button", self.language),
                     "prefix": cfg.prefix_skip,
                     "payload": {"d": dev.id},
                 }
@@ -932,7 +1233,7 @@ class JiraSpecialist(Agent):
         except Exception as e:
             self.logger.error(f"Failed to transition {ticket_key}: {e}", exc_info=True)
             return CallbackResult(
-                answer_text=f"⚠️ Error transicionando {ticket_key}",
+                answer_text=render_message("transition_error", self.language, ticket_key=ticket_key),
                 show_alert=True,
             )
 
@@ -940,12 +1241,11 @@ class JiraSpecialist(Agent):
         await self._mark_responded(developer_id, callback.user_id, ticket_key)
 
         # 3. Return result — edits original message + shows toast
+        status = self._standup_config.in_progress_transition
         return CallbackResult(
-            answer_text=f"✅ {ticket_key} → In Progress",
-            edit_message=(
-                f"✅ *{callback.display_name}*, tu ticket "
-                f"*{ticket_key}* ha sido marcado como *In Progress*.\n\n"
-                f"¡A trabajar! 💪"
+            answer_text=render_message("transition_ok", self.language, ticket_key=ticket_key, status=status),
+            edit_message=render_message(
+                "transition_edit", self.language, name=callback.display_name, ticket_key=ticket_key, status=status
             ),
             edit_parse_mode="Markdown",
             remove_keyboard=True,
@@ -963,8 +1263,8 @@ class JiraSpecialist(Agent):
         await self._mark_responded(developer_id, callback.user_id, "skipped")
 
         return CallbackResult(
-            answer_text="👍 Entendido",
-            edit_message=(f"👍 *{callback.display_name}*, entendido. " f"Ya tienes tu plan para hoy."),
+            answer_text=render_message("skip_ok", self.language),
+            edit_message=render_message("skip_edit", self.language, name=callback.display_name),
             edit_parse_mode="Markdown",
             remove_keyboard=True,
         )
@@ -973,14 +1273,24 @@ class JiraSpecialist(Agent):
         self,
         developer_id: str,
         telegram_user_id: int,
-        ticket_key: str,
+        ticket_key: Optional[str],
+        *,
+        source: str = "callback",
     ) -> None:
         """
         Record that a developer responded to the daily standup.
 
         Redis key: standup:responded:{today}:{developer_id}
-        Value: JSON with timestamp, user ID, and selected ticket
+        Value: JSON with timestamp, user ID, selected ticket and source
         TTL: Configured in standup_config (default 12h)
+
+        Args:
+            developer_id: Roster id of the developer who answered.
+            telegram_user_id: Telegram user/chat the answer came from.
+            ticket_key: Ticket they picked, or ``None`` for the HITL lane,
+                where the answer is a conversation rather than a button.
+            source: Which lane recorded the answer (``callback`` for the
+                inline-keyboard flow, ``hitl-morning`` for the fan-out).
         """
         r = await self._get_redis()
         today = date.today().isoformat()
@@ -993,11 +1303,12 @@ class JiraSpecialist(Agent):
                 "telegram_user_id": telegram_user_id,
                 "ticket_key": ticket_key,
                 "responded_at": datetime.now().isoformat(),
+                "source": source,
             }
         )
 
         await r.set(key, value, ex=self._standup_config.redis_ttl_seconds)
-        self.logger.info(f"Marked developer {developer_id} as responded " f"(ticket: {ticket_key})")
+        self.logger.info("Marked developer %s as responded (ticket: %s, source: %s)", developer_id, ticket_key, source)
 
     # ──────────────────────────────────────────────────────────
     # CRON Job: Escalation Check
@@ -1012,12 +1323,24 @@ class JiraSpecialist(Agent):
 
         Scheduled to run at 10:00 AM (2h after dispatch).
 
+        The managers are notified with a **single** message listing every
+        developer who did not answer the morning standup, posted to the shared
+        Telegram channel (:attr:`public_channel_id`, defaulting to the
+        ``JIRA_TELEGRAM_PUBLIC_CHANNEL_ID`` env var) instead of one DM per
+        manager. Each silent developer still gets their private nudge.
+
+        When no channel is configured the legacy behaviour is kept as a
+        fallback: non-responders are grouped by manager and each manager gets
+        their own list.
+
         Args:
-            manager_chat_id: Override manager chat ID. If None, uses
-            each developer's configured manager_chat_id.
+            manager_chat_id: Send the digest here instead of the configured
+                channel (explicit override wins over both).
 
         Returns:
-            Summary of escalation results.
+            Summary of escalation results: ``date``, ``total_dispatched``,
+            ``responded``, ``non_responders``, ``escalated_to``, ``channel_id``
+            and ``messages_sent``.
         """
         if not self._wrapper:
             return {"error": "No wrapper attached"}
@@ -1048,64 +1371,85 @@ class JiraSpecialist(Agent):
             else:
                 non_responders.append(dev)
 
-        result = {
+        result: Dict[str, Any] = {
             "date": today,
             "total_dispatched": len(responders) + len(non_responders),
             "responded": len(responders),
             "non_responders": [],
             "escalated_to": [],
+            "channel_id": None,
+            "messages_sent": 0,
         }
 
         if not non_responders:
             self.logger.info("All developers responded. No escalation needed.")
             return result
 
-        # Group non-responders by manager
-        by_manager: Dict[int, List[Developer]] = {}
+        # Nudge every silent developer in their own chat.
         for dev in non_responders:
-            mgr_chat = manager_chat_id or dev.manager_chat_id
-            if mgr_chat:
-                by_manager.setdefault(mgr_chat, []).append(dev)
-
             result["non_responders"].append(dev.name)
-
-            # Nudge the developer
             try:
                 await self._wrapper.send_interactive_message(
                     chat_id=dev.telegram_chat_id,
-                    text=(
-                        f"👋 *{dev.name}*, aún no has seleccionado tu ticket "
-                        f"para hoy.\n\n"
-                        f"¿Necesitas ayuda con la priorización?"
-                    ),
+                    text=render_message("nudge", self.language, name=dev.name),
                     keyboard={"inline_keyboard": []},  # No buttons for nudge
                     parse_mode="Markdown",
                 )
             except Exception as e:
                 self.logger.warning(f"Failed to nudge {dev.name}: {e}")
 
-        # Notify each manager
         hours = self._standup_config.response_window_hours
+        channel_id = manager_chat_id or self.public_channel_id or JIRA_TELEGRAM_PUBLIC_CHANNEL_ID
+
+        if channel_id:
+            # One message, one list — the managers read it in the channel.
+            result["channel_id"] = channel_id
+            names = "\n".join(f"• {d.name}" for d in non_responders)
+            try:
+                await self._wrapper.bot.send_message(
+                    chat_id=channel_id,
+                    text=render_message("escalation", self.language, hours=hours, names=names),
+                    parse_mode="Markdown",
+                )
+                result["escalated_to"].append(channel_id)
+                result["messages_sent"] = 1
+                self.logger.info(
+                    "Escalation complete: %d non-responder(s) listed in one message to channel %s.",
+                    len(non_responders),
+                    channel_id,
+                )
+            except Exception as e:
+                self.logger.error("Failed to post the standup escalation digest to %s: %s", channel_id, e)
+            return result
+
+        # No channel configured — keep the legacy one-DM-per-manager grouping.
+        by_manager: Dict[int, List[Developer]] = {}
+        for dev in non_responders:
+            if dev.manager_chat_id:
+                by_manager.setdefault(dev.manager_chat_id, []).append(dev)
+        if not by_manager:
+            self.logger.warning(
+                "%d non-responder(s) but nowhere to escalate: set JIRA_TELEGRAM_PUBLIC_CHANNEL_ID.",
+                len(non_responders),
+            )
+            return result
         for mgr_chat_id, devs in by_manager.items():
             names = "\n".join(f"• {d.name}" for d in devs)
             try:
                 await self._wrapper.bot.send_message(
                     chat_id=mgr_chat_id,
-                    text=(
-                        f"⚠️ *Escalación Daily Standup*\n\n"
-                        f"Los siguientes devs no han seleccionado "
-                        f"ticket tras {hours}h:\n\n"
-                        f"{names}\n\n"
-                        f"Puede que necesiten ayuda con priorización."
-                    ),
+                    text=render_message("escalation", self.language, hours=hours, names=names),
                     parse_mode="Markdown",
                 )
                 result["escalated_to"].append(mgr_chat_id)
+                result["messages_sent"] += 1
             except Exception as e:
                 self.logger.error(f"Failed to notify manager {mgr_chat_id}: {e}")
 
         self.logger.info(
-            f"Escalation complete: {len(non_responders)} non-responders, " f"notified {len(by_manager)} managers."
+            "Escalation complete (no channel configured): %d non-responders, notified %d manager(s).",
+            len(non_responders),
+            len(by_manager),
         )
         return result
 

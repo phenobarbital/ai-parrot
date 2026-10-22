@@ -71,6 +71,8 @@ export interface ChartSeriesItem {
   values: (number | null)[];
   /** Optional per-series color (CSS value). Used when not coloring by sign. */
   color?: string;
+  /** Value axis this series is drawn against (A2UI `Chart.seriesAxes[i]`). Absent = left. */
+  axis?: 'left' | 'right';
 }
 
 export interface ChartBlockData {
@@ -81,6 +83,8 @@ export interface ChartBlockData {
   series: ChartSeriesItem[];
   x_axis_label?: string;
   y_axis_label?: string;
+  /** Axis names `[left, right]` (A2UI `Chart.yAxisLabels`); used when any series is on the right. */
+  y_axis_labels?: (string | null)[];
   stacked?: boolean;
   show_legend?: boolean;
   /** Layout hint: 'half' renders side-by-side in a 2-column grid; 'full' (default) full-width. */

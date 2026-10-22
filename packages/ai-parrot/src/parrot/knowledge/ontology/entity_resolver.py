@@ -3,8 +3,8 @@
 Converts natural-language entity mentions (e.g., "Jesús") to graph ``_id``s
 using one of four pluggable strategies:
 
-- ``exact_id_match``: exact AQL filter on the entity's key field.
-- ``fuzzy_name_match``: case-insensitive LIKE filter with AQL.
+- ``exact_id_match``: exact filter on the entity's key field.
+- ``fuzzy_name_match``: case-insensitive name filter.
 - ``ai_assisted``: fuzzy shortlist + LLM ranking (requires ``llm_client``).
 - ``hybrid_concept_match``: 3-stage cascade (synonym → vector → LLM) with
   multi-concept conjunction parsing (FEAT-159).
@@ -15,15 +15,18 @@ raised so the Mixin can translate them to appropriate ``ContextEnvelope`` states
 **Default-deny on ambiguity**: when ``ambiguity_strategy=ask_user`` or ``fail``,
 multiple candidates always raise ``EntityAmbiguityError``.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .graph_store import OntologyGraphStore
-from .schema import EntityExtractionRule, MergedOntology, TraversalPattern
+from .schema import EntityExtractionRule, MergedOntology, TenantContext, TraversalPattern
+
+if TYPE_CHECKING:
+    from .contracts import OntologyTraversalStore
 
 # ---------------------------------------------------------------------------
 # Conjunction regex for multi-concept parsing (FEAT-159)
@@ -57,8 +60,7 @@ class EntityAmbiguityError(Exception):
         candidates: list[dict[str, Any]],
     ) -> None:
         super().__init__(
-            f"Ambiguous entity for rule '{rule_name}': "
-            f"mention='{mention}', {len(candidates)} candidates"
+            f"Ambiguous entity for rule '{rule_name}': " f"mention='{mention}', {len(candidates)} candidates"
         )
         self.rule_name = rule_name
         self.mention = mention
@@ -78,9 +80,7 @@ class EntityNotFoundError(Exception):
         rule_name: str,
         mention: str | None,
     ) -> None:
-        super().__init__(
-            f"Entity not found for rule '{rule_name}': mention='{mention}'"
-        )
+        super().__init__(f"Entity not found for rule '{rule_name}': mention='{mention}'")
         self.rule_name = rule_name
         self.mention = mention
 
@@ -94,12 +94,11 @@ class EntityResolver:
     """Extracts named-entity mentions from a query and resolves them to graph
     ``_id``s using per-rule strategies.
 
-    Designed to sit between ``OntologyIntentResolver.resolve()`` and
-    ``OntologyGraphStore.execute_traversal()`` in the ``ontology_process``
-    pipeline.
+    Designed to sit between ``OntologyIntentResolver.resolve()`` and the
+    typed traversal store in the ``ontology_process`` pipeline.
 
     Args:
-        graph_store: ArangoDB wrapper for entity-lookup traversals.
+        graph_store: Typed traversal store for entity lookups.
         ontology: Merged ontology to discover entity collection names.
         llm_client: Optional LLM client; required for ``ai_assisted`` resolver.
         vector_store: Optional PgVectorStore for ``hybrid_concept_match`` vector
@@ -113,7 +112,7 @@ class EntityResolver:
 
     def __init__(
         self,
-        graph_store: OntologyGraphStore,
+        graph_store: OntologyTraversalStore,
         ontology: MergedOntology,
         llm_client: Any | None = None,
         vector_store: Any | None = None,
@@ -146,9 +145,6 @@ class EntityResolver:
         2. Resolve candidates via the rule's strategy.
         3. Apply ambiguity handling or pick logic.
         4. Return the winning ``_id``.
-
-        AQL bind-variable key convention: a rule named ``target_employee``
-        produces a bind variable ``@target_employee_id`` in the Mixin's AQL.
 
         Args:
             pattern: The matched ``TraversalPattern`` with ``entity_extraction``.
@@ -193,7 +189,8 @@ class EntityResolver:
                     raise EntityNotFoundError(rule_name=rule_name, mention=mention)
                 self.logger.debug(
                     "No candidates for optional rule '%s' (mention='%s'); skipping.",
-                    rule_name, mention,
+                    rule_name,
+                    mention,
                 )
                 continue
 
@@ -229,7 +226,7 @@ class EntityResolver:
             Extracted mention string, or ``None`` if nothing found.
         """
         residual = query
-        for trigger in (pattern.trigger_intents or []):
+        for trigger in pattern.trigger_intents or []:
             pattern_re = re.compile(re.escape(trigger), re.IGNORECASE)
             residual = pattern_re.sub("", residual).strip()
 
@@ -273,9 +270,7 @@ class EntityResolver:
             NotImplementedError: For ``hybrid_concept_match``.
         """
         if rule.resolver == "hybrid_concept_match":
-            concept_ids = await self._resolve_hybrid_concept_match(
-                rule, mention, user_context, tenant_id
-            )
+            concept_ids = await self._resolve_hybrid_concept_match(rule, mention, user_context, tenant_id)
             # Return list[str] as list of single-element dicts to match the
             # existing candidate contract ({_id: ...}), then let _pick handle it.
             # We override _pick for hybrid by returning the first ID directly
@@ -316,29 +311,40 @@ class EntityResolver:
         self,
         rule: EntityExtractionRule,
         user_context: dict[str, Any],
-        bind_vars: dict[str, Any],
-    ) -> str:
-        """Build an additional AQL FILTER clause for scope filtering.
+    ) -> dict[str, Any]:
+        """Build typed equality filters for scope filtering.
 
         Args:
             rule: The entity extraction rule.
             user_context: Session data containing ``department``.
-            bind_vars: AQL bind-variable dict to extend in-place.
-
         Returns:
-            AQL FILTER clause string (empty if no filter applies).
+            Equality filters (empty if no filter applies).
         """
         if rule.scope == "same_department":
             dept = user_context.get("department")
             if dept:
-                bind_vars["user_department"] = dept
-                return "FILTER e.department == @user_department"
+                return {"department": dept}
             else:
                 self.logger.debug(
-                    "scope=same_department but user_context has no 'department'; "
-                    "skipping scope filter."
+                    "scope=same_department but user_context has no 'department'; " "skipping scope filter."
                 )
-        return ""
+        return {}
+
+    def _tenant_context(self, tenant_id: str) -> TenantContext:
+        """Build the tenant context required for typed entity lookups.
+
+        Args:
+            tenant_id: Tenant identifier for the lookup.
+
+        Returns:
+            The tenant context for this resolver's ontology.
+        """
+        return TenantContext(
+            tenant_id=tenant_id,
+            arango_db=f"{tenant_id}_ontology",
+            pgvector_schema=tenant_id,
+            ontology=self._ontology,
+        )
 
     async def _exact_id_match(
         self,
@@ -347,7 +353,7 @@ class EntityResolver:
         user_context: dict[str, Any],
         tenant_id: str,
     ) -> list[dict[str, Any]]:
-        """Exact AQL match on the entity's key field.
+        """Exactly match the entity's key field.
 
         Args:
             rule: Entity extraction rule.
@@ -358,31 +364,16 @@ class EntityResolver:
         Returns:
             List of matching candidate dicts (max 2 to detect accidental dupes).
         """
-        from .schema import TenantContext
-
         collection = self._collection_for_type(rule.type)
         entity_def = self._ontology.entities.get(rule.type)
         key_field = (entity_def.key_field if entity_def else None) or "name"
-
-        bind_vars: dict[str, Any] = {"mention": mention}
-        scope_filter = self._scope_filter(rule, user_context, bind_vars)
-
-        aql = (
-            f"FOR e IN @@collection "
-            f"FILTER e.{key_field} == @mention "
-            f"{scope_filter} "
-            f"LIMIT 2 RETURN e"
-        )
-        collection_binds = {"@collection": collection}
-
-        ctx = TenantContext(
-            tenant_id=tenant_id,
-            arango_db=f"{tenant_id}_ontology",
-            pgvector_schema=tenant_id,
-            ontology=self._ontology,
-        )
-        return await self._graph_store.execute_traversal(
-            ctx=ctx, aql=aql, bind_vars=bind_vars, collection_binds=collection_binds
+        return await self._graph_store.find_by_field(
+            self._tenant_context(tenant_id),
+            collection,
+            key_field,
+            mention,
+            filters=self._scope_filter(rule, user_context),
+            limit=2,
         )
 
     async def _fuzzy_name_match(
@@ -392,7 +383,7 @@ class EntityResolver:
         user_context: dict[str, Any],
         tenant_id: str,
     ) -> list[dict[str, Any]]:
-        """Case-insensitive LIKE AQL match on the ``name`` field.
+        """Case-insensitively match the entity's ``name`` field.
 
         Args:
             rule: Entity extraction rule.
@@ -403,29 +394,13 @@ class EntityResolver:
         Returns:
             Up to 10 candidate dicts sorted by name length (shortest first).
         """
-        from .schema import TenantContext
-
         collection = self._collection_for_type(rule.type)
-        bind_vars: dict[str, Any] = {"mention": mention.lower()}
-        scope_filter = self._scope_filter(rule, user_context, bind_vars)
-
-        aql = (
-            f"FOR e IN @@collection "
-            f"FILTER LIKE(LOWER(e.name), CONCAT('%', @mention, '%')) "
-            f"{scope_filter} "
-            f"SORT LENGTH(e.name) ASC "
-            f"LIMIT 10 RETURN e"
-        )
-        collection_binds = {"@collection": collection}
-
-        ctx = TenantContext(
-            tenant_id=tenant_id,
-            arango_db=f"{tenant_id}_ontology",
-            pgvector_schema=tenant_id,
-            ontology=self._ontology,
-        )
-        return await self._graph_store.execute_traversal(
-            ctx=ctx, aql=aql, bind_vars=bind_vars, collection_binds=collection_binds
+        return await self._graph_store.search_by_name(
+            self._tenant_context(tenant_id),
+            collection,
+            mention,
+            filters=self._scope_filter(rule, user_context),
+            limit=10,
         )
 
     async def _ai_assisted(
@@ -469,9 +444,7 @@ class EntityResolver:
                     return [candidate]
         except Exception as exc:
             self.logger.warning(
-                "LLM-assisted entity resolution failed for '%s': %s; "
-                "falling back to full shortlist.",
-                mention, exc
+                "LLM-assisted entity resolution failed for '%s': %s; " "falling back to full shortlist.", mention, exc
             )
 
         return candidates
@@ -575,7 +548,9 @@ class EntityResolver:
         if cache_key in self._hybrid_cache:
             self.logger.debug(
                 "hybrid_concept_match cache hit: mention='%s' version='%s' tenant='%s'",
-                mention, ontology_version, tenant_id,
+                mention,
+                ontology_version,
+                tenant_id,
             )
             return self._hybrid_cache[cache_key]
 
@@ -583,7 +558,9 @@ class EntityResolver:
         terms = self._split_mentions(mention)
         self.logger.debug(
             "hybrid_concept_match: mention='%s' → terms=%r tenant='%s'",
-            mention, terms, tenant_id,
+            mention,
+            terms,
+            tenant_id,
         )
 
         all_ids: list[str] = []
@@ -600,7 +577,8 @@ class EntityResolver:
         if len(all_ids) > 5:
             self.logger.debug(
                 "hybrid_concept_match: capping %d concepts to 5 for mention='%s'",
-                len(all_ids), mention,
+                len(all_ids),
+                mention,
             )
             all_ids = all_ids[:5]
 
@@ -674,16 +652,15 @@ class EntityResolver:
         if self._concept_instances:
             for concept in self._concept_instances:
                 label: str = self._get_concept_attr(concept, "label", "") or ""
-                synonyms: list[str] = list(
-                    self._get_concept_attr(concept, "synonyms", []) or []
-                )
+                synonyms: list[str] = list(self._get_concept_attr(concept, "synonyms", []) or [])
                 all_names = [label] + synonyms
                 if any(n.lower() == term_lower for n in all_names):
                     cid = str(self._get_concept_attr(concept, "concept_id", "") or "")
                     if cid:
                         self.logger.debug(
                             "hybrid_concept_match stage1 hit: term='%s' → concept_id='%s'",
-                            term, cid,
+                            term,
+                            cid,
                         )
                         return [cid]
 
@@ -706,7 +683,8 @@ class EntityResolver:
         except Exception as exc:
             self.logger.warning(
                 "hybrid_concept_match vector search failed for term='%s': %s",
-                term, exc,
+                term,
+                exc,
             )
             return []
 
@@ -724,9 +702,11 @@ class EntityResolver:
                 cid = results[0].metadata.get("concept_id", "")
                 if cid:
                     self.logger.debug(
-                        "hybrid_concept_match stage2 dominant: term='%s' → '%s' "
-                        "(score1=%.4f score2=%.4f)",
-                        term, cid, score1, score2,
+                        "hybrid_concept_match stage2 dominant: term='%s' → '%s' " "(score1=%.4f score2=%.4f)",
+                        term,
+                        cid,
+                        score1,
+                        score2,
                     )
                     return [cid]
         elif len(results) == 1:
@@ -772,11 +752,8 @@ class EntityResolver:
         prompt = (
             f"Given the search term '{term}', select the most relevant concept(s) "
             f"from the following list. Return ONLY a JSON array of concept_id strings, "
-            f"e.g. [\"id1\", \"id2\"]. Do not include any other text.\n\n"
-            + "\n".join(
-                f"- concept_id={c['concept_id']} label={c['label']}"
-                for c in candidate_info
-            )
+            f'e.g. ["id1", "id2"]. Do not include any other text.\n\n'
+            + "\n".join(f"- concept_id={c['concept_id']} label={c['label']}" for c in candidate_info)
         )
 
         try:
@@ -793,14 +770,15 @@ class EntityResolver:
                 if result:
                     self.logger.debug(
                         "hybrid_concept_match LLM tie-breaker: term='%s' → %r",
-                        term, result,
+                        term,
+                        result,
                     )
                     return result
         except Exception as exc:
             self.logger.warning(
-                "hybrid_concept_match LLM tie-breaker failed for term='%s': %s; "
-                "falling back to all candidates.",
-                term, exc,
+                "hybrid_concept_match LLM tie-breaker failed for term='%s': %s; " "falling back to all candidates.",
+                term,
+                exc,
             )
 
         # Fallback: return all candidate IDs
@@ -833,16 +811,12 @@ class EntityResolver:
         user_dept = user_context.get("department")
         user_mgr = user_context.get("manager_id")
 
-        dept_matches = [
-            c for c in candidates
-            if user_dept and c.get("department") == user_dept
-        ]
+        dept_matches = [c for c in candidates if user_dept and c.get("department") == user_dept]
         if len(dept_matches) == 1:
             return dept_matches[0]["_id"]
 
         mgr_matches = [
-            c for c in candidates
-            if user_mgr and (c.get("_id") == user_mgr or c.get("manager_id") == user_mgr)
+            c for c in candidates if user_mgr and (c.get("_id") == user_mgr or c.get("manager_id") == user_mgr)
         ]
         if len(mgr_matches) == 1:
             return mgr_matches[0]["_id"]

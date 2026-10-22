@@ -66,7 +66,7 @@ No report/canvas/page/notebook route exists. `AgentDetail.svelte` is a detail vi
 | `linked/scheduler.ts` | `RefreshScheduler`, `MIN_INTERVAL_SECONDS=30`. |
 | `linked/ref.ts` | `loadRef` (external JS row-transform module with SRI `sriOf`) from `transformsBase`. |
 | `linked/types.ts` | re-exports generated `LinkedSources` types (`lib/types/generated/LinkedSources.d.ts` from `ui/schemas/LinkedSources.json`); `DATA_SOURCES_EXTENSION='parrot_data_sources'`, `getDataSources(surface)` :43. |
-| `lib/api/querysource.ts` | `querySourceBaseUrl` (PUBLIC_QUERYSOURCE_URL or apiBaseUrl), `queryUrl` -> **POST `/api/v3/queries/{slug}`** or **`/api/v1/{tenant}/queries/{slug}`**; native fetch + bearer (`getAuthHeaders`). Browser calls QuerySource directly. |
+| `lib/api/querysource.ts` | `querySourceBaseUrl` (PUBLIC_QUERYSOURCE_URL or apiBaseUrl), `queryUrl` -> **POST `/api/v2/services/queries/{slug}`** (default, plain QS), **`/api/v3/queries/{slug}`** only when `is_multiquery` (MultiQS), or **`/api/v1/{tenant}/queries/{slug}`** when a tenant is set; native fetch + bearer (`getAuthHeaders`). Browser calls QuerySource directly. |
 
 ## 4. Infographic UI (`canvas/infographic/` + `InfographicCanvas.svelte`)
 
@@ -111,7 +111,7 @@ No report/canvas/page/notebook route exists. `AgentDetail.svelte` is a detail vi
 | `chatInteraction.ts` | GET/POST `/api/v1/chat/interactions`; GET/PUT/DELETE/PATCH `/api/v1/chat/interactions/{sessionId}` |
 | `infographic.ts` | GET `/api/v1/agents/infographic/templates[/{name}]`, `/themes[/{name}]`; POST `/api/v1/agents/infographic/{agentId}` |
 | `speechReport.ts` | POST `/api/v1/agents/chat/{agentId}/speech_report` |
-| `querysource.ts` | POST `/api/v3/queries/{slug}` or `/api/v1/{tenant}/queries/{slug}` (native fetch) |
+| `querysource.ts` | POST `/api/v2/services/queries/{slug}` (default), `/api/v3/queries/{slug}` (is_multiquery only) or `/api/v1/{tenant}/queries/{slug}` (native fetch) |
 | (inline in `A2UISurface.svelte:169`) | POST `/api/v1/ui/surfaces/{id}/refresh`; GET `${apiBaseUrl}/static/a2ui/transforms/*` (ref transforms) |
 | `studio.ts` (base `/api/v1/astudio`) | GET `/toolkits/{slug}/schema`; GET `/agents/{n}/toolkit-config`; PUT/DELETE `/agents/{n}/toolkits/{slug}`; GET `/agents/{n}/toolkits/{slug}/options/{param}`; GET/PUT `/agents/{n}/mcp-servers`; POST `/agents/{n}/reload`; GET/PUT/DELETE `/agents/{n}/toolkits/{slug}/me` |
 | `prompt-library.ts` | GET/PUT `/api/v1/prompt_library`; POST/DELETE `/api/v1/prompt_library/{id}` |

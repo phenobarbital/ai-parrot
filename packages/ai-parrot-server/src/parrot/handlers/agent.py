@@ -50,7 +50,7 @@ from .toolkit_persistence import ToolkitConfigService
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
 from parrot.security.vault_utils import retrieve_vault_credential
-from parrot.tools.spec import hydrate_params
+from parrot.tools.spec import agent_tooling_ref, hydrate_params
 
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
@@ -982,10 +982,11 @@ class AgentTalk(BaseView):
         Configure tool manager and MCP servers from request data.
 
         Used by PATCH to persist a user's ToolManager into the session.
-        The resulting ToolManager is saved under '{agent_name}_tool_manager'.
+        The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
+        ref = agent_tooling_ref(agent)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=agent.name)
+            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1096,11 +1097,12 @@ class AgentTalk(BaseView):
             return tool_manager
         svc = ToolkitConfigService()
         try:
-            overrides = await svc.load(str(user_id), agent.name)
+            ref = agent_tooling_ref(agent)
+            overrides = await svc.load(str(user_id), ref)
             if not overrides:
                 return tool_manager
-            marker_key = f"{agent.name}_toolkit_overrides_rev"
-            marker = f"{getattr(agent, '_tooling_revision', '')}:{await svc.revision(str(user_id), agent.name)}"
+            marker_key = f"{ref}_toolkit_overrides_rev"
+            marker = f"{getattr(agent, '_tooling_revision', '')}:{await svc.revision(str(user_id), ref)}"
             if tool_manager is not None and request_session.get(marker_key) == marker:
                 return tool_manager
             base = tool_manager if tool_manager is not None else agent.tool_manager.clone()
@@ -1112,9 +1114,9 @@ class AgentTalk(BaseView):
                 allowed = set(default_spec.user_overridable)
                 params = await hydrate_params(default_spec)
                 params.update({key: value for key, value in override.params.items() if key in allowed})
-                for key, ref in override.secret_refs.items():
+                for key, vault_ref in override.secret_refs.items():
                     if key in allowed:
-                        params[key] = (await retrieve_vault_credential(str(user_id), ref))[key]
+                        params[key] = (await retrieve_vault_credential(str(user_id), vault_ref))[key]
                 cls = agent._resolve_spec_class(override.slug)
                 for tool_name in base.list_tools():
                     if isinstance(get_toolkit_owner(base.get_tool(tool_name)), cls):
@@ -1126,8 +1128,9 @@ class AgentTalk(BaseView):
                     if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
                 }
                 filtered = {name: value for name, value in params.items() if name in accepted}
-                base.register_toolkit(cls(**filtered))
-            request_session[f"{agent.name}_tool_manager"] = base
+                # PA-9: a user override is a construction path too: through the agent's bound host parameter hook
+                base.register_toolkit(base.build_toolkit(cls, override.slug, filtered))
+            request_session[f"{ref}_tool_manager"] = base
             request_session[marker_key] = marker
             return base
         except Exception as exc:  # noqa: BLE001
@@ -1273,22 +1276,34 @@ class AgentTalk(BaseView):
                 )
                 # Continue with remaining servers — never fail the PATCH
 
-    async def _handle_attachments(
-        self, bot: AbstractBot, agent: AbstractBot, attachments: Dict[str, Any]
-    ) -> web.Response:
+    async def _persist_attachments(self, bot: AbstractBot, attachments: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist uploads before the request branches on a query.
+
+        This runs inside ``agent.session(...)`` so ``handle_files`` can use the
+        request-bound session. Persistence failures are reported to upload-only
+        callers but must not prevent a chat prompt from running.
         """
-        Manage file uploaded into a internal private method.
-        """
-        if attachments:
-            # Handle file uploads without a query
-            try:
-                added_files = await bot.handle_files(attachments)
-                return self.json_response(
-                    {"message": "Files uploaded successfully", "added_files": added_files, "agent": agent.name}
-                )
-            except Exception as e:
-                self.logger.error("Error handling files: %s", e, exc_info=True)
-                return self.json_response({"error": f"Error handling files: {str(e)}"}, status=500)
+        empty = {"dataframes": [], "files": [], "errors": []}
+        if not attachments:
+            return empty
+        try:
+            return await bot.handle_files(attachments)
+        except Exception as exc:  # noqa: BLE001 -- chat must survive upload persistence failures
+            self.logger.error("Attachment persistence failed: %s", exc, exc_info=True)
+            return {**empty, "errors": [{"filename": "*", "error": str(exc)}]}
+
+    async def _handle_attachments(self, agent: AbstractBot, upload_result: Dict[str, Any]) -> web.Response:
+        """Return the upload-only result without claiming discarded files succeeded."""
+        result = {
+            "files": upload_result.get("files", []),
+            "dataframes": upload_result.get("dataframes", []),
+            "errors": upload_result.get("errors", []),
+            "agent": agent.name,
+        }
+        if result["files"] or result["dataframes"]:
+            return self.json_response(result)
+        if result["errors"]:
+            return self.json_response(result, status=400)
         return self.json_response({"error": "query is required"}, status=400)
 
     async def _handle_hitl_resume(
@@ -1610,7 +1625,7 @@ class AgentTalk(BaseView):
         # per-system-bot ToolManager swap is not applicable to them.
         user_tool_manager = None
         if request_session and not is_user_bot:
-            session_key = f"{agent.name}_tool_manager"
+            session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
             user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
@@ -1805,6 +1820,7 @@ class AgentTalk(BaseView):
                     agent.name,
                 )
 
+        upload_errors = None
         try:
             async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -1815,8 +1831,15 @@ class AgentTalk(BaseView):
                         attachments=attachments,
                         use_background=use_background,
                     )
+                upload_result = await self._persist_attachments(bot, attachments)
                 if not query:
-                    return await self._handle_attachments(bot, agent, attachments)
+                    return await self._handle_attachments(agent, upload_result)
+                upload_errors = upload_result.get("errors") if isinstance(upload_result, dict) else None
+                if upload_errors:
+                    self.logger.warning(
+                        "Upload errors will be surfaced in response metadata: %s",
+                        upload_errors,
+                    )
                 if use_stream:
                     return await self._handle_stream_response(
                         bot=bot,
@@ -2033,6 +2056,13 @@ class AgentTalk(BaseView):
         if response is not None:
             await self._speak_text_to_avatar(session_id, getattr(response, "response", None) or "")
 
+        if upload_errors and response is not None:
+            meta = getattr(response, "metadata", None)
+            if isinstance(meta, dict):
+                meta["upload_errors"] = upload_errors
+            elif meta is None and hasattr(response, "metadata"):
+                response.metadata = {"upload_errors": upload_errors}
+
         # Return formatted response
         return self._format_response(
             response,
@@ -2122,7 +2152,7 @@ class AgentTalk(BaseView):
             summary: Dict[str, Any] = {
                 "agent": agent_name,
                 "message": "Tool configuration saved to session.",
-                "session_key": f"{agent_name}_tool_manager",
+                "session_key": f"{agent_tooling_ref(agent)}_tool_manager",
             }
             if tool_manager and isinstance(tool_manager, ToolManager):
                 summary["tool_count"] = tool_manager.tool_count()
@@ -2273,7 +2303,14 @@ class AgentTalk(BaseView):
 
             mcp_servers_list: list = []
             if request_session:
-                session_key = f"{agent_name}_tool_manager"
+                ref = agent_name
+                manager = self.request.app.get("bot_manager")
+                if manager is not None:
+                    try:
+                        ref = agent_tooling_ref(await manager.get_bot(agent_name))
+                    except Exception:  # unknown agent: legacy name-based key
+                        ref = agent_name
+                session_key = f"{ref}_tool_manager"
                 tool_manager = request_session.get(session_key)
                 if tool_manager and isinstance(tool_manager, ToolManager):
                     # Build serializable list from _mcp_configs

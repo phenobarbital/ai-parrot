@@ -1,0 +1,18 @@
+## 0. Origin
+
+Inline request (es): sdd-worker / sdd-coder run tests per task, and sometimes
+sdd-worker runs the whole spec's test set, but none of that reaches the PR that
+`/sdd-done` opens. Request: `/sdd-done` should show a table of tests run and
+passed, so reviewers have a visible metric when approving the spec.
+
+## 1. Synthesis Summary
+
+Test evidence exists today but is lost in three ways: `/sdd-done` deliberately
+skips tests (F001). The sdd-coder evidence store keeps only outcome and exit code,
+with no counts (F002). Pass counts survive only as free-text "N passed" in about
+29% of Completion Notes, and their scope varies (F003). The PR body is just
+"<N>/<total> tasks verified". The fix has two parts. First, structured per-task
+test counts recorded during execution. Second, an authoritative feature-tier
+re-run inside `/sdd-done` against the final HEAD. Both are rendered as a
+Markdown table in the PR body.
+

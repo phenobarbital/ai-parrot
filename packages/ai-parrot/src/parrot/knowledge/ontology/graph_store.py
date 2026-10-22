@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from collections.abc import Mapping
+from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel
 
-from .schema import TenantContext, merge_link_field, view_properties_match
+from .contracts import DynamicQuery, GraphDocumentStore, OntologyTraversalStore
+from .exceptions import QueryDialectMismatch, TraversalPatternUnavailable
+from .schema import TenantContext, TraversalPattern, merge_link_field, view_properties_match
 
 logger = logging.getLogger("Parrot.Ontology.GraphStore")
 
@@ -39,18 +42,24 @@ class UpsertResult(BaseModel):
 _ATTRIBUTE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _literal_attribute(name: str) -> str:
+def _literal_attribute(name: str, context: str = "") -> str:
     """Return ``name`` if it is a safe AQL attribute name, else raise.
+
+    Args:
+        name: Candidate attribute name.
+        context: Optional description of where the name comes from (tenant /
+            ontology / collection), appended to the error message.
 
     Raises:
         ValueError: When the name is not a plain identifier.
     """
     if not isinstance(name, str) or not _ATTRIBUTE_NAME.match(name):
-        raise ValueError(f"key_field {name!r} is not a plain attribute name")
+        where = f" ({context})" if context else ""
+        raise ValueError(f"key_field {name!r}{where} is not a plain attribute name")
     return name
 
 
-class OntologyGraphStore:
+class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
     """ArangoDB wrapper for ontology graph operations.
 
     Responsibilities:
@@ -65,6 +74,8 @@ class OntologyGraphStore:
     Args:
         arango_client: An ``asyncdb.AsyncDB`` instance configured for ArangoDB.
     """
+
+    dialect: ClassVar[str] = "aql"
 
     def __init__(self, arango_client: Any = None) -> None:
         self._client = arango_client
@@ -81,7 +92,7 @@ class OntologyGraphStore:
         """
         if self._client is None:
             raise RuntimeError(
-                "OntologyGraphStore requires an ArangoDB client. "
+                "ArangoOntologyGraphStore requires an ArangoDB client. "
                 "Pass an asyncdb.AsyncDB instance to the constructor."
             )
         # Use the tenant's database
@@ -259,7 +270,7 @@ class OntologyGraphStore:
         """
         try:
             await db.execute_query(
-                f"FOR doc IN @@col LIMIT 0 RETURN null",
+                "FOR doc IN @@col LIMIT 0 RETURN null",
                 bind_vars={"@col": collection},
             )
             # The actual index creation depends on the asyncdb adapter.
@@ -268,7 +279,7 @@ class OntologyGraphStore:
         except Exception:
             pass
 
-    async def execute_traversal(
+    async def _execute_aql(
         self,
         ctx: TenantContext,
         aql: str,
@@ -308,6 +319,197 @@ class OntologyGraphStore:
             logger.error("AQL traversal failed: %s\nQuery: %s", e, aql)
             raise
 
+    # ── Typed traversal surface (OntologyTraversalStore) ──────────────
+
+    @staticmethod
+    def _filter_clause(filters: Mapping[str, Any] | None, bind_vars: dict[str, Any]) -> str:
+        """Build equality ``FILTER`` clauses for ``filters`` on alias ``e``.
+
+        Args:
+            filters: Optional field -> value equality filters.
+            bind_vars: Bind-variable dict extended in place.
+
+        Returns:
+            The clause text (empty when there are no filters).
+        """
+        clauses: list[str] = []
+        for index, (field, value) in enumerate((filters or {}).items()):
+            name = f"filter_{index}"
+            bind_vars[name] = value
+            clauses.append(f"FILTER e.{_literal_attribute(field)} == @{name}")
+        return " ".join(clauses)
+
+    async def is_reachable(
+        self,
+        ctx: TenantContext,
+        start_id: str,
+        target_id: str,
+        *,
+        edge_collection: str,
+        max_depth: int,
+        direction: str = "outbound",
+    ) -> bool:
+        """Return whether ``target_id`` is reachable from ``start_id``.
+
+        Args:
+            ctx: Tenant context.
+            start_id: Full document id the traversal starts from.
+            target_id: Full document id to reach.
+            edge_collection: Edge collection to traverse.
+            max_depth: Maximum traversal depth.
+            direction: ``outbound``, ``inbound`` or ``any``.
+
+        Returns:
+            True when at least one path reaches the target.
+
+        Raises:
+            ValueError: If ``direction`` is unsupported or ``max_depth`` < 1.
+        """
+        keyword = direction.upper()
+        if keyword not in ("OUTBOUND", "INBOUND", "ANY"):
+            raise ValueError(f"Unsupported traversal direction {direction!r}")
+        depth = int(max_depth)
+        if depth < 1:
+            raise ValueError("max_depth must be >= 1")
+        aql = f"FOR v IN 1..{depth} {keyword} @asker_id @@edge_collection " "FILTER v._id == @target_id " "RETURN v._id"
+        rows = await self._execute_aql(
+            ctx,
+            aql,
+            bind_vars={"asker_id": start_id, "target_id": target_id},
+            collection_binds={"@edge_collection": edge_collection},
+        )
+        return bool(rows)
+
+    async def get_document_by_id(self, ctx: TenantContext, doc_id: str) -> dict[str, Any] | None:
+        """Return the document addressed by its full ``collection/key`` id.
+
+        Args:
+            ctx: Tenant context.
+            doc_id: Full document identifier.
+
+        Returns:
+            The document, or ``None`` when absent.
+        """
+        rows = await self._execute_aql(ctx, "RETURN DOCUMENT(@target_id)", bind_vars={"target_id": doc_id})
+        return rows[0] if rows and rows[0] is not None else None
+
+    async def find_by_field(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        field: str,
+        value: Any,
+        *,
+        filters: Mapping[str, Any] | None = None,
+        limit: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Find documents whose ``field`` equals ``value``.
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection to search.
+            field: Attribute compared for equality.
+            value: Value to match.
+            filters: Extra equality filters.
+            limit: Maximum number of rows.
+
+        Returns:
+            Matching documents.
+        """
+        bind_vars: dict[str, Any] = {"mention": value}
+        extra = self._filter_clause(filters, bind_vars)
+        aql = (
+            f"FOR e IN @@collection "
+            f"FILTER e.{_literal_attribute(field)} == @mention "
+            f"{extra} "
+            f"LIMIT {int(limit)} RETURN e"
+        )
+        return await self._execute_aql(ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection})
+
+    async def search_by_name(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        needle: str,
+        *,
+        field: str = "name",
+        filters: Mapping[str, Any] | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Find documents whose ``field`` contains ``needle`` (case-insensitive).
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection to search.
+            needle: Substring to look for.
+            field: Attribute searched.
+            filters: Extra equality filters.
+            limit: Maximum number of rows.
+
+        Returns:
+            Matching documents, shortest ``field`` first.
+        """
+        attr = _literal_attribute(field)
+        bind_vars: dict[str, Any] = {"mention": needle.lower()}
+        extra = self._filter_clause(filters, bind_vars)
+        aql = (
+            f"FOR e IN @@collection "
+            f"FILTER LIKE(LOWER(e.{attr}), CONCAT('%', @mention, '%')) "
+            f"{extra} "
+            f"SORT LENGTH(e.{attr}) ASC "
+            f"LIMIT {int(limit)} RETURN e"
+        )
+        return await self._execute_aql(ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection})
+
+    async def execute_pattern(
+        self,
+        ctx: TenantContext,
+        pattern: TraversalPattern,
+        params: Mapping[str, Any],
+        collection_binds: Mapping[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a traversal pattern using its AQL template.
+
+        The ``aql`` entry of ``query_templates`` wins; otherwise the implicit
+        ``query_template`` (AQL by convention) is used.
+
+        Args:
+            ctx: Tenant context.
+            pattern: The traversal pattern.
+            params: Bind variables.
+            collection_binds: ``@@collection`` resolutions.
+
+        Returns:
+            Result documents.
+
+        Raises:
+            TraversalPatternUnavailable: If the pattern has no AQL template.
+        """
+        templates = getattr(pattern, "query_templates", None) or {}
+        aql = templates.get(self.dialect) or getattr(pattern, "query_template", None)
+        if not aql:
+            raise TraversalPatternUnavailable(f"Pattern has no {self.dialect!r} query template")
+        return await self._execute_aql(ctx, aql, bind_vars=dict(params), collection_binds=dict(collection_binds or {}))
+
+    async def execute_query(self, ctx: TenantContext, query: DynamicQuery) -> list[dict[str, Any]]:
+        """Execute a dynamic query bound to the AQL dialect.
+
+        Args:
+            ctx: Tenant context.
+            query: The dialect-bound query.
+
+        Returns:
+            Result documents.
+
+        Raises:
+            QueryDialectMismatch: If ``query.dialect`` is not ``aql``.
+        """
+        if query.dialect != self.dialect:
+            raise QueryDialectMismatch(f"Store dialect is {self.dialect!r}, query dialect is {query.dialect!r}")
+        return await self._execute_aql(
+            ctx, query.text, bind_vars=dict(query.bind_vars), collection_binds=dict(query.collection_binds)
+        )
+
     async def upsert_nodes(
         self,
         ctx: TenantContext,
@@ -346,7 +548,10 @@ class OntologyGraphStore:
         # patterns like article_in_force's `FILTER a._key == @articulo_key`)
         # match — without this, ArangoDB would auto-generate `_key` on
         # insert instead of using the entity's declared identifier.
-        key_attr = _literal_attribute(key_field)
+        key_attr = _literal_attribute(
+            key_field,
+            f"ontology tenant {getattr(ctx, 'tenant_id', '?')!r}, collection {collection!r}",
+        )
         aql = f"""
         FOR doc IN @nodes
             UPSERT {{ {key_attr}: doc.{key_attr} }}
@@ -562,9 +767,9 @@ class OntologyGraphStore:
     # Generic document helpers (graph commit protocol support)
     # ------------------------------------------------------------------
     #
-    # Thin AQL wrappers used by ``GraphIndexPersistence`` to implement the
+    # Thin AQL wrappers used by ``ArangoPersistence`` to implement the
     # audited commit protocol (apply_update / revert_commit / ...).  They
-    # RAISE on failure (like ``execute_traversal``) — the caller owns the
+    # RAISE on failure (like ``_execute_aql``) — the caller owns the
     # degrade-or-propagate decision.
 
     async def ensure_collection(

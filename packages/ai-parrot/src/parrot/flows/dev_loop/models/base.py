@@ -408,6 +408,16 @@ class ResearchOutput(BaseModel):
         ),
         validation_alias=AliasChoices("base_branch", "base"),
     )
+    index_path: str = Field(
+        default="",
+        description=(
+            "Explicit task-index path inside the worktree, e.g. "
+            "'sdd/briefs/<slug>.index.json' for a FEAT-698 brief run. '' means "
+            "no explicit index: DevelopmentNode falls back to the per-spec index "
+            "scan keyed by feat_id."
+        ),
+        validation_alias=AliasChoices("index_path", "index"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -477,6 +487,13 @@ class TaskScopedBrief(BaseModel):
     task_id: str = Field(..., description="TASK-NNN id this dispatch must implement.")
     coder_feedback: str = Field(
         default="", description="Confirmed corrections from this coder model's prior deliveries."
+    )
+    validation_verdict: str = Field(
+        default="",
+        description=(
+            "Rendered engine validation verdict of the failed previous attempt (FEAT-709 same-seat "
+            "repair); empty on a first attempt."
+        ),
     )
     task_file: str = Field(
         default="",

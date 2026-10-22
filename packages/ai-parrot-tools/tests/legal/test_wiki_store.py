@@ -31,7 +31,7 @@ def _version(n, text, valid_from, valid_to):
 
 
 class FakeLegalStore:
-    """Minimal OntologyGraphStore double tailored to the adapter's own AQL shapes."""
+    """Minimal Arango graph-store double tailored to the adapter's own AQL shapes."""
 
     def __init__(self):
         self.articulos: dict[str, dict] = {}
@@ -48,9 +48,13 @@ class FakeLegalStore:
                 return v
         return None
 
-    async def execute_traversal(self, ctx, aql, bind_vars=None, collection_binds=None):
-        bind_vars = bind_vars or {}
-        collection_binds = collection_binds or {}
+    async def execute_query(self, ctx, query):
+        return await self._execute_aql(query.text, query.bind_vars, query.collection_binds)
+
+    async def execute_pattern(self, ctx, pattern, params, collection_binds=None):
+        return await self._execute_aql(pattern.query_template, params, collection_binds or {})
+
+    async def _execute_aql(self, aql, bind_vars, collection_binds):
 
         if "legal_articulos_view" in aql:
             return self._search_rows(bind_vars)
