@@ -72,9 +72,7 @@ def _reset_fanout_state() -> Iterator[None]:
 
 def test_redaction_drops_error_message() -> None:
     """Sensitive failure text is never included in bus payloads."""
-    payload = redact_usage_event(
-        ClientCallFailedEvent(trace_context=None, error_message="secret prompt", tenant="t1")
-    )
+    payload = redact_usage_event(ClientCallFailedEvent(trace_context=None, error_message="secret prompt", tenant="t1"))
     assert payload is not None and "error_message" not in payload and payload["tenant"] == "t1"
 
 
