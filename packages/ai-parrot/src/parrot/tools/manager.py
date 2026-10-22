@@ -10,7 +10,7 @@ import pandas as pd
 from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
 from .compression import (
-    codecs as _compression_codecs,
+    codecs as _compression_codecs,  # noqa: F401
 )  # noqa: F401 - import side effect: registers built-in codecs before CompressorRegistry.load()
 from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
@@ -1191,6 +1191,12 @@ class ToolManager(MCPToolManagerMixin):
         """
         Register all tools from a toolkit.
 
+        Re-registration is a no-op that keeps the FIRST registration: when a
+        toolkit of the same exact class and the same ``tool_prefix`` is already
+        registered, its registered tools are returned and nothing is mutated —
+        a name or class is not even constructed. A name claimed by a DIFFERENT
+        owner still raises ``ToolNameCollisionError``.
+
         This method supports multiple input types:
         - String: Looks up the toolkit by name in SUPPORTED_TOOLKITS registry
         - Class: Instantiates the toolkit class with provided kwargs
@@ -1230,6 +1236,11 @@ class ToolManager(MCPToolManagerMixin):
             if toolkit_class is None:
                 available = ToolkitRegistry.list_toolkits()
                 raise ValueError(f"Unknown toolkit: '{toolkit}'. " f"Available toolkits: {available}")
+            existing = self._match_registered_toolkit(
+                toolkit_class, kwargs.get("tool_prefix", getattr(toolkit_class, "tool_prefix", None))
+            )
+            if existing is not None:
+                return self._keep_first(existing, candidate=None)
             try:
                 toolkit_instance = self.build_toolkit(toolkit_class, toolkit, kwargs)
             except Exception as e:
@@ -1239,6 +1250,11 @@ class ToolManager(MCPToolManagerMixin):
         elif isinstance(toolkit, type) and issubclass(toolkit, AbstractToolkit):
             # It's a toolkit class, instantiate it
             toolkit_name = toolkit.__name__
+            existing = self._match_registered_toolkit(
+                toolkit, kwargs.get("tool_prefix", getattr(toolkit, "tool_prefix", None))
+            )
+            if existing is not None:
+                return self._keep_first(existing, candidate=None)
             try:
                 toolkit_instance = self.build_toolkit(toolkit, self._slug_of_class(toolkit), kwargs)
             except Exception as e:
@@ -1249,6 +1265,9 @@ class ToolManager(MCPToolManagerMixin):
             # Already an instance
             toolkit_instance = toolkit
             toolkit_name = toolkit.__class__.__name__
+            existing = self._match_registered_toolkit(type(toolkit), toolkit.tool_prefix)
+            if existing is not None:
+                return self._keep_first(existing, candidate=toolkit)
 
         else:
             raise ValueError(
@@ -2699,6 +2718,74 @@ class ToolManager(MCPToolManagerMixin):
             i += 1
             name = f"{base}_{i}"
         return name
+
+    def _registered_toolkit_owners(self) -> List["AbstractToolkit"]:
+        """Return unique toolkit owners of registered tools in registration order."""
+        owners: List[Any] = []
+        seen: Set[int] = set()
+        for tool in self._tools.values():
+            owner = get_toolkit_owner(tool)
+            if owner is None or id(owner) in seen:
+                continue
+            seen.add(id(owner))
+            owners.append(owner)
+        return owners
+
+    def find_registered_toolkit(
+        self,
+        toolkit_cls: type,
+        *,
+        tool_prefix: Optional[str] = None,
+    ) -> Optional["AbstractToolkit"]:
+        """Return the first registered instance of ``toolkit_cls``, or ``None``.
+
+        Matches on the exact class and, when ``tool_prefix`` is given, on an
+        equal prefix. A ``None`` prefix means that no prefix filter is applied.
+
+        Args:
+            toolkit_cls: The toolkit class to find.
+            tool_prefix: Optional prefix filter.
+
+        Returns:
+            The first matching registered toolkit, or ``None``.
+        """
+        for owner in self._registered_toolkit_owners():
+            if type(owner) is not toolkit_cls:
+                continue
+            if tool_prefix is not None and owner.tool_prefix != tool_prefix:
+                continue
+            return owner
+        return None
+
+    def _match_registered_toolkit(
+        self, toolkit_cls: type, tool_prefix: Optional[str]
+    ) -> Optional["AbstractToolkit"]:
+        """Return an exact-class and exact-prefix registered toolkit, if any."""
+        for owner in self._registered_toolkit_owners():
+            if type(owner) is toolkit_cls and owner.tool_prefix == tool_prefix:
+                return owner
+        return None
+
+    def _registered_tools_of(self, owner: "AbstractToolkit") -> List[AbstractTool]:
+        """Return tools registered from ``owner`` in registration order."""
+        return [tool for tool in self._tools.values() if get_toolkit_owner(tool) is owner]
+
+    def _keep_first(self, existing: "AbstractToolkit", candidate: Optional["AbstractToolkit"]) -> List[AbstractTool]:
+        """Log a keep-first skip and return the existing owner's tools."""
+        if candidate is not None and candidate is not existing:
+            self.logger.warning(
+                "Toolkit %s (tool_prefix=%r) is already registered; keeping the first instance "
+                "and ignoring the new one.",
+                type(existing).__name__,
+                existing.tool_prefix,
+            )
+        else:
+            self.logger.debug(
+                "Toolkit %s (tool_prefix=%r) is already registered; keeping the first instance.",
+                type(existing).__name__,
+                existing.tool_prefix,
+            )
+        return self._registered_tools_of(existing)
 
     def _find_working_memory_toolkit(self) -> Optional[Any]:
         """Locate an already-registered ``WorkingMemoryToolkit`` instance.
