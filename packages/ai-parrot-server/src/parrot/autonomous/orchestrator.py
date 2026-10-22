@@ -21,7 +21,6 @@ from typing import (
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import asyncio
 import uuid
 from navconfig.logging import logging
 # FEAT-317: EventBus/Event/EventPriority and BaseHook/HookManager/HookEvent
@@ -202,10 +201,6 @@ class AutonomousOrchestrator:
         
         # Runtime state
         self._running = False
-        # Background task running the EventBus Redis receive loop. Only spawned
-        # when the bus is backed by Redis (cross-process distribution); stays
-        # None for the in-memory bus.
-        self._evb_listener_task: Optional[asyncio.Task] = None
         self._agent_cache: Dict[str, "AbstractBot"] = {}
         self._execution_history: List[ExecutionResult] = []
         self._max_history = 1000
@@ -249,17 +244,12 @@ class AutonomousOrchestrator:
             )
             await self.event_bus.connect()
             self._setup_internal_event_handlers()
-            # When the bus is Redis-backed, publish() mirrors events to Redis
-            # but inbound events from other processes are only delivered while
-            # the receive loop runs. Spawn it as a background task so this
-            # orchestrator actually consumes distributed events, not just emits
-            # them. connect() has already created the pubsub object.
-            if self.event_bus.use_redis:
-                self._evb_listener_task = asyncio.create_task(
-                    self.event_bus.start_redis_listener(),
-                    name="eventbus-redis-listener",
-                )
-                self.logger.info("Event Bus Redis listener started")
+            # navigator-eventbus >= 0.4.0 starts the Redis consumer loop inside
+            # connect() (BusCore.start() owns the backend consumer), so inbound
+            # distributed events are delivered without any extra task here.
+            # start_redis_listener() is a deprecated no-op alias — calling it
+            # only logs a warning and leaves a finished task masquerading as a
+            # live receive loop, so it is deliberately NOT called.
             self.logger.info("Event Bus initialized")
 
         # Redis Job Injector
@@ -315,20 +305,8 @@ class AutonomousOrchestrator:
 
         await self.hook_manager.stop_all()
 
-        # Stop the Redis receive loop before closing the bus. The loop blocks in
-        # pubsub.listen(), so cancel it explicitly rather than relying on the
-        # _running flag (which only takes effect on the next inbound message).
-        if self._evb_listener_task is not None:
-            self._evb_listener_task.cancel()
-            try:
-                await self._evb_listener_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                self.logger.exception("EventBus Redis listener errored on stop")
-            finally:
-                self._evb_listener_task = None
-
+        # The Redis consumer loop is owned by the bus itself (navigator-eventbus
+        # >= 0.4.0), so close() drains and stops it — nothing to cancel here.
         if self.event_bus:
             await self.event_bus.close()
 
