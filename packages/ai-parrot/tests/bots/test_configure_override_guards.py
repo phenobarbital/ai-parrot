@@ -379,3 +379,123 @@ def test_exempt_override_is_not_guarded(module_name: str, class_name: str) -> No
         f"{class_name}.configure is a documented exemption (docs/agent-configure-lifecycle.md §8); "
         "guarding it was not intended — update the doc and the spec if that has genuinely changed"
     )
+
+
+# ---------------------------------------------------------------------------
+# Module 3 — pre-super overrides ask configure_is_noop() first
+# ---------------------------------------------------------------------------
+
+
+class _PreSuperBot(_ConfigureTestBot):
+    """An override in the canonical pre-super shape."""
+
+    async def configure(self, app=None) -> None:
+        """Do own setup before the base call, but not on a no-op entry."""
+        if self.configure_is_noop(app):
+            await super().configure(app)
+            return
+        self.own_calls += 1
+        await super().configure(app)
+
+
+def _pre_super_bot() -> AbstractBot:
+    """Return a stubbed _PreSuperBot with its own-work counter zeroed."""
+    bot = _stub_bot(_PreSuperBot)
+    bot.own_calls = 0
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_pre_super_work_skipped_on_repeat_configure() -> None:
+    """A pre-super override body runs ONCE across two configure() calls."""
+    bot, app = _pre_super_bot(), _app()
+
+    await bot.configure(app)
+    await bot.configure(app)
+
+    assert bot.own_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_pre_super_noop_path_still_increments_counter() -> None:
+    """The no-op path still enters super(), so counter and log stay truthful.
+
+    This is why the pattern calls super().configure(app) before returning: the
+    call really did happen, it just did no work, and configure_is_noop() itself
+    reads that counter.
+    """
+    bot, app = _pre_super_bot(), _app()
+
+    await bot.configure(app)
+    await bot.configure(app)
+
+    assert bot.configure_count == 2
+    assert bot.configure_skipped is True
+    assert bot.logger.info.called
+
+
+@pytest.mark.asyncio
+async def test_pre_super_work_runs_when_app_arrives_later() -> None:
+    """CLI-then-server: the pre-super body DOES run when an app arrives."""
+    bot, app = _pre_super_bot(), _app()
+
+    await bot.configure()
+    await bot.configure(app)
+
+    assert bot.own_calls == 2
+    assert bot.configure_count == 2
+
+
+@pytest.mark.asyncio
+async def test_pre_super_work_runs_again_after_reconfigure() -> None:
+    """reconfigure() forces the pre-super setup to run again."""
+    bot, app = _pre_super_bot(), _app()
+
+    await bot.configure(app)
+    await bot.configure(app)
+    await bot.reconfigure()
+
+    assert bot.own_calls == 2
+
+
+# The three real pre-super override sites (issue:81fa838a18c1).
+_PRE_SUPER_SITES = [
+    ("parrot.bots.chatbot", "Chatbot"),
+    ("parrot.bots.voice", "VoiceBot"),
+    ("parrot.bots.database.agent", "DatabaseAgent"),
+]
+
+
+@pytest.mark.parametrize(("module_name", "class_name"), _PRE_SUPER_SITES)
+def test_pre_super_override_is_guarded(module_name: str, class_name: str) -> None:
+    """Each pre-super override asks configure_is_noop() before its first side effect.
+
+    Structural for the same reason as the post-super check: the three share one
+    mechanism (covered behaviourally above), and what regresses is the guard
+    drifting away from the top of the method.
+    """
+    import importlib
+
+    module = pytest.importorskip(module_name)
+    cls = getattr(importlib.import_module(module.__name__), class_name)
+    source = inspect.getsource(cls.configure)
+    body = [ln.strip() for ln in source.splitlines() if ln.strip()]
+
+    guard = "if self.configure_is_noop(app):"
+    assert guard in body, f"{class_name}.configure must consult configure_is_noop() before its own work"
+
+    guard_at = body.index(guard)
+    super_calls = [i for i, ln in enumerate(body) if ln.startswith("await super().configure(")]
+    assert super_calls, f"{class_name}.configure must still call super().configure()"
+
+    # The guard precedes every super() call AND is not awaited.
+    assert guard_at < super_calls[0], f"{class_name}.configure guards too late — own work already ran"
+    assert "await self.configure_is_noop" not in source, (
+        f"{class_name}.configure awaits configure_is_noop(); it is a plain def"
+    )
+    # The no-op branch returns after entering super(), so the counter still moves.
+    assert body[guard_at + 1].startswith("await super().configure("), (
+        f"{class_name}.configure must call super().configure() on the no-op path "
+        "so the entry counter and INFO log stay truthful"
+    )
+    assert body[guard_at + 2] == "return", f"{class_name}.configure no-op branch must return"
