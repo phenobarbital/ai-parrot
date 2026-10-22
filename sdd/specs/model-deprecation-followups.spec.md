@@ -10,7 +10,7 @@ tags: [model-deprecations, video-generation, computer-use, transcription, gemini
 **Feature ID**: FEAT-719
 **Date**: 2026-10-22
 **Author**: Jesus (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 Source: `sdd/proposals/model-deprecation-followups.brainstorm.md` (Recommended Option B).
