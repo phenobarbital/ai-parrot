@@ -38,7 +38,7 @@
       "feature_id": "FEAT-717",
       "feature": "fixgroup-c2982b4864f3",
       "spec": "sdd/specs/fixgroup-c2982b4864f3.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -46,8 +46,9 @@
       "parallelism_notes": "No dependencies — creates live_claims() in shared_log.py and filters import_events' return. Touches tests/knowledge/wiki/test_ledger_shared_log_service.py, which TASK-4579 also modifies; TASK-4579 depends on this task, so the two never run concurrently.",
       "assigned_to": null,
       "started_at": "2026-10-22T00:40:37.236563+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4578-live-claims-import-filter.md"
+      "completed_at": "2026-10-22T00:44:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4578-live-claims-import-filter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4579",
