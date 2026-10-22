@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T02:05:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-22T01:26:08+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -37,16 +37,17 @@
       "feature_id": "FEAT-718",
       "feature": "fixgroup-a322afe6fc2b",
       "spec": "sdd/specs/fixgroup-a322afe6fc2b.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Sole task of FEAT-718; touches only scripts/sdd/close_task.sh and tests/sdd/test_close_task_ledger.py, no shared state outside them.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4580-close-task-ledger-interpreter.md"
+      "started_at": "2026-10-22T01:23:24+00:00",
+      "completed_at": "2026-10-22T01:26:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4580-close-task-ledger-interpreter.md",
+      "verification": "verified"
     }
   ]
 }
