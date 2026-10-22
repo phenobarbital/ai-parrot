@@ -427,10 +427,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) — seat: gpt-5.6-terra (codex), 1 attempt
+**Date**: 2026-10-22
+**Notes**: Created parrot/flows/dev_loop/native_artifacts.py (models + declaration loader) and tests. test_native_artifacts.py: 6 passed (PYTHONPATH=packages/ai-parrot/src).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

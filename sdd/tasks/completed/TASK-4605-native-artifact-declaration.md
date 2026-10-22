@@ -510,10 +510,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) — seat: gpt-5.6-terra (codex), 1 attempt
+**Date**: 2026-10-22
+**Notes**: Declared [tool.parrot.worktree] with cython-core and navrules-pyo3 groups, added build-rust-wheel Makefile target (maturin build --locked, no develop), refreshed Cargo.lock pin to 1.2.4. tests/sdd_scripts/test_native_artifact_declaration.py: 6 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
