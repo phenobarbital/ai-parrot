@@ -362,8 +362,42 @@ two tests in the blueprint above are appended to that same file.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Code session 778adf37)
+**Date**: 2026-10-22
+**Notes**: Implemented the blueprint verbatim. `_LEGACY_LLM_COLUMNS` /
+`_LEGACY_EMBEDDING_COLUMN`, `_fold_legacy_bot_columns()` and
+`_tolerate_legacy_columns()` were inserted above `# Chatbot Model:`, `wraps` was
+added to the imports, and `@_tolerate_legacy_columns` now decorates `BotModel`.
+Two regression tests were appended to
+`packages/ai-parrot/tests/handlers/test_bot_model_fields.py`.
 
-**Deviations from spec**: none | describe if any
+Evidence:
+- `pytest packages/ai-parrot/tests/handlers/test_bot_model_fields.py -q` →
+  **13 passed** (baseline at `2ab46ff16` was 4 failed / 7 passed). AC1 ✅
+- AC2 `BotModel(name='x', model_name='m', temperature=0.1, max_tokens=8192,
+  top_k=41, top_p=0.9).model_config` →
+  `{'model_name': 'm', 'temperature': 0.1, 'max_tokens': 8192, 'top_k': 41,
+  'top_p': 0.9, 'model': 'm'}` ✅
+- AC3 explicit `model_config={'model_name': 'gemini-2.5-flash'}` survives a
+  `model_name='gpt-4.5'` kwarg ✅
+- AC4 `embedding_model` folds into `vector_store_config['embedding_model']`, and
+  an explicit `vector_store_config['embedding_model']` wins ✅
+- AC5 none of the six legacy names is in `BotModel.__fields__`,
+  `BotModel.__columns__`, or `BotModel.model(dialect='sql')` ✅
+- AC6 `ruff check` clean on both files ✅
+- Blast radius: 33 passed / 3 skipped (ai-parrot BotModel consumers) and
+  24 passed (ai-parrot-server, incl. the FEAT-621 `test_storage_gates.py` AC17
+  "ai_bots untouched" gate).
+
+Known gotcha hit while validating: a bare `pytest` inside a worktree cannot
+import `parrot.utils.types` / `parrot.utils.parsers.toml` — the Cython `.so`
+files exist only in the main checkout. They were copied into the worktree
+(gitignored, not committed).
+
+**Deviations from spec**: none.
+
+Note for a future reader: `black --check` still reports this file as needing a
+reformat. That deviation is **pre-existing** (a stray blank line after the
+imports, verified by running `black --check` on `HEAD:…/bots.py`), untouched by
+this task, and deliberately not fixed so the diff stays minimal. `ruff check` —
+the lint gate — is clean.
