@@ -88,3 +88,64 @@ gitignored declared files (fixed in PR #1460)"*.
 1 failed, 7 warnings in 0.62s      # base coder_feedback.py
 24 passed, 15 warnings in 4.86s    # patched (23 pre-existing + 1 new)
 ```
+
+---
+
+# TASK-4604 — `ledger retract-feedback` CLI evidence
+
+**Date**: 2026-10-22
+
+`.parrot/ledger/events.jsonl` sha256 was identical before and after every probe
+below (`b310499aa6d9269a240402c470866c00667114c31c941f4d8c9c849940166601`,
+2437 lines) — the failure path appends nothing.
+
+> Only **deliberately fake** ids were used. The success path is *not* exercised
+> against the live ledger, because that would append a real tombstone to shared
+> state; `test_retracted_feedback_is_dropped_from_replay` covers the `True`
+> branch against a `tmp_path` store instead.
+
+## AC-4 — the command is registered
+
+```
+$ wikitoolkit ledger retract-feedback --help
+Usage: wikitoolkit ledger retract-feedback [OPTIONS] FEEDBACK_IDS...
+
+  Withdraw misattributed coder feedback (`coder-feedback:<digest>` ids) from
+  model lessons.
+
+Options:
+  --reason TEXT  Why the recorded correction is wrong (kept in the audit
+                 trail).  [required]
+  --actor TEXT   Actor withdrawing the correction, e.g. human:jesus.
+  --help         Show this message and exit.
+
+$ wikitoolkit ledger --help | grep retract-feedback
+  retract-feedback  Withdraw misattributed coder feedback...
+```
+
+## AC-2 / AC-5 — unknown id reports and exits 1
+
+```
+$ wikitoolkit ledger retract-feedback coder-feedback:000000000000000000000000 --reason "..."
+Could not retract coder-feedback:000000000000000000000000 (unknown or already retracted)
+exit=1
+```
+
+## AC-3 — every id is reported, with a single exit after the loop
+
+```
+$ wikitoolkit ledger retract-feedback coder-feedback:0000... coder-feedback:1111... --reason "..."
+Could not retract coder-feedback:000000000000000000000000 (unknown or already retracted)
+Could not retract coder-feedback:111111111111111111111111 (unknown or already retracted)
+exit=1
+```
+
+Both ids are reported — the loop does not exit on the first failure, which is the
+one behavioural difference from the `ledger_unclaim` template it was modelled on.
+
+## AC-6 / AC-7
+
+`ruff check` and `black --check --line-length 120` clean on `cli.py`;
+`test_cli_remote_push.py` 8 passed (it imports `parrot.knowledge.wiki.cli` and
+drives it through `CliRunner`, so it gates the module's import and Click wiring);
+`test_feedback.py` 24 passed.
