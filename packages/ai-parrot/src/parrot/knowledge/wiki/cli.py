@@ -3635,16 +3635,16 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
         if stage and (report.added > 0 or report.created):
-                try:
-                    subprocess.run(
-                        ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
-                    raise SystemExit(1) from exc
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
