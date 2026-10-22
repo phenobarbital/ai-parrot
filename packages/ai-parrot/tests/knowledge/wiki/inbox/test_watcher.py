@@ -1,17 +1,23 @@
-"""Tests for the inbox watcher stability probe and candidate filter (FEAT-715)."""
+"""Tests for inbox watcher stability probes and lifecycle (FEAT-715)."""
 
+import asyncio
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from parrot.knowledge.wiki.inbox.watcher import (
+    InboxWatcher,
     StabilityProbe,
     WatcherUnavailable,
     _require_watchdog,
     is_candidate,
 )
+from parrot.knowledge.wiki.inbox.processor import InboxLockBusy
+from parrot.knowledge.wiki.project import InboxConfig, WikiProjectConfig
 
 
 class FakeClock:
@@ -142,3 +148,189 @@ async def test_insufficient_samples_unstable(tmp_path: Path) -> None:
         3.0, 1.5, stat=scripted_stat([(10, 1)]), sleep=clock.sleep, clock=clock
     )
     assert await probe.is_stable(tmp_path / "a.md") is False
+
+
+class FakeObserver:
+    """Observer stand-in that retains the registered handler."""
+
+    def __init__(self) -> None:
+        self.handler = None
+        self.started = False
+        self.stopped = False
+        self.joined = False
+
+    def schedule(self, handler, path: str, recursive: bool = True) -> None:
+        """Retain the loop-safe handler supplied by the watcher."""
+        self.handler = handler
+
+    def start(self) -> None:
+        """Record observer startup."""
+        self.started = True
+
+    def stop(self) -> None:
+        """Record observer shutdown."""
+        self.stopped = True
+
+    def join(self) -> None:
+        """Record observer join."""
+        self.joined = True
+
+
+class CountingProcessor:
+    """Processor fake with a configurable first lock failure."""
+
+    runs = 0
+    fail_first_with_lock = False
+
+    def __init__(self, runtime) -> None:
+        """Accept the unchanged runtime passed by the watcher."""
+
+    async def run(self, **kwargs) -> SimpleNamespace:
+        """Count a run and optionally simulate a busy writer lock."""
+        type(self).runs += 1
+        if type(self).fail_first_with_lock and type(self).runs == 1:
+            raise InboxLockBusy("busy")
+        return SimpleNamespace(documents=[], counts={})
+
+
+class AlwaysStable(StabilityProbe):
+    """Probe fake that accepts every existing candidate immediately."""
+
+    def __init__(self) -> None:
+        super().__init__(0.0, 0.1)
+
+    async def is_stable(self, path: Path) -> bool:
+        """Return stability without sampling the filesystem."""
+        return True
+
+
+class StableAfterFirstProbe(AlwaysStable):
+    """Probe fake that defers its first candidate check."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    async def is_stable(self, path: Path) -> bool:
+        """Return false once, then permit the deferred run."""
+        self.calls += 1
+        return self.calls > 1
+
+
+@pytest.fixture
+def runtime(tmp_path: Path) -> SimpleNamespace:
+    """Build the limited runtime surface the watcher is permitted to read."""
+    (tmp_path / "inbox").mkdir()
+    return SimpleNamespace(root=tmp_path, config=WikiProjectConfig(inbox=InboxConfig()))
+
+
+def reset_processor() -> None:
+    """Reset mutable fake processor state for each lifecycle test."""
+    CountingProcessor.runs = 0
+    CountingProcessor.fail_first_with_lock = False
+
+
+async def test_burst_coalesces_into_one_run(runtime: SimpleNamespace) -> None:
+    """Thread-side event bursts are coalesced into one loop-side processor run."""
+    reset_processor()
+    observer = FakeObserver()
+    (runtime.root / "inbox" / "a.md").write_text("a", encoding="utf-8")
+    watcher = InboxWatcher(
+        runtime,
+        probe=AlwaysStable(),
+        debounce=0.05,
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    threads = [
+        threading.Thread(
+            target=observer.handler.dispatch,
+            args=(SimpleNamespace(src_path=str(runtime.root / "inbox" / name)),),
+        )
+        for name in ("a.md", "b.md", "c.md")
+    ]
+    for thread in threads:
+        thread.start()
+    await asyncio.gather(*(asyncio.to_thread(thread.join) for thread in threads))
+    await asyncio.sleep(0.15)
+    await watcher.stop(drain=True)
+    assert CountingProcessor.runs == 1
+    assert watcher.stats.events_seen == 3
+    assert observer.joined is True
+
+
+async def test_unstable_candidate_defers_run(runtime: SimpleNamespace) -> None:
+    """An unstable candidate defers the entire inbox until it becomes stable."""
+    reset_processor()
+    observer = FakeObserver()
+    probe = StableAfterFirstProbe()
+    (runtime.root / "inbox" / "a.md").write_text("a", encoding="utf-8")
+    watcher = InboxWatcher(
+        runtime,
+        probe=probe,
+        debounce=0.01,
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    await asyncio.sleep(0.08)
+    await watcher.stop(drain=True)
+    assert probe.calls >= 2
+    assert CountingProcessor.runs == 1
+
+
+async def test_lock_busy_is_retried(runtime: SimpleNamespace) -> None:
+    """A busy processor lock is retried without losing the pending work."""
+    reset_processor()
+    CountingProcessor.fail_first_with_lock = True
+    observer = FakeObserver()
+    (runtime.root / "inbox" / "a.md").write_text("a", encoding="utf-8")
+    watcher = InboxWatcher(
+        runtime,
+        probe=AlwaysStable(),
+        debounce=0.01,
+        lock_retry_delay=0.01,
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    await asyncio.sleep(0.08)
+    await watcher.stop(drain=True)
+    assert CountingProcessor.runs == 2
+    assert watcher.stats.lock_busy_retries == 1
+
+
+async def test_startup_scan_processes_preexisting_file(runtime: SimpleNamespace) -> None:
+    """Startup processing does not require a filesystem event."""
+    reset_processor()
+    observer = FakeObserver()
+    (runtime.root / "inbox" / "a.md").write_text("a", encoding="utf-8")
+    watcher = InboxWatcher(
+        runtime,
+        probe=AlwaysStable(),
+        debounce=0.01,
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    await asyncio.sleep(0.05)
+    await watcher.stop(drain=True)
+    assert CountingProcessor.runs == 1
+    assert watcher.stats.events_seen == 0
+
+
+async def test_start_twice_raises(runtime: SimpleNamespace) -> None:
+    """A second start while active raises the fixed lifecycle error."""
+    reset_processor()
+    observer = FakeObserver()
+    watcher = InboxWatcher(
+        runtime,
+        probe=AlwaysStable(),
+        observer_factory=lambda: observer,
+        processor_factory=CountingProcessor,
+    )
+    await watcher.start()
+    with pytest.raises(RuntimeError, match="InboxWatcher already started"):
+        await watcher.start()
+    await watcher.stop(drain=True)
