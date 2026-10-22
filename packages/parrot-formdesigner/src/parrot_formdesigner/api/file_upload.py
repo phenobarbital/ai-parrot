@@ -62,7 +62,7 @@ from ..services.blob_storage import AbstractBlobStorage, BlobMetadata
 from ..services.thumbnail import ThumbnailService
 from ._upload_helpers import _stream_with_limit
 from .handlers import extract_form_uid, extract_uid
-from .tenant import declared_tenant
+from .tenant import declared_tenant, enforce_membership_unless_public
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +210,8 @@ async def handle_file_upload(request: web.Request) -> web.Response:
     form = await registry.get(form_uid, tenant=tenant)
     if form is None:
         raise web.HTTPNotFound(reason=f"Form not found: {form_uid!r}")
+    # FEAT-730: the route is public-mode; a private form still requires tenant membership.
+    enforce_membership_unless_public(request, form, tenant)
 
     found = find_field_by_uid(form, field_uid)
     if found is None:
@@ -235,7 +237,9 @@ async def handle_file_upload(request: web.Request) -> web.Response:
 
     single = is_single_cardinality(field.field_type)
     blob_storage = _get_blob_storage(request.app)
-    blob_tenant: str | None = request.headers.get("X-Parrot-Tenant") or tenant
+    # FEAT-730: decided by the FORM, never by the caller — anybody can call a public form,
+    # so its blob always lands under the declared URL tenant.
+    blob_tenant: str | None = tenant if form.is_public else (request.headers.get("X-Parrot-Tenant") or tenant)
 
     # This endpoint's own path, minus the trailing '/file-upload' segment,
     # is exactly the field's base path (".../forms/{form_uid}/fields/
