@@ -39,7 +39,7 @@ def scripted_stat(samples):  # list[tuple[size, mtime_ns] | None], consumed in o
     it = iter(samples)
 
     def _stat(path: Path) -> FakeStat:
-        s = next(it)
+        s = next(it, None)
         if s is None:
             raise FileNotFoundError(path)
         return FakeStat(*s)

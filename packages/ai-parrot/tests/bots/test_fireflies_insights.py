@@ -91,6 +91,7 @@ async def test_configure_uses_file_skills_only(tmp_path: Path, monkeypatch: pyte
         "---\nname: meeting\ndescription: Meeting workflow\ntriggers:\n  - /meeting\n---\n\nUse the meeting workflow.\n"
     )
     agent = _bare_agent()
+    agent._agents_dir = tmp_path / "agents"
     agent.skill_paths = [skills_dir]
     agent.wiki_root = tmp_path
     agent.inbox_dir = None
