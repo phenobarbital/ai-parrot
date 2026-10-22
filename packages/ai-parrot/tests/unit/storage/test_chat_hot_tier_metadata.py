@@ -18,8 +18,8 @@ async def test_hot_tier_turn_contains_usage_and_tenant() -> None:
     mock_redis.add_turn = AsyncMock()
 
     storage = ChatStorage(
-        redis=mock_redis,
-        dynamo=None,
+        redis_conversation=mock_redis,
+        dynamodb=None,
     )
 
     # Call save_turn with caller metadata
