@@ -430,8 +430,31 @@ the shared `.venv` is editable-installed against the main checkout, so a bare
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5.5 (`/sdd-fix issue:fe3480881432`, SDD lane)
+**Date**: 2026-10-22
+**Notes**: `SUPERSEDING_CLAIM_KINDS` + `live_claims()` added to `shared_log.py`;
+`import_events` returns `live_claims(imported_claims)` (one-line behavioural
+change at the return). Six new unit tests for the predicate
+(`test_live_claims_*`, one parametrized over `issue.closed` / `issue.superseded`)
+plus `test_import_ignores_superseded_claim` at the service level.
 
-**Deviations from spec**:
+Verified as a genuine red test: with the filter temporarily removed, the new
+service test fails with exactly the bug the issue describes —
+`ClaimConflict(local_claimed_by='task:b', foreign_claimed_by='task:a')` for the
+revoked claim — while `test_import_detects_claim_conflict` still passes. With the
+filter restored both pass.
+
+Evidence: `pytest tests/knowledge/wiki/test_ledger_shared_log.py -q` → 15 passed;
+`test_ledger_shared_log_service.py -q` → 5 passed; the whole shared-log selection
+(`-k "shared_log or import_log or export_log or rotate_log"`) → 32 passed;
+`ruff check` and `black --check --line-length 120` clean on all three files
+(both were clean on `origin/dev` too, so the backlog did not grow).
+
+**Deviations from spec**: two cosmetic ones, no behavioural difference.
+1. `from collections.abc import Sequence` was placed in sorted position (before
+   `from datetime import ...`) rather than literally below `from pathlib import
+   Path` as the blueprint wrote — ruff's `I` family is not selected in
+   `ruff.toml`, so either position lints clean; sorted reads better.
+2. `test_live_claims_drops_superseded_claim`'s docstring was reworded because the
+   blueprint's version began with a quote character (`""""A claims, ...`), which
+   `black` reformats to a quad-quote with a space. Same meaning.

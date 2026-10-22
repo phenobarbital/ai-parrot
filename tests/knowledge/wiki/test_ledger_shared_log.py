@@ -123,3 +123,69 @@ def test_import_reads_archives_then_current(tmp_path: Path) -> None:
 
     sl.import_events(local, repo, tmp_path / "marker")
     assert [event.subject for event, _ in local.iter_events()] == ["issue:archived", "issue:current"]
+
+
+def test_live_claims_drops_superseded_claim() -> None:
+    """A claim revoked and then re-made by another actor leaves only the later claim (issue:fe3480881432)."""
+    events = [
+        _event("issue.claimed", "issue:1", claimed_by="task:a"),
+        _event("issue.unclaimed", "issue:1", unclaimed_by="task:a", reason="done looking"),
+        _event("issue.claimed", "issue:1", claimed_by="task:b"),
+    ]
+
+    assert [event.payload["claimed_by"] for event in sl.live_claims(events)] == ["task:b"]
+
+
+@pytest.mark.parametrize("terminal_kind", ["issue.closed", "issue.superseded"])
+def test_live_claims_drops_closed_subject(terminal_kind: str) -> None:
+    """A claim revoked by a terminal event for the same subject does not survive."""
+    events = [
+        _event("issue.claimed", "issue:1", claimed_by="task:a"),
+        _event(terminal_kind, "issue:1", reason="resolved elsewhere"),
+    ]
+
+    assert sl.live_claims(events) == []
+
+
+def test_live_claims_keeps_last_claim_per_subject() -> None:
+    """Two claims with no revocation between them collapse to the later one."""
+    events = [
+        _event("issue.claimed", "issue:1", claimed_by="task:a"),
+        _event("issue.claimed", "issue:1", claimed_by="task:b"),
+    ]
+
+    survivors = sl.live_claims(events)
+
+    assert [event.payload["claimed_by"] for event in survivors] == ["task:b"]
+
+
+def test_live_claims_is_pure_and_ignores_other_kinds() -> None:
+    """Non-claim kinds are ignored, subjects are independent, and the input is untouched."""
+    events = [
+        _event("issue.opened", "issue:1", title="first"),
+        _event("issue.claimed", "issue:1", claimed_by="task:a"),
+        _event("issue.opened", "issue:2", title="second"),
+        _event("issue.acknowledged", "issue:1", actor="human:jesus"),
+        _event("issue.claimed", "issue:2", claimed_by="task:b"),
+        _event("issue.linked", "issue:2", rel="about"),
+    ]
+    unchanged = list(events)
+
+    survivors = sl.live_claims(events)
+
+    # claim order, one per subject, and nothing but claims comes back
+    assert [(event.subject, event.payload["claimed_by"]) for event in survivors] == [
+        ("issue:1", "task:a"),
+        ("issue:2", "task:b"),
+    ]
+    assert events == unchanged
+
+
+def test_live_claims_unclaim_without_claim_is_noop() -> None:
+    """An unclaim for a subject that was never claimed in this batch is harmless."""
+    events = [
+        _event("issue.unclaimed", "issue:1", unclaimed_by="task:a", reason="stale"),
+        _event("issue.claimed", "issue:2", claimed_by="task:b"),
+    ]
+
+    assert [event.subject for event in sl.live_claims(events)] == ["issue:2"]

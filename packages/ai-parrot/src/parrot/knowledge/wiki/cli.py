@@ -3801,6 +3801,8 @@ def ledger_audit() -> None:
             f"local-only events: {shared['local_only_events']} · "
             f"committed-unknown events: {shared['committed_unknown_events']} · marker: {shared['marker']}"
         )
+        if shared.get("claim_conflicts"):
+            click.echo(f"  claim conflicts: {shared['claim_conflicts']}")
     if audit.get("event_counts"):
         click.echo("Event counts by kind:")
         for kind, count in sorted(audit["event_counts"].items()):
