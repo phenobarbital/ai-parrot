@@ -68,24 +68,19 @@ class InProcessSlidingWindow:
                 hits = deque()
                 self._hits[key] = hits
             self._hits.move_to_end(key)
+            # Evict immediately after insertion so every path (allow or deny) respects the cap.
+            while len(self._hits) > self._max_keys:
+                self._hits.popitem(last=False)
 
-            # Prune hits older than `now - window_s`
             while hits and hits[0] < now - window_s:
                 hits.popleft()
 
             if len(hits) < limit:
-                # Allow: append current time
                 hits.append(now)
-            else:
-                # Deny: compute retry_after_s from hits[0]
-                retry_after_s = max(1, math.ceil(hits[0] + window_s - now))  # Always >= 1
-                return QuotaDecision(allowed=False, retry_after_s=retry_after_s)
-
-            # Evict LRU key while len(self._hits) > self._max_keys
-            while len(self._hits) > self._max_keys:
-                self._hits.popitem(last=False)
-
-            return QuotaDecision(allowed=True)
+                return QuotaDecision(allowed=True)
+            # An empty window (limit <= 0) has no oldest hit: a full window is the honest wait.
+            oldest = hits[0] if hits else now
+            return QuotaDecision(allowed=False, retry_after_s=max(1, math.ceil(oldest + window_s - now)))
 
 
 class LLMQuota:

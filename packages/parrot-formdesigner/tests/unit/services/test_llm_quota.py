@@ -223,3 +223,18 @@ class TestQuotaPolicy:
         # Should not raise, should allow
         decision = await quota.acquire(req, tenant="test-tenant", form_uid="test-form")
         assert decision.allowed is True
+
+
+class TestZeroLimit:
+    """issue:51ad6bbb67a3 — limit<=0 must deny cleanly and still respect max_keys."""
+
+    async def test_zero_limit_denies_without_error_and_bounds_keys(self) -> None:
+        clock = FakeClock()
+        limiter = InProcessSlidingWindow(max_keys=2, clock=clock)
+
+        for i in range(5):
+            decision = await limiter.acquire(f"k{i}", limit=0, window_s=60.0)
+            assert decision.allowed is False
+            assert decision.retry_after_s == 60
+
+        assert len(limiter._hits) == 2
