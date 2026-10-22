@@ -56,7 +56,7 @@ class ServiceSchedule(Model):
     CREATE INDEX idx_service_scheduler_target ON navigator.service_scheduler(target_kind, target_name);
     """
 
-    schedule_id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4)
+    schedule_id: uuid.UUID = Field(primary_key=True, default=uuid.uuid4)
     target_kind: str = Field(required=True)
     target_name: str = Field(required=True)
     target_id: Optional[str] = Field(required=False)
