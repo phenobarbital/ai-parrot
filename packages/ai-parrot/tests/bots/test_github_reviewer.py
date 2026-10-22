@@ -49,7 +49,6 @@ from parrot_tools.gittoolkit import (
 from parrot_tools.jiratoolkit import JiraToolkit
 from parrot.tools.manager import ToolManager
 
-
 class _MinimalReviewer:
     """Cheap stand-in that reuses real helpers but skips Agent.__init__."""
 
@@ -4995,8 +4994,8 @@ class TestPostConfigureReentrant:
         assert len(jira_build_calls) == 1, f"Expected 1 jira build call, got {len(jira_build_calls)}"
 
         # reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(GitToolkit)
-        assert (
-            reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(GitToolkit)
+        assert reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(
+            GitToolkit
         ), "git_toolkit should be the registered instance"
 
         # No duplicate names in reviewer.tools
