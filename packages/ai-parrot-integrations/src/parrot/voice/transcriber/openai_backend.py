@@ -8,6 +8,7 @@ without GPU access or for simpler deployment.
 Originally part of FEAT-008 (MS Teams Voice Note Support),
 refactored to shared location for FEAT-039.
 """
+
 import asyncio
 import logging
 import time
@@ -160,14 +161,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
 
         for attempt in range(self.max_retries):
             try:
-                result = await self._transcribe_attempt(
-                    audio_path, language, start_time
-                )
+                result = await self._transcribe_attempt(audio_path, language, start_time)
                 return result
             except aiohttp.ClientResponseError as e:
                 if e.status == 429:
                     # Rate limited - retry with exponential backoff
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     self.logger.warning(
                         "Rate limited by OpenAI API, retrying in %ds (attempt %d/%d)",
                         wait_time,
@@ -177,16 +176,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                     await asyncio.sleep(wait_time)
                     last_error = e
                 elif e.status == 401:
-                    raise RuntimeError(
-                        "OpenAI API authentication failed. Check your API key."
-                    ) from e
+                    raise RuntimeError("OpenAI API authentication failed. Check your API key.") from e
                 else:
-                    raise RuntimeError(
-                        f"OpenAI API error ({e.status}): {e.message}"
-                    ) from e
+                    raise RuntimeError(f"OpenAI API error ({e.status}): {e.message}") from e
             except aiohttp.ClientError as e:
                 # Network error - retry with backoff
-                wait_time = 2 ** attempt
+                wait_time = 2**attempt
                 self.logger.warning(
                     "Request failed: %s, retrying in %ds (attempt %d/%d)",
                     str(e),
@@ -197,9 +192,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                 await asyncio.sleep(wait_time)
                 last_error = e
 
-        raise RuntimeError(
-            f"Transcription failed after {self.max_retries} attempts: {last_error}"
-        )
+        raise RuntimeError(f"Transcription failed after {self.max_retries} attempts: {last_error}")
 
     async def _transcribe_attempt(
         self,
@@ -256,9 +249,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
         ) as response:
             if response.status == 200:
                 result_json = await response.json()
-                processing_time_ms = int(
-                    (time.perf_counter() - start_time) * 1000
-                )
+                processing_time_ms = int((time.perf_counter() - start_time) * 1000)
 
                 self.logger.debug(
                     "Transcription completed: %d chars in %dms",

@@ -10,6 +10,7 @@ class VideoResolution(str, Enum):
         - ``1080p`` and ``4k`` require ``duration=8`` and are unsupported by VEO 2.0.
         - Video extension only supports ``720p``.
     """
+
     RES_720P = "720p"
     RES_1080P = "1080p"
     RES_4K = "4k"
@@ -45,10 +46,7 @@ class VideoGenInput(BaseModel):
     )
     resolution: Optional[str] = Field(
         None,
-        description=(
-            "Video resolution: '720p' (default), '1080p', or '4k'. "
-            "VEO 3.1 only — unsupported by VEO 2.0."
-        ),
+        description=("Video resolution: '720p' (default), '1080p', or '4k'. " "VEO 3.1 only — unsupported by VEO 2.0."),
     )
     person_generation: str = Field(
         "allow_adult",
@@ -82,16 +80,12 @@ class VideoGenInput(BaseModel):
     )
     last_frame_path: Optional[str] = Field(
         None,
-        description=(
-            "Path of the ending frame for interpolation. "
-            "Must be combined with ``image_path``."
-        ),
+        description=("Path of the ending frame for interpolation. " "Must be combined with ``image_path``."),
     )
     reference_image_paths: Optional[List[str]] = Field(
         None,
         description=(
-            "Up to 3 reference image paths used as style/content guides. "
-            "VEO 3.1 only. Implies ``duration=8``."
+            "Up to 3 reference image paths used as style/content guides. " "VEO 3.1 only. Implies ``duration=8``."
         ),
         max_length=3,
     )
@@ -138,52 +132,32 @@ class VideoGenInput(BaseModel):
 class VideoGenerationPrompt(BaseModel):
     """Input schema for generating video content with VEO models (handler-facing)."""
 
-    prompt: str = Field(
-        ...,
-        description="The text prompt describing the desired video content."
-    )
+    prompt: str = Field(..., description="The text prompt describing the desired video content.")
 
     model: Optional[str] = Field(
         None,
         description=(
-            "Video model id; None uses the registry default for the API surface "
-            "(e.g. 'gemini-omni-1.1-flash')."
+            "Video model id; None uses the registry default for the API surface " "(e.g. 'gemini-omni-1.1-flash')."
         ),
     )
 
-    aspect_ratio: str = Field(
-        default="16:9",
-        description="The desired aspect ratio (e.g., '16:9', '9:16')."
-    )
+    aspect_ratio: str = Field(default="16:9", description="The desired aspect ratio (e.g., '16:9', '9:16').")
 
     resolution: Optional[str] = Field(
         default=None,
-        description="Optional video resolution ('720p', '1080p', or '4k'); leave unset for models that reject it."
+        description="Optional video resolution ('720p', '1080p', or '4k'); leave unset for models that reject it.",
     )
 
-    negative_prompt: Optional[str] = Field(
-        default='',
-        description="A description of what to avoid in the video."
-    )
+    negative_prompt: Optional[str] = Field(default="", description="A description of what to avoid in the video.")
 
-    number_of_videos: int = Field(
-        default=1,
-        description="The number of videos to generate per request."
-    )
+    number_of_videos: int = Field(default=1, description="The number of videos to generate per request.")
 
-    duration: Optional[int] = Field(
-        None,
-        description="Duration in seconds. VEO 3.1: 4/6/8; VEO 2.0: 5/6/8."
-    )
+    duration: Optional[int] = Field(None, description="Duration in seconds. VEO 3.1: 4/6/8; VEO 2.0: 5/6/8.")
 
-    seed: Optional[int] = Field(
-        None,
-        description="Optional seed for reproducible generation (VEO 3.x only)."
-    )
+    seed: Optional[int] = Field(None, description="Optional seed for reproducible generation (VEO 3.x only).")
 
     include_audio: bool = Field(
-        True,
-        description="Whether to include generated audio (VEO 3.1 generates native audio)."
+        True, description="Whether to include generated audio (VEO 3.1 generates native audio)."
     )
 
     model_config = ConfigDict(
@@ -210,4 +184,3 @@ def validate_resolution(resolution: str) -> bool:
     """Validate that resolution is supported."""
     valid_resolutions = ["720p", "1080p", "4k"]
     return resolution in valid_resolutions
-

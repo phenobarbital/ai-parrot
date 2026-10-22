@@ -5,6 +5,7 @@ Configured for Google Gemini computer-use models. Composes
 ComputerInteractionToolkit + optional WebScrapingToolkit. Manages
 screenshot memory pruning and safety decision handling.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -111,17 +112,12 @@ class ComputerAgent(Agent):
         if include_scraping:
             try:
                 from parrot_tools.scraping.toolkit import WebScrapingToolkit
-                self._scraping_toolkit = WebScrapingToolkit(
-                    driver_type="playwright", headless=True
-                )
+
+                self._scraping_toolkit = WebScrapingToolkit(driver_type="playwright", headless=True)
             except ImportError as exc:
-                logger.warning(
-                    "ComputerAgent: WebScrapingToolkit not available (ImportError): %s", exc
-                )
+                logger.warning("ComputerAgent: WebScrapingToolkit not available (ImportError): %s", exc)
             except Exception as exc:
-                logger.warning(
-                    "ComputerAgent: could not initialize WebScrapingToolkit: %s", exc
-                )
+                logger.warning("ComputerAgent: could not initialize WebScrapingToolkit: %s", exc)
         super().__init__(
             agent_id=self.agent_id,
             llm=model,
@@ -186,13 +182,13 @@ class ComputerAgent(Agent):
         if manager is None:
             try:
                 from parrot.human import get_default_human_manager
+
                 manager = get_default_human_manager()
             except Exception:
                 manager = None
         if manager is None:
             logger.info(
-                "ComputerAgent: no HumanInteractionManager configured; "
-                "falling back to terminal confirmation."
+                "ComputerAgent: no HumanInteractionManager configured; " "falling back to terminal confirmation."
             )
             return await self._terminal_confirm(decision)
 
@@ -213,10 +209,7 @@ class ComputerAgent(Agent):
             source_agent=self.agent_id,
         )
         result = await manager.request_human_input(interaction, channel=self._safety_channel)
-        approved = (
-            result.status == InteractionStatus.COMPLETED
-            and bool(result.consolidated_value)
-        )
+        approved = result.status == InteractionStatus.COMPLETED and bool(result.consolidated_value)
         logger.info(
             "ComputerAgent HITL safety decision: approved=%s (status=%s)",
             approved,
@@ -243,10 +236,7 @@ class ComputerAgent(Agent):
         """Build a human-readable confirmation prompt from a safety decision."""
         tool = decision.get("tool", "an action")
         explanation = decision.get("explanation") or "(no explanation provided)"
-        return (
-            f"The computer-use agent wants to perform '{tool}'. "
-            f"Reason: {explanation}. Approve?"
-        )
+        return f"The computer-use agent wants to perform '{tool}'. " f"Reason: {explanation}. Approve?"
 
     def agent_tools(self) -> List[AbstractTool]:
         """Return the tools available to the ComputerAgent.
@@ -347,9 +337,7 @@ class ComputerAgent(Agent):
             when no callback is configured.
         """
         if self._safety_mode == "auto":
-            logger.warning(
-                "ComputerAgent safety decision (auto-acknowledged): %s", decision
-            )
+            logger.warning("ComputerAgent safety decision (auto-acknowledged): %s", decision)
             return True
         else:
             # Interactive mode: emit event for any listeners.
@@ -374,8 +362,7 @@ class ComputerAgent(Agent):
                     )
             # No callback configured — default to proceeding with a clear warning.
             logger.warning(
-                "ComputerAgent safety decision (interactive mode, no callback set — "
-                "defaulting to proceed): %s",
+                "ComputerAgent safety decision (interactive mode, no callback set — " "defaulting to proceed): %s",
                 decision,
             )
             return True
