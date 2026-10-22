@@ -432,10 +432,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; coder seat gpt-5.6-terra (codex, attempt 1, 698.4s)
+**Date**: 2026-10-22
+**Notes**: Extended watcher.py with InboxWatcher (watchdog observer + debounce), WatcherConfig, run_watcher. Extended __init__.py exports. 90 passed merge-tier validation. No review fixes needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
