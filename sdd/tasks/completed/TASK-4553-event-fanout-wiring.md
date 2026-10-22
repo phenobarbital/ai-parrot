@@ -277,10 +277,10 @@ See the test-file block in the Implementation Blueprint; every `FILL IN` test mu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker orchestrator (coder: codex/gpt-5.6-sol, attempt 2; attempt 1 terra empty_delivery while navigator-eventbus 0.3.0 was installed)
+**Date**: 2026-10-22
+**Notes**: Merged, 8 unit tests + merge-tier green.
 
 **Deviations from spec**: none

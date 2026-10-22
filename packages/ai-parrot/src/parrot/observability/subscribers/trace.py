@@ -272,14 +272,9 @@ class GenAIOpenTelemetrySubscriber:
         await self._start_span(span_name, event, attrs=attrs)
 
     async def _on_client_end(self, event: AfterClientCallEvent) -> None:
-        cost: Optional[float] = None
-        if self._cost is not None:
-            cost = self._cost.cost_usd(
-                provider=resolve_gen_ai_system(event.client_name),
-                model=event.model,
-                input_tokens=event.input_tokens or 0,
-                output_tokens=event.output_tokens or 0,
-            )
+        from parrot.observability.cost import resolve_event_cost
+
+        cost: Optional[float] = resolve_event_cost(event, self._cost)
         extra = build_after_client_attrs(event, cost_usd=cost)
         await self._end_span_ok(event, extra_attrs=extra)
 

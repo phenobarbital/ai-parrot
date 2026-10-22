@@ -195,10 +195,10 @@ See the test-file block in the Implementation Blueprint; every `FILL IN` test mu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker orchestrator (coder: codex/gpt-5.6-terra)
+**Date**: 2026-10-22
+**Notes**: Review fix 981eb467 (undefined `tenant` in _format_response; feedback coder-feedback:80be38bca5634aad0f487bc4). Handler tests green. Persisted cost_usd depends on usage.estimated_cost, which is only filled once issue:1874ef259510 (TASK-4548 AC-3) lands.
 
 **Deviations from spec**: none
