@@ -426,10 +426,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Delivered by seat gpt-5.6-terra (codex), 1 attempt, 329s. Merge-tier validation green (216 passed). Worker diff review: no defects.

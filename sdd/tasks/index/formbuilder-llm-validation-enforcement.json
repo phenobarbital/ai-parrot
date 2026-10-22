@@ -90,7 +90,7 @@
       "feature_id": "FEAT-728",
       "feature": "formbuilder-llm-validation-enforcement",
       "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,9 @@
       "parallelism_notes": "catches ImplausibleSubmission and calls SubmissionPipeline.gate_for / submit(plausibility_ack=) from TASK-4624 (services/submission_pipeline.py).",
       "assigned_to": null,
       "started_at": "2026-10-22T20:09:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4625-http-a2ui-gate-surfacing.md"
+      "completed_at": "2026-10-22T20:27:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4625-http-a2ui-gate-surfacing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4626",
