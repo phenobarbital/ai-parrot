@@ -65,7 +65,7 @@ cluster (TASK-3910 / 3911 / 3912 / 3913).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/__init__.py` | MODIFY | break the transitive `api` import (F5a) |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/telegram.py` | MODIFY | break the transitive `api` import (F5a) — the edge is `ui/telegram.py`'s top-level `from ..api.tenant import declared_tenant`, not `ui/__init__.py` (corrected after step-1 location) |
 | `packages/parrot-formdesigner/tests/unit/test_venue_service.py` | MODIFY | fix the unique-violation double (F5b) |
 | `packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py` | MODIFY | fix after root-causing (F5c) |
 
@@ -132,7 +132,7 @@ def test_importing_ui_does_not_pull_api():       # line 9
 {
   "schema_version": 1,
   "targets": [
-    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/ui/__init__.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/ui/telegram.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_venue_service.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py", "action": "MODIFY"}
   ],
