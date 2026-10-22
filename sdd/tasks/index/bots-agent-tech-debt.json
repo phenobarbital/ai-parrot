@@ -42,7 +42,7 @@
       "feature_id": "FEAT-726",
       "feature": "bots-agent-tech-debt",
       "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +50,9 @@
       "parallelism_notes": "root of the graph: owns bots/abstract.py and creates tests/bots/test_configure_override_guards.py; no inbound edge",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4616-abstractbot-configure-signals.md"
+      "completed_at": "2026-10-22T17:00:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4616-abstractbot-configure-signals.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4617",
