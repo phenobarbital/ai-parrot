@@ -49,6 +49,9 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 > statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
 > Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
 
+
+> **Class (ii) correction (measured after TASK-4591 merged)**: `ai-parrot-embeddings/tests/test_namespace_imports.py` and `ai-parrot-loaders/tests/test_metadata_standardization.py` do `from .<sibling> import …` in a root-level test file; the tests root is no longer a package, so there is no parent. Repair by loading the sibling by file location (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique name) at the same place the import was — an import-statement-level change only. Do NOT add an `__init__.py` (AC4) and do NOT put the tests directory on `sys.path`.
+
 ---
 
 ## Files to Create / Modify
@@ -60,6 +63,8 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 | `packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py` | MODIFY | class (i) import |
 | `packages/parrot-formdesigner/tests/unit/test_org_graph_service.py` | MODIFY | class (i) import |
 | `packages/parrot-formdesigner/tests/conftest.py` | MODIFY | class (x): explicit `sys.path` entry for the package's own `scripts/` |
+| `packages/ai-parrot-embeddings/tests/test_namespace_imports.py` | MODIFY | class (ii): `from ._helpers import run_in_pruned_venv` has no parent package |
+| `packages/ai-parrot-loaders/tests/test_metadata_standardization.py` | MODIFY | class (ii): `from .conftest import CANONICAL_DOC_META_KEYS, CANONICAL_TOP_LEVEL_KEYS` has no parent package |
 
 `ai-parrot-server`, `ai-parrot-embeddings` and `ai-parrot-loaders` have no failing site: record their
 standalone collect (server 3,647 items with only the 2 pre-existing `fakeredis` errors; embeddings 214; loaders 421).
@@ -123,7 +128,9 @@ TASK-4591 deletes `packages/ai-parrot-server/tests/mcp/__init__.py`. Verify, do 
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_org_graph_service.py", "action": "MODIFY"},
-    {"path": "packages/parrot-formdesigner/tests/conftest.py", "action": "MODIFY"}
+    {"path": "packages/parrot-formdesigner/tests/conftest.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-embeddings/tests/test_namespace_imports.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-loaders/tests/test_metadata_standardization.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }

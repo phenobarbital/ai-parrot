@@ -65,7 +65,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -75,8 +75,9 @@
       "parallelism_notes": "Needs the STRATEGY (a) CONFIRMED verdict in sdd/state/FEAT-720/spike-collect.md from TASK-4590. Exclusive: edits the root pyproject.toml (a shared manifest) and changes pytest import semantics for the entire monorepo, so no other task's test run is meaningful while it lands.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4591-collection-identity.md"
+      "completed_at": "2026-10-23T12:13:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4591-collection-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4592",

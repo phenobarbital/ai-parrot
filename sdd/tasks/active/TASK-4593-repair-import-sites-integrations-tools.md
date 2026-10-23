@@ -46,6 +46,9 @@ behaviour, parameter or skip.
 > statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
 > Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
 
+
+> **Class (ii) correction (measured after TASK-4591 merged)**: `ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py` do `from .<sibling> import …` in a root-level test file; the tests root is no longer a package, so there is no parent. Repair by loading the sibling by file location (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique name) at the same place the import was — an import-statement-level change only. Do NOT add an `__init__.py` (AC4) and do NOT put the tests directory on `sys.path`.
+
 ---
 
 ## Files to Create / Modify
@@ -59,6 +62,7 @@ behaviour, parameter or skip.
 | `packages/ai-parrot-tools/tests/business_automation/fixtures/broker.py` | MODIFY | class (i) import |
 | `packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py` | MODIFY | class (i) import |
 | `packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py` | MODIFY | class (i) import |
+| `packages/ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py` | MODIFY | class (ii): `from .test_export_tools_pa11 import …` has no parent package |
 
 The remaining class-(v) files in `ai-parrot-integrations` (6 total, located by
 the command in the contract below) and any class-(ii)/(iii) file named by
@@ -139,7 +143,8 @@ collection going green here is **not** evidence this task is done.
     {"path": "packages/ai-parrot-integrations/tests/agentd/test_cli.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-tools/tests/business_automation/fixtures/broker.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
