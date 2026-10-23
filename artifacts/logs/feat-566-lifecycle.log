@@ -10,7 +10,7 @@ exit_code: 0
     from pandas.core.computation.check import (
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-67 passed, 1 warning in 2.86s
+67 passed, 1 warning in 4.04s
 
 --- stderr (tail) ---
 

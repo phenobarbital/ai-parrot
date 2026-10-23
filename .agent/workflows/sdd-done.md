@@ -190,6 +190,10 @@ Then render the section (always, even when the re-run was skipped or failed):
 python -m scripts.sdd.test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
 ```
 
+`render` always writes `$TEST_REPORT_MD` and exits 0 — an unusable index yields a visible
+`## Tests — no data` section instead of an error, so no later step can fail on a missing file
+(issue:326c8c0da36c). Only a malformed invocation exits 2.
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -453,9 +457,11 @@ if [[ "$BASE_BRANCH" == "main" ]]; then
 
    Open the PR manually:
 
+     # --body-file only when the rendered report is present (it may be unset in a fresh shell)
+     BODY=(--body "_Closed by /sdd-done_")
+     [ -s "$TEST_REPORT_MD" ] && BODY=(--body-file "$TEST_REPORT_MD")
      gh pr create --base main --head feat-<FEAT-ID>-<slug> \\
-       --title "<hotfix title>" \\
-       --body-file "$TEST_REPORT_MD"
+       --title "<hotfix title>" "\${BODY[@]}"
 
    After the PR merges, the sync-down.yml Action propagates the change to staging
    and dev automatically. If the Action fails or you are offline, re-run with
@@ -491,7 +497,7 @@ gh pr create \
 
 <N>/<total> tasks verified.
 
-$(cat "$TEST_REPORT_MD")
+$(cat "$TEST_REPORT_MD" 2>/dev/null)
 
 ---
 _Closed by /sdd-done_
@@ -503,9 +509,11 @@ If `gh` is not installed or not authenticated, print the manual command:
 ```
 ℹ️  Could not create PR automatically. Run manually:
 
+    # --body-file only when the rendered report is present (it may be unset in a fresh shell)
+    BODY=(--body "_Closed by /sdd-done_")
+    [ -s "$TEST_REPORT_MD" ] && BODY=(--body-file "$TEST_REPORT_MD")
     gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
-      --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
-      --body-file "$TEST_REPORT_MD"
+      --title "feat(<feature-slug>): FEAT-<ID> — <title>" "${BODY[@]}"
 ```
 
 **Feature flow with `--merge` — direct merge (old behavior):**
