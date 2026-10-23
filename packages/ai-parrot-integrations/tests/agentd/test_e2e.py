@@ -29,7 +29,7 @@ from parrot.integrations.agentd.mcp_server import build_proxy_tools
 from parrot.mcp.local_server import StdioMCPServer
 from parrot.mcp.server_base import LocalServerConfig
 
-from tests.agentd.fakes import EchoAgent
+from .fakes import EchoAgent
 
 from .conftest import run_daemon, stop_daemon
 

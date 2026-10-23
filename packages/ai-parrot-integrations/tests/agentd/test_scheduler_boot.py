@@ -15,7 +15,7 @@ from parrot.integrations.agentd.config import (
 from parrot.integrations.agentd.protocol import INVALID_PARAMS
 from parrot.integrations.agentd.service import AgentDaemon
 
-from tests.agentd.test_service import _call, _run_daemon, _stop_daemon
+from .test_service import _call, _run_daemon, _stop_daemon
 
 pytest.importorskip("apscheduler")
 pytest.importorskip("parrot.scheduler.manager")

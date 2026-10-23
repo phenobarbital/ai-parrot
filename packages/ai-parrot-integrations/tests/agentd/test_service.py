@@ -36,7 +36,7 @@ from parrot.integrations.agentd.protocol import (
 )
 from parrot.integrations.agentd.service import AgentDaemon, sd_notify
 
-from tests.agentd.fakes import EchoAgent
+from .fakes import EchoAgent
 
 
 async def _wait_for_socket(socket_path: Path, timeout: float = 5.0) -> None:
