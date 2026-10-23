@@ -67,6 +67,8 @@ Every `ValidationTrace` includes three distinct version identifiers to ensure ex
 
 ## 4. Check reference
 
+`checks_run` and each field's `checks_ran` count every non-skipped record, including the two always-passing `resolution.visible` / `resolution.required` records written per field.
+
 The table below lists every `CheckId` enum value defined in `parrot_formdesigner.core.audit_trail`. These identifiers are stable contract strings recorded in the trace.
 
 | Check ID | What it checks | Bound format / Notes |

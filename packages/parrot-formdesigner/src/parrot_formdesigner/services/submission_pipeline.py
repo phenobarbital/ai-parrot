@@ -165,6 +165,25 @@ class SubmissionPipeline:
             return None
         return ValidationTraceCollector(detail=config.detail, locale=locale)
 
+    def _capped_trace(self, trace: ValidationTrace, max_bytes: int) -> dict[str, Any]:
+        """Cap ``trace``; a cap too small for even the header degrades to a minimal header, never a failed submit."""
+        try:
+            return cap_trace(trace, max_bytes=max_bytes)
+        except ValueError:
+            self.logger.warning(
+                "audit trace for form %s does not fit max_bytes=%d; storing a minimal header", trace.form_id, max_bytes
+            )
+            minimal = trace.model_copy(
+                update={
+                    "form_checks": [],
+                    "fields": [],
+                    "truncated": True,
+                    "omitted_fields": len(trace.fields),
+                    "omitted_checks": sum(len(f.checks_ran) for f in trace.fields),
+                }
+            )
+            return minimal.model_dump(mode="json")
+
     def gate_for(
         self, form: FormSchema, report: PlausibilityReport | None, *, ack: bool = False
     ) -> ImplausibleSubmission | None:
@@ -261,10 +280,6 @@ class SubmissionPipeline:
         quota_check: "QuotaCheck | None" = None,
     ) -> SubmitOutcome:
         """Commit step. Raises ValidationFailed, SubmitSinkError, PlausibilityBlocked or FormEventAbort."""
-        # Some internal callers use model_copy(update=...), which skips Pydantic validation.
-        # Keep the audit fingerprint's enum contract intact at this shared commit boundary.
-        if not isinstance(form.unknown_fields, UnknownFieldsPolicy):
-            form = form.model_copy(update={"unknown_fields": UnknownFieldsPolicy(form.unknown_fields)})
         auth = auth_context or AuthContext(scheme="none")
 
         async def _on_error(exc: BaseException, where: str) -> None:
@@ -348,7 +363,7 @@ class SubmissionPipeline:
             ctx = dict(context or {})
             # FEAT-732 — capped BEFORE the merge, so llm_validation is never what gets truncated.
             if isinstance(result.trace, ValidationTrace):
-                ctx["validation"] = cap_trace(result.trace, max_bytes=self._audit_config(form).effective_max_bytes)
+                ctx["validation"] = self._capped_trace(result.trace, self._audit_config(form).effective_max_bytes)
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
                 review_policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"

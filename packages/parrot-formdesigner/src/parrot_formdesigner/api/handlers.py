@@ -18,8 +18,8 @@ from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
-from ..core.llm_validation import wire_report
 
+from ..core.llm_validation import wire_report
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer

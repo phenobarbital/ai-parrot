@@ -122,7 +122,12 @@ class AuditTrailConfig(BaseModel):
 
 
 class ValidationTrace(BaseModel):
-    """Deterministic validation evidence for one submission."""
+    """Deterministic validation evidence for one submission.
+
+    ``checks_run`` / ``FieldTrace.checks_ran`` count every non-skipped record, including the
+    two always-passing ``resolution.*`` records written for each field, so a field with no
+    declared constraints still reports a handful of checks.
+    """
 
     trace_schema: int = 1
     detail: AuditDetail

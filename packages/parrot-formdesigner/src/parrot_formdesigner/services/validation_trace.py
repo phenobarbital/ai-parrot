@@ -262,7 +262,7 @@ def schema_fingerprint(form: FormSchema) -> str:
         }
         for section in form.sections
     ]
-    payload = {"unknown_fields": form.unknown_fields.value, "sections": sections}
+    payload = {"unknown_fields": getattr(form.unknown_fields, "value", form.unknown_fields), "sections": sections}
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     return f"sha256:{hashlib.sha256(blob.encode('utf-8')).hexdigest()}"
 
