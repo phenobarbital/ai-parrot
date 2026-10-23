@@ -112,10 +112,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (done by hand: two-line config, fully measured beforehand)
+**Date**: 2026-10-23
+**Notes**: Amendment B. `pytest.ini` now has `addopts = --import-mode=importlib` and `consider_namespace_packages = true`. No `__init__.py`
+deleted or added (267), `pyproject.toml` identical to base. Verified: `test_wheel_layout.py` 15 passed; embeddings + formdesigner collect together
+with none of `ImportPathMismatchError` / `Plugin already registered` / `import file mismatch`; every root standalone at its baseline count
+(`spike-namespace-packages.md`). The earlier delivery of this task (76 `__init__.py` changes + a dead `pyproject.toml` edit) was reverted:
+`pyproject.toml`'s pytest table is ignored because the tracked root `pytest.ini` takes precedence.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: yes — the spec's M2 (delete 25 `__init__.py`, edit `pyproject.toml`) is replaced by Amendment B.
