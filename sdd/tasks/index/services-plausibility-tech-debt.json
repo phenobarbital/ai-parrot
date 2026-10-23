@@ -39,7 +39,7 @@
       "feature_id": "FEAT-737",
       "feature": "services-plausibility-tech-debt",
       "spec": "sdd/specs/services-plausibility-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "No dependencies. Owns core/llm_validation.py and tests/unit/test_plausibility_wire_report.py exclusively; no file is shared with TASK-4677.",
       "assigned_to": null,
       "started_at": "2026-10-23T23:12:04.211211+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4676-plausibility-coverage-and-cap-models.md"
+      "completed_at": "2026-10-23T23:13:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4676-plausibility-coverage-and-cap-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4677",
