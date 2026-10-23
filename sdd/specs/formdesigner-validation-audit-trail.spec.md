@@ -760,6 +760,24 @@ tests:
 - packages/parrot-formdesigner/tests/formdesigner/test_audio_plausibility_policy.py
 - packages/parrot-formdesigner/tests/formdesigner/test_llm_quota_http.py
 - packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_v2_integration.py
+- packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_adapter.py
+- packages/parrot-formdesigner/tests/formdesigner/test_submission_pipeline_parity.py
+- packages/parrot-formdesigner/tests/formdesigner/test_validator_envelope_any_type.py
+- packages/parrot-formdesigner/tests/unit/services/test_rule_validation.py
+- packages/parrot-formdesigner/tests/unit/services/test_validator_relation.py
+- packages/parrot-formdesigner/tests/unit/services/test_validators_rest.py
+- packages/parrot-formdesigner/tests/unit/test_api_feat302.py
+- packages/parrot-formdesigner/tests/unit/api/test_setup_form_api.py
+- packages/parrot-formdesigner/tests/test_submit_merge.py
+- packages/parrot-formdesigner/tests/unit/test_audit_trail_models.py
+- packages/parrot-formdesigner/tests/formdesigner/test_plausibility_identity.py
+- packages/parrot-formdesigner/tests/unit/test_plausibility_wire_report.py
+- packages/parrot-formdesigner/tests/unit/services/test_validation_trace.py
+- packages/parrot-formdesigner/tests/unit/services/test_validator_trace_form.py
+- packages/parrot-formdesigner/tests/unit/services/test_validator_trace_fields.py
+- packages/parrot-formdesigner/tests/formdesigner/test_pipeline_validation_trace.py
+- packages/parrot-formdesigner/tests/unit/api/test_submission_audit_endpoint.py
+- packages/parrot-formdesigner/tests/unit/test_audit_trail_docs.py
 markers: none
 
 ### Test Data / Fixtures
