@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
     from ..services.org_graph import OrgGraphService
+    from ..services.pending_uploads import PendingUploadStore
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.rbac import RBACService
@@ -190,6 +191,13 @@ def _stash_without_clobbering(app: web.Application, key: str, value: object) -> 
         app.setdefault(key, None)
 
 
+def _wire_pending_uploads(app: web.Application, submission_storage: Any, pending_uploads: Any) -> None:
+    """FEAT-731: publish the pending-upload store for /file-upload and attach it to the generic storage."""
+    _stash_without_clobbering(app, "form_pending_uploads", pending_uploads)
+    if pending_uploads is not None and submission_storage is not None:
+        submission_storage.attach_pending_uploads(pending_uploads)
+
+
 def setup_form_api(
     app: web.Application,
     registry: FormRegistry,
@@ -214,6 +222,7 @@ def setup_form_api(
     public_base_url: str | None = None,
     teams_renderer: "AbstractFormRenderer | None" = None,
     llm_quota: "LLMQuota | None" = None,
+    pending_uploads: "PendingUploadStore | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -308,6 +317,7 @@ def setup_form_api(
     # ``app["blob_storage"]`` keep getting ``None`` rather than a KeyError.
     _stash_without_clobbering(app, "blob_storage", blob_storage)
     _stash_without_clobbering(app, "rest_resolver", resolver)
+    _wire_pending_uploads(app, submission_storage, pending_uploads)
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()

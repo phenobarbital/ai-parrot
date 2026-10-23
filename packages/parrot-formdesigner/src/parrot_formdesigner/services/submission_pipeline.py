@@ -377,6 +377,7 @@ class SubmissionPipeline:
                         else flatten_submission(form, submission)
                     )
                     await sink.write(submission, payload)
+                    await self._clear_pending_after_sink(submission, tenant)
                 except SinkUnavailableError as exc:
                     await _on_error(exc, "sink write")
                     raise SubmitSinkError(str(exc), status=503, headers={"Retry-After": "30"}) from exc
@@ -459,6 +460,20 @@ class SubmissionPipeline:
                 request["_lifecycle_user_message"] = user_message
             self.logger.exception("submit failed for form %r: %s", form.form_uid, type(exc).__name__)
             raise
+
+    async def _clear_pending_after_sink(self, submission: FormSubmission, tenant: str | None) -> None:
+        """FEAT-731: best-effort pending-upload clear for sink forms (not transactional with the sink)."""
+        pending = getattr(self.submission_storage, "_pending", None)
+        if pending is None:
+            return
+        from .pending_uploads import iter_blob_refs
+
+        try:
+            await pending.clear(iter_blob_refs(submission.data), tenant=tenant)
+        except Exception as exc:  # noqa: BLE001 — the sink write already succeeded
+            self.logger.warning(
+                "pending-upload clear after sink write failed for %s: %s", submission.submission_id, exc
+            )
 
     def attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
         """Public (audio client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""
