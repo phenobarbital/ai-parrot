@@ -20,6 +20,7 @@ Vault and identity-mapping failures are logged but do NOT fail the auth
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from parrot.integrations.telegram.jira_commands import _TELEGRAM_CHANNEL
@@ -32,6 +33,26 @@ if TYPE_CHECKING:
     from parrot.services.vault_token_sync import VaultTokenSync
 
 logger = logging.getLogger(__name__)
+
+
+def _build_token_response(token_set: "JiraTokenSet") -> Any:
+    """Build a navigator-auth ``TokenResponse`` from a Jira token set."""
+    from navigator_auth.identity.types import TokenResponse
+
+    raw_expiry = getattr(token_set, "expires_at", None)
+    expires_at = (
+        datetime.fromtimestamp(float(raw_expiry), tz=timezone.utc)
+        if isinstance(raw_expiry, (int, float)) and raw_expiry
+        else None
+    )
+    return TokenResponse(
+        access_token=token_set.access_token,
+        refresh_token=getattr(token_set, "refresh_token", None) or None,
+        expires_at=expires_at,
+        scopes=list(getattr(token_set, "scopes", None) or []),
+        provider_user_id=token_set.account_id,
+        raw={"cloud_id": token_set.cloud_id, "site_url": token_set.site_url},
+    )
 
 
 class JiraPostAuthProvider:
@@ -254,6 +275,7 @@ class JiraPostAuthProvider:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider="telegram",
+                provider_user_id=str(session.telegram_id),
                 auth_data={
                     "telegram_id": session.telegram_id,
                     "username": session.telegram_username,
@@ -271,6 +293,10 @@ class JiraPostAuthProvider:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider=self.provider_name,
+                provider_user_id=token_set.account_id,
+                # The credential is ciphered by IdentityStore; auth_data
+                # below stays non-secret.
+                token=_build_token_response(token_set),
                 auth_data={
                     "account_id": token_set.account_id,
                     "cloud_id": token_set.cloud_id,

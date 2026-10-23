@@ -230,6 +230,7 @@ async def handle_slack_jira_callback(
             await identity_service.upsert_identity(
                 nav_user_id=nav_user_id,
                 auth_provider="slack",
+                provider_user_id=slack_user_id,
                 auth_data={
                     "team_id": team_id,
                     "slack_user_id": slack_user_id,
