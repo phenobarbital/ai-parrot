@@ -315,18 +315,31 @@ schema-valid input with a missing `attempt_uid` is rejected by the
 
 ### Validation Contract
 
-```bash
-# Module 1 + 2
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_models.py -q
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_models.py -q
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_validation.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_task_tier.py -q
-# Module 3
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_report.py -q
-# Regression: the contract suites that pin these models' shapes
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_contract.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_mcp.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_done_optimization_contract.py -q
-# Lint
-ruff check packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/report.py
-```
+tests:
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_models.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_models.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_validation.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_task_tier.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_mcp.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_done_optimization_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_report.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_stdlib_only.py
+markers: none
+
+> The last three entries before `test_report.py` are regression suites, not
+> new work: they pin the shapes of the models this feature widens and the
+> error strings it rewords, so a weakened assertion shows up here.
+
+> All runs need `PYTHONPATH=packages/ai-parrot/src` — the shared `.venv` is
+> editable-installed against the main checkout
+> (`.claude/rules/worktree-management.md`).
+
+> Lint gate for the four changed source files:
+> `ruff check packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py
+> packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py
+> packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py
+> packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/report.py`
 
 ### Test Data / Fixtures
 
