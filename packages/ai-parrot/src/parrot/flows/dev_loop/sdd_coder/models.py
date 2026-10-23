@@ -20,6 +20,7 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
 )
 
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    COMPLEXITY_ERROR_CODES,
     ComplexityAssessment,
     ComplexityBlock,
     ComplexityPolicy,
@@ -69,11 +70,6 @@ ERROR_CODES: frozenset[str] = frozenset(
         "engine_busy",
         "invalid_arguments",
         "internal_error",
-        # Complexity routing error codes (FEAT-561 spec §2)
-        "complexity_contract_invalid",
-        "complexity_plan_stale",
-        "complex_model_unavailable",
-        "complexity_audit_failed",
         # FEAT-559: execution pool / suspension lifecycle errors (spec §2).
         "execution_required",
         "execution_not_found",
@@ -107,6 +103,10 @@ ERROR_CODES: frozenset[str] = frozenset(
         "validation_request_conflict",
         "validation_scope_invalid",
     }
+    # Complexity routing error codes (FEAT-561 spec §2) are owned by
+    # `complexity_models.COMPLEXITY_ERROR_CODES` and unioned in rather than
+    # re-listed here, so a code added there can never silently miss this set.
+    | COMPLEXITY_ERROR_CODES
 )
 #: Reserved task ids (`TASK-<NNN>`) and a brief's local, unreserved task ids
 #: (`HOTFIX-<KEY>-<n>`, `scripts/sdd/brief_meta.brief_task_id`). `<KEY>` uses
