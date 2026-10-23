@@ -51,7 +51,9 @@ def test_audit_detail_default_is_summary() -> None:
 def test_cap_default_per_detail() -> None:
     """max_bytes=None resolves by detail; explicit max_bytes always wins."""
     assert AuditTrailConfig().effective_max_bytes == DEFAULT_MAX_BYTES[AuditDetail.SUMMARY] == 65_536
-    assert AuditTrailConfig(detail=AuditDetail.FULL).effective_max_bytes == DEFAULT_MAX_BYTES[AuditDetail.FULL] == 262_144
+    assert (
+        AuditTrailConfig(detail=AuditDetail.FULL).effective_max_bytes == DEFAULT_MAX_BYTES[AuditDetail.FULL] == 262_144
+    )
     assert AuditTrailConfig(detail=AuditDetail.SUMMARY, max_bytes=4096).effective_max_bytes == 4096
     assert AuditTrailConfig(detail=AuditDetail.FULL, max_bytes=500_000).effective_max_bytes == 500_000
 
