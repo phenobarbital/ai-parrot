@@ -11,7 +11,7 @@ tags: [msteams, formdesigner, security, tenant-isolation, hmac]
 **Feature ID**: FEAT-733
 **Date**: 2026-10-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > Closes ledger `issue:bcd04b2170a0` (`vulnerability`, filed `minor` on
