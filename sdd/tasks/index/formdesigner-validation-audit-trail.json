@@ -70,7 +70,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +78,9 @@
       "parallelism_notes": "Root: creates core/audit_trail.py and adds FormSchema.audit_trail; needs nothing from this feature.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4644-audit-trail-core-models.md"
+      "completed_at": "2026-10-23T02:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4644-audit-trail-core-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4645",
@@ -88,7 +89,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -96,8 +97,9 @@
       "parallelism_notes": "Root: edits core/llm_validation.py, services/plausibility.py and four plausibility test fakes; independent of TASK-4644.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4645-plausibility-effective-model-identity.md"
+      "completed_at": "2026-10-23T02:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4645-plausibility-effective-model-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4646",
