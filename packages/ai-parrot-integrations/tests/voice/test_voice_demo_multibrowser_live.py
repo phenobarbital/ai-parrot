@@ -77,7 +77,7 @@ def _record(scenario: str, payload: Dict[str, Any]) -> Path:
 @pytest.fixture
 def live_env() -> Dict[str, str]:
     """The live configuration, with credential *values* never returned."""
-    return {name: "<set>" for name in _REQUIRED_ENV}
+    return dict.fromkeys(_REQUIRED_ENV, "<set>")
 
 
 @pytest.mark.skipif(not _GATE_ENABLED, reason=_SKIP_REASON)
