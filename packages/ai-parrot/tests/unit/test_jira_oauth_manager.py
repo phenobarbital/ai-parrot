@@ -825,10 +825,22 @@ class _RecordingSink:
 
     def __init__(self, raises: bool = False) -> None:
         self.calls: list[tuple[str, str, JiraTokenSet]] = []
+        self.minted: list[tuple[str, str, JiraTokenSet, dict]] = []
         self.raises = raises
 
     async def persist(self, channel: str, user_id: str, token: JiraTokenSet) -> None:
         self.calls.append((channel, user_id, token))
+        if self.raises:
+            raise RuntimeError("durable store unavailable")
+
+    async def persist_minted(
+        self,
+        channel: str,
+        user_id: str,
+        token: JiraTokenSet,
+        state_payload: dict,
+    ) -> None:
+        self.minted.append((channel, user_id, token, state_payload))
         if self.raises:
             raise RuntimeError("durable store unavailable")
 
@@ -915,3 +927,74 @@ class TestCredentialSink:
 
         assert token is not None and token.access_token == "new-access"
         assert json.loads(fake_redis.store["jira:oauth:tg:u1"])["access_token"] == "new-access"
+
+
+def _callback_responses() -> tuple:
+    """The three HTTP responses handle_callback consumes, in order."""
+    exchange = _mock_response(200, json_data={
+        "access_token": "at_minted",
+        "refresh_token": "rt_minted",
+        "expires_in": 3600,
+        "scope": "read:jira-work offline_access",
+    })
+    resources = _mock_response(200, json_data=[
+        {"id": "cloud-uuid-1", "name": "mysite", "url": "https://mysite.atlassian.net"}
+    ])
+    myself = _mock_response(200, json_data={
+        "accountId": "acc-123",
+        "displayName": "Jesus Garcia",
+        "emailAddress": "jesus@example.com",
+    })
+    return exchange, resources, myself
+
+
+class TestLinkTimeCredentialSink:
+    """TASK-4669 — a minted grant must reach the durable owner too."""
+
+    @pytest.mark.asyncio
+    async def test_link_notifies_sink(self, fake_redis: _FakeRedis) -> None:
+        sink = _RecordingSink()
+        manager = _manager_with_sink(fake_redis, sink)
+        _, nonce = await manager.create_authorization_url("telegram", "user-7")
+        manager._http = _mock_session(*_callback_responses())
+
+        token, state_payload = await manager.handle_callback(code="auth-code", state=nonce)
+
+        assert len(sink.minted) == 1
+        channel, user_id, persisted, payload = sink.minted[0]
+        assert (channel, user_id) == ("telegram", "user-7")
+        assert persisted.access_token == "at_minted"
+        assert persisted.account_id == "acc-123"
+        # The sink gets the decoded state so it can resolve the Navigator user.
+        assert payload == state_payload
+        # Redis was still written, and the return value is unchanged.
+        assert fake_redis.set_calls[-1][0] == "jira:oauth:telegram:user-7"
+        assert token.access_token == "at_minted"
+
+    @pytest.mark.asyncio
+    async def test_link_survives_sink_failure(self, fake_redis: _FakeRedis) -> None:
+        """AC-3 — a durable-store outage must not fail a link that worked."""
+        sink = _RecordingSink(raises=True)
+        manager = _manager_with_sink(fake_redis, sink)
+        _, nonce = await manager.create_authorization_url("telegram", "user-7")
+        manager._http = _mock_session(*_callback_responses())
+
+        token, _ = await manager.handle_callback(code="auth-code", state=nonce)
+
+        assert token.access_token == "at_minted"
+        assert len(sink.minted) == 1
+        assert fake_redis.set_calls[-1][0] == "jira:oauth:telegram:user-7"
+
+    @pytest.mark.asyncio
+    async def test_link_without_sink_is_unchanged(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        """AC-6 — the default construction behaves exactly as before."""
+        assert manager._credential_sink is None
+        _, nonce = await manager.create_authorization_url("telegram", "user-7")
+        manager._http = _mock_session(*_callback_responses())
+
+        token, _ = await manager.handle_callback(code="auth-code", state=nonce)
+
+        assert token.access_token == "at_minted"
+        assert fake_redis.set_calls[-1][0] == "jira:oauth:telegram:user-7"

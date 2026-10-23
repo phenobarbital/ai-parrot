@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict
 
 
 class IdentityVaultCredentialSink:
@@ -58,6 +58,65 @@ class IdentityVaultCredentialSink:
             scopes=list(getattr(token, "scopes", None) or []),
             provider_user_id=token.account_id,
             raw={"cloud_id": token.cloud_id, "site_url": token.site_url},
+        )
+
+    async def persist_minted(
+        self,
+        channel: str,
+        user_id: str,
+        token: Any,
+        state_payload: Dict[str, Any],
+    ) -> None:
+        """Seal a newly minted grant on the owner's identity row.
+
+        Unlike :meth:`persist`, link time *has* ``userinfo`` — account id,
+        cloud id, site url, display name — so this is the full
+        ``save_linked_identity`` write, and it is the call that creates the
+        row on a first link.
+
+        The Navigator user is resolved in this order:
+
+        1. ``state_payload["extra"]["nav_user_id"]`` — the combined Telegram
+           login is the only flow that carries it today;
+        2. the Atlassian account's existing row, for a re-link;
+        3. neither — a logged no-op.
+
+        Case 3 is real: the Slack and MS Teams authorize states carry a
+        channel id, not a Navigator one, so a first-ever link from those
+        channels has no owner to attach the credential to. Guessing one is
+        what put a composite ``team:user`` string and an AAD GUID into a
+        ``bigint`` column before.
+        """
+        account_id = getattr(token, "account_id", None)
+        extra = (state_payload or {}).get("extra") or {}
+        nav_user_id = extra.get("nav_user_id")
+        if not nav_user_id and account_id:
+            nav_user_id = await self._store().find_user_by_provider_account(self._provider, account_id)
+        if not nav_user_id:
+            self.logger.warning(
+                "Jira credential sink: link for %s:%s carries no Navigator user and "
+                "account %s owns no identity row — durable copy skipped",
+                channel,
+                user_id,
+                account_id or "<none>",
+            )
+            return
+        await self._store().save_linked_identity(
+            user_id=nav_user_id,
+            provider=self._provider,
+            token=self._as_token_response(token),
+            userinfo={
+                "account_id": account_id,
+                "cloud_id": getattr(token, "cloud_id", None),
+                "site_url": getattr(token, "site_url", None),
+                "display_name": getattr(token, "display_name", None),
+                "email": getattr(token, "email", None),
+            },
+        )
+        self.logger.info(
+            "Jira credential sink: minted grant sealed for user %s (account %s)",
+            nav_user_id,
+            account_id,
         )
 
     async def persist(self, channel: str, user_id: str, token: Any) -> None:

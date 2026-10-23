@@ -70,6 +70,70 @@ def sink_with_store(monkeypatch: pytest.MonkeyPatch):
     return _build
 
 
+class TestPersistMinted:
+    """TASK-4669 — link time, where the owner row is created."""
+
+    @pytest.mark.asyncio
+    async def test_resolves_nav_user_from_state(self, sink_with_store) -> None:
+        """AC-4 — the state's Navigator id wins; no account lookup happens."""
+        store = _FakeStore(nav_user_id="should-not-be-used")
+        sink = sink_with_store(store)
+
+        await sink.persist_minted("telegram", "tg-1", _token(), {"extra": {"nav_user_id": "42"}})
+
+        assert store.lookups == []
+        assert len(store.save_linked_identity_calls) == 1
+        _args, kwargs = store.save_linked_identity_calls[0]
+        assert kwargs["user_id"] == "42"
+        assert kwargs["provider"] == "jira"
+        assert kwargs["token"].access_token == "new-access"
+        assert kwargs["userinfo"]["cloud_id"] == "cloud-1"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_account_lookup_on_relink(self, sink_with_store) -> None:
+        """AC-2 — a channel with no Navigator id can still re-link."""
+        store = _FakeStore(nav_user_id="77")
+        sink = sink_with_store(store)
+
+        await sink.persist_minted("slack", "team:u1", _token(), {"extra": {}})
+
+        assert store.lookups == [("jira", "acct-1")]
+        _args, kwargs = store.save_linked_identity_calls[0]
+        assert kwargs["user_id"] == "77"
+
+    @pytest.mark.asyncio
+    async def test_without_nav_user_is_a_logged_noop(self, sink_with_store) -> None:
+        """AC-5 — a first-ever Slack/Teams link has no owner; never guess one."""
+        store = _FakeStore(nav_user_id=None)
+        sink = sink_with_store(store)
+
+        await sink.persist_minted("slack", "team:u1", _token(), {"extra": {}})
+
+        assert store.save_linked_identity_calls == []
+        assert store.update_tokens_calls == []
+
+    @pytest.mark.asyncio
+    async def test_link_uses_save_linked_identity_not_update_tokens(self, sink_with_store) -> None:
+        """Link time has userinfo, so the full sealed write is the right call."""
+        store = _FakeStore()
+        sink = sink_with_store(store)
+
+        await sink.persist_minted("telegram", "tg-1", _token(), {"extra": {"nav_user_id": "42"}})
+
+        assert store.update_tokens_calls == []
+        assert len(store.save_linked_identity_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_state_payload_is_tolerated(self, sink_with_store) -> None:
+        """An empty payload degrades to the account lookup, never a KeyError."""
+        store = _FakeStore(nav_user_id="77")
+        sink = sink_with_store(store)
+
+        await sink.persist_minted("slack", "team:u1", _token(), {})
+
+        assert store.lookups == [("jira", "acct-1")]
+
+
 class TestPersist:
     @pytest.mark.asyncio
     async def test_refresh_reseals_the_owner_row(self, sink_with_store) -> None:

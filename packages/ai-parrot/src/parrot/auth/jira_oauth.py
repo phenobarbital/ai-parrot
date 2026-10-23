@@ -236,6 +236,21 @@ class CredentialSink(Protocol):
         """Persist a freshly refreshed grant. Raises on failure."""
         ...
 
+    async def persist_minted(
+        self,
+        channel: str,
+        user_id: str,
+        token: "JiraTokenSet",
+        state_payload: Dict[str, Any],
+    ) -> None:
+        """Persist a freshly minted grant. Raises on failure.
+
+        ``state_payload`` is the decoded OAuth state. The manager only knows
+        the channel's own user id, so the implementation reads
+        ``extra.nav_user_id`` from here when the channel supplied one.
+        """
+        ...
+
 
 class JiraOAuthManager:
     """OAuth 2.0 (3LO) lifecycle manager for Jira Cloud.
@@ -516,6 +531,19 @@ class JiraOAuthManager:
         )
 
         await self._write_token(self._token_key(channel, user_id), token)
+        if self._credential_sink is not None:
+            # Same order and policy as the refresh path: the durable owner is
+            # written strictly after Redis, and a sink failure never fails a
+            # link that worked for the user.
+            try:
+                await self._credential_sink.persist_minted(channel, user_id, token, state_payload)
+            except Exception:  # noqa: BLE001 - the durable copy must not break the link
+                self.logger.error(
+                    "Jira credential sink failed at link time for %s:%s",
+                    channel,
+                    user_id,
+                    exc_info=True,
+                )
         self.logger.info(
             "Stored Jira token for %s:%s (%s @ %s)",
             channel,
