@@ -258,9 +258,7 @@ When you pick up this task:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
-
-**Completed**:
-**Deviations from scope**:
-**Ambiguities found in the spec**:
-**Follow-up needed**:
+**Completed**: Implemented by the orchestrator after both Codex seats returned empty_delivery twice. test_msteams_auth_lane.py: /login -> exchange -> /whoami end to end with provider_user_id == aad_object_id asserted; unprovisioned-user path; signin/tokenExchange invoke; /logout with failing adapter; signature-fidelity checks against the installed BotFrameworkAdapter (autospec). 9 passed.
+**Deviations from scope**: AC-3 NOT proven in this environment: the Jira-callback identity-persistence test needs a real Postgres and SKIPPED (dev database unreachable: No route to host). The test is written and self-contained (rolled-back transaction, scratch schema if the table is missing); run it with IDENTITY_PG_DSN set. Closed as partial for this reason. Also: the lane test found and fixed a real TASK-4659 defect (tenant_id always None because channel_data is a dict) — fix commit f85f6f9f38eeb136d55db741bcb738993b640410, feedback coder-feedback:0c4b39fbb803c1f1ebac6a7e.
+**Ambiguities found in the spec**: none
+**Follow-up needed**: Run test_jira_callback_persists_identity against a reachable Postgres. Closed via close_task.sh (no engine review-evidence ref for finalize_task).

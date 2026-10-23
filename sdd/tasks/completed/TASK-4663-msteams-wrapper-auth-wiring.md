@@ -383,9 +383,7 @@ When you pick up this task:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
-
-**Completed**:
-**Deviations from scope**:
-**Ambiguities found in the spec**:
-**Follow-up needed**:
+**Completed**: Implemented by the orchestrator (sdd-worker) after both Codex seats returned empty_delivery twice; not an MCP seat attempt. Four auth fields on MSTeamsAgentConfig (+ from_dict), auth lane construction/registration in MSTeamsAgentWrapper.__init__, auth gate + UserContext + once-per-session post_login (clone_for_user when singleton_agent is False), and all four user_id context sites via `_effective_user_id`. 13 new tests; whole msteams suite 313 passed.
+**Deviations from scope**: (1) The gate sits after command dispatch rather than directly under `_is_authorized`: placing it before would block /login, /logout and /whoami for unauthenticated users under auth_required=True. It still runs after `_is_authorized`, which keeps first refusal. (2) `from_dict` in models.py also reads the four new fields (same file) so YAML configs work. (3) Class-level `_auth = None` default added because existing tests build the wrapper via `__new__`. (4) `singleton_agent` is not a field of MSTeamsAgentConfig; read via getattr default True.
+**Ambiguities found in the spec**: Spec said three context sites, task said four; four were wired. The spec's `singleton_agent` clone mode has no config field in the Teams lane.
+**Follow-up needed**: In non-singleton mode the clone is stored on `session.user_agent` but `form_orchestrator` still uses the shared agent, so the clone is not yet used for answering. Add a `singleton_agent` field to MSTeamsAgentConfig and route the orchestrator to the per-user agent if that mode is wanted. Per-user ToolManager cloning (as Telegram does in singleton mode) is not done.

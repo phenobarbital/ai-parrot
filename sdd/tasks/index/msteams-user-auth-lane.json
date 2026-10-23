@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-23T04:20:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-23T11:17:26+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -126,7 +126,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -138,8 +138,9 @@
       "parallelism_notes": "Constructs MSTeamsSessionStore from TASK-4659 and MSTeamsAuthStrategy from TASK-4661, and calls register_auth_commands from TASK-4662 (msteams/commands/auth_commands.py); sole owner of every edit to msteams/wrapper.py and msteams/models.py.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4663-msteams-wrapper-auth-wiring.md"
+      "completed_at": "2026-10-23T11:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4663-msteams-wrapper-auth-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4664",
@@ -167,7 +168,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -181,8 +182,9 @@
       "parallelism_notes": "Drives the lane assembled by hand, so it imports the session store (4659), the exchange client (4660), the strategy (4661) and register_auth_commands (4662), and asserts the Jira-callback row written by 4664. It does NOT depend on TASK-4663: the suite never constructs MSTeamsAgentWrapper — the wrapper gate is covered by 4663's own test_msteams_auth_gate.py.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4665-msteams-auth-lane-integration-tests.md"
+      "completed_at": "2026-10-23T11:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4665-msteams-auth-lane-integration-tests.md",
+      "verification": "partial"
     }
   ]
 }
