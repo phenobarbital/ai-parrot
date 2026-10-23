@@ -153,6 +153,9 @@ class TestHandleSlackJiraCallback:
         mock_identity_service.upsert_identity.assert_called_once_with(
             nav_user_id="T0001:U1234",
             auth_provider="slack",
+            # TASK-4664: the Slack user id is the external account; the unique
+            # index is partial on provider_user_id being non-NULL.
+            provider_user_id="U1234",
             auth_data={"team_id": "T0001", "slack_user_id": "U1234"},
             display_name="Jane Doe",
             email="jane@myco.com",

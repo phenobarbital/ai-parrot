@@ -14,6 +14,7 @@ skips when Postgres is unreachable or the table predates navigator-auth
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Any, AsyncIterator
@@ -297,6 +298,16 @@ class TestJiraCredentialPath:
         rows = await _rows(authdb_pool, user, "jira")
         assert len(rows) == 1
         row = rows[0]
+        # Regression guard: binding the payload as ``$2::jsonb`` makes asyncpg
+        # send a JSON *string scalar*, so the stamp's ``||`` APPENDS it and the
+        # column becomes the array ``[{profile}, "{...}"]`` — which
+        # _decode_auth_data turns into ``{}``, hiding the loss. The merge must
+        # produce an object.
+        raw = row["auth_data"]
+        parsed = raw if isinstance(raw, dict) else json.loads(raw)
+        assert isinstance(parsed, dict), (
+            f"auth_data must be a jsonb object, got {type(parsed).__name__}: {parsed!r}"
+        )
         auth_data = _decode_auth_data(row["auth_data"])
         assert auth_data["cloud_id"] == "cloud-abc"
         assert secret not in str(auth_data)

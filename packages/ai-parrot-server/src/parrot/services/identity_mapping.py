@@ -56,9 +56,16 @@ RETURNING identity_id, user_id, auth_provider, provider_user_id, auth_data
 # Metadata stamp applied after an IdentityStore write: merges the
 # non-secret provider payload into ``auth_data`` (IdentityStore only keeps
 # a fixed set of userinfo keys there).
+#
+# ``$2::text::jsonb``, not ``$2::jsonb``: in the operator position asyncpg
+# infers the parameter as jsonb and encodes the Python ``str`` as a JSON
+# *string scalar*, so ``||`` APPENDS it and the row ends up as
+# ``[{profile}, "{...}"]`` — a jsonb array, from which _decode_auth_data
+# returns ``{}``. Forcing text first makes Postgres parse it and merge.
+# Verified against auth.user_identities on navigator-auth 0.28.8.
 _STAMP_METADATA_SQL = """
 UPDATE auth.user_identities
-SET auth_data = COALESCE(auth_data, '{}'::jsonb) || $2::jsonb,
+SET auth_data = COALESCE(auth_data, '{}'::jsonb) || $2::text::jsonb,
     display_name = COALESCE($3, display_name),
     email = COALESCE($4, email)
 WHERE identity_id = $1
