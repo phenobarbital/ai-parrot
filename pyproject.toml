@@ -248,6 +248,7 @@ navrules = { workspace = true }
 addopts = [
     "--strict-config",
     "--strict-markers",
+    "--import-mode=importlib",
 ]
 testpaths = ["tests"]
 python_files = "test_*.py"
