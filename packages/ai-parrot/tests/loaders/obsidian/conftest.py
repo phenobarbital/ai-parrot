@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 import pytest
 
-from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
+from interfaces.obsidian.conftest import fixture_vault  # noqa: F401
 
 
 class StubPageIndex:

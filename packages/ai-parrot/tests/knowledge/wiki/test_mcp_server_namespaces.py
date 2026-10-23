@@ -16,7 +16,7 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
-from tests.knowledge.wiki._tool_surface import LOCAL_NO_LEDGER
+from ._tool_surface import LOCAL_NO_LEDGER
 
 BASE_TOOLS = set(LOCAL_NO_LEDGER)
 

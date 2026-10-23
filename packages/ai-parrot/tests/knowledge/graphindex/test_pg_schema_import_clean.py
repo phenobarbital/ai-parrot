@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from tests.knowledge._support.import_probe import run_import_probe
+from .._support.import_probe import run_import_probe
 
 _MODULE = "parrot.knowledge.graphindex.pg_schema"
 _KEYS = (

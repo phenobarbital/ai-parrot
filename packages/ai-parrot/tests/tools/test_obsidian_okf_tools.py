@@ -2,7 +2,7 @@
 import pytest
 
 from parrot.tools.obsidian import ObsidianToolkit
-from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
+from interfaces.obsidian.conftest import fixture_vault  # noqa: F401
 
 pytestmark = pytest.mark.asyncio
 
