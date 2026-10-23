@@ -33,7 +33,11 @@ class FakeLLM:
         self.calls.append((prompt, kwargs))
         if self._exc:
             raise self._exc
-        return type("Msg", (), {"structured_output": self._batch, "output": self._batch})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": self._batch, "output": self._batch, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 def _form(cfg: LLMValidationConfig | None = None) -> FormSchema:
@@ -263,6 +267,37 @@ class TestEnforcementPolicy:
         assert errors[0]["path"] == "/answers/name"
         update = next(envelope["updateDataModel"] for envelope in envelopes if "updateDataModel" in envelope)
         assert update["path"] == "/errors"
+
+
+class TestAuditFieldsStayOffTheWire:
+    """FEAT-732 R10 — persisted, never sent to the form client."""
+
+    async def test_submit_200_omits_identity_but_storage_keeps_it(self, make_handler):
+        handler, storage = make_handler(_form(LLMValidationConfig(enabled=True)), FakeLLM(_OK))
+
+        response = await handler.submit_data(_request({"name": "Ann"}))
+
+        assert response.status == 200
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
+        stored = storage.store.call_args.args[0]
+        assert stored.context["llm_validation"]["resolved_model"] == "fake-model-1"
+
+    async def test_validate_omits_identity(self, make_handler):
+        handler, _ = make_handler(_form(LLMValidationConfig(enabled=True)), FakeLLM(_OK))
+
+        response = await handler.validate(_request({"name": "Ann", "llm_validation": True}))
+
+        assert response.status == 200
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
+
+    async def test_review_422_omits_identity(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        handler, _ = make_handler(_form(config), FakeLLM(_LOW))
+
+        response = await handler.submit_data(_request({"name": "Ann"}))
+
+        assert response.status == 422
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
 
 
 class TestRoutes:

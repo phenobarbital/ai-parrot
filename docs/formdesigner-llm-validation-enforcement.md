@@ -163,6 +163,15 @@ behaviour is governed by `on_error` (not `on_implausible`):
 With `Retry-After: 30`. This is FEAT-649 behaviour and is unchanged by
 FEAT-728.
 
+### 4.5 Audit-only report fields (FEAT-732)
+
+`PlausibilityReport` also carries `resolved_model`, `provider` and `usage` — what actually
+answered, and at what token cost. They are **persisted** in `context["llm_validation"]` and
+are **never** part of any response above: every client-facing dump goes through
+`wire_report()`, so the shapes in §4.1–§4.4 are unchanged. `model` keeps its meaning: the
+model the configuration *requested*, `null` when the client default was used.
+See [`formdesigner-validation-audit-trail.md`](formdesigner-validation-audit-trail.md).
+
 ---
 
 ## 5. Configuring a form
@@ -361,3 +370,5 @@ The LLM check is completely skipped for anonymous callers, with the reason
   another per-form policy page, used as the structural reference for this doc
 - [`formdesigner-autonomous-persistence.md`](formdesigner-autonomous-persistence.md) —
   sink/persistence documentation
+- [`formdesigner-validation-audit-trail.md`](formdesigner-validation-audit-trail.md) —
+  validation audit trail reference (FEAT-732)

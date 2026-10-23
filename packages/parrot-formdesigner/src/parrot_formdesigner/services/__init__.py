@@ -23,15 +23,33 @@ from .registry import FormRegistry, FormStorage
 from .sink_aliases import SinkAliasRegistry
 from .sinks import SinkFactory
 from .storage import PostgresFormStorage
+from .pending_uploads import (
+    DEFAULT_PUBLIC_FORM_TTL,
+    DEFAULT_TTL,
+    PendingUpload,
+    PendingUploadReaper,
+    PendingUploadStore,
+    ReapResult,
+    iter_blob_refs,
+)
 from .submissions import (
     CORE_METADATA_COLUMNS,
     FormSubmission,
     FormSubmissionStorage,
 )
 from .rule_evaluator import RuleEvaluator, RuleResolution
+from .validation_trace import ValidationTraceCollector, callable_identity, cap_trace, schema_fingerprint
 from .validators import FormValidator, ValidationResult
 
 __all__ = [
+    # Pending-upload cleanup (FEAT-731)
+    "DEFAULT_PUBLIC_FORM_TTL",
+    "DEFAULT_TTL",
+    "PendingUpload",
+    "PendingUploadReaper",
+    "PendingUploadStore",
+    "ReapResult",
+    "iter_blob_refs",
     "CORE_METADATA_COLUMNS",
     "FormCache",
     "FormVersionService",
@@ -53,8 +71,12 @@ __all__ = [
     "SinkFactory",
     "SubmissionForwarder",
     "ValidationResult",
+    "ValidationTraceCollector",
     "VersionMeta",
+    "callable_identity",
+    "cap_trace",
     "enrich_submission",
+    "schema_fingerprint",
     # Lifecycle event registry (FEAT-188)
     "register_form_event",
     "get_form_event",
