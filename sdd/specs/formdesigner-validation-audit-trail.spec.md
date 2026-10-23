@@ -11,7 +11,7 @@ tags: [formdesigner, audit-trail, validation, llm-validation, compliance]
 **Feature ID**: FEAT-732
 **Date**: 2026-10-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: review
 **Target version**: 1.3.0
 
 ---
@@ -160,7 +160,10 @@ unbounded (`services/submissions.py:331`), so capping after the merge would be
 capping the wrong object. The cap reserves room for the header and the truncation
 metadata, drops field entries in a deterministic order, and records
 `truncated: true` with `omitted_fields` / `omitted_checks` counts — so a short
-trace is never mistaken for a complete one.
+trace is never mistaken for a complete one. The cap's default is resolved **per
+detail level** (64 KiB for `summary`, 256 KiB for `full`), because a single flat
+default either truncates the opt-in forensic level on an ordinary large form or
+over-provisions the common one — see the measurements in §7 R6.
 
 **F. Effective LLM identity.** `AnswerPlausibilityChecker.check` already holds the
 response object. `AIMessage.model` and `AIMessage.provider` are **required** `str`
@@ -188,6 +191,28 @@ sibling `_rbac_require` denies with `403` when the service is missing, when
 resolution raises, or when the permission is absent — regardless of
 `rbac_enforcing`, which exists to avoid breaking routes that shipped before RBAC,
 not routes that ship after it.
+
+The gate also requires a **minimum scope of `CLIENT`**:
+`has_permission("read_form_audit", scope=RBACScope.CLIENT)`. That is enforceable
+today exactly as written, because `has_permission` genuinely compares scope
+*levels* (`services/rbac.py:182-208`, `_SCOPE_ORDER` at `:84`) — an `own`- or
+`team`-scoped grant therefore cannot read another subject's audit record, while a
+`client`- or `global` grant can. What `has_permission` does **not** do is evaluate
+a resource: `_compile_scope_to_policy` hardcodes `resources=["form:*"]`
+(`services/rbac.py:298`), so there is no submission- or form-level condition in the
+policy at all. Row identity is therefore checked by the handler: the tenant comes
+from `_get_tenant` (already validated by `requires_tenant` before the handler
+runs, `api/handlers.py:397-409`) and the row's `form_uid` must equal the path's.
+A mismatch is a **404**, not a 403, and it is evaluated *after* the permission
+gate — otherwise the endpoint would confirm which submission ids exist to a caller
+with no permission at all.
+
+Scoping by *submission ownership* is deliberately not attempted. `FormSubmission.user_id`
+is `None` unless the form declares a `metadata` block: `submit_data` passes
+`user_id=None` (`api/handlers.py:1841`) and the pipeline calls `enrich_submission`
+only `if form.metadata:` (`services/submission_pipeline.py:346`). An `own`-scoped
+rule would therefore deny every audit read on the majority of forms, public ones
+included, because those rows have no owner to compare against.
 
 ### Component Diagram
 
@@ -321,11 +346,28 @@ class FieldTrace(BaseModel):
     failures: list[CheckRecord] = Field(default_factory=list)  # every detail level
 
 
+# Per-detail cap defaults. `full` gets four times the room because it is the
+# opt-in level that exists for disputes: a truncated forensic trace on an
+# 80-field contract form is the exact failure this feature removes. Measured
+# sizes behind these numbers are in §7 R6.
+DEFAULT_MAX_BYTES: dict[AuditDetail, int] = {
+    AuditDetail.OFF: 0,
+    AuditDetail.SUMMARY: 65_536,     # 64 KiB — covers 239-352 fields
+    AuditDetail.FULL: 262_144,       # 256 KiB — covers 235-440 fields
+}
+
+
 class AuditTrailConfig(BaseModel):
     """Per-form deterministic-audit settings (``FormSchema.audit_trail``)."""
 
     detail: AuditDetail = AuditDetail.SUMMARY
-    max_bytes: int = Field(default=65536, ge=1024, le=1048576)
+    max_bytes: int | None = Field(default=None, ge=1024, le=1_048_576)
+    """Hard cap on the serialized trace. ``None`` resolves per `detail` via
+    ``DEFAULT_MAX_BYTES`` — an explicit value always wins, in either direction."""
+
+    @property
+    def effective_max_bytes(self) -> int:
+        """Return `max_bytes`, or the `DEFAULT_MAX_BYTES` entry for `detail`."""
 
 
 class ValidationTrace(BaseModel):
@@ -423,6 +465,9 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
     `field_id`), setting `truncated` and the `omitted_*` counters. Failures are
     dropped last — a trace that omits a failure is worse than useless. Never
     returns a payload larger than `max_bytes`.
+
+    Callers pass `AuditTrailConfig.effective_max_bytes`, never the raw
+    `max_bytes` field, which may be `None`.
     """
 ```
 
@@ -434,18 +479,34 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 
         Returns 200 with `{submission_id, form_uid, form_version, is_valid,
         validation, llm_validation}` — the trace and the plausibility report
-        only, never the submitted answers. 403 when the caller lacks
-        `read_form_audit`; 404 when no such submission exists in the resolved
-        tenant.
+        only, never the submitted answers.
+
+        Order is part of the contract: the permission gate runs FIRST, then the
+        lookup. 403 when the caller lacks `read_form_audit` at `CLIENT` scope or
+        wider; 404 when no row matches `submission_id` in the resolved tenant, or
+        when the row's `form_uid` differs from the path's. A caller without the
+        permission therefore learns nothing about which submission ids exist.
         """
 
-    async def _rbac_require(self, request: web.Request, codename: str, *, resource: str) -> None:
+    async def _rbac_require(
+        self, request: web.Request, codename: str, *, scope: RBACScope | None = None
+    ) -> None:
         """Fail-CLOSED permission gate — the audit sibling of `_rbac_shadow_gate`.
 
         Raises `web.HTTPForbidden` when the RBAC service is unavailable, when
-        resolution raises, or when the permission is absent, independent of
-        `self.rbac_enforcing`. Deliberately NOT `_rbac_shadow_gate`, which
-        allows in all three of those cases (handlers.py:2239, 2254, 2271).
+        resolution raises, or when the permission is absent at `scope` or wider,
+        independent of `self.rbac_enforcing`. Deliberately NOT
+        `_rbac_shadow_gate`, which allows in all three of those cases
+        (handlers.py:2239, 2254, 2271).
+
+        Takes `scope`, not a `resource` string: `RBACContext.has_permission`
+        accepts `(codename, scope)` only and evaluates no resource
+        (services/rbac.py:182), so a `resource=` parameter would be a promise the
+        RBAC layer cannot keep. Row identity is the caller's job.
+
+        `RBACScope` is imported INSIDE the method body, matching the existing
+        idiom at handlers.py:2487 — the module imports only `RBACService`, and
+        only under TYPE_CHECKING (handlers.py:103).
         """
 ```
 
@@ -468,8 +529,9 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 ### Module 1: Audit-trail core models
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/core/audit_trail.py` (new)
 - **Responsibility**: Declare `AuditDetail`, `CheckId`, `CheckOutcome`, `SkipReason`,
-  `CheckRecord`, `FieldTrace`, `AuditTrailConfig`, `ValidationTrace`. Add
-  `FormSchema.audit_trail` and export the new names from `core/__init__.py`.
+  `CheckRecord`, `FieldTrace`, `AuditTrailConfig` (with `DEFAULT_MAX_BYTES` and
+  `effective_max_bytes`), `ValidationTrace`. Add `FormSchema.audit_trail` and
+  export the new names from `core/__init__.py`.
 - **Depends on**: nothing in this spec (root module).
 - **Interface Skeleton** *(signatures + docstrings only)*:
   ```python
@@ -596,7 +658,10 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 - **Responsibility**: `GET {tp}/forms/{form_uid}/data/{submission_id}/audit`,
   registered with `_wrap_auth(..., tenant="required")` (the default — never
   `"public"`), gated by the new fail-closed `_rbac_require` on codename
-  `read_form_audit`, returning only the audit projection.
+  `read_form_audit` at a minimum scope of `RBACScope.CLIENT`, returning only the
+  audit projection. Permission gate first, then lookup; a `form_uid` mismatch is
+  a 404. No policy is seeded — the codename is declared as a constant and granted
+  through the existing `POST /org/users/{user_id}/assign` (`api/routes.py:552-555`).
 - **Depends on**: Modules 1, 5.
 - **Interface Skeleton**: as written verbatim in §2 New Public Interfaces.
 
@@ -625,6 +690,7 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 | `test_fingerprint_deterministic_across_runs` | M2 | Same form → identical hash; dict ordering in `meta` does not change it |
 | `test_fingerprint_changes_with_constraint` | M2 | Changing `max_length` changes the hash while `form.version` stays `"1.0"` |
 | `test_fingerprint_excludes_array_item_template` | M2 | The hash covers the validator's traversal, not `iter_fields_recursive` (validators.py:340-356) |
+| `test_cap_default_per_detail` | M1 | `max_bytes=None` resolves to 64 KiB under `summary` and 256 KiB under `full`; an explicit value wins in both directions |
 | `test_cap_trace_respects_max_bytes` | M2 | 200 fields × 8 checks capped to `max_bytes`; UTF-8 length asserted |
 | `test_cap_trace_marks_truncation` | M2 | `truncated=True` and `omitted_fields`/`omitted_checks` non-zero when it cuts |
 | `test_cap_trace_drops_failures_last` | M2 | A failing field survives a cap that drops passing fields |
@@ -646,6 +712,8 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 | `test_rbac_require_fails_closed_no_service` | M6 | `_rbac_service is None` → 403, unlike `_rbac_shadow_gate` (handlers.py:2239) |
 | `test_rbac_require_fails_closed_on_exception` | M6 | Resolution raising → 403, unlike handlers.py:2254 |
 | `test_rbac_require_ignores_shadow_mode` | M6 | `rbac_enforcing=False` still denies |
+| `test_rbac_require_rejects_narrow_scope` | M6 | An `own`- or `team`-scoped `read_form_audit` grant → 403; `client` and `global` → allowed (`rbac.py:182-208`) |
+| `test_rbac_require_takes_scope_not_resource` | M6 | The signature is `(request, codename, *, scope)`; no `resource=` parameter exists, since `has_permission` evaluates none |
 
 ### Integration Tests
 
@@ -661,6 +729,9 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 | `test_audit_endpoint_returns_projection_only` | 200 body carries `validation` + `llm_validation` and **no** submitted answers |
 | `test_audit_endpoint_denies_without_permission` | Authenticated without `read_form_audit` → 403 even at `rbac_enforcing=False` |
 | `test_audit_endpoint_404_unknown_submission` | Unknown `submission_id` → 404, after the permission gate, never before |
+| `test_audit_endpoint_404_on_form_uid_mismatch` | A real `submission_id` under a different `form_uid` → 404, not 200 and not 403 |
+| `test_audit_endpoint_gate_precedes_lookup` | A caller with no permission gets 403 for both an existing and a non-existent `submission_id` — the response does not disclose existence |
+| `test_audit_endpoint_full_detail_not_truncated_at_80_fields` | An 80-field form under `full` stores a complete trace with `truncated=false` — the case a flat 64 KiB cap would have cut |
 | `test_validate_only_callers_produce_no_persisted_trace` | Pins NG1: the Telegram router and `ui/handlers` validate paths persist nothing, so nobody later reads coverage into them |
 
 ### Validation Contract
@@ -737,9 +808,12 @@ def unidentified_client() -> Any:
 - [ ] **AC7** — `ruleset_version`, `form_version` and `schema_fingerprint` are three
   distinct stored fields; a validator-code bump changes `ruleset_version` alone.
 - [ ] **AC8** — The serialized `validation` payload never exceeds
-  `audit_trail.max_bytes` UTF-8 bytes; when it would, `truncated=true` and the
-  `omitted_fields`/`omitted_checks` counters are non-zero, and no `failures` entry
-  is dropped while a passing field entry remains.
+  `audit_trail.effective_max_bytes` UTF-8 bytes; when it would, `truncated=true`
+  and the `omitted_fields`/`omitted_checks` counters are non-zero, and no
+  `failures` entry is dropped while a passing field entry remains.
+- [ ] **AC8b** — `max_bytes=None` resolves to 64 KiB under `summary` and 256 KiB
+  under `full`; an explicit `max_bytes` overrides both, up or down. An 80-field form
+  under `full` is stored complete (`truncated=false`).
 - [ ] **AC9** — The cap is applied before the trace is merged into `context`, so
   `context["llm_validation"]` is never truncated by it.
 - [ ] **AC10** — `PlausibilityReport.model` keeps its current meaning and value for
@@ -760,8 +834,12 @@ def unidentified_client() -> Any:
   form_version, is_valid, validation, llm_validation}`, and carries no submitted
   answer.
 - [ ] **AC17** — The endpoint returns 403 when the caller lacks `read_form_audit`,
-  when `rbac_service` is `None`, and when RBAC resolution raises — in all three
-  cases regardless of `rbac_enforcing`.
+  when the grant is narrower than `CLIENT` scope, when `rbac_service` is `None`,
+  and when RBAC resolution raises — in all four cases regardless of
+  `rbac_enforcing`.
+- [ ] **AC17b** — The permission gate runs before the lookup: a caller without the
+  permission receives 403 for an existing and for a non-existent `submission_id`
+  alike. A `submission_id` that exists under a different `form_uid` returns 404.
 - [ ] **AC18** — `FormValidator.validate_field` called without `trace=` returns
   `list[str]` and behaves exactly as before; `api/handlers.py:743` is unchanged in
   behaviour.
@@ -774,6 +852,10 @@ def unidentified_client() -> Any:
   new `PlausibilityReport` fields.
 - [ ] **AC22** — The Validation Contract tests pass, and `ruff check` is clean on
   every touched file.
+- [ ] **AC23** — No policy is seeded by this feature. The `read_form_audit` codename
+  is a declared constant, and `docs/formdesigner-validation-audit-trail.md` documents
+  the grant through the existing `POST /org/users/{user_id}/assign` — including that
+  the endpoint 403s until an operator grants it, which is the intended failure.
 
 ---
 
@@ -927,10 +1009,26 @@ class FormSchema(BaseModel):                             # line 411
 
 # packages/parrot-formdesigner/src/parrot_formdesigner/services/rbac.py
 class RBACScope(str, Enum): OWN/TEAM/CLIENT/GLOBAL       # line 67
+_SCOPE_ORDER = [OWN, TEAM, CLIENT, GLOBAL]               # line 84 — 0 narrowest .. 3 widest
+def _scope_level(scope: RBACScope) -> int: ...           # line 87
+class PermissionRecord(BaseModel):                       # line 135
+    user_id: str; codename: str; scope: RBACScope; program_id: int; policy_name: str; tenant: str
 class RBACContext(BaseModel):                            # line 162
+    permissions: list[PermissionRecord]                  # line 179
     def has_permission(self, codename: str, scope: RBACScope | None = None) -> bool: ...   # line 182
+    #   lines 200-208 — a grant at scope S satisfies a required S' iff level(S') <= level(S).
+    #   SCOPE LEVELS DO WORK. A `resource` is NEVER evaluated — there is no such parameter.
+def _compile_scope_to_policy(user_id, *, program_id, codename, scope, tenant) -> Policy: ...  # line 261
+    #   line 298 — resources=["form:*"]  HARDCODED; no submission/form condition ever lands in the policy
+    #   line 303 — enforcing=False       every compiled policy is created in shadow mode
 class RBACService:                                       # line 313
+    async def create_policy(self, policy: Policy) -> Policy: ...                           # line 341
+    async def assign_role(self, user_id, *, program_id, codename, scope, tenant) -> PermissionRecord: ...  # line 414
     async def resolve(self, user_id, *, program_id, tenant) -> RBACContext: ...            # line 467
+    #   line 496 — `if policy.name.startswith(f"user__{user_id}__")` — ONLY per-user compiled
+    #     policies are projected into `permissions`. A hand-written or group-scoped policy row
+    #     is INVISIBLE to has_permission, so seeding a generic policy accomplishes nothing.
+    #   lines 501-503 — codename and scope are parsed back out of the policy NAME
 
 # packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py
     async def _rbac_shadow_gate(self, request: web.Request, codename: str) -> None: ...    # line 2220
@@ -938,6 +1036,16 @@ class RBACService:                                       # line 313
 #   line 2254 — `except Exception: ... return`            (ALLOWS — fail open)
 #   line 2271 — `if self.rbac_enforcing:` …  else WOULD-DENY (shadow)
     rbac_enforcing: bool = False                                                            # line 158
+    def _get_tenant(self, request: web.Request) -> str: ...                                 # line 397
+    #   lines 398-409 — the tenant is declared in the URL and already validated + authorized
+    #     by `requires_tenant` (api/tenant.py) BEFORE the handler body runs
+    async def submit_data(self, request: web.Request) -> web.Response: ...                  # line 1673
+    #   line 1841 — pipeline.submit(..., user_id=None, ...)   HTTP submit never sets an owner
+    async def assign_user_role(self, request: web.Request) -> web.Response: ...             # line 2442
+    #   the grant path; itself gated on `manage_roles` (privilege check ~line 2513)
+#   line 103  — `from ..services.rbac import RBACService` is TYPE_CHECKING-only
+#   line 2487 — `from ..services.rbac import RBACScope` is a LOCAL import inside the
+#     method body. New code needing RBACScope follows that idiom, not a top-level import.
 #   line 743 — errors = await self.validator.validate_field(field, value, all_data=answers)
 
 # packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py
@@ -947,6 +1055,16 @@ def setup_form_api(app, registry, *, ..., rbac_service=None, rbac_enforcing=Fals
 #   line 367 — app["submission_pipeline"] = handler._build_submission_pipeline()
 #   line 422 — add_post(f"{tp}/forms/{{form_uid}}/validate", _wrap_auth(handler.validate, tenant="public"))
 #   line 432 — add_post(f"{tp}/forms/{{form_uid}}/data", _wrap_auth(handler.submit_data, tenant="public"))
+#   lines 552-555 — add_post("/org/users/{user_id}/assign", _wrap_auth(handler.assign_user_role, tenant="none"))
+#     The grant path for `read_form_audit` EXISTS and is routed; nothing new is needed for it.
+
+# packages/parrot-formdesigner/src/parrot_formdesigner/services/submission_pipeline.py
+#   line 346 — `if form.metadata:` guards the enrich_submission call, so FormSubmission.user_id
+#     stays None on every form without a declared `metadata` block (see handlers.py:1841)
+
+# packages/parrot-formdesigner/src/parrot_formdesigner/services/metadata_enricher.py
+#   line 93  — base_user_id = _user_attr(request, "user_id") or _user_attr(request, "id")
+#   line 218 — user_id=base_user_id      the ONLY place a submission acquires an owner
 
 # packages/parrot-formdesigner/src/parrot_formdesigner/services/sinks/mapper.py
 #   line 62, 84 — "context" is listed in both payload column sets (tabular + document)
@@ -1003,7 +1121,16 @@ __version__ = "1.2.4"      # current; FEAT-732 targets 1.3.0
 - ~~`_rbac_require`~~ — does not exist; only the fail-OPEN `_rbac_shadow_gate` (`handlers.py:2220`).
 - ~~`RBACContext.has_permission(resource=...)`~~ — the signature is `(codename, scope=None)` only
   (`services/rbac.py:182`); it evaluates **no** resource, so resource scoping must be done
-  by the caller, not delegated to it.
+  by the caller, not delegated to it. `_rbac_require` therefore takes `scope=`, never
+  `resource=`.
+- ~~a seeding hook / default-policy bootstrap for RBAC~~ — none exists, and a seeded policy
+  would not work: `resolve()` projects only `user__{user_id}__*` policies
+  (`services/rbac.py:496`). Grants go through `assign_role` / `assign_user_role` only.
+- ~~a group- or role-based path into `RBACContext.permissions`~~ — `resolve()` reads
+  `auth.user_groups` into `RBACContext.groups` (`services/rbac.py:524-525`) but **never**
+  turns a group into a `PermissionRecord`.
+- ~~`AuditTrailConfig.max_bytes` as a plain required `int`~~ — it is `int | None`; callers
+  read `effective_max_bytes`, which resolves the per-detail default.
 - ~~`AbstractClient.resolved_model`~~ / ~~`.effective_model`~~ — do not exist. `client.model`
   exists but can be `None` (`clients/base.py:424`).
 - ~~`AIMessage.model_name`~~ / ~~`.llm`~~ — the field is `model` (`responses.py:138`).
@@ -1083,17 +1210,41 @@ never be used as a bare anchor.
   serves audit records to anyone whenever RBAC is unconfigured, which is the
   default. Mitigation: a separate `_rbac_require`; AC17 tests all three paths.
 - **R4 — `RBACContext.has_permission` evaluates no resource** — it matches a
-  codename and an optional scope only (`services/rbac.py:182`). Tenant and
-  form-ownership scoping must therefore be enforced by the handler (the tenant from
-  `_get_tenant`, the `form_uid` from the path matched against the stored row), not
-  delegated to the RBAC layer. §8 Q1 asks how far that scoping should go for v1.
+  codename and an optional scope only (`services/rbac.py:182`), and
+  `_compile_scope_to_policy` hardcodes `resources=["form:*"]` (`:298`). Resolved
+  (§8 Q1): the gate requires `CLIENT` scope or wider — scope *levels* do work
+  (`:84`, `:182-208`) — and the handler checks row identity itself (tenant +
+  `form_uid`, mismatch ⇒ 404). Ownership scoping is **not** attempted, because
+  `FormSubmission.user_id` is `None` on any form without a `metadata` block
+  (`api/handlers.py:1841`, `services/submission_pipeline.py:346`), so an `own` rule
+  would deny every audit read on most forms.
+- **R4b — only per-user compiled policies are visible to `resolve()`.** It projects
+  a policy into `permissions` únicamente when the name starts with
+  `user__{user_id}__` (`services/rbac.py:496`). A hand-written or group-scoped
+  policy row is invisible to `has_permission`, so "seed a policy" is not an
+  available strategy without changing `resolve()`. Resolved (§8 Q2): nothing is
+  seeded; the grant goes through `assign_user_role`
+  (`POST /org/users/{user_id}/assign`, `api/routes.py:552-555`, itself gated on
+  `manage_roles`), and the doc says so.
 - **R5 — `context` is serialized unbounded today** (`services/submissions.py:331`).
   The cap must therefore be enforced on the trace before the merge; capping later,
   or trusting the storage layer, caps nothing.
-- **R6 — Cost on wide forms.** `summary` is the default precisely so the common
-  case stores field→`CheckId[]` lists rather than a record per check. A 200-field
-  form under `full` is the case the cap exists for; the `wide_form` fixture must be
-  deliberately larger than any plausible `max_bytes`.
+- **R6 — Cost on wide forms, measured not guessed.** `summary` is the default
+  precisely so the common case stores field→`CheckId[]` lists rather than a record
+  per check. Serialized UTF-8 JSON of the §2 shapes (header alone: 671 bytes):
+
+  | fields | summary / 4 checks | summary / 8 | full / 4 | full / 8 |
+  |---|---|---|---|---|
+  | 50 | 9,872 | 14,222 | 30,322 | 56,222 |
+  | 100 | 19,072 | 27,772 | 59,972 | 111,772 |
+  | 200 | 37,472 | 54,873 | 119,272 | 222,873 |
+
+  Fields that fit a candidate cap: **64 KiB** → summary 239–352, full **58–109**;
+  **256 KiB** → summary 964–1418, full 235–440. A flat 64 KiB would therefore have
+  truncated `full` on an ordinary 80-field form — which is why the default is
+  per-detail (§2 E). Numbers reproduced by the script recorded with this feature's
+  design research. The `wide_form` fixture must still exceed whichever cap the test
+  sets, so truncation is exercised rather than approximated.
 - **R7 — Localised error text must not leak into check identity.** `CheckRecord.message`
   may carry the localised message, but `CheckId` never derives from it, or the same
   submission traced in `es` and `en` would produce different "checks".
@@ -1116,18 +1267,30 @@ never be used as a bare anchor.
 
 ## 8. Open Questions
 
-- [ ] **Q1** — How far should resource scoping go on the audit read for v1?
-  `RBACContext.has_permission` evaluates no resource (`services/rbac.py:182`), so the
-  handler must scope by itself. Minimum is tenant + `form_uid`-matches-the-row;
-  a stricter reading would add `own`/`team` scope over `FormSubmission.user_id`.
-  Escalated from design review S10. — *Owner: Jesus Lara*
-- [ ] **Q2** — Should the `read_form_audit` permission be seeded as a policy by this
-  feature, or left for an operator to create? Shipping the endpoint without a seeded
-  policy means a correctly-configured deployment gets 403 until someone grants it —
-  which is the safe failure, but needs to be a decision rather than an accident.
-  — *Owner: Jesus Lara*
-- [ ] **Q3** — `max_bytes` default is proposed at 64 KiB. Confirm against the real
-  `form_data` row sizes in the tenants that will enable `full`. — *Owner: Jesus Lara*
+None open. All three were resolved on 2026-10-23 before task decomposition.
+
+- [x] **Q1** — How far should resource scoping go on the audit read for v1?
+  *Resolved*: tenant + `form_uid` checked by the handler, **plus** a minimum RBAC
+  scope of `CLIENT` on the permission, so an `own`/`team` grant cannot read another
+  subject's audit record. Ownership filtering on `user_id` was rejected on evidence:
+  that column is `None` on any form without a `metadata` block
+  (`api/handlers.py:1841`, `services/submission_pipeline.py:346`), so an `own` rule
+  would deny every audit read on most forms, public ones included. Escalated from
+  design review S10, now closed. → §2 G, §3 M6, §7 R4, §5 AC17/AC17b.
+- [x] **Q2** — Should the `read_form_audit` permission be seeded by this feature?
+  *Resolved*: **no**. The codename is declared as a constant and documented; an
+  operator grants it through the existing `POST /org/users/{user_id}/assign`
+  (`api/routes.py:552-555`, gated on `manage_roles`). The endpoint 403s until then,
+  and that is the intended failure. Seeding was also found not to be available as
+  posed: `RBACService.resolve` projects only policies named `user__{user_id}__*`
+  (`services/rbac.py:496`), so a seeded or group-scoped policy row would be
+  invisible to `has_permission`. → §3 M6, §7 R4b, §5 AC23.
+- [x] **Q3** — Confirm the `max_bytes` default. *Resolved*: the default is resolved
+  **per detail level** — 64 KiB for `summary`, 256 KiB for `full` — after measuring
+  the serialized shapes. A flat 64 KiB covers `summary` to 239–352 fields but cuts
+  `full` at 58–109, i.e. it would truncate the forensic level on an ordinary
+  80-field form. An explicit `max_bytes` still overrides either way. → §2 E, §2 Data
+  Models `DEFAULT_MAX_BYTES`, §7 R6, §5 AC8/AC8b.
 
 Resolved before drafting (decided by the product owner; carried into the body, not
 re-opened):
@@ -1170,10 +1333,12 @@ re-opened):
 | S7 | Cap the serialized trace deterministically before persistence (risk) | CONFIRM | Verified `submissions.py:331` dumps `context` unbounded, so a post-merge cap caps nothing. Fixed the cap point, the ordering, and "failures dropped last" | §2 E, M2 `cap_trace`, AC8/AC9 |
 | S8 | Resolve effective LLM identity from the response (api) | CONFIRM | Matches the fixed decision, and adds the part it did not cover: an `ok` with no effective model must route through `on_error` rather than persist an unattributable success | §2 F, M4, AC12 |
 | S9 | Dedicated authenticated submission-audit read contract (architecture) | CONFIRM | Verified `api/routes.py` registers no submission GET at all, and `get_submission` already exists — so the endpoint is new work, and the projection must exclude answers | §2 G, M6, AC16 |
-| S10 | Do not rely on RBAC shadow checks for audit authorization (risk) | CONFIRM + ESCALATE | The fail-open paths are confirmed at `handlers.py:2239/2254/2271`, so a separate fail-closed gate is adopted outright. The resource-scoping depth it also asks for is a product decision, not a code fact | §2 G, §7 R3/R4, AC17; scoping → §8 Q1 |
+| S10 | Do not rely on RBAC shadow checks for audit authorization (risk) | CONFIRM (escalation now resolved) | The fail-open paths are confirmed at `handlers.py:2239/2254/2271`, so a separate fail-closed gate is adopted outright. Its further ask — scope the resource — was escalated as §8 Q1 and resolved on 2026-10-23: `CLIENT`-minimum scope plus handler-side tenant/`form_uid` identity. Its suggestion to carry `submission_id`/`form_uid` *in the RBAC resource* is the one part REJECTED: `has_permission` accepts `(codename, scope)` only and evaluates no resource (`rbac.py:182`), so a `resource=` parameter would be a promise the layer cannot keep | §2 G, §7 R4, AC17/AC17b |
 | S11 | Contract tests for trace completeness and cross-channel parity (testing) | CONFIRM | Its branch list (early returns, relaxed required, the three detail modes, cap markers, the three sink families, missing-model, allow/deny reads) is more complete than the draft test table and was folded in wholesale | §4 Unit + Integration Tests |
 
-Summary: **11** confirmed · **0** rejected · **1** escalated (S10's scoping depth → §8 Q1).
+Summary: **11** confirmed · **0** rejected · **1** escalated and since resolved
+(S10's scoping depth → §8 Q1, closed 2026-10-23). One sub-point of S10 — carrying
+the resource inside the RBAC check — was rejected on evidence; see its row.
 
 ---
 
@@ -1208,3 +1373,4 @@ Summary: **11** confirmed · **0** rejected · **1** escalated (S10's scoping de
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-23 | Jesus Lara | Initial draft — two audit-trail gaps closed; four product decisions carried in; 11 design-review suggestions triaged |
+| 0.2 | 2026-10-23 | Jesus Lara | §8 Q1–Q3 resolved: `CLIENT`-minimum scope + handler-side row identity (ownership filtering rejected on evidence); no policy seeded; per-detail cap defaults after measuring serialized sizes |
