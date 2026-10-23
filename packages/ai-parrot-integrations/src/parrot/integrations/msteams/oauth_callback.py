@@ -55,6 +55,12 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 <p>You can close this tab and return to <span class="teams">Microsoft Teams</span>.</p>
 </div></body></html>"""
 
+_MSTEAMS_IDENTITY_WARNING_HTML = (
+    '<p class="identity-warning" style="color:#de350b">Warning: your Teams account '
+    "link could not be saved. Jira works for this session, but please contact "
+    "your administrator if the link is not remembered.</p>"
+)
+
 _MSTEAMS_ERROR_HTML = """\
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Authorization Failed</title>
@@ -241,22 +247,25 @@ async def handle_msteams_jira_callback(
 
     # 1. Persist identity mapping row
     identity_service = request.app.get("identity_mapping_service")
+    identity_saved = True
     if identity_service is not None and nav_user_id:
         try:
             await identity_service.upsert_identity(
                 nav_user_id=nav_user_id,
                 auth_provider="msteams",
+                # The Teams account id: the AAD object id (== nav_user_id here).
+                provider_user_id=nav_user_id,
                 auth_data={
                     "aad_object_id": nav_user_id,
                     # tenant_id, when present on the serialized conversation ref.
-                    "tenant_id": (
-                        conv_ref.get("conversation", {}).get("tenantId") or ""
-                    ),
+                    "tenant_id": (conv_ref.get("conversation", {}).get("tenantId") or ""),
                 },
                 display_name=token_set.display_name or None,
                 email=token_set.email or None,
             )
         except Exception:  # noqa: BLE001 — identity write must not break browser flow
+            # Surfaced to the user (warning on the page), not only logged.
+            identity_saved = False
             logger.exception(
                 "Failed to write auth.user_identities for Teams user=%s",
                 nav_user_id,
@@ -276,10 +285,14 @@ async def handle_msteams_jira_callback(
         )
 
     # 3. Return HTML success page
-    return web.Response(
-        text=_MSTEAMS_SUCCESS_HTML.format(
-            display_name=html.escape(token_set.display_name or ""),
-            site_url=html.escape(token_set.site_url or ""),
-        ),
-        content_type="text/html",
+    page = _MSTEAMS_SUCCESS_HTML.format(
+        display_name=html.escape(token_set.display_name or ""),
+        site_url=html.escape(token_set.site_url or ""),
     )
+    if not identity_saved:
+        page = page.replace(
+            "</div></body></html>",
+            _MSTEAMS_IDENTITY_WARNING_HTML + "</div></body></html>",
+            1,
+        )
+    return web.Response(text=page, content_type="text/html")
