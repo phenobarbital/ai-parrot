@@ -135,4 +135,44 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src:packages/a
 
 ## Completion Note
 
-_(filled on close)_
+**Closed**: 2026-10-23 — verification `verified`.
+**Discovered-from**: `issue:a671f989e8e7` (closed by this task).
+
+Implemented exactly the two files in scope:
+
+- `slack/oauth_callback.py` — `nav_user_id` now comes from the state's
+  `nav_user_id` key via the existing `_field` helper (`extra` first, then top
+  level). `state_payload["user_id"]` and the `f"{team_id}:{slack_user_id}"`
+  fallback are both gone; a missing Navigator id logs
+  `"Skipping auth.user_identities write for Slack user=%s team=%s: OAuth
+  state carries no Navigator nav_user_id"` and the `upsert_identity` call is
+  skipped. The DM notification, the `?error=` branch and the success page are
+  untouched. The module and function docstrings now state the condition.
+- `test_slack_oauth_callback.py` — added the
+  `slack_state_payload_with_nav_user` fixture,
+  `test_skips_identity_write_without_nav_user_id`,
+  `test_never_passes_composite_vault_key_as_nav_user_id`, and extended the
+  shape-parity test to carry `nav_user_id` through a real
+  `JiraOAuthManager` nonce round-trip while asserting the composite
+  `user_id` is still what the manager stores.
+
+**Validation** (in this worktree,
+`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src:packages/ai-parrot-server/src`):
+
+- `test_slack_oauth_callback.py` → **12 passed**.
+- `tests/integrations/slack/` + `test_jira_oauth_integration.py` →
+  **104 passed, 1 failed**. The failure is
+  `TestJiraOAuthCallbackRouting::test_missing_code_returns_400`
+  (`assert 500 == 400`, *"jira_oauth_manager not registered on the aiohttp
+  app"*), pre-existing and unrelated: it reproduces identically on a clean
+  `dev` checkout and never reaches this module.
+- `packages/ai-parrot/tests/unit/test_identity_mapping.py` → **11 passed**.
+- `ruff check` clean on both files.
+
+**Open / deferred**: the Slack lane still has no way to *produce* a Navigator
+user id — no Slack auth lane, no Slack→`auth.users` resolver — so in practice
+the Slack identity row is now explicitly skipped rather than written. Giving
+Slack a real `nav_user_id` (a Slack equivalent of the Teams auth lane, or a
+Slack-email→Navigator-user resolver) is separate feature work and was left
+out of scope deliberately; the ledger issue only asked that the impossible
+write stop being attempted.
