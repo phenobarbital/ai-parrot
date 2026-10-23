@@ -24,6 +24,7 @@ from .persistence import FormPersistenceConfig
 from .relations import RelationSpec
 from .types import FieldType, LocalizedString
 from .llm_validation import LLMValidationConfig
+from .audit_trail import AuditTrailConfig
 from .voice import VoiceFormConfig
 
 # Legal (field_type) sets for each (mode, cardinality) combination of
@@ -439,6 +440,8 @@ class FormSchema(BaseModel):
         metadata: Declared contextual metadata fields captured on submission.
         voice: Optional typed voice-mode configuration block (FEAT-649).
         llm_validation: Optional LLM answer-plausibility block (FEAT-649).
+        audit_trail: Optional deterministic validation audit-trail block (FEAT-732);
+            ``None`` means the ``summary`` default.
         events: Optional lifecycle event bindings (FEAT-188). Maps each
             lifecycle event name (``onBeforeOpen``, ``onSchemaLoaded``,
             ``onBeforeSubmit``, ``onAfterSubmit``, ``onError``) to a
@@ -489,6 +492,9 @@ class FormSchema(BaseModel):
     voice: VoiceFormConfig | None = None
     # FEAT-649 — LLM-assisted answer plausibility (all channels).
     llm_validation: LLMValidationConfig | None = None
+    # FEAT-732 — deterministic audit trail. SEPARATE from llm_validation on
+    # purpose: turning the LLM check off must never turn auditing off.
+    audit_trail: AuditTrailConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.
