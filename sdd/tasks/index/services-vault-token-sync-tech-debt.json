@@ -59,7 +59,7 @@
     {
       "id": "TASK-4669",
       "slug": "jira-link-time-credential-sink",
-      "title": "Write the owner at link time too (handle_callback \u2192 CredentialSink)",
+      "title": "Write the owner at link time too (handle_callback → CredentialSink)",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,15 +87,16 @@
         "TASK-4668"
       ],
       "parallel": true,
-      "parallelism_notes": "reads auth.user_identities, which only TASK-4668's sink keeps current; shipping the probe first would move the badge onto a write-once copy (spec \u00a73 M2 'Depends on: M1'). No file overlap \u2014 service.py is touched by this task alone",
-      "file": "sdd/tasks/active/TASK-4670-token-status-reads-owner.md",
+      "parallelism_notes": "reads auth.user_identities, which only TASK-4668's sink keeps current; shipping the probe first would move the badge onto a write-once copy (spec §3 M2 'Depends on: M1'). No file overlap — service.py is touched by this task alone",
+      "file": "sdd/tasks/completed/TASK-4670-token-status-reads-owner.md",
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-23T21:35:16.887961Z",
-      "completed_at": null
+      "completed_at": "2026-10-23T21:37:55+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4671",
