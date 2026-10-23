@@ -86,7 +86,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "Repairs the sites TASK-4591 breaks by deleting packages/ai-parrot/tests/__init__.py, and is scoped from the §3 table of TASK-4590's spike-collect.md. Exclusive: until every distribution is repaired the tree is half-converted, so a concurrent task's collection run cannot distinguish its own breakage from this one's.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4592-repair-import-sites-ai-parrot.md"
+      "completed_at": "2026-10-23T12:26:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4592-repair-import-sites-ai-parrot.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4593",
