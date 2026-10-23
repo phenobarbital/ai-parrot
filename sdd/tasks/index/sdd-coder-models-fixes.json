@@ -44,7 +44,7 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -52,8 +52,9 @@
       "parallelism_notes": "No dependencies: sole owner of sdd_coder/models.py and tests/.../sdd_coder/test_models.py; shares no file with TASK-4674 or TASK-4675.",
       "assigned_to": null,
       "started_at": "2026-10-23T22:53:36.761218+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4673-models-brief-ids-and-task-tier.md"
+      "completed_at": "2026-10-23T22:55:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4673-models-brief-ids-and-task-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4674",

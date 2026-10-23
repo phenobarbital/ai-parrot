@@ -420,4 +420,28 @@ already defined in `test_models.py`.
 
 ## Completion Note
 
-<!-- filled in on completion -->
+**Verified**, 2026-10-24.
+
+All four edit sites applied to `models.py`:
+- `_TASK_ID_RE` → `^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$`
+  (one constant; fixes `CoderRunChunkArgs.task_ids`,
+  `CoderPrepareNativeArgs.task_id`, `CoderRunValidationArgs.task_ids` and
+  `NativeObservation.task_id` at once).
+- `_check_task_id` docstring + error message now name both shapes.
+- `_check_uuid_optional` added below `_check_uuid`.
+- `CoderRunValidationArgs`: `tier: Literal["task", "merge", "feature"]`,
+  `attempt_uid: Optional[str] = None`, `_attempt_uuid` validator; docstring
+  records that the per-tier obligations stay in `background.py`.
+
+Tests: 11 new tests in `test_models.py` (including a parametrized
+`test_brief_key_ending_in_digits` for the backtracking case, a parametrized
+8-entry rejection table, and `test_native_observation_accepts_brief_task_id`).
+
+Evidence:
+- `pytest .../sdd_coder/test_models.py -q` → **62 passed**
+- `pytest .../test_background_contract.py .../test_background_mcp.py -q` → **11 passed**
+- `ruff check` on both changed files → clean
+
+No existing assertion pinned the old `"expected TASK-<1-5 digits>"` text, so
+nothing had to be updated. `toolkit.py`, `engine.py`, `background.py` and
+`optimization_models.py` are untouched (AC 7).
