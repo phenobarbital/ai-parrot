@@ -254,4 +254,26 @@ Python edit in this task is inside a docstring.
 
 ## Completion Note
 
-_To be filled on completion._
+**Completed 2026-10-23** (verification: verified).
+
+`docs/auth/jira-credential-ownership.md` created (the `docs/auth/` directory
+did not exist; checked for an existing ownership page first — there is none).
+It describes what **shipped**, re-read from the three implementations, not
+what the spec planned.
+
+Both docstrings updated and pointing at it. `vault_token_sync.py`'s was the
+more important of the two: it used Jira as its worked example of the flat key
+scheme — the exact pattern TASK-4671 retired — so it would have sent the next
+reader straight back to the dead copy. It now documents fireflies and states
+that Jira is not stored there.
+
+**Honest gap, recorded on the page rather than smoothed over**: a first-ever
+Jira link from Slack or MS Teams still writes no durable copy, because those
+flows carry no Navigator user id in the OAuth state. A re-link works via the
+account fallback. The page names `issue:187ce3fe3b93` as the fix and warns
+against closing it by inventing an id at the callback, citing the two ids that
+have already been written into a `bigint` column here.
+
+**Evidence**: `pytest test_jira_oauth_manager.py test_vault_token_sync_f4_regression.py
+test_vault_token_sync.py -q` → 64 passed; `ruff check` clean. Every Python
+edit in this task is inside a docstring — no executable line changed (AC-6).

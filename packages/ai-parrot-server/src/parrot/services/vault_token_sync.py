@@ -6,13 +6,19 @@ Works from non-HTTP contexts (e.g., the Telegram wrapper running under
 aiogram polling) by instantiating :class:`navigator_session.vault.SessionVault`
 directly via its ``load_for_session`` classmethod.
 
-Example keys stored for a Jira auth:
-    jira:access_token
-    jira:refresh_token
-    jira:cloud_id
-    jira:site_url
-    jira:account_id
+Example keys stored for a Fireflies auth:
+    fireflies:api_key
+
+Providers served here: fireflies, workiq, entra, o365.
+
+**Jira no longer stores credentials in this vault.** Its durable owner is
+navigator-auth's Identity Vault (``auth.user_identities``), written by
+``JiraOAuthManager``'s credential sink, with Redis as the hot cache
+(FEAT-735). Keys written before that change are inert and were deliberately
+left in place. Do not add a Jira path back here — see
+``docs/auth/jira-credential-ownership.md``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +57,7 @@ class VaultTokenRead:
         """True when the provider must be re-linked (tokens exist but are unusable)."""
         return self.status == "unreadable"
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +67,8 @@ _DEFAULT_SESSION_SCHEME: str = "telegram-persistent"
 
 
 def _synth_session_uuid(
-    nav_user_id: str, session_scheme: str = _DEFAULT_SESSION_SCHEME,
+    nav_user_id: str,
+    session_scheme: str = _DEFAULT_SESSION_SCHEME,
 ) -> str:
     """Deterministic session_uuid used for persistent per-user vault access.
 
@@ -205,7 +213,8 @@ class VaultTokenSync:
 
         expected_items = [(key, value) for key, value in tokens.items() if value is not None]
         ordered_items = sorted(
-            expected_items, key=lambda item: item[0] != self._WRITE_FIRST_FIELD,
+            expected_items,
+            key=lambda item: item[0] != self._WRITE_FIRST_FIELD,
         )
 
         written_keys: list[str] = []
@@ -269,7 +278,7 @@ class VaultTokenSync:
                 return VaultTokenRead(None, "missing")
             result: Dict[str, Any] = {}
             for full_key in matches:
-                field = full_key[len(prefix):]
+                field = full_key[len(prefix) :]
                 value = await vault.get(full_key)
                 if value is not None:
                     result[field] = value

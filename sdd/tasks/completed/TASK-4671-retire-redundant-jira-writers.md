@@ -266,4 +266,35 @@ vault data.
 
 ## Completion Note
 
-_To be filled on completion._
+**Completed 2026-10-23** (verification: verified).
+
+All three removals plus the dead helper: the `_store_in_vault` call site and
+method, `token=` on the `jira` upsert, and `_build_token_response` (its only
+caller was that argument — confirmed by `grep -rn` across `packages/*/src`
+before deleting, per AC-4). The now-unused `from datetime import ...` went
+with it. `vault_sync` stays on the constructor, documented as retained for
+the disconnect path.
+
+**Pre-deletion safety check (the task's step 2), done and recorded**: no
+reader of the Jira Session Vault copy remains.
+`integrations/mcp/fireflies_a2a.py:117` reads its own `PROVIDER`;
+`auth/broker/factory.py:237,260` are the generic `static_key` / `mcp`
+resolvers, keyed by a configured `vault_key` that defaults to
+`<provider>:api_key` / `<provider>:token` — neither matches the flat keys
+this provider wrote, and their `vault` object has a different `read_tokens`
+signature entirely. `service.py:273` is the vault branch TASK-4670 left for
+non-Jira providers.
+
+**Three existing tests asserted the write that is now gone** and were
+rewritten rather than deleted: `test_vault_called_with_jira_provider_and_flat_keys`
+became `test_jira_not_written_to_session_vault` (same subject, inverted
+expectation, with the reasoning in its docstring);
+`test_returns_true_on_clean_exchange` now asserts `store_tokens` is *not*
+awaited; `test_falls_back_to_extra_state_user_id` asserts the fallback on the
+identity rows, since the vault call it used to read is gone. Added
+`test_post_auth_jira_upsert_carries_no_token`.
+
+**Evidence**: `pytest test_post_auth_jira.py test_vault_token_sync_f4_regression.py -q`
+→ 20 passed. Whole feature contract (7 files) → **101 passed, 6 skipped**
+(the skips are the real-Postgres cases, gated on `IDENTITY_PG_DSN`).
+`ruff check` clean.
