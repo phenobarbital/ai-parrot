@@ -47,10 +47,10 @@ To prevent unbounded JSON payload growth in `context["validation"]`:
 
 ### Truncation behavior
 
-When the serialized JSON trace exceeds the effective byte cap, trimming occurs safely:
-1. Passing field traces are omitted first (`omitted_fields` counter increments).
-2. Passing check records within fields are omitted next (`omitted_checks` counter increments).
-3. **Failures are never dropped first**: failing checks are preserved until all passing evidence is trimmed.
+When the serialized JSON trace exceeds the effective byte cap, whole field traces are dropped:
+1. Fields with no failures are dropped first, in `field_id` order (`omitted_fields` and `omitted_checks` count what was dropped).
+2. Fields with failures are dropped only after every passing field is gone.
+3. If the form-level header still does not fit, form-level failure messages are blanked.
 4. When truncation occurs, the top-level flag `truncated: true` is set.
 
 ---
@@ -151,11 +151,11 @@ Reading submission audit records requires the `read_form_audit` permission at `c
 
 ### Response Status Codes
 
-- `200 OK`: Returns the `ValidationTrace` JSON.
+- `200 OK`: Returns `submission_id`, `form_uid`, `form_version`, `is_valid`, `validation` (the stored `ValidationTrace`) and `llm_validation`.
 - `403 Forbidden`: Requesting user lacks `read_form_audit` permission.
-- `404 Not Found`: Form or submission ID does not exist for the tenant.
-- `501 Not Implemented`: Form persistence uses FEAT-457 sink-persisted forms without audit support.
-- `503 Service Unavailable`: Storage or database unreachability.
+- `404 Not Found`: The submission does not exist for the tenant, or belongs to a different form.
+- `501 Not Implemented`: The form persists to its own sink; read the trace from that sink's context column.
+- `503 Service Unavailable`: Submission storage is not configured.
 
 ---
 
