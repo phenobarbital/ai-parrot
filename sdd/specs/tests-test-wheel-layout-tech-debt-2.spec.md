@@ -371,8 +371,10 @@ None. M1's artefact is evidence, not a fixture.
       matrix is pasted in the Completion Note. A changed count is a defect, not
       a result.
 - [ ] **AC3** `python -m pytest packages/ai-parrot-embeddings/tests/test_wheel_layout.py -q` passes 15/15.
-- [ ] **AC4** (Amendment B) **No** `__init__.py` is deleted or added: `find packages/*/tests -name __init__.py | wc -l` → **267**,
-      and `pytest.ini` carries `addopts = --import-mode=importlib` and `consider_namespace_packages = true`.
+- [ ] **AC4** (Amendment B) **No** `__init__.py` is deleted. One may be *added* only where a relative import has no parent package
+      (class (ii)); found so far: `packages/ai-parrot/tests/loaders/obsidian/__init__.py` (`find packages/*/tests -name __init__.py | wc -l`
+      → **267 + the additions listed in the Completion Notes**), and `pytest.ini` carries `addopts = --import-mode=importlib` and
+      `consider_namespace_packages = true`.
 - [ ] **AC5** No test's assertions change. Every M3 edit is an import statement,
       a `conftest.py`, or a dotted string target — reviewable as such in the diff.
 - [ ] **AC6** No test is skipped, xfailed or deleted to make collection pass.
