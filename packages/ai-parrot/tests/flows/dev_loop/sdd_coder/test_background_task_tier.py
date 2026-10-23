@@ -146,3 +146,70 @@ async def test_merge_tier_includes_vitest_runner(tmp_path: Path, monkeypatch: py
     verdict = await supervisor.wait_verdict(execution_id, registration.handle, 10)
     assert verdict.status == "passed"
     assert [(runner.runner, runner.suite) for runner in verdict.runners] == [("vitest", "vitest:admin-ui")]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-736 / TASK-4674 -- the schema layer and the supervisor guard must agree
+# on tier='task' (issue:146f4be4ee6d). Before FEAT-736 `CoderRunValidationArgs`
+# refused tier='task' and `attempt_uid` outright, so an MCP caller never
+# reached the supervisor rule below.
+# ---------------------------------------------------------------------------
+
+
+async def test_task_tier_schema_and_runner_guard_agree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The schema admits tier='task'; the SUPERVISOR, not the schema, enforces its obligations."""
+    from parrot.flows.dev_loop.sdd_coder.models import CoderRunValidationArgs
+
+    supervisor, _registry, worktree = _supervisor(tmp_path)
+    execution_id = str(uuid.uuid4())
+    attempt_uid = str(uuid.uuid4())
+    spawned = False
+
+    async def fake_spawn(*_args: object, **_kwargs: object) -> None:
+        nonlocal spawned
+        spawned = True
+
+    monkeypatch.setattr(background_module.asyncio, "create_subprocess_exec", fake_spawn)
+
+    # Layer 1 -- the schema accepts tier='task' with and without an attempt_uid,
+    # and accepts a brief task id while it is at it.
+    with_uid = CoderRunValidationArgs(
+        feature="BRIEF-CS-228",
+        worktree=str(worktree),
+        execution_id=execution_id,
+        task_ids=["HOTFIX-CS-228-1"],
+        tier="task",
+        timeout_seconds=5,
+        request_id="task-agree",
+        attempt_uid=attempt_uid,
+    )
+    assert with_uid.tier == "task"
+    assert with_uid.attempt_uid == attempt_uid
+
+    without_uid = CoderRunValidationArgs(
+        feature="BRIEF-CS-228",
+        worktree=str(worktree),
+        execution_id=execution_id,
+        task_ids=["HOTFIX-CS-228-1"],
+        tier="task",
+        timeout_seconds=5,
+        request_id="task-agree",
+    )
+    assert without_uid.attempt_uid is None
+
+    # Layer 2 -- the obligation the schema deliberately does NOT duplicate.
+    with pytest.raises(ValueError, match="explicit base_ref"):
+        await supervisor.start(
+            feature=without_uid.feature,
+            worktree=worktree,
+            execution_id=without_uid.execution_id,
+            task_ids=list(without_uid.task_ids),
+            tier=without_uid.tier,
+            timeout_seconds=without_uid.timeout_seconds,
+            request_id=without_uid.request_id,
+            base_ref=None,
+            attempt_uid=without_uid.attempt_uid,
+        )
+    assert spawned is False
