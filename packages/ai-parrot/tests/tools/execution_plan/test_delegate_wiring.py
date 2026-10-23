@@ -16,7 +16,7 @@ from parrot.tools.execution_plan.models import PlanRun, PlanRunError
 from parrot.tools.execution_plan.runs import plan_fingerprint
 from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 
-from ...bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
+from bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
 
 
 class _Args(BaseModel):

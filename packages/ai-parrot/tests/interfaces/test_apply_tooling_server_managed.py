@@ -8,7 +8,7 @@ from parrot.interfaces.tools import ToolInterface
 from parrot.tools.manager import ToolManager
 from parrot.tools.spec import ToolkitSpec
 
-from ..tools._host_probe import host_plugins  # noqa: F401
+from tools._host_probe import host_plugins  # noqa: F401
 
 
 class _Bot(ToolInterface):

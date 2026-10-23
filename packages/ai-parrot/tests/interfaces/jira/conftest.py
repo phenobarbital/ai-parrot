@@ -1,6 +1,6 @@
 import pytest
 
-from tests.fixtures.jira_payloads import raw_issue_payload, remote_links_payload
+from fixtures.jira_payloads import raw_issue_payload, remote_links_payload
 
 
 @pytest.fixture

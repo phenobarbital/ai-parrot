@@ -6,7 +6,7 @@ from parrot.knowledge.wiki.vault_scan import (
     scan_vault,
     tag_concept_id,
 )
-from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
+from interfaces.obsidian.conftest import fixture_vault  # noqa: F401
 
 
 @pytest.fixture

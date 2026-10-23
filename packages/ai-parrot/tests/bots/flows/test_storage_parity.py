@@ -79,7 +79,7 @@ class TestStorageBehaviouralParity:
     def test_no_legacy_storage_import_in_test_orchestrator(self):
         """test_orchestrator_agent.py must not import from parrot.bots.flow.storage."""
         import pathlib, inspect  # noqa: PLC0415, E401
-        import tests.test_orchestrator_agent as _mod  # noqa: PLC0415
+        import test_orchestrator_agent as _mod  # noqa: PLC0415
         src_file = pathlib.Path(inspect.getfile(_mod))
         src = src_file.read_text()
         assert "parrot.bots.flow.storage" not in src
@@ -87,7 +87,7 @@ class TestStorageBehaviouralParity:
     def test_no_legacy_storage_import_in_test_execution_memory(self):
         """test_execution_memory_integration.py must not import from parrot.bots.flow.storage."""
         import pathlib, inspect  # noqa: PLC0415, E401
-        import tests.test_execution_memory_integration as _mod  # noqa: PLC0415
+        import test_execution_memory_integration as _mod  # noqa: PLC0415
         src_file = pathlib.Path(inspect.getfile(_mod))
         src = src_file.read_text()
         assert "parrot.bots.flow.storage" not in src

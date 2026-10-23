@@ -5,7 +5,7 @@ from __future__ import annotations
 from parrot.interfaces.tools import ToolInterface
 from parrot.tools import resolver as resolver_module
 
-from ..tools._host_probe import host_plugins  # noqa: F401
+from tools._host_probe import host_plugins  # noqa: F401
 
 
 def test_resolve_spec_class_resolves_host_slug(host_plugins, monkeypatch):  # noqa: F811

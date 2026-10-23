@@ -23,8 +23,8 @@ from parrot.knowledge.wiki.cli import wiki
 from parrot.knowledge.wiki.jira_render import SYNC_MARKER
 from parrot.knowledge.wiki.jira_sync import sweep_jira_issues
 
-from tests.fixtures.jira_payloads import raw_issue_payload
-from tests.knowledge.wiki.test_jira_sync import FakeJiraInterface
+from fixtures.jira_payloads import raw_issue_payload
+from knowledge.wiki.test_jira_sync import FakeJiraInterface
 
 JQL = "project = NAV"
 
