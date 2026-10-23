@@ -1,4 +1,5 @@
 """Tests for MS Teams per-user session persistence."""
+
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace

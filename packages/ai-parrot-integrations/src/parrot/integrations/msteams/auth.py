@@ -1,4 +1,5 @@
 """MS Teams per-user session and its store."""
+
 from __future__ import annotations
 
 import json
@@ -123,10 +124,7 @@ class MSTeamsSessionStore:
 
     def is_expired(self, session: MSTeamsUserSession) -> bool:
         """Return whether the session's external credential has expired."""
-        return (
-            session.external_expires_at is not None
-            and session.external_expires_at <= datetime.now(timezone.utc)
-        )
+        return session.external_expires_at is not None and session.external_expires_at <= datetime.now(timezone.utc)
 
     async def get_or_create(self, turn_context: TurnContext) -> MSTeamsUserSession:
         """Return the live session, rehydrating from the store if needed.
@@ -223,6 +221,7 @@ class MSTeamsSessionStore:
         Returns:
             A session with live isolation slots left at their defaults.
         """
+
         def parse_datetime(value: Any) -> Optional[datetime]:
             if not isinstance(value, str):
                 return None
