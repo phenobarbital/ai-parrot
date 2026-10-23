@@ -348,9 +348,7 @@ class SubmissionPipeline:
             ctx = dict(context or {})
             # FEAT-732 — capped BEFORE the merge, so llm_validation is never what gets truncated.
             if isinstance(result.trace, ValidationTrace):
-                ctx["validation"] = cap_trace(
-                    result.trace, max_bytes=self._audit_config(form).effective_max_bytes
-                )
+                ctx["validation"] = cap_trace(result.trace, max_bytes=self._audit_config(form).effective_max_bytes)
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
                 review_policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
