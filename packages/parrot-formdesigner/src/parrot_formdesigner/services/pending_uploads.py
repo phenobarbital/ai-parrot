@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -93,6 +94,13 @@ class PendingUploadStore:
     def _qualified(self, tenant: str | None) -> str:
         schema = validate_identifier(tenant, kind="tenant") if tenant is not None else self._schema
         return qualified_table(schema, self._table)
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        """Yield a pooled connection inside a transaction (used by the reaper to hold row locks)."""
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                yield conn
 
     async def initialize(self, *, tenant: str | None = None) -> None:
         """CREATE TABLE / INDEX IF NOT EXISTS in <tenant or schema>."""
@@ -182,3 +190,69 @@ class PendingUploadStore:
     async def delete_rows(self, blob_refs: Iterable[str], *, tenant: str) -> int:
         """Delete rows by blob_ref (pooled connection)."""
         return await self.clear(blob_refs, tenant=tenant)
+
+
+class PendingUploadReaper:
+    """Delete expired, unreferenced pending uploads for one tenant (FEAT-731). Host-scheduled."""
+
+    def __init__(self, pending: PendingUploadStore, blob_storage: Any, submissions: Any) -> None:
+        self._pending = pending
+        self._blobs = blob_storage  # AbstractBlobStorage
+        self._submissions = submissions  # FormSubmissionStorage (references_blob)
+        self.logger = logging.getLogger(__name__)
+
+    async def reap_once(
+        self,
+        *,
+        tenant: str,
+        public_form_ttl: timedelta = DEFAULT_PUBLIC_FORM_TTL,
+        ttl: timedelta = DEFAULT_TTL,
+        batch: int = 500,
+    ) -> ReapResult:
+        """Reap up to ``batch`` expired rows of ``tenant``.
+
+        Rows are selected ``FOR UPDATE SKIP LOCKED`` and stay locked until the
+        batch is processed, so two concurrent runs never handle the same row.
+        Per row: a stored submission still referencing the blob drops only the
+        row; otherwise blob (and thumbnail) are deleted strictly and the row
+        dropped; any failure keeps the row for the next run. Never raises for a
+        per-row problem.
+
+        Args:
+            tenant: Tenant schema to sweep.
+            public_form_ttl: Age after which an upload to a public form expires.
+            ttl: Age after which an upload to any other form expires.
+            batch: Maximum number of rows handled per call.
+
+        Returns:
+            Counts of deleted / failed / still-referenced rows.
+        """
+        result = ReapResult()
+        async with self._pending.transaction() as conn:
+            rows = await self._pending.expired(
+                tenant=tenant, public_form_ttl=public_form_ttl, ttl=ttl, limit=batch, conn=conn
+            )
+            for row in rows:
+                outcome = await self._reap_row(row, tenant)
+                if outcome == "failed":
+                    result.failed += 1
+                    continue
+                await self._pending.clear([row.blob_ref], tenant=tenant, conn=conn)
+                if outcome == "referenced":
+                    result.still_referenced += 1
+                else:
+                    result.deleted += 1
+        return result
+
+    async def _reap_row(self, row: PendingUpload, tenant: str) -> str:
+        """Return ``"referenced"``, ``"deleted"`` or ``"failed"`` for one expired row."""
+        try:
+            if await self._submissions.references_blob(row.form_uid, row.blob_ref, tenant=tenant):
+                return "referenced"
+            await self._blobs.delete(row.blob_ref, strict=True)
+            if row.thumbnail_ref:
+                await self._blobs.delete(row.thumbnail_ref, strict=True)
+        except Exception as exc:  # noqa: BLE001 — ValueError (bad scheme) included; row kept
+            self.logger.warning("Pending upload %r not reaped (kept for next run): %s", row.blob_ref, exc)
+            return "failed"
+        return "deleted"
