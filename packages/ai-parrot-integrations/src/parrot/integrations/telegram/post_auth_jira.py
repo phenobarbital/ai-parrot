@@ -17,7 +17,6 @@ the combined Telegram auth flow:
 Vault and identity-mapping failures are logged but do NOT fail the auth
 — Redis is the primary store and the flow must stay resilient.
 """
-
 from __future__ import annotations
 
 import logging
@@ -163,16 +162,21 @@ class JiraPostAuthProvider:
         state = data.get("state")
         if not code or not state:
             self.logger.warning(
-                "JiraPostAuthProvider.handle_result: missing code/state " "(code=%s state=%s)",
+                "JiraPostAuthProvider.handle_result: missing code/state "
+                "(code=%s state=%s)",
                 bool(code),
                 bool(state),
             )
             return False
 
         try:
-            token_set, state_payload = await self._oauth.handle_callback(code, state)
+            token_set, state_payload = await self._oauth.handle_callback(
+                code, state
+            )
         except Exception:  # noqa: BLE001
-            self.logger.exception("JiraPostAuthProvider: Jira handle_callback failed")
+            self.logger.exception(
+                "JiraPostAuthProvider: Jira handle_callback failed"
+            )
             return False
 
         # Resolve the navigator user_id: prefer the one carried in the
@@ -207,10 +211,13 @@ class JiraPostAuthProvider:
                 cloud_id=token_set.cloud_id,
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception("JiraPostAuthProvider: failed to stamp jira identity on session")
+            self.logger.exception(
+                "JiraPostAuthProvider: failed to stamp jira identity on session"
+            )
 
         self.logger.info(
-            "JiraPostAuthProvider: combined auth complete " "(nav_user_id=%s jira_account=%s jira_email=%s)",
+            "JiraPostAuthProvider: combined auth complete "
+            "(nav_user_id=%s jira_account=%s jira_email=%s)",
             nav_user_id,
             token_set.account_id,
             token_set.email,
@@ -226,7 +233,9 @@ class JiraPostAuthProvider:
     ) -> None:
         """Write the Jira token fields as flat keys in the user's vault."""
         if not nav_user_id:
-            self.logger.warning("JiraPostAuthProvider: no nav_user_id — skipping vault write")
+            self.logger.warning(
+                "JiraPostAuthProvider: no nav_user_id — skipping vault write"
+            )
             return
         tokens: Dict[str, Any] = {
             "access_token": token_set.access_token,
@@ -243,7 +252,8 @@ class JiraPostAuthProvider:
             )
         except Exception:  # noqa: BLE001
             self.logger.exception(
-                "JiraPostAuthProvider: vault store failed " "(nav_user_id=%s)",
+                "JiraPostAuthProvider: vault store failed "
+                "(nav_user_id=%s)",
                 nav_user_id,
             )
 
@@ -256,7 +266,9 @@ class JiraPostAuthProvider:
     ) -> None:
         """Upsert ``telegram`` and ``jira`` identities for ``nav_user_id``."""
         if not nav_user_id:
-            self.logger.warning("JiraPostAuthProvider: no nav_user_id — skipping identity mapping")
+            self.logger.warning(
+                "JiraPostAuthProvider: no nav_user_id — skipping identity mapping"
+            )
             return
         # Telegram identity
         try:
@@ -272,7 +284,9 @@ class JiraPostAuthProvider:
                 email=primary_auth_data.get("email"),
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception("JiraPostAuthProvider: telegram identity upsert failed")
+            self.logger.exception(
+                "JiraPostAuthProvider: telegram identity upsert failed"
+            )
 
         # Jira identity
         try:
@@ -293,4 +307,6 @@ class JiraPostAuthProvider:
                 email=token_set.email,
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception("JiraPostAuthProvider: jira identity upsert failed")
+            self.logger.exception(
+                "JiraPostAuthProvider: jira identity upsert failed"
+            )

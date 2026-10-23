@@ -8,8 +8,17 @@ Exposes three user-facing text commands:
 - ``/jira_status`` — reports whether a valid Jira connection is on file.
 - ``jira`` / ``integrations`` — shows an Adaptive Card menu for Jira commands.
 
-User identity is the ``aad_object_id`` (Azure AD object ID), falling back to
-``from_property.id`` for non-AAD environments.
+Two different identifiers are involved and must not be confused:
+
+* the **Teams account id** — ``aad_object_id`` (Azure AD object ID), falling
+  back to ``from_property.id`` for non-AAD environments. It keys the Jira
+  token store in :class:`JiraOAuthManager` and is the provider-side account
+  id on the identity row;
+* the **Navigator user id** — ``auth.users.user_id``, a bigint, resolved from
+  the authenticated Teams session (FEAT-729). Only this one may be written to
+  ``auth.user_identities.user_id``, so ``/connect_jira`` carries it in the
+  OAuth state under its own ``nav_user_id`` key when the user is
+  authenticated.
 
 The ``conversation_reference`` is stored in ``extra_state`` so the OAuth
 callback can send a proactive message after the user returns from Atlassian.
@@ -18,7 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 from botbuilder.core import TurnContext
 from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
@@ -30,6 +39,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MSTEAMS_CHANNEL = "msteams"
+
+#: Resolves the Navigator user id for the current turn, or ``""`` when the
+#: Teams user is not authenticated against Navigator.
+NavUserIdResolver = Callable[["TurnContext"], Awaitable[str]]
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +146,33 @@ def _get_user_id(turn_context: "TurnContext") -> str:
     return turn_context.activity.from_property.id
 
 
+async def _resolve_nav_user_id(
+    turn_context: "TurnContext",
+    resolver: Optional["NavUserIdResolver"],
+) -> str:
+    """Return the Navigator user id for this turn, or an empty string.
+
+    Never raises: identity linking is best-effort here, so a missing or
+    failing resolver must not block ``/connect_jira`` — the Jira
+    authorization still works, only the ``auth.user_identities`` row is
+    skipped.
+
+    Args:
+        turn_context: The current Bot Framework turn context.
+        resolver: Optional async resolver supplied by the wrapper.
+
+    Returns:
+        The Navigator user id, or ``""`` when it cannot be resolved.
+    """
+    if resolver is None:
+        return ""
+    try:
+        return (await resolver(turn_context)) or ""
+    except Exception:  # noqa: BLE001 — identity linking is best-effort
+        logger.exception("Could not resolve the Navigator user id for /connect_jira")
+        return ""
+
+
 def _get_conversation_reference(turn_context: TurnContext) -> Dict[str, Any]:
     """Serialise the conversation reference for proactive messaging.
 
@@ -184,6 +224,7 @@ async def _send_adaptive_card(
 async def connect_jira_handler(
     turn_context: "TurnContext",
     oauth_manager: "JiraOAuthManager",
+    nav_user_id_resolver: Optional["NavUserIdResolver"] = None,
 ) -> None:
     """Handle ``/connect_jira`` text command.
 
@@ -194,6 +235,9 @@ async def connect_jira_handler(
     Args:
         turn_context: The current Bot Framework turn context.
         oauth_manager: Backing Jira OAuth manager.
+        nav_user_id_resolver: Optional async resolver for the Navigator user
+            id. When it yields one, it travels in the OAuth state as
+            ``nav_user_id`` so the callback can write the identity row.
     """
     user_id = _get_user_id(turn_context)
     existing = await oauth_manager.validate_token(_MSTEAMS_CHANNEL, user_id)
@@ -211,14 +255,20 @@ async def connect_jira_handler(
         return
 
     conv_ref = _get_conversation_reference(turn_context)
+    extra_state: Dict[str, Any] = {
+        "channel": _MSTEAMS_CHANNEL,
+        "user_id": user_id,
+        "conversation_reference": conv_ref,
+    }
+    # Only present for an authenticated user: the callback writes an identity
+    # row solely when it has a real Navigator (bigint) id, never the AAD GUID.
+    nav_user_id = await _resolve_nav_user_id(turn_context, nav_user_id_resolver)
+    if nav_user_id:
+        extra_state["nav_user_id"] = nav_user_id
     url, _nonce = await oauth_manager.create_authorization_url(
         _MSTEAMS_CHANNEL,
         user_id,
-        extra_state={
-            "channel": _MSTEAMS_CHANNEL,
-            "user_id": user_id,
-            "conversation_reference": conv_ref,
-        },
+        extra_state=extra_state,
     )
     await _send_adaptive_card(turn_context, _connect_jira_card(url))
 
@@ -300,6 +350,7 @@ async def jira_menu_handler(
 def register_jira_commands(
     router: "MSTeamsCommandRouter",
     oauth_manager: "JiraOAuthManager",
+    nav_user_id_resolver: Optional["NavUserIdResolver"] = None,
 ) -> None:
     """Register Jira commands on *router*.
 
@@ -309,10 +360,13 @@ def register_jira_commands(
     Args:
         router: Target :class:`MSTeamsCommandRouter` instance.
         oauth_manager: Backing Jira OAuth manager.
+        nav_user_id_resolver: Optional async resolver for the Navigator user
+            id, forwarded to ``/connect_jira`` only. It is called per turn, so
+            the caller may pass a closure over state it wires up later.
     """
 
     async def _connect(turn_context: "TurnContext") -> None:
-        await connect_jira_handler(turn_context, oauth_manager)
+        await connect_jira_handler(turn_context, oauth_manager, nav_user_id_resolver)
 
     async def _disconnect(turn_context: "TurnContext") -> None:
         await disconnect_jira_handler(turn_context, oauth_manager)

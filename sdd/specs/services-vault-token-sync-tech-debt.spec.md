@@ -403,12 +403,20 @@ class JiraOAuthManager:
 ### Validation Contract
 
 tests:
-- packages/ai-parrot/tests/unit/test_jira_oauth.py
+- packages/ai-parrot/tests/unit/test_jira_oauth_manager.py
+- packages/ai-parrot/tests/unit/test_oauth2_service_token_status.py
 - packages/ai-parrot/tests/unit/test_post_auth_jira.py
 - packages/ai-parrot/tests/unit/test_identity_mapping.py
 - packages/ai-parrot/tests/unit/test_vault_token_sync.py
+- packages/ai-parrot-server/tests/unit/test_identity_credential_sink.py
 - packages/ai-parrot-server/tests/unit/test_vault_token_sync_f4_regression.py
 markers: none
+
+> Corrected at task time (2026-10-23): the first entry was
+> `test_jira_oauth.py`, which does not exist — the manager's suite is
+> `test_jira_oauth_manager.py`. The two files created by this feature
+> (`test_identity_credential_sink.py`, `test_oauth2_service_token_status.py`)
+> are listed here and declared as CREATE targets by TASK-4668 / TASK-4670.
 
 > The real-Postgres tests in `test_identity_mapping.py` skip unless
 > `IDENTITY_PG_DSN` is set (the `TEST_STUDIO_PG_DSN` precedent). CI has no

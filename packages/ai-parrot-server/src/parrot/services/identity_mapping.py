@@ -199,11 +199,23 @@ class IdentityMappingService:
             token: Credential for token-bearing providers.
 
         Raises:
-            ValueError: If ``provider_user_id`` is empty or ``auth_data``
+            ValueError: If ``nav_user_id`` is not the numeric navigator-auth
+                user id, ``provider_user_id`` is empty, or ``auth_data``
                 carries a secret.
             Exception: Any database/cipher failure propagates — callers
                 decide how to surface it.
         """
+        # auth.user_identities.user_id is bigint on both write paths — the SQL
+        # casts with ``$1::text::bigint`` and IdentityStore expects the same id.
+        # Reject a channel-scoped id (an AAD GUID, "team:user", …) here, with a
+        # readable message, instead of as a Postgres cast error buried in a
+        # caller's ``except Exception`` (issue:187ce3fe3b93).
+        if not str(nav_user_id or "").isdigit():
+            raise ValueError(
+                "nav_user_id must be the numeric navigator-auth user_id "
+                "(auth.user_identities.user_id is bigint); got a non-numeric value of "
+                f"{len(str(nav_user_id or ''))} chars for provider {auth_provider!r}"
+            )
         if provider_user_id is None or str(provider_user_id) == "":
             raise ValueError(
                 "provider_user_id is required: a NULL falls outside the partial " "unique index on auth.user_identities"
