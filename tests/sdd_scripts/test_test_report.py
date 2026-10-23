@@ -94,6 +94,53 @@ def test_render_cli_surfaces_corrupt_record_notes(
     assert "skipped corrupt report: bad.json" in output
 
 
-def test_unreadable_index_exits_2(tmp_path: Path) -> None:
-    """A missing index is the sole data error that returns the usage exit code."""
-    assert test_report.main(["render", "--index", str(tmp_path / "missing.json")]) == 2
+def test_render_unreadable_index_emits_no_data_section(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """issue:326c8c0da36c - an unusable index reports no data on stdout and never blocks closeout."""
+    missing = tmp_path / "missing.json"
+
+    assert test_report.main(["render", "--index", str(missing)]) == 0
+    out = capsys.readouterr().out
+    assert test_report.NO_DATA_HEADING in out
+    assert str(missing) in out
+
+
+def test_render_unreadable_index_still_writes_out_file(tmp_path: Path) -> None:
+    """issue:326c8c0da36c - --out is always written, so `gh pr create --body-file` cannot fail."""
+    out = tmp_path / "pr-tests.md"
+
+    assert test_report.main(["render", "--index", str(tmp_path / "missing.json"), "--out", str(out)]) == 0
+    assert out.is_file()
+    assert out.read_text(encoding="utf-8").startswith(test_report.NO_DATA_HEADING)
+
+
+def test_render_corrupt_index_emits_no_data_section(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """issue:326c8c0da36c - a corrupt index is a data error, reported the same fail-open way."""
+    index = tmp_path / "index.json"
+    index.write_text("{not json", encoding="utf-8")
+
+    assert test_report.main(["render", "--index", str(index)]) == 0
+    assert test_report.NO_DATA_HEADING in capsys.readouterr().out
+
+
+def test_decide_rerun_unreadable_index_skips(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """issue:326c8c0da36c - decide-rerun yields a deterministic skip instead of an empty DECISION."""
+    assert test_report.main(["decide-rerun", "--index", str(tmp_path / "missing.json")]) == 0
+    assert capsys.readouterr().out.strip() == "skip (no data)"
+
+
+def test_render_unwritable_out_falls_back_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """issue:326c8c0da36c - an OSError on --out is reported on stderr, not raised, and never blocks."""
+    index = tmp_path / "index.json"
+    _write_index(index)
+    unwritable = tmp_path / "missing-dir" / "pr-tests.md"
+
+    assert test_report.main(["render", "--index", str(index), "--out", str(unwritable)]) == 0
+    captured = capsys.readouterr()
+    assert "could not write" in captured.err
+    assert "## Tests" in captured.out
+
+
+def test_bad_arguments_still_exit_2(tmp_path: Path) -> None:
+    """A malformed invocation stays loud: it is a caller bug, not missing test data."""
+    assert test_report.main(["render"]) == 2
+    assert test_report.main(["no-such-command"]) == 2
