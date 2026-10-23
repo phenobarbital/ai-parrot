@@ -128,7 +128,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,8 +138,9 @@
       "parallelism_notes": "Last repair task: it is the first point at which AC1's pair collect can pass, so it must observe the tree after TASK-4592 and TASK-4593 have landed. Exclusive: its class (vi) resolution changes whether the name `mcp` reaches top level, which affects every session in the repo.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4594-repair-import-sites-server-embeddings-loaders-formdesigner.md"
+      "completed_at": "2026-10-23T14:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4594-repair-import-sites-server-embeddings-loaders-formdesigner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4595",
