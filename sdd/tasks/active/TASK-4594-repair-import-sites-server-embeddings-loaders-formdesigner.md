@@ -86,7 +86,7 @@ from tests.unit.test_api_feat300 import _make_form, _make_handler, _make_request
 |---|---|---|
 | class-(i) sites, formdesigner | **4 files** | `grep -rln -E '^\s*(from\|import)\s+tests[.\s]' packages/parrot-formdesigner/tests` |
 | class-(i) sites, server / embeddings / loaders | **0** | same, per tree |
-| `packages/ai-parrot-server/tests/mcp/__init__.py` | present, 0 bytes | `ls -l` |
+| `packages/ai-parrot-server/tests/mcp/__init__.py` | present, 0 bytes **until TASK-4591 deletes it** | `ls -l` |
 | round-2 collect errors | server 6, formdesigner 5, embeddings 1, loaders 1 | `sdd/state/FEAT-720/spike-collect.md` §2 supersedes |
 | `parrot-formdesigner` baseline on `dev` | **40 failed**, 3825 passed | `pytest packages/parrot-formdesigner/tests -q -p no:randomly` |
 
@@ -188,24 +188,23 @@ into `sys.path` (idempotent: only if absent). Do not touch the test file.
 and it is the one file in this feature that another in-flight feature also edits.
 Changing only the path keeps the two changes disjoint.
 
-### `packages/ai-parrot-server/tests/mcp/__init__.py` (MODIFY)
+### `packages/parrot-formdesigner/tests/conftest.py` (MODIFY)
 ```python
-# occurrences: n/a — the file is 0 bytes; the defect is the directory NAME, not its contents.
-# FILL IN: the class (vi) resolution — bounded by AC5 and by the two acceptable
-#          options in "Class (vi) specifically" above. Record which you chose and
-#          why in the Completion Note. Do NOT resolve it by touching sys.path, the
-#          real `mcp` dependency, or any product import.
+# Add near the top, after the existing imports (idempotent; no other change to this file):
+#   _PKG_ROOT = str(Path(__file__).resolve().parents[1])
+#   if _PKG_ROOT not in sys.path:
+#       sys.path.insert(0, _PKG_ROOT)
+# FILL IN: the exact placement and the `Path`/`sys` imports, only if not already present — bounded by AC5.
 ```
-**Why**: the fix is structural rather than textual — an empty file cannot be
-edited into correctness, so the decision is about the directory's identity. It is
-left as a `FILL IN` because TASK-4590's evidence decides whether the name reaches
-top level in practice, and a rename has call sites a blind choice would miss.
+**Why**: `scripts/` sits beside `src/` and `tests/`, not inside the tests tree. Prepend mode used to put that directory
+on `sys.path` as a side effect of the removed `tests/__init__.py`; importlib mode does not, so the owning package
+path must be explicit. Only `conftest.py` changes, never the test.
 
 ### FILL IN checklist
 - [ ] `test_feat300_review_fixes.py:32` — replacement import, identical names; bounded by AC5
 - [ ] the other 3 formdesigner class-(i) sites; bounded by AC5
-- [ ] every server / embeddings / loaders site from TASK-4590 §3; bounded by AC5
-- [ ] class (vi) resolution + the reason, recorded in the Completion Note
+- [ ] `tests/conftest.py` explicit package path for `scripts.*`; bounded by AC5
+- [ ] `mcp.__file__` verification recorded in the Completion Note
 
 ---
 
