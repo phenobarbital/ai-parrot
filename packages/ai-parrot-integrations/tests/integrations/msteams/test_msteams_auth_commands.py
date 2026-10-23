@@ -1,4 +1,5 @@
 """Unit tests for the MS Teams Navigator authentication commands."""
+
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock

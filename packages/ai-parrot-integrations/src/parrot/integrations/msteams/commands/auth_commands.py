@@ -1,4 +1,5 @@
 """/login, /logout and /whoami for the MS Teams lane."""
+
 from __future__ import annotations
 
 import logging
