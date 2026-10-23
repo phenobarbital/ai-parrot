@@ -418,9 +418,91 @@ When you pick up this task:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
+**Completed**: All four identity writes land, verified against the real
+`navigator` Postgres (post-006 schema: `identity_id` PK, no `uid`, the partial
+unique index, the non-unique `(user_id, auth_provider)` index).
 
-**Completed**:
+The bug was **doubly** silent, and only the second half was in the ledger
+issue:
+
+1. `ON CONFLICT (user_id, auth_provider)` → 42P10, as diagnosed. Fixed by
+   arbitrating on `(user_id, auth_provider, provider_user_id)` *with* the
+   index predicate (`WHERE provider_user_id IS NOT NULL`) — a partial index
+   is only inferable when the predicate is restated — and by making
+   `provider_user_id` a required keyword at every call site.
+2. **`app["authdb"]` is an asyncdb pool, not asyncpg.** Its `execute()`
+   *swallows* the 42P10 and returns `[result, error]` instead of raising
+   (verified: `[None, 'Postgres Error: there is no unique or exclusion
+   constraint matching the ON CONFLICT specification']`). The callers'
+   `except Exception: logger.exception(...)` therefore never even fired —
+   the write failed with no log line at all. Writes now go through
+   `fetch_one` + `RETURNING`, which raises, and the service raises
+   `IdentityWriteError` rather than logging and continuing.
+
+Two further defects the real database surfaced, both of which would have kept
+the "fixed" SQL failing:
+
+3. `auth.user_identities.user_id` is `bigint`; a bound parameter is typed, so
+   asyncpg rejects the `str(nav_user_id)` all four sites pass
+   (`invalid input for query argument $1: '1'`). Added `_coerce_user_id`.
+4. `$4::jsonb` with a Python `str` makes asyncpg encode it as a JSON *string
+   scalar*, so the credential path's `||` merge produced
+   `[{profile}, "{...}"]` instead of a merged object. `$4::text::jsonb` is
+   what actually works.
+
+Evidence: `artifacts/logs/TASK-4664-validation.log` — 32 passed (identity
+mapping + post-auth, incl. 13 real-Postgres tests) and 279 passed (Teams +
+Slack callbacks). `ruff check` clean on all eight files.
+
+**AC-6 — IdentityStore vs VaultTokenSync**: **`VaultTokenSync` stays
+authoritative** for the Jira credential in ai-parrot. It is the copy with
+live readers (`read_tokens` / `read_tokens_result`, used by the Jira tooling
+and `integrations/mcp/fireflies_a2a.py`), while `auth.user_identities` still
+has no reader in this repo. The `IdentityStore` write makes the row real and
+keeps one writer for the sealed credential (the same one `TokenExchangeAuth`
+uses), but it is not yet the read path. The duplication survives this task
+and could not be retired inside it — moving every Jira/fireflies reader onto
+`decrypt_credential` is its own feature — so it is filed as
+`issue:50a31674e4f2`.
+
 **Deviations from scope**:
+- `telegram/wrapper.py` is listed as "MODIFY — construction site, if the
+  signature changes". `IdentityMappingService.__init__` is unchanged, so the
+  file was not touched.
+- Three test files outside the task's list were updated because they assert
+  the call sites this task changes:
+  `packages/ai-parrot/tests/unit/test_post_auth_jira.py` (its `spec_set`
+  token-set mock lacked `expires_at`/`scopes`, which the real `JiraTokenSet`
+  has),
+  `packages/ai-parrot-integrations/tests/integrations/slack/test_slack_oauth_callback.py`
+  (asserted the old kwargs), and
+  `.../msteams/test_msteams_oauth_callback.py` (holds the AC-3 and AC-5
+  evidence — the task's own Test Specification covers only
+  `test_identity_mapping.py`, and AC-5 is a call-site behaviour).
+- `get_identity` / `delete_identity` gained an optional `provider_user_id`.
+  Not in the Scope list, but mandatory: once several accounts per provider
+  are possible, an unscoped `delete_identity` would silently remove *all* of
+  them, and the AC-1 read-back needs a working read. The reads were also
+  calling `conn.fetchrow(sql, …)`, which does not exist on the asyncdb
+  driver (its `fetchrow` is a cursor method taking no sentence), so they
+  could never have worked against the real pool either.
+
 **Ambiguities found in the spec**:
+- The task's Codebase Contract lists `IdentityStore.decrypt_credential` as
+  `async def`. It is **synchronous** in navigator-auth 0.28.8
+  (`store.py:444`). The test was written against the real signature.
+- Spec §3 M6's "route all four call sites through IdentityStore" remains
+  unimplementable, exactly as this task's Scope Correction states; the split
+  (IdentityStore for the one site with a grant, fixed SQL for the three
+  channel mappings) is what shipped.
+
 **Follow-up needed**:
+- `issue:50a31674e4f2` — retire one of the two Jira credential stores.
+- The real-Postgres tests skip unless `TEST_AUTHDB_DSN` is set, following the
+  `TEST_STUDIO_PG_DSN` precedent. CI has no auth database, so the merge gate
+  runs only the pure-function and validation tests. Wiring an `auth`-schema
+  service into CI would make the regression permanent.
+- `auth_data["aad_object_id"]` on the Teams site is set to `nav_user_id`,
+  which is what the callback resolves upstream; if those ever diverge, the
+  Teams `provider_user_id` must follow the AAD object id, not the Navigator
+  user id.
