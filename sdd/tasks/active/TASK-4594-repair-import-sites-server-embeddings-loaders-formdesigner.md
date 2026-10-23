@@ -17,12 +17,9 @@ Implements spec **Module 3** for the last four affected distributions:
 `ai-parrot-server` (6 round-2 collect errors), `parrot-formdesigner` (5, with 4
 class-(i) sites), `ai-parrot-embeddings` (1) and `ai-parrot-loaders` (1).
 
-This task owns the feature's one genuinely nasty case: **breakage class (vi)**.
-`packages/ai-parrot-server/tests/mcp/__init__.py` declares a package named `mcp`.
-While the test root was itself a package that directory was `tests.mcp` and
-harmless. Once TASK-4591 makes the test root importable as a plain directory,
-`mcp` becomes a **top-level** name that shadows the real `mcp` third-party
-package — so a test importing `mcp` may silently get the test fixture instead.
+**Amendment A**: the former hard case (class (vi), `ai-parrot-server/tests/mcp/__init__.py` shadowing the real
+`mcp`) is now resolved by TASK-4591's identity fixpoint, which deletes that file. This task verifies it: after
+TASK-4591, `import mcp` inside the server tests must resolve to the installed package (check `mcp.__file__`).
 
 This is also the task that closes the feature's headline invariant: once
 `ai-parrot-embeddings` and `parrot-formdesigner` both collect, AC1's pair works.
@@ -108,15 +105,11 @@ and must come from TASK-4590 §3, not from a grep for imports.
 - ~~a `parrot-formdesigner` failure this task may fix~~ — all 40 belong to
   FEAT-618 (AC7).
 
-### The class-(vi) hazard, stated precisely
+### Class (vi) — verification only (Amendment A)
 
-`packages/ai-parrot-server/tests/mcp/__init__.py` makes `mcp` a package name.
-After TASK-4591 the test root is no longer a package, so this directory is
-reachable as top-level `mcp` and can shadow the real third-party `mcp`
-distribution. A shadowed import does not raise — it returns the wrong module, so
-a test can **pass against the fixture** while the product code it meant to
-exercise is never imported. Treat a green run here as insufficient evidence; the
-acceptance criterion below checks the resolved module's file path explicitly.
+TASK-4591 deletes `packages/ai-parrot-server/tests/mcp/__init__.py`. Verify, do not repair: with the
+(a′) state applied, `python -c` run through pytest's collection (or a one-off test-free probe) must show
+`mcp.__file__` under site-packages, and the server tests that import `mcp` still collect. Record the path.
 
 ---
 
@@ -145,13 +138,11 @@ A repair may change **only** an import statement, a `conftest.py`, or a dotted
 string target. It may **not** change an assertion, a fixture's behaviour, a
 test's parameters, or add a skip/xfail (AC5, AC6).
 
-### Class (vi) specifically
-Two acceptable resolutions; choose on TASK-4590's evidence and record which:
-- rename the directory so it no longer claims the name `mcp`; or
-- keep the directory a package whose name cannot reach top level.
-
-Do **not** resolve it by deleting the real `mcp` dependency, by reordering
-`sys.path`, or by renaming the third-party package's import.
+### The class-(x) site
+`packages/parrot-formdesigner/tests/unit/test_build_snippet_bundles.py` does `from scripts.build_snippet_bundles import …`;
+`scripts/` lives at `packages/parrot-formdesigner/scripts/` (no `__init__.py`). Add, in
+`packages/parrot-formdesigner/tests/conftest.py`, an explicit insertion of `Path(__file__).resolve().parents[1]`
+into `sys.path` (idempotent: only if absent). Do not touch the test file.
 
 ### Other constraints
 - `parrot-formdesigner` is red for unrelated reasons. Compare its **collect item
@@ -164,8 +155,7 @@ Do **not** resolve it by deleting the real `mcp` dependency, by reordering
 - `PYTHONPATH` per distribution when running in the worktree.
 
 ### References in Codebase
-- `sdd/state/FEAT-720/spike-collect.md` §3 — the **only** source for the server,
-  embeddings and loaders sites
+- `sdd/state/FEAT-720/spike-identity-fixpoint.md` — the measured residual sites in the (a′) state
 - `sdd/specs/tests-test-wheel-layout-tech-debt.spec.md` (FEAT-618) — the 40
   formdesigner failures this task must not touch
 
@@ -178,10 +168,10 @@ Do **not** resolve it by deleting the real `mcp` dependency, by reordering
    *why*: AC7 is a before/after comparison and cannot be made retroactively.
 2. Repair the 4 formdesigner class-(i) imports — *why*: they are the only
    import-statement work in this task; the other three distributions have none.
-3. Take the server, embeddings and loaders sites from TASK-4590 §3 — *why*: they
-   are classes (ii)/(iii), invisible to an import grep, so there is no other list.
-4. Resolve class (vi) and verify the resolved module path — *why*: a shadowed
-   `mcp` import returns the wrong module silently, so only the path proves it.
+3. Fix the class-(x) `scripts.*` site in `tests/conftest.py` — *why*: prepend mode used to provide that path.
+4. Verify (do not repair) that `mcp` resolves to the installed package, and record server/embeddings/loaders
+   standalone collect counts — *why*: a shadowed `mcp` import returns the wrong module silently, and these
+   three distributions have no repair of their own.
 5. Run AC1's pair collect — *why*: this is the first task at which the feature's
    headline invariant can be true, and it is this task's real deliverable.
 
