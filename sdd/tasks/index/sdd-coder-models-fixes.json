@@ -83,7 +83,7 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -91,8 +91,9 @@
       "parallelism_notes": "No dependencies: sole owner of test_scope/report.py and tests/.../test_scope/test_report.py, a different package subtree from the sdd_coder files TASK-4673/TASK-4674 touch.",
       "assigned_to": null,
       "started_at": "2026-10-23T22:56:20.182809+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4675-report-brief-aware-junit-paths.md"
+      "completed_at": "2026-10-23T22:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4675-report-brief-aware-junit-paths.md",
+      "verification": "verified"
     }
   ]
 }
