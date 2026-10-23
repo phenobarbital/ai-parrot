@@ -35,7 +35,7 @@
       "feature_id": "FEAT-731",
       "feature": "formdesigner-orphan-upload-cleanup",
       "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports PendingUpload from TASK-4638 (services/pending_uploads.py); calls PendingUploadStore.record/delete_rows.",
       "assigned_to": null,
       "started_at": "2026-10-23T00:46:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4639-record-pending-on-upload.md"
+      "completed_at": "2026-10-23T00:51:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4639-record-pending-on-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4640",
