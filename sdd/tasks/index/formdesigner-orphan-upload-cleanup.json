@@ -99,7 +99,7 @@
       "feature_id": "FEAT-731",
       "feature": "formdesigner-orphan-upload-cleanup",
       "spec": "sdd/specs/formdesigner-orphan-upload-cleanup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -110,8 +110,9 @@
       "parallelism_notes": "exports PendingUploadStore/iter_blob_refs from TASK-4638 (services/pending_uploads.py); calls attach_pending_uploads from TASK-4640 (services/submissions.py).",
       "assigned_to": null,
       "started_at": "2026-10-23T00:46:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4642-wire-pending-uploads.md"
+      "completed_at": "2026-10-23T01:46:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4642-wire-pending-uploads.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4643",
