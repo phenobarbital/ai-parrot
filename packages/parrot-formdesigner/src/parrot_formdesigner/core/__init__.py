@@ -57,6 +57,14 @@ from .voice_answer import (
     unwrap_voice,
     wrap_voice,
 )
+from .public_access import (
+    AvailabilityState,
+    CompletionAction,
+    PublicAccessConfig,
+    RejectionReason,
+    evaluate_open,
+    normalize_key_value,
+)
 from .llm_validation import (
     LLMValidationConfig,
     PlausibilityReport,
@@ -93,6 +101,13 @@ __all__ = [
     "field_voice_meta",
     "resolve_voice_config",
     "LLMValidationConfig",
+    # Public response controls (FEAT-730)
+    "PublicAccessConfig",
+    "CompletionAction",
+    "AvailabilityState",
+    "RejectionReason",
+    "evaluate_open",
+    "normalize_key_value",
     "PlausibilityVerdict",
     "PlausibilityReport",
     "llm_validation_enabled",

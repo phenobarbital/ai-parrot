@@ -25,6 +25,20 @@ from .relations import RelationSpec
 from .types import FieldType, LocalizedString
 from .llm_validation import LLMValidationConfig
 from .voice import VoiceFormConfig
+from .public_access import PublicAccessConfig
+
+# FEAT-730 — field types that cannot serve as ``public_access.unique_key_field``.
+_NON_SCALAR_KEY_TYPES = frozenset(
+    {
+        FieldType.GROUP,
+        FieldType.ARRAY,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.SIGNATURE,
+    }
+)
 
 # Legal (field_type) sets for each (mode, cardinality) combination of
 # FormField.relation — spec §2 "Canonical combinations" table (FEAT-456).
@@ -489,6 +503,8 @@ class FormSchema(BaseModel):
     voice: VoiceFormConfig | None = None
     # FEAT-649 — LLM-assisted answer plausibility (all channels).
     llm_validation: LLMValidationConfig | None = None
+    # FEAT-730 — public response controls (typed block, not meta).
+    public_access: PublicAccessConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.
@@ -581,6 +597,31 @@ class FormSchema(BaseModel):
                     f"'{entry.key}_ext')."
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_public_access(self) -> FormSchema:
+        """Validate ``public_access`` against the form (FEAT-730)."""
+        cfg = self.public_access
+        if cfg is None:
+            return self
+        key = cfg.unique_key_field
+        if key is not None:
+            matches = [f for f in self.iter_all_fields() if f.field_id == key]
+            if not matches:
+                raise ValueError(
+                    f"public_access.unique_key_field {key!r} does not match any field_id in the form"
+                )
+            if matches[0].field_type in _NON_SCALAR_KEY_TYPES:
+                raise ValueError(
+                    f"public_access.unique_key_field {key!r} must be a scalar field, "
+                    f"got {matches[0].field_type.value!r}"
+                )
+        if (cfg.max_responses is not None or key is not None) and self.persistence is not None:
+            raise ValueError(
+                "public_access.max_responses / unique_key_field cannot be combined with "
+                "persistence: counting is only atomic over FormSubmissionStorage"
+            )
         return self
 
     @model_validator(mode="after")

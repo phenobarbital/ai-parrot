@@ -210,4 +210,6 @@ Spec §4 rows `test_public_form_paths_seven`, `test_file_upload_public_form_no_s
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. Tests: test_public_forms.py + test_file_upload_public.py 16 passed; baselines (pre-change) test_public_forms+test_file_upload_handler 24 passed. Mutation checks (4) all RED.
+DEVIATION (files outside the task list, test-only): the new `enforce_membership_unless_public` call made 31 existing upload tests go red (they register `handle_file_upload` behind a bare wrapper that sets `request["tenant"]` but no session, so a private form is now 403). I added one line to the wrapper in tests/unit/test_file_upload_handler.py, tests/unit/test_idempotent_upload.py and tests/integration/test_file_upload.py (`request.session = {"session": {"programs": [<url tenant>]}}`, i.e. act as a member, which is what the production requires_tenant decorator enforced before). After that: 11 / 12 / 13 passed = their pre-change counts. test_thumbnail_route.py unaffected (6 passed). No production-behaviour change beyond the blueprint. Review whether you prefer a different harness fix.
+ruff not installed in the venv; not run.

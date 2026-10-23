@@ -97,7 +97,12 @@ from ..renderers.audio import (
 from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
-from ..services.submission_pipeline import ImplausibleSubmission, SubmissionPipeline, ValidationFailed
+from ..services.submission_pipeline import (
+    ImplausibleSubmission,
+    SubmissionPipeline,
+    SubmissionRejected,
+    ValidationFailed,
+)
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -1213,6 +1218,9 @@ class AudioFormWSHandler:
             # FEAT-728 — `reject` refuses even a reconfirmed answer; tell the user which code,
             # not a generic SUBMIT_FAILED. MUST stay above the broad `except` below.
             return IOFailed(type="_io_failed", request=item.type, code=exc.code, detail="implausible answers")
+        except SubmissionRejected as exc:
+            # FEAT-730 — response-policy refusal (closed / limit / duplicate). MUST stay above the broad except.
+            return IOFailed(type="_io_failed", request=item.type, code=exc.reason.upper(), detail=str(exc))
         except Exception as exc:  # noqa: BLE001 — sink/lifecycle failures: surface and re-ask the last question
             self.logger.warning("Audio submission failed: %s", type(exc).__name__)
             return IOFailed(

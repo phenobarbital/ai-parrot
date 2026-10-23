@@ -274,4 +274,6 @@ Spec §4 rows `test_submit_data_409_body`, `test_availability_states` (Module 4)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. Tests: test_public_form_controls_http.py 5 passed; test_setup_form_api.py 3 (baseline 3); test_http_plausibility.py 16 (baseline 16); pipeline parity 21. Mutation checks (6: flag plumbing, field_id, `>=` cap, membership check, upload route mode, setup kwarg) all RED.
+DEVIATIONS: (1) the 409 arm uses a local named `rejection` instead of `body` (avoids shadowing the request body variable). (2) tests/unit/api/test_exclude_provider.py (not in this task's list) hard-coded 5/10 public paths; TASK-4633's 5->7 globs turned 4 tests red, so I updated the counts to 7/14 here (test-only). (3) `test_file_upload_route_is_public_mode` spies on `routes._wrap_auth` (mode is not observable through the real auth wrappers).
+ruff not installed in the venv; not run.

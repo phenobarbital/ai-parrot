@@ -92,6 +92,7 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from .submission_events import SubmittedCallback
     from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
@@ -157,6 +158,8 @@ class FormAPIHandler:
         venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
         sink_factory: "SinkFactory | None" = None,
+        tenant_scoped_submissions: bool = False,
+        on_submitted: "SubmittedCallback | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
@@ -166,6 +169,10 @@ class FormAPIHandler:
         # declaring `persistence` write exclusively to their own sink
         # instead of `submission_storage` — see submit_data's branch.
         self._sink_factory = sink_factory
+        # FEAT-730 G8: host opt-in to store generic submissions under the URL tenant.
+        self._tenant_scoped_submissions = tenant_scoped_submissions
+        # FEAT-730 — host hook after a successful REST /data store.
+        self._on_submitted = on_submitted
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
         self._org_graph_service = org_graph_service
@@ -284,6 +291,7 @@ class FormAPIHandler:
             partial_store=self._partial_store,
             plausibility=checker,
             sink_factory=self._sink_factory,
+            tenant_scoped_submissions=self._tenant_scoped_submissions,
             logger=self.logger,
             dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
         )
@@ -970,6 +978,32 @@ class FormAPIHandler:
             if binding is not None and getattr(binding, "remote", False):
                 return True
         return False
+
+    async def get_availability(self, request: web.Request) -> web.Response:
+        """GET /{tenant}/forms/{form_uid}/availability — can this form take a response now? (FEAT-730)"""
+        from datetime import datetime, timezone
+
+        from ..core.public_access import AvailabilityState, evaluate_open
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_uid, tenant=tenant)
+        if form is None:
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        enforce_membership_unless_public(request, form, tenant)
+        cfg = form.public_access
+        if cfg is None:
+            return JSONResponse(AvailabilityState(accepting=True).model_dump(mode="json"))
+        reason = evaluate_open(cfg, now=datetime.now(timezone.utc))
+        if reason is None and cfg.max_responses and self._submission_storage is not None:
+            count = await self._submission_storage.count_responses(
+                form.form_uid, tenant=tenant if self._tenant_scoped_submissions else None
+            )
+            if count >= cfg.max_responses:
+                reason = "response_limit_reached"
+        state = AvailabilityState(accepting=reason is None, reason=reason, completion=cfg.completion)
+        return JSONResponse(state.model_dump(mode="json"))
 
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid} — Get full FormSchema as JSON."""
@@ -1670,6 +1704,26 @@ class FormAPIHandler:
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
 
+    async def _notify_submitted(self, form: FormSchema, outcome: Any, tenant: str) -> None:
+        """Await the host's on_submitted hook; never fails the submit (FEAT-730)."""
+        from datetime import datetime, timezone
+
+        from .submission_events import SubmittedEvent
+
+        try:
+            event = SubmittedEvent(
+                submission_id=outcome.submission_id,
+                form_uid=form.form_uid,
+                form_id=form.form_id,
+                form_version=form.version,
+                tenant=tenant,
+                is_public=bool(form.is_public),
+                created_at=outcome.created_at or datetime.now(timezone.utc),
+            )
+            await self._on_submitted(event)
+        except Exception as exc:  # noqa: BLE001 — the submit already succeeded
+            self.logger.warning("on_submitted hook failed for %s: %s", outcome.submission_id, exc)
+
     async def submit_data(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/data — Receive and process a form submission.
 
@@ -1828,6 +1882,7 @@ class FormAPIHandler:
         from ..services.submission_pipeline import (
             ImplausibleSubmission,
             PlausibilityRateLimited,
+            SubmissionRejected,
             SubmitSinkError,
             ValidationFailed,
         )
@@ -1870,6 +1925,12 @@ class FormAPIHandler:
                 },
                 status=422,
             )
+        except SubmissionRejected as exc:
+            # FEAT-730 — response-policy refusal; controlled flow, never routed to onError.
+            rejection: dict[str, Any] = {"error": str(exc), "reason": exc.reason}
+            if exc.field_id is not None:
+                rejection["field_id"] = exc.field_id
+            return _reply(rejection, status=409)
         except SubmitSinkError as exc:
             return _reply({"error": str(exc)}, status=exc.status, headers=exc.headers or None)
         except PlausibilityBlocked as exc:
@@ -1894,6 +1955,8 @@ class FormAPIHandler:
         }
         if outcome.plausibility is not None:
             body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+        if self._on_submitted is not None and outcome.stored_in != "none":
+            await self._notify_submitted(form, outcome, tenant)
         return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:

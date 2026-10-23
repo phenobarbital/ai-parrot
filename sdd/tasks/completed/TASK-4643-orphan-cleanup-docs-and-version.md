@@ -134,4 +134,4 @@ No new tests.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Done. Docs page written; version 1.2.4 -> 1.3.0 (origin/dev holds 1.2.4). Validation: test_setup_form_api + test_file_upload_handler = 14 passed. No new tests. If FEAT-730 bumps first, re-bump on merge.

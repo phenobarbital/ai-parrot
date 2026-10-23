@@ -233,4 +233,5 @@ Spec §4 rows `test_on_submitted_called_once`, `test_on_submitted_error_swallowe
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. Tests: test_on_submitted.py 6 passed; test_setup_form_api.py 3 (baseline 3); test_public_form_controls_http.py 5. Mutation checks (3: stored_in guard removed, swallow narrowed to KeyError, is_public hard-coded) all RED. Event has exactly the 7 contract fields, no `anonymous`.
+Cosmetic: TYPE_CHECKING import placed right after the AbstractClient import (not alphabetized). ruff not installed; not run.
