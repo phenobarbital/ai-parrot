@@ -45,7 +45,7 @@ def test_discover_entry_points(monkeypatch):
     _reset(monkeypatch)
     ep = md.EntryPoint(
         name="test-provider",
-        value="tests.unit.clients.fakes:FakeClient",
+        value=f"{__package__}.fakes:FakeClient",
         group="parrot.clients",
     )
     monkeypatch.setattr(md, "entry_points", lambda group=None: [ep])
@@ -57,7 +57,7 @@ def test_duplicate_entry_point_warning(monkeypatch, caplog):
     _reset(monkeypatch)
     ep1 = md.EntryPoint(
         name="test-provider",
-        value="tests.unit.clients.fakes:FakeClient",
+        value=f"{__package__}.fakes:FakeClient",
         group="parrot.clients",
     )
     ep2 = md.EntryPoint(
@@ -72,7 +72,7 @@ def test_duplicate_entry_point_warning(monkeypatch, caplog):
     # First registration wins — the ep1-loaded FakeClient, not ep2's OpenAIClient.
     # The registered value is ep1.load itself (a lazy loader), same shape
     # as the pre-existing _lazy_* closures — resolve it to compare classes.
-    from tests.unit.clients.fakes import FakeClient
+    from .fakes import FakeClient
 
     registered = factory.SUPPORTED_CLIENTS["test-provider"]
     resolved = registered() if callable(registered) and not isinstance(registered, type) else registered
@@ -99,7 +99,7 @@ def test_list_models_active_deprecated(monkeypatch):
     # pattern as test_discover_entry_points).
     ep = md.EntryPoint(
         name="test-provider",
-        value="tests.unit.clients.fakes:FakeClient",
+        value=f"{__package__}.fakes:FakeClient",
         group="parrot.clients",
     )
     monkeypatch.setattr(md, "entry_points", lambda group=None: [ep])
@@ -115,7 +115,7 @@ def test_list_providers_lists_in_core_keys(monkeypatch):
     # last provider leaving core, kept for the list_providers() shape).
     ep = md.EntryPoint(
         name="test-provider",
-        value="tests.unit.clients.fakes:FakeClient",
+        value=f"{__package__}.fakes:FakeClient",
         group="parrot.clients",
     )
     monkeypatch.setattr(md, "entry_points", lambda group=None: [ep])

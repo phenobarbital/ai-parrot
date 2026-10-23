@@ -11,7 +11,7 @@ import pytest
 from parrot.knowledge.wiki.models import SourceManifestEntry
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.sources_backend import AsyncSourceBackendBridge, JsonSourceBackend, SqliteSourceBackend
-from tests.knowledge.wiki.test_source_backends import FakeArangoDb
+from .test_source_backends import FakeArangoDb
 
 
 def _entry(source_id: str) -> SourceManifestEntry:
