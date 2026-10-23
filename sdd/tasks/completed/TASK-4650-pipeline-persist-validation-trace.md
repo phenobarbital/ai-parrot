@@ -294,10 +294,8 @@ async def test_prepare_step_builds_no_trace(pipeline_factory): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 1 (uid 3b14ae1256224316ad69efb1b61250e2), duration 260s
+**Date**: 2026-10-23
+**Notes**: SubmissionPipeline builds a collector from form.audit_trail, caps the trace and persists it at context['validation']. Merge-tier validation green. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

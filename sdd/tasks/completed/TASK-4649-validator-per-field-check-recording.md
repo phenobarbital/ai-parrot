@@ -438,10 +438,8 @@ async def test_no_value_leaks_into_bounds(): ...           # submit a distinctiv
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid 73742696609545a79f44429e877e5cdb), duration 301s
+**Date**: 2026-10-23
+**Notes**: Per-field check recording in FormValidator.validate_field (all CheckIds, skip reasons, _declared_checks). Merge-tier validation green. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
