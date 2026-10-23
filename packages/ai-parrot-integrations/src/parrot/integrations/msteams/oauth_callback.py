@@ -4,7 +4,10 @@ After a Teams user authorizes their Jira account, Atlassian redirects to
 ``/api/auth/jira/callback``.  When ``extra_state["channel"] == "msteams"``
 this module handles:
 
-1. Writing an ``auth.user_identities`` row via :class:`IdentityMappingService`.
+1. Writing an ``auth.user_identities`` row via :class:`IdentityMappingService`
+   — only when the state carries a ``nav_user_id`` (the navigator-auth bigint
+   id, put there by ``/connect_jira`` for an authenticated user). The Teams
+   AAD object id is the *provider* account id, never the ``user_id`` column.
 2. Returning a plain HTML success/error page shown in the user's browser.
 3. Sending a proactive message to the Teams conversation using the Bot
    Framework adapter and the stored ``conversation_reference``.
@@ -238,33 +241,59 @@ async def handle_msteams_jira_callback(
         )
 
     conv_ref: Dict[str, Any] = _conv_ref()
-    nav_user_id: str = state_payload.get("user_id") or extra.get("user_id", "")
+    # Two distinct identifiers — conflating them is what broke every write
+    # (FEAT-729 review, issue:187ce3fe3b93):
+    #  * teams_user_id — the AAD object id (a GUID). It keys the Jira token
+    #    store and is the provider-side account id on the identity row.
+    #  * nav_user_id — auth.users.user_id, a bigint, written to
+    #    auth.user_identities.user_id (``$1::text::bigint``). Only the Teams
+    #    auth lane can supply it, so it has its own state key and there is
+    #    deliberately NO fallback to ``user_id``.
+    teams_user_id: str = state_payload.get("user_id") or extra.get("user_id") or ""
+    nav_user_id: str = extra.get("nav_user_id") or state_payload.get("nav_user_id") or ""
 
     # 1. Persist identity mapping row
     identity_service = request.app.get("identity_mapping_service")
     identity_saved = True
-    if identity_service is not None and nav_user_id:
-        try:
-            await identity_service.upsert_identity(
-                nav_user_id=nav_user_id,
-                auth_provider="msteams",
-                # The Teams account id: the AAD object id (== nav_user_id here).
-                provider_user_id=nav_user_id,
-                auth_data={
-                    "aad_object_id": nav_user_id,
-                    # tenant_id, when present on the serialized conversation ref.
-                    "tenant_id": (conv_ref.get("conversation", {}).get("tenantId") or ""),
-                },
-                display_name=token_set.display_name or None,
-                email=token_set.email or None,
+    if identity_service is not None and teams_user_id:
+        if not nav_user_id:
+            # Nothing was expected to be saved (auth lane off, or the user is
+            # not authenticated against Navigator) — no warning on the page.
+            logger.info(
+                "No Navigator user id in the Teams Jira OAuth state — skipping the "
+                "auth.user_identities write for teams_user=%s",
+                teams_user_id,
             )
-        except Exception:  # noqa: BLE001 — identity write must not break browser flow
-            # Surfaced to the user (warning on the page), not only logged.
+        elif not str(nav_user_id).isdigit():
+            # Fail closed instead of letting the bigint cast blow up in Postgres.
             identity_saved = False
-            logger.exception(
-                "Failed to write auth.user_identities for Teams user=%s",
-                nav_user_id,
+            logger.warning(
+                "Refusing to write auth.user_identities for teams_user=%s: the OAuth "
+                "state carries a non-numeric Navigator user id (%d chars)",
+                teams_user_id,
+                len(str(nav_user_id)),
             )
+        else:
+            try:
+                await identity_service.upsert_identity(
+                    nav_user_id=nav_user_id,
+                    auth_provider="msteams",
+                    provider_user_id=teams_user_id,
+                    auth_data={
+                        "aad_object_id": teams_user_id,
+                        # tenant_id, when present on the serialized conversation ref.
+                        "tenant_id": (conv_ref.get("conversation", {}).get("tenantId") or ""),
+                    },
+                    display_name=token_set.display_name or None,
+                    email=token_set.email or None,
+                )
+            except Exception:  # noqa: BLE001 — identity write must not break browser flow
+                # Surfaced to the user (warning on the page), not only logged.
+                identity_saved = False
+                logger.exception(
+                    "Failed to write auth.user_identities for Teams user=%s",
+                    teams_user_id,
+                )
 
     # 2. Fire-and-forget proactive notification
     notifier: Optional[MSTeamsOAuthNotifier] = request.app.get("msteams_jira_oauth_notifier")

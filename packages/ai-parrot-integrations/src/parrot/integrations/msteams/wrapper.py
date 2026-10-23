@@ -197,7 +197,13 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
 
         if oauth_manager is not None:
-            register_jira_commands(self._command_router, oauth_manager)
+            register_jira_commands(
+                self._command_router,
+                oauth_manager,
+                # Resolved per turn, not here: the auth lane below is wired
+                # after this block, and an unauthenticated turn must yield "".
+                nav_user_id_resolver=lambda tc: self._effective_user_id(tc, ""),
+            )
             # Register the OAuth notifier for proactive messaging after callback.
             # continue_conversation needs a valid App ID, so skip (with a
             # warning) when client_id is not configured rather than registering
