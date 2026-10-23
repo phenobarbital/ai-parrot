@@ -10,7 +10,7 @@ tags: [msteams, authentication, identity, token-exchange]
 **Feature ID**: FEAT-729
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Inputs:** no brainstorm or proposal exists for this slug (§9). The spec is
@@ -514,13 +514,22 @@ class TokenExchangeClient:
 ### Validation Contract
 
 tests:
-- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_auth_lane.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_session_store.py
 - packages/ai-parrot/tests/unit/test_token_exchange_client.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_auth_strategy.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_auth_commands.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_auth_gate.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_auth_lane.py
 - packages/ai-parrot/tests/unit/test_identity_mapping.py
 - packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_oauth_callback.py
 - packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_jira_commands.py
 - packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_authorization.py
 markers: none
+
+> One test file per task — `check_task_graph`'s `file-overlap` is an error, so
+> two tasks may never declare the same file. `test_msteams_auth_lane.py` holds
+> the three integration tests only; each module's unit tests live beside it in
+> the per-module file above.
 
 ### Test Data / Fixtures
 
@@ -588,7 +597,7 @@ end-to-end run is recorded evidence in `sdd/state/FEAT-729/poc/`, not a test.
 ### Measurement evidence (2026-10-22, runtime)
 
 The successful exchange, with secrets redacted
-(`sdd/state/FEAT-729/poc/exchange_run.log`):
+(`sdd/state/FEAT-729/poc/exchange_run.transcript.md`):
 
 ```
 POST /api/v1/login   X-Auth-Method: TokenExchangeAuth   → HTTP 200
@@ -868,14 +877,34 @@ cannot be verified until that ships and is released.
       whether to reuse `AZURE_ADFS_CLIENT_ID` for the connection (no config
       change) or register the bot separately (needs `AZURE_TRUSTED_APPIDS`).
       — *Owner: Jesus Lara*
-- [ ] **Q2** — Default for `auth_required`: `False` keeps every existing Teams
-      deployment behaving exactly as today and makes auth opt-in; `True` is the
-      safer posture but changes behaviour on upgrade. Spec currently assumes
-      `False`. — *Owner: Jesus Lara*
-- [ ] **Q3** — Should the Navigator session token be persisted (Redis, like
-      Telegram's) or stay process-local? Process-local means a gunicorn worker
-      restart forces re-login; shared means a session token at rest.
-      — *Owner: Jesus Lara*
+- [x] **Q2** — Default for `auth_required`. — *Resolved 2026-10-23 by the
+      user*: **`False`** — auth is opt-in. Every existing Teams deployment keeps
+      behaving exactly as today after the upgrade, and a deployment that wants
+      the gate sets it explicitly. The residual risk is accepted: a deployment
+      that *should* gate stays open until someone sets the flag. → M5,
+      `test_auth_required_fails_closed` asserts both directions.
+- [x] **Q3** — Where does the Navigator session live? — *Resolved 2026-10-23
+      by the user*: **a shared store, so it survives worker restarts**.
+
+      **The premise of this question was wrong and is corrected here.**
+      Telegram's session is *not* Redis-backed: `TelegramUserSession` is a plain
+      dataclass held in an in-process dict (`telegram/wrapper.py:177`), and
+      `telegram/auth.py:78` documents the three isolation slots as *"Kept
+      process-local (no Redis serialization)"* because `tool_manager` and
+      `user_agent` are live objects that cannot be serialized. So there is no
+      "like Telegram" Redis pattern to mirror.
+
+      **Resolution — hybrid, satisfying the intent without breaking that
+      constraint:** the serializable auth fields persist through the existing
+      injectable store of `IntegrationStateManager`
+      (`integrations/core/state.py:61`, `set/get/delete(expire=)`, default
+      `InMemoryStateStore`), while `tool_manager`, `user_agent` and
+      `post_login_ran` stay process-local exactly as Telegram's do. TTL is
+      derived from `external_expires_at` — never hard-coded, which is the defect
+      the ledger already records against `AudioSessionStore`
+      (`issue:d92b765f8c4d`). Accepted cost: the Navigator session token is at
+      rest in the shared store for the token's remaining life (`cap=89` in the
+      PoC, so typically minutes). → M1.
 - [ ] **Q4** — M6 changes `IdentityMappingService` semantics from one row per
       `(user, provider)` to one per `provider_user_id`. Does any consumer rely
       on the old uniqueness? `telegram/post_auth_jira.py` has two call sites to
@@ -954,3 +983,4 @@ PoC could not exercise.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-22 | Jesus Lara | Initial draft, seeded by the in-session PoC: identity extraction (layers 1-2) and a live Azure→Navigator exchange returning HTTP 200 (layer 3) |
+| 0.2 | 2026-10-23 | Claude | Approved for decomposition. Q2 resolved (`auth_required=False`, opt-in) and Q3 resolved (shared store for the serializable fields only) — Q3's premise corrected: Telegram's session is process-local, not Redis-backed, so M1 mirrors `IntegrationStateManager` instead. §4 Validation Contract split one test file per task to satisfy `check_task_graph`'s `file-overlap`. Corrected the preserved PoC log's path (`.log` is gitignored; it is committed as `.transcript.md`) |
