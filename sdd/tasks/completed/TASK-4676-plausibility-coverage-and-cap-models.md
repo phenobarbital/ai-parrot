@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-737 — Plausibility coverage reporting and prompt length caps
 **Spec**: `sdd/specs/services-plausibility-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -324,10 +324,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix SDD lane, FEAT-737)
+**Date**: 2026-10-24
+**Notes**: Added `LLMValidationConfig.max_answer_chars` (default 500, ge=1) and
+`max_reason_chars` (default 300, ge=1); added `PlausibilityReport.not_examined`
+(`dict[str, str]`, default `{}`) as the model's last field so persisted reports in
+`audio/session_store.py` stay loadable; added the `NOT_EXAMINED_MAX_FIELDS` /
+`NOT_EXAMINED_UNRENDERABLE` reason-code constants next to
+`PLAUSIBILITY_AUDIT_FIELDS`. `PLAUSIBILITY_AUDIT_FIELDS` itself is unchanged
+(still exactly `resolved_model`/`provider`/`usage`), so `not_examined` reaches the
+client — the spec §2 decision.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Two tests added to `tests/unit/test_plausibility_wire_report.py`
+(`test_not_examined_reaches_the_client`, `test_not_examined_defaults_empty`); the
+three pre-existing tests in that file pass unchanged, including
+`test_other_fields_identical`, which compares `wire_report` against
+`model_dump(exclude=PLAUSIBILITY_AUDIT_FIELDS)` and therefore proves the widened
+model did not leak into the audit set.
 
-**Deviations from spec**: none | describe if any
+Verified: 16 passed across both Validation Commands; `ruff check` clean; `black`
+applied (it joined the new test's report construction onto one 120-col line).
+AC1/AC2/AC9 checked directly — defaults are 500/300, `max_answer_chars=0` and
+`max_reason_chars=0` both raise `ValidationError`, and the imported module
+resolved from the worktree (not the main checkout) as printed by `m.__file__`.
+
+**Deviations from spec**: none

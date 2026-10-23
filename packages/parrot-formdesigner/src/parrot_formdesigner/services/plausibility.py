@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from ..core.llm_validation import (
+    NOT_EXAMINED_MAX_FIELDS,
+    NOT_EXAMINED_UNRENDERABLE,
     LLMValidationConfig,
     PlausibilityReport,
     PlausibilityVerdict,
@@ -83,12 +85,21 @@ def _is_answered(value: Any) -> bool:
     return True
 
 
-def eligible_fields(
+def select_fields(
     form: FormSchema, scalars: dict[str, Any], cfg: LLMValidationConfig, *, only: set[str] | None = None
-) -> list[FormField]:
-    """Fields to send: enabled, answered, not read_only, type not excluded, not sensitive.
+) -> tuple[list[FormField], dict[str, str]]:
+    """Partition eligible fields into those to send and those the cap dropped.
 
-    Ordered required-first (stable), cut at ``cfg.max_fields``; ``only`` restricts to a subset.
+    Args:
+        form: The form whose fields are being judged.
+        scalars: Submitted answers by field id.
+        cfg: The form's LLM validation settings.
+        only: When given, restrict consideration to these field ids.
+
+    Returns:
+        ``(picked, not_examined)`` — ``picked`` is the ``cfg.max_fields``-capped,
+        required-first list; ``not_examined`` maps every field id cut by that cap
+        to ``NOT_EXAMINED_MAX_FIELDS``.
     """
     excluded = set(cfg.exclude_field_types) | _ALWAYS_EXCLUDED
     picked: list[FormField] = []
@@ -103,7 +114,18 @@ def eligible_fields(
             continue
         picked.append(field)
     picked.sort(key=lambda f: 0 if f.required else 1)
-    return picked[: cfg.max_fields]
+    return picked[: cfg.max_fields], {f.field_id: NOT_EXAMINED_MAX_FIELDS for f in picked[cfg.max_fields :]}
+
+
+def eligible_fields(
+    form: FormSchema, scalars: dict[str, Any], cfg: LLMValidationConfig, *, only: set[str] | None = None
+) -> list[FormField]:
+    """Fields to send: enabled, answered, not read_only, type not excluded, not sensitive.
+
+    Ordered required-first (stable), cut at ``cfg.max_fields``; ``only`` restricts to a subset.
+    Thin wrapper over :func:`select_fields` — call that one to learn what the cap cut.
+    """
+    return select_fields(form, scalars, cfg, only=only)[0]
 
 
 def _bool_text(value: bool, locale: str) -> str:
@@ -114,12 +136,29 @@ def _bool_text(value: bool, locale: str) -> str:
     return "yes" if value else "no"
 
 
-def _answer_text(field: FormField, value: Any, locale: str, labels: dict[str, str]) -> str | None:
-    """Render an answer as text; ``None`` when it cannot be rendered safely (dicts)."""
+def _truncate(text: str, limit: int | None) -> str:
+    """Return ``text`` cut to at most ``limit`` characters, ending in ``…`` when cut.
+
+    The marker replaces the final kept character rather than extending past
+    ``limit``, so the result is never longer than ``limit``. ``None`` (or a
+    non-positive limit) leaves ``text`` untouched.
+    """
+    if limit is None or limit <= 0 or len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def _answer_text(
+    field: FormField, value: Any, locale: str, labels: dict[str, str], *, max_chars: int | None = None
+) -> str | None:
+    """Render an answer as text; ``None`` when it cannot be rendered safely (dicts).
+
+    ``max_chars`` caps the rendered result (``None`` = uncapped).
+    """
     if isinstance(value, dict):
         return None
     if isinstance(value, bool):
-        return _bool_text(value, locale)
+        return _truncate(_bool_text(value, locale), max_chars)
     if isinstance(value, (list, tuple)):
         parts: list[str] = []
         for item in value:
@@ -130,19 +169,28 @@ def _answer_text(field: FormField, value: Any, locale: str, labels: dict[str, st
             else:
                 key = str(item)
                 parts.append(labels.get(key, key) if field.field_type in _OPTION_TYPES else key)
-        return ", ".join(parts)
+        return _truncate(", ".join(parts), max_chars)
     key = str(value)
-    return labels.get(key, key) if field.field_type in _OPTION_TYPES else key
+    return _truncate(labels.get(key, key) if field.field_type in _OPTION_TYPES else key, max_chars)
 
 
 def build_items(
-    form: FormSchema, fields: list[FormField], scalars: dict[str, Any], *, locale: str
+    form: FormSchema,
+    fields: list[FormField],
+    scalars: dict[str, Any],
+    *,
+    locale: str,
+    max_answer_chars: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Prompt items: field_id, label, description, hint, field_type, options (labels), answer (text)."""
+    """Prompt items: field_id, label, description, hint, field_type, options (labels), answer (text).
+
+    ``max_answer_chars`` caps each rendered answer (``None`` = uncapped, the
+    pre-FEAT-737 behaviour kept for direct callers).
+    """
     items: list[dict[str, Any]] = []
     for field in fields:
         labels = {opt.value: _loc(opt.label, locale) for opt in (field.options or [])}
-        answer = _answer_text(field, scalars.get(field.field_id), locale, labels)
+        answer = _answer_text(field, scalars.get(field.field_id), locale, labels, max_chars=max_answer_chars)
         if answer is None:
             continue
         item: dict[str, Any] = {
@@ -177,16 +225,35 @@ class AnswerPlausibilityChecker:
     async def check(
         self, form: FormSchema, scalars: dict[str, Any], *, locale: str, fields: set[str] | None = None
     ) -> PlausibilityReport:
-        """Return the report; raise PlausibilityBlocked only under ``on_error == "block"``."""
+        """Return the report; raise PlausibilityBlocked only under ``on_error == "block"``.
+
+        The report's ``not_examined`` names every eligible field the model never
+        saw — cut by ``cfg.max_fields`` or dropped as unrenderable — so a
+        ``status="ok"`` report can no longer over-claim coverage. ``items`` and
+        ``not_examined`` are always disjoint.
+        """
         cfg = self.config
-        targets = eligible_fields(form, scalars, cfg, only=fields)
+        targets, capped = select_fields(form, scalars, cfg, only=fields)
         if not targets:
-            return PlausibilityReport(status="ok", threshold=cfg.threshold, model=cfg.model, items={})
+            return PlausibilityReport(
+                status="ok", threshold=cfg.threshold, model=cfg.model, items={}, not_examined=capped
+            )
         if self._client is None:
             return self._fail("no LLM client configured")
-        items = build_items(form, targets, scalars, locale=locale)
+        items = build_items(form, targets, scalars, locale=locale, max_answer_chars=cfg.max_answer_chars)
         if not items:
-            return PlausibilityReport(status="ok", threshold=cfg.threshold, model=cfg.model, items={})
+            # Every eligible answer was unrenderable: an "ok" report with no items would
+            # be indistinguishable from a clean pass, so name each one explicitly.
+            self.logger.warning(
+                "plausibility: all %d eligible answers for form %s were unrenderable", len(targets), form.form_id
+            )
+            return PlausibilityReport(
+                status="ok",
+                threshold=cfg.threshold,
+                model=cfg.model,
+                items={},
+                not_examined=capped | {f.field_id: NOT_EXAMINED_UNRENDERABLE for f in targets},
+            )
         prompt = json.dumps({"locale": locale, "items": items}, ensure_ascii=False)
         kwargs: dict[str, Any] = {"system_prompt": _SYSTEM_PROMPT, "structured_output": PlausibilityBatch}
         if cfg.model:
@@ -205,18 +272,25 @@ class AnswerPlausibilityChecker:
             return self._fail("llm_error: unidentified_model")
         latency_ms = int((time.monotonic() - started) * 1000)
         known = {f.field_id for f in targets}
+        sent = {item["field_id"] for item in items}
         verdicts: dict[str, PlausibilityVerdict] = {}
         for out in batch.items:
-            if out.field_id not in known:
-                self.logger.warning("plausibility: dropping unknown field_id %r from LLM output", out.field_id)
+            # Gate on what was actually SENT, not merely on what was eligible: a verdict
+            # for a field the model never saw is unattributable, and keeping it would also
+            # put the same id in both `items` and `not_examined` (FEAT-737 AC5).
+            if out.field_id not in sent:
+                self.logger.warning("plausibility: dropping unsent field_id %r from LLM output", out.field_id)
                 continue
             confidence = out.confidence
             if confidence != confidence:  # NaN
                 confidence = 0.0
             confidence = max(0.0, min(1.0, float(confidence)))
             verdicts[out.field_id] = PlausibilityVerdict(
-                plausible=out.plausible, confidence=confidence, reason=out.reason or ""
+                plausible=out.plausible,
+                confidence=confidence,
+                reason=_truncate(out.reason or "", cfg.max_reason_chars),
             )
+        not_examined = capped | dict.fromkeys(known - sent, NOT_EXAMINED_UNRENDERABLE)
         return PlausibilityReport(
             status="ok",
             threshold=cfg.threshold,
@@ -226,6 +300,7 @@ class AnswerPlausibilityChecker:
             usage=usage,
             latency_ms=latency_ms,
             items=verdicts,
+            not_examined=not_examined,
         )
 
     def _parse(self, response: Any) -> PlausibilityBatch:
