@@ -284,10 +284,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (by hand — the file is fully specified in the blueprint)
+**Date**: 2026-10-23
+**Notes**: `packages/ai-parrot/tests/test_package_test_collection.py` with the three tests of Amendment B; 3 passed (≈17 s, the pair collect runs in a subprocess); ruff clean.
+**AC8 demonstrated, both reverted, nothing committed**: (1) deleting the `consider_namespace_packages` line from `pytest.ini` → `test_pytest_ini_enables_path_derived_test_identities` AND
+`test_two_package_test_trees_collect_together` fail (2 failed, 1 passed); (2) prepending `from tests.foo import x` to `parrot-formdesigner/tests/unit/test_version_and_docs.py` →
+`test_no_test_imports_the_ambiguous_tests_package` fails. Restored; `git status` clean afterwards.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the tests differ from the original spec's M4 (Amendment B: `__init__.py` files stay, so the "no `tests/__init__.py`" assertion became a `pytest.ini` config guard).
