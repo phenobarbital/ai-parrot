@@ -288,13 +288,11 @@ When you pick up this task:
 **Completed by**: sdd-worker (by hand; the task is five small edits)
 **Date**: 2026-10-23
 **Notes**: 4 `from tests.<x>` → relative imports in `parrot-formdesigner` (`integration/conftest.py`, `unit/test_feat300_review_fixes.py` — imported names unchanged,
-`unit/test_feat302_review_fixes.py`, `unit/test_org_graph_service.py`) + class (iii): `tests/conftest.py` now puts the package root on `sys.path` (idempotent) so
-`scripts.build_snippet_bundles` resolves. Nothing needed in `ai-parrot-server`, `-embeddings`, `-loaders`.
+`unit/test_feat302_review_fixes.py`, `unit/test_org_graph_service.py`) + class (iii): `unit/test_build_snippet_bundles.py` now loads `scripts/build_snippet_bundles.py` by path (an earlier version put the package root on `sys.path` in `tests/conftest.py`; removed after review — a global path entry is ambiguous across trees). Nothing needed in `ai-parrot-server`, `-embeddings`, `-loaders`.
 Evidence (live `pytest.ini`): **AC1** `embeddings + formdesigner` collect together: 4,113 items, 0 errors, none of `ImportPathMismatchError` / `Plugin already registered` /
 `import file mismatch`. Formdesigner standalone 3,899 (baseline 3,899); server 3,597 with 4 errors that are all pre-existing (2 `fakeredis`, 2 `unit/e2e`). All 28 roots in one session:
 43,420 collected, **0 identity collisions**, 49 errors that are class (xi) pollution (a test replaces `sys.modules['aiohttp']`/`parrot._imports` at import) — out of scope.
 Formdesigner failure count unchanged (AC7): the same 6 failures in the touched files before and after (FEAT-618's baseline).
-Class (vi) (`tests/mcp` shadowing the real `mcp`) is not reproducible standalone or in the AC1 pair; the 2 server `mcp` errors in the 28-way run come from some test inserting a tests directory on
-`sys.path` (class (xi)). No change made.
+Class (vi) (`tests/mcp` shadowing the real `mcp`) was later traced to `packages/ai-parrot/tests/conftest.py` putting its own tests directory on `sys.path`; fixed in the follow-up commit (helpers are now imported relatively).
 
 **Deviations from spec**: class (vi) left alone (see above).

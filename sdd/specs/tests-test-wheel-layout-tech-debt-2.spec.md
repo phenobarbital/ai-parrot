@@ -138,6 +138,17 @@ Class (ii)/(iv)/(vii)–(x) do not arise (nothing is removed). **M4** guards the
 Class (xi) — test modules that replace `sys.modules[...]` at import, visible only when many trees share a session — is out of scope (ledger).
 **AC4 becomes: all 267 `__init__.py` under `packages/*/tests` are unchanged.**
 
+### Follow-up fixes after review (2026-10-23)
+
+The independent review and the 28-way session surfaced residue that is now fixed: (1) `agentd` dotted targets follow `__package__` and the
+guard rejects `"tests.<x>:Name"` strings; (2) the dead root `[tool.pytest.ini_options]` is removed and guarded; (3) class (xi) pollution —
+the spatial tests restore their `aiohttp`/`parrot._imports` stubs, `ai-parrot/tests` no longer puts its own directory on `sys.path` (which made
+`tests/mcp` and `tests/benchmarks` shadow the real `mcp` SDK and the repo-root `benchmarks`), and the formdesigner build-script test loads the script by
+path instead of a global `sys.path` entry. Entry-point targets must not contain the hyphens of a path-derived package name (`test_factory_discovery`
+uses a plain alias). Result: all 28 roots in one session collect **44,118** items with **0** identity collisions and only the 2 pre-existing
+`fakeredis` errors (a package missing from the shared `.venv`); ruff is clean on every changed file; the 57 failures in the touched files are identical
+on `origin/dev`.
+
 ### The two strategies, and why (b) is already rejected
 
 | | Strategy | Verdict |
