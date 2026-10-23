@@ -103,6 +103,7 @@ if TYPE_CHECKING:
     from ..services.forwarder import SubmissionForwarder
     from ..services.llm_quota import LLMQuota
     from ..services.org_graph import OrgGraphService
+    from ..services.rbac import RBACScope
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
