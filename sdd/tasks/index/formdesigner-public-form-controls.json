@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-22T23:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-23T00:00:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates core/public_access.py; no upstream symbol needed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4630-public-access-schema-block.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4630-public-access-schema-block.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4631",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: extends services/submissions.py only; independent of TASK-4630 (no shared file or symbol).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4631-guarded-submission-storage.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:48:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4631-guarded-submission-storage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4632",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,9 +64,10 @@
       "parallel": true,
       "parallelism_notes": "imports evaluate_open/normalize_key_value/RejectionReason from TASK-4630 (core/public_access.py); calls store_guarded and catches ResponseLimitReached/DuplicateResponse from TASK-4631 (services/submissions.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4632-pipeline-enforcement.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:50:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4632-pipeline-enforcement.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4633",
@@ -73,25 +76,26 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: services/public_forms.py + api/file_upload.py; uses only existing enforce_membership_unless_public (core/tenant.py:189).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4633-public-paths-and-file-upload.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:53:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4633-public-paths-and-file-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4634",
       "slug": "http-409-availability-routes",
-      "title": "HTTP surface \u2014 409 mapping, /availability, route modes, tenant flag plumbing",
+      "title": "HTTP surface — 409 mapping, /availability, route modes, tenant flag plumbing",
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,9 +106,10 @@
       "parallel": true,
       "parallelism_notes": "catches SubmissionRejected and passes tenant_scoped_submissions to SubmissionPipeline from TASK-4632; get_availability uses AvailabilityState/evaluate_open from TASK-4630 and count_responses from TASK-4631.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4634-http-409-availability-routes.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:57:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4634-http-409-availability-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4635",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,18 +128,19 @@
       "parallel": true,
       "parallelism_notes": "reads SubmitOutcome.created_at added by TASK-4632; modifies api/handlers.py and api/routes.py after TASK-4634 (same files, anchors on its tenant_scoped_submissions lines).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4635-on-submitted-callback.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:58:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4635-on-submitted-callback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4636",
       "slug": "audio-ws-rejection-mapping",
-      "title": "Audio WS \u2014 map SubmissionRejected to IOFailed",
+      "title": "Audio WS — map SubmissionRejected to IOFailed",
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -143,9 +149,10 @@
       "parallel": true,
       "parallelism_notes": "imports SubmissionRejected from TASK-4632 (services/submission_pipeline.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4636-audio-ws-rejection-mapping.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-22T23:59:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4636-audio-ws-rejection-mapping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4637",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-730",
       "feature": "formdesigner-public-form-controls",
       "spec": "sdd/specs/formdesigner-public-form-controls.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,9 +172,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: bumps the package version (version.py feeds pyproject's dynamic version). Documents the 7 globs from TASK-4633 (services/public_forms.py), the HTTP surface from TASK-4634 (api/routes.py) and SubmittedEvent from TASK-4635 (api/submission_events.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4637-docs-and-version-bump.md"
+      "started_at": "2026-10-22T23:35:06+00:00",
+      "completed_at": "2026-10-23T00:00:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4637-docs-and-version-bump.md",
+      "verification": "verified"
     }
   ]
 }
