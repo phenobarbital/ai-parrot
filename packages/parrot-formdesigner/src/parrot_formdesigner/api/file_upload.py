@@ -48,7 +48,7 @@ import hashlib
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from aiohttp import web
 
@@ -72,7 +72,8 @@ logger = logging.getLogger(__name__)
 # uploads to the same field never interleave. Process-local — sufficient
 # for the V1 "basic chunked upload" scope (not full tus-protocol support;
 # see spec Non-Goals). An abandoned upload (client stops sending chunks)
-# leaves its entry and chunk blobs orphaned — no expiry/GC in V1.
+# leaves its entry and chunk blobs orphaned — no expiry/GC in V1 (chunk uploads
+# remain out of scope of FEAT-731).
 _CHUNK_BUFFERS: dict[tuple[str, str, str], dict[int, str]] = {}
 
 
@@ -135,9 +136,7 @@ CLIENT_UPLOAD_ID_HEADER = "X-Parrot-Client-Upload-Id"
 _MAX_CLIENT_UPLOAD_ID = 128
 
 
-def _client_blob_id(
-    request: web.Request, form: FormSchema, field: FormField, tenant: str | None
-) -> str | None:
+def _client_blob_id(request: web.Request, form: FormSchema, field: FormField, tenant: str | None) -> str | None:
     """The client-id SEED for this upload's blob names, or ``None`` (random, as before).
 
     A hash of the header with the tenant, form and field, so the raw header
@@ -288,7 +287,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 if request.headers.get(CLIENT_UPLOAD_ID_HEADER):
                     raise web.HTTPBadRequest(reason=f"Field {field_id!r} accepts a single file only")
                 for orphan in envelopes:
-                    for ref in (orphan.blob_ref, orphan.thumbnail_url):
+                    for ref in (orphan.blob_ref, _thumbnail_ref(orphan.thumbnail_url)):
                         if not ref:
                             continue
                         try:
@@ -327,6 +326,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
     if prior_blob_ref and prior_blob_ref not in written:
         try:
             await blob_storage.delete(prior_blob_ref)
+            await _forget_pending(request, [prior_blob_ref], tenant)
         except Exception as exc:
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
@@ -336,9 +336,62 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 exc,
             )
 
+    await _record_pending(request, form, field, tenant, result)
     if isinstance(result, list):
         return web.json_response([env.model_dump() for env in result])
     return web.json_response(result.model_dump())
+
+
+def _thumbnail_ref(thumbnail_url: str | None) -> str | None:
+    """The ``ref`` query param of a thumbnail_url built by ``_finalize_envelope``, unquoted."""
+    if not thumbnail_url:
+        return None
+    values = parse_qs(urlparse(thumbnail_url).query).get("ref")
+    return (unquote(values[0]) or None) if values else None
+
+
+async def _record_pending(
+    request: web.Request,
+    form: FormSchema,
+    field: FormField,
+    tenant: str,
+    result: FileEnvelope | list[FileEnvelope],
+) -> None:
+    """Record every returned envelope as pending (FEAT-731). Fail-soft: never fails the upload."""
+    store = request.app.get("form_pending_uploads")
+    if store is None:
+        return
+    from ..services.pending_uploads import PendingUpload
+
+    envelopes = result if isinstance(result, list) else [result]
+    try:
+        for env in envelopes:
+            if not env.blob_ref:
+                continue
+            await store.record(
+                PendingUpload(
+                    blob_ref=env.blob_ref,
+                    thumbnail_ref=_thumbnail_ref(env.thumbnail_url),
+                    form_uid=form.form_uid,
+                    field_uid=field.field_uid,
+                    tenant=tenant,
+                    public_form=bool(form.is_public),
+                ),
+                tenant=tenant,
+            )
+    except Exception as exc:  # noqa: BLE001 — the blob is merely untracked (today's state)
+        logger.warning("Failed to record pending upload for %s: %s", form.form_uid, exc)
+
+
+async def _forget_pending(request: web.Request, blob_refs: list[str], tenant: str) -> None:
+    """Drop pending rows for blobs this request deleted. Fail-soft."""
+    store = request.app.get("form_pending_uploads")
+    if store is None:
+        return
+    try:
+        await store.delete_rows(blob_refs, tenant=tenant)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to drop pending rows %r: %s", blob_refs, exc)
 
 
 async def _process_file_part(
