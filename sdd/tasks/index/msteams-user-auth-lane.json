@@ -45,7 +45,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -53,8 +53,9 @@
       "parallelism_notes": "No dependencies: creates msteams/auth.py from scratch and only reads InMemoryStateStore (integrations/core/state.py:14), which it does not modify.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4659-msteams-user-session-store.md"
+      "completed_at": "2026-10-23T02:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4659-msteams-user-session-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4660",
@@ -63,7 +64,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -71,8 +72,9 @@
       "parallelism_notes": "No dependencies: creates parrot/auth/token_exchange.py in core and must not import parrot.integrations at all, so it shares no file with any other task.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4660-navigator-token-exchange-client.md"
+      "completed_at": "2026-10-23T02:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4660-navigator-token-exchange-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4661",
