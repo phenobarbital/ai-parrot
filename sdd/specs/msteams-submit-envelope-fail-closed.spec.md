@@ -84,6 +84,10 @@ rather than a configuration change.
   plus an environment fallback, forwarded to `register_teams_renderer()`.
 - **One documented escape hatch** for local development, loud and deliberate —
   never reachable by omission.
+- **Stop trusting the envelope's `tenant` as the only source.** Derive it from
+  the Bot Framework-asserted Teams tenant when a mapping exists, falling back to
+  the envelope otherwise — a second line of defence behind the signature, never
+  a replacement for it (see §2 "Why derivation does not replace the signature").
 - **Document the pairing** in `docs/formdesigner-msteams-renderer.md`, which
   today describes `sig` as optional without stating the consequence.
 - Close `issue:bcd04b2170a0` and `issue:89f47e08b13a`.
@@ -95,10 +99,13 @@ rather than a configuration change.
   (`verify()` already returns `False` for `sig=None`, `teams.py:76-81`); the
   defect is in the caller, not the primitive.
 - Key rotation, multiple active secrets, or asymmetric signatures.
-- Server-side re-derivation of `tenant` from the Bot Framework identity. That
-  would be a stronger design, but it changes the trust model of FEAT-551's
-  envelope and belongs to its own feature — see §8 Q2.
 - Replacing the host allowlist or the SSRF guard around `submit_url`.
+- Auto-discovering the AAD-tenant → FormDesigner-tenant mapping. M6 consumes a
+  mapping the operator configures; building it from Graph or a directory sync is
+  a separate problem.
+- Deriving `form_uid` from anything but the envelope. Only `tenant` has a
+  server-asserted counterpart in the activity; `form_uid` stays envelope-only
+  and signature-protected.
 - Teams upload support. Adaptive Cards cannot upload; the renderer already
   degrades to an `Action.OpenUrl` plus a `RenderWarning`.
 
@@ -123,6 +130,32 @@ The escape hatch (`allow_unsigned_submissions`) is a single flag that relaxes
 gates 1 and 2 together, logs a `WARNING` on every startup, and is never set by
 default.
 
+A fourth change, **M6**, narrows the blast radius rather than closing a gate: the
+bot prefers a Bot Framework-asserted tenant over the one the card claims.
+
+### Why derivation does not replace the signature
+
+Teams asserts an **Azure AD tenant GUID** (`activity.channel_data["tenant"]["id"]`,
+`TeamsChannelData.tenant.id` — verified against the installed `botbuilder.schema.teams`).
+FormDesigner routes on a **tenant slug** (`navigator`), the `{tenant}` segment of
+`…/{tenant}/forms/{form_uid}/data`. These are different namespaces, so derivation
+needs an operator-configured mapping: `{aad_tenant_guid: formdesigner_tenant_slug}`.
+
+That mapping cannot be exhaustive, and the fallback is what makes it safe to
+deploy — but also what keeps it from being a gate:
+
+> A caller whose AAD tenant is **not** in the mapping falls back to the envelope's
+> `tenant`. An attacker reaching the bot from an unmapped tenant is therefore back
+> to the original situation. **M6 constrains mapped tenants; only the signature
+> constrains everyone.** M1, M2 and M3 remain mandatory, and M6 is not a reason to
+> relax any of them.
+
+What M6 does buy: for every mapped tenant — the configured, production case — a
+valid signature is no longer sufficient to write into *another* tenant. A leaked
+or replayed signing secret stops being a cross-tenant write primitive. That is a
+real reduction in blast radius, and the reason it is worth doing here rather than
+deferring.
+
 ### Component Diagram
 
 ```
@@ -145,6 +178,11 @@ TeamsFormRenderer(signing_secret=…)
                                                           │
                                    verify_envelope(require_signature=…)  [M2]
                                                           │  ← refuses unsigned
+                                   resolve_submit_tenant()  [M6]
+                                     channel_data.tenant.id → mapping
+                                     hit  → authoritative; rewrite submit_url
+                                     miss → fall back to env.tenant
+                                                          │
                                                   post_submission(bearer)
                                                           │
                                                           ▼
@@ -161,6 +199,7 @@ TeamsFormRenderer(signing_secret=…)
 | `setup_form_api()` | extends | new `teams_signing_secret` parameter, forwarded |
 | `register_teams_renderer()` | uses | already accepts `signing_secret` — unchanged |
 | `TeamsSubmitEnvelope.sign/verify` | uses | unchanged |
+| `Activity.channel_data["tenant"]["id"]` | reads | M6 — server-asserted AAD tenant GUID |
 
 ### Data Models
 
@@ -171,7 +210,8 @@ class MSTeamsAgentConfig:
     formdesigner_allowed_hosts: Optional[List[str]] = None
     formdesigner_submit_token: Optional[str] = None
     formdesigner_submit_secret: Optional[str] = None
-    formdesigner_allow_unsigned_submissions: bool = False  # NEW — escape hatch
+    formdesigner_allow_unsigned_submissions: bool = False  # NEW — escape hatch (M1)
+    formdesigner_tenant_map: Optional[Dict[str, str]] = None  # NEW — {aad_guid: fd_slug} (M6)
 ```
 
 ### New Public Interfaces
@@ -195,6 +235,7 @@ that already guards config construction keeps working.
 | M1: config fail-closed | yes | field name, env var name, exception type and message shape all fixed below | — |
 | M2: `require_signature` | yes | keyword-only, defaults `True`; reuses `EnvelopeRejected` | — |
 | M3: `teams_signing_secret` wiring | yes | parameter name, env var, forwarding call site fixed | — |
+| M6: tenant derivation | yes | helper is pure; mapping shape, precedence and fallback all fixed below | — |
 | M4: documentation | yes | target file and section fixed | — |
 | M5: tests | yes | test names and assertions enumerated in §4 | — |
 
@@ -284,17 +325,70 @@ that already guards config construction keeps working.
       """
   ```
 
+### Module 6: Bot-asserted tenant derivation
+- **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/msteams/formdesigner_submit.py`
+  (pure helper) + `.../wrapper.py` (call site) + `.../models.py` (config field)
+- **Responsibility**: prefer the Bot Framework-asserted tenant over the card's
+  claim when a mapping exists; fall back to the envelope otherwise.
+- **Depends on**: M2 — derivation runs **after** `verify_envelope()`, never
+  instead of it. Order is load-bearing: a rewritten `submit_url` must not be
+  able to launder an envelope past the SSRF/path guard.
+- **Behaviour**:
+  - Read the AAD tenant GUID from `activity.channel_data["tenant"]["id"]`
+    (a plain dict on a raw activity; absent on non-Teams channels and in many
+    test activities → treat as a miss, never an error).
+  - Look it up in `formdesigner_tenant_map`. **Hit** → that slug is
+    authoritative; when it differs from `env.tenant`, rewrite both `env.tenant`
+    and the `{tenant}` segment of `env.submit_url`, and log at `INFO` that a
+    claim was overridden. **Miss, or no map configured** → keep `env.tenant`
+    unchanged (today's behaviour).
+  - The helper is pure and takes the GUID, not the activity, so it stays
+    testable without `botbuilder` — preserving the module's no-botbuilder rule
+    (`formdesigner_submit.py:3`). The wrapper does the extraction.
+  - Rewriting `submit_url` must rebuild the path from `api_base_path`, the
+    resolved tenant and `env.form_uid` — never string-replace the old slug,
+    which would corrupt a URL whose host or path contains it.
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot-integrations/src/parrot/integrations/msteams/formdesigner_submit.py (new symbols)
+  def resolve_submit_tenant(
+      env: TeamsSubmitEnvelope,
+      *,
+      asserted_tenant_id: str | None,
+      tenant_map: dict[str, str] | None,
+      api_base_path: str = "/api/v1",
+  ) -> tuple[TeamsSubmitEnvelope, bool]:
+      """Return (envelope, overridden). A mapped ``asserted_tenant_id`` wins over ``env.tenant``.
+
+      Rebuilds ``submit_url`` from ``api_base_path``/tenant/``form_uid`` on override.
+      Returns the envelope unchanged with ``False`` when the id is None or unmapped.
+      """
+  ```
+- **Call site** (`wrapper.py:1065`, immediately after `verify_envelope`):
+  ```python
+  tenant_info = (getattr(turn_context.activity, "channel_data", None) or {}).get("tenant") or {}
+  env, overridden = resolve_submit_tenant(
+      env,
+      asserted_tenant_id=tenant_info.get("id"),
+      tenant_map=self.config.formdesigner_tenant_map,
+      api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+  )
+  ```
+
 ### Module 4: Documentation
 - **Path**: `docs/formdesigner-msteams-renderer.md`
 - **Responsibility**: state the pairing requirement where the `sig` field is
   introduced.
-- **Depends on**: M1, M2, M3 (documents their final names).
+- **Depends on**: M1, M2, M3, M6 (documents their final names).
 - **Content**: replace the bare *"`sig` is omitted (`null`) when no secret is
   configured"* with the rule — the two secrets are one setting in two places
   (`teams_signing_secret` on the FormDesigner side, `formdesigner_submit_secret`
   on the bot side) and must be equal; a bearer token without a secret is refused
   at startup; the escape hatch and why it is development-only; a short
-  "Configuring Teams submissions securely" section with both env vars.
+  "Configuring Teams submissions securely" section with all three env vars; and
+  a "Tenant resolution" subsection stating the AAD-GUID → slug mapping, the
+  fallback, and — explicitly — that the mapping does **not** remove the need for
+  the signature.
 
 ### Module 5: Tests
 - **Path**: `packages/ai-parrot-integrations/tests/msteams/test_formdesigner_submit.py`,
@@ -303,7 +397,7 @@ that already guards config construction keeps working.
 - **Responsibility**: regression coverage per §4; update the existing calls that
   pass `secret=None` (`test_formdesigner_submit.py:56`) now that the default
   refuses.
-- **Depends on**: M1, M2, M3.
+- **Depends on**: M1, M2, M3, M6.
 
 ---
 
@@ -326,6 +420,12 @@ that already guards config construction keeps working.
 | `test_setup_form_api_forwards_signing_secret` | M3 | the registered renderer carries the secret |
 | `test_setup_form_api_signing_secret_from_env` | M3 | `FORMDESIGNER_TEAMS_SIGNING_SECRET` fallback |
 | `test_setup_form_api_explicit_renderer_still_wins` | M3 | `teams_renderer=` takes precedence, unchanged |
+| `test_resolve_tenant_mapped_guid_overrides_envelope` | M6 | mapped GUID ≠ `env.tenant` → tenant and `submit_url` rewritten, `overridden is True` |
+| `test_resolve_tenant_mapped_guid_matching_is_noop` | M6 | mapped GUID == `env.tenant` → unchanged, `overridden is False` |
+| `test_resolve_tenant_unmapped_guid_falls_back` | M6 | GUID absent from the map → envelope untouched |
+| `test_resolve_tenant_no_asserted_id_falls_back` | M6 | `asserted_tenant_id=None` (non-Teams channel) → envelope untouched, no raise |
+| `test_resolve_tenant_rebuilds_url_not_string_replace` | M6 | a tenant slug that also appears in the host survives the rewrite intact |
+| `test_hatch_env_fallback_sets_allow_unsigned` | M1 | `<NAME>_FORMDESIGNER_ALLOW_UNSIGNED=1` → hatch on (Q1) |
 
 ### Integration Tests
 
@@ -335,6 +435,8 @@ that already guards config construction keeps working.
 | `test_teams_card_roundtrip_signed` | render `teams` with a signing secret → bot verifies → `POST …/data` → `200` reply card |
 | `test_teams_card_roundtrip_private_form_403_then_bearer` | private form without token → `403` card; with an accepted bearer → `200`. **Closes `issue:89f47e08b13a`** |
 | `test_unsigned_renderer_against_signed_bot_is_refused` | the misconfiguration M3 exists to prevent: `sig: null` meets a bot with a secret → refused, not silently accepted |
+| `test_mapped_tenant_overrides_validly_signed_cross_tenant_claim` | M6's reason to exist: a **correctly signed** envelope claiming another tenant, from a mapped AAD tenant → the POST goes to the mapped slug, not the claimed one |
+| `test_derivation_runs_after_verification` | a rewritten `submit_url` cannot launder an envelope past the SSRF/path guard — an envelope that fails `verify_envelope` never reaches `resolve_submit_tenant` |
 
 ### Validation Contract
 
@@ -372,7 +474,8 @@ def cross_tenant_envelope():
 - [ ] That check runs **after** the env fallbacks, so a secret provided only
       through the environment satisfies it.
 - [ ] `formdesigner_allow_unsigned_submissions=True` permits it and logs exactly
-      one `WARNING` per startup.
+      one `WARNING` per startup; `<NAME>_FORMDESIGNER_ALLOW_UNSIGNED` sets it
+      through the environment like every other FormDesigner field (Q1).
 - [ ] `verify_envelope()` refuses an unsigned envelope by default; the skip
       requires an explicit `require_signature=False`.
 - [ ] The refusal text is identical for "no secret configured" and "bad
@@ -385,8 +488,18 @@ def cross_tenant_envelope():
       wins.
 - [ ] `test_cross_tenant_envelope_is_refused` fails against the pre-fix code
       (it is the regression test for the vulnerability).
-- [ ] `docs/formdesigner-msteams-renderer.md` documents the pairing, both env
-      vars and the hatch.
+- [ ] A mapped AAD tenant GUID overrides a conflicting `env.tenant`, rewriting
+      both the tenant and the `{tenant}` segment of `submit_url` by rebuilding
+      the path — never by string replacement.
+- [ ] An absent or unmapped AAD tenant GUID leaves the envelope untouched and
+      raises nothing (non-Teams channels must keep working).
+- [ ] `resolve_submit_tenant()` runs strictly **after** `verify_envelope()`; an
+      envelope that fails verification never reaches it.
+- [ ] `resolve_submit_tenant()` is importable and testable without `botbuilder`
+      installed.
+- [ ] `docs/formdesigner-msteams-renderer.md` documents the pairing, all three
+      env vars, the hatch, and that tenant derivation does **not** replace the
+      signature.
 - [ ] Full contract suite green; `ruff check` clean on every changed file.
 - [ ] `issue:bcd04b2170a0` and `issue:89f47e08b13a` closed with
       `--resolved-by` pointing at the merge commit.
@@ -490,6 +603,18 @@ def register_teams_renderer(                                              # line
 - ~~A shared constant for the two secrets~~ — they are two independent settings
   in two distributions that must be given the same value by the operator. There
   is no code path that compares or synchronizes them.
+- ~~`TeamsInfo.get_tenant_id()`~~ / ~~`teams_get_tenant_id()`~~ — no such helper.
+  `botbuilder.core.teams` exposes only `teams_get_channel_id` and
+  `teams_get_selected_channel_id` (verified against the installed package). Read
+  `activity.channel_data["tenant"]["id"]` directly.
+- ~~`MSTeamsAgentConfig.app_tenantid` as the FormDesigner tenant~~ — it is the
+  **AAD tenant GUID** for `app_type: SingleTenant` bot authentication
+  (`models.py:37`, `models.py:79`), a different namespace from the FormDesigner
+  tenant slug. Never pass it as `{tenant}`.
+- ~~`channel_data` being read anywhere today~~ — it is not. M6 is the first
+  reader in the `msteams` package.
+- ~~`TenantInfo` carrying a name or slug~~ — its only field is `id`
+  (verified: `botbuilder.schema.teams.TenantInfo._attribute_map`).
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -540,8 +665,22 @@ Verified against: `c9c6a1ba5`
   signature" are distinguishable to an attacker if the user-facing text differs.
   Log the distinction; do not return it.
 - **The hatch must be hard to reach by accident.** `False` default, explicit
-  field, `WARNING` on every startup. Do not add an env fallback that could be
-  set cluster-wide by mistake — see §8 Q1.
+  field, `WARNING` on every startup. It does get an env fallback (§8 Q1), so the
+  `WARNING` is the only thing standing between a stray cluster-wide variable and
+  a silently unsigned deployment — do not downgrade it to `INFO` or emit it
+  once per process-group.
+- **M6 is not a gate, and the spec must keep saying so.** It is tempting to read
+  "the bot derives the tenant itself" as making the signature redundant. It does
+  not: an unmapped caller falls straight back to the envelope. Any future change
+  that relaxes M1/M2 on the grounds that M6 exists reopens `bcd04b2170a0`.
+- **Order M2 → M6, never the reverse.** `resolve_submit_tenant()` can rewrite
+  `submit_url`; running it before `verify_envelope()` would let a crafted
+  envelope be rewritten into a shape that then passes the host/path guard.
+- **`channel_data` is not always a dict.** It is absent on non-Teams channels
+  and in most hand-built test activities. Treat anything that is not a dict with
+  a `tenant.id` as a miss; never raise from the extraction.
+- **No live deployment relies on unsigned envelopes** (§8 Q3), so M1 may fail
+  closed from day one with no migration path.
 
 ### External Dependencies
 
@@ -552,19 +691,28 @@ None. `hmac` and `hashlib` are stdlib and already imported in
 
 ## 8. Open Questions
 
-- [ ] **Q1** — Should `formdesigner_allow_unsigned_submissions` get an env
-      fallback (`<NAME>_FORMDESIGNER_ALLOW_UNSIGNED`) like every other
-      FormDesigner config field, or stay code-only so it cannot be switched on
-      from a deployment environment? Consistency argues for the env var; the
-      threat model argues against. — *Owner: Jesus Lara*
-- [ ] **Q2** — Should the bot derive `tenant` from the Bot Framework identity
-      instead of trusting the envelope, making the signature a second line of
-      defence rather than the only one? Out of scope here; worth its own feature
-      if the answer is yes. — *Owner: Jesus Lara*
-- [ ] **Q3** — Does any live deployment currently rely on unsigned envelopes? If
-      yes, M1 is a breaking upgrade for it and needs a release note; if no (the
-      expectation — the secret is unset *and* the producing side cannot sign, so
-      the pairing has never worked), no migration path is needed. — *Owner: Jesus Lara*
+- [x] **Q1** — Env fallback for the escape hatch? — *Resolved: **yes***.
+      `formdesigner_allow_unsigned_submissions` gets
+      `<NAME>_FORMDESIGNER_ALLOW_UNSIGNED`, consistent with every other
+      FormDesigner config field (`models.py:87-99`). The `WARNING` on every
+      startup is what keeps it from being silent. Landed in M1 and §5.
+- [x] **Q2** — Derive `tenant` from the Bot Framework identity? — *Resolved:
+      **yes — derive from the tenant, falling back to the envelope***. Promoted
+      out of Non-Goals into **M6**. Note the consequence recorded in §2 "Why
+      derivation does not replace the signature": because the fallback is
+      reachable by any unmapped caller, M6 narrows blast radius for mapped
+      tenants but gates nothing — M1/M2/M3 stay mandatory.
+- [x] **Q3** — Does any live deployment rely on unsigned envelopes? — *Resolved:
+      **no***. No migration path and no breaking-upgrade release note needed;
+      M1 can fail closed from day one.
+
+### Remaining
+
+- [ ] **Q4** — Where does `formdesigner_tenant_map` come from operationally? A
+      dict on the agent config is enough for the first deployment, but FieldSync
+      already owns tenant identity (tenant-per-schema, `fieldsync.projects`), so
+      a second hand-maintained copy will drift. Decide before the map grows past
+      a handful of entries. — *Owner: Jesus Lara*
 
 ---
 
@@ -590,11 +738,18 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Module dependency graph**:
   - M1, M2 and M3 are **independent** — three different files in two
     distributions, no shared symbol. Expected to run concurrently.
-  - M4 → M1, M2, M3 (documents their final names).
-  - M5 → M1, M2, M3 (tests their behaviour).
-- **Shared files**: `models.py` is touched by M1 only, at two separate anchors
-  (`:64` field block, `:91` env-fallback tail). If M1 is split across tasks they
-  serialize on that file.
+  - M6 → M2 (adds a symbol to `formdesigner_submit.py` and a call right after
+    `verify_envelope`; the ordering is a correctness requirement, not a
+    convenience).
+  - M4 → M1, M2, M3, M6 (documents their final names).
+  - M5 → M1, M2, M3, M6 (tests their behaviour).
+- **Shared files** — two, and both serialize:
+  - `models.py`: M1 (field + env fallback + validation) and M6
+    (`formdesigner_tenant_map` field + env fallback). Same two anchor regions.
+  - `formdesigner_submit.py`: M2 (`verify_envelope` signature) and M6
+    (`resolve_submit_tenant`).
+  - `wrapper.py`: M2 and M6 both edit the `verify_envelope(` call site at
+    `:1065`.
 - **Exclusive resources**: none. No migration, no lockfile change, no extension
   rebuild.
 - **Cross-feature dependencies**: none. Touches no file in flight on
@@ -607,3 +762,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-23 | Jesus Lara | Initial draft from ledger `issue:bcd04b2170a0`; adds the `setup_form_api` signing-secret gap (M3) found during §4 verification |
+| 0.2 | 2026-10-23 | Jesus Lara | Resolved Q1–Q3. Q2 promoted tenant derivation out of Non-Goals into **M6** (AAD GUID → slug map, envelope fallback), with §2 recording why it narrows blast radius without gating. Q1 adds the hatch's env fallback; Q3 removes the migration path. New Q4 on where the tenant map lives |
