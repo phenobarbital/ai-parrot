@@ -273,9 +273,7 @@ class FormValidator:
         if circular_errors:
             errors["__circular__"] = circular_errors
             if trace is not None:
-                trace.record_form(
-                    CheckId.FORM_RULE_INTEGRITY, CheckOutcome.SKIP, skip_reason=SkipReason.EARLY_RETURN
-                )
+                trace.record_form(CheckId.FORM_RULE_INTEGRITY, CheckOutcome.SKIP, skip_reason=SkipReason.EARLY_RETURN)
             return self._seal(form, trace, ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized))
 
         # Rule-integrity pass: validate references, ordering, and operator/type compatibility
@@ -403,9 +401,7 @@ class FormValidator:
         )
 
     @staticmethod
-    def _seal(
-        form: FormSchema, trace: ValidationTraceCollector | None, result: ValidationResult
-    ) -> ValidationResult:
+    def _seal(form: FormSchema, trace: ValidationTraceCollector | None, result: ValidationResult) -> ValidationResult:
         """Attach the sealed trace to ``result`` (FEAT-732); a no-op without a collector."""
         if trace is None:
             return result

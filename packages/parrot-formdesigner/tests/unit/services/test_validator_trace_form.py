@@ -108,7 +108,9 @@ async def test_rules_early_return_seals_trace() -> None:
 async def test_relaxed_required_is_recorded_summary() -> None:
     """A hidden required field exposes its resolved flags in a summary trace."""
     form = _form(
-        FormSection(section_id="main", fields=[_field("driver"), _field("hidden", required=True, depends_on=_rule("driver"))])
+        FormSection(
+            section_id="main", fields=[_field("driver"), _field("hidden", required=True, depends_on=_rule("driver"))]
+        )
     )
     result = await FormValidator().validate(form, {"driver": "no"}, trace=_collector())
 
@@ -122,7 +124,9 @@ async def test_relaxed_required_is_recorded_summary() -> None:
 async def test_relaxed_required_is_recorded_full() -> None:
     """A full trace explains a hidden required field's requirement relaxation."""
     form = _form(
-        FormSection(section_id="main", fields=[_field("driver"), _field("hidden", required=True, depends_on=_rule("driver"))])
+        FormSection(
+            section_id="main", fields=[_field("driver"), _field("hidden", required=True, depends_on=_rule("driver"))]
+        )
     )
     result = await FormValidator().validate(form, {"driver": "no"}, trace=_collector(AuditDetail.FULL))
 
