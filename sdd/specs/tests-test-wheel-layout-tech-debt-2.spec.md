@@ -192,10 +192,12 @@ Nested deletions (51):
 ```
 
 Real-pytest validation of (a′), importlib mode: all 28 roots in **one** session collect 43,037 items with **0**
-`Plugin already registered` / `ImportPathMismatchError` (strategy (a) alone: many). Standalone per-root, the only
-residual errors are **8 files**: `ai-parrot` 5 (class (x)), `ai-parrot-tools` 2 (class (i)), `parrot-formdesigner` 1
-(class (x)), plus 2 pre-existing `fakeredis` errors in `ai-parrot-server`. Embeddings, loaders, integrations,
-visualizations, pipelines and the clients collect clean; the earlier (ii) sites vanish. Residuals of class (xi) are not repaired.
+`Plugin already registered` / `ImportPathMismatchError` (strategy (a) alone: many). **Correction (2026-10-23, after TASK-4591/4592 merged, real `addopts`)**: the first per-root run reported only 8 residual files and
+was wrong. Standalone per-root, the removed nested `__init__.py` files leave ~48 files with class-(ii) relative imports:
+`ai-parrot-tools` 16, `ai-parrot-server` 17, `ai-parrot-integrations` 4, `parrot-formdesigner` 7, `ai-parrot-embeddings` 1,
+`ai-parrot-loaders` 1 (+2 pre-existing `fakeredis` errors in server, out of scope); `ai-parrot` collects clean at its
+baseline 25,328 once TASK-4592's sites are repaired; clients/visualizations/pipelines/advisors/navrules are clean. The
+repair for class (ii) is a file-location load of the sibling (M3). Class (xi) residuals are not repaired.
 
 ### The two strategies, and why (b) is already rejected
 

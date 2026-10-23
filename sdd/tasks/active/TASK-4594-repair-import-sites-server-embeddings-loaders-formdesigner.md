@@ -52,6 +52,14 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 
 > **Class (ii) correction (measured after TASK-4591 merged)**: `ai-parrot-embeddings/tests/test_namespace_imports.py` and `ai-parrot-loaders/tests/test_metadata_standardization.py` do `from .<sibling> import …` in a root-level test file; the tests root is no longer a package, so there is no parent. Repair by loading the sibling by file location (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique name) at the same place the import was — an import-statement-level change only. Do NOT add an `__init__.py` (AC4) and do NOT put the tests directory on `sys.path`.
 
+
+> **Class (ii) at scale (corrected measurement, real `addopts`, TASK-4591 + TASK-4592 merged)**: removing the 51 nested
+> `__init__.py` files left every `from .<sibling> import …` in those directories without a parent package. This is the
+> bulk of the residual work, not the handful first reported: `ai-parrot-server` 17 files (`ui/` ×13, `handlers`, `integration`, `unit/e2e` ×2; the 2 `fakeredis` errors are pre-existing and out of scope) and 2 more `parrot-formdesigner` files (`test_submission_metadata_storage.py`, `test_submission_revisions.py`). Repair each by loading the sibling **by file
+> location** (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique,
+> distribution-prefixed name) at the place the import was. Import-level change only; never add an `__init__.py` (AC4),
+> never put the tests directory on `sys.path`, never change what a test asserts.
+
 ---
 
 ## Files to Create / Modify
@@ -65,6 +73,25 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 | `packages/parrot-formdesigner/tests/conftest.py` | MODIFY | class (x): explicit `sys.path` entry for the package's own `scripts/` |
 | `packages/ai-parrot-embeddings/tests/test_namespace_imports.py` | MODIFY | class (ii): `from ._helpers import run_in_pruned_venv` has no parent package |
 | `packages/ai-parrot-loaders/tests/test_metadata_standardization.py` | MODIFY | class (ii): `from .conftest import CANONICAL_DOC_META_KEYS, CANONICAL_TOP_LEVEL_KEYS` has no parent package |
+| `packages/ai-parrot-server/tests/handlers/test_ui_surfaces_source_data.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/integration/test_linked_e2e_offline.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/unit/e2e/test_evidence.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/unit/e2e/test_supervisor.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_canvas_linked.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_chart_adapter.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_format_parity.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_dsl.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_parity.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_refresh.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_runtime.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_surface.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_types.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_chart_dual_axis.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_my_tool_settings.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_schema_form.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/ai-parrot-server/tests/ui/test_vitest_tools_tab.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
+| `packages/parrot-formdesigner/tests/unit/test_submission_metadata_storage.py` | MODIFY | class (i)/(ii): `tests.unit.real_db_shapes` / relative import |
+| `packages/parrot-formdesigner/tests/unit/test_submission_revisions.py` | MODIFY | class (i)/(ii): `tests.unit.real_db_shapes` / relative import |
 
 `ai-parrot-server`, `ai-parrot-embeddings` and `ai-parrot-loaders` have no failing site: record their
 standalone collect (server 3,647 items with only the 2 pre-existing `fakeredis` errors; embeddings 214; loaders 421).
@@ -130,7 +157,26 @@ TASK-4591 deletes `packages/ai-parrot-server/tests/mcp/__init__.py`. Verify, do 
     {"path": "packages/parrot-formdesigner/tests/unit/test_org_graph_service.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/conftest.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-embeddings/tests/test_namespace_imports.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-loaders/tests/test_metadata_standardization.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot-loaders/tests/test_metadata_standardization.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/handlers/test_ui_surfaces_source_data.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/integration/test_linked_e2e_offline.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/unit/e2e/test_evidence.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/unit/e2e/test_supervisor.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_canvas_linked.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_chart_adapter.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_format_parity.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_dsl.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_parity.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_refresh.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_runtime.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_surface.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_types.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_chart_dual_axis.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_my_tool_settings.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_schema_form.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot-server/tests/ui/test_vitest_tools_tab.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/tests/unit/test_submission_metadata_storage.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/tests/unit/test_submission_revisions.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
