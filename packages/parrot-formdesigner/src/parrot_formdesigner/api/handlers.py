@@ -18,6 +18,7 @@ from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
+from ..core.llm_validation import wire_report
 
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
@@ -1240,7 +1241,7 @@ class FormAPIHandler:
         if gate is not None:
             payload["code"] = gate.code
         if plausibility is not None:
-            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+            payload["plausibility"] = wire_report(plausibility, mode="json", exclude_none=True)
         elif opt_in_skipped is not None and any(
             llm_validation_enabled(form, field) for field in form.iter_fields_recursive()
         ):
@@ -1866,7 +1867,7 @@ class FormAPIHandler:
                     "is_valid": False,
                     "code": exc.code,
                     "errors": exc.errors,
-                    "plausibility": exc.report.model_dump(mode="json", exclude_none=True),
+                    "plausibility": wire_report(exc.report, mode="json", exclude_none=True),
                 },
                 status=422,
             )
@@ -1893,7 +1894,7 @@ class FormAPIHandler:
             "forward_error": outcome.forward_error,
         }
         if outcome.plausibility is not None:
-            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+            body_out["plausibility"] = wire_report(outcome.plausibility, mode="json", exclude_none=True)
         return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:

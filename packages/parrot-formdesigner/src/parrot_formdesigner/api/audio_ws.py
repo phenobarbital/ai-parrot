@@ -87,7 +87,7 @@ from ..audio.recordings import delete_recording, store_recording
 from ..audio.segments import _SYNTH_LOCK, AudioSegmentCache
 from ..audio.session_store import AudioSnapshot, ResumeUnavailable, SnapshotConflict
 from ..audio.value_refiner import LLMValueRefiner, ValueRefiner
-from ..core.llm_validation import LLMValidationConfig, PlausibilityReport
+from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, wire_report
 from ..core.voice import resolve_voice_config
 from ..core.voice_answer import unwrap_voice
 from ..renderers.audio import (
@@ -1254,7 +1254,7 @@ class AudioFormWSHandler:
         if not result.is_valid:
             return SubmitDone(type="_submit_done", outcome={"errors": result.errors})
         client_data = pipeline.attach_verdicts(result.sanitized_data, state.plausibility)
-        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None
+        summary = wire_report(state.plausibility, mode="json") if state.plausibility is not None else None
         return SubmitDone(type="_submit_done", outcome={"client_data": client_data, "plausibility_summary": summary})
 
     # -------------------------------------------------------------------------
