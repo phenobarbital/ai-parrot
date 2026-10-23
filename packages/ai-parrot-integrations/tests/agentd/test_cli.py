@@ -48,7 +48,7 @@ class TestServe:
     def test_yaml_arg(self, tmp_path, monkeypatch):
         yaml_path = tmp_path / "cfg.yaml"
         yaml_path.write_text(
-            'name: my-agent\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'name: my-agent\nagent:\n  target: "agentd.fakes:EchoAgent"\n'
         )
         monkeypatch.setattr(agentd_cli, "AgentDaemon", _FakeDaemon)
 
@@ -57,30 +57,30 @@ class TestServe:
 
         assert result.exit_code == 0, result.output
         assert _FakeDaemon.last_config.name == "my-agent"
-        assert _FakeDaemon.last_config.agent.target == "tests.agentd.fakes:EchoAgent"
+        assert _FakeDaemon.last_config.agent.target == "agentd.fakes:EchoAgent"
 
     def test_target_arg(self, monkeypatch):
         monkeypatch.setattr(agentd_cli, "AgentDaemon", _FakeDaemon)
 
         runner = CliRunner()
         result = runner.invoke(
-            agentd_cli.serve, ["tests.agentd.fakes:EchoAgent", "--name", "cli-agent"]
+            agentd_cli.serve, ["agentd.fakes:EchoAgent", "--name", "cli-agent"]
         )
 
         assert result.exit_code == 0, result.output
         assert _FakeDaemon.last_config.name == "cli-agent"
-        assert _FakeDaemon.last_config.agent.target == "tests.agentd.fakes:EchoAgent"
+        assert _FakeDaemon.last_config.agent.target == "agentd.fakes:EchoAgent"
 
     def test_target_arg_without_name_errors(self):
         runner = CliRunner()
-        result = runner.invoke(agentd_cli.serve, ["tests.agentd.fakes:EchoAgent"])
+        result = runner.invoke(agentd_cli.serve, ["agentd.fakes:EchoAgent"])
 
         assert result.exit_code != 0
 
     def test_overrides_applied(self, tmp_path, monkeypatch):
         yaml_path = tmp_path / "cfg.yaml"
         yaml_path.write_text(
-            'name: my-agent\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'name: my-agent\nagent:\n  target: "agentd.fakes:EchoAgent"\n'
         )
         monkeypatch.setattr(agentd_cli, "AgentDaemon", _FakeDaemon)
 
@@ -165,7 +165,7 @@ class TestInstallService:
     def test_unit_content(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "cfg.yaml"
         cfg_path.write_text(
-            'name: my-agent\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'name: my-agent\nagent:\n  target: "agentd.fakes:EchoAgent"\n'
         )
         fake_home = tmp_path / "home"
         fake_home.mkdir()
@@ -190,7 +190,7 @@ class TestInstallService:
     def test_system_prints_only(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "cfg.yaml"
         cfg_path.write_text(
-            'name: my-agent\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'name: my-agent\nagent:\n  target: "agentd.fakes:EchoAgent"\n'
         )
         fake_home = tmp_path / "home"
         fake_home.mkdir()
