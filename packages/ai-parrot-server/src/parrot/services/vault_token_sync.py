@@ -6,12 +6,17 @@ Works from non-HTTP contexts (e.g., the Telegram wrapper running under
 aiogram polling) by instantiating :class:`navigator_session.vault.SessionVault`
 directly via its ``load_for_session`` classmethod.
 
-Example keys stored for a Jira auth:
-    jira:access_token
-    jira:refresh_token
-    jira:cloud_id
-    jira:site_url
-    jira:account_id
+Example keys stored for a Fireflies auth:
+    fireflies:api_key
+
+Providers served here: fireflies, workiq, entra, o365.
+
+**Jira no longer stores credentials in this vault.** Its durable owner is
+navigator-auth's Identity Vault (``auth.user_identities``), written by
+``JiraOAuthManager``'s credential sink, with Redis as the hot cache
+(FEAT-735). Keys written before that change are inert and were deliberately
+left in place. Do not add a Jira path back here — see
+``docs/auth/jira-credential-ownership.md``.
 """
 from __future__ import annotations
 

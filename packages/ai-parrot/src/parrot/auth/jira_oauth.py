@@ -13,6 +13,13 @@ for per-user Jira access:
 
 The manager never holds credentials in memory — everything flows through
 Redis so the HTTP callback process and the agent session can share state.
+
+Redis is the **hot cache** and the live tool read path. The **durable owner**
+of a Jira grant is navigator-auth's Identity Vault (``auth.user_identities``),
+which this manager keeps current through an injected
+:class:`CredentialSink` — notified after every successful Redis write, at link
+time and on refresh. The Session Vault's ``jira:*`` keys were retired
+(FEAT-735). See ``docs/auth/jira-credential-ownership.md``.
 """
 
 from __future__ import annotations
