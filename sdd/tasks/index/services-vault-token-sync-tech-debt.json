@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-23T16:32:23Z",
-  "completed_at": null,
+  "completed_at": "2026-10-23T21:42:41+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -42,23 +42,24 @@
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "First task of the feature; M2-M4 are not filed yet.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4668-jira-refresh-credential-sink.md",
+      "started_at": "2026-10-23T21:28:55.094782Z",
+      "completed_at": "2026-10-23T21:32:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4668-jira-refresh-credential-sink.md",
       "discovered_from": "issue:2e85cce93cab",
-      "module": "M1"
+      "module": "M1",
+      "verification": "verified"
     },
     {
       "id": "TASK-4669",
       "slug": "jira-link-time-credential-sink",
-      "title": "Write the owner at link time too (handle_callback \u2192 CredentialSink)",
+      "title": "Write the owner at link time too (handle_callback → CredentialSink)",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,14 +67,15 @@
       ],
       "parallel": true,
       "parallelism_notes": "needs CredentialSink + IdentityVaultCredentialSink from TASK-4668 (jira_oauth.py, services/identity_credential_sink.py); also modifies both of those files and both of its test files",
-      "file": "sdd/tasks/active/TASK-4669-jira-link-time-credential-sink.md",
+      "file": "sdd/tasks/completed/TASK-4669-jira-link-time-credential-sink.md",
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-10-23T21:32:55.667058Z",
+      "completed_at": "2026-10-23T21:34:42+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4670",
@@ -85,15 +87,16 @@
         "TASK-4668"
       ],
       "parallel": true,
-      "parallelism_notes": "reads auth.user_identities, which only TASK-4668's sink keeps current; shipping the probe first would move the badge onto a write-once copy (spec \u00a73 M2 'Depends on: M1'). No file overlap \u2014 service.py is touched by this task alone",
-      "file": "sdd/tasks/active/TASK-4670-token-status-reads-owner.md",
+      "parallelism_notes": "reads auth.user_identities, which only TASK-4668's sink keeps current; shipping the probe first would move the badge onto a write-once copy (spec §3 M2 'Depends on: M1'). No file overlap — service.py is touched by this task alone",
+      "file": "sdd/tasks/completed/TASK-4670-token-status-reads-owner.md",
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-10-23T21:35:16.887961Z",
+      "completed_at": "2026-10-23T21:37:55+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4671",
@@ -107,14 +110,15 @@
       ],
       "parallel": true,
       "parallelism_notes": "deleting the vault write is safe only after TASK-4670 moved its last reader off auth.user_vault_secrets; dropping token= is safe only after TASK-4669 writes the credential at link time from handle_callback",
-      "file": "sdd/tasks/active/TASK-4671-retire-redundant-jira-writers.md",
+      "file": "sdd/tasks/completed/TASK-4671-retire-redundant-jira-writers.md",
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-10-23T21:38:55.091704Z",
+      "completed_at": "2026-10-23T21:41:09+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4672",
@@ -129,14 +133,15 @@
       ],
       "parallel": true,
       "parallelism_notes": "documents the state TASK-4671 leaves behind: AC-1 requires the page and both docstrings to state that the Session Vault's Jira path was retired, which is only true after TASK-4671 deletes it, and AC-4/AC-5 describe TASK-4669's and TASK-4670's shipped behaviour. Also edits jira_oauth.py's module docstring, modified by TASK-4668/TASK-4669 (dependency path via TASK-4669).",
-      "file": "sdd/tasks/active/TASK-4672-document-jira-credential-ownership.md",
+      "file": "sdd/tasks/completed/TASK-4672-document-jira-credential-ownership.md",
       "feature_id": "FEAT-735",
       "feature": "services-vault-token-sync-tech-debt",
       "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-10-23T21:42:08.326009Z",
+      "completed_at": "2026-10-23T21:42:41+00:00",
+      "verification": "verified"
     }
   ]
 }

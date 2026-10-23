@@ -47,6 +47,56 @@ class TestDecodeAuthData:
         assert _decode_auth_data("not json") == {}
 
 
+class TestNavUserIdGuard:
+    """``nav_user_id`` must be the navigator-auth bigint — checked client-side.
+
+    Regression guard for ``issue:187ce3fe3b93``: a channel-scoped id (an AAD
+    GUID, ``"team:user"``, …) used to travel all the way to Postgres, where
+    ``$1::text::bigint`` raised inside a caller's ``except Exception`` and the
+    failure surfaced only as a warning on an OAuth success page. These tests
+    need no database: the guard must fire before the pool is touched.
+    """
+
+    @staticmethod
+    def _service() -> IdentityMappingService:
+        class _ExplodingPool:
+            def acquire(self):  # pragma: no cover — must never be reached
+                raise AssertionError("the pool must not be touched")
+
+        return IdentityMappingService(_ExplodingPool())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "7f1c0b2e-9a3d-4c8e-9b61-0c3f1e0a5d44",  # AAD object id
+            "T0123:U0456",  # Slack team:user composite
+            "nav-123",
+            "",
+            None,
+        ],
+    )
+    async def test_upsert_rejects_non_numeric_nav_user_id(self, bad_id):
+        with pytest.raises(ValueError, match="numeric navigator-auth user_id"):
+            await self._service().upsert_identity(
+                nav_user_id=bad_id,
+                auth_provider="msteams",
+                provider_user_id="aad-account",
+                auth_data={},
+            )
+
+    @pytest.mark.asyncio
+    async def test_numeric_nav_user_id_passes_the_guard(self):
+        """A bigint id gets past the guard and reaches the pool."""
+        with pytest.raises(AssertionError, match="must not be touched"):
+            await self._service().upsert_identity(
+                nav_user_id="9000123456",
+                auth_provider="msteams",
+                provider_user_id="aad-account",
+                auth_data={},
+            )
+
+
 # --------------------------------------------------------------------------
 # Real-Postgres fixture
 # --------------------------------------------------------------------------

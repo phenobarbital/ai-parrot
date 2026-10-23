@@ -186,6 +186,42 @@ def test_junit_paths_are_unique_per_invocation():
     assert first != second
 
 
+# FEAT-736 / TASK-4675 -- brief runs (BRIEF-<KEY> feature ids, HOTFIX-<KEY>-<n>
+# task ids) used to collapse into `_invalid/junit/_invalid--<suite>--<n>.xml`,
+# so two brief tasks overwrote each other's junit XML (issue:0ea4f0acaefd).
+
+
+def test_junit_path_for_brief_ids():
+    path = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-1", "one", 1)
+    assert "_invalid" not in path.parts
+    assert "BRIEF-CS-228" in path.parts
+    assert path.name.startswith("HOTFIX-CS-228-1--")
+
+
+def test_junit_path_for_brief_tasks_do_not_collide():
+    first = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-1", "one", 1)
+    second = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-2", "one", 1)
+    assert first != second
+    assert "_invalid" not in first.parts + second.parts
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["../etc", "a/b", "HOTFIX-a..b-1", "BRIEF-a..b", "BRIEF-CS.228", "hotfix-cs-228-1", "", "HOTFIX-"],
+)
+def test_junit_path_for_rejects_traversal(bad):
+    """A dotted or unsafe key must still fall back to the neutral component."""
+    assert report._safe_id(bad) is False
+    path = report.junit_path_for("FEAT-695", bad, "one", 1)
+    assert path.name.startswith("_invalid--")
+
+
+def test_junit_path_for_keeps_rerun_sentinel():
+    assert report._safe_id("_rerun") is True
+    assert report._safe_id("FEAT-695") is True
+    assert report._safe_id("TASK-1") is True
+
+
 def test_append_suite_replaces_same_suite():
     report.append_suite("FEAT-695", "TASK-1", _result("a"), head_sha="one", base_ref="dev", tier="task", source="test")
     report.append_suite("FEAT-695", "TASK-1", _result("b"), head_sha="two", base_ref="dev", tier="task", source="test")
@@ -399,19 +435,3 @@ def test_unsafe_ids_are_not_recorded(tmp_path) -> None:
     result = report.SuiteResult("root", 1, 1, 0, 0, 0, 0.1, 0, ("pytest",), "ok")
     assert report.append_suite("../..", "TASK-1", result, head_sha="a", base_ref="b", tier="merge", source="t") is None
     assert report.load_records("../..")[0] == {}
-
-
-def test_junit_path_for_accepts_brief_ids() -> None:
-    """issue:0ea4f0acaefd — BRIEF/HOTFIX ids are real ids, not `_invalid` directories."""
-    path = report.junit_path_for("BRIEF-d6027c24b96d", "HOTFIX-d6027c24b96d-1", "core", 0)
-    assert path.parent.parent.name == "BRIEF-d6027c24b96d"
-    assert path.name.startswith("HOTFIX-d6027c24b96d-1--core--")
-    assert "_invalid" not in str(path)
-
-
-def test_junit_path_for_still_rejects_unsafe_ids() -> None:
-    """A path separator or traversal segment is still mapped to the neutral name."""
-    for bad_feature, bad_task in (("../etc", "../etc"), ("a/b", "a/b"), ("..", ".."), ("", "")):
-        path = report.junit_path_for(bad_feature, bad_task, "core", 0)
-        assert path.parent.parent.name == "_invalid"
-        assert path.name.startswith("_invalid--core--")

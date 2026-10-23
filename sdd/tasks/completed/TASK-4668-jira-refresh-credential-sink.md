@@ -391,9 +391,35 @@ class TestIdentityVaultCredentialSink:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
+**Completed 2026-10-23** (verification: verified) — commit `e8f043d0f`.
 
-**Completed**:
-**Deviations from scope**:
-**Ambiguities found in the spec**:
-**Follow-up needed**:
+Implemented as specified. Three pieces:
+
+1. `jira_oauth.py` — a `CredentialSink` Protocol (structural, so `ai-parrot`
+   keeps no import of `ai-parrot-server`), a keyword-only `credential_sink`
+   constructor argument stored as `self._credential_sink`, and a notify block
+   between `await self._write_token(key, refreshed)` and `return refreshed`.
+   The block swallows every exception and logs at `error` with channel + user.
+2. `identity_credential_sink.py` (new) — `IdentityVaultCredentialSink`,
+   resolving the Navigator user with `find_user_by_provider_account` and
+   re-sealing with `update_tokens`. A token with no `account_id`, an account
+   with no owner, or a missing provider row are each a logged no-op.
+3. `manager.py` — `_build_jira_credential_sink(app)` guarded on
+   `app["authdb"]`, passed at both construction sites (MS Teams, Slack).
+
+**Evidence**: `pytest test_jira_oauth_manager.py -q` → 40 passed (3 new);
+`pytest test_identity_credential_sink.py -q` → 5 passed (new file);
+`test_post_auth_jira.py`, `test_vault_token_sync_f4_regression.py` and
+`test_jira_oauth_helpers.py` → 31 passed; `ruff check` clean on all five files.
+
+**Deviation from the task's blueprint** — the blueprint sketched the sink's
+`persist` as resolve → `get_for_provider_account` → `update_tokens`. The
+implementation adds one guard the blueprint did not list: a token with an
+empty `account_id` returns before any lookup, because
+`find_user_by_provider_account("jira", "")` would otherwise ask the database
+to match the empty string. Covered by
+`test_token_without_account_id_is_a_noop`.
+
+**Not closed by this task**: `issue:2e85cce93cab` keeps its remaining scope —
+TASK-4669 (link time), TASK-4670 (the badge), TASK-4671 (retire the two
+redundant writers), TASK-4672 (document it).

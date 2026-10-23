@@ -108,8 +108,10 @@ ERROR_CODES: frozenset[str] = frozenset(
     # re-listed here, so a code added there can never silently miss this set.
     | COMPLEXITY_ERROR_CODES
 )
-#: FEAT-698 brief tasks carry local `HOTFIX-<KEY>-<N>` ids; both they and
-#: `TASK-<NNN>` are valid SDD task ids wherever one crosses the MCP surface.
+#: Reserved task ids (`TASK-<NNN>`) and a brief's local, unreserved task ids
+#: (`HOTFIX-<KEY>-<n>`, `scripts/sdd/brief_meta.brief_task_id`). `<KEY>` uses
+#: brief_meta's own `_SAFE_REF_RE` character class. Re-declared, not imported:
+#: see `background.py` and `optimization_models._TASK_ID_PATTERN`.
 _TASK_ID_RE = re.compile(r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$")
 
 
@@ -127,6 +129,13 @@ def _check_uuid(v: str) -> str:
     except (ValueError, AttributeError, TypeError) as exc:
         raise ValueError(f"execution_id must be a valid UUID string, got {v!r}") from exc
     return v
+
+
+def _check_uuid_optional(v: Optional[str]) -> Optional[str]:
+    """Apply `_check_uuid` only when a value is present (mirrors `_require_utc_optional`)."""
+    if v is None:
+        return None
+    return _check_uuid(v)
 
 
 def _require_utc(value: datetime) -> datetime:
@@ -627,7 +636,12 @@ class _Args(BaseModel):
 
 
 def _check_task_id(v: str) -> str:
-    """Reject anything that is neither `TASK-<1-5 digits>` nor `HOTFIX-<KEY>-<1-5 digits>`."""
+    """Reject anything that is neither `TASK-<1-5 digits>` nor `HOTFIX-<KEY>-<1-5 digits>`.
+
+    The second shape is a brief's local, unreserved task id (FEAT-698,
+    `scripts/sdd/brief_meta.brief_task_id`); without it the MCP coder surface
+    refuses every `/sdd-brief --split` task the engine would have accepted.
+    """
     if not _TASK_ID_RE.fullmatch(v):
         raise ValueError(f"invalid task id {v!r}; expected TASK-<1-5 digits> or HOTFIX-<KEY>-<1-5 digits>")
     return v
@@ -815,7 +829,15 @@ class CoderBgWaitArgs(CoderBgStatusArgs):
 
 
 class CoderRunValidationArgs(_Args):
-    """`coder_run_validation` arguments (FEAT-584 M8/R8): admits one protected, idempotent selection."""
+    """`coder_run_validation` arguments (FEAT-584 M8/R8): admits one protected, idempotent selection.
+
+    `tier='task'` (FEAT-709) is admitted here but its *obligations* are not
+    enforced here: exactly one `task_ids` entry, an `attempt_uid` this
+    execution issued, and the engine-supplied fork SHA as `base_ref` are
+    checked by `BackgroundRunner.run_validation` (`background.py`), which owns
+    that rule. This model only stops the schema from refusing a request the
+    toolkit's own signature advertises.
+    """
 
     feature: str
     worktree: str
@@ -824,11 +846,11 @@ class CoderRunValidationArgs(_Args):
     tier: Literal["task", "merge", "feature"]
     timeout_seconds: int = Field(..., ge=1, le=7200)
     request_id: str = Field(..., min_length=1)
-    #: FEAT-709 `tier='task'`: the attempt whose worktree the engine resolves.
-    attempt_uid: Optional[str] = Field(default=None, min_length=1)
+    attempt_uid: Optional[str] = None
     _wt = field_validator("worktree")(_check_abs)
     _tids = field_validator("task_ids")(_check_task_ids)
     _exec = field_validator("execution_id")(_check_uuid)
+    _attempt_uuid = field_validator("attempt_uid")(_check_uuid_optional)
 
 
 class NativeObservation(BaseModel):

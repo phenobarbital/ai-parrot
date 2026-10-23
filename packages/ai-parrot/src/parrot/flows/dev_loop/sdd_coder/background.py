@@ -73,9 +73,10 @@ _MIN_POLL_INTERVAL_MS = 5000
 _MAX_POLL_INTERVAL_MS = 60000
 
 _EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-#: Same closed shape as `optimization_models._TASK_ID_PATTERN` (not imported --
-#: that module's validators are private to its own field declarations).
-#: FEAT-698: brief tasks carry local `HOTFIX-<KEY>-<N>` ids as well as `TASK-<NNN>`.
+#: Reserved `TASK-<NNN>` plus a brief's local `HOTFIX-<KEY>-<n>` (FEAT-698).
+#: Same shape as `optimization_models._TASK_ID_PATTERN` and `models._TASK_ID_RE`
+#: (not imported -- those modules' validators are private to their own field
+#: declarations; keep the three in step by hand).
 _TASK_ID_RE = re.compile(r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$")
 #: FEAT-695: canonical feature id shape for test-result records.
 _FEATURE_ID_RE = re.compile(r"^(?:FEAT-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9._-]*)$")

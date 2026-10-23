@@ -47,7 +47,7 @@ different code paths, with **no propagation between them**:
 | # | Store | Written by | Read by | Refreshed? |
 |---|---|---|---|---|
 | 1 | **Redis** (`JiraOAuthManager`, TTL 90 d) | `handle_callback` → `_write_token` (`jira_oauth.py:386`) | the live tool path: `JiraToolkit` → `OAuthCredentialResolver.resolve` → `get_valid_token` (`credentials.py:198`, `jira_oauth.py:547`) | **yes** — `_refresh_tokens` (`jira_oauth.py:642`) writes Redis |
-| 2 | **Session Vault** (`auth.user_vault_secrets`) | `post_auth_jira._store_in_vault` → `VaultTokenSync.store_tokens` (`vault_token_sync.py:181`) | the integrations UI status badge: `OAuth2Service._token_status` → `read_tokens_result(user_id, "jira")` (`service.py:190`) | **no** |
+| 2 | **Session Vault** (`auth.user_vault_secrets`) | `post_auth_jira._store_in_vault` → `VaultTokenSync.store_tokens` (`vault_token_sync.py:181`) | the integrations UI status badge: `IntegrationsService._token_status` → `read_tokens_result(user_id, "jira")` (`service.py:190`) | **no** |
 | 3 | **Identity Vault** (`auth.user_identities`) | `IdentityMappingService.upsert_identity(token=…)` → `IdentityStore.save_linked_identity`, added by FEAT-729 / TASK-4664 | **nothing, anywhere** | **no** |
 
 Two consequences follow, and both are live defects rather than aesthetics:
@@ -133,7 +133,7 @@ JiraOAuthManager.handle_callback              _refresh_tokens
               both arrows go through the ONE sink:
               M1b at link time (Q4), M1 at refresh time
                   ↑
-                  └── OAuth2Service._token_status reads here (M2)
+                  └── IntegrationsService._token_status reads here (M2)
 
    RETIRED by M3:  post_auth_jira._store_in_vault(provider="jira")
                       → VaultTokenSync → auth.user_vault_secrets
@@ -149,7 +149,7 @@ JiraOAuthManager.handle_callback              _refresh_tokens
 |---|---|---|
 | `JiraOAuthManager._refresh_tokens` | extends | also persists to the durable owner (M1) |
 | `JiraOAuthManager.handle_callback` | extends | same sink at link time, every channel (M1b, Q4) |
-| `OAuth2Service._token_status` | replaces backing store | reads the owner, not the vault (M2) |
+| `IntegrationsService._token_status` | replaces backing store | reads the owner, not the vault (M2) |
 | `JiraPostAuthProvider._store_in_vault` | removes the jira call | M3, only after M2 ships |
 | `IdentityMappingService.upsert_identity` | uses | already the single entry point for the sealed write |
 | `IdentityStore.decrypt_credential` | uses | sync, not async — see §6 |
@@ -335,7 +335,7 @@ class JiraOAuthManager:
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/oauth2/service.py (modifies service.py:173)
-  class OAuth2Service:
+  class IntegrationsService:
       async def _token_status(self, user_id: str, provider_id: str,
                               request: Any) -> str:
           """``connected`` | ``needs_reconnect``, from the durable owner.
@@ -501,7 +501,7 @@ class OAuthCredentialResolver:
         return await self._manager.get_valid_token(channel, user_id)     # line 198 — the live tool path
 
 # packages/ai-parrot/src/parrot/auth/oauth2/service.py
-class OAuth2Service:
+class IntegrationsService:
     def _vault_sync(self, request: Any) -> Any:                          # line 151
     async def _token_status(self, user_id, provider_id, request) -> str: # line 173 — THE EDIT SITE
         result = await sync.read_tokens_result(user_id, provider_id)     # line 190
