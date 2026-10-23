@@ -22,6 +22,7 @@ Two write paths:
 * token-bearing providers (jira) go through navigator-auth's
   :class:`IdentityStore`, which ciphers the credential.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -198,8 +199,7 @@ class IdentityMappingService:
         """
         if provider_user_id is None or str(provider_user_id) == "":
             raise ValueError(
-                "provider_user_id is required: a NULL falls outside the partial "
-                "unique index on auth.user_identities"
+                "provider_user_id is required: a NULL falls outside the partial " "unique index on auth.user_identities"
             )
         provider_user_id = str(provider_user_id)
         data = dict(auth_data or {})
@@ -240,9 +240,7 @@ class IdentityMappingService:
                     email,
                 )
             if row is None:
-                raise RuntimeError(
-                    f"identity upsert returned no row (user={nav_user_id} provider={auth_provider})"
-                )
+                raise RuntimeError(f"identity upsert returned no row (user={nav_user_id} provider={auth_provider})")
         self.logger.info(
             "IdentityMappingService: upserted identity user=%s provider=%s account=%s",
             nav_user_id,
@@ -312,9 +310,19 @@ class IdentityMappingService:
             data = dict(row)
         except TypeError:
             # Fall back to attribute access if row is dict-like but not iterable.
-            data = {k: row[k] for k in (
-                "identity_id", "user_id", "auth_provider", "provider_user_id", "auth_data",
-                "display_name", "email", "created_at"
-            ) if k in row}
+            data = {
+                k: row[k]
+                for k in (
+                    "identity_id",
+                    "user_id",
+                    "auth_provider",
+                    "provider_user_id",
+                    "auth_data",
+                    "display_name",
+                    "email",
+                    "created_at",
+                )
+                if k in row
+            }
         data["auth_data"] = _decode_auth_data(data.get("auth_data"))
         return data

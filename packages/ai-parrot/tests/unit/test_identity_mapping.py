@@ -11,6 +11,7 @@ INITIALLY DEFERRED`` and therefore never checked). The DSN comes from
 skips when Postgres is unreachable or the table predates navigator-auth
 0.28.8.
 """
+
 from __future__ import annotations
 
 import os

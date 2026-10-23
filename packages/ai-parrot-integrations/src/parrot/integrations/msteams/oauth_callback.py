@@ -258,9 +258,7 @@ async def handle_msteams_jira_callback(
                 auth_data={
                     "aad_object_id": nav_user_id,
                     # tenant_id, when present on the serialized conversation ref.
-                    "tenant_id": (
-                        conv_ref.get("conversation", {}).get("tenantId") or ""
-                    ),
+                    "tenant_id": (conv_ref.get("conversation", {}).get("tenantId") or ""),
                 },
                 display_name=token_set.display_name or None,
                 email=token_set.email or None,
