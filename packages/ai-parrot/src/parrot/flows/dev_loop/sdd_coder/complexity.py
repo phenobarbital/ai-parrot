@@ -383,8 +383,10 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
             else:
                 reason_codes.append("score_below_threshold")
 
-    # Create the assessment
-    assessment = ComplexityAssessment(
+    # Create the assessment. ComplexityAssessment is frozen, so the id-bearing
+    # instance is built from an id-less draft: the hash is still taken over the
+    # canonical form with assessment_id="" (unchanged ids across this refactor).
+    draft = ComplexityAssessment(
         policy_version=policy.version,
         task_id=evidence.task_id,
         classification=classification,
@@ -392,10 +394,7 @@ def evaluate_complexity(evidence: ComplexityEvidence, policy: ComplexityPolicy) 
         component_points=component_points,
         reason_codes=tuple(reason_codes),
         evidence=evidence,
-        assessment_id="",  # Will be filled in by the validator
+        assessment_id="",
     )
 
-    # Set the assessment_id using canonical hash
-    assessment.assessment_id = _canonical_hash(assessment)
-
-    return assessment
+    return draft.model_copy(update={"assessment_id": _canonical_hash(draft)})

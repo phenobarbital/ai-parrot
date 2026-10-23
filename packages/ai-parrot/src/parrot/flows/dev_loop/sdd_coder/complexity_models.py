@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MetricEvidence(BaseModel):
@@ -259,7 +259,7 @@ class ComplexityAssessment(BaseModel):
         assessment_id: SHA-256 of canonical JSON representation.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
     policy_version: str
@@ -271,14 +271,16 @@ class ComplexityAssessment(BaseModel):
     evidence: ComplexityEvidence
     assessment_id: str
 
-    @model_validator(mode="after")
-    def _freeze_evidence(self) -> "ComplexityAssessment":
-        """Ensure evidence is owned/copied so caller mutations cannot change assessment."""
-        # Create a deep copy by re-serializing and parsing
+    @field_validator("evidence", mode="after")
+    @classmethod
+    def _own_evidence(cls, value: ComplexityEvidence) -> ComplexityEvidence:
+        """Take an owned copy of evidence so caller mutations cannot change the assessment.
 
-        evidence_json = self.evidence.model_dump_json()
-        self.evidence = ComplexityEvidence.model_validate_json(evidence_json)
-        return self
+        `frozen=True` already forbids rebinding this field after construction; the copy
+        closes the remaining hole, where a caller keeps a reference to the evidence it
+        passed in and mutates it (e.g. `evidence.metrics[...] = ...`) afterwards.
+        """
+        return ComplexityEvidence.model_validate_json(value.model_dump_json())
 
 
 COMPLEXITY_ERROR_CODES: frozenset[str] = frozenset(

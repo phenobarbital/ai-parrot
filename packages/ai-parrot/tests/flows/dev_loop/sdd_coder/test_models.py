@@ -267,6 +267,37 @@ class TestComplexityModels:
         # Assessment's evidence should be unchanged (frozen)
         assert "test" not in assessment.evidence.metrics
 
+    def test_complexity_assessment_is_frozen(self):
+        """The model is declared frozen, so no field can be rebound after construction."""
+        assessment = ComplexityAssessment(
+            policy_version="v1",
+            task_id="TASK-1",
+            classification="standard",
+            total_points=0,
+            component_points={},
+            reason_codes=(),
+            evidence=ComplexityEvidence(
+                task_id="TASK-1",
+                contract=ComplexityContract(targets=()),
+                metrics={},
+                head_sha="abc",
+                task_sha256="abc",
+                index_sha256="abc",
+                policy_sha256="abc",
+                target_hashes={},
+                wiki_evidence_hashes={},
+                collector_versions={},
+                details={},
+            ),
+            assessment_id="test-id",
+        )
+        assert assessment.model_config["frozen"] is True
+        with pytest.raises(ValidationError):
+            assessment.assessment_id = "other-id"
+        with pytest.raises(ValidationError):
+            assessment.classification = "complex"
+        assert assessment.assessment_id == "test-id"
+
     def test_complexity_block_error_codes_in_error_codes_set(self):
         """Every new complexity error code validates and unknown codes remain rejected."""
         new_codes = [
