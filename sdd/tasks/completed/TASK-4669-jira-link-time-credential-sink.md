@@ -351,4 +351,26 @@ TASK-4668's `persist`; add `persist_minted` beside it. Touch no other file.
 
 ## Completion Note
 
-_To be filled on completion._
+**Completed 2026-10-23** (verification: verified).
+
+`handle_callback` notifies the sink after its existing `_write_token`, with
+the same try/except/log-at-error shape as the refresh path, and
+`IdentityVaultCredentialSink.persist_minted` implements the three-step
+resolution: state `extra.nav_user_id` → `find_user_by_provider_account` →
+logged no-op. Link time calls `save_linked_identity` (it has the userinfo and
+must create the row); refresh keeps `update_tokens`.
+
+**Evidence**: `pytest test_jira_oauth_manager.py test_identity_credential_sink.py -q`
+→ 53 passed (8 new: 3 manager, 5 sink); `ruff check` clean.
+
+**Verified, not assumed** — the claim that only Telegram carries a Navigator
+id was checked at all three call sites before writing the fallback:
+`post_auth_jira.py:120` sets `extra_state["nav_user_id"]`;
+`slack/commands/jira_commands.py:91` sends `team_id`/`slack_user_id`;
+`msteams/commands/jira_commands.py:214` sends the AAD object id. The gap for
+a first-ever Slack/Teams link therefore stands and is documented, not closed:
+it needs those flows to carry a Navigator id (`issue:187ce3fe3b93`).
+
+**Deviation**: none from the blueprint. The task's `_persist_to_sink` helper
+idea was not used — both call sites keep their own inline block, matching
+TASK-4668's shipped shape, so the two paths read identically.
