@@ -372,4 +372,58 @@ the validation commands from the worktree root with the `PYTHONPATH` above.
 
 ## Completion Note
 
-_To be filled on completion._
+**Completed** 2026-10-23, verification: verified.
+
+The two identifiers are now distinct everywhere on the Teams Jira path:
+
+* `jira_commands.connect_jira_handler` keeps `_get_user_id` (the AAD object
+  id) as the `JiraOAuthManager` key and adds `extra_state["nav_user_id"]`
+  only when an optional async `nav_user_id_resolver` yields one. A missing or
+  raising resolver degrades to "no key" and still sends the card.
+* `wrapper.py` passes `lambda tc: self._effective_user_id(tc, "")`, evaluated
+  per turn, so registration order (line 200 vs. the auth lane at 216-229) does
+  not matter.
+* `oauth_callback.handle_msteams_jira_callback` splits `teams_user_id` from
+  `nav_user_id` with **no fallback** between them: absent → skip the write and
+  log at info (no page warning); non-numeric → skip, log a warning and splice
+  the warning into the page; numeric → write with `provider_user_id` and
+  `auth_data["aad_object_id"]` set to the AAD GUID.
+* `IdentityMappingService.upsert_identity` rejects a non-numeric `nav_user_id`
+  with a `ValueError` before the pool is touched, covering the `IdentityStore`
+  path too.
+
+All eight acceptance criteria hold. Evidence:
+
+* `pytest packages/ai-parrot-integrations/tests/integrations/msteams/` —
+  **329 passed** (was 1 failed / 327 passed mid-change: the Postgres-backed
+  `TestJiraCallbackRegression::test_jira_callback_persists_identity` pinned
+  the old shape and was updated to a GUID account id + bigint nav id).
+* `pytest packages/ai-parrot/tests/unit/test_identity_mapping.py` —
+  **16 passed, 1 xfailed**, Postgres reachable, so the real SQL path ran.
+* `pytest .../slack/test_slack_oauth_callback.py` — 10 passed;
+  `pytest packages/ai-parrot/tests/unit/test_post_auth_jira.py` — 14 passed
+  (the new service-level guard changes no behaviour for them: their writes
+  already failed on the cast, now they fail one layer earlier).
+* `ruff check` clean on all eight files.
+
+**Notes / deviations**
+
+* The two suites cannot be collected in one `pytest` invocation —
+  `packages/ai-parrot/tests/conftest.py` and
+  `packages/ai-parrot-integrations/tests/conftest.py` collide under the same
+  `tests.conftest` module name (pre-existing, tracked by FEAT-617/FEAT-720).
+  They were run separately.
+* `test_jira_callback_without_nav_id_writes_nothing` counts rows for the oid
+  before and after rather than asserting absence: the fixture runs against the
+  deployment's real `auth.user_identities`, which already holds a row for
+  `TEAMS_OID` from an earlier session.
+* `slack/oauth_callback.py:222` has the same class of defect (its fallback
+  `nav_user_id` is `"<team>:<user>"`). It is a separate, already-claimed
+  ledger issue and was deliberately left untouched.
+* The worktree was created with `git worktree add` from
+  `origin/feat-FEAT-729-msteams-user-auth-lane` rather than
+  `ensure_worktree`: the feature branch exists on the remote but had no local
+  ref, and `ensure()` refuses that case (it would have branched from
+  `origin/dev`). Naming follows `plan_worktree`, and native artifacts were
+  synced with the same `sync_native_artifacts` helper `ensure_worktree` calls
+  (10 copied, 0 missing).
