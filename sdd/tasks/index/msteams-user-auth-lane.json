@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-23T04:20:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-23T16:13:08+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -45,16 +45,17 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates msteams/auth.py from scratch and only reads InMemoryStateStore (integrations/core/state.py:14), which it does not modify.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4659-msteams-user-session-store.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T02:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4659-msteams-user-session-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4660",
@@ -63,16 +64,17 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates parrot/auth/token_exchange.py in core and must not import parrot.integrations at all, so it shares no file with any other task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4660-navigator-token-exchange-client.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T02:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4660-navigator-token-exchange-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4661",
@@ -81,7 +83,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -91,9 +93,10 @@
       "parallel": true,
       "parallelism_notes": "Appends to the same file TASK-4659 creates (msteams/auth.py) and imports MSTeamsSessionStore/user_key from it; calls TokenExchangeClient.exchange from TASK-4660 (parrot/auth/token_exchange.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4661-msteams-auth-strategy.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T02:26:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4661-msteams-auth-strategy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4662",
@@ -102,7 +105,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -111,9 +114,10 @@
       "parallel": true,
       "parallelism_notes": "Imports MSTeamsAuthStrategy from TASK-4661 (msteams/auth.py) and calls ensure_authenticated / send_signin_card / sign_out; creates its own module so it shares no file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4662-msteams-auth-commands.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T02:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4662-msteams-auth-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4663",
@@ -122,7 +126,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -133,9 +137,10 @@
       "parallel": true,
       "parallelism_notes": "Constructs MSTeamsSessionStore from TASK-4659 and MSTeamsAuthStrategy from TASK-4661, and calls register_auth_commands from TASK-4662 (msteams/commands/auth_commands.py); sole owner of every edit to msteams/wrapper.py and msteams/models.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4663-msteams-wrapper-auth-wiring.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T11:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4663-msteams-wrapper-auth-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4664",
@@ -144,16 +149,17 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent of the Teams lane: fixes services/identity_mapping.py plus the four upsert_identity call sites (msteams/slack oauth_callback, telegram/post_auth_jira, telegram/wrapper), none of which any other task touches. Its Postgres tests use a unique provider_user_id per run, so they do not serialize.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4664-identity-writes-identitystore-and-sql-fix.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T02:24:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4664-identity-writes-identitystore-and-sql-fix.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4665",
@@ -162,7 +168,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -175,9 +181,32 @@
       "parallel": true,
       "parallelism_notes": "Drives the lane assembled by hand, so it imports the session store (4659), the exchange client (4660), the strategy (4661) and register_auth_commands (4662), and asserts the Jira-callback row written by 4664. It does NOT depend on TASK-4663: the suite never constructs MSTeamsAgentWrapper — the wrapper gate is covered by 4663's own test_msteams_auth_gate.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4665-msteams-auth-lane-integration-tests.md"
+      "started_at": "2026-10-23T02:11:26+00:00",
+      "completed_at": "2026-10-23T11:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4665-msteams-auth-lane-integration-tests.md",
+      "verification": "partial"
+    },
+    {
+      "id": "TASK-4666",
+      "slug": "slack-oauth-nav-user-id",
+      "title": "Stop the Slack Jira callback writing a composite id into auth.user_identities.user_id",
+      "feature_id": "FEAT-729",
+      "feature": "msteams-user-auth-lane",
+      "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4664"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches the same Slack call site TASK-4664 fixed; runs after it.",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-23T18:05:00+00:00",
+      "completed_at": "2026-10-23T16:13:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4666-slack-oauth-nav-user-id.md",
+      "discovered_from": "issue:a671f989e8e7",
+      "verification": "verified"
     }
   ]
 }
