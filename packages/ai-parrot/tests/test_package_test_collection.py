@@ -15,6 +15,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _COLLECT_TIMEOUT_S = 300
 _TESTS_IMPORT = re.compile(r"^\s*(?:from|import)\s+tests(?:\.|\s|$)", re.MULTILINE)
+# A dotted import target such as "tests.agentd.fakes:EchoAgent" is resolved with import_module at run time and is just as ambiguous.
+_TESTS_TARGET = re.compile(r"[\"']tests(?:\.\w+)+:\w+")
+_ALLOW_MARKER = "tests-root-ok"
 
 
 def test_pytest_ini_enables_path_derived_test_identities() -> None:
@@ -47,11 +50,16 @@ def test_two_package_test_trees_collect_together() -> None:
 
 
 def test_no_test_imports_the_ambiguous_tests_package() -> None:
-    """``tests`` names 25 different trees, so ``from tests.<x>`` resolves to whichever was imported first."""
+    """``tests`` names 25 different trees, so ``from tests.<x>`` (or a ``"tests.<x>:Name"`` target) resolves to whichever was imported first."""
     assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
-    offenders = sorted(
-        str(path.relative_to(REPO_ROOT))
-        for path in REPO_ROOT.glob("packages/*/tests/**/*.py")
-        if path.resolve() != Path(__file__).resolve() and _TESTS_IMPORT.search(path.read_text(errors="ignore"))
-    )
+    offenders = []
+    for path in sorted(REPO_ROOT.glob("packages/*/tests/**/*.py")):
+        if path.resolve() == Path(__file__).resolve():
+            continue
+        text = path.read_text(errors="ignore")
+        hit = _TESTS_IMPORT.search(text) is not None or any(
+            _TESTS_TARGET.search(line) and _ALLOW_MARKER not in line for line in text.splitlines()
+        )
+        if hit:
+            offenders.append(str(path.relative_to(REPO_ROOT)))
     assert offenders == [], f"files still import the ambiguous `tests` package: {offenders}"

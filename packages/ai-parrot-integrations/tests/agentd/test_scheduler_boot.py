@@ -27,7 +27,7 @@ async def scheduler_daemon(tmp_path):
     socket_path = tmp_path / "sched.sock"
     config = AgentServiceConfig(
         name="sched-echo",
-        agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent", kwargs={"name": "echo"}),
+        agent=AgentTargetConfig(target=f"{__package__}.fakes:EchoAgent", kwargs={"name": "echo"}),
         socket=socket_path,
         scheduler=SchedulerConfig(enabled=True, dsn=None, redis=False),
     )
