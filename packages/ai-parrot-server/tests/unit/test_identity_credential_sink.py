@@ -6,6 +6,7 @@ resolved from the Atlassian account id, the refresh re-seals the row with
 ``update_tokens`` (never ``save_linked_identity``, which would wipe
 ``auth_data``), and an account with no row is a logged no-op.
 """
+
 from __future__ import annotations
 
 import time

@@ -13,6 +13,7 @@ Protocol structurally.
 
 See ``docs/auth/jira-credential-ownership.md``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -147,8 +148,7 @@ class IdentityVaultCredentialSink:
         nav_user_id = await store.find_user_by_provider_account(self._provider, account_id)
         if not nav_user_id:
             self.logger.warning(
-                "Jira credential sink: account %s owns no identity row — "
-                "durable copy not updated for %s:%s",
+                "Jira credential sink: account %s owns no identity row — " "durable copy not updated for %s:%s",
                 account_id,
                 channel,
                 user_id,

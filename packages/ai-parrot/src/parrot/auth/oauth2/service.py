@@ -14,6 +14,7 @@ without a request), the service fails **closed** for the integrations surface
 (overrides the general fail-open convention in ``AgentTalk._check_pbac_agent_access``).
 This was resolved as the correct behaviour for FEAT-144 Q-B.
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,7 +26,7 @@ from navconfig.logging import logging  # noqa: F811
 from parrot.auth.oauth2 import _WEB_CHANNEL
 
 if TYPE_CHECKING:  # pragma: no cover
-    from parrot.auth.jira_oauth import JiraTokenSet
+    pass
 from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
@@ -128,9 +129,7 @@ class IntegrationsService:
 
         for provider in providers:
             # Check whether a per-provider PBAC check passes
-            if not await self._check_pbac(
-                request, "integration:list", provider.provider_id
-            ):
+            if not await self._check_pbac(request, "integration:list", provider.provider_id):
                 continue
 
             integration_row = await get_users_integration(user_id, provider.provider_id)
@@ -145,9 +144,7 @@ class IntegrationsService:
                 status=status,
                 enabled_on_agent=provider.provider_id in enabled_provider_ids,
                 account_id=integration_row.account_id if integration_row else None,
-                display_account_name=(
-                    integration_row.display_name if integration_row else None
-                ),
+                display_account_name=(integration_row.display_name if integration_row else None),
                 email=integration_row.email if integration_row else None,
                 connected_at=integration_row.connected_at if integration_row else None,
             )
@@ -227,7 +224,8 @@ class IntegrationsService:
             if identity is None:
                 logger.info(
                     "Integrations: provider=%s has no identity row for user=%s",
-                    provider_id, user_id,
+                    provider_id,
+                    user_id,
                 )
                 return "needs_reconnect"
             # Synchronous on purpose — IdentityStore.decrypt_credential is not
@@ -236,13 +234,15 @@ class IntegrationsService:
         except IdentityCredentialError:
             logger.info(
                 "Integrations: provider=%s credential unreadable for user=%s",
-                provider_id, user_id,
+                provider_id,
+                user_id,
             )
             return "needs_reconnect"
         except Exception:  # noqa: BLE001 - probing must never break the listing
             logger.warning(
                 "Integrations: identity probe failed for user=%s provider=%s",
-                user_id, provider_id,
+                user_id,
+                provider_id,
             )
             return "connected"
         return "connected"
@@ -274,13 +274,16 @@ class IntegrationsService:
         except Exception:  # noqa: BLE001 - probing must never break the listing
             logger.warning(
                 "Integrations: token probe failed for user=%s provider=%s",
-                user_id, provider_id,
+                user_id,
+                provider_id,
             )
             return "connected"
         if result.status in ("missing", "unreadable"):
             logger.info(
                 "Integrations: provider=%s needs reconnect for user=%s (%s)",
-                provider_id, user_id, result.status,
+                provider_id,
+                user_id,
+                result.status,
             )
             return "needs_reconnect"
         return "connected"

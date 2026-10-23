@@ -3,6 +3,7 @@
 Covers TASK-751 from FEAT-107 (Jira OAuth 2.0 3LO). The HTTP layer and
 Redis are mocked so the tests run without any external services.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,8 +20,8 @@ from parrot.auth.jira_oauth import (
     JiraTokenSet,
 )
 
-
 # ------------------------------------------------------------------ helpers
+
 
 def _mock_response(
     status: int,
@@ -56,6 +57,7 @@ def _mock_session(*responses: MagicMock) -> MagicMock:
 
 
 # ------------------------------------------------------------------ fakes
+
 
 class _FakeRedis:
     """Minimal in-memory Redis double that mimics the async API we use."""
@@ -154,9 +156,7 @@ class TestJiraTokenSet:
 
 class TestAuthorizationURL:
     @pytest.mark.asyncio
-    async def test_create_authorization_url(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_create_authorization_url(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         url, nonce = await manager.create_authorization_url("telegram", "user-1")
         assert AUTHORIZATION_URL in url
         assert "client_id=test-client-id" in url
@@ -167,9 +167,7 @@ class TestAuthorizationURL:
         assert nonce and len(nonce) > 10
 
     @pytest.mark.asyncio
-    async def test_state_nonce_stored_with_ttl(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_state_nonce_stored_with_ttl(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         _, nonce = await manager.create_authorization_url("tg", "u1")
         assert fake_redis.set_calls, "Expected nonce to be written to Redis"
         key, value, ttl = fake_redis.set_calls[0]
@@ -180,55 +178,56 @@ class TestAuthorizationURL:
         assert payload["user_id"] == "u1"
 
     @pytest.mark.asyncio
-    async def test_extra_state_is_preserved(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
-        _, nonce = await manager.create_authorization_url(
-            "tg", "u1", extra_state={"chat_id": 42}
-        )
+    async def test_extra_state_is_preserved(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
+        _, nonce = await manager.create_authorization_url("tg", "u1", extra_state={"chat_id": 42})
         payload = json.loads(fake_redis.store[f"jira:nonce:{nonce}"])
         assert payload["extra"] == {"chat_id": 42}
 
 
 class TestHandleCallback:
     @pytest.mark.asyncio
-    async def test_invalid_state_raises(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_invalid_state_raises(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         with pytest.raises(ValueError, match="Invalid or expired state nonce"):
             await manager.handle_callback(code="abc", state="unknown")
 
     @pytest.mark.asyncio
-    async def test_full_exchange_stores_token(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_full_exchange_stores_token(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         # Seed a valid nonce first.
         _, nonce = await manager.create_authorization_url("telegram", "user-7")
         fake_redis.set_calls.clear()
 
         # Build aiohttp-style mock responses for the 3 HTTP calls:
         # 1. POST /oauth/token (exchange code)
-        exchange_resp = _mock_response(200, json_data={
-            "access_token": "at_123",
-            "refresh_token": "rt_456",
-            "expires_in": 3600,
-            "scope": "read:jira-work write:jira-work offline_access",
-        })
+        exchange_resp = _mock_response(
+            200,
+            json_data={
+                "access_token": "at_123",
+                "refresh_token": "rt_456",
+                "expires_in": 3600,
+                "scope": "read:jira-work write:jira-work offline_access",
+            },
+        )
         # 2. GET /oauth/token/accessible-resources
-        resources_resp = _mock_response(200, json_data=[
-            {
-                "id": "cloud-uuid-1",
-                "name": "mysite",
-                "url": "https://mysite.atlassian.net",
-                "scopes": ["read:jira-work"],
-            }
-        ])
+        resources_resp = _mock_response(
+            200,
+            json_data=[
+                {
+                    "id": "cloud-uuid-1",
+                    "name": "mysite",
+                    "url": "https://mysite.atlassian.net",
+                    "scopes": ["read:jira-work"],
+                }
+            ],
+        )
         # 3. GET /rest/api/3/myself
-        myself_resp = _mock_response(200, json_data={
-            "accountId": "acc-123",
-            "displayName": "Jesus Garcia",
-            "emailAddress": "jesus@example.com",
-        })
+        myself_resp = _mock_response(
+            200,
+            json_data={
+                "accountId": "acc-123",
+                "displayName": "Jesus Garcia",
+                "emailAddress": "jesus@example.com",
+            },
+        )
 
         manager._http = _mock_session(exchange_resp, resources_resp, myself_resp)
 
@@ -258,9 +257,7 @@ class TestHandleCallback:
 
 class TestConsumeState:
     @pytest.mark.asyncio
-    async def test_returns_payload_and_deletes_nonce(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_returns_payload_and_deletes_nonce(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         # Channel data lives under "extra" — the shape the callback handlers read.
         _, nonce = await manager.create_authorization_url(
             "slack",
@@ -276,27 +273,21 @@ class TestConsumeState:
         assert f"jira:nonce:{nonce}" in fake_redis.deleted
 
     @pytest.mark.asyncio
-    async def test_second_consume_raises(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_second_consume_raises(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         _, nonce = await manager.create_authorization_url("telegram", "u1")
         await manager.consume_state(nonce)
         with pytest.raises(ValueError, match="Invalid or expired state nonce"):
             await manager.consume_state(nonce)
 
     @pytest.mark.asyncio
-    async def test_unknown_state_raises(
-        self, manager: JiraOAuthManager
-    ) -> None:
+    async def test_unknown_state_raises(self, manager: JiraOAuthManager) -> None:
         with pytest.raises(ValueError, match="Invalid or expired state nonce"):
             await manager.consume_state("does-not-exist")
 
 
 class TestGetValidToken:
     @pytest.mark.asyncio
-    async def test_returns_none_when_empty(
-        self, manager: JiraOAuthManager
-    ) -> None:
+    async def test_returns_none_when_empty(self, manager: JiraOAuthManager) -> None:
         assert await manager.get_valid_token("tg", "u1") is None
 
     @pytest.mark.asyncio
@@ -319,9 +310,7 @@ class TestGetValidToken:
         assert result.access_token == "at"
 
     @pytest.mark.asyncio
-    async def test_refresh_on_expired_token(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_refresh_on_expired_token(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         expired = JiraTokenSet(
             access_token="old",
             refresh_token="rt_old",
@@ -333,11 +322,14 @@ class TestGetValidToken:
         )
         fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
 
-        refresh_resp = _mock_response(200, json_data={
-            "access_token": "new",
-            "refresh_token": "rt_new",
-            "expires_in": 3600,
-        })
+        refresh_resp = _mock_response(
+            200,
+            json_data={
+                "access_token": "new",
+                "refresh_token": "rt_new",
+                "expires_in": 3600,
+            },
+        )
         manager._http = _mock_session(refresh_resp)
 
         refreshed = await manager.get_valid_token("tg", "u1")
@@ -345,15 +337,11 @@ class TestGetValidToken:
         assert refreshed.access_token == "new"
         assert refreshed.refresh_token == "rt_new"
         # Rotating refresh token must be persisted in Redis.
-        stored = JiraTokenSet.model_validate_json(
-            fake_redis.store["jira:oauth:tg:u1"]
-        )
+        stored = JiraTokenSet.model_validate_json(fake_redis.store["jira:oauth:tg:u1"])
         assert stored.refresh_token == "rt_new"
 
     @pytest.mark.asyncio
-    async def test_refresh_401_revokes_and_raises(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_refresh_401_revokes_and_raises(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         expired = JiraTokenSet(
             access_token="old",
             refresh_token="rt_old",
@@ -398,10 +386,12 @@ class TestGetValidToken:
         # and forwards to _refresh_tokens.
         fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
 
-        fresh = expired.model_copy(update={
-            "access_token": "refreshed_by_other",
-            "expires_at": time.time() + 3600,
-        })
+        fresh = expired.model_copy(
+            update={
+                "access_token": "refreshed_by_other",
+                "expires_at": time.time() + 3600,
+            }
+        )
 
         # Patch the lock so acquire() always returns False.
         def patched_lock(name, **kwargs):
@@ -546,9 +536,7 @@ class TestLifecycleHooks:
         assert mgr.redis is None
 
     @pytest.mark.asyncio
-    async def test_on_cleanup_leaves_external_redis_alone(
-        self, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_on_cleanup_leaves_external_redis_alone(self, fake_redis: _FakeRedis) -> None:
         external_close = MagicMock()
         fake_redis.aclose = AsyncMock(side_effect=external_close)  # type: ignore[attr-defined]
         fake_redis.close = AsyncMock(side_effect=external_close)  # type: ignore[attr-defined]
@@ -564,9 +552,7 @@ class TestLifecycleHooks:
         assert mgr.redis is fake_redis
 
     @pytest.mark.asyncio
-    async def test_on_cleanup_closes_owned_aiohttp_session(
-        self, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_on_cleanup_closes_owned_aiohttp_session(self, fake_redis: _FakeRedis) -> None:
         mgr = JiraOAuthManager(
             client_id="x",
             client_secret="y",
@@ -584,9 +570,7 @@ class TestLifecycleHooks:
         assert mgr._http is None
 
     @pytest.mark.asyncio
-    async def test_on_startup_resolves_redis_from_app(
-        self, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_on_startup_resolves_redis_from_app(self, fake_redis: _FakeRedis) -> None:
         """``app['redis']`` takes precedence over building a new client."""
         fake_redis.ping = AsyncMock(return_value=True)  # type: ignore[attr-defined]
         app = web.Application()
@@ -604,7 +588,9 @@ class TestLifecycleHooks:
 
     @pytest.mark.asyncio
     async def test_on_startup_app_redis_takes_precedence_over_url(
-        self, fake_redis: _FakeRedis, monkeypatch,
+        self,
+        fake_redis: _FakeRedis,
+        monkeypatch,
     ) -> None:
         """When both ``app['redis']`` and ``redis_url`` are available the
         shared app-level client wins and ``from_url`` is never called."""
@@ -635,7 +621,8 @@ class TestLifecycleHooks:
 
     @pytest.mark.asyncio
     async def test_on_startup_falls_back_to_redis_url_when_app_has_no_redis(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ) -> None:
         """If ``app['redis']`` is absent we build the client from the URL."""
         built: dict[str, Any] = {}
@@ -691,24 +678,18 @@ class TestLifecycleHooks:
 
 class TestRevokeAndIsConnected:
     @pytest.mark.asyncio
-    async def test_revoke_deletes_key(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_revoke_deletes_key(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         fake_redis.store["jira:oauth:telegram:user-1"] = "x"
         await manager.revoke("telegram", "user-1")
         assert "jira:oauth:telegram:user-1" not in fake_redis.store
         assert "jira:oauth:telegram:user-1" in fake_redis.deleted
 
     @pytest.mark.asyncio
-    async def test_is_connected_false(
-        self, manager: JiraOAuthManager
-    ) -> None:
+    async def test_is_connected_false(self, manager: JiraOAuthManager) -> None:
         assert await manager.is_connected("tg", "u1") is False
 
     @pytest.mark.asyncio
-    async def test_is_connected_true(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_is_connected_true(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         token = JiraTokenSet(
             access_token="at",
             refresh_token="rt",
@@ -725,9 +706,7 @@ class TestRevokeAndIsConnected:
 class TestValidateToken:
     """Live ``/myself`` probe + auto-revoke on Atlassian rejection."""
 
-    def _seed_token(
-        self, fake_redis: _FakeRedis, *, key: str = "jira:oauth:tg:u1"
-    ) -> JiraTokenSet:
+    def _seed_token(self, fake_redis: _FakeRedis, *, key: str = "jira:oauth:tg:u1") -> JiraTokenSet:
         token = JiraTokenSet(
             access_token="at",
             refresh_token="rt",
@@ -741,15 +720,11 @@ class TestValidateToken:
         return token
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_token(
-        self, manager: JiraOAuthManager
-    ) -> None:
+    async def test_returns_none_when_no_token(self, manager: JiraOAuthManager) -> None:
         assert await manager.validate_token("tg", "u1") is None
 
     @pytest.mark.asyncio
-    async def test_returns_token_when_probe_ok(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_returns_token_when_probe_ok(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         self._seed_token(fake_redis)
         manager._http = _mock_session(_mock_response(200, json_data={"accountId": "a"}))
 
@@ -780,9 +755,7 @@ class TestValidateToken:
         assert "jira:oauth:tg:u1" in fake_redis.deleted
 
     @pytest.mark.asyncio
-    async def test_transport_failure_keeps_token(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_transport_failure_keeps_token(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         # A network outage must not auto-disconnect users — we cannot
         # tell a transient blip from a real revocation, so the cached
         # token is returned unchanged and Redis is left untouched.
@@ -819,6 +792,7 @@ class TestValidateToken:
 
 
 # ------------------------------------------------- FEAT-735 — CredentialSink
+
 
 class _RecordingSink:
     """``CredentialSink`` double that records what the manager hands it."""
@@ -915,9 +889,7 @@ class TestCredentialSink:
         assert json.loads(fake_redis.store["jira:oauth:tg:u1"])["access_token"] == "new-access"
 
     @pytest.mark.asyncio
-    async def test_no_sink_keeps_redis_only_behaviour(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_no_sink_keeps_redis_only_behaviour(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         """The default construction (no sink) is unchanged (AC-4)."""
         assert manager._credential_sink is None
         fake_redis.store["jira:oauth:tg:u1"] = _expired_token().model_dump_json()
@@ -931,20 +903,26 @@ class TestCredentialSink:
 
 def _callback_responses() -> tuple:
     """The three HTTP responses handle_callback consumes, in order."""
-    exchange = _mock_response(200, json_data={
-        "access_token": "at_minted",
-        "refresh_token": "rt_minted",
-        "expires_in": 3600,
-        "scope": "read:jira-work offline_access",
-    })
-    resources = _mock_response(200, json_data=[
-        {"id": "cloud-uuid-1", "name": "mysite", "url": "https://mysite.atlassian.net"}
-    ])
-    myself = _mock_response(200, json_data={
-        "accountId": "acc-123",
-        "displayName": "Jesus Garcia",
-        "emailAddress": "jesus@example.com",
-    })
+    exchange = _mock_response(
+        200,
+        json_data={
+            "access_token": "at_minted",
+            "refresh_token": "rt_minted",
+            "expires_in": 3600,
+            "scope": "read:jira-work offline_access",
+        },
+    )
+    resources = _mock_response(
+        200, json_data=[{"id": "cloud-uuid-1", "name": "mysite", "url": "https://mysite.atlassian.net"}]
+    )
+    myself = _mock_response(
+        200,
+        json_data={
+            "accountId": "acc-123",
+            "displayName": "Jesus Garcia",
+            "emailAddress": "jesus@example.com",
+        },
+    )
     return exchange, resources, myself
 
 
@@ -986,9 +964,7 @@ class TestLinkTimeCredentialSink:
         assert fake_redis.set_calls[-1][0] == "jira:oauth:telegram:user-7"
 
     @pytest.mark.asyncio
-    async def test_link_without_sink_is_unchanged(
-        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
-    ) -> None:
+    async def test_link_without_sink_is_unchanged(self, manager: JiraOAuthManager, fake_redis: _FakeRedis) -> None:
         """AC-6 — the default construction behaves exactly as before."""
         assert manager._credential_sink is None
         _, nonce = await manager.create_authorization_url("telegram", "user-7")

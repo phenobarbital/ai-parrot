@@ -7,6 +7,7 @@ provider on the vault. These tests pin both halves of that branch, and the
 fail-open contract that must survive it: a store outage reports ``connected``,
 never a spurious re-connect prompt.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -75,7 +76,9 @@ class TestJiraReadsTheOwner:
         """AC-3 — the owner's equivalent of the vault's ``unreadable``."""
         from navigator_auth.identity.store import IdentityCredentialError
 
-        store = _FakeIdentityStore(decrypt_error=IdentityCredentialError("jira", "access_token", "sealed token will not open"))
+        store = _FakeIdentityStore(
+            decrypt_error=IdentityCredentialError("jira", "access_token", "sealed token will not open")
+        )
         service = _service(identity_store=store, vault_sync=_vault("ok"))
 
         assert await service._token_status("42", "jira", _request()) == "needs_reconnect"
