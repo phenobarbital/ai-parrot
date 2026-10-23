@@ -816,3 +816,102 @@ class TestValidateToken:
         result = await manager.validate_token("tg", "u1")
 
         assert result is None
+
+
+# ------------------------------------------------- FEAT-735 — CredentialSink
+
+class _RecordingSink:
+    """``CredentialSink`` double that records what the manager hands it."""
+
+    def __init__(self, raises: bool = False) -> None:
+        self.calls: list[tuple[str, str, JiraTokenSet]] = []
+        self.raises = raises
+
+    async def persist(self, channel: str, user_id: str, token: JiraTokenSet) -> None:
+        self.calls.append((channel, user_id, token))
+        if self.raises:
+            raise RuntimeError("durable store unavailable")
+
+
+def _expired_token() -> JiraTokenSet:
+    return JiraTokenSet(
+        access_token="old",
+        refresh_token="rt_old",
+        expires_at=time.time() - 10,
+        cloud_id="c",
+        site_url="https://x.atlassian.net",
+        account_id="acct-1",
+        display_name="Test",
+    )
+
+
+def _refresh_response() -> MagicMock:
+    return _mock_response(
+        200,
+        json_data={
+            "access_token": "new-access",
+            "refresh_token": "rt_new",
+            "expires_in": 3600,
+        },
+    )
+
+
+def _manager_with_sink(fake_redis: _FakeRedis, sink: Any) -> JiraOAuthManager:
+    return JiraOAuthManager(
+        client_id="test-client-id",
+        client_secret="test-secret",
+        redirect_uri="https://test.example.com/api/auth/jira/callback",
+        redis_client=fake_redis,
+        credential_sink=sink,
+    )
+
+
+class TestCredentialSink:
+    """TASK-4668 — a refreshed grant must reach the durable owner."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_notifies_sink(self, fake_redis: _FakeRedis) -> None:
+        sink = _RecordingSink()
+        manager = _manager_with_sink(fake_redis, sink)
+        fake_redis.store["jira:oauth:tg:u1"] = _expired_token().model_dump_json()
+        manager._http = _mock_session(_refresh_response())
+
+        token = await manager.get_valid_token("tg", "u1")
+
+        assert token is not None and token.access_token == "new-access"
+        assert len(sink.calls) == 1
+        channel, user_id, persisted = sink.calls[0]
+        assert (channel, user_id) == ("tg", "u1")
+        # The sink receives the REFRESHED grant, not the stale one (AC-2).
+        assert persisted.access_token == "new-access"
+        assert persisted.refresh_token == "rt_new"
+        # ...and Redis was written before the sink ran (AC-1).
+        assert json.loads(fake_redis.store["jira:oauth:tg:u1"])["access_token"] == "new-access"
+
+    @pytest.mark.asyncio
+    async def test_refresh_survives_sink_failure(self, fake_redis: _FakeRedis) -> None:
+        """A durable-store outage must not cost the user a working token (AC-3)."""
+        sink = _RecordingSink(raises=True)
+        manager = _manager_with_sink(fake_redis, sink)
+        fake_redis.store["jira:oauth:tg:u1"] = _expired_token().model_dump_json()
+        manager._http = _mock_session(_refresh_response())
+
+        token = await manager.get_valid_token("tg", "u1")
+
+        assert token is not None and token.access_token == "new-access"
+        assert len(sink.calls) == 1
+        assert json.loads(fake_redis.store["jira:oauth:tg:u1"])["access_token"] == "new-access"
+
+    @pytest.mark.asyncio
+    async def test_no_sink_keeps_redis_only_behaviour(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        """The default construction (no sink) is unchanged (AC-4)."""
+        assert manager._credential_sink is None
+        fake_redis.store["jira:oauth:tg:u1"] = _expired_token().model_dump_json()
+        manager._http = _mock_session(_refresh_response())
+
+        token = await manager.get_valid_token("tg", "u1")
+
+        assert token is not None and token.access_token == "new-access"
+        assert json.loads(fake_redis.store["jira:oauth:tg:u1"])["access_token"] == "new-access"

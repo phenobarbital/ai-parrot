@@ -21,7 +21,7 @@ import json
 import logging
 import secrets
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 from urllib.parse import urlencode
 
 import aiohttp
@@ -221,6 +221,22 @@ async def fetch_myself(session: aiohttp.ClientSession, access_token: str, cloud_
         return await response.json()
 
 
+class CredentialSink(Protocol):
+    """Durable store kept in step with the Redis hot cache.
+
+    Redis is the hot cache and the live tool read path; the durable owner of a
+    Jira grant is navigator-auth's Identity Vault (FEAT-735). A sink is how
+    :class:`JiraOAuthManager` keeps that owner current without importing it:
+    ``ai-parrot`` must not depend on ``ai-parrot-server``, so the Protocol is
+    satisfied structurally and the concrete sink is injected by the
+    application.
+    """
+
+    async def persist(self, channel: str, user_id: str, token: "JiraTokenSet") -> None:
+        """Persist a freshly refreshed grant. Raises on failure."""
+        ...
+
+
 class JiraOAuthManager:
     """OAuth 2.0 (3LO) lifecycle manager for Jira Cloud.
 
@@ -244,6 +260,7 @@ class JiraOAuthManager:
         redis_client: Any = None,
         scopes: Optional[List[str]] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
+        credential_sink: Optional[CredentialSink] = None,
     ) -> None:
         if app is None and redis_client is None and not redis_url:
             raise ValueError("JiraOAuthManager requires one of: app (with app['redis']), " "redis_client, or redis_url")
@@ -261,6 +278,9 @@ class JiraOAuthManager:
         self.scopes: List[str] = list(scopes) if scopes else list(DEFAULT_SCOPES)
         self._http: Optional[aiohttp.ClientSession] = http_session
         self._http_owned: bool = http_session is None  # True if we must close it
+        # Durable owner of the grant, notified after every successful Redis
+        # write. ``None`` keeps the historic Redis-only behaviour verbatim.
+        self._credential_sink: Optional[CredentialSink] = credential_sink
         self._setup_done: bool = False
         self.logger = logger
 
@@ -718,6 +738,19 @@ class JiraOAuthManager:
                 }
             )
             await self._write_token(key, refreshed)
+            if self._credential_sink is not None:
+                # Strictly after the Redis write: a durable-store outage must
+                # never cost the user a working hot credential, and a sink
+                # failure must never roll back a refresh that worked.
+                try:
+                    await self._credential_sink.persist(channel, user_id, refreshed)
+                except Exception:  # noqa: BLE001 - the durable copy must not break the refresh
+                    self.logger.error(
+                        "Jira credential sink failed after refresh for %s:%s",
+                        channel,
+                        user_id,
+                        exc_info=True,
+                    )
             return refreshed
         finally:
             # lock.release() is only reached when acquired is True —
