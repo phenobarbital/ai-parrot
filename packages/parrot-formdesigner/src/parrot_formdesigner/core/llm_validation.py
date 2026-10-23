@@ -6,7 +6,7 @@ and the report returned by ``AnswerPlausibilityChecker`` (services/plausibility.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -76,6 +76,16 @@ class PlausibilityReport(BaseModel):
     threshold: float
     latency_ms: int | None = None
     items: dict[str, PlausibilityVerdict] = Field(default_factory=dict)
+    resolved_model: str | None = None
+    """The model that actually answered (``AIMessage.model``) — FEAT-732.
+
+    ``model`` above is what the config REQUESTED and may be ``None`` (client
+    default). This is what RESPONDED. ``None`` only when no LLM call was made.
+    """
+    provider: str | None = None
+    """The provider that answered (``AIMessage.provider``)."""
+    usage: dict[str, Any] | None = None
+    """Token usage of the call (``AIMessage.usage``), JSON-dumped."""
 
 
 def llm_validation_enabled(form: FormSchema, field: FormField) -> bool:
@@ -106,3 +116,24 @@ def implausible_fields(report: PlausibilityReport) -> list[str]:
         for field_id, verdict in report.items.items()
         if not verdict.plausible or verdict.confidence < report.threshold
     )
+
+
+#: Fields that belong to the audit record only (FEAT-732). Persisted with the
+#: report, never sent to a form client — they name the vendor, the model and
+#: the token usage of the call (spec §7 R10).
+PLAUSIBILITY_AUDIT_FIELDS: frozenset[str] = frozenset({"resolved_model", "provider", "usage"})
+
+
+def wire_report(report: PlausibilityReport, **dump_kwargs: Any) -> dict[str, Any]:
+    """Dump ``report`` for a client-facing response, without audit-only fields.
+
+    Args:
+        report: The plausibility report to serialize.
+        **dump_kwargs: Forwarded to ``model_dump`` unchanged. An ``exclude``
+            set is honoured and widened.
+
+    Returns:
+        The dumped report minus ``PLAUSIBILITY_AUDIT_FIELDS``.
+    """
+    exclude = set(PLAUSIBILITY_AUDIT_FIELDS) | set(dump_kwargs.pop("exclude", None) or ())
+    return report.model_dump(exclude=exclude, **dump_kwargs)

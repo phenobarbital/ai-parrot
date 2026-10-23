@@ -38,6 +38,7 @@ from .submissions import (
     FormSubmissionStorage,
 )
 from .rule_evaluator import RuleEvaluator, RuleResolution
+from .validation_trace import ValidationTraceCollector, callable_identity, cap_trace, schema_fingerprint
 from .validators import FormValidator, ValidationResult
 
 __all__ = [
@@ -70,8 +71,12 @@ __all__ = [
     "SinkFactory",
     "SubmissionForwarder",
     "ValidationResult",
+    "ValidationTraceCollector",
     "VersionMeta",
+    "callable_identity",
+    "cap_trace",
     "enrich_submission",
+    "schema_fingerprint",
     # Lifecycle event registry (FEAT-188)
     "register_form_event",
     "get_form_event",

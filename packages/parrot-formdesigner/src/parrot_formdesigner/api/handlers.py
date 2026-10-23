@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
 
+from ..core.llm_validation import wire_report
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
@@ -34,6 +35,10 @@ from .tenant import (
     declared_tenant,
     enforce_membership_unless_public,
 )
+
+#: RBAC codename for the FEAT-732 audit read. Granted per user, at CLIENT scope or
+#: wider, through POST /org/users/{user_id}/assign. Never seeded.
+READ_FORM_AUDIT = "read_form_audit"
 
 
 def extract_form_uid(request: web.Request) -> _uuid.UUID:
@@ -98,6 +103,7 @@ if TYPE_CHECKING:
     from ..services.forwarder import SubmissionForwarder
     from ..services.llm_quota import LLMQuota
     from ..services.org_graph import OrgGraphService
+    from ..services.rbac import RBACScope
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
@@ -1274,7 +1280,7 @@ class FormAPIHandler:
         if gate is not None:
             payload["code"] = gate.code
         if plausibility is not None:
-            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+            payload["plausibility"] = wire_report(plausibility, mode="json", exclude_none=True)
         elif opt_in_skipped is not None and any(
             llm_validation_enabled(form, field) for field in form.iter_fields_recursive()
         ):
@@ -1921,7 +1927,7 @@ class FormAPIHandler:
                     "is_valid": False,
                     "code": exc.code,
                     "errors": exc.errors,
-                    "plausibility": exc.report.model_dump(mode="json", exclude_none=True),
+                    "plausibility": wire_report(exc.report, mode="json", exclude_none=True),
                 },
                 status=422,
             )
@@ -1954,7 +1960,7 @@ class FormAPIHandler:
             "forward_error": outcome.forward_error,
         }
         if outcome.plausibility is not None:
-            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+            body_out["plausibility"] = wire_report(outcome.plausibility, mode="json", exclude_none=True)
         if self._on_submitted is not None and outcome.stored_in != "none":
             await self._notify_submitted(form, outcome, tenant)
         return _reply(body_out, status=200)
@@ -2346,6 +2352,113 @@ class FormAPIHandler:
                     codename,
                     tenant,
                 )
+
+    async def _rbac_require(
+        self,
+        request: web.Request,
+        codename: str,
+        *,
+        scope: "RBACScope | None" = None,
+    ) -> None:
+        """Require an RBAC permission, denying on missing or failed RBAC.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+            codename: Permission codename to require.
+            scope: Minimum permission scope required.
+
+        Raises:
+            web.HTTPForbidden: If RBAC is unavailable, resolution fails, or
+                the resolved context lacks the required permission.
+        """
+        if self._rbac_service is None:
+            self.logger.warning(
+                "_rbac_require: DENY codename=%s — no RBAC service configured",
+                codename,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+        user = getattr(request, "user", None)
+        user_id = str(getattr(user, "id", "anonymous")) if user else "anonymous"
+        tenant = self._get_tenant(request)
+        # H-4: _get_programs() returns program SLUGS, not numeric IDs. There is
+        # no reliable numeric program_id in the slug-only session, so the gate
+        # resolves at tenant+user granularity (program_id=0). RBACService.resolve
+        # filters policies by user+tenant, so program scoping is not required here.
+        program_id = 0
+
+        try:
+            ctx = await self._rbac_service.resolve(user_id, program_id=program_id, tenant=tenant)
+            allowed = ctx.has_permission(codename, scope=scope)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "_rbac_require: DENY resolution failed for %s/%s: %s",
+                user_id,
+                codename,
+                exc,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}") from exc
+
+        if not allowed:
+            self.logger.warning(
+                "_rbac_require: DENY user=%s codename=%s tenant=%s",
+                user_id,
+                codename,
+                tenant,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+    async def get_submission_audit(self, request: web.Request) -> web.Response:
+        """Return the audit projection for one submission.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+
+        Returns:
+            The six-field audit projection, or a JSON error response when
+            storage is unavailable or the submission cannot be read here.
+
+        Raises:
+            web.HTTPForbidden: If the caller lacks ``read_form_audit`` at
+                ``CLIENT`` scope or wider.
+        """
+        from ..services.rbac import RBACScope
+
+        await self._rbac_require(request, READ_FORM_AUDIT, scope=RBACScope.CLIENT)
+        if self._submission_storage is None:
+            return JSONResponse({"error": "Submission storage not configured"}, status=503)
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        submission_id = request.match_info["submission_id"]
+        row = await self._submission_storage.get_submission(submission_id, tenant=tenant)
+        if row is None:
+            form = await self.registry.get(form_uid, tenant=tenant)
+            if form is not None and form.persistence is not None:
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Submission was written to its own persistence sink; "
+                            "read the audit trail from that sink's context column"
+                        )
+                    },
+                    status=501,
+                )
+            return JSONResponse({"error": "Submission not found"}, status=404)
+        if row.form_uid != form_uid:
+            return JSONResponse({"error": "Submission not found"}, status=404)
+
+        context = row.context or {}
+        return JSONResponse(
+            {
+                "submission_id": row.submission_id,
+                "form_uid": str(row.form_uid),
+                "form_version": row.form_version,
+                "is_valid": row.is_valid,
+                "validation": context.get("validation"),
+                "llm_validation": context.get("llm_validation"),
+            }
+        )
 
     # ------------------------------------------------------------------
     # FEAT-302 — Org Graph endpoints

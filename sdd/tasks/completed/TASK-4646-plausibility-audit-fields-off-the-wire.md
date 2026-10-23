@@ -270,10 +270,8 @@ class TestAuditFieldsStayOffTheWire:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid 6a8592265ea1451483e57f18854555c9), duration 187s
+**Date**: 2026-10-23
+**Notes**: wire_report() strips audit-only plausibility fields from client responses; handlers.py/audio_ws.py use it. Merge-tier validation green. Orchestrator diff review: no fixes needed. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-23T01:17:30+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-23T15:17:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -70,16 +70,17 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: creates core/audit_trail.py and adds FormSchema.audit_trail; needs nothing from this feature.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4644-audit-trail-core-models.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4644-audit-trail-core-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4645",
@@ -88,16 +89,17 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: edits core/llm_validation.py, services/plausibility.py and four plausibility test fakes; independent of TASK-4644.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4645-plausibility-effective-model-identity.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4645-plausibility-effective-model-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4646",
@@ -106,7 +108,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -115,9 +117,10 @@
       "parallel": true,
       "parallelism_notes": "Needs PlausibilityReport.resolved_model/provider/usage and the typing.Any import from TASK-4645 (core/llm_validation.py); both also modify tests/formdesigner/test_http_plausibility.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4646-plausibility-audit-fields-off-the-wire.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:14:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4646-plausibility-audit-fields-off-the-wire.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4647",
@@ -126,7 +129,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -135,9 +138,10 @@
       "parallel": true,
       "parallelism_notes": "Imports AuditDetail, CheckId, CheckRecord, FieldTrace, SkipReason and ValidationTrace from TASK-4644 (core/audit_trail.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4647-validation-trace-collector.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:14:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4647-validation-trace-collector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4648",
@@ -146,7 +150,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -155,9 +159,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ValidationTraceCollector and schema_fingerprint from TASK-4647 (services/validation_trace.py); CheckId/ValidationTrace from TASK-4644 arrive transitively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4648-validator-trace-plumbing-and-form-level.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4648-validator-trace-plumbing-and-form-level.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4649",
@@ -166,7 +171,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -175,9 +180,10 @@
       "parallel": true,
       "parallelism_notes": "Reads the trace= kwarg TASK-4648 adds to validate_field and edits the same file (services/validators.py); callable_identity from TASK-4647 arrives transitively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4649-validator-per-field-check-recording.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:28:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4649-validator-per-field-check-recording.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4650",
@@ -186,7 +192,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -195,9 +201,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes ValidationResult.trace and validate(trace=) added by TASK-4648 (services/validators.py); cap_trace from TASK-4647 and AuditTrailConfig from TASK-4644 arrive transitively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4650-pipeline-persist-validation-trace.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:28:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4650-pipeline-persist-validation-trace.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4651",
@@ -206,7 +213,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -215,9 +222,10 @@
       "parallel": true,
       "parallelism_notes": "File overlap only: both modify api/handlers.py, where TASK-4646 rewrites three wire dumps; no symbol from it is used.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4651-submission-audit-read-endpoint.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4651-submission-audit-read-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4652",
@@ -226,7 +234,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -239,9 +247,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: bumps the package version (version.py feeds pyproject's dynamic version). Its drift test imports CheckId/SkipReason from TASK-4644 and READ_FORM_AUDIT from TASK-4651; the page documents wire_report (TASK-4646), the recording rules (TASK-4649) and context['validation'] (TASK-4650).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4652-audit-trail-docs-and-version.md"
+      "started_at": "2026-10-23T02:01:17+00:00",
+      "completed_at": "2026-10-23T02:32:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4652-audit-trail-docs-and-version.md",
+      "verification": "verified"
     }
   ]
 }

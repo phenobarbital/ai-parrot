@@ -451,6 +451,12 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/data",
         _wrap_auth(handler.submit_data, tenant="public"),
     )
+    # FEAT-732 — audit projection of one submission. NOT a public-form glob:
+    # tenant="required" (the default) plus a fail-closed permission gate.
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/data/{{submission_id}}/audit",
+        _wrap_auth(handler.get_submission_audit),
+    )
     # FEAT-730 — can this form take a response now? Auth-exempt for public forms (7th glob).
     app.router.add_get(
         f"{tp}/forms/{{form_uid}}/availability",

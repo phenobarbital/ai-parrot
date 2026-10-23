@@ -526,10 +526,8 @@ class TestCap:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 1 (uid 9037fa0234324350a9fe8d00cc439a9a), duration 206s
+**Date**: 2026-10-23
+**Notes**: services/validation_trace.py: ValidationTraceCollector, schema_fingerprint, callable_identity, cap_trace; exported from services. Merge-tier validation green. Orchestrator diff review: no fixes needed. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -57,6 +57,17 @@ from .voice_answer import (
     unwrap_voice,
     wrap_voice,
 )
+from .audit_trail import (
+    DEFAULT_MAX_BYTES,
+    AuditDetail,
+    AuditTrailConfig,
+    CheckId,
+    CheckOutcome,
+    CheckRecord,
+    FieldTrace,
+    SkipReason,
+    ValidationTrace,
+)
 from .public_access import (
     AvailabilityState,
     CompletionAction,
@@ -100,6 +111,15 @@ __all__ = [
     "is_sensitive",
     "field_voice_meta",
     "resolve_voice_config",
+    "AuditDetail",
+    "AuditTrailConfig",
+    "CheckId",
+    "CheckOutcome",
+    "CheckRecord",
+    "DEFAULT_MAX_BYTES",
+    "FieldTrace",
+    "SkipReason",
+    "ValidationTrace",
     "LLMValidationConfig",
     # Public response controls (FEAT-730)
     "PublicAccessConfig",

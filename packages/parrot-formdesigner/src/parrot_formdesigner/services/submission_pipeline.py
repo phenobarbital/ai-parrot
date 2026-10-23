@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from ..core.audit_trail import AuditDetail, AuditTrailConfig, ValidationTrace
 from ..core.events import FormEventAbort
 from ..core.public_access import RejectionReason, evaluate_open, normalize_key_value
 from ..core.llm_validation import (
@@ -32,6 +33,7 @@ from .sinks.base import SinkNotCapableError, SinkTargetMismatchError, SinkUnavai
 from .sinks.mapper import flatten_submission, nest_submission
 from .submissions import DuplicateResponse, FormSubmission, FormSubmissionStorage, ResponseLimitReached
 from .unknown_fields import ExtrasCapExceeded, enforce_extras_cap
+from .validation_trace import ValidationTraceCollector, cap_trace
 from .validators import FormValidator, ValidationResult
 
 if TYPE_CHECKING:
@@ -166,6 +168,37 @@ class SubmissionPipeline:
         """True when any field resolves llm_validation on (field override or form default)."""
         return any(llm_validation_enabled(form, f) for f in form.iter_fields_recursive())
 
+    @staticmethod
+    def _audit_config(form: FormSchema) -> AuditTrailConfig:
+        """Return the form's audit config, or the ``summary`` default when absent (FEAT-732)."""
+        return form.audit_trail or AuditTrailConfig()
+
+    def _new_collector(self, form: FormSchema, *, locale: str) -> ValidationTraceCollector | None:
+        """Build a collector, or ``None`` when detail is OFF — so an audit-off form pays nothing."""
+        config = self._audit_config(form)
+        if config.detail is AuditDetail.OFF:
+            return None
+        return ValidationTraceCollector(detail=config.detail, locale=locale)
+
+    def _capped_trace(self, trace: ValidationTrace, max_bytes: int) -> dict[str, Any]:
+        """Cap ``trace``; a cap too small for even the header degrades to a minimal header, never a failed submit."""
+        try:
+            return cap_trace(trace, max_bytes=max_bytes)
+        except ValueError:
+            self.logger.warning(
+                "audit trace for form %s does not fit max_bytes=%d; storing a minimal header", trace.form_id, max_bytes
+            )
+            minimal = trace.model_copy(
+                update={
+                    "form_checks": [],
+                    "fields": [],
+                    "truncated": True,
+                    "omitted_fields": len(trace.fields),
+                    "omitted_checks": sum(len(f.checks_ran) for f in trace.fields),
+                }
+            )
+            return minimal.model_dump(mode="json")
+
     def gate_for(
         self, form: FormSchema, report: PlausibilityReport | None, *, ack: bool = False
     ) -> ImplausibleSubmission | None:
@@ -282,7 +315,12 @@ class SubmissionPipeline:
                 data = dict(resolution.payload)
 
             result = await self.validator.validate(
-                form, data, locale=locale, auth_context=auth_context, visit_context=visit_context
+                form,
+                data,
+                locale=locale,
+                auth_context=auth_context,
+                visit_context=visit_context,
+                trace=self._new_collector(form, locale=locale),
             )
             if not result.is_valid:
                 await _on_error(ValueError(f"Validation failed: {result.errors}"), "validation")
@@ -341,6 +379,9 @@ class SubmissionPipeline:
 
             stored_data = self.attach_verdicts(result.sanitized_data, plausibility)
             ctx = dict(context or {})
+            # FEAT-732 — capped BEFORE the merge, so llm_validation is never what gets truncated.
+            if isinstance(result.trace, ValidationTrace):
+                ctx["validation"] = self._capped_trace(result.trace, self._audit_config(form).effective_max_bytes)
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
                 review_policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"

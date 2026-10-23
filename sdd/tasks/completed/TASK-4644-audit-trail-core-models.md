@@ -425,10 +425,8 @@ def test_audit_trail_independent_of_llm_validation():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid f893aa848d754e2cbeedc3886933268f), duration 151s
+**Date**: 2026-10-23
+**Notes**: Audit-trail core models + FormSchema.audit_trail + exports + unit tests. YAML extractor intentionally untouched (follow-up per task scope). Merge-tier validation green (472 passed, 6 skipped). Orchestrator diff review: no fixes needed; review recorded via coder_record_review. Closed with close_task.sh because the engine exposes no durable review-evidence ref for finalize_task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
