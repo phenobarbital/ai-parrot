@@ -28,9 +28,19 @@ from parrot.knowledge.wiki.structural.service import StructuralService
 # ``polyglot_repo``/``force_no_astgrep`` come from
 # tests/knowledge/wiki/languages/conftest.py — pytest auto-discovers
 # fixtures from any conftest.py in a parent directory of the test file,
-# and languages/ is a sibling directory, not an ancestor, so it is
-# imported explicitly here as a plugin rather than relying on discovery.
-pytest_plugins = ["tests.knowledge.wiki.languages.conftest"]
+# and languages/ is a sibling directory, not an ancestor, so they are
+# imported by name here rather than relying on discovery.
+#
+# A ``pytest_plugins = ["tests.knowledge.wiki.languages.conftest"]`` entry
+# cannot do this job under the root pytest.ini's ``--import-mode=importlib``
+# + ``consider_namespace_packages`` identity config (FEAT-720): whenever
+# languages/ is collected in the same run, pytest has already registered
+# that conftest under its file path, and ``pytest_plugins`` re-registering
+# the very same module object under a dotted name makes pluggy raise
+# ``ValueError: Plugin already registered under a different name``. A plain
+# relative import binds the fixtures without a second registration — the
+# same cross-tree fixture-sharing shape FEAT-720 adopted everywhere else.
+from .languages.conftest import force_no_astgrep, polyglot_repo  # noqa: F401
 
 
 def _open(root: Path, name: str) -> tuple[BaseWikiStore, SourceCollectionManager]:
