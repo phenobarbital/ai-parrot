@@ -4,6 +4,7 @@ Every ``packages/<dist>/tests`` is literally named ``tests``. With pytest's defa
 collide with ``ImportPathMismatchError`` before any test runs. The fix is configuration in the live ``pytest.ini`` (not
 ``pyproject.toml``, which pytest ignores while ``pytest.ini`` exists): importlib mode plus ``consider_namespace_packages``.
 """
+
 from __future__ import annotations
 
 import configparser
@@ -40,12 +41,20 @@ def test_two_package_test_trees_collect_together() -> None:
     assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
     result = subprocess.run(
         [
-            sys.executable, "-m", "pytest",
+            sys.executable,
+            "-m",
+            "pytest",
             "packages/ai-parrot-embeddings/tests",
             "packages/parrot-formdesigner/tests",
-            "--collect-only", "-q", "-p", "no:randomly",
+            "--collect-only",
+            "-q",
+            "-p",
+            "no:randomly",
         ],
-        cwd=REPO_ROOT, capture_output=True, text=True, timeout=_COLLECT_TIMEOUT_S,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=_COLLECT_TIMEOUT_S,
     )
     combined = result.stdout + result.stderr
     for needle in ("ImportPathMismatchError", "already registered", "import file mismatch"):
