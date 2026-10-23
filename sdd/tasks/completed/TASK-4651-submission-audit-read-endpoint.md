@@ -417,10 +417,8 @@ def test_audit_url_is_not_a_public_form_glob():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 1 (uid ccf6beae568e4182b013a04a76e8e12a), duration 283s
+**Date**: 2026-10-23
+**Notes**: READ_FORM_AUDIT RBAC gate, _rbac_require, get_submission_audit endpoint and route. Orchestrator fixed an F821 (RBACScope string annotation) via TYPE_CHECKING import in 9d5cdc5c3. Merge-tier validation green. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: the 501 response for sink-persisted forms is an addition to the spec's response set.
+**Deviations from spec**: none

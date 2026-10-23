@@ -150,7 +150,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,9 @@
       "parallelism_notes": "Imports ValidationTraceCollector and schema_fingerprint from TASK-4647 (services/validation_trace.py); CheckId/ValidationTrace from TASK-4644 arrive transitively.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4648-validator-trace-plumbing-and-form-level.md"
+      "completed_at": "2026-10-23T02:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4648-validator-trace-plumbing-and-form-level.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4649",
@@ -210,7 +211,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -220,8 +221,9 @@
       "parallelism_notes": "File overlap only: both modify api/handlers.py, where TASK-4646 rewrites three wire dumps; no symbol from it is used.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4651-submission-audit-read-endpoint.md"
+      "completed_at": "2026-10-23T02:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4651-submission-audit-read-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4652",

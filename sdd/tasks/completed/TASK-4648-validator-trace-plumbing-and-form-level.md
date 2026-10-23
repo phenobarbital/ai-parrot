@@ -369,10 +369,8 @@ async def test_validate_field_signature_unchanged(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid b2728229f8d645a39c480150a80fcb5b), duration 215s
+**Date**: 2026-10-23
+**Notes**: FormValidator.validate/validate_field accept an optional trace collector; ValidationResult.trace; form-level checks recorded. Merge-tier validation green. Closed with close_task.sh (engine exposes no durable review-evidence ref for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: on form-level early returns the trace carries `fields=[]` (see Scope).
+**Deviations from spec**: none
