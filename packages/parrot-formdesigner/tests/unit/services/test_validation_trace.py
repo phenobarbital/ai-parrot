@@ -241,9 +241,7 @@ class TestCap:
                 CheckId.FIELD_ASYNC_VALIDATOR,
             ):
                 outcome = (
-                    CheckOutcome.FAIL
-                    if index == 199 and check is CheckId.CONSTRAINT_PATTERN
-                    else CheckOutcome.PASS
+                    CheckOutcome.FAIL if index == 199 and check is CheckId.CONSTRAINT_PATTERN else CheckOutcome.PASS
                 )
                 collector.record(
                     field_id,
