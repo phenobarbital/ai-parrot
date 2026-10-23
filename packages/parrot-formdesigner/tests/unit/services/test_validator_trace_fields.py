@@ -183,7 +183,10 @@ async def test_no_value_leaks_into_bounds() -> None:
     _, trace = await _trace(field, secret)
     entry = next(item for item in trace.fields if item.field_id == "safe")
     evidence = " ".join(
-        part for record in entry.records for part in (record.bound, record.skip_reason.value if record.skip_reason else None) if part
+        part
+        for record in entry.records
+        for part in (record.bound, record.skip_reason.value if record.skip_reason else None)
+        if part
     )
 
     assert secret not in evidence
