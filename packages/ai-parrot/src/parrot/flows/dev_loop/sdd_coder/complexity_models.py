@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MetricEvidence(BaseModel):
@@ -259,7 +259,10 @@ class ComplexityAssessment(BaseModel):
         assessment_id: SHA-256 of canonical JSON representation.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    #: `frozen=True` is the immutability itself: no field can be rebound after
+    #: construction, so a later added field is protected without remembering to
+    #: extend a defensive validator. Derive a changed copy with `model_copy(update=...)`.
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
     policy_version: str
@@ -271,14 +274,18 @@ class ComplexityAssessment(BaseModel):
     evidence: ComplexityEvidence
     assessment_id: str
 
-    @model_validator(mode="after")
-    def _freeze_evidence(self) -> "ComplexityAssessment":
-        """Ensure evidence is owned/copied so caller mutations cannot change assessment."""
-        # Create a deep copy by re-serializing and parsing
+    @field_validator("evidence")
+    @classmethod
+    def _own_evidence(cls, value: ComplexityEvidence) -> ComplexityEvidence:
+        """Own a deep copy of the evidence so caller mutations cannot change the assessment.
 
-        evidence_json = self.evidence.model_dump_json()
-        self.evidence = ComplexityEvidence.model_validate_json(evidence_json)
-        return self
+        `frozen=True` stops the field being rebound, but `ComplexityEvidence`
+        holds mutable dicts; the caller keeps a reference to the instance it
+        passed in, so the snapshot has to be a copy. Runs at construction time
+        (returning the value) rather than assigning to `self`, which a frozen
+        model forbids.
+        """
+        return ComplexityEvidence.model_validate_json(value.model_dump_json())
 
 
 COMPLEXITY_ERROR_CODES: frozenset[str] = frozenset(
