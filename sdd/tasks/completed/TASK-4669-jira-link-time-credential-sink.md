@@ -371,6 +371,13 @@ id was checked at all three call sites before writing the fallback:
 a first-ever Slack/Teams link therefore stands and is documented, not closed:
 it needs those flows to carry a Navigator id (`issue:187ce3fe3b93`).
 
+**Superseded in part, same day**: FEAT-729 / TASK-4667 merged to `dev` while
+this feature was in flight and now sets `extra_state["nav_user_id"]` in the MS
+Teams Jira command for an authenticated user. The sink's step-1 resolution
+therefore already covers Teams — no code change needed — and the remaining
+gap is a first-ever **Slack** link. `docs/auth/jira-credential-ownership.md`
+carries the corrected per-channel table.
+
 **Deviation**: none from the blueprint. The task's `_persist_to_sink` helper
 idea was not used — both call sites keep their own inline block, matching
 TASK-4668's shipped shape, so the two paths read identically.

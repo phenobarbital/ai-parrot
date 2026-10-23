@@ -59,19 +59,29 @@ effect of this feature.
 
 ## Known gap
 
-A **first-ever** Jira link from Slack or MS Teams still writes no durable copy.
-Those flows do not carry a Navigator user id in the OAuth state — Slack sends
-`team_id` / `slack_user_id`, MS Teams sends the AAD object id — so there is no
-owner to attach the credential to, and the sink logs a warning and skips.
+The sink can only write the owner for a user it can identify. It resolves, in
+order: `nav_user_id` from the OAuth state, then
+`find_user_by_provider_account("jira", account_id)` for a **re-link** of an
+account that already owns a row. When neither resolves it logs a warning and
+skips — correctly, because there is no owner to attach the credential to.
 
-A *re-link* of an account that already owns an identity row does work: the sink
-falls back to `find_user_by_provider_account("jira", account_id)`.
+Per channel, as of 2026-10-23:
 
-Closing the gap means carrying a Navigator user id into those channels'
-authorize state. That is tracked as `issue:187ce3fe3b93`. Do **not** close it by
-inventing an id at the callback: a composite `team:user` string
-(`issue:a671f989e8e7`) and an AAD GUID (`issue:187ce3fe3b93`) have each already
-been written into a `bigint` column here.
+| Channel | Carries `nav_user_id` in the OAuth state? |
+|---|---|
+| Telegram | **yes** — the combined login sets it (`post_auth_jira.py`) |
+| MS Teams | **yes** for an authenticated user, since FEAT-729 / TASK-4667 (`msteams/commands/jira_commands.py`) |
+| Slack | **no** — it sends `team_id` / `slack_user_id` (`slack/commands/jira_commands.py`) |
+
+So the remaining gap is a **first-ever Slack link**, plus a Teams link by a user
+the resolver cannot authenticate. Closing it means carrying a Navigator user id
+into the Slack authorize state, the same way TASK-4667 did for Teams.
+
+Do **not** close it by inventing an id at the callback. A composite
+`team:user` string (`issue:a671f989e8e7`) and an AAD GUID
+(`issue:187ce3fe3b93`) have each already been written into a `bigint` column
+here; the Slack callback now explicitly skips the write instead
+(`slack/oauth_callback.py`, TASK-4666).
 
 ## History
 
