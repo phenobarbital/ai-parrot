@@ -108,7 +108,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -118,8 +118,9 @@
       "parallelism_notes": "Needs PlausibilityReport.resolved_model/provider/usage and the typing.Any import from TASK-4645 (core/llm_validation.py); both also modify tests/formdesigner/test_http_plausibility.py.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4646-plausibility-audit-fields-off-the-wire.md"
+      "completed_at": "2026-10-23T02:14:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4646-plausibility-audit-fields-off-the-wire.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4647",
@@ -128,7 +129,7 @@
       "feature_id": "FEAT-732",
       "feature": "formdesigner-validation-audit-trail",
       "spec": "sdd/specs/formdesigner-validation-audit-trail.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -138,8 +139,9 @@
       "parallelism_notes": "Imports AuditDetail, CheckId, CheckRecord, FieldTrace, SkipReason and ValidationTrace from TASK-4644 (core/audit_trail.py).",
       "assigned_to": null,
       "started_at": "2026-10-23T02:01:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4647-validation-trace-collector.md"
+      "completed_at": "2026-10-23T02:14:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4647-validation-trace-collector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4648",
