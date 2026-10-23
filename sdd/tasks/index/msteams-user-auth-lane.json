@@ -105,7 +105,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -115,8 +115,9 @@
       "parallelism_notes": "Imports MSTeamsAuthStrategy from TASK-4661 (msteams/auth.py) and calls ensure_authenticated / send_signin_card / sign_out; creates its own module so it shares no file.",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4662-msteams-auth-commands.md"
+      "completed_at": "2026-10-23T02:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4662-msteams-auth-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4663",
