@@ -38,6 +38,14 @@ imports alone.
 `__init__.py`; the regression test (TASK-4595); changing any assertion, fixture
 behaviour, parameter or skip.
 
+
+> **Amendment A (spec rev 0.2)** — measured in the (a′) state (TASK-4591 applied, importlib mode), standalone
+> per-root `--collect-only`: `ai-parrot-integrations` collects clean (2,458 items, same as baseline); `ai-parrot-tools` fails on exactly 2 files — `business_automation/test_fixture_site_e2e.py` and `scraping/test_fixture_site_integration.py` (`No module named 'tests.business_automation'` / `'tests.scraping'`). The other listed class-(i)/(v) sites still resolve only by luck of import order (pytest synthesises a parent `tests` stub) and fail in a multi-tree session, so they are repaired too.
+> Class (ii)/(iii)/(vi) work formerly attributed to TASK-4590 §3 is **moot** unless named in the table below:
+> TASK-4591 now removes/adds the nested `__init__.py` files that caused it. Repairs may change only an import
+> statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
+> Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
+
 ---
 
 ## Files to Create / Modify

@@ -32,17 +32,25 @@ This is also the task that closes the feature's headline invariant: once
 ## Scope
 
 - Repair the 4 class-(i) sites in `packages/parrot-formdesigner/tests`.
-- Repair every class-(i)/(ii)/(iii) site TASK-4590 §3 attributes to
-  `ai-parrot-server`, `ai-parrot-embeddings` and `ai-parrot-loaders`.
-- Resolve breakage class (vi): stop
-  `packages/ai-parrot-server/tests/mcp/__init__.py` shadowing the real `mcp`
-  package.
+- Repair the one class-(x) site in `packages/parrot-formdesigner/tests`: `unit/test_build_snippet_bundles.py`
+  imports `scripts.build_snippet_bundles`, which used to resolve through prepend mode; give it an explicit
+  owning-package path in `packages/parrot-formdesigner/tests/conftest.py`.
+- `ai-parrot-server`, `ai-parrot-embeddings`, `ai-parrot-loaders`: nothing to repair (verify and record). Class (vi)
+  (`server/tests/mcp/__init__.py` shadowing `mcp`) is **resolved by TASK-4591**, which deletes that file.
 - Confirm AC1's pair collect now exits 0.
 
 **NOT in scope**: `ai-parrot`, `ai-parrot-integrations`, `ai-parrot-tools`
 (TASK-4592/4593); restoring a top-level `__init__.py`; the regression test
 (TASK-4595); **any `parrot-formdesigner` test failure** — that package is 40
 tests red on `dev` for reasons FEAT-618 owns (AC7).
+
+
+> **Amendment A (spec rev 0.2)** — measured in the (a′) state (TASK-4591 applied, importlib mode), standalone
+> per-root `--collect-only`: `parrot-formdesigner` fails on exactly 1 file (`unit/test_build_snippet_bundles.py`, `No module named 'scripts.build_snippet_bundles'`); `ai-parrot-embeddings` and `ai-parrot-loaders` collect clean at their baseline counts (214, 421); `ai-parrot-server` collects 3,647 items with only 2 pre-existing `fakeredis` errors (its baseline collect stopped early on a shadowed `mcp`, so its count rises — state it in the AC2 matrix, do not treat it as a defect). The 4 class-(i) formdesigner sites still resolve only by import-order luck and are repaired.
+> Class (ii)/(iii)/(vi) work formerly attributed to TASK-4590 §3 is **moot** unless named in the table below:
+> TASK-4591 now removes/adds the nested `__init__.py` files that caused it. Repairs may change only an import
+> statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
+> Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
 
 ---
 
@@ -54,11 +62,10 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 | `packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py` | MODIFY | class (i) import |
 | `packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py` | MODIFY | class (i) import |
 | `packages/parrot-formdesigner/tests/unit/test_org_graph_service.py` | MODIFY | class (i) import |
-| `packages/ai-parrot-server/tests/mcp/__init__.py` | MODIFY | class (vi) — stop shadowing the real `mcp` |
+| `packages/parrot-formdesigner/tests/conftest.py` | MODIFY | class (x): explicit `sys.path` entry for the package's own `scripts/` |
 
-Any class-(i)/(ii)/(iii) file TASK-4590 §3 attributes to `ai-parrot-server`,
-`ai-parrot-embeddings` or `ai-parrot-loaders` is added to this table by the
-implementing agent **before** editing, so the Complexity Contract stays accurate.
+`ai-parrot-server`, `ai-parrot-embeddings` and `ai-parrot-loaders` have no failing site: record their
+standalone collect (server 3,647 items with only the 2 pre-existing `fakeredis` errors; embeddings 214; loaders 421).
 
 ---
 
@@ -123,7 +130,7 @@ acceptance criterion below checks the resolved module's file path explicitly.
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_org_graph_service.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-server/tests/mcp/__init__.py", "action": "MODIFY"}
+    {"path": "packages/parrot-formdesigner/tests/conftest.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
