@@ -83,7 +83,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -94,8 +94,9 @@
       "parallelism_notes": "Appends to the same file TASK-4659 creates (msteams/auth.py) and imports MSTeamsSessionStore/user_key from it; calls TokenExchangeClient.exchange from TASK-4660 (parrot/auth/token_exchange.py).",
       "assigned_to": null,
       "started_at": "2026-10-23T02:11:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4661-msteams-auth-strategy.md"
+      "completed_at": "2026-10-23T02:26:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4661-msteams-auth-strategy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4662",
