@@ -179,7 +179,9 @@ class TestSsoPath:
 
         await strategy.exchange_sso_token(turn_context, request)
 
-        fake_adapter.exchange_token.assert_awaited_once_with(turn_context, "teams-oauth", user_key(turn_context), request)
+        fake_adapter.exchange_token.assert_awaited_once_with(
+            turn_context, "teams-oauth", user_key(turn_context), request
+        )
 
     @pytest.mark.asyncio
     async def test_invoke_uses_sso_token_when_no_cached_token(
