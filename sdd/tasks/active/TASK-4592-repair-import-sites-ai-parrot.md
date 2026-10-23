@@ -43,12 +43,12 @@ failure TASK-4590 §5 attributes to a **pre-existing** cause; changing any
 assertion, fixture behaviour, parameter or skip.
 
 
-> **Amendment A (spec rev 0.2)** — measured in the (a′) state (TASK-4591 applied, importlib mode), standalone
-> per-root `--collect-only`: `ai-parrot` fails to collect exactly these 5 files — `from ..tools._host_probe import host_plugins` (2) and `from ...bots.flows.plan._delegate_fakes import …` (3) — because `..`/`...` now climb past the first-level package. They are listed below as class (x). Repair by importing the helper through a conftest-provided fixture or a file-location load inside the nearest `conftest.py`; **never** by putting the tests directory on `sys.path` (it would re-shadow `tools`, `mcp`, …).
-> Class (ii)/(iii)/(vi) work formerly attributed to TASK-4590 §3 is **moot** unless named in the table below:
-> TASK-4591 now removes/adds the nested `__init__.py` files that caused it. Repairs may change only an import
-> statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
-> Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
+> **Amendment B (spec rev 0.3)** — read first. (1) The live pytest config is the tracked root **`pytest.ini`**; the pytest table in
+> `pyproject.toml` is dead config. (2) The remedy is `--import-mode=importlib` + `consider_namespace_packages = true` in `pytest.ini`
+> (done in TASK-4591); **no `__init__.py` is deleted or added anywhere** — never touch one. Because every `__init__.py` stays,
+> relative imports (`from .x`, `from ..x`) keep working: **the preferred repair for a `from tests.<x> import …` is the equivalent
+> relative import**, or a conftest-provided fixture. Evidence: `sdd/state/FEAT-720/spike-namespace-packages.md`. Repairs may change only
+> an import statement, a `conftest.py`, or a dotted string target. `ai-parrot` collects clean standalone at its baseline (25,328) in this state; its `from tests.<x>` sites fail in mixed sessions, which is what this task fixes.
 
 ---
 
@@ -80,11 +80,6 @@ assertion, fixture behaviour, parameter or skip.
 | `packages/ai-parrot/tests/tools/test_obsidian_okf_tools.py` | MODIFY | class (i) import |
 | `packages/ai-parrot/tests/tools/test_obsidian_toolkit.py` | MODIFY | class (i) import |
 | `packages/ai-parrot/tests/unit/clients/test_factory_discovery.py` | MODIFY | class (i) import |
-| `packages/ai-parrot/tests/interfaces/test_apply_tooling_server_managed.py` | MODIFY | class (x): relative import reached through the removed `tests` root |
-| `packages/ai-parrot/tests/interfaces/test_resolve_spec_class_resolver.py` | MODIFY | class (x): relative import reached through the removed `tests` root |
-| `packages/ai-parrot/tests/tools/execution_plan/test_delegate_allowlist_repair.py` | MODIFY | class (x): relative import reached through the removed `tests` root |
-| `packages/ai-parrot/tests/tools/execution_plan/test_delegate_integration.py` | MODIFY | class (x): relative import reached through the removed `tests` root |
-| `packages/ai-parrot/tests/tools/execution_plan/test_delegate_wiring.py` | MODIFY | class (x): relative import reached through the removed `tests` root |
 
 Class-(v) files (6, located by the command in the contract below) and any
 class-(ii)/(iii) file named by TASK-4590 §3 are added to this table by the
@@ -167,12 +162,7 @@ outside every `packages/*/tests` glob this feature touches.
     {"path": "packages/ai-parrot/tests/outputs/a2ui/runtime/test_dispatch.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/tools/test_obsidian_okf_tools.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/tools/test_obsidian_toolkit.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/unit/clients/test_factory_discovery.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/interfaces/test_apply_tooling_server_managed.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/interfaces/test_resolve_spec_class_resolver.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/tools/execution_plan/test_delegate_allowlist_repair.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/tools/execution_plan/test_delegate_integration.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/tools/execution_plan/test_delegate_wiring.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot/tests/unit/clients/test_factory_discovery.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
@@ -318,12 +308,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: sdd-worker (seat gpt-5.6-sol attempt 2; attempt 1 gpt-5.6-terra delivered nothing)
-**Date**: 2026-10-23
-**Notes**: 29 files committed by the engine + 2 class-(v) files (`integration/test_structured_artifact_envelope_e2e.py`,
-`tools/working_memory/task_memory/test_postgres_artifacts.py`) that the task's table omitted but its Scope covers; the engine flagged them
-`fidelity_violation` (left uncommitted), the worker reviewed and committed them, then merged the branch by hand.
-Evidence: `packages/ai-parrot/tests` standalone collect = **25,328 items, 0 errors** (baseline 25,328 — AC2 holds for this distribution);
-the 4 task validation commands: 56 passed. Every edit is an import statement or dotted target.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: two files outside the task's table (see above), in scope per the Scope text.
+**Completed by**: <session or agent ID>
+**Date**: YYYY-MM-DD
+**Notes**: What was implemented, any deviations from scope, issues encountered.
+
+**Deviations from spec**: none | describe if any

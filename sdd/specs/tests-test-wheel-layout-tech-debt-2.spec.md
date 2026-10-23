@@ -10,7 +10,7 @@ tags: [pytest, conftest, test-collection, import-mode, tech-debt]
 **Feature ID**: FEAT-720
 **Date**: 2026-10-22
 **Author**: Jesus Lara
-**Status**: approved (rev 0.2 — Amendment A, 2026-10-23)
+**Status**: approved (rev 0.3 — Amendment B, 2026-10-23)
 **Target version**: 1.3.0
 
 > **Slug note.** The slug `tests-test-wheel-layout-tech-debt-2` is inherited
@@ -117,94 +117,33 @@ M4 ── regression test + CI guard ────────────→ a n
 
 M1 gates everything. M2 and M3 **land in one commit** — see *Landing* below.
 
-## 2a. Amendment A (rev 0.2, 2026-10-23) — classes (vii)–(xi)
+## 2a. Amendment B (rev 0.3, 2026-10-23) — the remedy is `pytest.ini`, not file deletion
 
-M1 ran and returned `STRATEGY (a) REFUTED` (`sdd/state/FEAT-720/spike-collect.md`): strategy (a) alone leaves
-129 new collection errors, 89 of them a class this spec did not list. A second measurement
-(`sdd/state/FEAT-720/spike-identity-fixpoint.md`, verdict **`STRATEGY (a′) CONFIRMED`**) found the cause and a remedy that
-needs **no import-mode change beyond (a)** and no new option (`consider_namespace_packages` stays unset).
+**Supersedes every statement below that says top-level or nested `packages/*/tests/__init__.py` files are deleted, and
+the "25 deletions / 242 nested survive" numbers.** Two measured facts (`sdd/state/FEAT-720/spike-namespace-packages.md`,
+verdict **`STRATEGY (a″) CONFIRMED`**; M1's first verdict `STRATEGY (a) REFUTED` is in `spike-collect.md`):
 
-| | Class | Measured | Repair |
-|---|---|---|---|
-| (vii) | in-tree gap: a directory without `__init__.py` whose children are packages, so two sibling trees derive the same short name | 1 gap matters (`ai-parrot/tests/unit`) | add that one `__init__.py` |
-| (viii) | cross-tree duplicate derived module/package name (`unit` ×20, `handlers`, `integration`, `voice`, …) | 16 names | remove the colliding directory's `__init__.py` in every tree but `ai-parrot` |
-| (ix) | a first-level test package shadows an importable name (installed: `mcp`, `outputs`, `docker`, `google`, `pulumi`, `querysource`; repo-root dirs on `sys.path`: `benchmarks`, `agents`, `examples`, `helpers`) — generalises (vi) | 10 names | remove that `__init__.py` |
-| (x) | cross-sibling relative imports that reached through the removed `tests` root (`from ..tools._host_probe`), and `scripts.*` imports that relied on prepend mode | 5 (`ai-parrot`) + 1 (`parrot-formdesigner`) per-root sites | rewrite the import (see M3) |
-| (xi) | **test-level pollution**: a test module replaces `sys.modules[...]` (`aiohttp`, `parrot._imports`) at import, visible only when many trees share one session; plus pre-existing missing deps (`fakeredis`) | ~31 errors in a 28-way run | **out of scope** — ledger issue; AC1 is the *pair* gate |
+1. **The live pytest config is the tracked root `pytest.ini`, not `pyproject.toml`.** pytest gives `pytest.ini` precedence, so
+   `[tool.pytest.ini_options]` in `pyproject.toml` (`:247`) is dead config. §6 "pytest configuration exists only in the root
+   `pyproject.toml:247`" is wrong.
+2. **`--import-mode=importlib` plus `consider_namespace_packages = true`, in `pytest.ini`, with every `__init__.py` kept, gives every
+   test module a path-derived identity.** The reported pair collects with 0 identity collisions; all 28 roots in one session collect
+   42,978 items with 0 `Plugin already registered` / `ImportPathMismatchError` / `import file mismatch`; every root collects
+   standalone at its baseline count. Importlib mode *alone* still fails (the original `tests.conftest` error) — both lines are required.
 
-The fixpoint is reproducible: `python -I sdd/state/FEAT-720/identity_fixpoint.py` (output `identity-plan.json`).
-**M2 therefore changes 77 files, not 25**: delete the 25 top-level `__init__.py` + **51** nested ones listed below,
-and add **1** (`packages/ai-parrot/tests/unit/__init__.py`). Nested `__init__.py` count: 242 → **192**.
-
-```
-Nested deletions (51):
-  packages/ai-parrot-client-amazon/tests/unit/__init__.py
-  packages/ai-parrot-client-anthropic/tests/unit/__init__.py
-  packages/ai-parrot-client-gemma4/tests/unit/__init__.py
-  packages/ai-parrot-client-google/tests/unit/__init__.py
-  packages/ai-parrot-client-grok/tests/unit/__init__.py
-  packages/ai-parrot-client-groq/tests/unit/__init__.py
-  packages/ai-parrot-client-hf/tests/unit/__init__.py
-  packages/ai-parrot-client-jev/tests/unit/__init__.py
-  packages/ai-parrot-client-local/tests/unit/__init__.py
-  packages/ai-parrot-client-moonshot/tests/unit/__init__.py
-  packages/ai-parrot-client-nvidia/tests/unit/__init__.py
-  packages/ai-parrot-client-openai/tests/unit/__init__.py
-  packages/ai-parrot-client-openai/tests/unit/openai/__init__.py
-  packages/ai-parrot-client-openrouter/tests/unit/__init__.py
-  packages/ai-parrot-client-vllm/tests/unit/__init__.py
-  packages/ai-parrot-client-zai/tests/unit/__init__.py
-  packages/ai-parrot-integrations/tests/integrations/__init__.py
-  packages/ai-parrot-integrations/tests/integrations/core/__init__.py
-  packages/ai-parrot-integrations/tests/integrations/slack/__init__.py
-  packages/ai-parrot-integrations/tests/msteams/__init__.py
-  packages/ai-parrot-integrations/tests/telegram/__init__.py
-  packages/ai-parrot-integrations/tests/unit/__init__.py
-  packages/ai-parrot-integrations/tests/voice/__init__.py
-  packages/ai-parrot-server/tests/handlers/__init__.py
-  packages/ai-parrot-server/tests/integration/__init__.py
-  packages/ai-parrot-server/tests/manager/__init__.py
-  packages/ai-parrot-server/tests/mcp/__init__.py
-  packages/ai-parrot-server/tests/ui/__init__.py
-  packages/ai-parrot-server/tests/unit/__init__.py
-  packages/ai-parrot-tools/tests/docker/__init__.py
-  packages/ai-parrot-tools/tests/google/__init__.py
-  packages/ai-parrot-tools/tests/pulumi/__init__.py
-  packages/ai-parrot-tools/tests/querysource/__init__.py
-  packages/ai-parrot-tools/tests/scraping/__init__.py
-  packages/ai-parrot-tools/tests/security/__init__.py
-  packages/ai-parrot-tools/tests/unit/__init__.py
-  packages/ai-parrot-visualizations/tests/formats/__init__.py
-  packages/ai-parrot-visualizations/tests/outputs/__init__.py
-  packages/ai-parrot/tests/agents/__init__.py
-  packages/ai-parrot/tests/benchmarks/__init__.py
-  packages/ai-parrot/tests/examples/__init__.py
-  packages/ai-parrot/tests/helpers/__init__.py
-  packages/ai-parrot/tests/mcp/__init__.py
-  packages/ai-parrot/tests/outputs/__init__.py
-  packages/ai-parrot/tests/unit/events/__init__.py
-  packages/ai-parrot/tests/unit/outputs/__init__.py
-  packages/parrot-formdesigner/tests/fixtures/__init__.py
-  packages/parrot-formdesigner/tests/integration/__init__.py
-  packages/parrot-formdesigner/tests/unit/__init__.py
-  packages/parrot-formdesigner/tests/unit/core/__init__.py
-  packages/parrot-formdesigner/tests/unit/services/__init__.py
-```
-
-Real-pytest validation of (a′), importlib mode: all 28 roots in **one** session collect 43,037 items with **0**
-`Plugin already registered` / `ImportPathMismatchError` (strategy (a) alone: many). **Correction (2026-10-23, after TASK-4591/4592 merged, real `addopts`)**: the first per-root run reported only 8 residual files and
-was wrong. Standalone per-root, the removed nested `__init__.py` files leave ~48 files with class-(ii) relative imports:
-`ai-parrot-tools` 16, `ai-parrot-server` 17, `ai-parrot-integrations` 4, `parrot-formdesigner` 7, `ai-parrot-embeddings` 1,
-`ai-parrot-loaders` 1 (+2 pre-existing `fakeredis` errors in server, out of scope); `ai-parrot` collects clean at its
-baseline 25,328 once TASK-4592's sites are repaired; clients/visualizations/pipelines/advisors/navrules are clean. The
-repair for class (ii) is a file-location load of the sibling (M3). Class (xi) residuals are not repaired.
+Consequences: **M2 is two lines in `pytest.ini`** (no deletion, no landing-window problem, nothing for ~60 worktrees to rebase
+through). **M3 is unchanged in kind** — the class (i)/(iii)/(v)/(vi) sites — measured now at: `ai-parrot-tools` 2 files and
+`parrot-formdesigner` 5 files fail even standalone; the other `from tests.<x>` sites fail only in mixed sessions and are repaired too.
+Class (ii)/(iv)/(vii)–(x) do not arise (nothing is removed). **M4** guards the config, the pair collect, and the absence of `tests.<x>` imports.
+Class (xi) — test modules that replace `sys.modules[...]` at import, visible only when many trees share a session — is out of scope (ledger).
+**AC4 becomes: all 267 `__init__.py` under `packages/*/tests` are unchanged.**
 
 ### The two strategies, and why (b) is already rejected
 
 | | Strategy | Verdict |
 |---|---|---|
-| **(a)** | Delete the 25 top-level `packages/*/tests/__init__.py`, set `--import-mode=importlib` in the root `addopts` | **Refuted alone** by M1 |
-| **(a′)** | (a) **plus** the identity fixpoint of §2a (add 1, remove 51 nested `__init__.py`) | **Selected — CONFIRMED** (Amendment A) |
+| **(a)** | Delete the 25 top-level `packages/*/tests/__init__.py`, set `--import-mode=importlib` in the root `addopts` | **Refuted** by M1 (leaves 129 errors) |
+| **(a″)** | `--import-mode=importlib` + `consider_namespace_packages = true` in **`pytest.ini`**; no `__init__.py` change | **Selected — CONFIRMED** (Amendment B) |
 | **(b)** | Rename each `packages/<dist>/tests` to a unique importable name | **Rejected on measurement** |
 
 **(b) is rejected** because the directory name is load-bearing far outside the
@@ -274,8 +213,7 @@ it**. There are ~60 live worktrees at spec time. Two consequences, both binding:
 
 ## 3. Module Breakdown
 
-> **Amendment A**: M2 is widened to 77 files (§2a); M3's site list shrinks to the 8 residual files measured in the
-> (a′) state (plus the class-(i) sites already listed); M4 gains a third test. M2's gate is `(a′) CONFIRMED`.
+> **Amendment B**: M2 = `pytest.ini` (two lines). M3 = the class (i)/(iii)/(v)/(vi) sites. M4 = config + pair + no-`tests.<x>` guards.
 
 #### Delegation-eligible modules
 
@@ -312,10 +250,10 @@ it**. There are ~60 live worktrees at spec time. Two consequences, both binding:
 
 ### Module 2: Collection identity
 
-- **Path**: `packages/*/tests/__init__.py` (25 files), 51 nested `__init__.py` (§2a), 1 added, `pyproject.toml`
-- **Responsibility**: make every package test root, and every module under it, resolve to a distinct import
-  name (strategy (a′), §2a).
-- **Depends on**: M1 (`STRATEGY (a′) CONFIRMED` in `spike-identity-fixpoint.md`; `spike-collect.md`'s REFUTED verdict is superseded).
+- **Path**: `pytest.ini` (Amendment B; the former 25 deletions and the `pyproject.toml` edit are void)
+- **Responsibility**: make every package test root resolve to a distinct import
+  name — by configuration in `pytest.ini` (Amendment B), not by deleting files.
+- **Depends on**: M1 (`STRATEGY (a″) CONFIRMED` in `spike-namespace-packages.md`).
 - **Interface Skeleton**:
   ```toml
   # pyproject.toml  (modifies :248)   # verified: pyproject.toml:247
@@ -340,8 +278,7 @@ it**. There are ~60 live worktrees at spec time. Two consequences, both binding:
   packages/ai-parrot-client-{amazon,anthropic,gemma4,google,grok,groq,hf,jev,
                              local,meta,moonshot,nvidia,openai,openrouter,
                              vllm,zai}/tests/__init__.py          # 16 files
-  # Also deleted — the 51 nested files of §2a. Added — packages/ai-parrot/tests/unit/__init__.py.
-  # KEPT — the other 192 nested packages/*/tests/**/__init__.py.
+  # KEPT — all 242 nested packages/*/tests/**/__init__.py.
   ```
 - **Constraint**: `testpaths`, `python_files`, `python_functions`,
   `filterwarnings` and `markers` are unchanged. `--import-mode=importlib` is
@@ -369,29 +306,22 @@ it**. There are ~60 live worktrees at spec time. Two consequences, both binding:
 - **Responsibility**: assert the invariant directly, so the collision cannot
   come back through a new package's `tests/__init__.py`.
 - **Depends on**: M2.
-- **Interface Skeleton**:
+- **Interface Skeleton** (Amendment B):
   ```python
   # packages/ai-parrot/tests/test_package_test_collection.py   (new)
-  def test_no_package_test_root_declares_a_package() -> None:
-      """No packages/*/tests/__init__.py may exist.
+  def test_pytest_ini_enables_path_derived_test_identities() -> None:
+      """`pytest.ini` must set `--import-mode=importlib` in addopts and `consider_namespace_packages = true`.
 
-      Each one claims the top-level import name `tests`, so two of them in one
-      pytest session raise ImportPathMismatchError before any test runs.
+      Parses the live config file with configparser. Guards the real defect: both lines are required, and
+      pyproject.toml's pytest table is dead config (pytest.ini takes precedence).
       """
 
-  def test_two_package_test_trees_collect_together(tmp_path) -> None:
-      """`pytest <embeddings tree> <formdesigner tree> --collect-only` exits 0.
+  def test_two_package_test_trees_collect_together() -> None:
+      """`pytest <embeddings tree> <formdesigner tree> --collect-only` exits 0 in a subprocess; neither
+      "ImportPathMismatchError" nor "already registered" nor "import file mismatch" appears."""
 
-      Runs pytest in a subprocess; asserts returncode 0 and that neither
-      "ImportPathMismatchError" nor "already registered" appears in the output.
-      """
-  ```
-  ```python
-  def test_derived_test_module_names_are_unique_and_unshadowed() -> None:
-      """Pure filesystem check (no pytest, no imports of test code): derive each test module's
-      importlib-mode identity from its contiguous `__init__.py` chain; assert no name occurs in two
-      trees (or twice in one), and that no first-level test package is importable as a top-level
-      module elsewhere (installed distribution or repo-root directory)."""
+  def test_no_test_imports_the_ambiguous_tests_package() -> None:
+      """No packages/*/tests/**/*.py contains `from tests.<x>`/`import tests.<x>` — `tests` is not a unique name."""
   ```
 - **Note**: the second test shells out to pytest; it must be marked so it is
   never collected by the very session it spawns.
@@ -435,16 +365,14 @@ None. M1's artefact is evidence, not a fixture.
 ## 5. Acceptance Criteria
 
 - [ ] **AC1** `python -m pytest packages/ai-parrot-embeddings/tests packages/parrot-formdesigner/tests --collect-only -q`
-      exits 0 — no `ImportPathMismatchError`, no pluggy double-registration. And the structural invariant
-      holds for *every* pair: no derived module name occurs in two trees (M4's test asserts it).
+      exits 0 — no `ImportPathMismatchError`, no pluggy double-registration.
 - [ ] **AC2** Every one of the 28 package test roots collects standalone with
       exit 0 **and the same item count as before the change**. The before/after
       matrix is pasted in the Completion Note. A changed count is a defect, not
       a result.
 - [ ] **AC3** `python -m pytest packages/ai-parrot-embeddings/tests/test_wheel_layout.py -q` passes 15/15.
-- [ ] **AC4** Exactly 25 top-level `packages/*/tests/__init__.py` plus the 51 nested files of §2a are deleted, and
-      exactly one is added (`packages/ai-parrot/tests/unit/__init__.py`); every other nested `__init__.py`
-      survives (`find packages/*/tests -name __init__.py | wc -l` → **192**).
+- [ ] **AC4** (Amendment B) **No** `__init__.py` is deleted or added: `find packages/*/tests -name __init__.py | wc -l` → **267**,
+      and `pytest.ini` carries `addopts = --import-mode=importlib` and `consider_namespace_packages = true`.
 - [ ] **AC5** No test's assertions change. Every M3 edit is an import statement,
       a `conftest.py`, or a dotted string target — reviewable as such in the diff.
 - [ ] **AC6** No test is skipped, xfailed or deleted to make collection pass.
@@ -453,10 +381,10 @@ None. M1's artefact is evidence, not a fixture.
       before and after.
 - [ ] **AC8** M4's regression test fails if any `packages/*/tests/__init__.py`
       is reintroduced (demonstrated by adding one, observing red, removing it).
-- [ ] **AC9** `ruff check` clean on every changed file; `ruff.toml` and
+- [ ] **AC9** `ruff check` clean on every changed file; `ruff.toml`, `pyproject.toml` and
       `.github/workflows/*` are unmodified.
-- [ ] **AC10** M1's artefacts exist: `spike-collect.md` (verdict `STRATEGY (a) REFUTED`) and
-      `spike-identity-fixpoint.md` carrying an explicit `STRATEGY (a′) CONFIRMED` line.
+- [ ] **AC10** M1's artefacts exist: `spike-collect.md` (`STRATEGY (a) REFUTED`) and `spike-namespace-packages.md`
+      carrying an explicit `STRATEGY (a″) CONFIRMED` line.
 
 ---
 
@@ -528,8 +456,7 @@ $ python -m pytest packages/ai-parrot-embeddings/tests/test_wheel_layout.py -q
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
-| `pyproject.toml` | MODIFY | `    "--strict-markers",` | `pyproject.toml:250` | 1 |
-| `packages/*/tests/__init__.py` | DELETE | — (25 files, all 0 bytes) | — | 25 |
+| `pytest.ini` | MODIFY | `asyncio_mode = auto` (Amendment B: add the two settings below it) | `pytest.ini:3` | 1 |
 | `packages/ai-parrot/tests/test_package_test_collection.py` | CREATE | — | — | — |
 | ~60 import sites in 6 distributions | MODIFY | enumerated by **M1**, not guessed | `sdd/state/FEAT-720/spike-collect.md` | — |
 | `packages/ai-parrot-server/tests/mcp/__init__.py` | MODIFY/RENAME | — (class (vi); shadows the real `mcp`) | confirmed present | 1 |

@@ -39,4 +39,5 @@ replaces `sys.modules['aiohttp']`/`parrot._imports` at import time, plus pre-exi
 filed as a ledger issue, and AC1 is the pair gate, not the 28-way one.
 
 ## Verdict
-STRATEGY (a′) CONFIRMED
+SUPERSEDED by `spike-namespace-packages.md` (strategy (a″)). (a′) was measured with `-o addopts=…` because `pytest.ini`,
+not `pyproject.toml`, is the live config; a simpler remedy needs no `__init__.py` change at all.

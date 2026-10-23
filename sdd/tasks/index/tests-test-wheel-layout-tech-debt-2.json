@@ -42,7 +42,7 @@
     {
       "id": "TASK-4590",
       "slug": "spike-remeasure-strategy-a",
-      "title": "Spike — re-measure strategy (a) on current dev",
+      "title": "Spike \u2014 re-measure strategy (a) on current dev",
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
@@ -61,23 +61,22 @@
     {
       "id": "TASK-4591",
       "slug": "collection-identity",
-      "title": "Collection identity — delete the 25 test-root packages, add importlib mode",
+      "title": "Collection identity \u2014 pytest.ini: importlib mode + namespace-package identities",
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-4590"
       ],
       "parallel": false,
-      "parallelism_notes": "Needs the STRATEGY (a) CONFIRMED verdict in sdd/state/FEAT-720/spike-collect.md from TASK-4590. Exclusive: edits the root pyproject.toml (a shared manifest) and changes pytest import semantics for the entire monorepo, so no other task's test run is meaningful while it lands.",
+      "parallelism_notes": "Needs STRATEGY (a\u2033) CONFIRMED in sdd/state/FEAT-720/spike-namespace-packages.md. Exclusive: edits the live root pytest.ini, which changes import semantics for the entire monorepo.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": "2026-10-23T12:13:44+00:00",
-      "file": "sdd/tasks/completed/TASK-4591-collection-identity.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4591-collection-identity.md"
     },
     {
       "id": "TASK-4592",
@@ -86,19 +85,18 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-4591"
       ],
       "parallel": false,
-      "parallelism_notes": "Repairs the sites TASK-4591 breaks by deleting packages/ai-parrot/tests/__init__.py, and is scoped from the §3 table of TASK-4590's spike-collect.md. Exclusive: until every distribution is repaired the tree is half-converted, so a concurrent task's collection run cannot distinguish its own breakage from this one's.",
+      "parallelism_notes": "Repairs the sites TASK-4591 breaks by deleting packages/ai-parrot/tests/__init__.py, and is scoped from the \u00a73 table of TASK-4590's spike-collect.md. Exclusive: until every distribution is repaired the tree is half-converted, so a concurrent task's collection run cannot distinguish its own breakage from this one's.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": "2026-10-23T12:26:36+00:00",
-      "file": "sdd/tasks/completed/TASK-4592-repair-import-sites-ai-parrot.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4592-repair-import-sites-ai-parrot.md"
     },
     {
       "id": "TASK-4593",

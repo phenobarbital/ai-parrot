@@ -39,23 +39,12 @@ imports alone.
 behaviour, parameter or skip.
 
 
-> **Amendment A (spec rev 0.2)** — measured in the (a′) state (TASK-4591 applied, importlib mode), standalone
-> per-root `--collect-only`: `ai-parrot-integrations` collects clean (2,458 items, same as baseline); `ai-parrot-tools` fails on exactly 2 files — `business_automation/test_fixture_site_e2e.py` and `scraping/test_fixture_site_integration.py` (`No module named 'tests.business_automation'` / `'tests.scraping'`). The other listed class-(i)/(v) sites still resolve only by luck of import order (pytest synthesises a parent `tests` stub) and fail in a multi-tree session, so they are repaired too.
-> Class (ii)/(iii)/(vi) work formerly attributed to TASK-4590 §3 is **moot** unless named in the table below:
-> TASK-4591 now removes/adds the nested `__init__.py` files that caused it. Repairs may change only an import
-> statement, a `conftest.py`, or a dotted string target. Never restore or add an `__init__.py`.
-> Class (xi) `sys.modules` pollution seen only in many-trees-one-session runs is NOT this task's.
-
-
-> **Class (ii) correction (measured after TASK-4591 merged)**: `ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py` do `from .<sibling> import …` in a root-level test file; the tests root is no longer a package, so there is no parent. Repair by loading the sibling by file location (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique name) at the same place the import was — an import-statement-level change only. Do NOT add an `__init__.py` (AC4) and do NOT put the tests directory on `sys.path`.
-
-
-> **Class (ii) at scale (corrected measurement, real `addopts`, TASK-4591 + TASK-4592 merged)**: removing the 51 nested
-> `__init__.py` files left every `from .<sibling> import …` in those directories without a parent package. This is the
-> bulk of the residual work, not the handful first reported: `ai-parrot-tools` 16 files (`lsp`, `pulumi`, `querysource`, `scraping`, `security`) and `ai-parrot-integrations` 4 files (`telegram`, `voice`). Repair each by loading the sibling **by file
-> location** (`importlib.util.spec_from_file_location` + `module_from_spec`, registered in `sys.modules` under a unique,
-> distribution-prefixed name) at the place the import was. Import-level change only; never add an `__init__.py` (AC4),
-> never put the tests directory on `sys.path`, never change what a test asserts.
+> **Amendment B (spec rev 0.3)** — read first. (1) The live pytest config is the tracked root **`pytest.ini`**; the pytest table in
+> `pyproject.toml` is dead config. (2) The remedy is `--import-mode=importlib` + `consider_namespace_packages = true` in `pytest.ini`
+> (done in TASK-4591); **no `__init__.py` is deleted or added anywhere** — never touch one. Because every `__init__.py` stays,
+> relative imports (`from .x`, `from ..x`) keep working: **the preferred repair for a `from tests.<x> import …` is the equivalent
+> relative import**, or a conftest-provided fixture. Evidence: `sdd/state/FEAT-720/spike-namespace-packages.md`. Repairs may change only
+> an import statement, a `conftest.py`, or a dotted string target. `ai-parrot-tools` fails standalone on exactly 2 files (`business_automation/test_fixture_site_e2e.py`, `scraping/test_fixture_site_integration.py`).
 
 ---
 
@@ -70,27 +59,6 @@ behaviour, parameter or skip.
 | `packages/ai-parrot-tools/tests/business_automation/fixtures/broker.py` | MODIFY | class (i) import |
 | `packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py` | MODIFY | class (i) import |
 | `packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py` | MODIFY | class (i) import |
-| `packages/ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py` | MODIFY | class (ii): `from .test_export_tools_pa11 import …` has no parent package |
-| `packages/ai-parrot-tools/tests/lsp/test_models.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/pulumi/test_config.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/pulumi/test_executor.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/pulumi/test_integration.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/pulumi/test_toolkit.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/querysource/test_build_linked_python_transform.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/querysource/test_components_validate.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/querysource/test_models.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/querysource/test_multiquery_tools.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/querysource/test_registry_and_integration.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/scraping/test_executor.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/scraping/test_integration.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/scraping/test_local_fixture_site.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/scraping/test_toolkit.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/security/test_advisory_engine.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-tools/tests/security/test_soc2_advisory.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-integrations/tests/telegram/test_deeplink_resume.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_redis_registry.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-integrations/tests/voice/test_voice_demo_multibrowser.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
-| `packages/ai-parrot-integrations/tests/voice/test_voice_demo_multibrowser_live.py` | MODIFY | class (ii): relative import in a directory that lost its `__init__.py` |
 
 The remaining class-(v) files in `ai-parrot-integrations` (6 total, located by
 the command in the contract below) and any class-(ii)/(iii) file named by
@@ -171,28 +139,7 @@ collection going green here is **not** evidence this task is done.
     {"path": "packages/ai-parrot-integrations/tests/agentd/test_cli.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-tools/tests/business_automation/fixtures/broker.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-tools/tests/business_automation/test_fixture_site_e2e.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/test_exports_legacy_mode_pavfix.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/lsp/test_models.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/pulumi/test_config.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/pulumi/test_executor.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/pulumi/test_integration.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/pulumi/test_toolkit.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_build_linked_python_transform.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_components_validate.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_models.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_multiquery_tools.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_registry_and_integration.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_executor.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_integration.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_local_fixture_site.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/scraping/test_toolkit.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/security/test_advisory_engine.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/security/test_soc2_advisory.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-integrations/tests/telegram/test_deeplink_resume.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-integrations/tests/voice/test_voice_broadcast_redis_registry.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-integrations/tests/voice/test_voice_demo_multibrowser.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-integrations/tests/voice/test_voice_demo_multibrowser_live.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
