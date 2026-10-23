@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux'",
@@ -93,7 +93,7 @@ overrides = [
     { name = "opentelemetry-sdk", specifier = ">=1.39.0" },
     { name = "ortools", specifier = "==9.14.6206" },
     { name = "packaging", specifier = ">=26.2" },
-    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pillow", specifier = ">=13.0.0" },
     { name = "pyannote-audio", marker = "sys_platform == 'never'" },
     { name = "pymongo", specifier = ">=4.18.2" },
     { name = "requests", specifier = ">=2.33,<2.34" },
@@ -954,7 +954,7 @@ requires-dist = [
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
     { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
     { name = "navigator-auth", specifier = ">=0.28.3" },
-    { name = "navigator-eventbus", specifier = ">=0.2.1" },
+    { name = "navigator-eventbus", specifier = ">=0.4.0" },
     { name = "navigator-eventbus", extras = ["grpc"], marker = "extra == 'grpc'" },
     { name = "navigator-session", specifier = ">=1.0.1" },
     { name = "networkx", specifier = ">=3.0" },
@@ -1119,7 +1119,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1134,7 +1134,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1151,7 +1151,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1166,7 +1166,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1181,7 +1181,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1196,7 +1196,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1211,7 +1211,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1226,7 +1226,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1237,7 +1237,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1248,7 +1248,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1259,7 +1259,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1270,7 +1270,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1281,7 +1281,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1307,7 +1307,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1318,7 +1318,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1333,7 +1333,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1441,7 +1441,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'openai'", specifier = "==3.31.0" },
     { name = "peft", marker = "extra == 'huggingface'", specifier = ">=0.10.0" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = "==0.4.1" },
-    { name = "pillow", marker = "extra == 'multimodal'", specifier = ">=12.3.0" },
+    { name = "pillow", marker = "extra == 'multimodal'", specifier = ">=13.0.0" },
     { name = "pymilvus", marker = "extra == 'milvus'", specifier = "==2.4.8" },
     { name = "python-arango-async", marker = "extra == 'arango'", specifier = "==1.2.0" },
     { name = "rank-bm25", marker = "extra == 'huggingface'", specifier = "==0.2.2" },
@@ -1797,7 +1797,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -1829,7 +1829,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "onnxruntime", marker = "extra == 'planogram'", specifier = ">=1.20" },
     { name = "opencv-python-headless", specifier = ">=4.8" },
-    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pillow", specifier = ">=13.0.0" },
     { name = "rapidfuzz", specifier = ">=3.0" },
     { name = "rapidocr", marker = "extra == 'planogram'", specifier = ">=3.9" },
 ]
@@ -9594,7 +9594,7 @@ wheels = [
 
 [[package]]
 name = "navigator-eventbus"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -9602,9 +9602,9 @@ dependencies = [
     { name = "navconfig", extra = ["default"] },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/66/2e/32eef7651234492fab8d3ad01640fde03cb50ff414c95d84160af63255e9/navigator_eventbus-0.3.0.tar.gz", hash = "sha256:68e9e65915c16db4fe0598d797769be11b5f8ec13c5ecaeff0689a5a1c2aac10", size = 473283, upload-time = "2026-09-12T00:07:25.346Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/ca/d1a002a95ffab5792a816dcb8757c34e21f63ab318ecb8090d7efe99295c/navigator_eventbus-0.4.0.tar.gz", hash = "sha256:a47dd9289e7e003b3c882978df271f1e94429e502c60a50e1d928407264e299e", size = 796501, upload-time = "2026-10-21T01:02:23.543Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/73/a08dd2778f32c48c14679323e8f6ef369f8c6dbb286a08f53686e7752204/navigator_eventbus-0.3.0-py3-none-any.whl", hash = "sha256:a1577ab35168f9197feebe65cfb9efa612b55b5179ec9377f40dd5d8db77171d", size = 237801, upload-time = "2026-09-12T00:07:23.503Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/cb/befca5b1abd39d7f58f913467d4121fc5d43f4f9d543bec5b022ca0755bb/navigator_eventbus-0.4.0-py3-none-any.whl", hash = "sha256:7c4a56ab576359701ff2c5087665721de1247c9fb834e4ac422d2ddde3c0c81d", size = 255683, upload-time = "2026-10-21T01:02:21.942Z" },
 ]
 
 [package.optional-dependencies]
@@ -9634,7 +9634,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.2.3"
+version = "1.2.4"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
@@ -11134,27 +11134,29 @@ wheels = [
 
 [[package]]
 name = "pillow"
-version = "12.3.0"
+version = "13.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz", hash = "sha256:3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce", size = 47025035, upload-time = "2026-07-01T11:56:38.965Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz", hash = "sha256:cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510", size = 47058631, upload-time = "2026-10-16T22:18:09.718Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/98/766667a4be768150a202836acd9fad19c06824ca86c4286d3cf6b274964e/pillow-12.3.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:bcb46e2f9feff8d06323983bd83ed00c201fdcab3d74973e7072a889b3979fcd", size = 6263814, upload-time = "2026-07-01T11:53:51.32Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/2d/ede717bc1144f63886c21fd349bb95860b0d1a21149ff16f2bb362b612b6/pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd", size = 6934408, upload-time = "2026-07-01T11:53:53.487Z" },
-    { url = "https://files.pythonhosted.org/packages/a3/48/9c58b685e69d49c31af6c8eb9012055fab7e665785165c84796e2c73ce72/pillow-12.3.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:4f883547d4b7f0495ebe7056b0cc2aea76094e7a4abc8e933540f3271df27d9c", size = 6337160, upload-time = "2026-07-01T11:53:55.457Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/fa/dc2a5c0ba6df93f67c31d34b808b7ce440b40cdbf96f0b81cde1d1e6fa93/pillow-12.3.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:236ff70b9312fb68943c703aa842ca6a758abfa45ac187a5e7c1452e96ef72b5", size = 7045172, upload-time = "2026-07-01T11:53:57.736Z" },
-    { url = "https://files.pythonhosted.org/packages/25/27/ac8f99618ffd3dde21db0f4d4b1d2ab00c0880595bfd17df103f7f39fd0c/pillow-12.3.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d9c7f76c0673154f044e9d78c8655fb4213f6ca31a836df48b40fe5d187717b9", size = 6266838, upload-time = "2026-07-01T11:54:11.71Z" },
-    { url = "https://files.pythonhosted.org/packages/84/21/a35af28dcc61f37ed850a2d64c65c701321dfbf25085e469d5559360cbbf/pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91", size = 6940830, upload-time = "2026-07-01T11:54:13.732Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/51/8b08617af3ad95e33ce6d7dd2c99ed6c8298f7fb131636303956be022e25/pillow-12.3.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:e491916b378fba47242221bb9ead245211b70d504f495d105d17b14a24b4907c", size = 6344383, upload-time = "2026-07-01T11:54:15.756Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/72/cf78ac9780bb93c28328f408973845a309d4d145041665f734572ced1b52/pillow-12.3.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:0dd2064cbc55aaec028ef5fbb60fa47bb6c3e7918e07ff17935284b227a9d2df", size = 7052934, upload-time = "2026-07-01T11:54:17.721Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/ac/31fb64e1e7efb5a4b50cd3d92049ba89ac6e4d8d3bb6a74e15048ca3353e/pillow-12.3.0-cp313-cp313-ios_13_0_arm64_iphoneos.whl", hash = "sha256:21900ce7ba264168cd50defae43cd75d25c833ad4ad6e73ffc5596d12e25ac89", size = 4161684, upload-time = "2026-07-01T11:54:25.934Z" },
-    { url = "https://files.pythonhosted.org/packages/87/b4/9805e23d2b4d77842b468513841fda254ee42f0289d25088340e4ff46e2d/pillow-12.3.0-cp313-cp313-ios_13_0_arm64_iphonesimulator.whl", hash = "sha256:4e8c2a84d977f50b9daed6eeaf3baef67d00d5d74d932288f02cb94518ee3ace", size = 4255487, upload-time = "2026-07-01T11:54:27.935Z" },
-    { url = "https://files.pythonhosted.org/packages/df/39/ecf519435a200c693fe053a6ee4d835b41cf963a4dfc2551c4e637cb2a71/pillow-12.3.0-cp313-cp313-ios_13_0_x86_64_iphonesimulator.whl", hash = "sha256:ae26d61dfa7a47befdc7572b521024e8745f3d809bd95ca9505a7bba9ef849ec", size = 3696433, upload-time = "2026-07-01T11:54:29.813Z" },
-    { url = "https://files.pythonhosted.org/packages/1f/01/e18aff37cb0b4aac47ac90f016d347a49aca667ef97f190b06ac2aabc928/pillow-12.3.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f7401aebd7f581d7f83a439d87d474999317ee099218e5ad25d125290990ba65", size = 6263736, upload-time = "2026-07-01T11:54:36.131Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/62/de5bdd77d935331f4f802edc11e4d82950f642caad6cb2f949837b8560e2/pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3", size = 6937129, upload-time = "2026-07-01T11:54:38.216Z" },
-    { url = "https://files.pythonhosted.org/packages/70/4d/105627a13300c5e0df1d174230b32fd1273062c96f7745fd552b945d1e1d/pillow-12.3.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:571b9fcb07b97ef3a492028fb3d2dc0993ca23a06138b0315286566d29ef718a", size = 6339562, upload-time = "2026-07-01T11:54:40.354Z" },
-    { url = "https://files.pythonhosted.org/packages/6b/1d/f13de01a553988ab895ba1c722e06cf3144d4f57656fd5b81b6d881f1179/pillow-12.3.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:756c768d0c9c2955feb7a56c37ea24aea2e369f8d36a88da270b6a9f19e62b5e", size = 7049439, upload-time = "2026-07-01T11:54:42.489Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/20/22fe9384b7949e25fb1293bcfc84fb82590ff4ea6b37c95b24d26d793d86/pillow-12.3.0-pp311-pypy311_pp73-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fbd139c8447d25dd750ab79ee274cc5e1fe80fc56340ab10b18a195e1b6eca3e", size = 5237776, upload-time = "2026-07-01T11:56:30.263Z" },
-    { url = "https://files.pythonhosted.org/packages/08/14/f6ba68107680ffa74b39985f3f30884e41318fbc4250caa423c79b4788bb/pillow-12.3.0-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e7e480451b9fa137494bccd3a7d69adbe8ac65a87d97be61e11f1b1050a5bac3", size = 5860358, upload-time = "2026-07-01T11:56:32.68Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/ee/229b27472483a4801ea94990815e710391836afdf987b4b722b62bd75db6/pillow-13.0.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7c88c10dd432f3b39ccdafc9ed81d0c21b8fd634502574da76d1bfa4fe2c76d0", size = 6517304, upload-time = "2026-10-16T22:15:29.43Z" },
+    { url = "https://files.pythonhosted.org/packages/36/46/f509b74787f40ce0627501089d630b2c741b63b244c1f40b640b3b01e181/pillow-13.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a625df9a2a5597fa5e5266e01aefc82604bb85d291e3547981e863560d75da6c", size = 7140667, upload-time = "2026-10-16T22:15:31.368Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/a4/5a398b8ec2c37145397d6461c0b551c23ec03072aa64f357aed25e582b00/pillow-13.0.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:10b5019883c98f1dd819ca48ffc6f33a91cee04948fe637c605f4345c7cafd6f", size = 6610583, upload-time = "2026-10-16T22:15:34.025Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/7b/f2f1109b230fd4e2d57ab2305de31adc37ea9b4ff8719436c623cb484415/pillow-13.0.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:f391dc92a015c478745192fe4f2e120c2af2aba18d9fe0616341cbf537599806", size = 7218241, upload-time = "2026-10-16T22:15:36.214Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/bb/9e30e8ed18c20800ee327a12107d5249ad8dc444867b3adfcc21654e3c71/pillow-13.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:8bf295fe459343bc6093c8e5e0df60bfa189e0fcb775a22e2c2488fdeccc6c0d", size = 6519309, upload-time = "2026-10-16T22:15:48.14Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/99/fdf65cc539e266ab93546c261bdf98411fe165c6e4e13f9dbf597097192b/pillow-13.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca", size = 7144542, upload-time = "2026-10-16T22:15:50.093Z" },
+    { url = "https://files.pythonhosted.org/packages/26/9b/f38b7c4d8f599537e2d1a6d546cec9beef7536ff8f5c49a3f9c78179d8ac/pillow-13.0.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:4bd024d567eca931b668978d672dba914d4b8e2628e2c3073a2ad178de8a2620", size = 6618042, upload-time = "2026-10-16T22:15:52.054Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/7c/45ee28531f89ee4582967d8a17f7a26d71ca64cd902b93c269590cd60a00/pillow-13.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:23edf4ec4b6f4f240e8df6e4985e9ee2ced86474632433e55fb1e2548744bf40", size = 7228137, upload-time = "2026-10-16T22:15:54.009Z" },
+    { url = "https://files.pythonhosted.org/packages/82/e2/9132d38df320e8099e2642d9fa538f18a7dfebf68a875a31725dc2a115aa/pillow-13.0.0-cp313-cp313-ios_13_0_arm64_iphoneos.whl", hash = "sha256:e98b4f91f99b24b1da72e10621ba181f7281922384a7403094debb4199de6c00", size = 4190620, upload-time = "2026-10-16T22:16:02.527Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/be/436dac0996876f65ef1916ffb711c5ef4af2ebc57414b6f16642e07f6b47/pillow-13.0.0-cp313-cp313-ios_13_0_arm64_iphonesimulator.whl", hash = "sha256:34fb3db1149c879343861831728c243c432d4a5afc8f1878ca7612ef8de2a033", size = 4290286, upload-time = "2026-10-16T22:16:04.861Z" },
+    { url = "https://files.pythonhosted.org/packages/60/16/7c1007162e4169ea0d5bec47e2e0b2174f56c50cf5b8c02a1dc23e41037e/pillow-13.0.0-cp313-cp313-ios_13_0_x86_64_iphonesimulator.whl", hash = "sha256:2d50500a4a3bc6469adcdb319cf05d688b08ca3bf0f22a05339f3b25b433a599", size = 3723169, upload-time = "2026-10-16T22:16:06.956Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/3c/cd0770e96d20bfd990db024bcbd43897ff3e88da1f4782cf90ea231b1d4f/pillow-13.0.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:19b66ca0a4d25cc0200b381ce824c7ea090db61427315e73cfb05dbf1b35c369", size = 6515908, upload-time = "2026-10-16T22:16:12.896Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/fe/f5cdaa2d1c4086e757430f368c271a58ee29cfe7378e7ae7b9d964015c25/pillow-13.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5f56499c1a74d2b862beb0c33b8016f99d095858455df9d21583bbbc1c15b582", size = 7142544, upload-time = "2026-10-16T22:16:14.844Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/b5/a54f6d44adbcd23737c8c12953f42be107e4cca64e247c0ca3a5b563061c/pillow-13.0.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:a2a14cd73d5e6c927f644b0110ee81f59c4ef506259ec9183904747f2caacc81", size = 6613097, upload-time = "2026-10-16T22:16:16.893Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/b4/9e6c1207c21b2e91db0d15c16d30f3701ce5add1bd4da0e787761e66cb6e/pillow-13.0.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:08b826a9bf1265c76de04a42061d61ea6b109418b7826f28ff1ecdfaa26c5502", size = 7224846, upload-time = "2026-10-16T22:16:19.195Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/45/0923202a658e8ff6aafd72c1a4395ebadcdebaa182c437d8595d3dd3db32/pillow-13.0.0-pp311-pypy311_pp80-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a192360d512305fe92d3053e4f7627bbad1f7708f1f4ad38cccd9336acabe9ad", size = 5464831, upload-time = "2026-10-16T22:17:53.742Z" },
+    { url = "https://files.pythonhosted.org/packages/07/52/d3e38f0cad1dadea2a658b9a7d6ba8a04048f5ae14f011b806e5c3bd6bcb/pillow-13.0.0-pp311-pypy311_pp80-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:83b37abd87b590acd8f47ca8a61f70893322b11834d36e07c2298dacad4d14d2", size = 6043133, upload-time = "2026-10-16T22:17:55.625Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/ed/d504165ef79af6fafe25c76726cf30f544cc236002f7ed054f1d51adc4ff/pillow-13.0.0-pp312-pypy312_pp80-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:93ff9c9c3663ce23aaa5d0b6b6abac55359e2a0c06c7e30f3771829af816be63", size = 5464358, upload-time = "2026-10-16T22:18:02.779Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/fe/a10aba5503ca13e9e009b8bd0a1a4ce5584bdce246245fd6f3a83701369c/pillow-13.0.0-pp312-pypy312_pp80-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e65dd6e75de67b2362a4fa3e16aa627595f65054dc4ec73d64680c84d592fa61", size = 6043514, upload-time = "2026-10-16T22:18:04.538Z" },
 ]
 
 [[package]]

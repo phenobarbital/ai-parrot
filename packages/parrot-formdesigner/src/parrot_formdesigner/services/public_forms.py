@@ -15,7 +15,7 @@ def public_form_paths(
 ) -> list[str]:
     """Return the auth-exempt glob patterns for a public form.
 
-    These five patterns cover all read and submission URLs that should be
+    These seven patterns cover all read and submission URLs that should be
     reachable without authentication when a form has ``is_public=True``.
 
     Used by both the lifecycle toggle and the exclude-provider registration
@@ -34,13 +34,15 @@ def public_form_paths(
                    Trailing slashes are stripped automatically.
 
     Returns:
-        List of five URL patterns (fnmatch globs):
+        List of seven URL patterns (fnmatch globs):
 
           - ``{base_path}/{tenant}/forms/{form_uid}``            — GET form object
           - ``{base_path}/{tenant}/forms/{form_uid}/schema``     — GET JSON schema
           - ``{base_path}/{tenant}/forms/{form_uid}/render/*``   — GET rendered formats (glob)
           - ``{base_path}/{tenant}/forms/{form_uid}/data``       — POST submit results
           - ``{base_path}/{tenant}/forms/{form_uid}/validate``   — POST pre-submit validation
+          - ``{base_path}/{tenant}/forms/{form_uid}/availability`` — GET open/closed state (FEAT-730)
+          - ``{base_path}/{tenant}/forms/{form_uid}/fields/*/file-upload`` — POST file upload (FEAT-730)
     """
     bp = base_path.rstrip("/")
     base = f"{bp}/{tenant}/forms/{form_uid}"
@@ -50,4 +52,6 @@ def public_form_paths(
         f"{base}/render/*",
         f"{base}/data",
         f"{base}/validate",
+        f"{base}/availability",
+        f"{base}/fields/*/file-upload",
     ]

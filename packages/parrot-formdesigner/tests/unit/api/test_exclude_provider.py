@@ -137,7 +137,7 @@ class TestExcludeProviderBehavior:
 
         # FEAT-389: exclusion paths are built from form_uid (routes are
         # form_uid-based, TASK-1976), not the human-readable slug.
-        assert len(paths) == 5
+        assert len(paths) == 7  # FEAT-730: 5 -> 7 globs
         assert all(f"/forms/{pub_form.form_uid}" in p for p in paths)
         assert not any(f"/forms/{priv_form.form_uid}" in p for p in paths)
 
@@ -207,7 +207,7 @@ class TestExcludeProviderBehavior:
         paths = await provider()
 
         # 2 public forms × 5 paths each
-        assert len(paths) == 10
+        assert len(paths) == 14  # FEAT-730: 2 x 7 globs
         assert any(f"/forms/{form_a.form_uid}" in p for p in paths)
         assert any(f"/forms/{form_b.form_uid}" in p for p in paths)
         assert not any(f"/forms/{form_c.form_uid}" in p for p in paths)
@@ -256,7 +256,7 @@ class TestExcludeProviderStartupOrdering:
 
         # load_from_storage must have been called to handle ordering race.
         registry.load_from_storage.assert_awaited_once()
-        assert len(paths) == 5
+        assert len(paths) == 7  # FEAT-730: 5 -> 7 globs
         assert all(f"/forms/{form.form_uid}" in p for p in paths)
 
     async def test_provider_skips_load_when_no_storage(self):
@@ -307,6 +307,6 @@ class TestExcludeProviderStartupOrdering:
         paths = await provider()
 
         # 2 tenants × 1 public form × 5 paths = 10
-        assert len(paths) == 10
+        assert len(paths) == 14  # FEAT-730: 2 x 7 globs
         assert any(f"/forms/{nav_form.form_uid}" in p for p in paths)
         assert any(f"/forms/{epson_form.form_uid}" in p for p in paths)
