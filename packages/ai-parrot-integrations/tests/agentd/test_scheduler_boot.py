@@ -15,7 +15,7 @@ from parrot.integrations.agentd.config import (
 from parrot.integrations.agentd.protocol import INVALID_PARAMS
 from parrot.integrations.agentd.service import AgentDaemon
 
-from tests.agentd.test_service import _call, _run_daemon, _stop_daemon
+from .test_service import _call, _run_daemon, _stop_daemon
 
 pytest.importorskip("apscheduler")
 pytest.importorskip("parrot.scheduler.manager")
@@ -27,7 +27,7 @@ async def scheduler_daemon(tmp_path):
     socket_path = tmp_path / "sched.sock"
     config = AgentServiceConfig(
         name="sched-echo",
-        agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent", kwargs={"name": "echo"}),
+        agent=AgentTargetConfig(target="agentd.fakes:EchoAgent", kwargs={"name": "echo"}),
         socket=socket_path,
         scheduler=SchedulerConfig(enabled=True, dsn=None, redis=False),
     )

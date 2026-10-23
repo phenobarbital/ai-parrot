@@ -62,7 +62,7 @@ async def echo_daemon(tmp_path):
     config = AgentServiceConfig(
         name="echo-daemon",
         agent=AgentTargetConfig(
-            target="tests.agentd.fakes:EchoAgent", kwargs={"name": "echo"}
+            target="agentd.fakes:EchoAgent", kwargs={"name": "echo"}
         ),
         socket=socket_path,
         scheduler=SchedulerConfig(enabled=False),
@@ -76,11 +76,11 @@ async def echo_daemon(tmp_path):
 
 @pytest.fixture
 def agentd_yaml(tmp_path) -> Path:
-    """Minimal valid agent YAML pointing at `tests.agentd.fakes:EchoAgent`."""
+    """Minimal valid agent YAML pointing at `agentd.fakes:EchoAgent`."""
     yaml_path = tmp_path / "agentd.yaml"
     yaml_path.write_text(
         "name: yaml-echo\n"
-        'agent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+        'agent:\n  target: "agentd.fakes:EchoAgent"\n'
         "scheduler:\n  enabled: false\n"
     )
     return yaml_path
