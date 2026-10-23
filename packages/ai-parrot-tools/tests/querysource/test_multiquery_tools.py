@@ -1,4 +1,8 @@
 import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 import pandas as pd
 from parrot_tools.querysource import _qs
@@ -9,7 +13,15 @@ from parrot_tools.querysource.errors import (
     QuerysourceToolkitError,
     TenantDeniedError,
 )
-from .test_components_validate import fake_registry  # noqa: F401 — reused fixture (patches _qs.ComponentRegistry)
+_shared_test_path = Path(__file__).with_name("test_components_validate.py")
+_shared_test_spec = importlib.util.spec_from_file_location(
+    "ai_parrot_tools_tests_querysource_test_components_validate", _shared_test_path
+)
+assert _shared_test_spec is not None and _shared_test_spec.loader is not None
+_shared_test_module = importlib.util.module_from_spec(_shared_test_spec)
+sys.modules[_shared_test_spec.name] = _shared_test_module
+_shared_test_spec.loader.exec_module(_shared_test_module)
+fake_registry = _shared_test_module.fake_registry
 
 
 @pytest.fixture

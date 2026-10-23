@@ -19,6 +19,7 @@ the time of writing it reads 0 of 12.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import sys
@@ -29,7 +30,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 import uvloop
 
-from . import _broadcast_browser_fakes as fakes
+_fakes_path = Path(__file__).with_name("_broadcast_browser_fakes.py")
+_fakes_spec = importlib.util.spec_from_file_location(
+    "ai_parrot_integrations_tests_voice_broadcast_browser_fakes", _fakes_path
+)
+assert _fakes_spec is not None and _fakes_spec.loader is not None
+fakes = importlib.util.module_from_spec(_fakes_spec)
+sys.modules[_fakes_spec.name] = fakes
+_fakes_spec.loader.exec_module(fakes)
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
@@ -69,7 +77,7 @@ def _record(scenario: str, payload: Dict[str, Any]) -> Path:
 @pytest.fixture
 def live_env() -> Dict[str, str]:
     """The live configuration, with credential *values* never returned."""
-    return {name: "<set>" for name in _REQUIRED_ENV}
+    return dict.fromkeys(_REQUIRED_ENV, "<set>")
 
 
 @pytest.mark.skipif(not _GATE_ENABLED, reason=_SKIP_REASON)
