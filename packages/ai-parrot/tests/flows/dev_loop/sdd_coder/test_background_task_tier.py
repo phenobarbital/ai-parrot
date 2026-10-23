@@ -156,9 +156,7 @@ async def test_merge_tier_includes_vitest_runner(tmp_path: Path, monkeypatch: py
 # ---------------------------------------------------------------------------
 
 
-async def test_task_tier_schema_and_runner_guard_agree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_task_tier_schema_and_runner_guard_agree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The schema admits tier='task'; the SUPERVISOR, not the schema, enforces its obligations."""
     from parrot.flows.dev_loop.sdd_coder.models import CoderRunValidationArgs
 

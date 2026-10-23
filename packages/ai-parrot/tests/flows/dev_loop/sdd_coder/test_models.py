@@ -547,9 +547,7 @@ def test_prepare_native_accepts_brief_task_id():
 @pytest.mark.parametrize("task_id", ["HOTFIX-CS-228-1", "HOTFIX-CS-228-99999", "HOTFIX-a-1", "TASK-1"])
 def test_brief_key_ending_in_digits(task_id):
     """A brief key may itself end in digits; the trailing -<n> anchor must still bind."""
-    args = CoderRunChunkArgs(
-        feature="BRIEF-CS-228", worktree="/abs/path", task_ids=[task_id], execution_id=VALID_UUID
-    )
+    args = CoderRunChunkArgs(feature="BRIEF-CS-228", worktree="/abs/path", task_ids=[task_id], execution_id=VALID_UUID)
     assert args.task_ids == [task_id]
 
 
