@@ -149,7 +149,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -168,7 +168,7 @@
       "feature_id": "FEAT-729",
       "feature": "msteams-user-auth-lane",
       "spec": "sdd/specs/msteams-user-auth-lane.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
