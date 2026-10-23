@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..core.audit_trail import AuditDetail, AuditTrailConfig, ValidationTrace
 from ..core.events import FormEventAbort
+from ..core.public_access import RejectionReason, evaluate_open, normalize_key_value
 from ..core.llm_validation import (
     LLMValidationConfig,
     PlausibilityReport,
@@ -30,7 +31,7 @@ from .metadata_enricher import MetadataResolutionError, enrich_submission
 from .plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
 from .sinks.base import SinkNotCapableError, SinkTargetMismatchError, SinkUnavailableError
 from .sinks.mapper import flatten_submission, nest_submission
-from .submissions import FormSubmission, FormSubmissionStorage
+from .submissions import DuplicateResponse, FormSubmission, FormSubmissionStorage, ResponseLimitReached
 from .unknown_fields import ExtrasCapExceeded, enforce_extras_cap
 from .validation_trace import ValidationTraceCollector, cap_trace
 from .validators import FormValidator, ValidationResult
@@ -51,6 +52,7 @@ __all__ = [
     "PlausibilityBlocked",
     "ImplausibleSubmission",
     "PlausibilityRateLimited",
+    "SubmissionRejected",
 ]
 
 
@@ -66,6 +68,7 @@ class SubmitOutcome(BaseModel):
     forward_error: str | None = None
     plausibility: PlausibilityReport | None = None
     validation: ValidationResult
+    created_at: datetime | None = None  # FEAT-730: the stored submission's created_at (UTC)
 
 
 class ValidationFailed(Exception):
@@ -114,6 +117,15 @@ class ImplausibleSubmission(Exception):
         return "PLAUSIBILITY_REVIEW" if self.policy == "review" else "PLAUSIBILITY_REJECTED"
 
 
+class SubmissionRejected(Exception):
+    """Response-policy refusal (HTTP 409, FEAT-730). Controlled flow — never dispatched to onError."""
+
+    def __init__(self, reason: RejectionReason, message: str, *, field_id: str | None = None) -> None:
+        super().__init__(message)
+        self.reason: RejectionReason = reason
+        self.field_id = field_id
+
+
 class PlausibilityRateLimited(Exception):
     """The LLM quota denied a plausibility check that the policy cannot skip (429 class)."""
 
@@ -137,6 +149,7 @@ class SubmissionPipeline:
         partial_store: "PartialSaveStore | None",
         plausibility: AnswerPlausibilityChecker | None,
         sink_factory: "SinkFactory | None" = None,
+        tenant_scoped_submissions: bool = False,
         logger: logging.Logger | None = None,
         dispatch_fn: Any = None,
     ) -> None:
@@ -147,6 +160,8 @@ class SubmissionPipeline:
         self.partial_store = partial_store
         self.plausibility = plausibility
         self.sink_factory = sink_factory
+        # FEAT-730 G8: stamp the URL tenant on the generic store only when the host opts in.
+        self.tenant_scoped_submissions = tenant_scoped_submissions
         self.logger = logger or logging.getLogger(__name__)
 
     def _plausibility_enabled(self, form: FormSchema) -> bool:
@@ -281,6 +296,9 @@ class SubmissionPipeline:
     ) -> SubmitOutcome:
         """Commit step. Raises ValidationFailed, SubmitSinkError, PlausibilityBlocked or FormEventAbort."""
         auth = auth_context or AuthContext(scheme="none")
+        # FEAT-730: a closed form is refused before onBeforeSubmit / validation / any LLM call.
+        if evaluate_open(form.public_access, now=datetime.now(timezone.utc)) == "form_closed":
+            raise SubmissionRejected("form_closed", "This form is no longer accepting responses.")
 
         async def _on_error(exc: BaseException, where: str) -> None:
             try:
@@ -418,6 +436,7 @@ class SubmissionPipeline:
                         else flatten_submission(form, submission)
                     )
                     await sink.write(submission, payload)
+                    await self._clear_pending_after_sink(submission, tenant)
                 except SinkUnavailableError as exc:
                     await _on_error(exc, "sink write")
                     raise SubmitSinkError(str(exc), status=503, headers={"Retry-After": "30"}) from exc
@@ -429,8 +448,15 @@ class SubmissionPipeline:
                     raise SubmitSinkError(str(exc), status=501) from exc
                 stored_in = "sink"
             elif self.submission_storage is not None:
-                await self.submission_storage.store(submission)
+                await self._store_generic(form, submission, unwrap_voice(submission.data), tenant)
                 stored_in = "generic"
+            elif form.public_access is not None and (
+                form.public_access.max_responses is not None or form.public_access.unique_key_field is not None
+            ):
+                raise SubmitSinkError(
+                    "Form declares a response cap / unique key but no submission_storage is configured",
+                    status=501,
+                )
             else:
                 self.logger.debug(
                     "No submission_storage configured — skipping local storage for %s", submission.submission_id
@@ -477,6 +503,7 @@ class SubmissionPipeline:
                 forward_error=forward_error,
                 plausibility=plausibility,
                 validation=result,
+                created_at=submission.created_at,
             )
         except (
             FormEventAbort,
@@ -485,6 +512,7 @@ class SubmissionPipeline:
             PlausibilityBlocked,
             ImplausibleSubmission,
             PlausibilityRateLimited,
+            SubmissionRejected,
         ):
             raise
         except Exception as exc:
@@ -500,6 +528,55 @@ class SubmissionPipeline:
                 request["_lifecycle_user_message"] = user_message
             self.logger.exception("submit failed for form %r: %s", form.form_uid, type(exc).__name__)
             raise
+
+    async def _store_generic(
+        self, form: FormSchema, submission: FormSubmission, data: dict[str, Any], tenant: str | None
+    ) -> None:
+        """Generic-store branch (FEAT-730): tenant stamping behind the flag; guarded store when the
+        form's public_access needs counting. Maps storage refusals to SubmissionRejected."""
+        storage = self.submission_storage
+        assert storage is not None  # caller checked
+        store_tenant = tenant if self.tenant_scoped_submissions else None
+        if store_tenant is not None:
+            submission.tenant = store_tenant
+        cfg = form.public_access
+        if cfg is None or (cfg.max_responses is None and cfg.unique_key_field is None):
+            if store_tenant is None:
+                await storage.store(submission)  # today's exact call (AC1 / AC8 flag off)
+            else:
+                await storage.store(submission, tenant=store_tenant)
+            return
+        unique_value = normalize_key_value(data.get(cfg.unique_key_field)) if cfg.unique_key_field else None
+        try:
+            await storage.store_guarded(
+                submission,
+                tenant=store_tenant,
+                max_responses=cfg.max_responses,
+                unique_key_field=cfg.unique_key_field,
+                unique_value=unique_value,
+            )
+        except ResponseLimitReached as exc:
+            raise SubmissionRejected(
+                "response_limit_reached", "This form is no longer accepting responses."
+            ) from exc
+        except DuplicateResponse as exc:
+            raise SubmissionRejected(
+                "duplicate_response", "A response with this value was already submitted.", field_id=exc.field_id
+            ) from exc
+
+    async def _clear_pending_after_sink(self, submission: FormSubmission, tenant: str | None) -> None:
+        """FEAT-731: best-effort pending-upload clear for sink forms (not transactional with the sink)."""
+        pending = getattr(self.submission_storage, "_pending", None)
+        if pending is None:
+            return
+        from .pending_uploads import iter_blob_refs
+
+        try:
+            await pending.clear(iter_blob_refs(submission.data), tenant=tenant)
+        except Exception as exc:  # noqa: BLE001 — the sink write already succeeded
+            self.logger.warning(
+                "pending-upload clear after sink write failed for %s: %s", submission.submission_id, exc
+            )
 
     def attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
         """Public (audio client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""

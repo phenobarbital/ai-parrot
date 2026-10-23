@@ -23,6 +23,15 @@ from .registry import FormRegistry, FormStorage
 from .sink_aliases import SinkAliasRegistry
 from .sinks import SinkFactory
 from .storage import PostgresFormStorage
+from .pending_uploads import (
+    DEFAULT_PUBLIC_FORM_TTL,
+    DEFAULT_TTL,
+    PendingUpload,
+    PendingUploadReaper,
+    PendingUploadStore,
+    ReapResult,
+    iter_blob_refs,
+)
 from .submissions import (
     CORE_METADATA_COLUMNS,
     FormSubmission,
@@ -33,6 +42,14 @@ from .validation_trace import ValidationTraceCollector, callable_identity, cap_t
 from .validators import FormValidator, ValidationResult
 
 __all__ = [
+    # Pending-upload cleanup (FEAT-731)
+    "DEFAULT_PUBLIC_FORM_TTL",
+    "DEFAULT_TTL",
+    "PendingUpload",
+    "PendingUploadReaper",
+    "PendingUploadStore",
+    "ReapResult",
+    "iter_blob_refs",
     "CORE_METADATA_COLUMNS",
     "FormCache",
     "FormVersionService",

@@ -138,4 +138,5 @@ No new tests; re-run the feature's suites.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Docs page written from the shipped code. Version bumped one minor, as the task says (origin/dev had not moved). Note for the owner: the FEAT-728 doc (`docs/formdesigner-llm-validation-enforcement.md`) already says it needs the 1.3.0 package, while dev's version file was still 1.2.4 — so this bump and that doc's expectation now coincide; the release itself is yours.
+Tests: test_public_forms.py 13 passed, test_setup_form_api.py 3 passed (same as baseline).

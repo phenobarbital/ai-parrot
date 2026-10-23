@@ -207,4 +207,4 @@ Spec §4 rows `test_setup_form_api_wires_pending`, `test_sink_path_clears_after_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Done. `setup_form_api(pending_uploads=)` via `_wire_pending_uploads`; sink-path best-effort clear after `sink.write`; services exports. Tests: 3 new + test_setup_form_api (baseline 3 passed) + test_submit_path_branch pass (15 total). Mutations RED: wiring removed (test_setup_form_api_wires_pending), sink clear removed (test_sink_path_clears_after_write).

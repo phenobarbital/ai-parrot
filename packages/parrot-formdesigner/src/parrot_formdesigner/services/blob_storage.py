@@ -166,11 +166,13 @@ class AbstractBlobStorage(ABC):
         """
 
     @abstractmethod
-    async def delete(self, blob_ref: str) -> None:
+    async def delete(self, blob_ref: str, *, strict: bool = False) -> None:
         """Delete a blob by reference. Idempotent — no error if missing.
 
         Args:
             blob_ref: Blob reference returned by ``put``.
+            strict: Re-raise backend errors other than "missing" (FEAT-731
+                reaper). The default keeps the historical swallow-and-warn.
         """
 
     async def pre_persist_hook(self, ctx: PrePersistContext) -> None:
@@ -320,7 +322,7 @@ class _ManagerBackedBlobStorage(AbstractBlobStorage):
 
         return _iter()
 
-    async def delete(self, blob_ref: str) -> None:
+    async def delete(self, blob_ref: str, *, strict: bool = False) -> None:
         key = self._from_ref(blob_ref)
         try:
             await self._manager.delete_file(key)
@@ -334,6 +336,8 @@ class _ManagerBackedBlobStorage(AbstractBlobStorage):
             )
             if err_code in ("NoSuchKey", "404"):
                 return
+            if strict:
+                raise
             self.logger.warning(
                 "blob delete failed (non-critical): %s — %s", blob_ref, exc
             )

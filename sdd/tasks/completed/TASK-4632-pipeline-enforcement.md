@@ -279,4 +279,5 @@ See the CREATE block (spec §4 Module 3 rows). Mutation-check `test_generic_stor
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. Tests: test_submission_pipeline_public_access.py 8 passed; test_submission_pipeline_parity.py 21 passed (baseline 21 passed). Mutation checks (6: tenant kwarg dropped, guarded tenant dropped, SubmissionRejected not re-raised, flag ignored, created_at dropped, closed check removed) all RED.
+Deviations (minor): the guarded-store key value is read from `unwrap_voice(submission.data)` (sanitized/stored view) rather than the raw `data` payload, so voice envelopes and coerced values are compared as stored. Added an extra test for the 501 (counting policy without storage) and key normalization. ruff not installed in the venv; not run.

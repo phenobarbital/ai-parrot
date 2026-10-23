@@ -212,4 +212,7 @@ Spec §4 Module 2 rows.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct)
+**Date**: 2026-10-22
+**Notes**: Implemented per blueprint: `_thumbnail_ref`, `_record_pending` (fail-soft, skips envelopes with no `blob_ref`), `_forget_pending`; rejection cleanup now deletes the thumbnail REF; prior-ref replacement also drops the prior's row (inside the existing try, so it only runs after the delete call returned). Chunk uploads (`_CHUNK_BUFFERS`) still out of scope (comment updated). 7 new tests + 11 existing `test_file_upload_handler.py` green. Mutation-checked (thumbnail URL restored, `public_form=True`, wrong tenant, no prior-row clear, narrowed except) -> each RED. Test harness registers the form under tenant `navigator`, so the URL tenant is `navigator` and `X-Parrot-Tenant: other` proves the URL tenant wins.
+**Deviations from spec**: none. FEAT-730 (TASK-4633) edits `:210`/`:238` of this file on its own branch; my edits are confined to the blueprint anchors plus two new helpers above `_process_file_part`, so the merge should be local.

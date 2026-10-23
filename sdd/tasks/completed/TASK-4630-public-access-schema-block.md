@@ -361,4 +361,6 @@ See the CREATE block above (spec §4 Module 1 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint (resumed from uncommitted edits, reviewed against the blueprint). All FILL INs done.
+Tests: test_public_access_schema.py 13 passed; test_core_models.py 45 passed (baseline 45 passed). Mutation checks (6) all RED then restored.
+Deviation: ruff is not installed in the worktree venv, so `ruff check` was not run.

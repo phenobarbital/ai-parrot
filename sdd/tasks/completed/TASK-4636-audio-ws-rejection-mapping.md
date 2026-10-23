@@ -148,4 +148,4 @@ Spec §4 row `test_audio_ws_rejection_ioFailed`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint. Tests: test_audio_ws_public_access.py 3 passed (parametrized over the 3 reasons); test_audio_plausibility_policy.py 5 (baseline 5). Mutation check (arm renamed to KeyError) -> 3 RED, restored. ruff not installed; not run.

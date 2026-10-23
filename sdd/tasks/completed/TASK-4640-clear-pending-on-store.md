@@ -232,4 +232,4 @@ Spec §4 Integration rows (minus the reaper concurrency test, which is TASK-4641
 
 ## Completion Note
 
-*(Agent fills this in when done — state whether AC9 was wired here or left to FEAT-730)*
+AC9 deferred: `store_guarded` does not exist on origin/dev (it lives on FEAT-730's branch), so `_clear_pending` is called only inside `store()`. Wire it inside `store_guarded`'s transaction when the branch merges with FEAT-730 (TASK-4631 owner).
