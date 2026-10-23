@@ -33,7 +33,11 @@ class FakeLLM:
         self.calls.append((prompt, kwargs))
         if self._exc:
             raise self._exc
-        return type("Msg", (), {"structured_output": self._batch, "output": self._batch})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": self._batch, "output": self._batch, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 def _form(cfg: LLMValidationConfig | None = None) -> FormSchema:
