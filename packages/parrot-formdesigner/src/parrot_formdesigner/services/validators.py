@@ -18,13 +18,16 @@ from pydantic import ValidationError as PydanticValidationError
 
 from ..core.mime_match import file_type_allowed
 from ..core._location_data import is_valid_iso_country_code
+from ..core.audit_trail import CheckId, CheckOutcome, SkipReason, ValidationTrace
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from ..core.voice_answer import VoiceAnswerEnvelope, VoiceEvidenceEnvelope, is_voice_envelope
+from ..version import __version__ as _RULESET_VERSION
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 from .unknown_fields import compute_extra_data
+from .validation_trace import ValidationTraceCollector, schema_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +172,15 @@ class ValidationResult(BaseModel):
             reads no policy field. ``{}`` when the payload matches the
             schema exactly, or on the ``__circular__``/``__rules__`` early
             returns.
+        trace: Sealed deterministic evidence (FEAT-732), or ``None`` when no
+            collector was passed.
     """
 
     is_valid: bool
     errors: dict[str, list[str]]
     sanitized_data: dict[str, Any]
     extra_data: dict[str, Any] = Field(default_factory=dict)
+    trace: ValidationTrace | None = None
 
 
 def _summarize_pydantic_errors(exc: PydanticValidationError) -> str:
@@ -227,6 +233,7 @@ class FormValidator:
         auth_context: AuthContext | None = None,
         location_vars: dict[str, Any] | None = None,
         visit_context: dict[str, Any] | None = None,
+        trace: ValidationTraceCollector | None = None,
     ) -> ValidationResult:
         """Validate all form submission data against the schema.
 
@@ -245,6 +252,9 @@ class FormValidator:
                 the renderer used to keep both sides in agreement.
             visit_context: Visit-level metadata, forwarded to rule resolution
                 with the same caveat as ``location_vars``.
+            trace: Optional collector (FEAT-732). When given, the result
+                carries a sealed ``ValidationTrace``; when ``None`` validation
+                is unchanged.
 
         Returns:
             ValidationResult with field-level errors and sanitized data.
@@ -254,15 +264,31 @@ class FormValidator:
 
         # Detect circular dependencies first (includes post_depends and operation edges)
         circular_errors = self._detect_circular_dependencies(form)
+        if trace is not None:
+            trace.record_form(
+                CheckId.FORM_CIRCULAR_DEPENDENCIES,
+                CheckOutcome.FAIL if circular_errors else CheckOutcome.PASS,
+                message="; ".join(circular_errors) or None,
+            )
         if circular_errors:
             errors["__circular__"] = circular_errors
-            return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
+            if trace is not None:
+                trace.record_form(
+                    CheckId.FORM_RULE_INTEGRITY, CheckOutcome.SKIP, skip_reason=SkipReason.EARLY_RETURN
+                )
+            return self._seal(form, trace, ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized))
 
         # Rule-integrity pass: validate references, ordering, and operator/type compatibility
         rule_errors = self.validate_rules(form)
+        if trace is not None:
+            trace.record_form(
+                CheckId.FORM_RULE_INTEGRITY,
+                CheckOutcome.FAIL if rule_errors else CheckOutcome.PASS,
+                message="; ".join(rule_errors) or None,
+            )
         if rule_errors:
             errors["__rules__"] = rule_errors
-            return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
+            return self._seal(form, trace, ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized))
 
         # Collect all fields from all sections
         all_fields: list[FormField] = []
@@ -297,6 +323,9 @@ class FormValidator:
             effective_required = resolution.required.get(field.field_id, field.required) and resolution.visible.get(
                 field.field_id, True
             )
+            visible = resolution.visible.get(field.field_id, True)
+            if trace is not None:
+                trace.record_resolution(field.field_id, visible=visible, required=effective_required)
             field_errors = await self.validate_field(
                 field,
                 data.get(field.field_id),
@@ -304,7 +333,12 @@ class FormValidator:
                 locale=locale,
                 auth_context=auth_context,
                 required=effective_required,
+                trace=trace,
             )
+            if trace is not None and not visible and resolution.required.get(field.field_id, field.required):
+                trace.record(
+                    field.field_id, CheckId.FIELD_REQUIRED, CheckOutcome.SKIP, skip_reason=SkipReason.NOT_DISPLAYED
+                )
             if field_errors:
                 errors[field.field_id] = field_errors
             else:
@@ -357,12 +391,31 @@ class FormValidator:
         declared_ids = self._declared_field_ids_for_extras(all_fields)
         extra_data = compute_extra_data(data, declared_ids)
 
-        return ValidationResult(
-            is_valid=len(errors) == 0,
-            errors=errors,
-            sanitized_data=sanitized,
-            extra_data=extra_data,
+        return self._seal(
+            form,
+            trace,
+            ValidationResult(
+                is_valid=len(errors) == 0,
+                errors=errors,
+                sanitized_data=sanitized,
+                extra_data=extra_data,
+            ),
         )
+
+    @staticmethod
+    def _seal(
+        form: FormSchema, trace: ValidationTraceCollector | None, result: ValidationResult
+    ) -> ValidationResult:
+        """Attach the sealed trace to ``result`` (FEAT-732); a no-op without a collector."""
+        if trace is None:
+            return result
+        result.trace = trace.finish(
+            form,
+            fingerprint=schema_fingerprint(form),
+            ruleset_version=_RULESET_VERSION,
+            is_valid=result.is_valid,
+        )
+        return result
 
     async def validate_field(
         self,
@@ -373,6 +426,7 @@ class FormValidator:
         locale: str = "en",
         auth_context: AuthContext | None = None,
         required: bool | None = None,
+        trace: ValidationTraceCollector | None = None,
     ) -> list[str]:
         """Validate a single field value against its constraints.
 
@@ -385,6 +439,8 @@ class FormValidator:
             required: Overrides ``field.required`` for this call. ``validate``
                 passes the rule-resolved value, so a field the form never
                 displayed is not demanded; ``None`` keeps the schema default.
+            trace: Optional collector (FEAT-732), forwarded into the
+                voice-envelope recursion. Never changes the return value.
 
         Returns:
             List of error messages (empty list if valid).
@@ -418,6 +474,7 @@ class FormValidator:
                 locale=locale,
                 auth_context=auth_context,
                 required=required,
+                trace=trace,
             )
 
         # Required check. FEAT-488: a dict answer needs its own emptiness
