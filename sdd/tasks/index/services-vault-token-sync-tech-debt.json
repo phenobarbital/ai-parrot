@@ -1,0 +1,58 @@
+{
+  "feature": "services-vault-token-sync-tech-debt",
+  "feature_id": "FEAT-735",
+  "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-23T16:32:23Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/test_jira_oauth_manager.py",
+          "packages/ai-parrot-server/tests/unit/test_identity_credential_sink.py",
+          "packages/ai-parrot/tests/unit/test_post_auth_jira.py",
+          "packages/ai-parrot/tests/unit/test_identity_mapping.py",
+          "packages/ai-parrot/tests/unit/test_vault_token_sync.py",
+          "packages/ai-parrot-server/tests/unit/test_vault_token_sync_f4_regression.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:3a50f7b00cd129b766b2c273d583576d6f3b0027519a9adfa4ba87e959d73c5b"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4668",
+      "slug": "jira-refresh-credential-sink",
+      "title": "Propagate a refreshed Jira grant to the Identity Vault (CredentialSink)",
+      "feature_id": "FEAT-735",
+      "feature": "services-vault-token-sync-tech-debt",
+      "spec": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "First task of the feature; M2-M4 are not filed yet.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4668-jira-refresh-credential-sink.md",
+      "discovered_from": "issue:2e85cce93cab",
+      "module": "M1"
+    }
+  ]
+}

@@ -24,20 +24,26 @@ the test that turns that silent regression into a red build.
 It runs last because it asserts the end state TASK-4591–4594 create. Written
 earlier, its own validation would be circular.
 
+
+> **Amendment B (spec rev 0.3)** — read first. (1) The live pytest config is the tracked root **`pytest.ini`**; the pytest table in
+> `pyproject.toml` is dead config. (2) The remedy is `--import-mode=importlib` + `consider_namespace_packages = true` in `pytest.ini`
+> (done in TASK-4591); **no `__init__.py` is deleted or added anywhere** — never touch one. Because every `__init__.py` stays,
+> relative imports (`from .x`, `from ..x`) keep working: **the preferred repair for a `from tests.<x> import …` is the equivalent
+> relative import**, or a conftest-provided fixture. Evidence: `sdd/state/FEAT-720/spike-namespace-packages.md`. Repairs may change only
+> an import statement, a `conftest.py`, or a dotted string target. **Replace the first test** of this task: with every `__init__.py` kept, a test asserting their absence would be wrong. The three tests are (1) `pytest.ini` carries both settings, (2) the reported pair collects in a subprocess (also rejecting the string `import file mismatch`), (3) no test file contains `from tests.<x>` / `import tests.<x>`.
+
 ---
 
 ## Scope
 
-- Add `packages/ai-parrot/tests/test_package_test_collection.py` with two tests:
-  1. no `packages/*/tests/__init__.py` exists;
-  2. two package test trees collect together with exit 0.
-- Demonstrate the guard actually guards: add an `__init__.py`, observe red,
-  remove it (AC8).
+- Add `packages/ai-parrot/tests/test_package_test_collection.py` with three tests:
+  1. `pytest.ini` sets `--import-mode=importlib` in `addopts` and `consider_namespace_packages = true`;
+  2. the reported pair (`ai-parrot-embeddings`, `parrot-formdesigner`) collects together with exit 0;
+  3. no test file under `packages/*/tests` imports the ambiguous `tests` package (`from tests.<x>` / `import tests.<x>`).
+- Demonstrate each guard fails when its invariant is broken, then revert (AC8).
 
-**NOT in scope**: changing any existing test; repairing any import site
-(TASK-4592/4593/4594); deleting any `__init__.py` for real (TASK-4591); adding a
-CI workflow step (the test runs in the existing suite); any `parrot-formdesigner`
-failure (FEAT-618).
+**NOT in scope**: changing any existing test; repairing any import site (TASK-4592–4594); touching `pytest.ini` (TASK-4591);
+adding a CI workflow step; any `parrot-formdesigner` failure (FEAT-618).
 
 ---
 
@@ -84,7 +90,7 @@ markers = [                      # line 264 — --strict-markers is in force
 | Fact | Value then | Value this task asserts |
 |---|---|---|
 | top-level `packages/*/tests/__init__.py` | 25 | **0** |
-| all `__init__.py` under `packages/*/tests` | 267 | **242** |
+| all `__init__.py` under `packages/*/tests` | 267 | **267** |
 | the AC1 pair collect | `ImportPathMismatchError` | exit 0 |
 
 ### Does NOT Exist
@@ -164,46 +170,39 @@ markers = [                      # line 264 — --strict-markers is in force
 
 ### `packages/ai-parrot/tests/test_package_test_collection.py` (CREATE)
 ```python
-"""Guard the one-importable-identity-per-test-tree invariant (FEAT-720).
+"""Guard the one-importable-identity-per-test-tree invariant (FEAT-720, Amendment B).
 
-Each ``packages/<dist>/tests/__init__.py`` makes that directory the top-level
-import name ``tests``. Two of them in one pytest session collide with
-``ImportPathMismatchError`` before any test runs, which is how this defect hid
-for months: every tree passes on its own.
+Every ``packages/<dist>/tests`` is literally named ``tests``. With pytest's default import mode two of them in one session
+collide with ``ImportPathMismatchError`` before any test runs. The fix is configuration in the live ``pytest.ini`` (not
+``pyproject.toml``, which pytest ignores while ``pytest.ini`` exists): importlib mode plus ``consider_namespace_packages``.
 """
 from __future__ import annotations
 
+import configparser
+import re
 import subprocess
 import sys
 from pathlib import Path
 
-# FILL IN: the parent index — count the levels from this file to the repo root
-#          and verify (REPO_ROOT / "packages").is_dir(); a wrong index makes both
-#          tests pass vacuously. Bounded by AC8.
-REPO_ROOT = Path(__file__).resolve().parents[0]
-
+REPO_ROOT = Path(__file__).resolve().parents[3]
 _COLLECT_TIMEOUT_S = 300
+_TESTS_IMPORT = re.compile(r"^\s*(?:from|import)\s+tests(?:\.|\s|$)", re.MULTILINE)
 
 
-def test_no_package_test_root_declares_a_package() -> None:
-    """No ``packages/*/tests/__init__.py`` may exist.
-
-    Nested ``__init__.py`` files are expected and are not checked here: they keep
-    the test trees' relative imports working.
-    """
-    assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
-    offenders = sorted(
-        str(p.relative_to(REPO_ROOT))
-        for p in REPO_ROOT.glob("packages/*/tests/__init__.py")
-    )
-    assert offenders == [], (
-        "these test roots declare the import name `tests`, which collides "
-        f"across distributions: {offenders}"
-    )
+def test_pytest_ini_enables_path_derived_test_identities() -> None:
+    """``pytest.ini`` must carry both settings; either one alone leaves the collision."""
+    ini = REPO_ROOT / "pytest.ini"
+    assert ini.is_file(), "pytest.ini is the live pytest config and must exist"
+    parser = configparser.ConfigParser()
+    parser.read(ini)
+    section = parser["pytest"]
+    assert "--import-mode=importlib" in section.get("addopts", "").split()
+    assert section.get("consider_namespace_packages", "").strip().lower() == "true"
 
 
 def test_two_package_test_trees_collect_together() -> None:
     """``pytest <embeddings> <formdesigner> --collect-only`` must exit 0."""
+    assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
     result = subprocess.run(
         [
             sys.executable, "-m", "pytest",
@@ -211,52 +210,41 @@ def test_two_package_test_trees_collect_together() -> None:
             "packages/parrot-formdesigner/tests",
             "--collect-only", "-q", "-p", "no:randomly",
         ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=_COLLECT_TIMEOUT_S,
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=_COLLECT_TIMEOUT_S,
     )
     combined = result.stdout + result.stderr
-    # FILL IN: assert on returncode AND on both failure strings
-    #          ("ImportPathMismatchError" and "already registered") — bounded by
-    #          AC1. Both are required: the second is what --import-mode=importlib
-    #          alone produces, so checking only the first lets a half-fix pass.
-    #          Include `combined` in the assertion message or a failure is unreadable.
-    raise NotImplementedError
+    for needle in ("ImportPathMismatchError", "already registered", "import file mismatch"):
+        assert needle not in combined, f"{needle!r} in collect output:\n{combined[-3000:]}"
+    assert result.returncode == 0, f"collect exited {result.returncode}:\n{combined[-3000:]}"
+
+
+def test_no_test_imports_the_ambiguous_tests_package() -> None:
+    """``tests`` names 25 different trees, so ``from tests.<x>`` resolves to whichever was imported first."""
+    assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
+    offenders = sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in REPO_ROOT.glob("packages/*/tests/**/*.py")
+        if path.resolve() != Path(__file__).resolve() and _TESTS_IMPORT.search(path.read_text(errors="ignore"))
+    )
+    assert offenders == [], f"files still import the ambiguous `tests` package: {offenders}"
 ```
-**Why this shape**: the two tests check the same invariant at different levels —
-the first is a cheap, precise tripwire naming the offending path, the second is
-the real behavioural assertion and would catch a collision arriving by some other
-route. `REPO_ROOT` is a `FILL IN` because the parent index depends on this file's
-final location and a wrong value silently disables both tests. The subprocess is
-scoped to two named trees rather than the repo root so it cannot recursively
-collect itself, and carries a timeout because a hung collect must fail rather
-than hang the suite. Do not add a pytest marker: `--strict-markers` is in force
-and the allowed set is fixed.
+**Why this shape**: the first test pins the real defect (a config in the file pytest actually reads, with both lines), the second is the
+behavioural assertion on the reported pair, the third stops class (i) from returning. `REPO_ROOT` is `parents[3]`
+(`test_package_test_collection.py` → `tests` → `ai-parrot` → `packages` → repo root): verify with the `is_dir` assertion. The subprocess is
+scoped to two named trees so it cannot collect itself, and has a timeout. Do not add a pytest marker.
 
 ### FILL IN checklist
-- [ ] `REPO_ROOT` parent index — verified against the real path; bounded by AC8
-- [ ] `test_two_package_test_trees_collect_together` assertions — returncode plus
-      both failure strings; bounded by AC1
+- [ ] none — fully specified. If `REPO_ROOT` does not resolve, stop and report.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `packages/ai-parrot/tests/test_package_test_collection.py` exists and both
-      tests pass.
-- [ ] **AC8 met**: adding a `packages/*/tests/__init__.py` makes **both** tests
-      fail; removing it makes both pass. The demonstration is pasted in the
-      Completion Note and the temporary file is **not** committed.
-- [ ] `REPO_ROOT` is verified: the test asserts `(REPO_ROOT / "packages").is_dir()`.
-- [ ] The subprocess test asserts on the return code **and** on both
-      `ImportPathMismatchError` and `already registered`.
-- [ ] No new pytest marker is introduced (`--strict-markers` is in force).
-- [ ] `find packages/*/tests -name '__init__.py' | wc -l` → **242** (AC4) —
-      unchanged by this task.
+- [ ] `packages/ai-parrot/tests/test_package_test_collection.py` exists and its three tests pass.
+- [ ] **AC8**: demonstrated and pasted in the Completion Note, each reverted afterwards (never committed): (1) delete the
+      `consider_namespace_packages` line from `pytest.ini` → test 1 and test 2 fail; (2) add `from tests.foo import x` to any test file → test 3 fails.
+- [ ] No new pytest marker. `find packages/*/tests -name '__init__.py' | wc -l` → **267** (AC4), unchanged.
 - [ ] `ruff check packages/ai-parrot/tests/test_package_test_collection.py` clean (AC9).
-
----
 
 ## Validation Commands
 
@@ -296,10 +284,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (by hand — the file is fully specified in the blueprint)
+**Date**: 2026-10-23
+**Notes**: `packages/ai-parrot/tests/test_package_test_collection.py` with the three tests of Amendment B; 3 passed (≈17 s, the pair collect runs in a subprocess); ruff clean.
+**AC8 demonstrated, both reverted, nothing committed**: (1) deleting the `consider_namespace_packages` line from `pytest.ini` → `test_pytest_ini_enables_path_derived_test_identities` AND
+`test_two_package_test_trees_collect_together` fail (2 failed, 1 passed); (2) prepending `from tests.foo import x` to `parrot-formdesigner/tests/unit/test_version_and_docs.py` →
+`test_no_test_imports_the_ambiguous_tests_package` fails. Restored; `git status` clean afterwards.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the tests differ from the original spec's M4 (Amendment B: `__init__.py` files stay, so the "no `tests/__init__.py`" assertion became a `pytest.ini` config guard).

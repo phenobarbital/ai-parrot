@@ -44,6 +44,14 @@ This is also the task that closes the feature's headline invariant: once
 (TASK-4595); **any `parrot-formdesigner` test failure** — that package is 40
 tests red on `dev` for reasons FEAT-618 owns (AC7).
 
+
+> **Amendment B (spec rev 0.3)** — read first. (1) The live pytest config is the tracked root **`pytest.ini`**; the pytest table in
+> `pyproject.toml` is dead config. (2) The remedy is `--import-mode=importlib` + `consider_namespace_packages = true` in `pytest.ini`
+> (done in TASK-4591); **no `__init__.py` is deleted or added anywhere** — never touch one. Because every `__init__.py` stays,
+> relative imports (`from .x`, `from ..x`) keep working: **the preferred repair for a `from tests.<x> import …` is the equivalent
+> relative import**, or a conftest-provided fixture. Evidence: `sdd/state/FEAT-720/spike-namespace-packages.md`. Repairs may change only
+> an import statement, a `conftest.py`, or a dotted string target. `parrot-formdesigner` fails on 5 files (4 `tests.*` + `unit/test_build_snippet_bundles.py`, class (iii)).
+
 ---
 
 ## Files to Create / Modify
@@ -55,6 +63,7 @@ tests red on `dev` for reasons FEAT-618 owns (AC7).
 | `packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py` | MODIFY | class (i) import |
 | `packages/parrot-formdesigner/tests/unit/test_org_graph_service.py` | MODIFY | class (i) import |
 | `packages/ai-parrot-server/tests/mcp/__init__.py` | MODIFY | class (vi) — stop shadowing the real `mcp` |
+| `packages/parrot-formdesigner/tests/conftest.py` | MODIFY | class (iii): explicit `sys.path` entry for the package's own `scripts/` (`scripts.build_snippet_bundles`) |
 
 Any class-(i)/(ii)/(iii) file TASK-4590 §3 attributes to `ai-parrot-server`,
 `ai-parrot-embeddings` or `ai-parrot-loaders` is added to this table by the
@@ -123,7 +132,8 @@ acceptance criterion below checks the resolved module's file path explicitly.
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_feat302_review_fixes.py", "action": "MODIFY"},
     {"path": "packages/parrot-formdesigner/tests/unit/test_org_graph_service.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-server/tests/mcp/__init__.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot-server/tests/mcp/__init__.py", "action": "MODIFY"},
+    {"path": "packages/parrot-formdesigner/tests/conftest.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
 }
@@ -275,10 +285,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (by hand; the task is five small edits)
+**Date**: 2026-10-23
+**Notes**: 4 `from tests.<x>` → relative imports in `parrot-formdesigner` (`integration/conftest.py`, `unit/test_feat300_review_fixes.py` — imported names unchanged,
+`unit/test_feat302_review_fixes.py`, `unit/test_org_graph_service.py`) + class (iii): `unit/test_build_snippet_bundles.py` now loads `scripts/build_snippet_bundles.py` by path (an earlier version put the package root on `sys.path` in `tests/conftest.py`; removed after review — a global path entry is ambiguous across trees). Nothing needed in `ai-parrot-server`, `-embeddings`, `-loaders`.
+Evidence (live `pytest.ini`): **AC1** `embeddings + formdesigner` collect together: 4,113 items, 0 errors, none of `ImportPathMismatchError` / `Plugin already registered` /
+`import file mismatch`. Formdesigner standalone 3,899 (baseline 3,899); server 3,597 with 4 errors that are all pre-existing (2 `fakeredis`, 2 `unit/e2e`). All 28 roots in one session:
+43,420 collected, **0 identity collisions**, 49 errors that are class (xi) pollution (a test replaces `sys.modules['aiohttp']`/`parrot._imports` at import) — out of scope.
+Formdesigner failure count unchanged (AC7): the same 6 failures in the touched files before and after (FEAT-618's baseline).
+Class (vi) (`tests/mcp` shadowing the real `mcp`) was later traced to `packages/ai-parrot/tests/conftest.py` putting its own tests directory on `sys.path`; fixed in the follow-up commit (helpers are now imported relatively).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: class (vi) left alone (see above).

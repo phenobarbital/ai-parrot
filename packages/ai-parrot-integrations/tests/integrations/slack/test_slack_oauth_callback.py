@@ -1,13 +1,14 @@
 """Unit tests for SlackOAuthNotifier and handle_slack_jira_callback (FEAT-225 / TASK-1469)."""
+
 from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_token_set():
@@ -24,7 +25,9 @@ def slack_state_payload():
     """State payload as produced by JiraOAuthManager.
 
     Channel-specific data (team_id, slack_user_id) is nested under ``extra`` —
-    this mirrors the real shape returned by ``handle_callback``.
+    this mirrors the real shape returned by ``handle_callback``. Note the
+    top-level ``user_id`` is the composite token-vault key
+    ``connect_jira_handler`` builds, NOT a Navigator user id.
     """
     return {
         "channel": "slack",
@@ -37,9 +40,22 @@ def slack_state_payload():
     }
 
 
+@pytest.fixture
+def slack_state_payload_with_nav_user(slack_state_payload):
+    """State payload that also carries a resolved Navigator user id.
+
+    ``nav_user_id`` in ``extra_state`` is the convention
+    ``JiraPostAuthProvider`` established for Telegram; it is the only value
+    the callback accepts for ``auth.user_identities.user_id`` (a bigint).
+    """
+    slack_state_payload["extra"]["nav_user_id"] = "4210"
+    return slack_state_payload
+
+
 # ---------------------------------------------------------------------------
 # SlackOAuthNotifier tests
 # ---------------------------------------------------------------------------
+
 
 class TestSlackOAuthNotifier:
     @pytest.mark.asyncio
@@ -108,6 +124,7 @@ class TestSlackOAuthNotifier:
 # handle_slack_jira_callback tests
 # ---------------------------------------------------------------------------
 
+
 def _make_success_request(app=None):
     """Build a mock request that simulates a successful OAuth callback (no ?error=)."""
     mock_request = MagicMock()
@@ -125,71 +142,99 @@ class TestHandleSlackJiraCallback:
 
         mock_request = _make_success_request()
 
-        response = await handle_slack_jira_callback(
-            mock_request, mock_token_set, slack_state_payload
-        )
+        response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
 
         assert response.content_type == "text/html"
         assert response.status == 200
 
     @pytest.mark.asyncio
-    async def test_writes_identity_when_service_available(
-        self, mock_token_set, slack_state_payload
-    ):
+    async def test_writes_identity_when_service_available(self, mock_token_set, slack_state_payload_with_nav_user):
         """Calls identity_mapping_service.upsert_identity when available."""
         from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
 
         mock_identity_service = MagicMock()
         mock_identity_service.upsert_identity = AsyncMock()
 
-        mock_request = _make_success_request(
-            app={"identity_mapping_service": mock_identity_service}
-        )
+        mock_request = _make_success_request(app={"identity_mapping_service": mock_identity_service})
 
-        await handle_slack_jira_callback(
-            mock_request, mock_token_set, slack_state_payload
-        )
+        await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload_with_nav_user)
 
         mock_identity_service.upsert_identity.assert_called_once_with(
-            nav_user_id="T0001:U1234",
+            # The Navigator user id from extra_state — never the composite
+            # ``team_id:slack_user_id`` vault key (issue:a671f989e8e7).
+            nav_user_id="4210",
             auth_provider="slack",
+            # TASK-4664: the Slack user id is the external account; the unique
+            # index is partial on provider_user_id being non-NULL.
+            provider_user_id="U1234",
             auth_data={"team_id": "T0001", "slack_user_id": "U1234"},
             display_name="Jane Doe",
             email="jane@myco.com",
         )
 
     @pytest.mark.asyncio
-    async def test_fires_dm_notification_when_notifier_available(
-        self, mock_token_set, slack_state_payload
+    async def test_skips_identity_write_without_nav_user_id(self, mock_token_set, slack_state_payload):
+        """No identity write at all when the state carries no nav_user_id.
+
+        ``auth.user_identities.user_id`` is a bigint with an FK to
+        ``auth.users``, so the composite ``team_id:slack_user_id`` vault key
+        can never land there. The callback must skip the write instead of
+        attempting one that fails server-side (issue:a671f989e8e7).
+        """
+        from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
+
+        mock_identity_service = MagicMock()
+        mock_identity_service.upsert_identity = AsyncMock()
+
+        mock_request = _make_success_request(app={"identity_mapping_service": mock_identity_service})
+
+        response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
+
+        mock_identity_service.upsert_identity.assert_not_called()
+        # The browser flow still completes.
+        assert response.status == 200
+        assert "Jira Connected" in response.text
+
+    @pytest.mark.asyncio
+    async def test_never_passes_composite_vault_key_as_nav_user_id(
+        self, mock_token_set, slack_state_payload_with_nav_user
     ):
+        """The composite ``team:user`` key is never handed to upsert_identity."""
+        from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
+
+        mock_identity_service = MagicMock()
+        mock_identity_service.upsert_identity = AsyncMock()
+
+        mock_request = _make_success_request(app={"identity_mapping_service": mock_identity_service})
+
+        await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload_with_nav_user)
+
+        passed = mock_identity_service.upsert_identity.call_args[1]["nav_user_id"]
+        assert ":" not in passed
+        assert str(passed).isdigit()
+
+    @pytest.mark.asyncio
+    async def test_fires_dm_notification_when_notifier_available(self, mock_token_set, slack_state_payload):
         """Schedules DM notification when notifier is on the app."""
         from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
 
         mock_notifier = MagicMock()
         mock_notifier.notify_connected = AsyncMock()
 
-        mock_request = _make_success_request(
-            app={"slack_jira_oauth_notifier": mock_notifier}
-        )
+        mock_request = _make_success_request(app={"slack_jira_oauth_notifier": mock_notifier})
 
         with patch("asyncio.create_task") as mock_create_task:
-            await handle_slack_jira_callback(
-                mock_request, mock_token_set, slack_state_payload
-            )
+            await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
             mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_no_identity_write_when_service_missing(
-        self, mock_token_set, slack_state_payload
-    ):
+    async def test_no_identity_write_when_service_missing(self, mock_token_set, slack_state_payload):
         """Does not fail when identity_mapping_service is absent."""
         from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
 
         mock_request = _make_success_request()  # no identity service
 
-        response = await handle_slack_jira_callback(
-            mock_request, mock_token_set, slack_state_payload
-        )
+        response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
         assert response.status == 200
 
     @pytest.mark.asyncio
@@ -199,9 +244,7 @@ class TestHandleSlackJiraCallback:
 
         mock_request = _make_success_request()
 
-        response = await handle_slack_jira_callback(
-            mock_request, mock_token_set, slack_state_payload
-        )
+        response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
         body = response.text
         assert "Jane Doe" in body
         assert "myco.atlassian.net" in body  # lgtm[py/incomplete-url-substring-sanitization]
@@ -213,15 +256,15 @@ class TestHandleSlackJiraCallback:
 
         mock_request = MagicMock()
         mock_request.app = {}
+
         # Simulate Atlassian sending back an error
         def _query_get(key, default=None):
             values = {"error": "access_denied", "error_description": "User denied access"}
             return values.get(key, default)
+
         mock_request.rel_url.query.get.side_effect = _query_get
 
-        response = await handle_slack_jira_callback(
-            mock_request, mock_token_set, slack_state_payload
-        )
+        response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload)
         assert response.status == 200
         assert "Authorization Failed" in response.text
         assert "User denied access" in response.text
@@ -230,6 +273,7 @@ class TestHandleSlackJiraCallback:
 # ---------------------------------------------------------------------------
 # State-payload shape parity (regression for the FEAT-225 nesting bug)
 # ---------------------------------------------------------------------------
+
 
 class _FakeRedis:
     """Minimal in-memory async Redis stand-in for shape-parity tests."""
@@ -276,6 +320,7 @@ class TestStatePayloadShapeParity:
                 "channel": "slack",
                 "team_id": "T0001",
                 "slack_user_id": "U1234",
+                "nav_user_id": "4210",
             },
         )
         # Exactly the payload handle_callback would return for this nonce.
@@ -301,3 +346,7 @@ class TestStatePayloadShapeParity:
             "team_id": "T0001",
             "slack_user_id": "U1234",
         }
+        # nav_user_id survives the real nesting as the Navigator id, not the
+        # composite vault key the manager stores at top level.
+        assert identity.upsert_identity.call_args[1]["nav_user_id"] == "4210"
+        assert state_payload["user_id"] == "T0001:U1234"

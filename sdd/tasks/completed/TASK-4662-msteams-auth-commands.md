@@ -301,9 +301,7 @@ When you pick up this task:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
-
-**Completed**:
-**Deviations from scope**:
-**Ambiguities found in the spec**:
-**Follow-up needed**:
+**Completed**: Seat: gpt-5.6-terra · codex · Attempts: 1 · Duration: 165s. /login, /logout, /whoami in msteams/commands/auth_commands.py with tests; merge-tier validation green; reviewed against AC-1..4, no corrections.
+**Deviations from scope**: none
+**Ambiguities found in the spec**: none
+**Follow-up needed**: none

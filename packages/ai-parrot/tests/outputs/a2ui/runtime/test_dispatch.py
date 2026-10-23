@@ -102,7 +102,7 @@ class TestCallAgentFunction:
         assert "Traceback" not in msg
 
     async def test_renderer_only_function_rejected(self, fake_surfaces, fake_pending, a2ui_call_ctx):
-        from tests.outputs.a2ui.runtime.conftest import FakeExecutor
+        from .conftest import FakeExecutor
 
         executor = FakeExecutor(
             mode="success",

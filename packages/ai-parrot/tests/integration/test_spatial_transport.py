@@ -24,6 +24,26 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+# Every sys.modules entry this file registers (stub packages, stub modules, and the modules it loads by path) goes
+# through _set_module so it can be put back after import: a leaked stub (e.g. a bare ``parrot.tools.dataset_manager``
+# or ``aiohttp``) changes what every test collected after this file in the same session imports (FEAT-720).
+_MISSING = object()
+_ORIGINALS: dict[str, object] = {}
+
+
+def _set_module(name: str, module: types.ModuleType) -> None:
+    _ORIGINALS.setdefault(name, sys.modules.get(name, _MISSING))
+    sys.modules[name] = module
+
+
+def _restore_stubbed_modules() -> None:
+    for name, original in _ORIGINALS.items():
+        if original is _MISSING:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+
 def _ensure_stubs() -> None:
     for pkg in (
         "parrot",
@@ -34,19 +54,20 @@ def _ensure_stubs() -> None:
         "parrot.handlers",
     ):
         if pkg not in sys.modules:
-            sys.modules[pkg] = types.ModuleType(pkg)
+            _set_module(pkg, types.ModuleType(pkg))
 
 
 def _load_module(name: str, path: str) -> types.ModuleType:
     import importlib.util
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
+    _set_module(name, mod)
     spec.loader.exec_module(mod)
     return mod
 
 
 _ensure_stubs()
+
 
 _PARROT_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
 _WORKTREE = str(_PARROT_ROOT) + "/"
@@ -69,7 +90,7 @@ class _FakeInMemorySource:
 
 
 _mem_stub.InMemorySource = _FakeInMemorySource
-sys.modules["parrot.tools.dataset_manager.sources.memory"] = _mem_stub
+_set_module("parrot.tools.dataset_manager.sources.memory", _mem_stub)
 
 _compiler_mod = _load_module(
     "parrot.tools.dataset_manager.spatial.compiler",
@@ -92,18 +113,19 @@ class _FakeResponse:
 _web_stub.Response = _FakeResponse
 _web_stub.Request = MagicMock
 _aiohttp_stub.web = _web_stub
-sys.modules["aiohttp"] = _aiohttp_stub
-sys.modules["aiohttp.web"] = _web_stub
+_set_module("aiohttp", _aiohttp_stub)
+_set_module("aiohttp.web", _web_stub)
 
 # Stub parrot._imports for the handler
 _imports_stub = types.ModuleType("parrot._imports")
 _imports_stub.lazy_import = MagicMock(side_effect=ImportError)
-sys.modules["parrot._imports"] = _imports_stub
+_set_module("parrot._imports", _imports_stub)
 
 _handler_mod = _load_module(
     "parrot.handlers.spatial_filter_handler",
     str(_PARROT_ROOT / "handlers" / "spatial_filter_handler.py"),
 )
+_restore_stubbed_modules()
 
 SpatialFilterSpec = _contracts.SpatialFilterSpec
 DatasetSpatialProfile = _contracts.DatasetSpatialProfile

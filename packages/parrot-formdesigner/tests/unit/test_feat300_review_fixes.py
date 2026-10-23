@@ -29,7 +29,7 @@ from parrot_formdesigner.services.form_version import FormVersionService
 from parrot_formdesigner.services.question_bank import QuestionBankService
 from parrot_formdesigner.services.registry import FormRegistry, FormStorage
 
-from tests.unit.test_api_feat300 import _make_form, _make_handler, _make_request
+from .test_api_feat300 import _make_form, _make_handler, _make_request
 
 
 # ---------------------------------------------------------------------------

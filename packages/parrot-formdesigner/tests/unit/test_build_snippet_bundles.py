@@ -7,14 +7,37 @@ monkeypatch/tmp_path) — no real esbuild binary is required.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts.build_snippet_bundles import EsbuildNotFoundError, _compile_one
+
+
+def _load_build_script():
+    """Load ``scripts/build_snippet_bundles.py`` by path (it is stdlib-only and ``scripts`` is not a package).
+
+    Importing it as ``scripts.build_snippet_bundles`` needed the package root on ``sys.path``, which importlib
+    mode no longer provides and which a global ``sys.path`` entry would make ambiguous across test trees.
+    """
+    name = "parrot_formdesigner_build_snippet_bundles"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[2] / "scripts" / "build_snippet_bundles.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_build_script = _load_build_script()
+EsbuildNotFoundError = _build_script.EsbuildNotFoundError
+_compile_one = _build_script._compile_one
 
 
 def _write_bundle(root: Path, name: str, *, with_ts: bool = True) -> Path:

@@ -62,14 +62,14 @@ from parrot_tools.scraping.session_actions import (
     exec_wait_for_download,
 )
 
-from tests.business_automation.fixtures.broker import fake_broker
-from tests.scraping.fixtures.local_site import (
+from ..business_automation.fixtures.broker import fake_broker
+from .fixtures.local_site import (
     SESSION_COOKIE_NAME,
     TEST_PASSWORD,
     TEST_USERNAME,
     local_fixture_site,
 )
-from tests.scraping.fixtures.real_driver import real_playwright_driver
+from .fixtures.real_driver import real_playwright_driver
 
 __all__ = ["fake_broker", "local_fixture_site", "real_playwright_driver"]  # re-exported fixtures
 

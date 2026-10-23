@@ -19,7 +19,7 @@ import pytest
 
 from parrot_formdesigner.services.org_graph import OrgGraph, OrgGraphService, OrgNode
 
-from tests.unit.real_db_shapes import (
+from .real_db_shapes import (
     REAL_AUTH_ORGANIZATIONS_COLUMNS,
     FakeUndefinedColumnError,
     assert_real_columns,
@@ -53,8 +53,8 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
                 if val is None:
                     return None
                 row = MagicMock()
-                row.__getitem__ = lambda self, k: val[k]
-                row.keys = lambda: list(val.keys())
+                row.__getitem__ = lambda self, k, val=val: val[k]
+                row.keys = lambda val=val: list(val.keys())
                 return row
         return None
 

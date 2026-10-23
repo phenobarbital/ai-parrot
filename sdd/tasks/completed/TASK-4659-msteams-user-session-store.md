@@ -417,9 +417,8 @@ When you pick up this task:
 
 ## Completion Note
 
-> Filled in by the implementing agent when the task is closed.
-
-**Completed**:
-**Deviations from scope**:
-**Ambiguities found in the spec**:
-**Follow-up needed**:
+**Completed**: MSTeamsUserSession + MSTeamsSessionStore in msteams/auth.py; merge-tier validation 41 passed; reviewed by orchestrator against AC-1..6, no corrections.
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 92s
+**Deviations from scope**: none
+**Ambiguities found in the spec**: none
+**Follow-up needed**: None. expire=0 when external_expires_at is None is per the task blueprint (store treats 0 as no TTL).
