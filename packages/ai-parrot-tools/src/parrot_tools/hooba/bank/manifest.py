@@ -59,19 +59,18 @@ def write_manifest(manifest: ImportManifest, account_id: Optional[str] = None) -
     return path
 
 
-def reconcile(manifest: ImportManifest, planned_rows: int) -> Dict[str, Any]:
+def reconcile(manifest: ImportManifest) -> Dict[str, Any]:
     """``{rows_in, drafts_out, skipped, delta, reconciled}`` — reconciled iff delta == 0.
 
     ``rows_in`` is always ``manifest.row_count`` — the whole statement's stable, persisted
-    total — never the caller's ``planned_rows`` (this-run's newly-planned count). On a
-    resumed or fully-complete re-run, ``planned_rows`` only reflects the remainder this run
-    actually had left to do (often 0), while ``manifest.completed``/``manifest.skipped`` are
-    cumulative across every run; using ``planned_rows`` for ``rows_in`` would make a correct,
-    fully-reconciled resume falsely report ``reconciled=False``. Mirrors the equivalent,
-    explicitly-documented convention in
+    total — and the function deliberately takes no per-run row count at all. On a resumed
+    or fully-complete re-run, this run's newly-planned count only reflects the remainder
+    it actually had left to do (often 0), while ``manifest.completed``/``manifest.skipped``
+    are cumulative across every run; sourcing ``rows_in`` from a per-call remainder would
+    make a correct, fully-reconciled resume falsely report ``reconciled=False``. Mirrors
+    the equivalent, explicitly-documented convention in
     ``business_automation/ingest.py:reconcile()`` (``bundle.row_count`` there, never
-    ``registrations_out`` alone). ``planned_rows`` is retained in the signature per the
-    spec's declared contract; it is intentionally not used for ``rows_in``.
+    ``registrations_out`` alone).
     """
     rows_in = manifest.row_count
     drafts_out = len(manifest.completed)

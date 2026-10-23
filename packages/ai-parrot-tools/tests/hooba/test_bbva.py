@@ -108,7 +108,7 @@ def test_manifest_permissions_and_reconcile(tmp_path, monkeypatch):
     assert loaded == manifest
     assert load_manifest("does-not-exist") is None
 
-    result = reconcile(manifest, planned_rows=7)
+    result = reconcile(manifest)
     assert result == {"rows_in": 7, "drafts_out": 2, "skipped": 1, "delta": 4, "reconciled": False}
 
 
@@ -147,9 +147,10 @@ def test_reconcile_uses_manifest_row_count_not_this_runs_planned_rows():
     """Regression: a resumed/re-run must reconcile against the WHOLE statement, not just
 
     the remainder this particular run had left to plan. ``manifest.completed``/``.skipped``
-    are cumulative across every run, but ``planned_rows`` reflects only this run's remainder
-    (often 0 once everything is done) — using it for ``rows_in`` would make a fully and
-    correctly completed resume falsely report ``reconciled=False``.
+    are cumulative across every run, while this run's planned count reflects only its own
+    remainder (often 0 once everything is done) — sourcing ``rows_in`` from that remainder
+    would make a fully and correctly completed resume falsely report ``reconciled=False``,
+    which is why ``reconcile()`` takes the manifest alone.
     """
     manifest = ImportManifest(
         statement_digest="resumed-run",
@@ -161,6 +162,6 @@ def test_reconcile_uses_manifest_row_count_not_this_runs_planned_rows():
     )
 
     # This run had nothing left to plan (everything was already completed by prior runs).
-    result = reconcile(manifest, planned_rows=0)
+    result = reconcile(manifest)
 
     assert result == {"rows_in": 3, "drafts_out": 3, "skipped": 0, "delta": 0, "reconciled": True}
