@@ -46,12 +46,14 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 .container{{text-align:center;padding:2rem}}
 .check{{font-size:3rem;color:#36b37e}}
 .teams{{color:#6264A7;font-weight:bold}}
+.warn{{color:#974f0c;background:#fffae6;padding:.75rem;border-radius:4px}}
 </style>
 </head><body><div class="container">
 <div class="check">&#10003;</div>
 <h2>Jira Connected!</h2>
 <p>Hi <strong>{display_name}</strong>! Your Jira account
 (<strong>{site_url}</strong>) is now linked.</p>
+{warning}
 <p>You can close this tab and return to <span class="teams">Microsoft Teams</span>.</p>
 </div></body></html>"""
 
@@ -239,13 +241,21 @@ async def handle_msteams_jira_callback(
     conv_ref: Dict[str, Any] = _conv_ref()
     nav_user_id: str = state_payload.get("user_id") or extra.get("user_id", "")
 
-    # 1. Persist identity mapping row
+    # 1. Persist identity mapping row.
+    #    A failure no longer disappears into the log: the OAuth grant itself
+    #    succeeded (Redis and the token vault already hold it), so the browser
+    #    flow still completes, but the page says the link was not fully
+    #    recorded instead of claiming an unqualified success.
+    identity_warning = ""
     identity_service = request.app.get("identity_mapping_service")
     if identity_service is not None and nav_user_id:
         try:
             await identity_service.upsert_identity(
                 nav_user_id=nav_user_id,
                 auth_provider="msteams",
+                # The Teams account IS the external account here: the callback
+                # resolves the AAD object id into nav_user_id upstream.
+                provider_user_id=nav_user_id,
                 auth_data={
                     "aad_object_id": nav_user_id,
                     # tenant_id, when present on the serialized conversation ref.
@@ -256,10 +266,15 @@ async def handle_msteams_jira_callback(
                 display_name=token_set.display_name or None,
                 email=token_set.email or None,
             )
-        except Exception:  # noqa: BLE001 — identity write must not break browser flow
+        except Exception:  # noqa: BLE001 — surfaced on the page, not swallowed
             logger.exception(
                 "Failed to write auth.user_identities for Teams user=%s",
                 nav_user_id,
+            )
+            identity_warning = (
+                '<p class="warn">Your Jira account is connected, but we could '
+                "not save the identity record. Please report this if Jira "
+                "actions keep failing.</p>"
             )
 
     # 2. Fire-and-forget proactive notification
@@ -280,6 +295,7 @@ async def handle_msteams_jira_callback(
         text=_MSTEAMS_SUCCESS_HTML.format(
             display_name=html.escape(token_set.display_name or ""),
             site_url=html.escape(token_set.site_url or ""),
+            warning=identity_warning,
         ),
         content_type="text/html",
     )

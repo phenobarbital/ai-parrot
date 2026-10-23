@@ -16,6 +16,10 @@ def _make_token_set(**overrides):
     defaults = dict(
         access_token="at-123",
         refresh_token="rt-456",
+        # epoch float, as on the real JiraTokenSet — the Jira identity write
+        # maps it onto TokenResponse.expires_at (TASK-4664).
+        expires_at=4102444800.0,
+        scopes=["read:jira-work", "offline_access"],
         cloud_id="cloud-abc",
         site_url="https://site.atlassian.net",
         account_id="acc-789",
@@ -190,6 +194,20 @@ class TestHandleResultSuccess:
         assert jira_call.kwargs["auth_data"]["account_id"] == "acc-789"
         assert jira_call.kwargs["auth_data"]["cloud_id"] == "cloud-abc"
         assert jira_call.kwargs["auth_data"]["site_url"] == "https://site.atlassian.net"
+
+        # TASK-4664: every site carries the external account id — the unique
+        # index is partial on it being non-NULL.
+        assert tg_call.kwargs["provider_user_id"] == "123456"
+        assert jira_call.kwargs["provider_user_id"] == "acc-789"
+
+        # Only the Jira site holds a real grant, so only it ships a token;
+        # the credential is sealed by IdentityStore, never put in auth_data.
+        assert tg_call.kwargs.get("token") is None
+        token = jira_call.kwargs["token"]
+        assert token.access_token == "at-123"
+        assert token.refresh_token == "rt-456"
+        assert token.provider_user_id == "acc-789"
+        assert "at-123" not in str(jira_call.kwargs["auth_data"])
 
     async def test_falls_back_to_extra_state_user_id(
         self, provider, session, mock_vault_sync

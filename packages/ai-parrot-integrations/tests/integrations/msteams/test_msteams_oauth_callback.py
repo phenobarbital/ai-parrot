@@ -188,6 +188,69 @@ class TestHandleMSTeamsJiraCallback:
         assert call_kwargs["nav_user_id"] == "aad-obj-123"
 
     @pytest.mark.asyncio
+    async def test_passes_provider_user_id(
+        self, mock_token_set, msteams_state_payload
+    ):
+        """TASK-4664: the account id is mandatory — the unique index is
+        partial on it being non-NULL, so a NULL brings back the 42P10."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        mock_request = _make_success_request(
+            app={"identity_mapping_service": identity}
+        )
+
+        await handle_msteams_jira_callback(
+            mock_request, mock_token_set, msteams_state_payload
+        )
+
+        call_kwargs = identity.upsert_identity.call_args[1]
+        assert call_kwargs["provider_user_id"] == "aad-obj-123"
+
+    @pytest.mark.asyncio
+    async def test_identity_failure_is_surfaced_on_the_page(
+        self, mock_token_set, msteams_state_payload
+    ):
+        """TASK-4664 AC-5: a failed write is no longer only logged.
+
+        The browser flow still completes — the OAuth grant itself succeeded —
+        but the page says the identity record was not saved.
+        """
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock(side_effect=RuntimeError("42P10"))
+        mock_request = _make_success_request(
+            app={"identity_mapping_service": identity}
+        )
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, msteams_state_payload
+        )
+
+        assert response.status == 200
+        assert "could not save the identity record" in response.text
+
+    @pytest.mark.asyncio
+    async def test_success_page_has_no_warning_when_write_lands(
+        self, mock_token_set, msteams_state_payload
+    ):
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        mock_request = _make_success_request(
+            app={"identity_mapping_service": identity}
+        )
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, msteams_state_payload
+        )
+
+        assert "could not save the identity record" not in response.text
+
+    @pytest.mark.asyncio
     async def test_fires_proactive_notification_when_notifier_available(
         self, mock_token_set, msteams_state_payload
     ):

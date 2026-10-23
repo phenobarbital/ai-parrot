@@ -15,12 +15,18 @@ the combined Telegram auth flow:
    the Telegram and Jira providers.
 
 Vault and identity-mapping failures are logged but do NOT fail the auth
-— Redis is the primary store and the flow must stay resilient.
+— Redis is the primary store and the flow must stay resilient. The user
+vault (``VaultTokenSync``) remains the authoritative reader-facing copy of
+the Jira credential; the ``IdentityStore`` write added for the Jira identity
+is the canonical navigator-auth record of the same grant.
 """
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, TYPE_CHECKING
+
+from navigator_auth.identity.types import TokenResponse
 
 from parrot.integrations.telegram.jira_commands import _TELEGRAM_CHANNEL
 
@@ -249,11 +255,12 @@ class JiraPostAuthProvider:
                 "JiraPostAuthProvider: no nav_user_id — skipping identity mapping"
             )
             return
-        # Telegram identity
+        # Telegram identity — a channel mapping, no credential exists.
         try:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider="telegram",
+                provider_user_id=str(session.telegram_id),
                 auth_data={
                     "telegram_id": session.telegram_id,
                     "username": session.telegram_username,
@@ -266,11 +273,14 @@ class JiraPostAuthProvider:
                 "JiraPostAuthProvider: telegram identity upsert failed"
             )
 
-        # Jira identity
+        # Jira identity — the one site that holds a real OAuth grant, so the
+        # credential goes through IdentityStore and is sealed with the vault
+        # master keys. auth_data keeps only non-secret coordinates.
         try:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider=self.provider_name,
+                provider_user_id=token_set.account_id,
                 auth_data={
                     "account_id": token_set.account_id,
                     "cloud_id": token_set.cloud_id,
@@ -279,8 +289,35 @@ class JiraPostAuthProvider:
                 },
                 display_name=token_set.display_name,
                 email=token_set.email,
+                token=self._as_token_response(token_set),
             )
-        except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: jira identity upsert failed"
+        except Exception:  # noqa: BLE001 — the vault write above is authoritative
+            self.logger.error(
+                "JiraPostAuthProvider: jira identity upsert failed "
+                "(nav_user_id=%s account=%s) — the credential is still in the "
+                "user vault, but auth.user_identities holds no row for it",
+                nav_user_id,
+                token_set.account_id,
+                exc_info=True,
             )
+
+    @staticmethod
+    def _as_token_response(token_set: "JiraTokenSet") -> "TokenResponse":
+        """Map a ``JiraTokenSet`` onto navigator-auth's ``TokenResponse``.
+
+        ``JiraTokenSet.expires_at`` is an epoch float; ``TokenResponse`` wants
+        an aware datetime. ``provider_user_id`` must be the Atlassian account
+        id, because the cipher binds the sealed token to it.
+        """
+        return TokenResponse(
+            access_token=token_set.access_token,
+            refresh_token=token_set.refresh_token or None,
+            token_type="Bearer",
+            expires_at=(
+                datetime.fromtimestamp(token_set.expires_at, tz=timezone.utc)
+                if token_set.expires_at
+                else None
+            ),
+            scopes=list(token_set.scopes or []),
+            provider_user_id=token_set.account_id,
+        )

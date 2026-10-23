@@ -153,6 +153,7 @@ class TestHandleSlackJiraCallback:
         mock_identity_service.upsert_identity.assert_called_once_with(
             nav_user_id="T0001:U1234",
             auth_provider="slack",
+            provider_user_id="U1234",
             auth_data={"team_id": "T0001", "slack_user_id": "U1234"},
             display_name="Jane Doe",
             email="jane@myco.com",
