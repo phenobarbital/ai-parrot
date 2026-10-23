@@ -10,7 +10,7 @@ tags: [credentials, jira, oauth2, identity-vault, tech-debt]
 **Feature ID**: FEAT-735
 **Date**: 2026-10-23
 **Author**: Jesus (via /sdd-fix, escalated from `issue:2e85cce93cab`)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.x
 
 > **Slug note**: the file is `services-vault-token-sync-tech-debt` because
@@ -18,13 +18,22 @@ tags: [credentials, jira, oauth2, identity-vault, tech-debt]
 > derived it from the single file on the issue's `about` symbol; the feature
 > is wider than that file, as §1 shows.
 
-> **GATED on FEAT-729.** The third credential copy this feature is about is
-> introduced by `feat-FEAT-729-msteams-user-auth-lane`, which is complete but
-> **not merged** (no PR as of 2026-10-23). Every §6 anchor is verified against
-> that branch at `13838cfb46` — i.e. against what `dev` will contain once
-> FEAT-729 lands. Do not start implementation before that merge: on today's
-> `dev` the IdentityStore write does not exist and half this spec has no
-> subject.
+> **Gate 1 cleared (2026-10-23): FEAT-729 landed on `dev`** via PR #1787
+> (`dev` @ `899d1fe59`). The third credential copy this feature is about now
+> exists on the base branch, and all three §6 edit-site anchors re-verify on
+> `dev` at the same line numbers they had on the feature branch.
+>
+> **Gate 2 cleared (2026-10-23): Q1 answered — the Identity Vault is the
+> durable owner, Redis stays the hot cache**, the same shape the other
+> providers use. The spec is approved on that basis; M1 is filed as a task,
+> M2–M4 are ready to decompose.
+>
+> **Q3 and Q4 answered (2026-10-23, same `/sdd-fix` run):** existing `jira:*`
+> vault keys are **left in place**, and the sink covers **link time as well as
+> refresh time** — which adds M1b, widens M3 to `post_auth_jira`'s own
+> credential write, and adds G5. G5 is bounded by a verified constraint: only
+> the Telegram flow puts a Navigator user id in the OAuth state, so the other
+> channels' *first* link still has no owner to write to (see Q4 in §8).
 
 ---
 
@@ -85,7 +94,9 @@ Only its **Jira path** is in scope.
 - The three channel identity mappings (`msteams`, `slack`, `telegram`). They
   hold no credential; FEAT-729 settled them.
 - `issue:a671f989e8e7` (the Slack composite `nav_user_id` is not a bigint) —
-  a separate defect on the same table.
+  a separate defect on the same table, **resolved** by TASK-4666 before the
+  FEAT-729 merge: the callback now skips the write explicitly when the OAuth
+  state carries no Navigator user id (`slack/oauth_callback.py:237`).
 
 ---
 
@@ -101,10 +112,11 @@ it is navigator-auth's canonical table, it is the same writer
 flat vault key. The Jira path of the Session Vault is then redundant and is
 retired.
 
-This is the direction TASK-4664's merged Completion Note recommended. It is
-written here as a recommendation, not a settled fact — **Q1 in §8 is the
-decision this spec exists to force**, and M2–M4 are contingent on it. M1 is
-not: the refresh must propagate under every answer.
+This is the direction TASK-4664's merged Completion Note recommended, and it
+is now **decided**: the user answered Q1 (§8) on 2026-10-23 in favour of the
+Identity Vault, so M2–M4 are no longer contingent. The same sink is called at
+link time and at refresh time (Q4), which makes `JiraOAuthManager` the single
+writer of the durable copy wherever a grant is minted or rotated.
 
 ### Component Diagram
 
@@ -118,11 +130,16 @@ JiraOAuthManager.handle_callback              _refresh_tokens
          │        └── JiraToolkit reads here (G4)     │
          │                                            │
          └──→ IdentityStore (DURABLE OWNER) ←─────────┘
+              both arrows go through the ONE sink:
+              M1b at link time (Q4), M1 at refresh time
                   ↑
                   └── OAuth2Service._token_status reads here (M2)
 
    RETIRED by M3:  post_auth_jira._store_in_vault(provider="jira")
                       → VaultTokenSync → auth.user_vault_secrets
+                   post_auth_jira._write_identity_records(token=…)
+                      → the sink owns the credential write now (M1b);
+                        the `telegram` mapping row STAYS
    (VaultTokenSync keeps serving fireflies / workiq / entra / o365)
 ```
 
@@ -131,6 +148,7 @@ JiraOAuthManager.handle_callback              _refresh_tokens
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `JiraOAuthManager._refresh_tokens` | extends | also persists to the durable owner (M1) |
+| `JiraOAuthManager.handle_callback` | extends | same sink at link time, every channel (M1b, Q4) |
 | `OAuth2Service._token_status` | replaces backing store | reads the owner, not the vault (M2) |
 | `JiraPostAuthProvider._store_in_vault` | removes the jira call | M3, only after M2 ships |
 | `IdentityMappingService.upsert_identity` | uses | already the single entry point for the sealed write |
@@ -174,25 +192,139 @@ class JiraOAuthManager:
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: refresh propagation | no | — | Needs the failure policy decided (Q2): does a sink failure fail the refresh, or log and continue? |
+| M1: refresh propagation | yes | Protocol + call site + sink class fixed below; Q2 decided (Redis first, sink failure logged at `error`, refresh still returns); the nav user is resolved with `IdentityStore.find_user_by_provider_account` and the row updated with `update_tokens` | — |
 | M2: status probe on the owner | yes | `_token_status` keeps its `"connected"`/`"needs_reconnect"` contract and its fail-open `except`; only the backing read changes | — |
 | M3: retire the vault jira write | yes | delete the `provider="jira"` call in `_store_in_vault`; leave the method for other providers | — |
+| M1b: link-time propagation | yes | same sink, called after the `_write_token` at `jira_oauth.py:498`; the Navigator user comes from `state_payload["extra"]["nav_user_id"]` when present, else `find_user_by_provider_account`; neither ⇒ logged no-op | — |
 | M4: docs + migration note | yes | one page under `docs/`, linked from the two touched modules | — |
 
-### Module 1: Refresh propagation (`CredentialSink`)
-- **Path**: `packages/ai-parrot/src/parrot/auth/jira_oauth.py`
+### Module 1: Refresh propagation (`CredentialSink` + Identity Vault sink)
+- **Paths**:
+  - `packages/ai-parrot/src/parrot/auth/jira_oauth.py` (MODIFY — Protocol, ctor param, call site)
+  - `packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py` (CREATE — the concrete sink)
+  - `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (MODIFY — wiring, 2 sites)
 - **Responsibility**: a refreshed grant reaches the durable owner, not only Redis.
-- **Depends on**: nothing in this spec (ships first; it is correct under either Q1 answer).
+- **Depends on**: nothing in this spec. It ships first and is correct on its own.
+- **The `nav_user_id` problem and its solution** — `_refresh_tokens` receives
+  `(channel, user_id)`, where `user_id` is the **channel's** id (a Telegram id,
+  an AAD object id), *not* the Navigator `user_id` the identity row is keyed
+  by, and `JiraTokenSet` carries no `nav_user_id` either. The sink therefore
+  resolves the owner from the Atlassian account id, which both sides do have:
+  `IdentityStore.find_user_by_provider_account("jira", token.account_id)`
+  (`store.py:497`) returns the Navigator `user_id` of the enabled identity for
+  that account. A miss (a user who linked Jira before FEAT-729, so no row
+  exists) is a logged no-op, never an error.
+- **Why `update_tokens`, never `save_linked_identity`** — `save_linked_identity`
+  sets `auth_data` to `_identity_profile(userinfo)` (`store.py:246`), so calling
+  it on a refresh with no `userinfo` would **wipe** `account_id` / `cloud_id` /
+  `site_url` from the row. `update_tokens` (`store.py:408`) re-seals only the
+  token columns and leaves `auth_data` untouched — that is the refresh call.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/jira_oauth.py (modifies jira_oauth.py:642)
+  class CredentialSink(Protocol):
+      """Durable store kept in step with the Redis hot cache."""
+
+      async def persist(self, channel: str, user_id: str,
+                        token: "JiraTokenSet") -> None:
+          """Persist a freshly minted or refreshed grant.
+
+          Raises on failure; the manager logs and continues (Q2).
+          """
+
   class JiraOAuthManager:
+      def __init__(self, ..., credential_sink: Optional[CredentialSink] = None) -> None:
+          """``credential_sink``: durable owner notified after every Redis write.
+
+          ``None`` keeps today's Redis-only behaviour verbatim.
+          """
+
       async def _refresh_tokens(self, channel: str, user_id: str,
                                 token_set: JiraTokenSet) -> JiraTokenSet:
-          """Refresh via Atlassian, write Redis, then notify ``credential_sink``.
+          """Refresh via Atlassian, write Redis, then notify the sink.
 
-          The sink is notified AFTER the Redis write succeeds, so a durable-store
-          outage can never cost the user a working hot credential.
+          Order is load-bearing: the sink runs AFTER ``_write_token`` succeeds,
+          so a Postgres outage can never cost the user a working hot
+          credential, and a sink failure is logged at ``error`` without
+          changing the return value.
+          """
+  ```
+  ```python
+  # packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py (new)
+  class IdentityVaultCredentialSink:
+      """``CredentialSink`` backed by navigator-auth's Identity Vault.
+
+      Structural implementation of ``parrot.auth.jira_oauth.CredentialSink``:
+      ai-parrot must not import ai-parrot-server, so the Protocol is satisfied
+      by shape, never by inheritance.
+      """
+
+      def __init__(self, db_pool: Any, provider: str = "jira") -> None:
+          """``db_pool``: the asyncdb ``authdb`` pool (``app['authdb']``)."""
+
+      async def persist(self, channel: str, user_id: str,
+                        token: "JiraTokenSet") -> None:
+          """Re-seal the rotated grant on the owner's identity row.
+
+          No-op with a warning when no identity row owns ``token.account_id``.
+          """
+  ```
+
+### Module 1b: Link-time propagation (Q4)
+- **Path**: `packages/ai-parrot/src/parrot/auth/jira_oauth.py` (MODIFY — the
+  `handle_callback` store site, `jira_oauth.py:498`)
+- **Responsibility**: a **minted** grant reaches the durable owner too, on
+  every channel — not only on the combined Telegram login, which is the one
+  flow that writes it today (G5).
+- **Depends on**: M1 (it reuses that Protocol, ctor parameter and sink class;
+  this module adds a second call site, nothing else).
+- **The resolution constraint, verified** — `handle_callback` has the state
+  payload, and only the Telegram flow puts a Navigator id in it:
+  `post_auth_jira` sets `extra_state["nav_user_id"]`
+  (`post_auth_jira.py:120`), while the Slack command sends
+  `team_id` / `slack_user_id` (`slack/commands/jira_commands.py:91`) and the
+  MS Teams command sends the AAD object id as `user_id`
+  (`msteams/commands/jira_commands.py:214`). So the owner is resolved in this
+  order:
+  1. `state_payload["extra"]["nav_user_id"]` — the Telegram flow, and any
+     future caller that carries it;
+  2. `find_user_by_provider_account("jira", token.account_id)` — a **re-link**
+     of an Atlassian account that already owns a row;
+  3. neither ⇒ **logged no-op at `warning`**, never an error. A first-ever
+     Slack or MS Teams link genuinely has no Navigator user to attach to, and
+     inventing one is what `issue:a671f989e8e7` (composite id) and
+     `issue:187ce3fe3b93` (AAD GUID vs the `bigint` cast) already cost us.
+- **Scope note**: closing case 3 means carrying a Navigator user id into those
+  channels' authorize state. That is `issue:187ce3fe3b93`'s fix for MS Teams
+  and is **out of scope here** — G5 is met for every channel that can identify
+  its user, and the gap that remains is named rather than papered over.
+- **Why `save_linked_identity` here, not `update_tokens`** — the mirror of M1:
+  at link time there *is* `userinfo` (account id, cloud id, site url, display
+  name), so the full sealed write is correct and creates the row when it is
+  the first link. M1's refresh path has no `userinfo` and must not wipe
+  `auth_data`.
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot/src/parrot/auth/jira_oauth.py (modifies jira_oauth.py:498)
+  class JiraOAuthManager:
+      async def handle_callback(self, code: str, state: str) -> Tuple[JiraTokenSet, Dict[str, Any]]:
+          """... unchanged contract and return value.
+
+          After ``_write_token`` succeeds, notify the sink with the state
+          payload so it can resolve the Navigator user. A sink failure is
+          logged at ``error`` and swallowed (Q2) — a link that worked for the
+          user must not fail because the durable copy did.
+          """
+  ```
+  ```python
+  # packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py
+  class IdentityVaultCredentialSink:
+      async def persist_minted(self, channel: str, user_id: str,
+                               token: "JiraTokenSet",
+                               state_payload: Dict[str, Any]) -> None:
+          """Seal a newly minted grant via ``save_linked_identity``.
+
+          Resolution order and the logged no-op are described above.
           """
   ```
 
@@ -215,13 +347,21 @@ class JiraOAuthManager:
           """
   ```
 
-### Module 3: Retire the Jira path of the Session Vault
+### Module 3: Retire the two redundant Jira writers
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py`
-- **Responsibility**: stop writing the second copy; it has no reader once M2 ships.
-- **Depends on**: M2.
+- **Responsibility**: stop writing the second copy (no reader once M2 ships),
+  and stop writing the credential a **second time into the owner's own row** —
+  M1b does that for every channel now. Two writers of one credential is the
+  defect this feature exists to remove; leaving both would only move them
+  inside one table.
+- **Depends on**: M2 (vault write) and M1b (identity write).
 - **Interface Skeleton**:
   ```python
-  # modifies post_auth_jira.py — `_store_in_vault` loses its jira call site.
+  # modifies post_auth_jira.py:189 — the `_store_in_vault` call site goes away.
+  # modifies post_auth_jira.py:279 — the `jira` upsert loses `token=`; it keeps
+  #   writing the non-secret mapping row (account_id / cloud_id / site_url /
+  #   display_name), which is FEAT-729's channel mapping, not a credential.
+  #   The `telegram` upsert above it is untouched.
   # VaultTokenSync itself is untouched: fireflies / workiq / entra / o365
   # keep calling store_tokens exactly as today.
   ```
@@ -241,12 +381,16 @@ class JiraOAuthManager:
 | Test | Module | Description |
 |---|---|---|
 | `test_refresh_notifies_sink` | M1 | A refresh writes Redis AND calls the sink with the new grant |
+| `test_link_notifies_sink` | M1b | `handle_callback` writes Redis AND calls the sink with the minted grant |
+| `test_link_resolves_nav_user_from_state` | M1b | `extra.nav_user_id` in the state wins over the account lookup |
+| `test_link_without_nav_user_is_a_logged_noop` | M1b | No `nav_user_id`, no matching account ⇒ no write, no raise, one `warning` |
 | `test_refresh_survives_sink_failure` | M1 | A sink error leaves the refreshed Redis token usable (policy from Q2) |
 | `test_no_sink_keeps_redis_only_behaviour` | M1 | `credential_sink=None` is byte-identical to today |
 | `test_status_connected_from_owner` | M2 | A sealed, openable row ⇒ `connected` |
 | `test_status_needs_reconnect_on_credential_error` | M2 | `IdentityCredentialError` ⇒ `needs_reconnect` |
 | `test_status_fails_open` | M2 | Store outage ⇒ `connected` (contract preserved) |
 | `test_jira_not_written_to_session_vault` | M3 | The combined Telegram login writes no `jira:*` vault key |
+| `test_post_auth_jira_upsert_carries_no_token` | M3 | The `jira` upsert passes no `token=`; the `telegram` upsert is unchanged |
 | `test_other_providers_still_use_vault` | M3 | fireflies / o365 vault writes unchanged |
 
 ### Integration Tests
@@ -259,12 +403,20 @@ class JiraOAuthManager:
 ### Validation Contract
 
 tests:
-- packages/ai-parrot/tests/unit/test_jira_oauth.py
+- packages/ai-parrot/tests/unit/test_jira_oauth_manager.py
+- packages/ai-parrot/tests/unit/test_oauth2_service_token_status.py
 - packages/ai-parrot/tests/unit/test_post_auth_jira.py
 - packages/ai-parrot/tests/unit/test_identity_mapping.py
 - packages/ai-parrot/tests/unit/test_vault_token_sync.py
+- packages/ai-parrot-server/tests/unit/test_identity_credential_sink.py
 - packages/ai-parrot-server/tests/unit/test_vault_token_sync_f4_regression.py
 markers: none
+
+> Corrected at task time (2026-10-23): the first entry was
+> `test_jira_oauth.py`, which does not exist — the manager's suite is
+> `test_jira_oauth_manager.py`. The two files created by this feature
+> (`test_identity_credential_sink.py`, `test_oauth2_service_token_status.py`)
+> are listed here and declared as CREATE targets by TASK-4668 / TASK-4670.
 
 > The real-Postgres tests in `test_identity_mapping.py` skip unless
 > `IDENTITY_PG_DSN` is set (the `TEST_STUDIO_PG_DSN` precedent). CI has no
@@ -288,25 +440,32 @@ def recording_sink():
       which copies are derived and which were retired.
 - [ ] **AC-2** `_refresh_tokens` updates the durable owner; a test proves the
       owner's stored credential decrypts to the **refreshed** access token.
+- [ ] **AC-2b** `handle_callback` writes the owner through the same sink on
+      every channel that can identify its Navigator user, and is a logged
+      no-op on one that cannot — proven by the three M1b tests (G5).
 - [ ] **AC-3** `_token_status` answers from the owner, keeps the
       `connected` / `needs_reconnect` vocabulary, and still fails open.
 - [ ] **AC-4** No code path writes the Jira credential to
-      `auth.user_vault_secrets` any more; `VaultTokenSync`'s other providers
-      are untouched and their tests still pass.
+      `auth.user_vault_secrets` any more, and exactly **one** writer — the
+      sink — writes it to `auth.user_identities`; `VaultTokenSync`'s other
+      providers are untouched and their tests still pass.
 - [ ] **AC-5** `JiraToolkit` credential resolution still goes through Redis —
       no new per-call Postgres read on the tool path (G4).
-- [ ] **AC-6** A migration note says what to do with `jira:*` keys already in
-      users' vaults (leave, or a one-off delete), and the choice is justified.
+- [ ] **AC-6** A migration note records the Q3 decision — existing `jira:*`
+      vault keys are **left in place**, inert once nothing reads them — and
+      names what would change it: an audit requiring that a revoked credential
+      leave no copy behind.
 - [ ] **AC-7** `issue:2e85cce93cab` can be closed with this evidence.
 
 ---
 
 ## 6. Codebase Contract
 
-> Verified against `origin/feat-FEAT-729-msteams-user-auth-lane` @ `13838cfb46`
-> on 2026-10-23 — i.e. against what `dev` holds **after** FEAT-729 merges.
-> Re-verify every anchor at task time: this branch had not merged when the
-> spec was written.
+> Written against `feat-FEAT-729-msteams-user-auth-lane` @ `13838cfb46` and
+> **re-verified against `origin/dev` @ `899d1fe59`** (2026-10-23, after the
+> FEAT-729 merge): every edit-site anchor below still resolves, at the same
+> line numbers. `/sdd-task` must still re-run each `grep -c` — this table
+> saves the search, not the check.
 
 ### Verified Imports
 
@@ -398,8 +557,12 @@ Verified against `13838cfb46`.
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/auth/jira_oauth.py` | MODIFY | `    async def _refresh_tokens(self, channel: str, user_id: str, token_set: JiraTokenSet) -> JiraTokenSet:` | `jira_oauth.py:642` | 1 |
+| `packages/ai-parrot/src/parrot/auth/jira_oauth.py` | MODIFY | `        await self._write_token(self._token_key(channel, user_id), token)` | `jira_oauth.py:498` (M1b link time) | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `    async def _token_status(self, user_id: str, provider_id: str, request: Any) -> str:` | `service.py:173` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py` | MODIFY | `        await self._store_in_vault(nav_user_id, token_set)` | `post_auth_jira.py:189` (method at `:222`) | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py` | MODIFY | `                token=_build_token_response(token_set),` | `post_auth_jira.py:279` (M3 drops `token=`) | 1 |
+| `packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py` | CREATE | — | — | — |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `                    jira_oauth_manager = JiraOAuthManager(` | `manager.py:338` and `:896` | 2 |
 | `docs/auth/jira-credential-ownership.md` | CREATE | — | — | — |
 
 ---
@@ -444,9 +607,11 @@ Verified against `13838cfb46`.
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Which store owns the Jira credential?** *(the decision this spec
-      exists to force; M2–M4 are contingent on it)*
-      **Recommendation: the Identity Vault**, with Redis kept as the hot cache.
+- [x] **Q1 — Which store owns the Jira credential?** — **ANSWERED 2026-10-23
+      by the user: the Identity Vault is the durable owner, Redis stays the
+      hot cache, "like others".** M2–M4 proceed on that basis.
+      Original recommendation (adopted): **the Identity Vault**, with Redis
+      kept as the hot cache.
       It is navigator-auth's canonical table, it is the store
       `TokenExchangeAuth` already writes, and it seals each token bound to its
       identity row rather than as a flat vault key. The counter-argument on
@@ -457,23 +622,36 @@ Verified against `13838cfb46`.
       keep the Session Vault, which is less work but gives up the sealed,
       context-bound credential and leaves navigator-auth's canonical table
       empty for Jira.
-- [ ] **Q2 — Does a sink failure fail the refresh?** Proposed: no. Redis is
+- [x] **Q2 — Does a sink failure fail the refresh?** — **RESOLVED: no**, the
+      proposal below is adopted as the default for TASK filing. Flag it if you
+      disagree; it is the one decision in M1 the user did not state explicitly.
+      Proposed: no. Redis is
       written first and the refreshed token is returned; a sink failure is
       logged at `error` with the user and provider. A refresh that works for
       the user must not be rolled back because the durable copy lagged — but
       the log must be loud, because silent failure is what produced
       `issue:0115386145f2` in the first place.
-- [ ] **Q3 — What happens to `jira:*` keys already in users' vaults?**
-      Proposed: leave them; they are inert once nothing reads them, and a bulk
-      delete across every user's vault is a risk with no payoff. Revisit if an
-      audit requires that revoked credentials leave no copy.
-- [ ] **Q4 — Should `handle_callback` write the owner directly**, instead of
-      relying on `post_auth_jira` to do it for the Telegram flow only? Today
-      the sealed write happens only on the combined Telegram login; the MS
-      Teams and Slack Jira callbacks write no credential at all. If the answer
-      is yes, the sink of M1 covers link time as well as refresh time, and
-      this feature closes a gap wider than the one `issue:2e85cce93cab`
-      reported.
+- [x] **Q3 — What happens to `jira:*` keys already in users' vaults?** —
+      **ANSWERED 2026-10-23 by the user: leave them.** They are inert once
+      nothing reads them, and a bulk delete across every user's vault is a
+      risk with no payoff. AC-6 records the decision and its trigger to
+      revisit: an audit requiring that a revoked credential leave no copy.
+- [x] **Q4 — Should `handle_callback` write the owner directly?** —
+      **ANSWERED 2026-10-23 by the user: yes.** The sink covers link time as
+      well as refresh time, which adds **M1b**, adds **G5**, and makes
+      `post_auth_jira`'s own credential write redundant (**M3** widened).
+      Today the sealed write happens only on the combined Telegram login; the
+      MS Teams and Slack Jira callbacks write no credential at all.
+      **Verified constraint on how far "yes" reaches:** only the Telegram
+      flow carries a Navigator user id in the OAuth state
+      (`post_auth_jira.py:120` sets `extra_state["nav_user_id"]`; Slack sends
+      `team_id`/`slack_user_id` at `slack/commands/jira_commands.py:91`, MS
+      Teams sends the AAD object id at `msteams/commands/jira_commands.py:214`).
+      So M1b writes the owner whenever the user can be resolved — from the
+      state, else from `find_user_by_provider_account` on a re-link — and is a
+      logged no-op on a first-ever Slack/Teams link. Carrying a Navigator id
+      into those channels' authorize state is `issue:187ce3fe3b93`'s fix and
+      stays out of this feature.
 
 ---
 
@@ -487,4 +665,7 @@ Verified against `13838cfb46`.
 - Prior art: `sdd/proposals/unified-credential-broker.brainstorm.md`
   (2026-06-29) — the `CredentialResolver` abstraction this feature deliberately
   does not change.
-- Sibling issue on the same table: `issue:a671f989e8e7`.
+- Sibling issue on the same table: `issue:a671f989e8e7` — closed by TASK-4666.
+- FEAT-729 merged to `dev` on 2026-10-23 (PR #1787). TASK-4664 and TASK-4665
+  closed `done-with-issues` / `verification: partial`; the credential-store
+  duplication this spec addresses is the TASK-4664 remainder.

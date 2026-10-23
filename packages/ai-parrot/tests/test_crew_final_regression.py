@@ -10,7 +10,7 @@ import inspect
 import subprocess
 
 
-from _crew_test_helpers import DummyAgent  # shared test infrastructure
+from ._crew_test_helpers import DummyAgent  # shared test infrastructure
 
 
 # ---------------------------------------------------------------------------

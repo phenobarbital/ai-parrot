@@ -242,7 +242,7 @@ class TestEndToEnd:
         """`ensure_tool_node_registered(PlanToolNode)` must not affect
         `AgentCrew.add_tool_node()`, which builds crew's own `ToolNode`
         directly — never through `NODE_REGISTRY`."""
-        from _crew_test_helpers import DummyAgent, DummyTool  # noqa: PLC0415
+        from ..._crew_test_helpers import DummyAgent, DummyTool  # noqa: PLC0415
 
         ensure_tool_node_registered(PlanToolNode)
         assert NODE_REGISTRY["tool"] is PlanToolNode
