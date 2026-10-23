@@ -43,6 +43,18 @@ class LLMValidationConfig(BaseModel):
     timeout_s: float = Field(default=8.0, gt=0.0)
     max_fields: int = Field(default=50, ge=1)
     exclude_field_types: list[FieldType] = Field(default_factory=lambda: list(_DEFAULT_EXCLUDED))
+    max_answer_chars: int = Field(default=500, ge=1)
+    """Max characters of a rendered answer placed in the prompt (FEAT-737).
+
+    Longer text is truncated with a trailing ``…`` so the model can see the
+    answer was cut rather than silently judging a fragment as if it were whole.
+    """
+    max_reason_chars: int = Field(default=300, ge=1)
+    """Max characters kept from the model's returned ``reason`` (FEAT-737).
+
+    Bounds what a verbose or adversarial response can persist into the audit
+    record and echo back to the client.
+    """
 
 
 class PlausibilityVerdict(BaseModel):
@@ -86,6 +98,15 @@ class PlausibilityReport(BaseModel):
     """The provider that answered (``AIMessage.provider``)."""
     usage: dict[str, Any] | None = None
     """Token usage of the call (``AIMessage.usage``), JSON-dumped."""
+    not_examined: dict[str, str] = Field(default_factory=dict)
+    """Eligible field ids the model never saw, by reason code (FEAT-737).
+
+    Keys are field ids; values are ``NOT_EXAMINED_MAX_FIELDS`` or
+    ``NOT_EXAMINED_UNRENDERABLE``. Empty on a ``skipped``/``blocked`` report —
+    those statuses already say the whole batch went unexamined. A
+    ``status="ok"`` report with a non-empty map means PARTIAL coverage:
+    ``items`` is authoritative only for the field ids absent from this map.
+    """
 
 
 def llm_validation_enabled(form: FormSchema, field: FormField) -> bool:
@@ -122,6 +143,13 @@ def implausible_fields(report: PlausibilityReport) -> list[str]:
 #: report, never sent to a form client — they name the vendor, the model and
 #: the token usage of the call (spec §7 R10).
 PLAUSIBILITY_AUDIT_FIELDS: frozenset[str] = frozenset({"resolved_model", "provider", "usage"})
+
+#: ``PlausibilityReport.not_examined`` reason: cut by ``LLMValidationConfig.max_fields`` (FEAT-737).
+NOT_EXAMINED_MAX_FIELDS: str = "max_fields_cap"
+
+#: ``PlausibilityReport.not_examined`` reason: the answer could not be rendered as
+#: prompt text (dict answers, or lists holding dicts/lists) — FEAT-737.
+NOT_EXAMINED_UNRENDERABLE: str = "unrenderable_answer"
 
 
 def wire_report(report: PlausibilityReport, **dump_kwargs: Any) -> dict[str, Any]:
