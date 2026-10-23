@@ -77,7 +77,16 @@ def report_root() -> Path:
     return Path("/tmp") / f"claude-{os.getuid()}" / "sdd-tests"
 
 
-_SAFE_ID_RE = re.compile(r"^(?:FEAT-\d+|TASK-\d+|_rerun)$")
+# Feature/task ids safe as a PATH COMPONENT. Deliberately stricter than the
+# sdd_coder task-id gates (`models._TASK_ID_RE` and friends, FEAT-736): their
+# key class `[A-Za-z0-9._-]` mirrors `brief_meta._SAFE_REF_RE` and admits `.`,
+# which here would make `HOTFIX-a..b-1` a usable path component. The key class
+# below excludes `.`, so a dotted brief key falls back to `_invalid` -- safe,
+# and no worse than refusing every brief id as this did before. `_safe_id`
+# uses `.match()`, so the trailing `$` is what makes this a full match: keep it.
+_SAFE_ID_RE = re.compile(
+    r"^(?:FEAT-\d+|TASK-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9_-]*|HOTFIX-[A-Za-z0-9][A-Za-z0-9_-]*-\d+|_rerun)$"
+)
 
 
 def _safe_id(value: str) -> bool:
