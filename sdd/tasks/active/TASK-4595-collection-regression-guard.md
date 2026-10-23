@@ -28,9 +28,11 @@ earlier, its own validation would be circular.
 
 ## Scope
 
-- Add `packages/ai-parrot/tests/test_package_test_collection.py` with two tests:
+- Add `packages/ai-parrot/tests/test_package_test_collection.py` with three tests:
   1. no `packages/*/tests/__init__.py` exists;
-  2. two package test trees collect together with exit 0.
+  2. two package test trees collect together with exit 0;
+  3. (Amendment A) no derived test-module name occurs twice (in one tree or across trees) and no first-level
+     test package shadows an importable top-level name — a pure filesystem check.
 - Demonstrate the guard actually guards: add an `__init__.py`, observe red,
   remove it (AC8).
 
@@ -45,7 +47,7 @@ failure (FEAT-618).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/tests/test_package_test_collection.py` | CREATE | The two regression tests |
+| `packages/ai-parrot/tests/test_package_test_collection.py` | CREATE | The three regression tests |
 
 ---
 
@@ -57,8 +59,12 @@ failure (FEAT-618).
 # stdlib only — this test must not import parrot, and must not import pytest
 # plugins that the subprocess session would also load.
 from __future__ import annotations
+import collections
+import os
+import site
 import subprocess
 import sys
+from importlib.machinery import PathFinder
 from pathlib import Path
 ```
 
@@ -223,6 +229,46 @@ def test_two_package_test_trees_collect_together() -> None:
     #          alone produces, so checking only the first lets a half-fix pass.
     #          Include `combined` in the assertion message or a failure is unreadable.
     raise NotImplementedError
+
+
+def _derived_identities() -> dict[str, set[str]]:
+    """Map each importlib-mode module/package name to the paths that would claim it.
+
+    Mirrors pytest's rule: a file's identity is its contiguous ``__init__.py`` chain
+    below the test root (the root itself is not a package).
+    """
+    claims: dict[str, set[str]] = collections.defaultdict(set)
+    for tree in sorted((REPO_ROOT / "packages").glob("*/tests")):
+        for dirpath, _dirs, files in os.walk(tree):
+            here = Path(dirpath)
+            if "__init__.py" not in files:
+                continue
+            chain: list[str] = []
+            cur = here
+            while cur != tree and (cur / "__init__.py").exists():
+                chain.append(cur.name)
+                cur = cur.parent
+            base = ".".join(reversed(chain))
+            claims[base].add(str(here))
+            for name in files:
+                if name.endswith(".py") and name != "__init__.py":
+                    claims[f"{base}.{name[:-3]}"].add(str(here / name))
+    return claims
+
+
+def test_derived_test_module_names_are_unique_and_unshadowed() -> None:
+    """No derived module name may be claimed twice, nor shadow an importable top-level name."""
+    assert (REPO_ROOT / "packages").is_dir(), "repo root misderived"
+    claims = _derived_identities()
+    assert claims, "no test package found: the walk is vacuous"
+    duplicates = {n: sorted(p) for n, p in claims.items() if len(p) > 1}
+    assert duplicates == {}, f"derived test module names claimed more than once: {duplicates}"
+    search = [str(REPO_ROOT), *site.getsitepackages()]
+    shadowing = sorted(
+        n for n in claims
+        if "." not in n and PathFinder.find_spec(n, search) is not None
+    )
+    assert shadowing == [], f"first-level test packages shadow importable modules: {shadowing}"
 ```
 **Why this shape**: the two tests check the same invariant at different levels —
 the first is a cheap, precise tripwire naming the offending path, the second is
@@ -252,8 +298,10 @@ and the allowed set is fixed.
 - [ ] The subprocess test asserts on the return code **and** on both
       `ImportPathMismatchError` and `already registered`.
 - [ ] No new pytest marker is introduced (`--strict-markers` is in force).
-- [ ] `find packages/*/tests -name '__init__.py' | wc -l` → **242** (AC4) —
+- [ ] `find packages/*/tests -name '__init__.py' | wc -l` → **192** (AC4) —
       unchanged by this task.
+- [ ] The third test passes, and fails when a duplicate identity is introduced (e.g. add
+      `packages/ai-parrot-server/tests/unit/__init__.py`) — demonstrate and revert, as for AC8.
 - [ ] `ruff check packages/ai-parrot/tests/test_package_test_collection.py` clean (AC9).
 
 ---

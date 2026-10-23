@@ -1,4 +1,4 @@
-# TASK-4591: Collection identity — delete the 25 test-root packages, add importlib mode
+# TASK-4591: Collection identity — delete the 25 test-root packages + 51 nested colliders, add 1, add importlib mode
 
 **Feature**: FEAT-720 — One Importable Identity per Package Test Tree
 **Spec**: `sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md`
@@ -32,14 +32,20 @@ why this feature merges as one PR and never incrementally.
 
 ## Scope
 
-- Delete exactly the 25 top-level `packages/*/tests/__init__.py` files listed below.
+> **Amendment A (spec rev 0.2)** widens this task: `spike-collect.md` REFUTED strategy (a) alone;
+> `spike-identity-fixpoint.md` (verdict `STRATEGY (a′) CONFIRMED`) found that unique derived module
+> identities also need 51 nested `__init__.py` removed and 1 added. The lists below are its output
+> (`sdd/state/FEAT-720/identity-plan.json`, reproducible with `python -I sdd/state/FEAT-720/identity_fixpoint.py`).
+
+- Delete exactly the 25 top-level `packages/*/tests/__init__.py` files.
+- Delete exactly the 51 nested `__init__.py` files listed in the table (classes (viii)/(ix)).
+- Create exactly one empty file: `packages/ai-parrot/tests/unit/__init__.py` (class (vii)).
 - Append `"--import-mode=importlib"` to the root `pyproject.toml` `addopts` array.
 
-**NOT in scope**: deleting any **nested** `__init__.py` (all 242 stay — they keep
-343 relative imports across 231 test files working); repairing any import site
-(TASK-4592/4593/4594); the regression test (TASK-4595); touching `ruff.toml` or
-`.github/workflows/*` (both key on paths, which this task does not move); any
-`parrot-formdesigner` test failure (FEAT-618).
+**NOT in scope**: deleting or adding any *other* `__init__.py`; repairing any import site
+(TASK-4592/4593/4594) — DO NOT fix a broken import here; the regression test (TASK-4595); touching
+`ruff.toml` or `.github/workflows/*`; any `parrot-formdesigner` test failure (FEAT-618); test-level
+`sys.modules` pollution (class (xi), out of scope).
 
 ---
 
@@ -48,15 +54,6 @@ why this feature merges as one PR and never incrementally.
 | File | Action | Description |
 |---|---|---|
 | `pyproject.toml` | MODIFY | Append `--import-mode=importlib` to `addopts` |
-| `packages/ai-parrot/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-embeddings/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-integrations/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-loaders/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-pipelines/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-server/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-tools/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/ai-parrot-visualizations/tests/__init__.py` | DELETE | Test-root package marker |
-| `packages/parrot-formdesigner/tests/__init__.py` | DELETE | Test-root package marker |
 | `packages/ai-parrot-client-amazon/tests/__init__.py` | DELETE | Test-root package marker |
 | `packages/ai-parrot-client-anthropic/tests/__init__.py` | DELETE | Test-root package marker |
 | `packages/ai-parrot-client-gemma4/tests/__init__.py` | DELETE | Test-root package marker |
@@ -73,6 +70,67 @@ why this feature merges as one PR and never incrementally.
 | `packages/ai-parrot-client-openrouter/tests/__init__.py` | DELETE | Test-root package marker |
 | `packages/ai-parrot-client-vllm/tests/__init__.py` | DELETE | Test-root package marker |
 | `packages/ai-parrot-client-zai/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-embeddings/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-integrations/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-loaders/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-pipelines/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-server/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-tools/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-visualizations/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/parrot-formdesigner/tests/__init__.py` | DELETE | Test-root package marker |
+| `packages/ai-parrot-client-amazon/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-anthropic/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-gemma4/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-google/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-grok/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-groq/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-hf/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-jev/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-local/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-moonshot/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-nvidia/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-openai/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-openai/tests/unit/openai/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-openrouter/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-vllm/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-client-zai/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/integrations/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/integrations/core/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/integrations/slack/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/msteams/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/telegram/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-integrations/tests/voice/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/handlers/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/integration/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/manager/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/mcp/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/ui/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-server/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/docker/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/google/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/pulumi/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/querysource/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/scraping/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/security/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-tools/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-visualizations/tests/formats/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot-visualizations/tests/outputs/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/agents/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/benchmarks/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/examples/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/helpers/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/mcp/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/outputs/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/unit/events/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/unit/outputs/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/parrot-formdesigner/tests/fixtures/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/parrot-formdesigner/tests/integration/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/parrot-formdesigner/tests/unit/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/parrot-formdesigner/tests/unit/core/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/parrot-formdesigner/tests/unit/services/__init__.py` | DELETE | Nested colliding identity (class (viii)/(ix)) |
+| `packages/ai-parrot/tests/unit/__init__.py` | CREATE | Empty; closes the in-tree gap (class (vii)) |
 
 ---
 
@@ -102,7 +160,8 @@ python_functions = "test_*"         # line 254
 |---|---|---|
 | top-level `packages/*/tests/__init__.py` | **25**, all 0 bytes | `ls packages/*/tests/__init__.py \| wc -l` |
 | all `__init__.py` under `packages/*/tests` | **267** | `find packages/*/tests -name '__init__.py' \| wc -l` |
-| ⇒ nested, which must survive | **242** | `267 - 25` |
+| ⇒ nested before this task | **242** | `267 - 25` |
+| nested after this task | **192** | `242 - 51 + 1` |
 
 ### Does NOT Exist
 - ~~a 26th top-level test-root `__init__.py`~~ — `ai-parrot-advisors`,
@@ -121,38 +180,324 @@ python_functions = "test_*"         # line 254
 {
   "schema_version": 1,
   "targets": [
-    {"path": "pyproject.toml", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-embeddings/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-integrations/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-loaders/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-pipelines/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-server/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-visualizations/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/parrot-formdesigner/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-amazon/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-anthropic/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-gemma4/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-google/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-grok/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-groq/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-hf/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-jev/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-local/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-meta/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-moonshot/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-nvidia/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-openai/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-openrouter/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-vllm/tests/__init__.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-client-zai/tests/__init__.py", "action": "MODIFY"}
+    {
+      "path": "pyproject.toml",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-anthropic/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-gemma4/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-google/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-grok/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-groq/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-hf/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-jev/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-local/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-meta/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-moonshot/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-nvidia/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-openai/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-openrouter/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-vllm/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-zai/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-loaders/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-amazon/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-anthropic/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-gemma4/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-google/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-grok/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-groq/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-hf/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-jev/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-local/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-moonshot/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-nvidia/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-openai/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-openai/tests/unit/openai/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-openrouter/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-vllm/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-client-zai/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/integrations/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/integrations/core/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/integrations/slack/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/msteams/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/telegram/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/tests/voice/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/handlers/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/integration/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/manager/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/mcp/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/ui/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/docker/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/google/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/pulumi/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/querysource/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/scraping/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/security/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/tests/formats/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/tests/outputs/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/agents/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/benchmarks/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/examples/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/helpers/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/mcp/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/outputs/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/unit/events/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/unit/outputs/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/fixtures/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/integration/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/unit/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/unit/core/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/parrot-formdesigner/tests/unit/services/__init__.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/unit/__init__.py",
+      "action": "CREATE"
+    }
   ],
   "contract_symbols": []
 }
 ```
 
-*(Deletions are declared as `MODIFY` because the Complexity Contract schema has
+*(All 76 deletions are declared as `MODIFY` because the Complexity Contract schema has
 only `CREATE`/`MODIFY`; the "Files to Create / Modify" table above is
 authoritative on the action, and it says DELETE for all 25.)*
 
@@ -161,11 +506,11 @@ authoritative on the action, and it says DELETE for all 25.)*
 ## Implementation Notes
 
 ### Key Constraints
-- **Exactly 25 deletions.** Verify with
-  `find packages/*/tests -name '__init__.py' | wc -l` → **242** afterwards. A
-  different number means a nested file was caught; restore it.
+- **Exactly 25 + 51 = 76 deletions and 1 creation.** Verify with
+  `find packages/*/tests -name '__init__.py' | wc -l` → **192** afterwards. A
+  different number means a wrong file was caught; restore it.
 - **Never `git add -A`.** This repo has ~60 live worktrees and concurrent
-  sessions; stage the 26 paths explicitly.
+  sessions; stage the 78 paths explicitly (76 deletions, 1 creation, `pyproject.toml`).
 - Use `git rm` so the deletions are staged as deletions, not left as untracked
   absences.
 - `--import-mode=importlib` is **appended**. Do not reorder, replace or remove
@@ -177,8 +522,9 @@ authoritative on the action, and it says DELETE for all 25.)*
   here hides the per-distribution accounting those tasks depend on.
 
 ### References in Codebase
-- `sdd/state/FEAT-720/spike-collect.md` — TASK-4590's evidence; its §7 verdict
-  must read `STRATEGY (a) CONFIRMED` before this task starts
+- `sdd/state/FEAT-720/spike-identity-fixpoint.md` — Amendment A evidence; its last line must read
+  `STRATEGY (a′) CONFIRMED` before this task starts (`spike-collect.md` says REFUTED and is superseded)
+- `sdd/state/FEAT-720/identity-plan.json` — the exact add/remove lists (authoritative if this table drifts)
 - `sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md` §2 — *Landing*
 
 ---
@@ -186,17 +532,18 @@ authoritative on the action, and it says DELETE for all 25.)*
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Read `sdd/state/FEAT-720/spike-collect.md` §7 and stop unless it says
-   `STRATEGY (a) CONFIRMED` — *why*: this task is gated on measured evidence, and
-   a `REFUTED` verdict means the spec is revised instead.
-2. `git rm` the 25 files from the table — *why*: each one claims the import name
-   `tests`, which is the defect itself.
+1. Read `sdd/state/FEAT-720/spike-identity-fixpoint.md` and stop unless its last line is
+   `STRATEGY (a′) CONFIRMED` — *why*: this task is gated on measured evidence.
+2. `git rm` the 25 top-level files and the 51 nested files from the table — *why*: the top-level ones claim
+   the import name `tests`; the nested ones give two modules the same derived identity or shadow an
+   importable name.
+2b. Create `packages/ai-parrot/tests/unit/__init__.py` (empty) and `git add` it — *why*: closes the one
+   in-tree gap that makes `tests/unit/bots/...` collide with `tests/bots/...`.
 3. Append `"--import-mode=importlib",` to `addopts` — *why*: without it pytest
    still resolves test modules through `sys.path` prepending and the conftest
    collision returns one layer down.
-4. Assert the nested count is still 242 — *why*: those files keep 343 relative
-   imports working, and losing one silently breaks a test tree TASK-4592–4594 are
-   not scoped to repair.
+4. Assert the nested count is **192** — *why*: a different number means a file outside the plan was
+   touched. Relative imports the removals break are expected and are TASK-4592–4594's.
 5. Run the AC1 pair collect and record the result, red or green — *why*: it is the
    feature's headline invariant and the first point at which it can be observed.
 
@@ -212,7 +559,7 @@ fix the deletions cannot provide on their own. Appending keeps `--strict-config`
 and `--strict-markers` in force; both are relied on by the `markers` block at
 `pyproject.toml:264`.
 
-### The 25 deletions
+### The 25 top-level deletions (then the 51 nested ones from the table, and the 1 creation)
 ```bash
 git rm packages/ai-parrot/tests/__init__.py \
        packages/ai-parrot-embeddings/tests/__init__.py \
@@ -225,7 +572,10 @@ git rm packages/ai-parrot/tests/__init__.py \
        packages/parrot-formdesigner/tests/__init__.py \
        packages/ai-parrot-client-{amazon,anthropic,gemma4,google,grok,groq,hf,jev,local,meta,moonshot,nvidia,openai,openrouter,vllm,zai}/tests/__init__.py
 
-# MUST print 242
+# the 51 nested ones: git rm every row marked DELETE (nested) in the table above; then
+touch packages/ai-parrot/tests/unit/__init__.py && git add packages/ai-parrot/tests/unit/__init__.py
+
+# MUST print 192
 find packages/*/tests -name '__init__.py' | wc -l
 ```
 **Why**: the brace expansion covers exactly the 16 client distributions and the
@@ -241,16 +591,18 @@ load-bearing and are not this feature's to remove.
 
 ## Acceptance Criteria
 
-- [ ] Exactly 25 files deleted, all matching `packages/*/tests/__init__.py`.
-- [ ] `find packages/*/tests -name '__init__.py' | wc -l` → **242** (AC4).
+- [ ] Exactly 76 files deleted (25 top-level + the 51 listed nested), 1 created.
+- [ ] `find packages/*/tests -name '__init__.py' | wc -l` → **192** (AC4).
+- [ ] `python -I sdd/state/FEAT-720/identity_fixpoint.py` run on the result proposes **no further** change
+      (ADDED and REMOVED both 0).
 - [ ] `pyproject.toml` `addopts` contains `--strict-config`, `--strict-markers`
       and `--import-mode=importlib`, in that order; nothing else changed in the
       `[tool.pytest.ini_options]` block.
 - [ ] `ruff.toml` and `.github/workflows/*` are unmodified (AC9).
-- [ ] `git diff --cached --name-only` lists exactly 26 paths — the 25 deletions
-      plus `pyproject.toml`.
+- [ ] `git diff --cached --name-only` lists exactly 78 paths — 76 deletions, 1 creation, `pyproject.toml`.
 - [ ] The AC1 pair collect result is recorded in the Completion Note, whether it
-      is green or still red pending TASK-4592–4594.
+      is green or still red pending TASK-4592–4594; the strings `Plugin already registered` and
+      `ImportPathMismatchError` must be ABSENT from it (identity defects are this task's).
 
 ---
 
@@ -274,14 +626,14 @@ When you pick up this task:
 1. **Work in the feature worktree** — never on `dev`
 2. **Read the spec** §2 *Landing* — this task leaves the branch red on purpose
 3. **Check dependencies** — TASK-4590 must be `"done"` in
-   `sdd/tasks/index/tests-test-wheel-layout-tech-debt-2.json`, and its evidence
-   file must carry `STRATEGY (a) CONFIRMED`
-4. **Verify the Codebase Contract** — re-run the three counts and re-check
+   `sdd/tasks/index/tests-test-wheel-layout-tech-debt-2.json`, and
+   `sdd/state/FEAT-720/spike-identity-fixpoint.md` must carry `STRATEGY (a′) CONFIRMED`
+4. **Verify the Codebase Contract** — re-run the counts (242 nested now) and re-check
    `pyproject.toml:250`; correct the task file first if anything moved
 5. **Update status** in the per-spec index → `"in-progress"`, commit only that file
 6. **Implement** from the blueprint; there are no `FILL IN` markers
-7. **Verify** every acceptance criterion, especially the 242 count
-8. **Commit the code** — stage the 26 paths explicitly, never `git add .` / `-A`
+7. **Verify** every acceptance criterion, especially the 192 count
+8. **Commit the code** — stage the 78 paths explicitly, never `git add .` / `-A`
 9. **Close the task** with
    `scripts/sdd/close_task.sh TASK-4591 tests-test-wheel-layout-tech-debt-2 verified`
 10. **Fill in the Completion Note**, then commit the staged SDD state
