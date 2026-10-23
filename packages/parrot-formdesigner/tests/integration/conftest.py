@@ -6,7 +6,7 @@ triggering a false-positive "redefinition" lint on the test module's own
 fixture-name parameters.
 """
 
-from tests.fixtures.persistence import (  # noqa: F401
+from ..fixtures.persistence import (  # noqa: F401
     alias_registry,
     fake_pool,
     survey_form_csv,
