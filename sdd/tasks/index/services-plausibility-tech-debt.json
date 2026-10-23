@@ -58,7 +58,7 @@
       "feature_id": "FEAT-737",
       "feature": "services-plausibility-tech-debt",
       "spec": "sdd/specs/services-plausibility-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -67,7 +67,7 @@
       "parallel": true,
       "parallelism_notes": "Imports NOT_EXAMINED_MAX_FIELDS and NOT_EXAMINED_UNRENDERABLE from TASK-4676 (core/llm_validation.py), and reads cfg.max_answer_chars / cfg.max_reason_chars plus sets PlausibilityReport.not_examined — all four created by TASK-4676. Owns services/plausibility.py and tests/formdesigner/test_plausibility_checker.py exclusively.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T23:13:52.701101+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4677-plausibility-coverage-and-prompt-caps.md"
     }
