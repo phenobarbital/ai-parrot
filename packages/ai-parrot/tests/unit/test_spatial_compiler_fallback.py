@@ -22,12 +22,32 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+# Every sys.modules entry this file registers (stub packages, stub modules, and the modules it loads by path) goes
+# through _set_module so it can be put back after import: a leaked stub (e.g. a bare ``parrot.tools.dataset_manager``
+# or ``aiohttp``) changes what every test collected after this file in the same session imports (FEAT-720).
+_MISSING = object()
+_ORIGINALS: dict[str, object] = {}
+
+
+def _set_module(name: str, module: types.ModuleType) -> None:
+    _ORIGINALS.setdefault(name, sys.modules.get(name, _MISSING))
+    sys.modules[name] = module
+
+
+def _restore_stubbed_modules() -> None:
+    for name, original in _ORIGINALS.items():
+        if original is _MISSING:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+
 def _load_module(name: str, path: str) -> types.ModuleType:
     """Load a Python module from an absolute file path."""
     import importlib.util as _util
     spec = _util.spec_from_file_location(name, path)
     mod = _util.module_from_spec(spec)
-    sys.modules[name] = mod
+    _set_module(name, mod)
     spec.loader.exec_module(mod)
     return mod
 
@@ -41,24 +61,10 @@ def _ensure_stubs() -> None:
         "parrot.tools.dataset_manager.sources",
     ):
         if pkg not in sys.modules:
-            sys.modules[pkg] = types.ModuleType(pkg)
+            _set_module(pkg, types.ModuleType(pkg))
 
 
 _ensure_stubs()
-
-# These stubs only exist to import the modules below. They must not outlive the import: a permanent
-# sys.modules["aiohttp"] / ["parrot._imports"] breaks every test collected after this file in the same session.
-_MISSING = object()
-_STUBBED = ("parrot._imports", "parrot.tools.dataset_manager.sources.base", "parrot.tools.dataset_manager.sources.memory")
-_SAVED_MODULES = {name: sys.modules.get(name, _MISSING) for name in _STUBBED}
-
-
-def _restore_stubbed_modules() -> None:
-    for name, original in _SAVED_MODULES.items():
-        if original is _MISSING:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = original
 
 
 _PKG_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
@@ -83,7 +89,7 @@ class _FakeInMemorySource:
 
 
 _mem_stub.InMemorySource = _FakeInMemorySource
-sys.modules["parrot.tools.dataset_manager.sources.memory"] = _mem_stub
+_set_module("parrot.tools.dataset_manager.sources.memory", _mem_stub)
 
 _compiler_mod = _load_module(
     "parrot.tools.dataset_manager.spatial.compiler",
@@ -111,7 +117,7 @@ def _load_table_source() -> type:
     class _FakeDataSource:
         routing_meta = {}
     _base_stub.DataSource = _FakeDataSource
-    sys.modules["parrot.tools.dataset_manager.sources.base"] = _base_stub
+    _set_module("parrot.tools.dataset_manager.sources.base", _base_stub)
 
     # Stub parrot._imports
     _imports_stub = types.ModuleType("parrot._imports")
@@ -120,7 +126,7 @@ def _load_table_source() -> type:
         raise ImportError(f"lazy_import({name!r}) called in test context")
 
     _imports_stub.lazy_import = _fake_lazy_import
-    sys.modules["parrot._imports"] = _imports_stub
+    _set_module("parrot._imports", _imports_stub)
 
     table_mod = _load_module(
         "parrot.tools.dataset_manager.sources.table",
