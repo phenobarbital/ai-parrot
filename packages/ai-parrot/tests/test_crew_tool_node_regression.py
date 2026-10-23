@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from _crew_test_helpers import DummyAgent, DummyTool  # shared test infrastructure
+from ._crew_test_helpers import DummyAgent, DummyTool  # shared test infrastructure
 from parrot.bots.flows.crew import AgentCrew, ToolNode
 
 

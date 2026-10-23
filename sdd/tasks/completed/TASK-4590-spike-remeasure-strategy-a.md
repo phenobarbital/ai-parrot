@@ -301,10 +301,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat gpt-5.6-sol, attempt 3; attempts 1-2 gpt-5.6-terra)
+**Date**: 2026-10-23
+**Notes**: Evidence file `sdd/state/FEAT-720/spike-collect.md` delivered and merged by hand
+(`git merge --no-ff` of the a3 branch). Verdict: **STRATEGY (a) REFUTED** — 129 new collection
+errors, 2,711 fewer items, and a NEW breakage class (vii): retained nested packages derive
+short, colliding identities (`tools.*`, `outputs.*`, ...) under whole-tree collection (89 of the
+129 errors). ai-parrot's collect failure does NOT pre-exist (baseline rc=0, 25,328 items).
+Per the task, a new class stops the feature: the spec must be amended before TASK-4591
+(gated on CONFIRMED) and TASK-4592-4595 proceed. TASK-4591..4595 were reset to pending.
+Engine task-tier validation reported "15 failure(s)" and then "no execution_id" on retry; the
+Validation Command was re-run by the worker with PYTHONPATH set: 15 passed. Engine issue,
+not a delivery defect.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (stopped at the spec's own stop condition)
