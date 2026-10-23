@@ -18,13 +18,15 @@ tags: [credentials, jira, oauth2, identity-vault, tech-debt]
 > derived it from the single file on the issue's `about` symbol; the feature
 > is wider than that file, as §1 shows.
 
-> **GATED on FEAT-729.** The third credential copy this feature is about is
-> introduced by `feat-FEAT-729-msteams-user-auth-lane`, which is complete but
-> **not merged** (no PR as of 2026-10-23). Every §6 anchor is verified against
-> that branch at `13838cfb46` — i.e. against what `dev` will contain once
-> FEAT-729 lands. Do not start implementation before that merge: on today's
-> `dev` the IdentityStore write does not exist and half this spec has no
-> subject.
+> **Gate 1 cleared (2026-10-23): FEAT-729 landed on `dev`** via PR #1787
+> (`dev` @ `899d1fe59`). The third credential copy this feature is about now
+> exists on the base branch, and all three §6 edit-site anchors re-verify on
+> `dev` at the same line numbers they had on the feature branch.
+>
+> **Gate 2 still open: Q1 (§8) — which store owns the credential.** M2–M4 are
+> contingent on that answer, so task decomposition waits for it. M1 (refresh
+> propagation) is correct under either answer and can be decomposed
+> independently.
 
 ---
 
@@ -85,7 +87,9 @@ Only its **Jira path** is in scope.
 - The three channel identity mappings (`msteams`, `slack`, `telegram`). They
   hold no credential; FEAT-729 settled them.
 - `issue:a671f989e8e7` (the Slack composite `nav_user_id` is not a bigint) —
-  a separate defect on the same table.
+  a separate defect on the same table, **resolved** by TASK-4666 before the
+  FEAT-729 merge: the callback now skips the write explicitly when the OAuth
+  state carries no Navigator user id (`slack/oauth_callback.py:237`).
 
 ---
 
@@ -303,10 +307,11 @@ def recording_sink():
 
 ## 6. Codebase Contract
 
-> Verified against `origin/feat-FEAT-729-msteams-user-auth-lane` @ `13838cfb46`
-> on 2026-10-23 — i.e. against what `dev` holds **after** FEAT-729 merges.
-> Re-verify every anchor at task time: this branch had not merged when the
-> spec was written.
+> Written against `feat-FEAT-729-msteams-user-auth-lane` @ `13838cfb46` and
+> **re-verified against `origin/dev` @ `899d1fe59`** (2026-10-23, after the
+> FEAT-729 merge): every edit-site anchor below still resolves, at the same
+> line numbers. `/sdd-task` must still re-run each `grep -c` — this table
+> saves the search, not the check.
 
 ### Verified Imports
 
@@ -487,4 +492,7 @@ Verified against `13838cfb46`.
 - Prior art: `sdd/proposals/unified-credential-broker.brainstorm.md`
   (2026-06-29) — the `CredentialResolver` abstraction this feature deliberately
   does not change.
-- Sibling issue on the same table: `issue:a671f989e8e7`.
+- Sibling issue on the same table: `issue:a671f989e8e7` — closed by TASK-4666.
+- FEAT-729 merged to `dev` on 2026-10-23 (PR #1787). TASK-4664 and TASK-4665
+  closed `done-with-issues` / `verification: partial`; the credential-store
+  duplication this spec addresses is the TASK-4664 remainder.
