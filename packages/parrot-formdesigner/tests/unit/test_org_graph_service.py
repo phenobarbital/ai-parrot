@@ -19,7 +19,7 @@ import pytest
 
 from parrot_formdesigner.services.org_graph import OrgGraph, OrgGraphService, OrgNode
 
-from tests.unit.real_db_shapes import (
+from .real_db_shapes import (
     REAL_AUTH_ORGANIZATIONS_COLUMNS,
     FakeUndefinedColumnError,
     assert_real_columns,
