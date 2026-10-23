@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -274,7 +275,8 @@ class MSTeamsAuthStrategy:
         self.store = store
         self.exchange = exchange
         self.logger = logger_ or logger
-        self._locks: Dict[str, asyncio.Lock] = {}
+        # Weak values: a lock is dropped once no coroutine holds or awaits it, so the map never grows unbounded.
+        self._locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = weakref.WeakValueDictionary()
 
     @property
     def connection_name(self) -> Optional[str]:
@@ -290,7 +292,11 @@ class MSTeamsAuthStrategy:
         Returns:
             The lock dedicated to that user.
         """
-        return self._locks.setdefault(key, asyncio.Lock())
+        lock = self._locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[key] = lock
+        return lock
 
     async def ensure_authenticated(self, turn_context: TurnContext) -> MSTeamsUserSession:
         """Serialised wrapper: concurrent activities of one user exchange only once.

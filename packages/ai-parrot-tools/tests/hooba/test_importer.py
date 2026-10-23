@@ -134,7 +134,7 @@ async def test_manifest_row_count_is_debit_rows_not_whole_table(tmp_path):
 
     await importer.apply(planned, manifest)
 
-    summary = reconcile(manifest, len(planned))
+    summary = reconcile(manifest)
     assert summary == {"rows_in": 5, "drafts_out": 4, "skipped": 1, "delta": 0, "reconciled": True}
 
 

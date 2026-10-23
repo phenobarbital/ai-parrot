@@ -77,6 +77,34 @@ def _build_jira_toolkit() -> Any:
         return None
 
 
+def _build_jira_credential_sink(app: Any) -> Any:
+    """Build the Identity Vault sink for a ``JiraOAuthManager``, else ``None``.
+
+    The durable owner of a Jira grant is navigator-auth's Identity Vault
+    (FEAT-735); the sink is what keeps it in step with the Redis hot cache on
+    every refresh. It needs the ``authdb`` pool, so a deployment without one
+    simply gets today's Redis-only behaviour.
+
+    Returns:
+        An ``IdentityVaultCredentialSink``, or ``None`` when ``app['authdb']``
+        is absent or the server package is not installed.
+    """
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_credential_sink import (  # noqa: PLC0415
+            IdentityVaultCredentialSink,
+        )
+
+        return IdentityVaultCredentialSink(db_pool=db_pool)
+    except Exception:  # noqa: BLE001 - the durable copy is optional, never fatal
+        logging.getLogger(__name__).warning(
+            "IdentityVaultCredentialSink unavailable; Jira refreshes will update Redis only."
+        )
+        return None
+
+
 async def handle_a2a_directory(request: web.Request) -> web.Response:
     """GET /a2a/directory — returns JSON array of all registered AgentCards.
 
@@ -340,6 +368,7 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_sink=_build_jira_credential_sink(app),
                     )
                     self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -898,6 +927,7 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_sink=_build_jira_credential_sink(app),
                     )
                     self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
