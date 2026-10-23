@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 
 from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 from parrot_tools.querysource.errors import InvalidConditionsError
 from parrot_tools.querysource.toolkit import QuerysourceToolkit
 
-from .test_build_linked_surface_tool import fake_core_qs  # noqa: F401 — established fixture
+_shared_test_path = Path(__file__).with_name("test_build_linked_surface_tool.py")
+_shared_test_spec = importlib.util.spec_from_file_location(
+    "ai_parrot_tools_tests_querysource_test_build_linked_surface_tool", _shared_test_path
+)
+assert _shared_test_spec is not None and _shared_test_spec.loader is not None
+_shared_test_module = importlib.util.module_from_spec(_shared_test_spec)
+sys.modules[_shared_test_spec.name] = _shared_test_module
+_shared_test_spec.loader.exec_module(_shared_test_module)
+fake_core_qs = _shared_test_module.fake_core_qs
 
 COMPONENT = {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]}
 SLUG = "epson_field_activity"

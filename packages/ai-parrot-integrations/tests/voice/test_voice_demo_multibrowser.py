@@ -20,16 +20,25 @@ Each scenario writes a per-browser measurement table to
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import sys
 import time
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 import uvloop
 from aiohttp.test_utils import TestServer
 
-from . import _broadcast_browser_fakes as fakes
+_fakes_path = Path(__file__).with_name("_broadcast_browser_fakes.py")
+_fakes_spec = importlib.util.spec_from_file_location(
+    "ai_parrot_integrations_tests_voice_broadcast_browser_fakes", _fakes_path
+)
+assert _fakes_spec is not None and _fakes_spec.loader is not None
+fakes = importlib.util.module_from_spec(_fakes_spec)
+sys.modules[_fakes_spec.name] = fakes
+_fakes_spec.loader.exec_module(fakes)
 
 # Same reason as FEAT-536's browser suite: Playwright launches a Node.js
 # subprocess whose plain-asyncio path needs a child watcher this repo's uvloop

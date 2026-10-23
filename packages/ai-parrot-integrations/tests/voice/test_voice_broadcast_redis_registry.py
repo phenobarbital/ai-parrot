@@ -18,9 +18,12 @@ Skipped with an explicit NOT VERIFIED reason when no Redis is reachable.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import inspect
 import os
+import sys
 import uuid
+from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List
 
 import pytest
@@ -32,7 +35,14 @@ from parrot.integrations.liveavatar.broadcast import (
     errors,
 )
 
-from . import test_voice_broadcast_registry as contract
+_contract_path = Path(__file__).with_name("test_voice_broadcast_registry.py")
+_contract_spec = importlib.util.spec_from_file_location(
+    "ai_parrot_integrations_tests_voice_test_voice_broadcast_registry", _contract_path
+)
+assert _contract_spec is not None and _contract_spec.loader is not None
+contract = importlib.util.module_from_spec(_contract_spec)
+sys.modules[_contract_spec.name] = contract
+_contract_spec.loader.exec_module(contract)
 
 REDIS_URL = os.environ.get("PARROT_TEST_REDIS_URL", "redis://localhost:6379/3")
 
