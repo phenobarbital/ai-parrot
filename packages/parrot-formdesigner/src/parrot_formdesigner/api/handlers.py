@@ -36,7 +36,6 @@ from .tenant import (
     enforce_membership_unless_public,
 )
 
-
 #: RBAC codename for the FEAT-732 audit read. Granted per user, at CLIENT scope or
 #: wider, through POST /org/users/{user_id}/assign. Never seeded.
 READ_FORM_AUDIT = "read_form_audit"

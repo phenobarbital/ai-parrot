@@ -252,7 +252,6 @@ class TestEnforcementPolicy:
         assert dry_run_body["errors"] == commit_body["errors"] == {"name": ["odd"]}
         storage.store.assert_not_awaited()
 
-
     async def test_validate_a2ui_review_envelopes(self, make_handler):
         pytest.importorskip("parrot.outputs.a2ui")
         config = LLMValidationConfig(enabled=True, on_implausible="review")
