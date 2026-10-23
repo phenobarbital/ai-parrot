@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from botbuilder.core import TurnContext
+from botbuilder.schema import Activity, Attachment, CardAction, OAuthCard
+from botframework.connector.token_api.models import TokenExchangeRequest
 
+from parrot.auth.token_exchange import TokenExchangeClient
 from parrot.integrations.core.state import InMemoryStateStore
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -245,3 +248,178 @@ class MSTeamsSessionStore:
             external_expires_at=parse_datetime(payload.get("external_expires_at")),
             metadata=payload.get("metadata", {}),
         )
+
+
+class MSTeamsAuthStrategy:
+    """Bot Framework Token Service to Navigator session."""
+
+    def __init__(
+        self,
+        config: Any,
+        store: MSTeamsSessionStore,
+        exchange: TokenExchangeClient,
+        logger_: Any = None,
+    ) -> None:
+        """Initialize the Teams Token Service authentication strategy.
+
+        Args:
+            config: Teams integration configuration containing the OAuth connection name.
+            store: Per-user Teams session store.
+            exchange: Client which exchanges provider tokens for Navigator sessions.
+            logger_: Optional logger for adapter failures.
+        """
+        self.config = config
+        self.store = store
+        self.exchange = exchange
+        self.logger = logger_ or logger
+
+    @property
+    def connection_name(self) -> Optional[str]:
+        """Return the Azure Bot OAuth connection name, if configured."""
+        return getattr(self.config, "oauth_connection_name", None)
+
+    async def ensure_authenticated(self, turn_context: TurnContext) -> MSTeamsUserSession:
+        """Return an authenticated session, or one which still needs authentication.
+
+        This resolver never emits a sign-in card. Its caller owns the prompting
+        policy so that optional-auth integrations can continue unauthenticated.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+
+        Returns:
+            The user's cached or newly resolved session.
+        """
+        session = await self.store.get_or_create(turn_context)
+        if session.authenticated and not self.store.is_expired(session):
+            return session
+        if self.store.is_expired(session):
+            session.authenticated = False
+
+        token_response = await self.fetch_provider_token(turn_context)
+        if token_response is None and getattr(turn_context.activity, "name", None) == "signin/tokenExchange":
+            value = getattr(turn_context.activity, "value", None) or {}
+            exchange_request = TokenExchangeRequest(
+                uri=value.get("uri") if isinstance(value, dict) else getattr(value, "uri", None),
+                token=value.get("token") if isinstance(value, dict) else getattr(value, "token", None),
+            )
+            token_response = await self.exchange_sso_token(turn_context, exchange_request)
+
+        if token_response is None:
+            return session
+
+        result = await self.exchange.exchange(
+            token_response.token,
+            provider="azure",
+            id_token=getattr(token_response, "id_token", None),
+        )
+        if not result.ok:
+            session.authenticated = False
+            session.metadata["auth_reason"] = result.reason
+            return session
+
+        session.set_authenticated(
+            result.nav_user_id or "",
+            result.session_token or "",
+            display_name=result.display_name,
+            email=result.email,
+            external_expires_at=self._parse_expiration(result.expires_at),
+            provider_user_id=result.provider_user_id,
+        )
+        await self.store.save(session)
+        return session
+
+    @staticmethod
+    def _parse_expiration(value: Optional[str]) -> Optional[datetime]:
+        """Parse a Navigator external-token expiry into an aware datetime.
+
+        Args:
+            value: ISO-8601 external token expiry from Navigator.
+
+        Returns:
+            The parsed UTC-aware expiry, or ``None`` for a missing or invalid value.
+        """
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    async def fetch_provider_token(self, turn_context: TurnContext) -> Optional[Any]:
+        """Fetch the current user's token from the Bot Framework Token Service.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+
+        Returns:
+            A populated TokenResponse, or ``None`` if no token is available.
+        """
+        if not self.connection_name:
+            return None
+        try:
+            token_response = await turn_context.adapter.get_user_token(
+                turn_context,
+                self.connection_name,
+                None,
+            )
+        except Exception:
+            self.logger.exception("Unable to fetch Bot Framework user token for connection=%s", self.connection_name)
+            return None
+        return token_response if token_response and getattr(token_response, "token", None) else None
+
+    async def exchange_sso_token(
+        self,
+        turn_context: TurnContext,
+        exchange_request: TokenExchangeRequest,
+    ) -> Optional[Any]:
+        """Exchange a Teams SSO token through the Bot Framework Token Service.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            exchange_request: The token-exchange invoke request.
+
+        Returns:
+            The exchanged TokenResponse, or ``None`` when no connection exists.
+        """
+        if not self.connection_name:
+            return None
+        return await turn_context.adapter.exchange_token(
+            turn_context,
+            self.connection_name,
+            user_key(turn_context),
+            exchange_request,
+        )
+
+    async def send_signin_card(self, turn_context: TurnContext) -> None:
+        """Send an OAuthCard carrying the Bot Framework sign-in link.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+        """
+        if not self.connection_name:
+            return
+        link = await turn_context.adapter.get_oauth_sign_in_link(turn_context, self.connection_name)
+        card = OAuthCard(
+            connection_name=self.connection_name,
+            text="Sign in to continue.",
+            buttons=[CardAction(type="signin", title="Sign in", value=link)],
+        )
+        activity = Activity(
+            type="message",
+            attachments=[Attachment(content_type="application/vnd.microsoft.card.oauth", content=card)],
+        )
+        await turn_context.send_activity(activity)
+
+    async def sign_out(self, turn_context: TurnContext) -> None:
+        """Clear the Navigator session before revoking the Token Service token.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+        """
+        key = user_key(turn_context)
+        await self.store.clear(key)
+        await turn_context.adapter.sign_out_user(turn_context, self.connection_name, key)
