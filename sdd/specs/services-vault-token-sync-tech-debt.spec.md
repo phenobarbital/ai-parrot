@@ -10,7 +10,7 @@ tags: [credentials, jira, oauth2, identity-vault, tech-debt]
 **Feature ID**: FEAT-735
 **Date**: 2026-10-23
 **Author**: Jesus (via /sdd-fix, escalated from `issue:2e85cce93cab`)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.x
 
 > **Slug note**: the file is `services-vault-token-sync-tech-debt` because
@@ -23,10 +23,10 @@ tags: [credentials, jira, oauth2, identity-vault, tech-debt]
 > exists on the base branch, and all three §6 edit-site anchors re-verify on
 > `dev` at the same line numbers they had on the feature branch.
 >
-> **Gate 2 still open: Q1 (§8) — which store owns the credential.** M2–M4 are
-> contingent on that answer, so task decomposition waits for it. M1 (refresh
-> propagation) is correct under either answer and can be decomposed
-> independently.
+> **Gate 2 cleared (2026-10-23): Q1 answered — the Identity Vault is the
+> durable owner, Redis stays the hot cache**, the same shape the other
+> providers use. The spec is approved on that basis; M1 is filed as a task,
+> M2–M4 are ready to decompose.
 
 ---
 
@@ -178,25 +178,80 @@ class JiraOAuthManager:
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: refresh propagation | no | — | Needs the failure policy decided (Q2): does a sink failure fail the refresh, or log and continue? |
+| M1: refresh propagation | yes | Protocol + call site + sink class fixed below; Q2 decided (Redis first, sink failure logged at `error`, refresh still returns); the nav user is resolved with `IdentityStore.find_user_by_provider_account` and the row updated with `update_tokens` | — |
 | M2: status probe on the owner | yes | `_token_status` keeps its `"connected"`/`"needs_reconnect"` contract and its fail-open `except`; only the backing read changes | — |
 | M3: retire the vault jira write | yes | delete the `provider="jira"` call in `_store_in_vault`; leave the method for other providers | — |
 | M4: docs + migration note | yes | one page under `docs/`, linked from the two touched modules | — |
 
-### Module 1: Refresh propagation (`CredentialSink`)
-- **Path**: `packages/ai-parrot/src/parrot/auth/jira_oauth.py`
+### Module 1: Refresh propagation (`CredentialSink` + Identity Vault sink)
+- **Paths**:
+  - `packages/ai-parrot/src/parrot/auth/jira_oauth.py` (MODIFY — Protocol, ctor param, call site)
+  - `packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py` (CREATE — the concrete sink)
+  - `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (MODIFY — wiring, 2 sites)
 - **Responsibility**: a refreshed grant reaches the durable owner, not only Redis.
-- **Depends on**: nothing in this spec (ships first; it is correct under either Q1 answer).
+- **Depends on**: nothing in this spec. It ships first and is correct on its own.
+- **The `nav_user_id` problem and its solution** — `_refresh_tokens` receives
+  `(channel, user_id)`, where `user_id` is the **channel's** id (a Telegram id,
+  an AAD object id), *not* the Navigator `user_id` the identity row is keyed
+  by, and `JiraTokenSet` carries no `nav_user_id` either. The sink therefore
+  resolves the owner from the Atlassian account id, which both sides do have:
+  `IdentityStore.find_user_by_provider_account("jira", token.account_id)`
+  (`store.py:497`) returns the Navigator `user_id` of the enabled identity for
+  that account. A miss (a user who linked Jira before FEAT-729, so no row
+  exists) is a logged no-op, never an error.
+- **Why `update_tokens`, never `save_linked_identity`** — `save_linked_identity`
+  sets `auth_data` to `_identity_profile(userinfo)` (`store.py:246`), so calling
+  it on a refresh with no `userinfo` would **wipe** `account_id` / `cloud_id` /
+  `site_url` from the row. `update_tokens` (`store.py:408`) re-seals only the
+  token columns and leaves `auth_data` untouched — that is the refresh call.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/jira_oauth.py (modifies jira_oauth.py:642)
+  class CredentialSink(Protocol):
+      """Durable store kept in step with the Redis hot cache."""
+
+      async def persist(self, channel: str, user_id: str,
+                        token: "JiraTokenSet") -> None:
+          """Persist a freshly minted or refreshed grant.
+
+          Raises on failure; the manager logs and continues (Q2).
+          """
+
   class JiraOAuthManager:
+      def __init__(self, ..., credential_sink: Optional[CredentialSink] = None) -> None:
+          """``credential_sink``: durable owner notified after every Redis write.
+
+          ``None`` keeps today's Redis-only behaviour verbatim.
+          """
+
       async def _refresh_tokens(self, channel: str, user_id: str,
                                 token_set: JiraTokenSet) -> JiraTokenSet:
-          """Refresh via Atlassian, write Redis, then notify ``credential_sink``.
+          """Refresh via Atlassian, write Redis, then notify the sink.
 
-          The sink is notified AFTER the Redis write succeeds, so a durable-store
-          outage can never cost the user a working hot credential.
+          Order is load-bearing: the sink runs AFTER ``_write_token`` succeeds,
+          so a Postgres outage can never cost the user a working hot
+          credential, and a sink failure is logged at ``error`` without
+          changing the return value.
+          """
+  ```
+  ```python
+  # packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py (new)
+  class IdentityVaultCredentialSink:
+      """``CredentialSink`` backed by navigator-auth's Identity Vault.
+
+      Structural implementation of ``parrot.auth.jira_oauth.CredentialSink``:
+      ai-parrot must not import ai-parrot-server, so the Protocol is satisfied
+      by shape, never by inheritance.
+      """
+
+      def __init__(self, db_pool: Any, provider: str = "jira") -> None:
+          """``db_pool``: the asyncdb ``authdb`` pool (``app['authdb']``)."""
+
+      async def persist(self, channel: str, user_id: str,
+                        token: "JiraTokenSet") -> None:
+          """Re-seal the rotated grant on the owner's identity row.
+
+          No-op with a warning when no identity row owns ``token.account_id``.
           """
   ```
 
@@ -405,6 +460,8 @@ Verified against `13838cfb46`.
 | `packages/ai-parrot/src/parrot/auth/jira_oauth.py` | MODIFY | `    async def _refresh_tokens(self, channel: str, user_id: str, token_set: JiraTokenSet) -> JiraTokenSet:` | `jira_oauth.py:642` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `    async def _token_status(self, user_id: str, provider_id: str, request: Any) -> str:` | `service.py:173` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py` | MODIFY | `        await self._store_in_vault(nav_user_id, token_set)` | `post_auth_jira.py:189` (method at `:222`) | 1 |
+| `packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py` | CREATE | — | — | — |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `                    jira_oauth_manager = JiraOAuthManager(` | `manager.py:338` and `:896` | 2 |
 | `docs/auth/jira-credential-ownership.md` | CREATE | — | — | — |
 
 ---
@@ -449,9 +506,11 @@ Verified against `13838cfb46`.
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Which store owns the Jira credential?** *(the decision this spec
-      exists to force; M2–M4 are contingent on it)*
-      **Recommendation: the Identity Vault**, with Redis kept as the hot cache.
+- [x] **Q1 — Which store owns the Jira credential?** — **ANSWERED 2026-10-23
+      by the user: the Identity Vault is the durable owner, Redis stays the
+      hot cache, "like others".** M2–M4 proceed on that basis.
+      Original recommendation (adopted): **the Identity Vault**, with Redis
+      kept as the hot cache.
       It is navigator-auth's canonical table, it is the store
       `TokenExchangeAuth` already writes, and it seals each token bound to its
       identity row rather than as a flat vault key. The counter-argument on
@@ -462,7 +521,10 @@ Verified against `13838cfb46`.
       keep the Session Vault, which is less work but gives up the sealed,
       context-bound credential and leaves navigator-auth's canonical table
       empty for Jira.
-- [ ] **Q2 — Does a sink failure fail the refresh?** Proposed: no. Redis is
+- [x] **Q2 — Does a sink failure fail the refresh?** — **RESOLVED: no**, the
+      proposal below is adopted as the default for TASK filing. Flag it if you
+      disagree; it is the one decision in M1 the user did not state explicitly.
+      Proposed: no. Redis is
       written first and the refreshed token is returned; a sink failure is
       logged at `error` with the user and provider. A refresh that works for
       the user must not be rolled back because the durable copy lagged — but
