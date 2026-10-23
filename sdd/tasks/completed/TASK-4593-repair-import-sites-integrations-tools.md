@@ -285,10 +285,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (attempt 3, by hand — both coder seats returned `empty_delivery`)
+**Date**: 2026-10-23
+**Notes**: 6 files, 8 lines: the six `from tests.<x> import …` statements became relative imports (`agentd/test_e2e.py`, `test_service.py`,
+`test_scheduler_boot.py`; `business_automation/fixtures/broker.py`, `business_automation/test_fixture_site_e2e.py`, `scraping/test_fixture_site_integration.py`).
+Evidence (live `pytest.ini`): `ai-parrot-integrations` collects **2,458** (baseline 2,458) and `ai-parrot-tools` **6,286** (baseline 6,286), 0 errors; agentd directory run =
+2 failed / 132 passed, byte-identical failure set to the baseline (the 2 are pre-existing: `test_yaml_roundtrip`, `test_no_aiohttp_without_server_pkg`); the two tools fixture
+test files: 6 passed / 10 skipped, same as baseline.
+Class (v) dotted *string* targets (`"tests.agentd.fakes:EchoAgent"`) were deliberately NOT changed: they resolve and pass standalone, and re-pointing them is only meaningful for
+runs that mix several test trees in one process, which this feature does not promise (collection is the gate; mixed-run pollution is class (xi), out of scope).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: class (v) targets left as-is (see above).

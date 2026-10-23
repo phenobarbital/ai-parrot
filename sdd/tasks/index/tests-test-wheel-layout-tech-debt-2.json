@@ -107,7 +107,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -117,8 +117,9 @@
       "parallelism_notes": "Serialized after TASK-4592 so the half-converted window stays single-owner: both tasks validate by comparing per-distribution collect counts against the same TASK-4590 baseline, which only one task at a time can interpret. Exclusive for the same reason.",
       "assigned_to": null,
       "started_at": "2026-10-23T11:36:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4593-repair-import-sites-integrations-tools.md"
+      "completed_at": "2026-10-23T13:56:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4593-repair-import-sites-integrations-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4594",
