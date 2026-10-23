@@ -192,4 +192,4 @@ Spec §4 rows `test_delete_strict`, `test_reaper_ttls_and_outcomes`, `test_reape
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Done. `delete(strict=)` on both implementations; `PendingUploadReaper.reap_once` holds the SKIP LOCKED rows in one transaction (`PendingUploadStore.transaction()` added). Resumed after a crash: fixed a bug in the uncommitted draft (`expired(conn=None)` meant no row locks). Unit 8 + PG 4 tests pass (SCRATCH_DSN set). Mutations seen RED: conn=None (PG concurrency), strict raise removed (test_delete_strict), thumbnail delete removed (2 tests).

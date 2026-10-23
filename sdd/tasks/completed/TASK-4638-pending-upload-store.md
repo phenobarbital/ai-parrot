@@ -241,4 +241,7 @@ Spec §4 row `test_iter_blob_refs_shapes` plus the store-SQL rows above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (direct, no coder pool)
+**Date**: 2026-10-22
+**Notes**: Implemented as blueprinted. `PendingUploadStore.record` upserts with `COALESCE($7, now())` so `uploaded_at=None` falls to the DB default; `expired()` passes the two TTLs as `timedelta` -> `interval`; `FOR UPDATE SKIP LOCKED` only when a `conn` is supplied. Unit tests (8) pass; mutation-checked (upsert, walker, SKIP LOCKED). `ruff` is not installed in this venv, so only `black -l 120` was run.
+**Deviations from spec**: none.
