@@ -63,6 +63,8 @@ class AfterClientCallEvent(LifecycleEvent):
             attributes only — NEVER in metric labels.
         session_id: Optional session identifier. Set from the
             ``current_session_id`` ContextVar. Spans only.
+        tenant: Optional server-resolved tenant identifier.
+        cost_usd: Optional call cost in USD. None when pricing is unknown.
     """
 
     client_name: str = ""
@@ -74,6 +76,8 @@ class AfterClientCallEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
+    tenant: Optional[str] = None  # FEAT-710
+    cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,7 @@ class ClientCallFailedEvent(LifecycleEvent):
         user_id: Optional user identifier for per-user usage attribution.
             Spans only — NEVER in metric labels.
         session_id: Optional session identifier. Spans only.
+        tenant: Optional server-resolved tenant identifier.
     """
 
     client_name: str = ""
@@ -104,6 +109,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
+    tenant: Optional[str] = None  # FEAT-710
 
 
 @dataclass(frozen=True)

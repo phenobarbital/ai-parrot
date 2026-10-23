@@ -6,6 +6,8 @@ extensions copied from the main checkout. Anything that cannot be proven is ``un
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import logging
 import os
 import shutil
@@ -14,6 +16,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import ModuleType
 
 from .datatypes import BaselineVerdict
 from .mirror import distribution_of
@@ -21,25 +24,56 @@ from .report import parse_junit
 
 logger = logging.getLogger(__name__)
 
+#: ``native_artifacts.py`` sits next to the kernel package, in ``dev_loop/``.
+_NATIVE_ARTIFACTS_PATH = Path(__file__).resolve().parents[1] / "native_artifacts.py"
+#: Module name the by-path load registers — the same one ``scripts/sdd/ensure_worktree.py``
+#: uses, so a process doing both loads the module once.
+_NATIVE_ARTIFACTS_MODULE = "_parrot_native_artifacts"
+
 
 class BaselineUnavailable(RuntimeError):
     """The base ref cannot be checked out into a runnable tree."""
 
 
+def _native_artifacts() -> ModuleType:
+    """Import the sibling ``native_artifacts`` module under either import layout.
+
+    The kernel is imported both as ``parrot.flows.dev_loop.test_scope`` and, by path, as the
+    top-level package ``test_scope`` (FEAT-563). In the latter layout there is no parent
+    package, so ``from ..native_artifacts import ...`` is an import beyond top-level and the
+    module has to be loaded from its file instead.
+
+    Returns:
+        The ``native_artifacts`` module.
+
+    Raises:
+        BaselineUnavailable: The module cannot be imported under either layout.
+    """
+    parent = __package__.rpartition(".")[0] if __package__ else ""
+    try:
+        if parent:
+            return importlib.import_module(f"{parent}.native_artifacts")
+        cached = sys.modules.get(_NATIVE_ARTIFACTS_MODULE)
+        if cached is not None:
+            return cached
+        spec = importlib.util.spec_from_file_location(_NATIVE_ARTIFACTS_MODULE, _NATIVE_ARTIFACTS_PATH)
+        if spec is None or spec.loader is None:
+            raise BaselineUnavailable(f"no native-artifact module at {_NATIVE_ARTIFACTS_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[_NATIVE_ARTIFACTS_MODULE] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            del sys.modules[_NATIVE_ARTIFACTS_MODULE]
+            raise
+    except ImportError as exc:
+        raise BaselineUnavailable(f"cannot import native_artifacts: {exc}") from exc
+    return module
+
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run git in ``cwd`` capturing text output."""
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False)
-
-
-def main_checkout_root(worktree: Path) -> Path | None:
-    """Root of the primary checkout that owns ``worktree``'s git common dir."""
-    try:
-        proc = _git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    except OSError:
-        return None
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return None
-    return Path(proc.stdout.strip()).parent
 
 
 def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -> Path:
@@ -57,18 +91,28 @@ def prepare_baseline_checkout(*, worktree: Path, base_ref: str, scratch: Path) -
         raise BaselineUnavailable(f"git worktree add failed: {add.stderr.strip()}")
 
     try:
-        main_root = main_checkout_root(worktree)
+        native_artifacts = _native_artifacts()
+        main_root = native_artifacts.main_checkout_root(worktree)
         if main_root is not None:
-            for so_file in main_root.glob("packages/*/src/**/*.so"):
-                rel = so_file.relative_to(main_root)
-                dest = target / rel
-                if dest.exists() or not dest.parent.is_dir():
-                    continue
-                shutil.copy2(so_file, dest)
-        for pyx in target.glob("packages/*/src/**/*.pyx"):
-            stem = pyx.stem
-            if not any(pyx.parent.glob(f"{stem}.*.so")) and not (pyx.parent / f"{stem}.so").exists():
-                raise BaselineUnavailable(f"no compiled extension for {pyx.relative_to(target)} in main checkout")
+            # One shared implementation (FEAT-722). `autobuild=False`: a verdict run must never trigger
+            # a compile, so an unbuilt extension stays fatal here.
+            report = native_artifacts.sync_native_artifacts(main_root=main_root, target=target, autobuild=False)
+            # Only an UNPAIRED SOURCE is fatal, which is exactly what the pre-FEAT-722
+            # loop checked: a `.pyx` with no sibling `.so`. `no_match` (a declared group
+            # whose artifacts are absent, e.g. navrules on a checkout that never built
+            # it) and `abi_mismatch` (artifacts built for another interpreter) were
+            # invisible to the old check and must not turn every baseline verdict into
+            # `unknown` here.
+            fatal = [entry for entry in report.missing if entry.reason == "unpaired_source"]
+            for entry in report.missing:
+                if entry not in fatal:
+                    logger.warning(
+                        "baseline: native artifact %s missing from the main checkout (%s), continuing",
+                        entry.detail,
+                        entry.reason,
+                    )
+            if fatal:
+                raise BaselineUnavailable(f"no compiled extension for {fatal[0].detail} in main checkout")
     except BaselineUnavailable:
         remove_baseline_checkout(worktree, target)
         raise

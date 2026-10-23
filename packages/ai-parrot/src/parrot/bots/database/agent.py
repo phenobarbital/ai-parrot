@@ -225,6 +225,13 @@ class DatabaseAgent(BasicAgent):
             ValueError: If two toolkits register the same fully-qualified tool
                 name.
         """
+        # FEAT-726: pre-super work — everything below starts toolkit pools and
+        # re-runs the FEAT-172 prefix/collision validation, so a repeat entry
+        # must stop here, before the first side effect. Still enter super() so
+        # the counter and the INFO log stay truthful.
+        if self.configure_is_noop(app):
+            await super().configure(app=app)
+            return
         primary_schema = "public"
         allowed_schemas: List[str] = []
         for tk in self.toolkits:

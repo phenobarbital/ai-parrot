@@ -87,7 +87,7 @@ from ..audio.recordings import delete_recording, store_recording
 from ..audio.segments import _SYNTH_LOCK, AudioSegmentCache
 from ..audio.session_store import AudioSnapshot, ResumeUnavailable, SnapshotConflict
 from ..audio.value_refiner import LLMValueRefiner, ValueRefiner
-from ..core.llm_validation import LLMValidationConfig, PlausibilityReport
+from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, wire_report
 from ..core.voice import resolve_voice_config
 from ..core.voice_answer import unwrap_voice
 from ..renderers.audio import (
@@ -97,7 +97,12 @@ from ..renderers.audio import (
 from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
-from ..services.submission_pipeline import SubmissionPipeline, ValidationFailed
+from ..services.submission_pipeline import (
+    ImplausibleSubmission,
+    SubmissionPipeline,
+    SubmissionRejected,
+    ValidationFailed,
+)
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -1200,12 +1205,22 @@ class AudioFormWSHandler:
                 auth_context=self._auth_context(ctx.user),
                 merge_session_id=self._partial_session(ctx),
                 plausibility=state.plausibility,
+                # Reaching Submit in server mode means the REVIEW turn was confirmed, so the
+                # answers are already reconfirmed by the user (FEAT-728). `reject` still refuses.
+                plausibility_ack=True,
                 submission_id=state.submission_id,
             )
         except ValidationFailed as exc:
             return SubmitDone(type="_submit_done", outcome={"errors": exc.errors})
         except PlausibilityBlocked as exc:
             return IOFailed(type="_io_failed", request=item.type, code="PLAUSIBILITY_UNAVAILABLE", detail=exc.reason)
+        except ImplausibleSubmission as exc:
+            # FEAT-728 — `reject` refuses even a reconfirmed answer; tell the user which code,
+            # not a generic SUBMIT_FAILED. MUST stay above the broad `except` below.
+            return IOFailed(type="_io_failed", request=item.type, code=exc.code, detail="implausible answers")
+        except SubmissionRejected as exc:
+            # FEAT-730 — response-policy refusal (closed / limit / duplicate). MUST stay above the broad except.
+            return IOFailed(type="_io_failed", request=item.type, code=exc.reason.upper(), detail=str(exc))
         except Exception as exc:  # noqa: BLE001 — sink/lifecycle failures: surface and re-ask the last question
             self.logger.warning("Audio submission failed: %s", type(exc).__name__)
             return IOFailed(
@@ -1247,7 +1262,7 @@ class AudioFormWSHandler:
         if not result.is_valid:
             return SubmitDone(type="_submit_done", outcome={"errors": result.errors})
         client_data = pipeline.attach_verdicts(result.sanitized_data, state.plausibility)
-        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None
+        summary = wire_report(state.plausibility, mode="json") if state.plausibility is not None else None
         return SubmitDone(type="_submit_done", outcome={"client_data": client_data, "plausibility_summary": summary})
 
     # -------------------------------------------------------------------------

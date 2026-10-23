@@ -1,0 +1,95 @@
+{
+  "feature": "fixgroup-f3ad5ee39704",
+  "feature_id": "FEAT-725",
+  "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T16:30:00+00:00",
+  "completed_at": "2026-10-22T16:34:46+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/observability/test_bootstrap_hook.py",
+          "packages/ai-parrot/tests/unit/observability/test_bootstrap.py",
+          "packages/ai-parrot/tests/unit/observability/test_bootstrap_cleanup.py",
+          "packages/ai-parrot/tests/unit/observability/test_event_fanout.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:61378e7f247fd0acc9fb60294c498c7949127e78415ee072db939f5f36ce943c"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4613",
+      "slug": "install-observability-bootstrap-hook",
+      "title": "Install the observability bootstrap hook from parrot.core.events.lifecycle",
+      "feature_id": "FEAT-725",
+      "feature": "fixgroup-f3ad5ee39704",
+      "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only parrot/core/events/lifecycle/__init__.py and the NEW tests/unit/observability/test_bootstrap_hook.py; shares no file with TASK-4614, which owns bootstrap.py and test_bootstrap.py. No symbol dependency either way: this task calls ensure_observability_bootstrapped, which already exists on dev.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T16:18:06+00:00",
+      "completed_at": "2026-10-22T16:21:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4613-install-observability-bootstrap-hook.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4614",
+      "slug": "loud-observability-bootstrap-failures",
+      "title": "Make auto-boot and fan-out failures loud in bootstrap.py",
+      "feature_id": "FEAT-725",
+      "feature": "fixgroup-f3ad5ee39704",
+      "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only parrot/observability/bootstrap.py and tests/unit/observability/test_bootstrap.py; shares no file with TASK-4613. Its tests call ensure_observability_bootstrapped directly, so they do not need the hook TASK-4613 installs.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T16:19:17+00:00",
+      "completed_at": "2026-10-22T16:21:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4614-loud-observability-bootstrap-failures.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4615",
+      "slug": "fanout-failure-fail-once",
+      "title": "Fail once on a bad fan-out configuration",
+      "feature_id": "FEAT-725",
+      "feature": "fixgroup-f3ad5ee39704",
+      "spec": "sdd/specs/fixgroup-f3ad5ee39704.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4614"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites the same hunk of bootstrap.py and the same test that TASK-4614 just added; strictly after it.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T16:31:30+00:00",
+      "completed_at": "2026-10-22T16:34:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4615-fanout-failure-fail-once.md",
+      "verification": "verified"
+    }
+  ]
+}

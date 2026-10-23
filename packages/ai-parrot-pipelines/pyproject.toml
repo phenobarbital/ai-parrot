@@ -29,7 +29,7 @@ dependencies = [
     "ai-parrot>=1.2.4",
     "opencv-python-headless>=4.8",
     "numpy",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "rapidfuzz>=3.0",
 ]
 

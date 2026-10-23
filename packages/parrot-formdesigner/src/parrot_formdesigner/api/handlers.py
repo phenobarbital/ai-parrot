@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
 
+from ..core.llm_validation import wire_report
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
@@ -34,6 +35,10 @@ from .tenant import (
     declared_tenant,
     enforce_membership_unless_public,
 )
+
+#: RBAC codename for the FEAT-732 audit read. Granted per user, at CLIENT scope or
+#: wider, through POST /org/users/{user_id}/assign. Never seeded.
+READ_FORM_AUDIT = "read_form_audit"
 
 
 def extract_form_uid(request: web.Request) -> _uuid.UUID:
@@ -92,10 +97,13 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from .submission_events import SubmittedCallback
     from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
+    from ..services.llm_quota import LLMQuota
     from ..services.org_graph import OrgGraphService
+    from ..services.rbac import RBACScope
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
@@ -156,6 +164,8 @@ class FormAPIHandler:
         venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
         sink_factory: "SinkFactory | None" = None,
+        tenant_scoped_submissions: bool = False,
+        on_submitted: "SubmittedCallback | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
@@ -165,6 +175,10 @@ class FormAPIHandler:
         # declaring `persistence` write exclusively to their own sink
         # instead of `submission_storage` — see submit_data's branch.
         self._sink_factory = sink_factory
+        # FEAT-730 G8: host opt-in to store generic submissions under the URL tenant.
+        self._tenant_scoped_submissions = tenant_scoped_submissions
+        # FEAT-730 — host hook after a successful REST /data store.
+        self._on_submitted = on_submitted
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
         self._org_graph_service = org_graph_service
@@ -283,9 +297,39 @@ class FormAPIHandler:
             partial_store=self._partial_store,
             plausibility=checker,
             sink_factory=self._sink_factory,
+            tenant_scoped_submissions=self._tenant_scoped_submissions,
             logger=self.logger,
             dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
         )
+
+    def _llm_quota(self) -> "LLMQuota":
+        """Return the configured quota, creating a default for direct handlers."""
+        quota = getattr(self, "llm_quota", None)
+        if quota is None:
+            from ..services.llm_quota import LLMQuota
+
+            quota = LLMQuota()
+            self.llm_quota = quota
+        return quota
+
+    @staticmethod
+    def _plausibility_ack(request: web.Request, body: Any) -> bool:
+        """Read the plausibility reconfirmation flag (FEAT-728).
+
+        Accepts ``?plausibility_ack=true`` or a body ``plausibility_ack: true``,
+        and pops the body key so it is never judged as an undeclared answer.
+
+        Args:
+            request: The inbound request (query string).
+            body: The parsed JSON body, mutated in place when it is a dict.
+
+        Returns:
+            True when the client reconfirmed the flagged answers.
+        """
+        ack = request.query.get("plausibility_ack", "").lower() == "true"
+        if isinstance(body, dict) and body.pop("plausibility_ack", None) is True:
+            ack = True
+        return ack
 
     # ------------------------------------------------------------------
     # User context helpers (navigator-auth integration)
@@ -941,6 +985,32 @@ class FormAPIHandler:
                 return True
         return False
 
+    async def get_availability(self, request: web.Request) -> web.Response:
+        """GET /{tenant}/forms/{form_uid}/availability — can this form take a response now? (FEAT-730)"""
+        from datetime import datetime, timezone
+
+        from ..core.public_access import AvailabilityState, evaluate_open
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_uid, tenant=tenant)
+        if form is None:
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        enforce_membership_unless_public(request, form, tenant)
+        cfg = form.public_access
+        if cfg is None:
+            return JSONResponse(AvailabilityState(accepting=True).model_dump(mode="json"))
+        reason = evaluate_open(cfg, now=datetime.now(timezone.utc))
+        if reason is None and cfg.max_responses and self._submission_storage is not None:
+            count = await self._submission_storage.count_responses(
+                form.form_uid, tenant=tenant if self._tenant_scoped_submissions else None
+            )
+            if count >= cfg.max_responses:
+                reason = "response_limit_reached"
+        state = AvailabilityState(accepting=reason is None, reason=reason, completion=cfg.completion)
+        return JSONResponse(state.model_dump(mode="json"))
+
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid} — Get full FormSchema as JSON."""
         form_uid = extract_form_uid(request)
@@ -1114,6 +1184,7 @@ class FormAPIHandler:
         `VALIDATION_FAILED` envelopes (422, invalid) instead of plain JSON.
         A legacy JSON caller is completely unaffected.
         """
+        from ..core.llm_validation import llm_validation_enabled
         from ..core.schema import UnknownFieldsPolicy
 
         form_uid = extract_form_uid(request)
@@ -1151,17 +1222,37 @@ class FormAPIHandler:
             body = submission_in.answers
 
         from ..services.plausibility import PlausibilityBlocked
+        from ..services.submission_pipeline import PlausibilityRateLimited
 
         # Opt-in plausibility check; popped BEFORE visit-context extraction so the flag is
         # never reported as an unknown field.
         llm_opt_in = request.query.get("llm_validation", "").lower() == "true"
         if isinstance(body, dict) and body.pop("llm_validation", None) is True:
             llm_opt_in = True
+        opt_in_skipped: str | None = None
+        # navigator-auth stores None under request["session"] for anonymous callers, so key presence proves nothing.
+        has_session = request.get("session") is not None
+        if llm_opt_in and not has_session:
+            llm_opt_in = False
+            opt_in_skipped = "unauthenticated_opt_in"
+        ack = self._plausibility_ack(request, body)
         data, visit_context = self._extract_visit_context(form, body)
         pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
         try:
             result, plausibility = await pipeline.validate(
-                form, data, locale="en", auth_context=None, llm_validation=llm_opt_in, visit_context=visit_context
+                form,
+                data,
+                locale="en",
+                auth_context=None,
+                llm_validation=llm_opt_in,
+                visit_context=visit_context,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
+            )
+        except PlausibilityRateLimited as exc:
+            return JSONResponse(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
             )
         except PlausibilityBlocked as exc:
             return JSONResponse(
@@ -1175,6 +1266,10 @@ class FormAPIHandler:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
+        gate = pipeline.gate_for(form, plausibility, ack=ack) if is_valid else None
+        if gate is not None:
+            is_valid = False
+            errors.update(gate.errors)
 
         if a2ui_surface_id is not None:
             if is_valid:
@@ -1182,8 +1277,14 @@ class FormAPIHandler:
             return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
 
         payload: dict[str, Any] = {"is_valid": is_valid, "errors": errors}
+        if gate is not None:
+            payload["code"] = gate.code
         if plausibility is not None:
-            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+            payload["plausibility"] = wire_report(plausibility, mode="json", exclude_none=True)
+        elif opt_in_skipped is not None and any(
+            llm_validation_enabled(form, field) for field in form.iter_fields_recursive()
+        ):
+            payload["plausibility"] = {"status": "skipped", "reason": opt_in_skipped}
         return JSONResponse(payload, status=200 if is_valid else 422)
 
     async def create_blank_form(self, request: web.Request) -> web.Response:
@@ -1609,6 +1710,26 @@ class FormAPIHandler:
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
 
+    async def _notify_submitted(self, form: FormSchema, outcome: Any, tenant: str) -> None:
+        """Await the host's on_submitted hook; never fails the submit (FEAT-730)."""
+        from datetime import datetime, timezone
+
+        from .submission_events import SubmittedEvent
+
+        try:
+            event = SubmittedEvent(
+                submission_id=outcome.submission_id,
+                form_uid=form.form_uid,
+                form_id=form.form_id,
+                form_version=form.version,
+                tenant=tenant,
+                is_public=bool(form.is_public),
+                created_at=outcome.created_at or datetime.now(timezone.utc),
+            )
+            await self._on_submitted(event)
+        except Exception as exc:  # noqa: BLE001 — the submit already succeeded
+            self.logger.warning("on_submitted hook failed for %s: %s", outcome.submission_id, exc)
+
     async def submit_data(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/data — Receive and process a form submission.
 
@@ -1718,6 +1839,8 @@ class FormAPIHandler:
             )
             return a2ui_wire.a2ui_response([envelope], status=status)
 
+        plausibility_ack = self._plausibility_ack(request, body)
+
         # Split off an optional caller-supplied store context before it can
         # be treated as an answer field by the merge/lifecycle steps below
         # (spec §3 Module 5) — `data` is pure answers from here on.
@@ -1762,7 +1885,13 @@ class FormAPIHandler:
                     )
 
         from ..services.plausibility import PlausibilityBlocked
-        from ..services.submission_pipeline import SubmitSinkError, ValidationFailed
+        from ..services.submission_pipeline import (
+            ImplausibleSubmission,
+            PlausibilityRateLimited,
+            SubmissionRejected,
+            SubmitSinkError,
+            ValidationFailed,
+        )
 
         pipeline = self._build_submission_pipeline(form)
         try:
@@ -1776,6 +1905,8 @@ class FormAPIHandler:
                 extra_data=None,
                 auth_context=_auth_ctx,
                 merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
+                plausibility_ack=plausibility_ack,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
                 request=request,
                 visit_context=visit_context,
             )
@@ -1784,6 +1915,28 @@ class FormAPIHandler:
             return JSONResponse({"error": exc.user_message, "reason": exc.reason}, status=exc.status_code)
         except ValidationFailed as exc:
             return _reply({"is_valid": False, "errors": exc.errors}, status=422)
+        except PlausibilityRateLimited as exc:
+            return _reply(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
+            )
+        except ImplausibleSubmission as exc:
+            return _reply(
+                {
+                    "is_valid": False,
+                    "code": exc.code,
+                    "errors": exc.errors,
+                    "plausibility": wire_report(exc.report, mode="json", exclude_none=True),
+                },
+                status=422,
+            )
+        except SubmissionRejected as exc:
+            # FEAT-730 — response-policy refusal; controlled flow, never routed to onError.
+            rejection: dict[str, Any] = {"error": str(exc), "reason": exc.reason}
+            if exc.field_id is not None:
+                rejection["field_id"] = exc.field_id
+            return _reply(rejection, status=409)
         except SubmitSinkError as exc:
             return _reply({"error": str(exc)}, status=exc.status, headers=exc.headers or None)
         except PlausibilityBlocked as exc:
@@ -1807,7 +1960,9 @@ class FormAPIHandler:
             "forward_error": outcome.forward_error,
         }
         if outcome.plausibility is not None:
-            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+            body_out["plausibility"] = wire_report(outcome.plausibility, mode="json", exclude_none=True)
+        if self._on_submitted is not None and outcome.stored_in != "none":
+            await self._notify_submitted(form, outcome, tenant)
         return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:
@@ -2197,6 +2352,113 @@ class FormAPIHandler:
                     codename,
                     tenant,
                 )
+
+    async def _rbac_require(
+        self,
+        request: web.Request,
+        codename: str,
+        *,
+        scope: "RBACScope | None" = None,
+    ) -> None:
+        """Require an RBAC permission, denying on missing or failed RBAC.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+            codename: Permission codename to require.
+            scope: Minimum permission scope required.
+
+        Raises:
+            web.HTTPForbidden: If RBAC is unavailable, resolution fails, or
+                the resolved context lacks the required permission.
+        """
+        if self._rbac_service is None:
+            self.logger.warning(
+                "_rbac_require: DENY codename=%s — no RBAC service configured",
+                codename,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+        user = getattr(request, "user", None)
+        user_id = str(getattr(user, "id", "anonymous")) if user else "anonymous"
+        tenant = self._get_tenant(request)
+        # H-4: _get_programs() returns program SLUGS, not numeric IDs. There is
+        # no reliable numeric program_id in the slug-only session, so the gate
+        # resolves at tenant+user granularity (program_id=0). RBACService.resolve
+        # filters policies by user+tenant, so program scoping is not required here.
+        program_id = 0
+
+        try:
+            ctx = await self._rbac_service.resolve(user_id, program_id=program_id, tenant=tenant)
+            allowed = ctx.has_permission(codename, scope=scope)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "_rbac_require: DENY resolution failed for %s/%s: %s",
+                user_id,
+                codename,
+                exc,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}") from exc
+
+        if not allowed:
+            self.logger.warning(
+                "_rbac_require: DENY user=%s codename=%s tenant=%s",
+                user_id,
+                codename,
+                tenant,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+    async def get_submission_audit(self, request: web.Request) -> web.Response:
+        """Return the audit projection for one submission.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+
+        Returns:
+            The six-field audit projection, or a JSON error response when
+            storage is unavailable or the submission cannot be read here.
+
+        Raises:
+            web.HTTPForbidden: If the caller lacks ``read_form_audit`` at
+                ``CLIENT`` scope or wider.
+        """
+        from ..services.rbac import RBACScope
+
+        await self._rbac_require(request, READ_FORM_AUDIT, scope=RBACScope.CLIENT)
+        if self._submission_storage is None:
+            return JSONResponse({"error": "Submission storage not configured"}, status=503)
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        submission_id = request.match_info["submission_id"]
+        row = await self._submission_storage.get_submission(submission_id, tenant=tenant)
+        if row is None:
+            form = await self.registry.get(form_uid, tenant=tenant)
+            if form is not None and form.persistence is not None:
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Submission was written to its own persistence sink; "
+                            "read the audit trail from that sink's context column"
+                        )
+                    },
+                    status=501,
+                )
+            return JSONResponse({"error": "Submission not found"}, status=404)
+        if row.form_uid != form_uid:
+            return JSONResponse({"error": "Submission not found"}, status=404)
+
+        context = row.context or {}
+        return JSONResponse(
+            {
+                "submission_id": row.submission_id,
+                "form_uid": str(row.form_uid),
+                "form_version": row.form_version,
+                "is_valid": row.is_valid,
+                "validation": context.get("validation"),
+                "llm_validation": context.get("llm_validation"),
+            }
+        )
 
     # ------------------------------------------------------------------
     # FEAT-302 — Org Graph endpoints

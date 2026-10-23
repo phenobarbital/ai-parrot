@@ -8,11 +8,33 @@ from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.native_artifacts import NativeSyncReport
 from scripts.sdd.ensure_worktree import EnsureWorktreeError, ensure, main
 from scripts.sdd.sdd_meta import FlowMeta, plan_worktree
 
 SLUG = "demo-feature"
 FEATURE_ID = "FEAT-999"
+
+
+def _declare_stub_group(repo: Path, artifact_rel: str) -> None:
+    """Declare one simple native artifact group for an isolated CLI test repo."""
+    (repo / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.parrot.worktree]",
+                "enabled = true",
+                "",
+                "[[tool.parrot.worktree.native_group]]",
+                'name = "stub"',
+                f'copy_globs = ["{artifact_rel}"]',
+                "required = true",
+                "autobuild = false",
+                'manual_hint = "build the stub manually"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture
@@ -177,6 +199,106 @@ def test_json_output_includes_worktree_path_alias(tmp_git_repo: Path, capsys, mo
     assert data["worktree_path"] == data["path"]
 
 
+def test_main_syncs_on_create_and_reuse(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """The artifact lands in the new worktree, and reuse re-syncs a changed one."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("first", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    created_path = Path(capsys.readouterr().out.strip())
+    copied = created_path / artifact_rel
+    assert copied.read_text(encoding="utf-8") == "first"
+
+    source.write_text("second", encoding="utf-8")
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    reused_path = Path(capsys.readouterr().out.strip())
+    assert reused_path == created_path
+    assert copied.read_text(encoding="utf-8") == "second"
+
+
+def test_main_stdout_is_only_the_path(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """Warnings go to stderr while stdout contains exactly the worktree path."""
+    _declare_stub_group(tmp_git_repo, "native/missing.bin")
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    out, err = capsys.readouterr()
+    assert out.count("\n") == 1
+    assert Path(out.strip()).is_dir()
+    assert err.startswith("warning: stub:")
+
+
+def test_main_json_carries_native_report(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--json exposes every documented native report field."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert set(data["native"]) == {"enabled", "copied", "skipped", "built", "missing", "warnings"}
+    assert data["native"]["enabled"] is True
+    assert data["native"]["copied"] == [artifact_rel]
+
+
+def test_main_no_native_sync_flag(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--no-native-sync returns a worktree without copying declared artifacts."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--no-native-sync"]) == 0
+    path = Path(capsys.readouterr().out.strip())
+    assert not (path / artifact_rel).exists()
+
+
+def test_main_no_autobuild_flag_is_forwarded(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--no-autobuild keeps sync enabled while forwarding autobuild=False."""
+    seen: dict[str, bool] = {}
+
+    def fake_sync(*, main_root: Path, target: Path, autobuild: bool) -> NativeSyncReport:
+        seen["autobuild"] = autobuild
+        return NativeSyncReport(enabled=True)
+
+    monkeypatch.setattr("scripts.sdd.ensure_worktree.sync_native_artifacts", fake_sync)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--no-autobuild"]) == 0
+    capsys.readouterr()
+    assert seen == {"autobuild": False}
+
+
+def test_main_dry_run_skips_sync(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--dry-run performs neither native copy nor build."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--dry-run"]) == 0
+    path = Path(capsys.readouterr().out.strip())
+    assert not path.exists()
+
+
+def test_ensure_signature_unchanged(tmp_git_repo: Path) -> None:
+    """ensure() still returns the two-item tuple expected by existing callers."""
+    result = ensure(_plan(), repo_root=tmp_git_repo, dry_run=True)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
 def test_main_infers_hotfix_from_jira_key_alone(tmp_git_repo: Path, capsys, monkeypatch) -> None:
     """The documented invocation ``--slug <slug> --jira-key <KEY>`` (CLAUDE.md,
     sdd-research.md) must work without also requiring ``--type``/
@@ -321,3 +443,34 @@ def test_main_brief_key_rejects_feature_id_jira_and_type(
     assert rc == 1
     assert "Error:" in capsys.readouterr().err
     assert after == before
+
+
+def test_native_sync_failure_does_not_fail_worktree_creation(monkeypatch, capsys):
+    """FEAT-722 review: a raising sync degrades to a stderr warning, exit 0."""
+    from scripts.sdd import ensure_worktree as ew
+
+    def boom(**_kwargs):
+        raise ValueError("malformed manifest")
+
+    monkeypatch.setattr(ew, "sync_native_artifacts", boom)
+    monkeypatch.setattr(ew, "ensure", lambda *a, **k: (Path("/tmp/x-wt"), False))
+    code = ew.main(["--slug", "s", "--feature-id", "FEAT-1"])
+    out = capsys.readouterr()
+    assert code == 0
+    assert out.out.strip() == "/tmp/x-wt"
+    assert "native artifact sync failed" in out.err
+
+
+def test_ensure_worktree_import_keeps_cwd_and_skips_parrot_utils():
+    """FEAT-722 review: importing the CLI must not chdir or load parrot.utils (Cython)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import os, sys; c = os.getcwd(); import scripts.sdd.ensure_worktree; "
+        "print(os.getcwd() == c, 'parrot.utils' in sys.modules, 'parrot.flows.dev_loop' in sys.modules)"
+    )
+    res = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[2]
+    )
+    assert res.stdout.strip().splitlines()[-1] == "True False False", res.stderr

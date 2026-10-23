@@ -486,3 +486,33 @@ async def test_review_and_feedback_coexist(git_sandbox_feature: tuple, noop_prob
     assert "fail-open-authorization" in context_h2
     context_h1 = await store.context("native", prep1.model, ["pkg/t1.py"])
     assert context_h1 == ""  # the timeout never fabricated a lesson for the OTHER model
+
+
+async def test_retracted_feedback_is_dropped_from_replay(store: CoderFeedbackStore) -> None:
+    """A misattributed correction can be withdrawn without rewriting the append-only log.
+
+    FEAT-589 recorded four "forgot `git add -f`" defects against a codex model whose
+    sandbox cannot commit at all (the engine's extraction was the bug). Retraction
+    appends an `insight.superseded` tombstone; replay drops the record, other
+    patterns and other models are untouched, and a later re-recording of the same
+    occurrence is a fresh confirmation again.
+    """
+    wrong = feedback(pattern="gitignored-file-not-force-added", files=["artifacts/x.py"], model="gpt-5.6-terra")
+    real = feedback(pattern="unverified-fixture-schema-drift", model="gpt-5.6-terra")
+    await store.record(wrong)
+    await store.record(real)
+
+    assert await store.retract(wrong.feedback_id(), reason="engine extraction bug, not the model", actor="human:t")
+    assert not await store.retract("coder-feedback:000000000000000000000000", reason="unknown", actor="human:t")
+    assert not await store.retract(wrong.feedback_id(), reason="already gone", actor="human:t")
+
+    restarted = CoderFeedbackStore(LedgerLog(store.log.path))
+    context = await restarted.context("nova", "gpt-5.6-terra", ["artifacts/x.py"])
+    assert "gitignored-file-not-force-added" not in context
+    assert "unverified-fixture-schema-drift" in context
+    kinds = [event.kind for event, _offset in restarted.log.iter_events()]
+    assert kinds.count("insight.recorded") == 2 and kinds.count("insight.superseded") == 1
+
+    await restarted.record(wrong)
+    context = await restarted.context("nova", "gpt-5.6-terra", ["artifacts/x.py"])
+    assert "gitignored-file-not-force-added" in context and "confirmed deliveries: 1" in context

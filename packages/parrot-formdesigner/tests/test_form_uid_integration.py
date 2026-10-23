@@ -72,6 +72,7 @@ def _make_request(
     # FormAPIHandler._get_tenant() resolves the right tenant.
     req.session = {"session": {"programs": [tenant]}}
     req.__contains__ = lambda self, key: False
+    req.get = lambda key, default=None: tenant if key == "tenant" else default
 
     if body is not None:
         req.json = AsyncMock(return_value=body)

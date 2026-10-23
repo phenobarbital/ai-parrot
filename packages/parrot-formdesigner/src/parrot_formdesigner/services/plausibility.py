@@ -198,6 +198,11 @@ class AnswerPlausibilityChecker:
         except Exception as exc:  # timeout, provider error, unparsable output
             self.logger.warning("plausibility check failed for form %s: %s", form.form_id, type(exc).__name__)
             return self._fail(f"llm_error: {type(exc).__name__}")
+        resolved_model, provider, usage = self._identity(response)
+        if not resolved_model:
+            # FEAT-732 AC12: a parseable answer nobody can attribute is not a success.
+            self.logger.warning("plausibility: response for form %s carries no model identity", form.form_id)
+            return self._fail("llm_error: unidentified_model")
         latency_ms = int((time.monotonic() - started) * 1000)
         known = {f.field_id for f in targets}
         verdicts: dict[str, PlausibilityVerdict] = {}
@@ -213,7 +218,14 @@ class AnswerPlausibilityChecker:
                 plausible=out.plausible, confidence=confidence, reason=out.reason or ""
             )
         return PlausibilityReport(
-            status="ok", threshold=cfg.threshold, model=cfg.model, latency_ms=latency_ms, items=verdicts
+            status="ok",
+            threshold=cfg.threshold,
+            model=cfg.model,
+            resolved_model=resolved_model,
+            provider=provider,
+            usage=usage,
+            latency_ms=latency_ms,
+            items=verdicts,
         )
 
     def _parse(self, response: Any) -> PlausibilityBatch:
@@ -234,6 +246,25 @@ class AnswerPlausibilityChecker:
             except ValueError:
                 continue
         raise ValueError("unparsable plausibility output")
+
+    @staticmethod
+    def _identity(response: Any) -> tuple[str | None, str | None, dict[str, Any] | None]:
+        """Extract (resolved_model, provider, usage) from an AIMessage-shaped response.
+
+        Reads ``response.model`` / ``.provider`` / ``.usage`` — required fields on
+        AIMessage (responses.py:138-139,143). Tolerant of test doubles: a missing
+        or empty attribute yields ``None``, which ``check()`` then treats as an LLM
+        failure rather than an unattributable success.
+        """
+        model = getattr(response, "model", None)
+        provider = getattr(response, "provider", None)
+        raw_usage = getattr(response, "usage", None)
+        usage: dict[str, Any] | None = None
+        if isinstance(raw_usage, BaseModel):
+            usage = raw_usage.model_dump(mode="json")
+        elif isinstance(raw_usage, dict):
+            usage = dict(raw_usage)
+        return (str(model) if model else None, str(provider) if provider else None, usage)
 
     def _fail(self, reason: str) -> PlausibilityReport:
         """Map an LLM failure through ``on_error``."""

@@ -765,6 +765,7 @@ class SchedulerManager:
         """Load enabled database schedules into the default APScheduler jobstore."""
         pool = await self._get_connection_pool()
         query = "SELECT * FROM navigator.service_scheduler WHERE enabled = TRUE ORDER BY created_at"
+        next_run_update = "UPDATE navigator.service_scheduler SET next_run = $1, updated_at = $2 WHERE schedule_id = $3"
         async with await pool.acquire() as conn:  # pylint: disable=no-member
             ServiceSchedule.Meta.connection = conn
             rows, error = await conn.query(query)
@@ -788,11 +789,17 @@ class SchedulerManager:
                     misfire_grace_time=300,
                 )
                 if job.next_run_time:
+                    # NAV-10363: stamp next_run with a targeted statement instead of
+                    # row.update(). datamodel keeps __values__ on the class, so a model
+                    # built directly with ServiceSchedule(**record) reports the first
+                    # row's values and Model.update() would build
+                    # "WHERE schedule_id = <first row>" for every following row.
                     row.next_run = job.next_run_time
                     row.updated_at = utcnow()
                     async with await pool.acquire() as conn:  # pylint: disable=no-member
-                        ServiceSchedule.Meta.connection = conn
-                        await row.update()
+                        _, error = await conn.execute(next_run_update, row.next_run, row.updated_at, row.schedule_id)
+                    if error:
+                        raise RuntimeError(error)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error("Failed to load schedule %s: %s", record.get("schedule_id"), exc)
 

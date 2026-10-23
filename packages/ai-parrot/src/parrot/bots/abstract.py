@@ -366,6 +366,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # Status and Events
         self._configured: bool = False
+        # FEAT-721: entries into configure(); a re-entry with no new app is a no-op.
+        self._configure_count: int = 0
+        # FEAT-726: whether the most recent configure() entry was that no-op.
+        self._configure_skipped: bool = False
         self._status: AgentStatus = AgentStatus.IDLE
         self._listeners: Dict[str, List[Callable]] = {}
 
@@ -1257,7 +1261,16 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             sig = inspect.signature(getattr(client, method))
             if "budget_scope" in sig.parameters:
                 llm_kwargs["budget_scope"] = _scope
-        return await getattr(client, method)(**llm_kwargs)
+        if method != "ask":
+            return await getattr(client, method)(**llm_kwargs)
+        # FEAT-710: the client computes the call cost once (``_emit_after_call``); surface it on the
+        # response's usage so AgentTalk can persist it without recomputing.
+        from ..observability.cost import backfill_estimated_cost, last_call_cost
+
+        last_call_cost.set(None)
+        response = await client.ask(**llm_kwargs)
+        backfill_estimated_cost(response)
+        return response
 
     def _budget_defaults(self):
         """Constructor-level budget settings (FEAT-550 §2.1)."""
@@ -1564,6 +1577,24 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
 
+        Idempotent per instance. The counter is incremented on entry; a
+        second or later entry returns immediately (INFO log) when the
+        resolved app is the SAME object as the one already bound —
+        including both being ``None``. An app arriving where none was bound
+        before (CLI first, server later) is a genuine reconfiguration and
+        runs the pipeline; Module 1 makes the toolkit re-registration in
+        that path safe.
+
+        Subclass overrides that do their own work AFTER
+        ``await super().configure(app)`` guard it with
+        ``if self.configure_skipped: return``. Overrides that work BEFORE the
+        ``super()`` call guard it with ``if self.configure_is_noop(app): ...``
+        (see ``docs/agent-configure-lifecycle.md`` §6 and §8).
+
+        Do NOT use ``configure_count > 1`` for either guard: it is ``2`` on the
+        CLI-then-server path, where this method genuinely DOES run its
+        pipeline, so a counter-based guard skips setup that was needed.
+
         Wrapped in ``try/except/finally`` so ``self._configured`` is always
         flipped to ``True`` at the end, even when an inner step raises.
         Without this guarantee an uncaught error during configure() leaves
@@ -1573,10 +1604,24 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         raises ``ToolNameCollisionError`` on top of the original failure —
         masking the real cause.
         """
+        # Ask BEFORE incrementing: configure_is_noop() answers the prospective
+        # question ("would a call right now be a no-op?") so that a pre-super
+        # override can consult it before it has entered configure() at all.
+        is_noop = self.configure_is_noop(app)
+        self._configure_count = getattr(self, "_configure_count", 0) + 1
+        if is_noop:
+            self._configure_skipped = True
+            self.logger.info(
+                "configure() already ran for '%s' (entry #%d); skipping. Use reconfigure() to force a re-run.",
+                getattr(self, "name", self.__class__.__name__),
+                self._configure_count,
+            )
+            return
+        self._configure_skipped = False
+        resolved_app = self._resolve_configure_app(app)
         self._configured = False
-        self.app = None
-        if app:
-            self.app = app if isinstance(app, web.Application) else app.get_app()
+        self.app = resolved_app
+        if resolved_app is not None:
             if self.tool_manager._server_param_source is None:  # a Studio build already bound it before its tools
                 self.tool_manager.set_server_param_source(self.app)
         try:
@@ -1776,6 +1821,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         The default implementation is a no-op. Subclasses that override
         this should ``await super().post_configure()`` first to stay
         forward-compatible with future base-class setup added here.
+
+        Called once per configure() that actually runs its pipeline, and again by
+        reconfigure(). An override MUST be safe to run more than once per instance:
+        adopt an already-registered toolkit via
+        ``self.tool_manager.find_registered_toolkit(...)`` instead of building a
+        second one. See ``docs/agent-configure-lifecycle.md``.
         """
         return None
 
@@ -1842,6 +1893,84 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     def is_configured(self) -> bool:
         """Return whether the bot has completed its configuration."""
         return self._configured
+
+    @property
+    def configure_count(self) -> int:
+        """How many times :meth:`configure` has been entered on this instance."""
+        return getattr(self, "_configure_count", 0)
+
+    @property
+    def configure_skipped(self) -> bool:
+        """Whether the most recent :meth:`configure` entry was an idempotent no-op.
+
+        ``False`` before the first ``configure()`` and after any entry that ran
+        the pipeline — including a genuine reconfiguration (an app arriving
+        where none was bound) and :meth:`reconfigure`.
+
+        Overrides that do their own work AFTER ``await super().configure(app)``
+        read this and return early when it is ``True``. Do NOT use
+        ``configure_count > 1`` for that: it is ``2`` on the CLI-then-server
+        path, where the pipeline genuinely DID run.
+
+        Returns:
+            True when the last entry skipped the pipeline, else False.
+        """
+        return getattr(self, "_configure_skipped", False)
+
+    def _resolve_configure_app(self, app) -> Optional[web.Application]:
+        """Resolve ``app`` to an :class:`aiohttp.web.Application` or ``None``.
+
+        The single app-resolution used by both :meth:`configure` and
+        :meth:`configure_is_noop`, so the two can never disagree about which
+        app a call refers to.
+
+        Args:
+            app: An ``aiohttp`` application, an object exposing ``get_app()``,
+                or ``None``.
+
+        Returns:
+            The resolved application, or ``None`` when ``app`` is falsy.
+        """
+        if not app:
+            return None
+        return app if isinstance(app, web.Application) else app.get_app()
+
+    def configure_is_noop(self, app=None) -> bool:
+        """Whether a :meth:`configure` call with ``app`` would be an idempotent no-op.
+
+        Deliberately synchronous: overrides that do their own work BEFORE
+        ``await super().configure(app)`` must consult it first, and an
+        ``async`` predicate would force them to await before deciding.
+
+        The question is **prospective** — "would a call made right now be a
+        no-op?" — so it tests ``configure_count >= 1`` (at least one entry has
+        already happened), not ``> 1``. :meth:`configure` therefore calls it
+        BEFORE incrementing its counter; a pre-super override calls it before
+        entering ``configure()`` at all, and both get the same answer.
+
+        Args:
+            app: The app that would be passed to ``configure()``.
+
+        Returns:
+            True when ``configure(app)`` would log and return without running
+            the pipeline.
+        """
+        resolved_app = self._resolve_configure_app(app)
+        previous_app = getattr(self, "app", None)
+        return getattr(self, "_configure_count", 0) >= 1 and (resolved_app is None or resolved_app is previous_app)
+
+    async def reconfigure(self, app=None) -> None:
+        """Reset the idempotency counter and run :meth:`configure` again.
+
+        The ONLY supported way to re-run the configure pipeline on a live
+        instance. ``post_configure()`` runs again, so overrides must adopt
+        already-registered toolkits (see ``docs/agent-configure-lifecycle.md``).
+
+        Args:
+            app: The aiohttp app to bind; defaults to the currently bound one.
+        """
+        self._configure_count = 0
+        await self.configure(app if app is not None else getattr(self, "app", None))
 
     def get_conversation_memory(self, storage_type: str = "memory", **kwargs) -> ConversationMemory:
         """Factory function to create conversation memory instances."""

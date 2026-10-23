@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Final, List, Optional
 
+from parrot.observability.context import current_tenant
 from parrot.utils.paths import secure_path, validate_path_segment
 
 from .file_registry import SkillFileRegistry
@@ -74,7 +75,7 @@ def discover_tenant_dirs(agent_root: Path, logger: Optional[logging.Logger] = No
     return found
 
 
-_skill_tenant: ContextVar[Optional[str]] = ContextVar("parrot_skill_tenant", default=None)
+_skill_tenant = current_tenant
 _active_skill: ContextVar[Optional[SkillDefinition]] = ContextVar("parrot_active_skill", default=None)
 
 

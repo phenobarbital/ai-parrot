@@ -95,6 +95,8 @@ def _make_form(*fields: FormField) -> FormSchema:
 
 async def _tenant_wrapped_upload(request: web.Request) -> web.Response:
     request["tenant"] = request.match_info["tenant"]
+    # FEAT-730: handle_file_upload now enforces membership on private forms — act as a member.
+    request.session = {"session": {"programs": [request.match_info["tenant"]]}}
     return await handle_file_upload(request)
 
 

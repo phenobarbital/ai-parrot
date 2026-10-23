@@ -29,7 +29,11 @@ class FakeClient:
             await asyncio.sleep(self.delay)
         if self.exc:
             raise self.exc
-        return type("Msg", (), {"structured_output": self.result, "output": self.result})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": self.result, "output": self.result, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 def _make_form(cfg: LLMValidationConfig | None = None) -> FormSchema:

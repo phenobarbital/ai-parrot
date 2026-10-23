@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
@@ -44,6 +44,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 
 from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
+from ..services.llm_quota import LLMQuota
 from ..services.sinks.factory import SinkFactory
 from . import controls as controls_module
 from . import file_upload as file_upload_module
@@ -55,6 +56,8 @@ from .tenant import requires_tenant
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+
+    from .submission_events import SubmittedCallback
     from parrot.core.ws_auth import TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
     from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
@@ -63,6 +66,7 @@ if TYPE_CHECKING:
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
     from ..services.org_graph import OrgGraphService
+    from ..services.pending_uploads import PendingUploadStore
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.rbac import RBACService
@@ -189,6 +193,13 @@ def _stash_without_clobbering(app: web.Application, key: str, value: object) -> 
         app.setdefault(key, None)
 
 
+def _wire_pending_uploads(app: web.Application, submission_storage: Any, pending_uploads: Any) -> None:
+    """FEAT-731: publish the pending-upload store for /file-upload and attach it to the generic storage."""
+    _stash_without_clobbering(app, "form_pending_uploads", pending_uploads)
+    if pending_uploads is not None and submission_storage is not None:
+        submission_storage.attach_pending_uploads(pending_uploads)
+
+
 def setup_form_api(
     app: web.Application,
     registry: FormRegistry,
@@ -212,6 +223,10 @@ def setup_form_api(
     alias_registry: "SinkAliasRegistry | None" = None,
     public_base_url: str | None = None,
     teams_renderer: "AbstractFormRenderer | None" = None,
+    llm_quota: "LLMQuota | None" = None,
+    tenant_scoped_submissions: bool = False,
+    on_submitted: "SubmittedCallback | None" = None,
+    pending_uploads: "PendingUploadStore | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -226,6 +241,9 @@ def setup_form_api(
         submission_storage: Optional storage backend for submissions.
         forwarder: Optional submission forwarder.
         base_path: URL prefix for all routes (default ``"/api/v1"``).
+        on_submitted: Optional async host hook ``(SubmittedEvent) -> None`` awaited after a successful
+            REST ``/data`` store (errors are logged, never fail the submit).
+        tenant_scoped_submissions: Store generic ``/data`` submissions under the URL tenant; default False.
         blob_storage: Optional ``AbstractBlobStorage`` instance for REST field
             binary uploads. If ``None``, the upload handler will construct an
             ``S3BlobStorage()`` lazily on first use from environment variables.
@@ -306,6 +324,7 @@ def setup_form_api(
     # ``app["blob_storage"]`` keep getting ``None`` rather than a KeyError.
     _stash_without_clobbering(app, "blob_storage", blob_storage)
     _stash_without_clobbering(app, "rest_resolver", resolver)
+    _wire_pending_uploads(app, submission_storage, pending_uploads)
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
@@ -358,11 +377,16 @@ def setup_form_api(
         venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
         sink_factory=sink_factory,
+        tenant_scoped_submissions=tenant_scoped_submissions,
+        on_submitted=on_submitted,
     )
     app["form_api_handler"] = handler
     # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).
     # plausibility=None here — the audio engine runs its own check at REVIEW and passes the report in.
     app["submission_pipeline"] = handler._build_submission_pipeline()
+    quota = llm_quota if llm_quota is not None else LLMQuota()
+    handler.llm_quota = quota
+    _stash_without_clobbering(app, "llm_quota", quota)
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
@@ -427,6 +451,17 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/data",
         _wrap_auth(handler.submit_data, tenant="public"),
     )
+    # FEAT-732 — audit projection of one submission. NOT a public-form glob:
+    # tenant="required" (the default) plus a fail-closed permission gate.
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/data/{{submission_id}}/audit",
+        _wrap_auth(handler.get_submission_audit),
+    )
+    # FEAT-730 — can this form take a response now? Auth-exempt for public forms (7th glob).
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/availability",
+        _wrap_auth(handler.get_availability, tenant="public"),
+    )
 
     # Form-controls toolbar metadata — static, tenant-agnostic field-type
     # catalog (no registry access, no per-tenant data). Path unchanged,
@@ -451,7 +486,7 @@ def setup_form_api(
     # Raw upload field types (FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD) — FEAT-460
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/file-upload",
-        _wrap_auth(file_upload_module.handle_file_upload),
+        _wrap_auth(file_upload_module.handle_file_upload, tenant="public"),  # FEAT-730: handler enforces membership unless public
     )
     # Thumbnail serving route — TASK-2469 (follow-up: thumbnail_url must be
     # a fetchable URL, not a raw blob_ref)
