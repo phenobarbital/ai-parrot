@@ -386,9 +386,14 @@ class TestJiraCallbackRegression:
         token_set = SimpleNamespace(
             display_name="J Lara", email="jlara@trocglobal.com", site_url="https://x.atlassian.net"
         )
+        # The real shape: ``user_id`` is the Teams AAD object id (a GUID), and
+        # the navigator-auth bigint rides in ``extra["nav_user_id"]``.
         state = {
-            "user_id": nav_user,
-            "extra": {"conversation_reference": {"conversation": {"tenantId": TENANT_ID}}},
+            "user_id": TEAMS_OID,
+            "extra": {
+                "nav_user_id": nav_user,
+                "conversation_reference": {"conversation": {"tenantId": TENANT_ID}},
+            },
         }
 
         response = await handle_msteams_jira_callback(request, token_set, state)
@@ -396,6 +401,44 @@ class TestJiraCallbackRegression:
         assert "could not be saved" not in response.text.lower()
         row = await service.get_identity(nav_user, "msteams")
         assert row is not None
-        assert row["provider_user_id"] == nav_user
+        assert row["provider_user_id"] == TEAMS_OID
+        assert row["auth_data"]["aad_object_id"] == TEAMS_OID
         assert row["email"] == "jlara@trocglobal.com"
         assert row["auth_data"]["tenant_id"] == TENANT_ID
+
+    @pytest.mark.asyncio
+    async def test_jira_callback_without_nav_id_writes_nothing(self, authdb_pool):
+        """A GUID-only state must not reach the bigint cast (issue:187ce3fe3b93)."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+        from parrot.services.identity_mapping import IdentityMappingService
+
+        service = IdentityMappingService(authdb_pool)
+        request = MagicMock()
+        request.rel_url.query = {}
+        request.app = {"identity_mapping_service": service}
+        token_set = SimpleNamespace(
+            display_name="J Lara", email="jlara@trocglobal.com", site_url="https://x.atlassian.net"
+        )
+        state = {
+            "user_id": TEAMS_OID,
+            "extra": {"conversation_reference": {"conversation": {"tenantId": TENANT_ID}}},
+        }
+
+        # Counted, not asserted absent: the table is the deployment's real one
+        # and may already hold rows for this oid from an earlier session.
+        # Queried on provider_user_id, since looking the GUID up as a user_id
+        # is the very bigint cast this test exists to keep out of the path.
+        async def _rows_for_oid() -> int:
+            async with authdb_pool.acquire() as conn:
+                return await conn.engine().fetchval(
+                    "SELECT count(*) FROM auth.user_identities WHERE provider_user_id = $1",
+                    TEAMS_OID,
+                )
+
+        before = await _rows_for_oid()
+        response = await handle_msteams_jira_callback(request, token_set, state)
+
+        # Nothing was expected to be written, so the page carries no warning...
+        assert "could not be saved" not in response.text.lower()
+        # ...and no new row appeared.
+        assert await _rows_for_oid() == before

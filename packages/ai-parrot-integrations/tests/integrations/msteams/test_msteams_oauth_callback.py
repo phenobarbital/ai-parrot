@@ -19,26 +19,36 @@ def mock_token_set():
     return token
 
 
+#: A realistic Azure AD object id — a GUID, NOT a bigint. Writing this into
+#: auth.user_identities.user_id is the defect issue:187ce3fe3b93 reported.
+AAD_GUID = "7f1c0b2e-9a3d-4c8e-9b61-0c3f1e0a5d44"
+#: The navigator-auth user id (auth.users.user_id is bigint).
+NAV_USER_ID = "9000123456"
+
+
+def _state_payload(*, nav_user_id: str | None = NAV_USER_ID, conv_ref: bool = True):
+    """Build a Teams OAuth state as JiraOAuthManager produces it.
+
+    Channel-specific data is nested under ``extra``; ``user_id`` is the Teams
+    AAD object id at both levels, and ``nav_user_id`` (when the user is
+    authenticated) rides in ``extra`` only.
+    """
+    extra = {"channel": "msteams", "user_id": AAD_GUID}
+    if conv_ref:
+        extra["conversation_reference"] = {
+            "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
+            "bot": {"id": "bot-app-id"},
+            "user": {"id": AAD_GUID, "aadObjectId": AAD_GUID},
+        }
+    if nav_user_id is not None:
+        extra["nav_user_id"] = nav_user_id
+    return {"channel": "msteams", "user_id": AAD_GUID, "extra": extra}
+
+
 @pytest.fixture
 def msteams_state_payload():
-    """State payload as produced by JiraOAuthManager.
-
-    Channel-specific data (conversation_reference) is nested under ``extra`` —
-    this mirrors the real shape returned by ``handle_callback``.
-    """
-    return {
-        "channel": "msteams",
-        "user_id": "aad-obj-123",
-        "extra": {
-            "channel": "msteams",
-            "user_id": "aad-obj-123",
-            "conversation_reference": {
-                "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
-                "bot": {"id": "bot-app-id"},
-                "user": {"id": "aad-obj-123", "aadObjectId": "aad-obj-123"},
-            },
-        },
-    }
+    """State payload for an authenticated Teams user."""
+    return _state_payload()
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +195,9 @@ class TestHandleMSTeamsJiraCallback:
         mock_identity_service.upsert_identity.assert_called_once()
         call_kwargs = mock_identity_service.upsert_identity.call_args[1]
         assert call_kwargs["auth_provider"] == "msteams"
-        assert call_kwargs["nav_user_id"] == "aad-obj-123"
+        assert call_kwargs["nav_user_id"] == NAV_USER_ID
+        assert call_kwargs["provider_user_id"] == AAD_GUID
+        assert call_kwargs["auth_data"]["aad_object_id"] == AAD_GUID
 
     @pytest.mark.asyncio
     async def test_fires_proactive_notification_when_notifier_available(
@@ -214,7 +226,7 @@ class TestHandleMSTeamsJiraCallback:
 
         state_payload = {
             "channel": "msteams",
-            "user_id": "aad-obj-123",
+            "user_id": AAD_GUID,
             # no conversation_reference
         }
 
@@ -295,14 +307,15 @@ class TestStatePayloadShapeParity:
         conv_ref = {
             "conversation": {"id": "conv-123", "tenantId": "tenant-456"},
             "bot": {"id": "bot-app-id"},
-            "user": {"id": "aad-obj-123"},
+            "user": {"id": AAD_GUID},
         }
         _url, nonce = await mgr.create_authorization_url(
             "msteams",
-            "aad-obj-123",
+            AAD_GUID,
             extra_state={
                 "channel": "msteams",
-                "user_id": "aad-obj-123",
+                "user_id": AAD_GUID,
+                "nav_user_id": NAV_USER_ID,
                 "conversation_reference": conv_ref,
             },
         )
@@ -325,5 +338,69 @@ class TestStatePayloadShapeParity:
 
         identity.upsert_identity.assert_called_once()
         call_kwargs = identity.upsert_identity.call_args[1]
-        assert call_kwargs["nav_user_id"] == "aad-obj-123"
+        assert call_kwargs["nav_user_id"] == NAV_USER_ID
+        assert call_kwargs["provider_user_id"] == AAD_GUID
         assert call_kwargs["auth_data"]["tenant_id"] == "tenant-456"
+
+
+class TestNavUserIdFailsClosed:
+    """The identity row must never be written with a channel-scoped id.
+
+    Regression guard for ``issue:187ce3fe3b93``: ``/connect_jira`` used to put
+    the AAD object id (a GUID) in the state's ``user_id`` and the callback
+    passed it straight to ``upsert_identity(nav_user_id=...)``, where
+    ``$1::text::bigint`` rejected it — so every real Teams user got the
+    "could not be saved" warning. These tests need no Postgres.
+    """
+
+    @pytest.mark.asyncio
+    async def test_guid_only_state_skips_identity_write(self, mock_token_set):
+        """A state without nav_user_id writes nothing — and warns nobody."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        mock_request = _make_success_request(app={"identity_mapping_service": identity})
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, _state_payload(nav_user_id=None)
+        )
+
+        identity.upsert_identity.assert_not_called()
+        assert "identity-warning" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_numeric_nav_user_id_is_written(self, mock_token_set, msteams_state_payload):
+        """The bigint goes to user_id, the GUID to provider_user_id."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        mock_request = _make_success_request(app={"identity_mapping_service": identity})
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, msteams_state_payload
+        )
+
+        call_kwargs = identity.upsert_identity.call_args[1]
+        assert call_kwargs["nav_user_id"] == NAV_USER_ID
+        assert call_kwargs["nav_user_id"].isdigit()
+        assert call_kwargs["provider_user_id"] == AAD_GUID
+        assert call_kwargs["auth_data"]["aad_object_id"] == AAD_GUID
+        assert "identity-warning" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_non_numeric_nav_user_id_warns_and_skips(self, mock_token_set):
+        """A GUID smuggled into nav_user_id never reaches the database."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        identity = MagicMock()
+        identity.upsert_identity = AsyncMock()
+        mock_request = _make_success_request(app={"identity_mapping_service": identity})
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, _state_payload(nav_user_id=AAD_GUID)
+        )
+
+        identity.upsert_identity.assert_not_called()
+        assert "identity-warning" in response.text
