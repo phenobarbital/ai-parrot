@@ -149,9 +149,10 @@ class TokenExchangeClient:
         nav_user_id = body.get("user_id", session_data.get("user_id"))
         display_name = body.get("name") or body.get("display_name")
         if not display_name:
-            display_name = " ".join(
-                part for part in (session_data.get("first_name"), session_data.get("last_name")) if part
-            ) or None
+            display_name = (
+                " ".join(part for part in (session_data.get("first_name"), session_data.get("last_name")) if part)
+                or None
+            )
 
         return ExchangeResult(
             ok=True,
