@@ -153,12 +153,13 @@ class MSTeamsSessionStore:
         activity = turn_context.activity
         frm = activity.from_property
         channel_data = getattr(activity, "channel_data", None)
-        tenant = getattr(channel_data, "tenant", None)
+        # Teams delivers channel_data as a plain dict; tests and SDK objects use attributes.
+        tenant = channel_data.get("tenant") if isinstance(channel_data, dict) else getattr(channel_data, "tenant", None)
         session = MSTeamsUserSession(
             user_key=key,
             teams_user_id=frm.id,
             aad_object_id=getattr(frm, "aad_object_id", None),
-            tenant_id=getattr(tenant, "id", None),
+            tenant_id=tenant.get("id") if isinstance(tenant, dict) else getattr(tenant, "id", None),
             display_name=getattr(frm, "name", None),
         )
         self._local[key] = session
