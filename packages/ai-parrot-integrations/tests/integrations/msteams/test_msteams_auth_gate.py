@@ -341,3 +341,50 @@ class TestReviewFixes:
         await wrapper.on_message_activity(turn_context)
 
         handler.assert_awaited_once()
+
+
+class TestSecondReviewFixes:
+    """Regressions from the second FEAT-729 code review."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("text", ["/LOGIN", "/Login", "/Whoami x", "/LOGOUT"])
+    async def test_mixed_case_auth_command_cannot_bypass_gate(self, agent, mock_app, turn_context, text):
+        """The router is case-sensitive, so a mis-cased auth command must not skip the gate."""
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login", auth_required=True)
+        _unauthenticated(wrapper)
+        turn_context.activity.text = text
+
+        await wrapper.on_message_activity(turn_context)
+
+        wrapper._auth.send_signin_card.assert_awaited_once()
+        wrapper.form_orchestrator.process_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_post_login_runs_once_for_concurrent_turns(self, agent, mock_app, turn_context):
+        """Two simultaneous turns of one authenticated user run post_login exactly once."""
+        import asyncio
+
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login", auth_required=True)
+        _authenticate(wrapper, turn_context)
+
+        async def slow_post_login(_user_context):
+            await asyncio.sleep(0.05)
+
+        agent.post_login = AsyncMock(side_effect=slow_post_login)
+
+        await asyncio.gather(wrapper.on_message_activity(turn_context), wrapper.on_message_activity(turn_context))
+
+        assert agent.post_login.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_idle_locks_are_released(self, agent, mock_app, turn_context):
+        """The per-user lock map does not retain locks nobody is using."""
+        import gc
+
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login")
+        lock = wrapper._auth.lock_for("user-a")
+        assert wrapper._auth.lock_for("user-a") is lock  # same user, same lock while in use
+        del lock
+        gc.collect()
+
+        assert "user-a" not in wrapper._auth._locks
