@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-24T00:52:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-23T23:01:06+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -63,7 +63,7 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -73,8 +73,9 @@
       "parallelism_notes": "Its two-layer integration test in test_background_task_tier.py constructs CoderRunValidationArgs(tier='task', attempt_uid=...) from TASK-4673 (sdd_coder/models.py); that field and Literal value do not exist until TASK-4673 lands. No file is shared with TASK-4673 or TASK-4675.",
       "assigned_to": null,
       "started_at": "2026-10-23T22:57:58.914150+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4674-optimization-and-background-brief-ids.md"
+      "completed_at": "2026-10-23T23:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4674-optimization-and-background-brief-ids.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4675",
