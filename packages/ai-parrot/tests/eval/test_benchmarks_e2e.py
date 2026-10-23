@@ -29,7 +29,7 @@ from parrot.eval import (
 from parrot.eval.rollout import ConversationalRollout, UserSimulator
 from parrot.eval.sandbox.state import InMemoryStateSandbox, DictStateBackend
 
-from .factories import make_db_agent, make_jira_agent
+from tests.eval.factories import make_db_agent, make_jira_agent
 
 BENCHMARKS_DIR = Path(__file__).parent / "benchmarks"
 

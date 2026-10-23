@@ -11,7 +11,7 @@ from parrot.tools.execution_plan.catalog import check_allowlist
 from parrot.tools.execution_plan.models import PlanDelta, PlanRun, PlanRunMetadata
 from parrot.tools.execution_plan.repair import validate_delta
 
-from bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
+from ...bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
 
 
 class _EmptyArgs(BaseModel):

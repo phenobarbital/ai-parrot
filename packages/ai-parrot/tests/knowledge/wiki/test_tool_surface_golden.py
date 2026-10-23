@@ -10,7 +10,7 @@ from parrot.knowledge.wiki.mcp_server import build_wiki_tools, create_wiki_mcp_s
 from parrot.knowledge.wiki.project import WikiProjectConfig, load_effective_config, save_project_config
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
-from ._tool_surface import BULK, LEDGER, LOCAL_NO_LEDGER  # noqa: E402 — after importorskip
+from tests.knowledge.wiki._tool_surface import BULK, LEDGER, LOCAL_NO_LEDGER  # noqa: E402 — after importorskip
 
 
 @pytest.fixture

@@ -250,6 +250,9 @@ addopts = [
     "--strict-markers",
     "--import-mode=importlib",
 ]
+# FEAT-720 Amendment B: derive each test module's import name from its full path, so no two package
+# test trees (all of which are literally named `tests`) can claim the same identity.
+consider_namespace_packages = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"

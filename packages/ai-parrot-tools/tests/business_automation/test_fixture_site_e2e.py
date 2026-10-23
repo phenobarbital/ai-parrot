@@ -26,9 +26,6 @@ full `HumanChannel` protocol implementation from scratch.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -46,16 +43,7 @@ from parrot_tools.business_automation.toolkit import BusinessAutomationToolkit
 from parrot_tools.scraping import FlowNode, ScrapingFlow, TemplatePlan
 from playwright.async_api import async_playwright
 
-_local_site_name = "ai_parrot_tools_tests_scraping_local_site"
-_local_site = sys.modules.get(_local_site_name)
-if _local_site is None:
-    _local_site_path = Path(__file__).resolve().parents[1] / "scraping/fixtures/local_site.py"
-    _local_site_spec = importlib.util.spec_from_file_location(_local_site_name, _local_site_path)
-    assert _local_site_spec is not None and _local_site_spec.loader is not None
-    _local_site = importlib.util.module_from_spec(_local_site_spec)
-    sys.modules[_local_site_name] = _local_site
-    _local_site_spec.loader.exec_module(_local_site)
-local_fixture_site = _local_site.local_fixture_site
+from tests.scraping.fixtures.local_site import local_fixture_site
 
 __all__ = ["local_fixture_site"]  # re-exported fixture
 

@@ -4,10 +4,7 @@ Uses an in-memory store double; no Postgres or S3 required.
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -22,17 +19,7 @@ from parrot_tools.security.advisory_engine import (
 from parrot_tools.security.reports import ComplianceMapper
 
 # Import shared store double and helpers from conftest (auto-discovered by pytest)
-_conftest_path = Path(__file__).with_name("conftest.py")
-_conftest_spec = importlib.util.spec_from_file_location("ai_parrot_tools_tests_security_conftest", _conftest_path)
-assert _conftest_spec is not None and _conftest_spec.loader is not None
-_conftest_module = importlib.util.module_from_spec(_conftest_spec)
-sys.modules[_conftest_spec.name] = _conftest_module
-_conftest_spec.loader.exec_module(_conftest_module)
-
-_FakeStore = _conftest_module.FakeStore
-_make_ref = _conftest_module._make_ref
-_prowler_finding = _conftest_module._prowler_finding
-_prowler_content = _conftest_module._prowler_content
+from .conftest import FakeStore as _FakeStore, _make_ref, _prowler_finding, _prowler_content
 
 
 # ---------------------------------------------------------------------------

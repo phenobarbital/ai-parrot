@@ -29,14 +29,14 @@ def isolated_parrot_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: 
 
 @pytest.fixture
 def raw_issue() -> dict:
-    from fixtures.jira_payloads import raw_issue_payload
+    from tests.fixtures.jira_payloads import raw_issue_payload
 
     return raw_issue_payload()
 
 
 @pytest.fixture
 def remote_links() -> list[dict]:
-    from fixtures.jira_payloads import remote_links_payload
+    from tests.fixtures.jira_payloads import remote_links_payload
 
     return remote_links_payload()
 

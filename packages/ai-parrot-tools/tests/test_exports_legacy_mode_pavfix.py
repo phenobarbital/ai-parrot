@@ -6,29 +6,18 @@ call without a store is not refused. The same tools in mode ON are covered by ``
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
 import parrot.tools.exports_mode as exports_mode
 
-_shared_test_path = Path(__file__).with_name("test_export_tools_pa11.py")
-_shared_test_spec = importlib.util.spec_from_file_location(
-    "ai_parrot_tools_test_export_tools_pa11", _shared_test_path
+from .test_export_tools_pa11 import (  # noqa: F401  (fixtures + factories of the mode-ON suite)
+    FACTORIES,
+    _rows,
+    sandbox,
+    store,
+    studio_scope,
 )
-assert _shared_test_spec is not None and _shared_test_spec.loader is not None
-_shared_test_module = importlib.util.module_from_spec(_shared_test_spec)
-sys.modules[_shared_test_spec.name] = _shared_test_module
-_shared_test_spec.loader.exec_module(_shared_test_module)
-
-FACTORIES = _shared_test_module.FACTORIES
-_rows = _shared_test_module._rows
-sandbox = _shared_test_module.sandbox
-store = _shared_test_module.store
-studio_scope = _shared_test_module.studio_scope
 
 LEGACY_ARGS = {
     "excel": {"output_dir", "output_filename", "overwrite_existing", "template_file"},

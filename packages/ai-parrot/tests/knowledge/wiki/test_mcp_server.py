@@ -13,7 +13,7 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
-from ._tool_surface import LEDGER, LOCAL_NO_LEDGER
+from tests.knowledge.wiki._tool_surface import LEDGER, LOCAL_NO_LEDGER
 
 # The worktree's own package sources must shadow whatever `parrot` is
 # installed (editable) into the active venv's site-packages — otherwise a

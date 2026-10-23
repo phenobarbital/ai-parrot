@@ -15,7 +15,7 @@ from parrot.tools.execution_plan.repair import validate_delta
 from parrot.tools.execution_plan.runs import plan_fingerprint
 from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 
-from bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
+from ...bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
 from ._recovery_fakes import ScriptedPlannerClient, SerializingFakeCheckpointStore
 
 _FROZEN_TOOL_ONLY_FINGERPRINT = "8f249908b2dd285c6da1aad02293048c25b15081045c630513a4e53d8d710ca1"

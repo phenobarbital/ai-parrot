@@ -1,19 +1,8 @@
-import importlib.util
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
-
 import pytest
 from parrot_tools.querysource import _qs
 from parrot_tools.querysource.toolkit import QuerysourceToolkit
-
-_conftest_path = Path(__file__).with_name("conftest.py")
-_conftest_spec = importlib.util.spec_from_file_location("ai_parrot_tools_tests_querysource_conftest", _conftest_path)
-assert _conftest_spec is not None and _conftest_spec.loader is not None
-_conftest_module = importlib.util.module_from_spec(_conftest_spec)
-sys.modules[_conftest_spec.name] = _conftest_module
-_conftest_spec.loader.exec_module(_conftest_module)
-PIPELINE = _conftest_module.PIPELINE
+from .conftest import PIPELINE
 
 
 @dataclass

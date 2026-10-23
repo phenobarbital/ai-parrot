@@ -24,7 +24,7 @@ from __future__ import annotations
 import navigator_auth.decorators as _auth_dec
 import pytest
 
-from .conftest import _SERVER_SRC, _register_package
+from tests.handlers.conftest import _SERVER_SRC, _register_package
 
 
 def _noop_auth_factory(*_args, **_kwargs):

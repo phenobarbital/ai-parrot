@@ -8,7 +8,7 @@ from parrot.knowledge.wiki.project import (
 )
 from parrot.knowledge.wiki.store import create_wiki_store
 from parrot.knowledge.wiki.tools import VaultIngestTool
-from interfaces.obsidian.conftest import fixture_vault  # noqa: F401
+from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
 
 
 class TestResolveVaultDir:

@@ -5,25 +5,14 @@ This proves the fixture site itself works BEFORE any real-browser test
 (TASK-2408/2409) relies on it.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import aiohttp
 
-_fixture_path = Path(__file__).with_name("fixtures") / "local_site.py"
-_fixture_spec = importlib.util.spec_from_file_location(
-    "ai_parrot_tools_tests_scraping_fixtures_local_site", _fixture_path
+from .fixtures.local_site import (
+    DOWNLOAD_CONTENT,
+    TEST_PASSWORD,
+    TEST_USERNAME,
+    local_fixture_site,
 )
-assert _fixture_spec is not None and _fixture_spec.loader is not None
-_fixture_module = importlib.util.module_from_spec(_fixture_spec)
-sys.modules[_fixture_spec.name] = _fixture_module
-_fixture_spec.loader.exec_module(_fixture_module)
-
-DOWNLOAD_CONTENT = _fixture_module.DOWNLOAD_CONTENT
-TEST_PASSWORD = _fixture_module.TEST_PASSWORD
-TEST_USERNAME = _fixture_module.TEST_USERNAME
-local_fixture_site = _fixture_module.local_fixture_site
 
 __all__ = ["local_fixture_site"]  # re-exported fixture, used as a parameter below
 

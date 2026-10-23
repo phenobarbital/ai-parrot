@@ -227,7 +227,7 @@ async def test_router_with_bot_end_to_end():
 
     Uses in-memory mocks — no external backend required.
     """
-    from unit.bots.test_abstractbot_store_router import FakeBot
+    from tests.unit.bots.test_abstractbot_store_router import FakeBot
     from parrot.stores.postgres import PgVectorStore
 
     store = MagicMock(spec=PgVectorStore)

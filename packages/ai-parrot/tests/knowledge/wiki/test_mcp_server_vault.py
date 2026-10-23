@@ -11,9 +11,9 @@ from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
     save_project_config,
 )
-from interfaces.obsidian.conftest import fixture_vault  # noqa: F401
-from .test_mcp_server import _seed_wiki, _subprocess_env
-from ._tool_surface import LOCAL_NO_LEDGER
+from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
+from tests.knowledge.wiki.test_mcp_server import _seed_wiki, _subprocess_env
+from tests.knowledge.wiki._tool_surface import LOCAL_NO_LEDGER
 
 BASE_TOOLS = set(LOCAL_NO_LEDGER)
 

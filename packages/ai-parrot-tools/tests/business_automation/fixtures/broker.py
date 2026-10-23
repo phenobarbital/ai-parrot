@@ -22,9 +22,6 @@ attribute-based object.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -32,17 +29,7 @@ import pytest
 from parrot.auth.broker import CredentialBroker
 from parrot.auth.credentials import CredentialResolver
 
-_local_site_name = "ai_parrot_tools_tests_scraping_local_site"
-_local_site = sys.modules.get(_local_site_name)
-if _local_site is None:
-    _local_site_path = Path(__file__).resolve().parents[2] / "scraping/fixtures/local_site.py"
-    _local_site_spec = importlib.util.spec_from_file_location(_local_site_name, _local_site_path)
-    assert _local_site_spec is not None and _local_site_spec.loader is not None
-    _local_site = importlib.util.module_from_spec(_local_site_spec)
-    sys.modules[_local_site_name] = _local_site
-    _local_site_spec.loader.exec_module(_local_site)
-TEST_PASSWORD = _local_site.TEST_PASSWORD
-TEST_USERNAME = _local_site.TEST_USERNAME
+from tests.scraping.fixtures.local_site import TEST_PASSWORD, TEST_USERNAME
 
 #: The provider identifier this fixture registers — used as
 #: ``Authenticate.credential_provider`` in a real end-to-end plan.

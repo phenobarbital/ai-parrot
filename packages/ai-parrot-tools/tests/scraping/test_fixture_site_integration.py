@@ -36,9 +36,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import importlib.util
-import sys
-from pathlib import Path
 
 import pytest
 from parrot_tools.browsing.toolkit import WebBrowsingToolkit
@@ -65,43 +62,14 @@ from parrot_tools.scraping.session_actions import (
     exec_wait_for_download,
 )
 
-_tests_root = Path(__file__).resolve().parents[1]
-
-_local_site_name = "ai_parrot_tools_tests_scraping_local_site"
-_local_site = sys.modules.get(_local_site_name)
-if _local_site is None:
-    _local_site_spec = importlib.util.spec_from_file_location(
-        _local_site_name, _tests_root / "scraping/fixtures/local_site.py"
-    )
-    assert _local_site_spec is not None and _local_site_spec.loader is not None
-    _local_site = importlib.util.module_from_spec(_local_site_spec)
-    sys.modules[_local_site_name] = _local_site
-    _local_site_spec.loader.exec_module(_local_site)
-
-_broker_name = "ai_parrot_tools_tests_business_automation_broker"
-_broker_spec = importlib.util.spec_from_file_location(
-    _broker_name, _tests_root / "business_automation/fixtures/broker.py"
+from tests.business_automation.fixtures.broker import fake_broker
+from tests.scraping.fixtures.local_site import (
+    SESSION_COOKIE_NAME,
+    TEST_PASSWORD,
+    TEST_USERNAME,
+    local_fixture_site,
 )
-assert _broker_spec is not None and _broker_spec.loader is not None
-_broker = importlib.util.module_from_spec(_broker_spec)
-sys.modules[_broker_name] = _broker
-_broker_spec.loader.exec_module(_broker)
-
-_real_driver_name = "ai_parrot_tools_tests_scraping_real_driver"
-_real_driver_spec = importlib.util.spec_from_file_location(
-    _real_driver_name, _tests_root / "scraping/fixtures/real_driver.py"
-)
-assert _real_driver_spec is not None and _real_driver_spec.loader is not None
-_real_driver = importlib.util.module_from_spec(_real_driver_spec)
-sys.modules[_real_driver_name] = _real_driver
-_real_driver_spec.loader.exec_module(_real_driver)
-
-fake_broker = _broker.fake_broker
-SESSION_COOKIE_NAME = _local_site.SESSION_COOKIE_NAME
-TEST_PASSWORD = _local_site.TEST_PASSWORD
-TEST_USERNAME = _local_site.TEST_USERNAME
-local_fixture_site = _local_site.local_fixture_site
-real_playwright_driver = _real_driver.real_playwright_driver
+from tests.scraping.fixtures.real_driver import real_playwright_driver
 
 __all__ = ["fake_broker", "local_fixture_site", "real_playwright_driver"]  # re-exported fixtures
 

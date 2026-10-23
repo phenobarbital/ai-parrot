@@ -1,6 +1,6 @@
 """Daemon-level tests for AgentDaemon (TASK-2212).
 
-Uses `EchoAgent` (from `agentd.fakes`, TASK-2210) over a real tmp
+Uses `EchoAgent` (from `tests.agentd.fakes`, TASK-2210) over a real tmp
 Unix domain socket. Talks raw NDJSON via `asyncio.open_unix_connection`
 (client library, TASK-2213, is out of scope here per the task).
 """
@@ -36,7 +36,7 @@ from parrot.integrations.agentd.protocol import (
 )
 from parrot.integrations.agentd.service import AgentDaemon, sd_notify
 
-from .fakes import EchoAgent
+from tests.agentd.fakes import EchoAgent
 
 
 async def _wait_for_socket(socket_path: Path, timeout: float = 5.0) -> None:
@@ -80,7 +80,7 @@ async def _stop_daemon(daemon: AgentDaemon, run_task: asyncio.Task) -> None:
 
 class _ScheduledEchoAgent(EchoAgent):
     """EchoAgent subclass with a decorated schedule -- module-level so it
-    can be resolved via `"agentd.test_service:_ScheduledEchoAgent"`.
+    can be resolved via `"tests.agentd.test_service:_ScheduledEchoAgent"`.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -147,7 +147,7 @@ async def echo_daemon(tmp_path):
     socket_path = tmp_path / "echo.sock"
     config = AgentServiceConfig(
         name="echo-daemon",
-        agent=AgentTargetConfig(target="agentd.fakes:EchoAgent", kwargs={"name": "echo"}),
+        agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent", kwargs={"name": "echo"}),
         socket=socket_path,
         scheduler=SchedulerConfig(enabled=False),
     )
@@ -216,7 +216,7 @@ class TestDaemonRpc:
         socket_path = tmp_path / "allowlist.sock"
         config = AgentServiceConfig(
             name="allow-daemon",
-            agent=AgentTargetConfig(target="agentd.fakes:EchoAgent"),
+            agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=False),
             exposed_methods=["get_tools_count"],
@@ -266,7 +266,7 @@ class TestRealisticResponseShapes:
         socket_path = tmp_path / "realistic.sock"
         config = AgentServiceConfig(
             name="realistic-daemon",
-            agent=AgentTargetConfig(target="agentd.test_service:_RealisticBot"),
+            agent=AgentTargetConfig(target="tests.agentd.test_service:_RealisticBot"),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=False),
         )
@@ -289,7 +289,7 @@ class TestRealisticResponseShapes:
         socket_path = tmp_path / "realistic_stream.sock"
         config = AgentServiceConfig(
             name="realistic-stream-daemon",
-            agent=AgentTargetConfig(target="agentd.test_service:_RealisticBot"),
+            agent=AgentTargetConfig(target="tests.agentd.test_service:_RealisticBot"),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=False),
         )
@@ -330,7 +330,7 @@ class TestDegradation:
         socket_path = tmp_path / "noscheduler.sock"
         config = AgentServiceConfig(
             name="no-sched-daemon",
-            agent=AgentTargetConfig(target="agentd.fakes:EchoAgent"),
+            agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=True),
         )
@@ -350,7 +350,7 @@ class TestDegradation:
         socket_path = tmp_path / "sigterm.sock"
         config = AgentServiceConfig(
             name="sigterm-daemon",
-            agent=AgentTargetConfig(target="agentd.fakes:EchoAgent"),
+            agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=False),
             shutdown_grace=5.0,
@@ -377,7 +377,7 @@ class TestSchedulerIntegration:
         config = AgentServiceConfig(
             name="sched-daemon",
             agent=AgentTargetConfig(
-                target="agentd.test_service:_ScheduledEchoAgent"
+                target="tests.agentd.test_service:_ScheduledEchoAgent"
             ),
             socket=socket_path,
             scheduler=SchedulerConfig(enabled=True, dsn=None, redis=False),
