@@ -954,7 +954,7 @@ requires-dist = [
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
     { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
     { name = "navigator-auth", specifier = ">=0.28.3" },
-    { name = "navigator-eventbus", specifier = ">=0.2.1" },
+    { name = "navigator-eventbus", specifier = ">=0.4.0" },
     { name = "navigator-eventbus", extras = ["grpc"], marker = "extra == 'grpc'" },
     { name = "navigator-session", specifier = ">=1.0.1" },
     { name = "networkx", specifier = ">=3.0" },
@@ -1119,7 +1119,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1134,7 +1134,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1151,7 +1151,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1166,7 +1166,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1181,7 +1181,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1196,7 +1196,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1211,7 +1211,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1226,7 +1226,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1237,7 +1237,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1248,7 +1248,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1259,7 +1259,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1270,7 +1270,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1281,7 +1281,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1307,7 +1307,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1318,7 +1318,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1333,7 +1333,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1797,7 +1797,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.4.3"
+version = "0.4.4"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -9594,7 +9594,7 @@ wheels = [
 
 [[package]]
 name = "navigator-eventbus"
-version = "0.3.0"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -9602,9 +9602,9 @@ dependencies = [
     { name = "navconfig", extra = ["default"] },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/66/2e/32eef7651234492fab8d3ad01640fde03cb50ff414c95d84160af63255e9/navigator_eventbus-0.3.0.tar.gz", hash = "sha256:68e9e65915c16db4fe0598d797769be11b5f8ec13c5ecaeff0689a5a1c2aac10", size = 473283, upload-time = "2026-09-12T00:07:25.346Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/ca/d1a002a95ffab5792a816dcb8757c34e21f63ab318ecb8090d7efe99295c/navigator_eventbus-0.4.0.tar.gz", hash = "sha256:a47dd9289e7e003b3c882978df271f1e94429e502c60a50e1d928407264e299e", size = 796501, upload-time = "2026-10-21T01:02:23.543Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/73/a08dd2778f32c48c14679323e8f6ef369f8c6dbb286a08f53686e7752204/navigator_eventbus-0.3.0-py3-none-any.whl", hash = "sha256:a1577ab35168f9197feebe65cfb9efa612b55b5179ec9377f40dd5d8db77171d", size = 237801, upload-time = "2026-09-12T00:07:23.503Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/cb/befca5b1abd39d7f58f913467d4121fc5d43f4f9d543bec5b022ca0755bb/navigator_eventbus-0.4.0-py3-none-any.whl", hash = "sha256:7c4a56ab576359701ff2c5087665721de1247c9fb834e4ac422d2ddde3c0c81d", size = 255683, upload-time = "2026-10-21T01:02:21.942Z" },
 ]
 
 [package.optional-dependencies]
@@ -9634,7 +9634,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.2.3"
+version = "1.2.4"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
