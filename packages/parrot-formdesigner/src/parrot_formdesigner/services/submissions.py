@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from ._db_utils import is_undefined_table
 from ._identifiers import qualified_table, validate_identifier
 
 if TYPE_CHECKING:
@@ -119,6 +120,18 @@ class FormSubmission(BaseModel):
     extra_data: dict[str, Any] | None = None
 
 
+class ResponseLimitReached(Exception):
+    """store_guarded refused: the form already has >= max_responses root responses (FEAT-730)."""
+
+
+class DuplicateResponse(Exception):
+    """store_guarded refused: another response of the form has the same key value (FEAT-730)."""
+
+    def __init__(self, field_id: str) -> None:
+        super().__init__(f"duplicate response for key field {field_id!r}")
+        self.field_id = field_id
+
+
 class FormSubmissionStorage:
     """Persist form submissions in a PostgreSQL table.
 
@@ -155,6 +168,32 @@ class FormSubmissionStorage:
         self._table = table_name
         self._tenant = tenant
         self.logger = logging.getLogger(__name__)
+        self._pending: Any = None  # FEAT-731 PendingUploadStore, attached late
+
+    def attach_pending_uploads(self, store: Any) -> None:
+        """Late-bind the pending-upload registry (FEAT-731). ``None`` detaches."""
+        self._pending = store
+
+    async def _clear_pending(self, conn: Any, submission: FormSubmission, tenant: str | None) -> None:
+        """Delete pending rows for the submission's blob_refs on ``conn``.
+
+        Runs inside the caller's transaction, under a SAVEPOINT so a missing
+        pending table never aborts the INSERT.
+        """
+        if self._pending is None:
+            return
+        from .pending_uploads import iter_blob_refs
+
+        refs = iter_blob_refs(submission.data)
+        if not refs:
+            return
+        try:
+            async with conn.transaction():  # nested -> SAVEPOINT
+                await self._pending.clear(refs, tenant=tenant, conn=conn)
+        except Exception as exc:  # noqa: BLE001
+            if not is_undefined_table(exc):
+                raise
+            self.logger.debug("Pending-upload table missing in %s; clear skipped", self._qualified(tenant))
 
     # ------------------------------------------------------------------
     # Identifier resolution
@@ -328,34 +367,16 @@ class FormSubmissionStorage:
             The ``submission_id`` of the persisted record.
         """
         effective_tenant = tenant if tenant is not None else submission.tenant
-        context_json = json.dumps(submission.context) if submission.context is not None else None
-        extra_data_json = json.dumps(submission.extra_data) if submission.extra_data is not None else None
+        sql = self._insert_sql(effective_tenant)
+        params = self._insert_params(submission, effective_tenant)
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                self._insert_sql(effective_tenant),
-                submission.submission_id,
-                submission.form_uid,
-                submission.form_id,
-                submission.form_version,
-                json.dumps(submission.data),
-                submission.is_valid,
-                submission.forwarded,
-                submission.forward_status,
-                submission.forward_error,
-                effective_tenant,
-                submission.created_at,
-                submission.user_id,
-                submission.username,
-                submission.org_id,
-                submission.submitted_at,
-                submission.ip,
-                submission.user_agent,
-                submission.locale,
-                submission.root_submission_id,
-                submission.revision,
-                context_json,
-                extra_data_json,
-            )
+            if self._pending is None:
+                await conn.execute(sql, *params)
+            else:
+                async with conn.transaction():
+                    await conn.execute(sql, *params)
+                    await self._clear_pending(conn, submission, effective_tenant)
+
         self.logger.debug(
             "Stored submission %s for form %s in %s",
             submission.submission_id,
@@ -363,6 +384,113 @@ class FormSubmissionStorage:
             self._qualified(effective_tenant),
         )
         return submission.submission_id
+
+    def _insert_params(self, submission: FormSubmission, effective_tenant: str | None) -> tuple:
+        """The INSERT parameter tuple, in `_insert_sql` order (shared by store/store_guarded)."""
+        context_json = json.dumps(submission.context) if submission.context is not None else None
+        extra_data_json = json.dumps(submission.extra_data) if submission.extra_data is not None else None
+        return (
+            submission.submission_id,
+            submission.form_uid,
+            submission.form_id,
+            submission.form_version,
+            json.dumps(submission.data),
+            submission.is_valid,
+            submission.forwarded,
+            submission.forward_status,
+            submission.forward_error,
+            effective_tenant,
+            submission.created_at,
+            submission.user_id,
+            submission.username,
+            submission.org_id,
+            submission.submitted_at,
+            submission.ip,
+            submission.user_agent,
+            submission.locale,
+            submission.root_submission_id,
+            submission.revision,
+            context_json,
+            extra_data_json,
+        )
+
+    async def count_responses(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> int:
+        """Count revision-chain roots of ``form_uid`` in the tenant's table."""
+        sql = (
+            f"SELECT count(*) FROM {self._qualified(tenant)} "
+            "WHERE form_uid = $1 AND COALESCE(root_submission_id, submission_id) = submission_id"
+        )
+        async with self._pool.acquire() as conn:
+            return int(await conn.fetchval(sql, form_uid))
+
+    async def store_guarded(
+        self,
+        submission: FormSubmission,
+        *,
+        tenant: str | None = None,
+        max_responses: int | None = None,
+        unique_key_field: str | None = None,
+        unique_value: Any | None = None,
+    ) -> str:
+        """Lock, count, key-check and INSERT in one transaction.
+
+        Raises:
+            ResponseLimitReached: the form already has ``max_responses`` roots.
+            DuplicateResponse: another response has the same key value.
+
+        Returns:
+            The ``submission_id`` of the persisted record.
+        """
+        effective_tenant = tenant if tenant is not None else submission.tenant
+        qt = self._qualified(effective_tenant)
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", str(submission.form_uid)
+                )
+                if max_responses is not None:
+                    current = await conn.fetchval(
+                        f"SELECT count(*) FROM {qt} "
+                        "WHERE form_uid = $1 AND COALESCE(root_submission_id, submission_id) = submission_id",
+                        submission.form_uid,
+                    )
+                    if int(current) >= max_responses:
+                        raise ResponseLimitReached()
+                if unique_key_field and unique_value is not None:
+                    if isinstance(unique_value, str):
+                        clash = await conn.fetchval(
+                            f"SELECT 1 FROM {qt} WHERE form_uid = $1 "
+                            "AND lower(btrim(data->>$2::text)) = lower(btrim($3::text)) LIMIT 1",
+                            submission.form_uid,
+                            unique_key_field,
+                            unique_value,
+                        )
+                    else:
+                        clash = await conn.fetchval(
+                            f"SELECT 1 FROM {qt} WHERE form_uid = $1 "
+                            "AND data->$2::text = $3::text::jsonb LIMIT 1",
+                            submission.form_uid,
+                            unique_key_field,
+                            json.dumps(unique_value),
+                        )
+                    if clash:
+                        raise DuplicateResponse(unique_key_field)
+                await conn.execute(
+                    self._insert_sql(effective_tenant), *self._insert_params(submission, effective_tenant)
+                )
+                # FEAT-731 AC9: clear pending-upload rows in the SAME transaction as the guarded INSERT.
+                await self._clear_pending(conn, submission, effective_tenant)
+        self.logger.debug("Stored guarded submission %s in %s", submission.submission_id, qt)
+        return submission.submission_id
+
+    async def references_blob(self, form_uid: uuid.UUID, blob_ref: str, *, tenant: str | None) -> bool:
+        """True when any stored submission of ``form_uid`` references ``blob_ref`` anywhere in ``data``."""
+        sql = (
+            f"SELECT EXISTS (SELECT 1 FROM {self._qualified(tenant)} WHERE form_uid = $1 "
+            "AND jsonb_path_exists(data, '$.** ? (@.blob_ref == $ref)', jsonb_build_object('ref', $2::text)))"
+        )
+        async with self._pool.acquire() as conn:
+            return bool(await conn.fetchval(sql, form_uid, blob_ref))
 
     # ------------------------------------------------------------------
     # Read API (revision chain)

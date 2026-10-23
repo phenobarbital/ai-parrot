@@ -510,6 +510,28 @@ class TestClientSubmitAdapter:
         assert ready["data"]["_verdicts"] is True
         assert ready["plausibility_summary"]["status"] == "ok"
 
+    async def test_client_summary_omits_audit_identity(self, synth, stt) -> None:
+        from parrot_formdesigner.core.llm_validation import PlausibilityReport
+
+        pipeline = self._pipeline()
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        ctx.engine.state.plausibility = PlausibilityReport(
+            status="ok",
+            threshold=0.7,
+            resolved_model="m",
+            provider="p",
+            usage={"input_tokens": 1},
+            items={},
+        )
+        ws.send_json.reset_mock()
+
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+
+        ready = next(m for m in _msgs(ws) if m["type"] == "answers_ready")
+        assert not {"resolved_model", "provider", "usage"}.intersection(ready["plausibility_summary"])
+
     async def test_client_mode_invalid_reasks(self, synth, stt) -> None:
         pipeline = self._pipeline(valid=False, errors={"a": ["too short"]})
         h = _handler(_form("a"), synth, stt, pipeline=pipeline)

@@ -4,7 +4,8 @@ After a Slack user authorizes their Jira account, Atlassian redirects to
 ``/api/auth/jira/callback``.  When ``extra_state["channel"] == "slack"``
 this module handles:
 
-1. Writing an ``auth.user_identities`` row via :class:`IdentityMappingService`.
+1. Writing an ``auth.user_identities`` row via :class:`IdentityMappingService`,
+   when the OAuth state carries a Navigator ``nav_user_id``.
 2. Returning a plain HTML success/error page shown in the user's browser.
 3. Firing a DM notification via :class:`SlackOAuthNotifier` (fire-and-forget).
 
@@ -12,7 +13,6 @@ The notifier must be registered on the aiohttp app as
 ``app["slack_jira_oauth_notifier"]`` by :class:`SlackAgentWrapper` during
 ``__init__`` (wired in TASK-1470).
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -71,7 +71,6 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 # Notifier
 # ---------------------------------------------------------------------------
 
-
 class SlackOAuthNotifier:
     """Push a DM confirmation to a Slack user after a successful Jira OAuth callback.
 
@@ -87,7 +86,8 @@ class SlackOAuthNotifier:
             from slack_sdk.web.async_client import AsyncWebClient
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                "slack-sdk is required for SlackOAuthNotifier. " "Install it with: pip install slack-sdk"
+                "slack-sdk is required for SlackOAuthNotifier. "
+                "Install it with: pip install slack-sdk"
             ) from exc
 
         self._bot_token = bot_token
@@ -154,7 +154,6 @@ class SlackOAuthNotifier:
 # Callback handler helper
 # ---------------------------------------------------------------------------
 
-
 async def handle_slack_jira_callback(
     request: "web.Request",
     token_set: Optional["JiraTokenSet"],
@@ -166,7 +165,8 @@ async def handle_slack_jira_callback(
     1. Return an HTML error page when Atlassian reports a consent denial
        (``?error=`` query param is present), and optionally DM the user.
     2. Write an ``auth.user_identities`` row (if
-       ``identity_mapping_service`` is available on the app).
+       ``identity_mapping_service`` is available on the app AND the state
+       carries a Navigator ``nav_user_id``).
     3. Fire a DM notification via ``app["slack_jira_oauth_notifier"]``
        (fire-and-forget).
     4. Return an HTML success page that instructs the user to return to Slack.
@@ -194,7 +194,9 @@ async def handle_slack_jira_callback(
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
     if error_code:
-        error_description = request.rel_url.query.get("error_description", error_code)
+        error_description = request.rel_url.query.get(
+            "error_description", error_code
+        )
         logger.warning(
             "Slack Jira OAuth callback received error: %s — %s",
             error_code,
@@ -202,7 +204,9 @@ async def handle_slack_jira_callback(
         )
         team_id_err: str = _field("team_id")
         slack_user_id_err: str = _field("slack_user_id")
-        notifier_err: Optional[SlackOAuthNotifier] = request.app.get("slack_jira_oauth_notifier")
+        notifier_err: Optional[SlackOAuthNotifier] = request.app.get(
+            "slack_jira_oauth_notifier"
+        )
         if notifier_err is not None and slack_user_id_err:
             asyncio.create_task(
                 notifier_err.notify_failure(
@@ -218,12 +222,28 @@ async def handle_slack_jira_callback(
 
     team_id: str = _field("team_id")
     slack_user_id: str = _field("slack_user_id")
-    # The composite user_id used in JiraOAuthManager (stored at top level).
-    nav_user_id: str = state_payload.get("user_id") or f"{team_id}:{slack_user_id}"
+    # The Navigator user id, when the Slack lane knows one: ``nav_user_id``
+    # inside ``extra_state`` (the convention JiraPostAuthProvider established
+    # for Telegram). ``state_payload["user_id"]`` is deliberately NOT read
+    # here: for Slack that is the composite ``team_id:slack_user_id``
+    # token-vault key built by ``connect_jira_handler``, while
+    # ``auth.user_identities.user_id`` is a bigint with an FK to
+    # ``auth.users`` — writing the composite string can only fail.
+    nav_user_id: str = str(_field("nav_user_id") or "")
 
-    # 1. Persist identity mapping row
+    # 1. Persist identity mapping row — only when the state carried a real
+    # Navigator user id. Without one there is no ``auth.users`` row to link
+    # the Slack account to, so skip the write explicitly instead of
+    # attempting one that cannot succeed.
     identity_service = request.app.get("identity_mapping_service")
-    if identity_service is not None and slack_user_id:
+    if identity_service is not None and slack_user_id and not nav_user_id:
+        logger.warning(
+            "Skipping auth.user_identities write for Slack user=%s team=%s: "
+            "OAuth state carries no Navigator nav_user_id",
+            slack_user_id,
+            team_id,
+        )
+    elif identity_service is not None and slack_user_id:
         try:
             await identity_service.upsert_identity(
                 nav_user_id=nav_user_id,

@@ -111,7 +111,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
     # FEAT-729: auth lane is disabled unless __init__ builds a strategy.
     _auth: Optional[MSTeamsAuthStrategy] = None
-    _AUTH_COMMANDS = frozenset({"/login", "/logout", "/whoami"})
+    # Bare names, compared case-sensitively exactly as MSTeamsCommandRouter.try_dispatch resolves them.
+    _AUTH_COMMANDS = frozenset({"login", "logout", "whoami"})
 
     # Supported audio content types for voice notes
     AUDIO_CONTENT_TYPES = {
@@ -683,8 +684,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Jira, agent commands) is reachable unauthenticated under auth_required.
         # Only /login, /logout and /whoami are exempt.
         if self._auth is not None:
-            first_token = clean_text.split(None, 1)[0].lower() if clean_text else ""
-            if first_token not in self._AUTH_COMMANDS:
+            first_token = clean_text.split(None, 1)[0] if clean_text else ""
+            # Exempt only what the router would really dispatch as an auth command. A differently-cased
+            # "/LOGIN" is not a registered command, so it must stay gated instead of falling through to the agent.
+            is_auth_command = first_token.startswith("/") and first_token.lstrip("/") in self._AUTH_COMMANDS
+            if not is_auth_command:
                 session = await self._auth.ensure_authenticated(turn_context)
                 if self.config.auth_required and not session.authenticated:
                     await self._auth.send_signin_card(turn_context)

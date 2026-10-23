@@ -21,7 +21,6 @@ The notifier must be registered on the aiohttp app as
 ``app["msteams_jira_oauth_notifier"]`` by :class:`MSTeamsAgentWrapper` during
 ``__init__`` (wired in TASK-1473).
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -87,7 +86,6 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 # Notifier
 # ---------------------------------------------------------------------------
 
-
 class MSTeamsOAuthNotifier:
     """Send a proactive message to a Teams user after a successful Jira OAuth callback.
 
@@ -125,7 +123,6 @@ class MSTeamsOAuthNotifier:
 
             async def _callback(turn_context: Any) -> None:
                 from botbuilder.schema import Activity
-
                 await turn_context.send_activity(
                     Activity(
                         type="message",
@@ -136,7 +133,9 @@ class MSTeamsOAuthNotifier:
                     )
                 )
 
-            await self._adapter.continue_conversation(conv_ref, _callback, self._app_id)
+            await self._adapter.continue_conversation(
+                conv_ref, _callback, self._app_id
+            )
         except Exception:  # noqa: BLE001 — notification must never break callback
             self.logger.exception(
                 "Failed to send proactive Teams message for Jira connection",
@@ -160,7 +159,6 @@ class MSTeamsOAuthNotifier:
 
             async def _callback(turn_context: Any) -> None:
                 from botbuilder.schema import Activity
-
                 await turn_context.send_activity(
                     Activity(
                         type="message",
@@ -168,7 +166,9 @@ class MSTeamsOAuthNotifier:
                     )
                 )
 
-            await self._adapter.continue_conversation(conv_ref, _callback, self._app_id)
+            await self._adapter.continue_conversation(
+                conv_ref, _callback, self._app_id
+            )
         except Exception:  # noqa: BLE001
             self.logger.exception(
                 "Failed to send proactive Teams failure message",
@@ -178,7 +178,6 @@ class MSTeamsOAuthNotifier:
 # ---------------------------------------------------------------------------
 # Callback handler helper
 # ---------------------------------------------------------------------------
-
 
 async def handle_msteams_jira_callback(
     request: "web.Request",
@@ -215,19 +214,25 @@ async def handle_msteams_jira_callback(
     extra: Dict[str, Any] = state_payload.get("extra") or {}
 
     def _conv_ref() -> Dict[str, Any]:
-        return extra.get("conversation_reference") or state_payload.get("conversation_reference") or {}
+        return extra.get("conversation_reference") or state_payload.get(
+            "conversation_reference"
+        ) or {}
 
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
     if error_code:
-        error_description = request.rel_url.query.get("error_description", error_code)
+        error_description = request.rel_url.query.get(
+            "error_description", error_code
+        )
         logger.warning(
             "MS Teams Jira OAuth callback received error: %s — %s",
             error_code,
             error_description,
         )
         conv_ref_err: Dict[str, Any] = _conv_ref()
-        notifier_err: Optional[MSTeamsOAuthNotifier] = request.app.get("msteams_jira_oauth_notifier")
+        notifier_err: Optional[MSTeamsOAuthNotifier] = request.app.get(
+            "msteams_jira_oauth_notifier"
+        )
         if notifier_err is not None and conv_ref_err:
             asyncio.create_task(
                 notifier_err.notify_failure(
@@ -296,7 +301,9 @@ async def handle_msteams_jira_callback(
                 )
 
     # 2. Fire-and-forget proactive notification
-    notifier: Optional[MSTeamsOAuthNotifier] = request.app.get("msteams_jira_oauth_notifier")
+    notifier: Optional[MSTeamsOAuthNotifier] = request.app.get(
+        "msteams_jira_oauth_notifier"
+    )
     if notifier is not None and conv_ref:
         asyncio.create_task(
             notifier.notify_connected(

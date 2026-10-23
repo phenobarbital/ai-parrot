@@ -166,10 +166,15 @@ override-dependencies = [
     # `version.parse(protobuf.__version__).major`), an API unchanged in 26.
     # Override the ceiling open so xai-sdk and sdmx1 share one packaging.
     "packaging>=26.2",
-    # moviepy 2.2.1 caps pillow<12.0, but Pillow 12.3.0 fixes 7 high-severity
-    # CVEs (Dependabot #116-#120, #126-#127). moviepy's pillow usage (basic
-    # Image.open/save/fromarray) is unaffected by the 11→12 changes.
-    "pillow>=12.3.0",
+    # moviepy 2.2.1 caps pillow<12.0, but Pillow 13.0.0 is the first release
+    # that fixes CVE-2026-112900 / GHSA-w889-685w-c8fh (Dependabot #216,
+    # critical: Ghostscript argument injection via an unsanitized EPS filename,
+    # chainable to RCE), on top of the 7 high-severity CVEs that 12.3.0 fixed
+    # (Dependabot #116-#120, #126-#127). moviepy's pillow usage (basic
+    # Image.open/save/fromarray) is unaffected by the 11→13 changes, and
+    # nothing here touches the APIs Pillow 13 removed (Image._show,
+    # get_child_images, ImageCms product_name/product_info, IFD.Makernote).
+    "pillow>=13.0.0",
     # --- Dependabot security overrides over sibling-package exact pins ---
     # flowtask 5.12.14 pins asyncssh[...]==2.23.0; 2.23.1/2.24.0 fix 3
     # advisories, 1 high + 2 medium (Dependabot #129 high, #128/#133 medium).
