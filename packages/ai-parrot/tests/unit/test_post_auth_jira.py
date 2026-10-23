@@ -145,24 +145,40 @@ class TestHandleResultSuccess:
             data, session, {"user_id": "nav-user-1"}
         )
         assert result is True
-        mock_vault_sync.store_tokens.assert_awaited_once()
+        # FEAT-735: the credential is written by JiraOAuthManager's sink, not
+        # here — this provider only writes the two non-secret mapping rows.
+        mock_vault_sync.store_tokens.assert_not_awaited()
         assert mock_identity_service.upsert_identity.await_count == 2
 
-    async def test_vault_called_with_jira_provider_and_flat_keys(
+    async def test_jira_not_written_to_session_vault(
         self, provider, session, mock_vault_sync
     ):
+        """FEAT-735 / TASK-4671 — the Session Vault no longer stores Jira.
+
+        It used to receive flat ``jira:access_token`` / ``refresh_token`` /
+        ``cloud_id`` / ``site_url`` / ``account_id`` keys here. That copy had
+        exactly one reader, the integrations badge, which TASK-4670 moved onto
+        the Identity Vault; writing it again would just be a second copy to
+        drift.
+        """
         await provider.handle_result(
             {"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"}
         )
-        kwargs = mock_vault_sync.store_tokens.call_args.kwargs
-        assert kwargs["nav_user_id"] == "nav-user-1"
-        assert kwargs["provider"] == "jira"
-        tokens = kwargs["tokens"]
-        assert tokens["access_token"] == "at-123"
-        assert tokens["refresh_token"] == "rt-456"
-        assert tokens["cloud_id"] == "cloud-abc"
-        assert tokens["site_url"] == "https://site.atlassian.net"
-        assert tokens["account_id"] == "acc-789"
+        mock_vault_sync.store_tokens.assert_not_awaited()
+
+    async def test_post_auth_jira_upsert_carries_no_token(
+        self, provider, session, mock_identity_service
+    ):
+        """The sink is the single writer of the sealed credential."""
+        await provider.handle_result(
+            {"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"}
+        )
+        calls = mock_identity_service.upsert_identity.await_args_list
+        jira_call = next(c for c in calls if c.kwargs["auth_provider"] == "jira")
+        assert "token" not in jira_call.kwargs
+        # ...but the non-secret mapping row is still written in full.
+        assert jira_call.kwargs["provider_user_id"] == "acc-789"
+        assert jira_call.kwargs["auth_data"]["cloud_id"] == "cloud-abc"
 
     async def test_identity_upsert_creates_telegram_and_jira_records(
         self, provider, session, mock_identity_service
@@ -192,15 +208,16 @@ class TestHandleResultSuccess:
         assert jira_call.kwargs["auth_data"]["site_url"] == "https://site.atlassian.net"
 
     async def test_falls_back_to_extra_state_user_id(
-        self, provider, session, mock_vault_sync
+        self, provider, session, mock_identity_service
     ):
         session.nav_user_id = None  # Force fallback
         await provider.handle_result(
             {"code": "c", "state": "s"}, session, {}  # No primary_auth_data
         )
         # Should still succeed using the extra.nav_user_id in the state payload.
-        kwargs = mock_vault_sync.store_tokens.call_args.kwargs
-        assert kwargs["nav_user_id"] == "nav-user-1"
+        # Asserted on the identity rows now that the vault write is gone.
+        calls = mock_identity_service.upsert_identity.await_args_list
+        assert {c.kwargs["nav_user_id"] for c in calls} == {"nav-user-1"}
 
 
 class TestHandleResultFailure:
