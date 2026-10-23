@@ -1001,7 +1001,7 @@ class HoobaToolkit(AbstractToolkit):
             if not dry_run:
                 created = await importer.apply(planned, manifest)
 
-            summary = reconcile(manifest, len(planned))
+            summary = reconcile(manifest)
             batch = ExpenseDraftBatch(
                 statement_digest=statement.digest,
                 period=period,
