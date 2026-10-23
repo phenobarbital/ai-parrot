@@ -86,7 +86,9 @@ the verdict and the deterministic pass **reconstructable after the fact**.
 - NG2. No new database column and no migration. The trace lands in the existing
   `context` JSONB.
 - NG3. No change to the `on_implausible` policy matrix or the wire shapes FEAT-728
-  documented in `docs/formdesigner-llm-validation-enforcement.md`.
+  documented in `docs/formdesigner-llm-validation-enforcement.md`. This binds the new
+  `PlausibilityReport` fields too: `resolved_model`, `provider` and `usage` are
+  persisted, but stay **off** every client-facing dump (see §7 R10).
 - NG4. No change to the meaning of `PlausibilityReport.model`. It stays "what the
   config requested" (documented, published); the effective identity arrives in
   new fields.
@@ -631,12 +633,16 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
   ```
 
 ### Module 5: Pipeline and audio persistence
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/submission_pipeline.py`,
-  `packages/parrot-formdesigner/src/parrot_formdesigner/audio/engine.py` (modify)
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/submission_pipeline.py` (modify)
 - **Responsibility**: Construct the collector when `form.audit_trail.detail` is not
-  `off`, pass it into both `validator.validate` calls, and write the capped trace
-  into `ctx["validation"]` beside the existing `ctx["llm_validation"]`. Mirror the
-  write on the audio path. The cap runs **before** the merge into `context`.
+  `off`, pass it into the `submit()` call of `validator.validate`, and write the
+  capped trace into `ctx["validation"]` beside the existing `ctx["llm_validation"]`.
+  The cap runs **before** the merge into `context`. The audio channel inherits this
+  write with **no** audio edit: server-mode audio submits through
+  `SubmissionPipeline.submit` (`api/audio_ws.py:1192`), which merges the incoming
+  context with `ctx = dict(context or {})` (`services/submission_pipeline.py:325`).
+  `pipeline.validate()` (the prepare step) does **not** build a collector — its
+  result is never persisted, so a trace there is pure cost (amended at task time).
 - **Depends on**: Modules 2, 3, 4.
 - **Interface Skeleton** *(signatures + docstrings only)*:
   ```python
@@ -648,7 +654,7 @@ def cap_trace(trace: ValidationTrace, *, max_bytes: int) -> dict[str, Any]:
 
       def _new_collector(self, form: FormSchema, *, locale: str) -> ValidationTraceCollector | None:
           """Build a collector, or `None` when detail is OFF (no cost paid)."""
-      # validate()  — modifies submission_pipeline.py:221 (passes trace= to validator.validate)
+      # validate()  — NOT modified: the prepare step is never persisted, so it builds no collector
       # submit()    — modifies submission_pipeline.py:266 (same) and :327 (writes ctx["validation"])
   ```
 
@@ -744,14 +750,16 @@ tests:
 - packages/parrot-formdesigner/tests/unit/services/test_rule_evaluator.py
 - packages/parrot-formdesigner/tests/unit/test_submissions.py
 - packages/parrot-formdesigner/tests/unit/test_submission_metadata_storage.py
-- packages/parrot-formdesigner/tests/unit/test_submission_jsonb_shape.py
-- packages/parrot-formdesigner/tests/unit/test_store_context_http.py
+- packages/parrot-formdesigner/tests/test_submission_jsonb_shape.py
+- packages/parrot-formdesigner/tests/test_store_context_http.py
 - packages/parrot-formdesigner/tests/unit/test_rbac_service.py
 - packages/parrot-formdesigner/tests/formdesigner/test_plausibility_checker.py
 - packages/parrot-formdesigner/tests/formdesigner/test_http_plausibility.py
 - packages/parrot-formdesigner/tests/formdesigner/test_submission_pipeline.py
 - packages/parrot-formdesigner/tests/formdesigner/test_plausibility_enforcement.py
 - packages/parrot-formdesigner/tests/formdesigner/test_audio_plausibility_policy.py
+- packages/parrot-formdesigner/tests/formdesigner/test_llm_quota_http.py
+- packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_v2_integration.py
 markers: none
 
 ### Test Data / Fixtures
@@ -1159,7 +1167,13 @@ __version__ = "1.2.4"      # current; FEAT-732 targets 1.3.0
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/plausibility.py` | MODIFY | `            status="ok", threshold=cfg.threshold, model=cfg.model, latency_ms=latency_ms, items=verdicts` | `services/plausibility.py:216` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/plausibility.py` | MODIFY | `    def _fail(self, reason: str) -> PlausibilityReport:` | `services/plausibility.py:238` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/submission_pipeline.py` | MODIFY | `                ctx["llm_validation"] = plausibility.model_dump(mode="json")` | `services/submission_pipeline.py:327` | 1 |
-| `packages/parrot-formdesigner/src/parrot_formdesigner/audio/engine.py` | MODIFY | `            context["llm_validation"] = self.state.plausibility.model_dump(mode="json")` | `audio/engine.py:1086` | 1 |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)` | `api/handlers.py:1243` | 1 |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `                    "plausibility": exc.report.model_dump(mode="json", exclude_none=True),` | `api/handlers.py:1869` | 1 |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)` | `api/handlers.py:1896` | 1 |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/audio_ws.py` | MODIFY | `        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None` | `api/audio_ws.py:1257` | 1 |
+
+`audio/engine.py:1086` was listed here at spec time and is **not** an edit site:
+see §3 Module 5. Editing it would add a second writer of the same key.
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `    async def _rbac_shadow_gate(` | `api/handlers.py:2220` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py` | MODIFY | `        _wrap_auth(handler.submit_data, tenant="public"),` | `api/routes.py:433` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/__init__.py` | MODIFY | `from .validators import FormValidator, ValidationResult` | `services/__init__.py:32` | 1 |
@@ -1248,10 +1262,22 @@ never be used as a bare anchor.
 - **R7 — Localised error text must not leak into check identity.** `CheckRecord.message`
   may carry the localised message, but `CheckId` never derives from it, or the same
   submission traced in `es` and `en` would produce different "checks".
-- **R8 — Audio path double write.** `audio/engine.py:1086` writes
-  `context["llm_validation"]` independently of the pipeline. AC14 requires the
-  `validation` key there too; missing it would leave the voice channel as the one
-  blind spot, which is the channel most likely to be disputed.
+- **R8 — Audio parity comes through the pipeline, not the engine.** `audio/engine.py:1086`
+  writes `context["llm_validation"]` into the context it *hands to* the pipeline; it
+  persists nothing itself. Server-mode audio commits through
+  `SubmissionPipeline.submit` (`api/audio_ws.py:1192`), so AC14 holds by
+  construction and the engine is left untouched. Client-submit mode
+  (`_do_client_submit`) is validate-only — the host persists — and falls under NG1.
+- **R10 — The new report fields would leak through four client-facing dumps.**
+  `PlausibilityReport` is `model_dump`ed straight onto the wire at `api/handlers.py:1243`
+  (validate), `:1869` (422 refusal), `:1896` (submit 200) and `api/audio_ws.py:1257`
+  (client-submit summary). Adding `resolved_model`/`provider`/`usage` would publish
+  the vendor, the model and token usage to public form clients and break NG3.
+  Mitigation: a `wire_report()` helper in `core/llm_validation.py` excludes the
+  audit-only fields; those four sites call it, persistence keeps the full dump.
+  `Field(exclude=True)` was rejected: it would also drop the fields from the
+  persistence dump at `services/submission_pipeline.py:327`, which is the one place
+  they are needed.
 - **R9 — The `version.py` / docs mismatch.** `docs/formdesigner-llm-validation-enforcement.md`
   already claims `parrot-formdesigner >= 1.3.0` while `version.py` still reads
   `1.2.4`. M7 bumps to `1.3.0`, which makes the existing doc true rather than
@@ -1374,3 +1400,4 @@ the resource inside the RBAC check — was rejected on evidence; see its row.
 |---|---|---|---|
 | 0.1 | 2026-10-23 | Jesus Lara | Initial draft — two audit-trail gaps closed; four product decisions carried in; 11 design-review suggestions triaged |
 | 0.2 | 2026-10-23 | Jesus Lara | §8 Q1–Q3 resolved: `CLIENT`-minimum scope + handler-side row identity (ownership filtering rejected on evidence); no policy seeded; per-detail cap defaults after measuring serialized sizes |
+| 0.3 | 2026-10-23 | Jesus Lara | Task-time amendments from verification: audio parity via the pipeline (engine.py not edited); prepare-step `validate()` builds no collector; R10 — new report fields kept off four wire dumps via `wire_report()`; two Validation Contract paths corrected, two touched suites added |
