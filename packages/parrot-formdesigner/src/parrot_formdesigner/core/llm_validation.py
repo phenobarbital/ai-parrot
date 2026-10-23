@@ -6,7 +6,7 @@ and the report returned by ``AnswerPlausibilityChecker`` (services/plausibility.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -76,6 +76,16 @@ class PlausibilityReport(BaseModel):
     threshold: float
     latency_ms: int | None = None
     items: dict[str, PlausibilityVerdict] = Field(default_factory=dict)
+    resolved_model: str | None = None
+    """The model that actually answered (``AIMessage.model``) — FEAT-732.
+
+    ``model`` above is what the config REQUESTED and may be ``None`` (client
+    default). This is what RESPONDED. ``None`` only when no LLM call was made.
+    """
+    provider: str | None = None
+    """The provider that answered (``AIMessage.provider``)."""
+    usage: dict[str, Any] | None = None
+    """Token usage of the call (``AIMessage.usage``), JSON-dumped."""
 
 
 def llm_validation_enabled(form: FormSchema, field: FormField) -> bool:

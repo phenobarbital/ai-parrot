@@ -51,7 +51,11 @@ class FakeLLM:
 
     async def ask(self, prompt, **kwargs):
         self.calls.append((prompt, kwargs))
-        message = type("Message", (), {"structured_output": self.batch, "output": self.batch})
+        message = type(
+            "Message",
+            (),
+            {"structured_output": self.batch, "output": self.batch, "model": "fake-model-1", "provider": "fake"},
+        )
         return message()
 
 
