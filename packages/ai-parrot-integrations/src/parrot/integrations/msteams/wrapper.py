@@ -43,6 +43,10 @@ from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
 from .commands import MSTeamsCommandRouter
 from .commands.jira_commands import register_jira_commands
+from .commands.auth_commands import register_auth_commands
+from .auth import MSTeamsAuthStrategy, MSTeamsSessionStore
+from parrot.auth.context import UserContext
+from parrot.auth.token_exchange import TokenExchangeClient
 from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
 from parrot.interfaces.file.session import SessionFileStore
@@ -104,6 +108,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     - Multi-step wizard dialogs
     - Post-form tool execution
     """
+
+    # FEAT-729: auth lane is disabled unless __init__ builds a strategy.
+    _auth: Optional[MSTeamsAuthStrategy] = None
 
     # Supported audio content types for voice notes
     AUDIO_CONTENT_TYPES = {
@@ -203,6 +210,22 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 self.logger.warning(
                     "No client_id configured — MS Teams proactive notification " "after Jira OAuth will be skipped"
                 )
+
+        # FEAT-729: user authentication lane (opt-in via config.auth_required)
+        self._session_store = MSTeamsSessionStore(agent_name=config.name, store=getattr(self, "_state_store", None))
+        self._auth: Optional[MSTeamsAuthStrategy] = None
+        if config.navigator_auth_url:
+            self._auth = MSTeamsAuthStrategy(
+                config=config,
+                store=self._session_store,
+                exchange=TokenExchangeClient(
+                    config.navigator_auth_url,
+                    prefer_id_token=config.prefer_id_token,
+                ),
+            )
+            register_auth_commands(self._command_router, self._auth)
+        else:
+            self.logger.info("MSTeams[%s]: no navigator_auth_url — auth lane disabled", config.name)
 
         # Route
         # Clean chatbot_id to be safe for URL
@@ -307,6 +330,66 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     # =========================================================================
     # Authorization
     # =========================================================================
+
+    async def _effective_user_id(self, turn_context: TurnContext, fallback: str) -> str:
+        """Return the Navigator id for an authenticated Teams user, else ``fallback``.
+
+        Never triggers an exchange: it only reads the cached/rehydrated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            fallback: The value used today when the user is not authenticated.
+
+        Returns:
+            The Navigator user id when the session is authenticated and unexpired,
+            otherwise ``fallback``.
+        """
+        if self._auth is None:
+            return fallback
+        session = await self._session_store.get_or_create(turn_context)
+        if session.authenticated and session.nav_user_id and not self._session_store.is_expired(session):
+            return session.nav_user_id
+        return fallback
+
+    def _build_user_context(self, turn_context: TurnContext, session: Any) -> UserContext:
+        """Build the channel-agnostic identity snapshot for an authenticated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            session: The authenticated ``MSTeamsUserSession``.
+
+        Returns:
+            A ``UserContext`` with ``channel="msteams"`` and the Navigator id.
+        """
+        metadata: Dict[str, Any] = {"teams_user_id": session.teams_user_id}
+        if session.aad_object_id:
+            metadata["aad_object_id"] = session.aad_object_id
+        if session.tenant_id:
+            metadata["tenant_id"] = session.tenant_id
+        return UserContext(
+            channel="msteams",
+            user_id=session.nav_user_id,
+            display_name=session.display_name,
+            email=session.nav_email,
+            session_id=turn_context.activity.conversation.id,
+            metadata=metadata,
+        )
+
+    async def _run_post_login(self, turn_context: TurnContext, session: Any) -> None:
+        """Run the agent's ``post_login`` once per authenticated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            session: The authenticated ``MSTeamsUserSession``.
+        """
+        user_context = self._build_user_context(turn_context, session)
+        target_agent = self.agent
+        if not getattr(self.config, "singleton_agent", True):
+            session.user_agent = await self.agent.clone_for_user(user_context)
+            target_agent = session.user_agent
+        await target_agent.post_login(user_context)
+        session.post_login_ran = True
+        await self._session_store.save(session)
 
     def _is_authorized(self, conversation_id: str, user_id: str) -> bool:
         """Check if a conversation and user are authorized for this bot.
@@ -417,7 +500,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     result = await self.form_orchestrator.process_message(
                         message=query,
                         conversation_id=conversation_id,
-                        context={"user_id": user_id, "session_id": session_id},
+                        context={
+                            "user_id": await self._effective_user_id(turn_context, user_id),
+                            "session_id": session_id,
+                        },
                     )
                     return result
 
@@ -457,7 +543,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             result = await self.form_orchestrator.process_message(
                 message=query,
                 conversation_id=conversation_id,
-                context={"user_id": user_id, "session_id": conversation_id},
+                context={
+                    "user_id": await self._effective_user_id(turn_context, user_id),
+                    "session_id": conversation_id,
+                },
             )
             if result and result.raw_response is not None:
                 parsed = self._parse_response(result.raw_response)
@@ -584,6 +673,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             if dispatched:
                 return  # command handled — skip agent processing
 
+        # FEAT-729: authentication gate. Runs after the allow-list (which keeps first
+        # refusal) and after command dispatch, so /login, /logout and /whoami stay
+        # reachable while unauthenticated.
+        if self._auth is not None:
+            session = await self._auth.ensure_authenticated(turn_context)
+            if self.config.auth_required and not session.authenticated:
+                await self._auth.send_signin_card(turn_context)
+                return
+            if session.authenticated and not session.post_login_ran:
+                await self._run_post_login(turn_context, session)
+
         # DEBUG: Log activity details
         self.logger.info(
             "on_message_activity: type=%s, has_value=%s, text=%s",
@@ -672,7 +772,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             message=text,
             conversation_id=conversation_id,
             context={
-                "user_id": turn_context.activity.from_property.id,
+                "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
                 "session_id": conversation_id,
             },
         )
@@ -1022,7 +1122,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             message=text,
             conversation_id=conversation_id,
             context={
-                "user_id": turn_context.activity.from_property.id,
+                "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
                 "session_id": conversation_id,
                 "source": "voice_note",  # Mark source for analytics
             },

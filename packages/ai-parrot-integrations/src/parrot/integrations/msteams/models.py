@@ -64,6 +64,11 @@ class MSTeamsAgentConfig:
     formdesigner_submit_secret: Optional[str] = None  # HMAC secret; envelopes must carry a valid sig when set
     formdesigner_submit_timeout: float = 15.0
     formdesigner_api_base_path: str = "/api/v1"  # must match setup_form_api(base_path=...) on the FormDesigner side
+    # FEAT-729: user authentication lane
+    oauth_connection_name: Optional[str] = None  # Azure Bot OAuth connection (Graph-scoped)
+    auth_required: bool = False  # auth is opt-in; True fails closed
+    navigator_auth_url: Optional[str] = None  # e.g. https://host/api/v1/login
+    prefer_id_token: bool = True  # send id_token for strong JWKS verification
 
     def __post_init__(self):
         """
@@ -169,4 +174,9 @@ class MSTeamsAgentConfig:
             formdesigner_submit_secret=data.get("formdesigner_submit_secret"),
             formdesigner_submit_timeout=float(data.get("formdesigner_submit_timeout", 15.0)),
             formdesigner_api_base_path=data.get("formdesigner_api_base_path", "/api/v1"),
+            # User authentication lane (FEAT-729)
+            oauth_connection_name=data.get("oauth_connection_name"),
+            auth_required=bool(data.get("auth_required", False)),
+            navigator_auth_url=data.get("navigator_auth_url"),
+            prefer_id_token=bool(data.get("prefer_id_token", True)),
         )
