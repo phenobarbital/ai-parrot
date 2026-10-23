@@ -8,7 +8,7 @@ pinning the *engine* gets `_pytector_detector = None`
 (`prompt_injection.py:730`) on exactly those machines, and every assertion
 driving that alias dies with `AttributeError: 'NoneType'` — `issue:d6027c24b96d`.
 
-Importable as `from _injection_test_helpers import mock_pytector_engine`
+Importable relatively, e.g. `from .._injection_test_helpers import mock_pytector_engine`
 because `tests/conftest.py:85-87` puts this directory on `sys.path`.
 """
 from typing import Any

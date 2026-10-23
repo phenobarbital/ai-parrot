@@ -48,6 +48,21 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 _ensure_stubs()
 
+# These stubs only exist to import the modules below. They must not outlive the import: a permanent
+# sys.modules["aiohttp"] / ["parrot._imports"] breaks every test collected after this file in the same session.
+_MISSING = object()
+_STUBBED = ("aiohttp", "aiohttp.web", "parrot._imports", "parrot.tools.dataset_manager.sources.memory")
+_SAVED_MODULES = {name: sys.modules.get(name, _MISSING) for name in _STUBBED}
+
+
+def _restore_stubbed_modules() -> None:
+    for name, original in _SAVED_MODULES.items():
+        if original is _MISSING:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+
 _PARROT_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
 _WORKTREE = str(_PARROT_ROOT) + "/"
 _SPATIAL_BASE = str(_PARROT_ROOT / "tools" / "dataset_manager" / "spatial")
@@ -104,6 +119,7 @@ _handler_mod = _load_module(
     "parrot.handlers.spatial_filter_handler",
     str(_PARROT_ROOT / "handlers" / "spatial_filter_handler.py"),
 )
+_restore_stubbed_modules()
 
 SpatialFilterSpec = _contracts.SpatialFilterSpec
 DatasetSpatialProfile = _contracts.DatasetSpatialProfile

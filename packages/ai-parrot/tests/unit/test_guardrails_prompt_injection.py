@@ -28,8 +28,10 @@ installs lightweight fake modules into `sys.modules` so
 access.
 """
 import asyncio
+import importlib.util
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,7 +44,19 @@ from parrot.bots.guardrails.builtin import prompt_injection as pi_module
 from parrot.bots.guardrails.builtin.prompt_injection import PromptInjectionGuardrail
 from parrot.bots.guardrails.pipeline import GuardrailPipeline
 
-from _injection_test_helpers import mock_pytector_engine  # shared test infrastructure
+def _load_injection_helpers():
+    """Load the shared helper by path: ``tests/unit`` is not a package, so it has no relative parent."""
+    name = "ai_parrot_tests_injection_test_helpers"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "_injection_test_helpers.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+mock_pytector_engine = _load_injection_helpers().mock_pytector_engine  # shared test infrastructure
 
 
 # Shared with test_guardrails_input_migration.py (issue:d6027c24b96d): one

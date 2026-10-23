@@ -46,6 +46,21 @@ def _ensure_stubs() -> None:
 
 _ensure_stubs()
 
+# These stubs only exist to import the modules below. They must not outlive the import: a permanent
+# sys.modules["aiohttp"] / ["parrot._imports"] breaks every test collected after this file in the same session.
+_MISSING = object()
+_STUBBED = ("parrot._imports", "parrot.tools.dataset_manager.sources.base", "parrot.tools.dataset_manager.sources.memory")
+_SAVED_MODULES = {name: sys.modules.get(name, _MISSING) for name in _STUBBED}
+
+
+def _restore_stubbed_modules() -> None:
+    for name, original in _SAVED_MODULES.items():
+        if original is _MISSING:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
+
+
 _PKG_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
 _SPATIAL_BASE = str(_PKG_ROOT / "tools" / "dataset_manager" / "spatial")
 _SOURCE_BASE = str(_PKG_ROOT / "tools" / "dataset_manager" / "sources")
@@ -120,6 +135,8 @@ try:
 except Exception:
     TableSource = None  # type: ignore[assignment,misc]
     _TABLE_SOURCE_AVAILABLE = False
+finally:
+    _restore_stubbed_modules()
 
 
 # ---------------------------------------------------------------------------

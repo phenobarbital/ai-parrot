@@ -10,7 +10,6 @@ local duplicate definition.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -28,12 +27,6 @@ from parrot_formdesigner.core.schema import (
     FormSubsection,
 )
 from parrot_formdesigner.core.types import FieldType
-
-_PACKAGE_ROOT = str(Path(__file__).resolve().parents[1])
-if _PACKAGE_ROOT not in sys.path:
-    # importlib mode no longer prepends the rootdir; `scripts.*` lives beside `src/` and `tests/` in this package.
-    sys.path.insert(0, _PACKAGE_ROOT)
-
 
 _DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
 

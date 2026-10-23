@@ -53,8 +53,8 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
                 if val is None:
                     return None
                 row = MagicMock()
-                row.__getitem__ = lambda self, k: val[k]
-                row.keys = lambda: list(val.keys())
+                row.__getitem__ = lambda self, k, val=val: val[k]
+                row.keys = lambda val=val: list(val.keys())
                 return row
         return None
 
