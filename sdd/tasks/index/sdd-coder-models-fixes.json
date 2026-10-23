@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-24T00:52:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-23T23:01:06+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -44,16 +44,17 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: sole owner of sdd_coder/models.py and tests/.../sdd_coder/test_models.py; shares no file with TASK-4674 or TASK-4675.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4673-models-brief-ids-and-task-tier.md"
+      "started_at": "2026-10-23T22:53:36.761218+00:00",
+      "completed_at": "2026-10-23T22:55:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4673-models-brief-ids-and-task-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4674",
@@ -62,7 +63,7 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,9 +72,10 @@
       "parallel": true,
       "parallelism_notes": "Its two-layer integration test in test_background_task_tier.py constructs CoderRunValidationArgs(tier='task', attempt_uid=...) from TASK-4673 (sdd_coder/models.py); that field and Literal value do not exist until TASK-4673 lands. No file is shared with TASK-4673 or TASK-4675.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4674-optimization-and-background-brief-ids.md"
+      "started_at": "2026-10-23T22:57:58.914150+00:00",
+      "completed_at": "2026-10-23T23:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4674-optimization-and-background-brief-ids.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4675",
@@ -82,16 +84,17 @@
       "feature_id": "FEAT-736",
       "feature": "sdd-coder-models-fixes",
       "spec": "sdd/specs/sdd-coder-models-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: sole owner of test_scope/report.py and tests/.../test_scope/test_report.py, a different package subtree from the sdd_coder files TASK-4673/TASK-4674 touch.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4675-report-brief-aware-junit-paths.md"
+      "started_at": "2026-10-23T22:56:20.182809+00:00",
+      "completed_at": "2026-10-23T22:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4675-report-brief-aware-junit-paths.md",
+      "verification": "verified"
     }
   ]
 }

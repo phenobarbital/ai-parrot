@@ -405,4 +405,43 @@ each test module; add none.
 
 ## Completion Note
 
-<!-- filled in on completion -->
+**Verified**, 2026-10-24.
+
+Four edit sites applied:
+- `optimization_models._TASK_ID_PATTERN` widened (bare string kept, with a
+  comment recording the Rust-regex-engine constraint), plus
+  `_check_optional_task_id`'s docstring and error text.
+- `background._TASK_ID_RE` widened; its comment now names all three twins and
+  keeps the "deliberately not imported" rationale. The error at the guard
+  names both shapes while preserving "(never a foreign id)".
+
+**Naming correction to this task's Context/AC 3.** The task file said the
+guard lives in `BackgroundRunner.run_validation`. The class is actually
+`ValidationSupervisor` and the method is `start()` (`background.py`); the
+engine's `run_validation` delegates to it. Same code, same line, wrong class
+name in the task text — the implementation and tests target the real symbol.
+
+Tests added (11 cases over 3 files):
+- `test_optimization_models.py`: validator accept/reject and the
+  `Field(pattern=...)` path proved by constructing `TaskCompletionEvidence`
+  (AC 2) — this is the one that actually exercises pydantic's Rust engine.
+- `test_background_validation.py`: `test_run_validation_accepts_brief_task_id`
+  plus a 4-case parametrized rejection including `BRIEF-CS-228`.
+- `test_background_task_tier.py`:
+  `test_task_tier_schema_and_runner_guard_agree` — the schema parses
+  `tier='task'` with and without `attempt_uid`, and the supervisor still
+  raises `explicit base_ref` for the same payload, with no spawn (AC 4).
+
+One self-inflicted red along the way: the first `TaskCompletionEvidence`
+fixture used `implementation_sha="abc123"`, which that model rejects — it
+needs a full 40-hex SHA. Fixed by reusing the module's `_FULL_SHA_A`; the
+regex was never the failure.
+
+Evidence:
+- `pytest` over this task's four Validation Commands → **34 passed**
+- Whole FEAT-736 validation contract (9 files) → **150 passed**
+- `ruff check` on the four changed source/test files → clean
+
+AC 5 confirmed: `_FEATURE_ID_RE` appears in the diff as context only.
+AC 7 confirmed: `models.py`, `toolkit.py`, `engine.py`,
+`complexity_collectors.py` and `build/` are untouched by this task.

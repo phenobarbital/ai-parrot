@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -26,8 +27,10 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderPlan,
     CoderPlanArgs,
     CoderPrepareNativeArgs,
+    CoderRunValidationArgs,
     ExecutionPoolView,
     ExecutionSnapshot,
+    NativeObservation,
     NativePrep,
     PlannedTask,
     PoolSeatView,
@@ -35,6 +38,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     SeatProbeResult,
     SuspendModelArgs,
     TaskResult,
+    _check_uuid_optional,
 )
 from parrot.knowledge.wiki.ledger.coder_suspensions import ModelKey, SuspensionPolicy
 
@@ -488,3 +492,115 @@ class TestValidationVerdictModels:
         assert RunnerConfig().gate_overall_timeout_s == 600
         assert RunnerConfig().same_seat_repair is True
         assert "validation_verdict" in TaskScopedBrief.model_fields
+
+
+# ---------------------------------------------------------------------------
+# FEAT-736 / TASK-4673 -- brief task ids and tier='task' (issue:0ea4f0acaefd,
+# issue:146f4be4ee6d). A brief's tasks carry local, unreserved ids
+# `HOTFIX-<KEY>-<n>` (scripts/sdd/brief_meta.brief_task_id); the key 'CS-228'
+# below ends in digits on purpose -- that is the regex-backtracking case.
+# ---------------------------------------------------------------------------
+
+BRIEF_TASK_ID = "HOTFIX-CS-228-1"
+
+_BAD_TASK_IDS = [
+    "nope",
+    "HOTFIX-1",
+    "HOTFIX--1",
+    "HOTFIX-CS-228-",
+    "HOTFIX-CS-228-123456",
+    "TASK-123456",
+    "hotfix-cs-228-1",
+    "BRIEF-CS-228",
+]
+
+
+def _validation_args(**overrides):
+    """Build a minimal valid CoderRunValidationArgs payload, overridable per test."""
+    payload = dict(
+        feature="BRIEF-CS-228",
+        worktree="/abs/path",
+        execution_id=VALID_UUID,
+        task_ids=[BRIEF_TASK_ID],
+        tier="merge",
+        timeout_seconds=600,
+        request_id="req-1",
+    )
+    payload.update(overrides)
+    return payload
+
+
+def test_chunk_args_accept_brief_task_ids():
+    args = CoderRunChunkArgs(
+        feature="BRIEF-CS-228", worktree="/abs/path", task_ids=[BRIEF_TASK_ID], execution_id=VALID_UUID
+    )
+    assert args.task_ids == [BRIEF_TASK_ID]
+
+
+def test_prepare_native_accepts_brief_task_id():
+    args = CoderPrepareNativeArgs(
+        feature="BRIEF-CS-228", worktree="/abs/path", task_id="HOTFIX-CS-228-12", execution_id=VALID_UUID
+    )
+    assert args.task_id == "HOTFIX-CS-228-12"
+
+
+@pytest.mark.parametrize("task_id", ["HOTFIX-CS-228-1", "HOTFIX-CS-228-99999", "HOTFIX-a-1", "TASK-1"])
+def test_brief_key_ending_in_digits(task_id):
+    """A brief key may itself end in digits; the trailing -<n> anchor must still bind."""
+    args = CoderRunChunkArgs(feature="BRIEF-CS-228", worktree="/abs/path", task_ids=[task_id], execution_id=VALID_UUID)
+    assert args.task_ids == [task_id]
+
+
+@pytest.mark.parametrize("bad", _BAD_TASK_IDS)
+def test_task_id_still_rejects_foreign_ids(bad):
+    with pytest.raises(ValidationError):
+        CoderRunChunkArgs(feature="f", worktree="/abs", task_ids=[bad], execution_id=VALID_UUID)
+
+
+def test_native_observation_accepts_brief_task_id():
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
+
+    evidence = EvidenceRef(
+        artifact_id="a1",
+        sha256="0" * 64,
+        relative_path="x.json",
+        size_bytes=1,
+        media_type="application/json",
+    )
+    obs = NativeObservation(
+        event_id="e1",
+        task_id=BRIEF_TASK_ID,
+        attempt_uid=VALID_UUID,
+        agent_id="seat-1",
+        observed_at=datetime(2026, 10, 24, tzinfo=timezone.utc),
+        kind="dispatched",
+        evidence_ref=evidence,
+    )
+    assert obs.task_id == BRIEF_TASK_ID
+
+
+def test_run_validation_args_accept_task_tier():
+    args = CoderRunValidationArgs(**_validation_args(tier="task", attempt_uid=VALID_UUID))
+    assert args.tier == "task"
+    assert args.attempt_uid == VALID_UUID
+
+
+def test_run_validation_args_tier_task_without_attempt_uid_parses():
+    """The schema must NOT duplicate the engine's rule: background.py owns it."""
+    args = CoderRunValidationArgs(**_validation_args(tier="task"))
+    assert args.attempt_uid is None
+
+
+def test_run_validation_args_reject_bad_attempt_uid():
+    with pytest.raises(ValidationError):
+        CoderRunValidationArgs(**_validation_args(tier="task", attempt_uid="not-a-uuid"))
+
+
+def test_run_validation_args_reject_unknown_tier():
+    with pytest.raises(ValidationError):
+        CoderRunValidationArgs(**_validation_args(tier="whatever"))
+
+
+def test_check_uuid_optional_passes_none_through():
+    assert _check_uuid_optional(None) is None
+    assert _check_uuid_optional(VALID_UUID) == VALID_UUID

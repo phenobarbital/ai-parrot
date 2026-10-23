@@ -295,4 +295,40 @@ Run with `PYTHONPATH=packages/ai-parrot/src`. No new fixtures.
 
 ## Completion Note
 
-<!-- filled in on completion -->
+**Verified**, 2026-10-24.
+
+`_SAFE_ID_RE` widened to
+`^(?:FEAT-\d+|TASK-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9_-]*|HOTFIX-[A-Za-z0-9][A-Za-z0-9_-]*-\d+|_rerun)$`
+with the dot-free key class and the seven-line comment explaining why this
+gate is stricter than its `sdd_coder` twins. `_safe_id` and `junit_path_for`
+keep their signatures; `report.py` gained no import.
+
+**Correction to this task's AC 1–2 (spec §3 Module 3 said the same thing).**
+The task file assumed `junit_path_for` used the task id as a *directory*. It
+does not — the real layout is
+
+```
+report_root() / <feature_id> / "junit" / f"{task_id}--{suite}--{ordinal}.xml"
+```
+
+so the feature id is a directory and the task id is a **filename prefix**. The
+pre-fix defect is therefore a *filename* collision, not a directory one: every
+brief task wrote `_invalid/junit/_invalid--<suite>--<n>.xml` and overwrote its
+siblings. The fix and its value are unchanged; only the wording of AC 1–2 and
+the shape of the assertions moved. Tests assert on `path.parts` for the
+feature component and `path.name` for the task component.
+
+Tests added (4, one parametrized over 8 unsafe ids):
+`test_junit_path_for_brief_ids`, `test_junit_path_for_brief_tasks_do_not_collide`,
+`test_junit_path_for_rejects_traversal`, `test_junit_path_for_keeps_rerun_sentinel`.
+The rejection table pins `HOTFIX-a..b-1`, `BRIEF-a..b` and `BRIEF-CS.228` as
+`_invalid`, which is the deliberate strictness.
+
+Evidence:
+- `pytest .../test_scope/test_report.py .../test_scope/test_stdlib_only.py -q`
+  → **43 passed**
+- `ruff check` on both changed files → clean
+
+AC 7: decision recorded as wiki memory `mem-a53868191c3b`
+("sdd_coder brief task ids: four separate gates, report.py stricter"), including
+the `junit_path_for` layout correction above.
