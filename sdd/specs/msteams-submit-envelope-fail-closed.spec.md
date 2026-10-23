@@ -444,6 +444,8 @@ tests:
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_submit.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_wrapper.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_roundtrip.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_models.py
+- packages/parrot-formdesigner/tests/unit/api/test_setup_form_api.py
 markers: none
 
 ### Test Data / Fixtures
