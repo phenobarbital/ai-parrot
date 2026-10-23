@@ -54,9 +54,7 @@ def _rbac(context: RBACContext | None = None, *, error: Exception | None = None)
     if error is not None:
         service.resolve = AsyncMock(side_effect=error)
     else:
-        service.resolve = AsyncMock(
-            return_value=context or RBACContext(user_id="auditor", program_id=0)
-        )
+        service.resolve = AsyncMock(return_value=context or RBACContext(user_id="auditor", program_id=0))
     return service
 
 
