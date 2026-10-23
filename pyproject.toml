@@ -244,27 +244,9 @@ navrules = { workspace = true }
 # ---------------------------------------------------------------------------
 # Shared tool configs
 # ---------------------------------------------------------------------------
-[tool.pytest.ini_options]
-addopts = [
-    "--strict-config",
-    "--strict-markers",
-]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-log_cli = true
-log_cli_level = "DEBUG"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-filterwarnings = [
-    "error",
-    'ignore:The loop argument is deprecated since Python 3\.8, and scheduled for removal in Python 3\.10:DeprecationWarning:asyncio',
-]
-markers = [
-    "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
-    "real_llm: mark a test as requiring a live LLM provider",
-    "live_google: Opt-in paid Google GenAI (Veo/Omni/Lyria) reel smoke tests. Require real credentials and PARROT_TEST_LIVE_GOOGLE=1; skipped by default, never run at collection time (FEAT-564 TASK-3335).",
-]
+# pytest is configured in the tracked root `pytest.ini`, NOT here: pytest gives pytest.ini precedence, so a
+# [tool.pytest.ini_options] table in this file would be silently ignored (FEAT-720). Per-package tables under
+# packages/*/pyproject.toml are still honoured when a run is rooted inside that package.
 
 [tool.black]
 line-length = 120

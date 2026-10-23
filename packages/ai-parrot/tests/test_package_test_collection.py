@@ -10,6 +10,7 @@ import configparser
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,6 +30,9 @@ def test_pytest_ini_enables_path_derived_test_identities() -> None:
     section = parser["pytest"]
     assert "--import-mode=importlib" in section.get("addopts", "").split()
     assert section.get("consider_namespace_packages", "").strip().lower() == "true"
+    # pytest.ini wins over pyproject.toml, so a pytest table in the root pyproject would be dead config.
+    root_tool = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]
+    assert "pytest" not in root_tool, "root pyproject.toml must not carry an (ignored) [tool.pytest.ini_options]"
 
 
 def test_two_package_test_trees_collect_together() -> None:
