@@ -65,7 +65,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -74,7 +74,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the STRATEGY (a) CONFIRMED verdict in sdd/state/FEAT-720/spike-collect.md from TASK-4590. Exclusive: edits the root pyproject.toml (a shared manifest) and changes pytest import semantics for the entire monorepo, so no other task's test run is meaningful while it lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T11:36:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4591-collection-identity.md"
     },
@@ -85,7 +85,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -94,7 +94,7 @@
       "parallel": false,
       "parallelism_notes": "Repairs the sites TASK-4591 breaks by deleting packages/ai-parrot/tests/__init__.py, and is scoped from the §3 table of TASK-4590's spike-collect.md. Exclusive: until every distribution is repaired the tree is half-converted, so a concurrent task's collection run cannot distinguish its own breakage from this one's.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T11:36:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4592-repair-import-sites-ai-parrot.md"
     },
@@ -105,7 +105,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -114,7 +114,7 @@
       "parallel": false,
       "parallelism_notes": "Serialized after TASK-4592 so the half-converted window stays single-owner: both tasks validate by comparing per-distribution collect counts against the same TASK-4590 baseline, which only one task at a time can interpret. Exclusive for the same reason.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T11:36:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4593-repair-import-sites-integrations-tools.md"
     },
@@ -125,7 +125,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -134,7 +134,7 @@
       "parallel": false,
       "parallelism_notes": "Last repair task: it is the first point at which AC1's pair collect can pass, so it must observe the tree after TASK-4592 and TASK-4593 have landed. Exclusive: its class (vi) resolution changes whether the name `mcp` reaches top level, which affects every session in the repo.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T11:36:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4594-repair-import-sites-server-embeddings-loaders-formdesigner.md"
     },
@@ -145,7 +145,7 @@
       "feature_id": "FEAT-720",
       "feature": "tests-test-wheel-layout-tech-debt-2",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -154,7 +154,7 @@
       "parallel": false,
       "parallelism_notes": "Asserts the end state TASK-4591..4594 create, so it can only pass once TASK-4594 lands. Exclusive: its AC8 demonstration deliberately recreates a packages/*/tests/__init__.py to prove the guard fails, which breaks collection repo-wide for the duration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-23T11:36:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4595-collection-regression-guard.md"
     }
