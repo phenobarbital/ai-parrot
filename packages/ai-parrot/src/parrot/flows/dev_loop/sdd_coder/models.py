@@ -20,6 +20,7 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:407, :497
 )
 
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    COMPLEXITY_ERROR_CODES,
     ComplexityAssessment,
     ComplexityBlock,
     ComplexityPolicy,
@@ -69,11 +70,6 @@ ERROR_CODES: frozenset[str] = frozenset(
         "engine_busy",
         "invalid_arguments",
         "internal_error",
-        # Complexity routing error codes (FEAT-561 spec §2)
-        "complexity_contract_invalid",
-        "complexity_plan_stale",
-        "complex_model_unavailable",
-        "complexity_audit_failed",
         # FEAT-559: execution pool / suspension lifecycle errors (spec §2).
         "execution_required",
         "execution_not_found",
@@ -107,8 +103,14 @@ ERROR_CODES: frozenset[str] = frozenset(
         "validation_request_conflict",
         "validation_scope_invalid",
     }
+    # Complexity routing error codes (FEAT-561 spec §2) are owned by
+    # `complexity_models.COMPLEXITY_ERROR_CODES` and unioned in rather than
+    # re-listed here, so a code added there can never silently miss this set.
+    | COMPLEXITY_ERROR_CODES
 )
-_TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
+#: FEAT-698 brief tasks carry local `HOTFIX-<KEY>-<N>` ids; both they and
+#: `TASK-<NNN>` are valid SDD task ids wherever one crosses the MCP surface.
+_TASK_ID_RE = re.compile(r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$")
 
 
 def _check_uuid(v: str) -> str:
@@ -625,9 +627,9 @@ class _Args(BaseModel):
 
 
 def _check_task_id(v: str) -> str:
-    """Reject anything that does not match `^TASK-\\d{1,5}$`."""
+    """Reject anything that is neither `TASK-<1-5 digits>` nor `HOTFIX-<KEY>-<1-5 digits>`."""
     if not _TASK_ID_RE.fullmatch(v):
-        raise ValueError(f"invalid task id {v!r}; expected TASK-<1-5 digits>")
+        raise ValueError(f"invalid task id {v!r}; expected TASK-<1-5 digits> or HOTFIX-<KEY>-<1-5 digits>")
     return v
 
 
@@ -819,9 +821,11 @@ class CoderRunValidationArgs(_Args):
     worktree: str
     execution_id: str = Field(..., min_length=1)
     task_ids: List[str] = Field(..., min_length=1)
-    tier: Literal["merge", "feature"]
+    tier: Literal["task", "merge", "feature"]
     timeout_seconds: int = Field(..., ge=1, le=7200)
     request_id: str = Field(..., min_length=1)
+    #: FEAT-709 `tier='task'`: the attempt whose worktree the engine resolves.
+    attempt_uid: Optional[str] = Field(default=None, min_length=1)
     _wt = field_validator("worktree")(_check_abs)
     _tids = field_validator("task_ids")(_check_task_ids)
     _exec = field_validator("execution_id")(_check_uuid)

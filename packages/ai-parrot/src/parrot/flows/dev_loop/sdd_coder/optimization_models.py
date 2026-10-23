@@ -28,7 +28,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
-_TASK_ID_PATTERN = r"^TASK-\d{1,5}$"
+#: FEAT-698: `TASK-<NNN>` plus the local `HOTFIX-<KEY>-<N>` ids of brief tasks.
+_TASK_ID_PATTERN = r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$"
 
 # Keys that must never appear (at any nesting depth) inside a persisted event
 # payload or completion-fact bag: spec R3 "sin texto de prompts ni
@@ -82,11 +83,11 @@ def _check_full_sha(value: str) -> str:
 
 
 def _check_optional_task_id(value: str | None) -> str | None:
-    """Apply the closed `TASK-<1-5 digits>` shape only when a task_id is present."""
+    """Apply the closed task-id shape only when a task_id is present."""
     if value is None:
         return value
     if not re.match(_TASK_ID_PATTERN, value):
-        raise ValueError(f"invalid task id {value!r}; expected TASK-<1-5 digits>")
+        raise ValueError(f"invalid task id {value!r}; expected TASK-<1-5 digits> or HOTFIX-<KEY>-<1-5 digits>")
     return value
 
 

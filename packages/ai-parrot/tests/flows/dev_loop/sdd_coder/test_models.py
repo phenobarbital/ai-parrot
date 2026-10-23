@@ -11,6 +11,7 @@ from parrot.flows.dev_loop.sdd_coder import (
     RosterSeat,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
+    COMPLEXITY_ERROR_CODES,
     ComplexityAssessment,
     ComplexityBlock,
     ComplexityContract,
@@ -39,6 +40,71 @@ from parrot.flows.dev_loop.sdd_coder.models import (
 from parrot.knowledge.wiki.ledger.coder_suspensions import ModelKey, SuspensionPolicy
 
 VALID_UUID = "11111111-1111-4111-8111-111111111111"
+
+HOTFIX_TASK_ID = "HOTFIX-d6027c24b96d-1"
+
+
+def test_task_id_validator_accepts_brief_hotfix_ids():
+    """issue:0ea4f0acaefd — brief tasks use HOTFIX-<KEY>-<N>, not only TASK-<NNN>."""
+    from parrot.flows.dev_loop.sdd_coder.models import _check_task_id, _check_task_ids
+
+    assert _check_task_id("TASK-4321") == "TASK-4321"
+    assert _check_task_id(HOTFIX_TASK_ID) == HOTFIX_TASK_ID
+    assert _check_task_id("HOTFIX-NAV-10363-12") == "HOTFIX-NAV-10363-12"
+    assert _check_task_ids(["TASK-1", HOTFIX_TASK_ID]) == ["TASK-1", HOTFIX_TASK_ID]
+    for bad in ("TASK-", "HOTFIX-1", "HOTFIX--1", "HOTFIX-key-", "FEAT-1", "../etc", "TASK-123456"):
+        with pytest.raises(ValueError):
+            _check_task_id(bad)
+
+
+def test_run_validation_args_accept_task_tier_and_attempt_uid():
+    """issue:146f4be4ee6d — the schema must admit what engine/toolkit already accept."""
+    from parrot.flows.dev_loop.sdd_coder.models import CoderRunValidationArgs
+
+    args = CoderRunValidationArgs(
+        feature="FEAT-709",
+        worktree="/abs/wt",
+        execution_id=VALID_UUID,
+        task_ids=["TASK-4532"],
+        tier="task",
+        timeout_seconds=600,
+        request_id="r1",
+        attempt_uid="a1-7c1e",
+    )
+    assert args.tier == "task" and args.attempt_uid == "a1-7c1e"
+    # attempt_uid stays optional for the other tiers.
+    merge = CoderRunValidationArgs(
+        feature="FEAT-709",
+        worktree="/abs/wt",
+        execution_id=VALID_UUID,
+        task_ids=["TASK-4532"],
+        tier="merge",
+        timeout_seconds=600,
+        request_id="r2",
+    )
+    assert merge.attempt_uid is None
+    # A brief task id is admitted here too (issue:0ea4f0acaefd).
+    brief = CoderRunValidationArgs(
+        feature="BRIEF-d6027c24b96d",
+        worktree="/abs/wt",
+        execution_id=VALID_UUID,
+        task_ids=[HOTFIX_TASK_ID],
+        tier="feature",
+        timeout_seconds=60,
+        request_id="r3",
+    )
+    assert brief.task_ids == [HOTFIX_TASK_ID]
+    with pytest.raises(ValidationError):
+        CoderRunValidationArgs(
+            feature="f",
+            worktree="/abs/wt",
+            execution_id=VALID_UUID,
+            task_ids=["TASK-1"],
+            tier="bogus",
+            timeout_seconds=60,
+            request_id="r4",
+        )
+
 
 
 def test_roster_config_requires_backend_for_mcp():
@@ -262,6 +328,47 @@ class TestComplexityModels:
         evidence.metrics["test"] = MetricEvidence(state="ok", value=1, reason="x", source="y")
         # Assessment's evidence should be unchanged (frozen)
         assert "test" not in assessment.evidence.metrics
+
+    def test_complexity_assessment_is_frozen(self):
+        """issue:7fb9a3a2edb4 — immutability is the model config, not a validator."""
+        contract = ComplexityContract(targets=())
+        evidence = ComplexityEvidence(
+            task_id="TASK-1",
+            contract=contract,
+            metrics={},
+            head_sha="abc",
+            task_sha256="abc",
+            index_sha256="abc",
+            policy_sha256="abc",
+            target_hashes={},
+            wiki_evidence_hashes={},
+            collector_versions={},
+            details={},
+        )
+        assessment = ComplexityAssessment(
+            policy_version="v1",
+            task_id="TASK-1",
+            classification="standard",
+            total_points=0,
+            component_points={},
+            reason_codes=(),
+            evidence=evidence,
+            assessment_id="test-id",
+        )
+        assert ComplexityAssessment.model_config["frozen"] is True
+        with pytest.raises(ValidationError):
+            assessment.assessment_id = "other"
+        with pytest.raises(ValidationError):
+            assessment.evidence = evidence
+        # A derived copy is still the supported way to change one field.
+        assert assessment.model_copy(update={"assessment_id": "x"}).assessment_id == "x"
+
+    def test_complexity_error_codes_subset_of_error_codes(self):
+        """issue:acaba20fe760 — the two sets can never drift apart silently."""
+        assert COMPLEXITY_ERROR_CODES <= ERROR_CODES
+        # And the union is the real source, not a hand-copied list.
+        for code in COMPLEXITY_ERROR_CODES:
+            assert CoderError(code=code, message="m").code == code
 
     def test_complexity_block_error_codes_in_error_codes_set(self):
         """Every new complexity error code validates and unknown codes remain rejected."""

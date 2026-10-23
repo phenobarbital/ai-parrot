@@ -75,7 +75,8 @@ _MAX_POLL_INTERVAL_MS = 60000
 _EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 #: Same closed shape as `optimization_models._TASK_ID_PATTERN` (not imported --
 #: that module's validators are private to its own field declarations).
-_TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
+#: FEAT-698: brief tasks carry local `HOTFIX-<KEY>-<N>` ids as well as `TASK-<NNN>`.
+_TASK_ID_RE = re.compile(r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$")
 #: FEAT-695: canonical feature id shape for test-result records.
 _FEATURE_ID_RE = re.compile(r"^(?:FEAT-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9._-]*)$")
 
@@ -563,7 +564,10 @@ class ValidationSupervisor:
             raise ValueError("task_ids must be a non-empty list")
         for task_id in task_ids:
             if not _TASK_ID_RE.match(task_id):
-                raise ValueError(f"invalid task id {task_id!r}; expected TASK-<1-5 digits> (never a foreign id)")
+                raise ValueError(
+                    f"invalid task id {task_id!r}; expected TASK-<1-5 digits>"
+                    " or HOTFIX-<KEY>-<1-5 digits> (never a foreign id)"
+                )
         if not request_id:
             raise ValueError("request_id must be a non-empty string")
         if base_ref is not None and not base_ref.strip():

@@ -77,7 +77,13 @@ def report_root() -> Path:
     return Path("/tmp") / f"claude-{os.getuid()}" / "sdd-tests"
 
 
-_SAFE_ID_RE = re.compile(r"^(?:FEAT-\d+|TASK-\d+|_rerun)$")
+#: FEAT-698 brief ids (`BRIEF-<KEY>` features, `HOTFIX-<KEY>-<N>` tasks) are as safe
+#: as FEAT/TASK here: each is anchored to its literal prefix, so no value can ever be
+#: `.`, `..` or carry a path separator.
+_SAFE_ID_RE = re.compile(
+    r"^(?:FEAT-\d+|TASK-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9._-]*"
+    r"|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5}|_rerun)$"
+)
 
 
 def _safe_id(value: str) -> bool:

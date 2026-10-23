@@ -399,3 +399,19 @@ def test_unsafe_ids_are_not_recorded(tmp_path) -> None:
     result = report.SuiteResult("root", 1, 1, 0, 0, 0, 0.1, 0, ("pytest",), "ok")
     assert report.append_suite("../..", "TASK-1", result, head_sha="a", base_ref="b", tier="merge", source="t") is None
     assert report.load_records("../..")[0] == {}
+
+
+def test_junit_path_for_accepts_brief_ids() -> None:
+    """issue:0ea4f0acaefd — BRIEF/HOTFIX ids are real ids, not `_invalid` directories."""
+    path = report.junit_path_for("BRIEF-d6027c24b96d", "HOTFIX-d6027c24b96d-1", "core", 0)
+    assert path.parent.parent.name == "BRIEF-d6027c24b96d"
+    assert path.name.startswith("HOTFIX-d6027c24b96d-1--core--")
+    assert "_invalid" not in str(path)
+
+
+def test_junit_path_for_still_rejects_unsafe_ids() -> None:
+    """A path separator or traversal segment is still mapped to the neutral name."""
+    for bad_feature, bad_task in (("../etc", "../etc"), ("a/b", "a/b"), ("..", ".."), ("", "")):
+        path = report.junit_path_for(bad_feature, bad_task, "core", 0)
+        assert path.parent.parent.name == "_invalid"
+        assert path.name.startswith("_invalid--core--")

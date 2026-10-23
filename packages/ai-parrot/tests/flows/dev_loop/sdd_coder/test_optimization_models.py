@@ -378,3 +378,17 @@ def test_canonical_json_roundtrip(tmp_path: Path) -> None:
     reloaded_event = WorkflowEvent.model_validate_json(event.model_dump_json())
     assert reloaded_event == event
     assert reloaded_event.schema_version == 1
+
+
+def test_optional_task_id_accepts_brief_hotfix_ids():
+    """issue:0ea4f0acaefd — TaskCompletionEvidence and friends must admit brief task ids."""
+    import pytest
+
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import _check_optional_task_id
+
+    assert _check_optional_task_id(None) is None
+    assert _check_optional_task_id("TASK-3286") == "TASK-3286"
+    assert _check_optional_task_id("HOTFIX-d6027c24b96d-1") == "HOTFIX-d6027c24b96d-1"
+    for bad in ("HOTFIX-1", "HOTFIX--1", "FEAT-1", "nope"):
+        with pytest.raises(ValueError):
+            _check_optional_task_id(bad)
