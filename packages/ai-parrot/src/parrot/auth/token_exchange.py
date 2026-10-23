@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
@@ -107,7 +108,8 @@ class TokenExchangeClient:
                         result = self._classify_failure(response.status, await response.text())
                     logger.info("Navigator token exchange completed: HTTP %s reason=%s", response.status, result.reason)
                     return result
-        except aiohttp.ClientError:
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            # ValueError covers a 200 whose body is not valid JSON.
             logger.error("Navigator token exchange request failed: reason=%s", REASON_TRANSPORT)
             return ExchangeResult(ok=False, reason=REASON_TRANSPORT)
 
@@ -122,11 +124,10 @@ class TokenExchangeClient:
         Returns:
             An unsuccessful result with a stable reason.
         """
-        del status
         normalized_body = body.lower()
         if "unacceptable auth method" in normalized_body:
             reason = REASON_BACKEND_NOT_LOADED
-        elif "user_not_found" in normalized_body or "not found" in normalized_body:
+        elif "user_not_found" in normalized_body or (status in (401, 403, 404) and "not found" in normalized_body):
             reason = REASON_USER_NOT_FOUND
         elif "expired" in normalized_body:
             reason = REASON_EXPIRED
@@ -153,6 +154,10 @@ class TokenExchangeClient:
                 " ".join(part for part in (session_data.get("first_name"), session_data.get("last_name")) if part)
                 or None
             )
+
+        if nav_user_id in (None, "") or not body.get("token"):
+            # A 200 without an identity or session token must never authenticate anyone.
+            return ExchangeResult(ok=False, reason=REASON_INVALID_TOKEN)
 
         return ExchangeResult(
             ok=True,

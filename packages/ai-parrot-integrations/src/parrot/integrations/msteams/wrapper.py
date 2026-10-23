@@ -111,6 +111,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
     # FEAT-729: auth lane is disabled unless __init__ builds a strategy.
     _auth: Optional[MSTeamsAuthStrategy] = None
+    _AUTH_COMMANDS = frozenset({"/login", "/logout", "/whoami"})
 
     # Supported audio content types for voice notes
     AUDIO_CONTENT_TYPES = {
@@ -213,6 +214,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # FEAT-729: user authentication lane (opt-in via config.auth_required)
         self._session_store = MSTeamsSessionStore(agent_name=config.name, store=getattr(self, "_state_store", None))
+        if config.auth_required and not config.navigator_auth_url:
+            # Fail closed: a deployment that demands auth must not silently serve everyone.
+            raise ValueError(f"MSTeams[{config.name}]: auth_required=True needs navigator_auth_url to be configured")
         self._auth: Optional[MSTeamsAuthStrategy] = None
         if config.navigator_auth_url:
             self._auth = MSTeamsAuthStrategy(
@@ -382,14 +386,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             turn_context: The current Bot Framework turn context.
             session: The authenticated ``MSTeamsUserSession``.
         """
-        user_context = self._build_user_context(turn_context, session)
-        target_agent = self.agent
-        if not getattr(self.config, "singleton_agent", True):
-            session.user_agent = await self.agent.clone_for_user(user_context)
-            target_agent = session.user_agent
-        await target_agent.post_login(user_context)
-        session.post_login_ran = True
-        await self._session_store.save(session)
+        async with self._auth.lock_for(session.user_key):
+            if session.post_login_ran:  # another concurrent turn of this user already ran it
+                return
+            user_context = self._build_user_context(turn_context, session)
+            target_agent = self.agent
+            if not getattr(self.config, "singleton_agent", True):
+                session.user_agent = await self.agent.clone_for_user(user_context)
+                target_agent = session.user_agent
+            await target_agent.post_login(user_context)
+            session.post_login_ran = True
+            await self._session_store.save(session)
 
     def _is_authorized(self, conversation_id: str, user_id: str) -> bool:
         """Check if a conversation and user are authorized for this bot.
@@ -659,10 +666,27 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # The mention-stripped text is cached on `mention_stripped_text` so the
         # later "Clean message" step can reuse it instead of stripping twice.
         mention_stripped_text = None
+        clean_text = ""
         if turn_context.activity.text:
             raw_text = turn_context.activity.text
             mention_stripped_text = self._remove_mentions(turn_context.activity, raw_text)
             clean_text = mention_stripped_text.strip()
+
+        # FEAT-729: authentication gate. Runs after the allow-list (which keeps first
+        # refusal) and BEFORE command dispatch, so no other command (knowledge upload,
+        # Jira, agent commands) is reachable unauthenticated under auth_required.
+        # Only /login, /logout and /whoami are exempt.
+        if self._auth is not None:
+            first_token = clean_text.split(None, 1)[0].lower() if clean_text else ""
+            if first_token not in self._AUTH_COMMANDS:
+                session = await self._auth.ensure_authenticated(turn_context)
+                if self.config.auth_required and not session.authenticated:
+                    await self._auth.send_signin_card(turn_context)
+                    return
+                if session.authenticated and not session.post_login_ran:
+                    await self._run_post_login(turn_context, session)
+
+        if clean_text:
             dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
             if not dispatched:
                 # Secondary plain-text dispatch for discoverability keywords
@@ -672,17 +696,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     dispatched = await self._command_router.try_dispatch_plain(plain, turn_context)
             if dispatched:
                 return  # command handled — skip agent processing
-
-        # FEAT-729: authentication gate. Runs after the allow-list (which keeps first
-        # refusal) and after command dispatch, so /login, /logout and /whoami stay
-        # reachable while unauthenticated.
-        if self._auth is not None:
-            session = await self._auth.ensure_authenticated(turn_context)
-            if self.config.auth_required and not session.authenticated:
-                await self._auth.send_signin_card(turn_context)
-                return
-            if session.authenticated and not session.post_login_ran:
-                await self._run_post_login(turn_context, session)
 
         # DEBUG: Log activity details
         self.logger.info(

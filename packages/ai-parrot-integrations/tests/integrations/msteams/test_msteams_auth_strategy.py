@@ -174,14 +174,12 @@ class TestSsoPath:
         turn_context: MagicMock,
         fake_adapter: MagicMock,
     ) -> None:
-        """exchange_token receives the stable Teams user key."""
+        """exchange_token receives the channel user id (from.id), the key Bot Framework stores tokens under."""
         request = TokenExchangeRequest(uri="api://resource", token="sso-token")
 
         await strategy.exchange_sso_token(turn_context, request)
 
-        fake_adapter.exchange_token.assert_awaited_once_with(
-            turn_context, "teams-oauth", user_key(turn_context), request
-        )
+        fake_adapter.exchange_token.assert_awaited_once_with(turn_context, "teams-oauth", "teams-user-123", request)
 
     @pytest.mark.asyncio
     async def test_invoke_uses_sso_token_when_no_cached_token(
@@ -229,12 +227,74 @@ class TestPromptAndSignOut:
         turn_context: MagicMock,
         fake_adapter: MagicMock,
     ) -> None:
-        """Store cleanup precedes a failing Token Service sign-out call."""
+        """Store cleanup precedes a failing Token Service sign-out call, which is logged, not raised."""
         key = user_key(turn_context)
         store._local[key] = MSTeamsUserSession(user_key=key, teams_user_id="teams-user-123")
         fake_adapter.sign_out_user.side_effect = RuntimeError("Token service unavailable")
 
-        with pytest.raises(RuntimeError, match="Token service unavailable"):
-            await strategy.sign_out(turn_context)
+        await strategy.sign_out(turn_context)
 
         assert key not in store._local
+        # Revocation targets the channel user id, not the Entra oid.
+        fake_adapter.sign_out_user.assert_awaited_once_with(turn_context, "teams-oauth", "teams-user-123")
+
+
+class TestReviewFixes:
+    """Regressions from the FEAT-729 code review."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_activities_exchange_once(
+        self, strategy: MSTeamsAuthStrategy, turn_context: MagicMock, fake_adapter: MagicMock
+    ) -> None:
+        """Two simultaneous turns of one user run a single token exchange."""
+        import asyncio
+
+        fake_adapter.get_user_token.return_value = SimpleNamespace(token="graph-token", id_token=None)
+
+        async def slow_exchange(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return ExchangeResult(ok=True, nav_user_id="35", session_token="nav-token")
+
+        strategy.exchange.exchange = AsyncMock(side_effect=slow_exchange)
+
+        first, second = await asyncio.gather(
+            strategy.ensure_authenticated(turn_context), strategy.ensure_authenticated(turn_context)
+        )
+
+        assert strategy.exchange.exchange.await_count == 1
+        assert first is second and first.authenticated
+
+    @pytest.mark.asyncio
+    async def test_auth_reason_cleared_after_success(
+        self,
+        strategy: MSTeamsAuthStrategy,
+        store: MSTeamsSessionStore,
+        turn_context: MagicMock,
+        fake_adapter: MagicMock,
+    ) -> None:
+        """A stale failure reason does not outlive a later successful login."""
+        session = await store.get_or_create(turn_context)
+        session.metadata["auth_reason"] = "invalid_token"
+        fake_adapter.get_user_token.return_value = SimpleNamespace(token="graph-token", id_token=None)
+        strategy.exchange.exchange = AsyncMock(
+            return_value=ExchangeResult(ok=True, nav_user_id="35", session_token="t")
+        )
+
+        session = await strategy.ensure_authenticated(turn_context)
+
+        assert session.authenticated is True
+        assert "auth_reason" not in session.metadata
+
+    @pytest.mark.asyncio
+    async def test_signin_card_without_connection_replies(
+        self, store: MSTeamsSessionStore, turn_context: MagicMock
+    ) -> None:
+        """No oauth_connection_name: the user gets a text reply instead of silence."""
+        strategy = MSTeamsAuthStrategy(
+            config=SimpleNamespace(oauth_connection_name=None), store=store, exchange=MagicMock()
+        )
+
+        await strategy.send_signin_card(turn_context)
+
+        turn_context.send_activity.assert_awaited_once()
+        assert "not configured" in turn_context.send_activity.await_args.args[0]

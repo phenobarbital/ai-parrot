@@ -226,7 +226,7 @@ class TestSsoInvoke:
         fake_adapter.exchange_token.assert_awaited_once()
         args = fake_adapter.exchange_token.await_args.args
         assert args[1] == CONNECTION
-        assert args[2] == TEAMS_OID  # user_id == user_key(turn_context)
+        assert args[2] == teams_activity.from_property.id  # channel user id (from.id), not the oid
         assert args[3].token == "teams-sso-token-SECRET"
         assert session.authenticated is True
         assert session.nav_user_id == NAV_USER_ID

@@ -291,3 +291,53 @@ class TestContextSites:
 
         context = wrapper.form_orchestrator.process_message.await_args.kwargs["context"]
         assert context["user_id"] == TEAMS_ID
+
+
+class TestReviewFixes:
+    """Regressions from the FEAT-729 code review."""
+
+    def test_auth_required_without_url_fails_closed(self, agent, mock_app):
+        """auth_required=True with no navigator_auth_url refuses to start instead of serving everyone."""
+        with pytest.raises(ValueError, match="navigator_auth_url"):
+            MSTeamsAgentWrapper(agent, _config(auth_required=True), mock_app)
+
+    @pytest.mark.asyncio
+    async def test_other_commands_blocked_when_unauthenticated(self, agent, mock_app, turn_context):
+        """Under auth_required an unauthenticated user cannot reach non-auth commands."""
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login", auth_required=True)
+        _unauthenticated(wrapper)
+        handler = AsyncMock()
+        wrapper._command_router.register("/ingest_book", handler)
+        turn_context.activity.text = "/ingest_book something"
+
+        await wrapper.on_message_activity(turn_context)
+
+        handler.assert_not_awaited()
+        wrapper._auth.send_signin_card.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_auth_commands_stay_reachable_when_unauthenticated(self, agent, mock_app, turn_context):
+        """/login is exempt from the gate: no card is forced before it runs."""
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login", auth_required=True)
+        _unauthenticated(wrapper)
+        login = AsyncMock()
+        wrapper._command_router.register("/login", login)
+        turn_context.activity.text = "/login"
+
+        await wrapper.on_message_activity(turn_context)
+
+        login.assert_awaited_once()
+        wrapper._auth.send_signin_card.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_commands_run_normally_once_authenticated(self, agent, mock_app, turn_context):
+        """An authenticated user reaches the other commands."""
+        wrapper = _build(agent, mock_app, navigator_auth_url="https://nav.test/api/v1/login", auth_required=True)
+        _authenticate(wrapper, turn_context)
+        handler = AsyncMock()
+        wrapper._command_router.register("/ingest_book", handler)
+        turn_context.activity.text = "/ingest_book something"
+
+        await wrapper.on_message_activity(turn_context)
+
+        handler.assert_awaited_once()

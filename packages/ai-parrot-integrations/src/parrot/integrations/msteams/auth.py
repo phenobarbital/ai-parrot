@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -273,13 +274,37 @@ class MSTeamsAuthStrategy:
         self.store = store
         self.exchange = exchange
         self.logger = logger_ or logger
+        self._locks: Dict[str, asyncio.Lock] = {}
 
     @property
     def connection_name(self) -> Optional[str]:
         """Return the Azure Bot OAuth connection name, if configured."""
         return getattr(self.config, "oauth_connection_name", None)
 
+    def lock_for(self, key: str) -> asyncio.Lock:
+        """Return the per-user lock serialising authentication work for one Teams user.
+
+        Args:
+            key: The Teams user key (see ``user_key``).
+
+        Returns:
+            The lock dedicated to that user.
+        """
+        return self._locks.setdefault(key, asyncio.Lock())
+
     async def ensure_authenticated(self, turn_context: TurnContext) -> MSTeamsUserSession:
+        """Serialised wrapper: concurrent activities of one user exchange only once.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+
+        Returns:
+            The user's cached or newly resolved session.
+        """
+        async with self.lock_for(user_key(turn_context)):
+            return await self._ensure_authenticated(turn_context)
+
+    async def _ensure_authenticated(self, turn_context: TurnContext) -> MSTeamsUserSession:
         """Return an authenticated session, or one which still needs authentication.
 
         This resolver never emits a sign-in card. Its caller owns the prompting
@@ -319,6 +344,7 @@ class MSTeamsAuthStrategy:
             session.metadata["auth_reason"] = result.reason
             return session
 
+        session.metadata.pop("auth_reason", None)
         session.set_authenticated(
             result.nav_user_id or "",
             result.session_token or "",
@@ -391,7 +417,8 @@ class MSTeamsAuthStrategy:
         return await turn_context.adapter.exchange_token(
             turn_context,
             self.connection_name,
-            user_key(turn_context),
+            # Bot Framework keys Token Service entries by the channel user id (from.id), not the Entra oid.
+            turn_context.activity.from_property.id,
             exchange_request,
         )
 
@@ -402,6 +429,7 @@ class MSTeamsAuthStrategy:
             turn_context: The current Bot Framework turn context.
         """
         if not self.connection_name:
+            await turn_context.send_activity("Sign-in is not configured for this bot. Please contact an administrator.")
             return
         link = await turn_context.adapter.get_oauth_sign_in_link(turn_context, self.connection_name)
         card = OAuthCard(
@@ -423,4 +451,10 @@ class MSTeamsAuthStrategy:
         """
         key = user_key(turn_context)
         await self.store.clear(key)
-        await turn_context.adapter.sign_out_user(turn_context, self.connection_name, key)
+        try:
+            # The Token Service entry is keyed by the channel user id (from.id), not the Entra oid.
+            await turn_context.adapter.sign_out_user(
+                turn_context, self.connection_name, turn_context.activity.from_property.id
+            )
+        except Exception:  # noqa: BLE001 — the local session is already gone; do not crash /logout
+            self.logger.exception("Token Service sign-out failed for connection=%s", self.connection_name)

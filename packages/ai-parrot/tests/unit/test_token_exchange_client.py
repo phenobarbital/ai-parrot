@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 from unittest.mock import patch
@@ -204,3 +205,55 @@ class TestFailureClassification:
 
         assert access_token not in caplog.text
         assert id_token not in caplog.text
+
+
+class TestReviewFixes:
+    """Regressions from the FEAT-729 code review."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [{}, {"token": "t"}, {"user_id": 35}, {"user_id": "", "token": "t"}, {"user_id": 35, "token": ""}],
+    )
+    async def test_200_without_identity_or_token_never_authenticates(self, body: Dict[str, Any]) -> None:
+        """A 200 lacking user_id or token is rejected, not treated as a login."""
+        session = FakeSession(FakeResponse(200, body=body))
+
+        with patch_client_session(session):
+            result = await TokenExchangeClient("https://navigator.example/api/v1/login").exchange("provider-token")
+
+        assert result.ok is False
+        assert result.reason == REASON_INVALID_TOKEN
+        assert result.nav_user_id is None
+
+    async def test_timeout_does_not_escape(self) -> None:
+        """A total-timeout (asyncio.TimeoutError) becomes transport_error."""
+
+        class TimingOutSession(FakeSession):
+            def post(self, url: str, **kwargs: Any) -> FakeResponse:
+                raise asyncio.TimeoutError()
+
+        with patch_client_session(TimingOutSession(FakeResponse(200))):
+            result = await TokenExchangeClient("https://navigator.example/api/v1/login").exchange("provider-token")
+
+        assert (result.ok, result.reason) == (False, REASON_TRANSPORT)
+
+    async def test_invalid_json_body_does_not_escape(self) -> None:
+        """A 200 whose body is not JSON becomes transport_error."""
+
+        class BadJsonResponse(FakeResponse):
+            async def json(self) -> Dict[str, Any]:
+                raise ValueError("not json")
+
+        with patch_client_session(FakeSession(BadJsonResponse(200))):
+            result = await TokenExchangeClient("https://navigator.example/api/v1/login").exchange("provider-token")
+
+        assert (result.ok, result.reason) == (False, REASON_TRANSPORT)
+
+    async def test_not_found_text_needs_an_auth_status(self) -> None:
+        """'not found' in a 500 body is not a missing-user verdict."""
+        session = FakeSession(FakeResponse(500, text="route not found"))
+
+        with patch_client_session(session):
+            result = await TokenExchangeClient("https://navigator.example/api/v1/login").exchange("provider-token")
+
+        assert result.reason == REASON_INVALID_TOKEN
