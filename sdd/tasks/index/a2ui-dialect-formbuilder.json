@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-10T01:28:05+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-24T01:18:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -307,7 +307,7 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -321,8 +321,9 @@
       "parallelism_notes": "integration round-trips drive get_schema/list_forms (TASK-4194/4195), export (TASK-4197), translate (TASK-4200), import (TASK-4203) and the CLI/hygiene set (TASK-4204, cli.py); the golden fixture comes from TASK-4194 via TASK-4195's chain.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:06:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4205-docs-and-roundtrips.md"
+      "completed_at": "2026-10-24T01:18:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4205-docs-and-roundtrips.md",
+      "verification": "verified"
     }
   ]
 }
