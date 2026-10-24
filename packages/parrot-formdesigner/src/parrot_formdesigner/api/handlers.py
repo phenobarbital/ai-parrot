@@ -1078,9 +1078,9 @@ class FormAPIHandler:
         from ..core import FormDialect
 
         requested_dialect = request.query.get("dialect")
-        accepts_a2ui = isinstance(request.headers.get("Accept", ""), str) and "application/a2ui+json" in request.headers.get(
-            "Accept", ""
-        )
+        accepts_a2ui = isinstance(
+            request.headers.get("Accept", ""), str
+        ) and "application/a2ui+json" in request.headers.get("Accept", "")
         if form.dialect is FormDialect.A2UI or isinstance(requested_dialect, str) or accepts_a2ui:
             from .dialect import DialectError, render_a2ui_schema, resolve_dialect
 

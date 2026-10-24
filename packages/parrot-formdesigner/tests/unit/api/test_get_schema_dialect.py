@@ -113,6 +113,7 @@ async def test_a2ui_single_envelope() -> None:
 
 async def test_a2ui_with_overrides_is_messages(monkeypatch: pytest.MonkeyPatch) -> None:
     """Lifecycle overrides are translated into a second A2UI envelope."""
+
     async def resolve(*_args, **_kwargs) -> EventResolution:
         return EventResolution(schema_overrides={"title": "X"})
 
@@ -148,6 +149,7 @@ async def test_private_form_requires_membership_under_a2ui() -> None:
 
 async def test_onschemaloaded_abort_is_json_under_both_dialects(monkeypatch: pytest.MonkeyPatch) -> None:
     """Lifecycle aborts remain JSON errors before dialect response framing."""
+
     async def abort(*_args, **_kwargs) -> EventResolution:
         raise FormEventAbort("gated", user_message="Denied", status_code=403)
 
