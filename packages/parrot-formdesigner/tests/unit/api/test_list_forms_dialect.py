@@ -154,6 +154,7 @@ async def test_unknown_dialect_400_and_missing_renderer_415(client: _HandlerClie
 
 async def test_inline_render_failure_is_isolated(client: _HandlerClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """One rendering exception produces an entry warning instead of a list 500."""
+
     async def fail_render(_form: FormSchema, **_kwargs: Any) -> NoReturn:
         raise RuntimeError("broken surface")
 

@@ -120,7 +120,6 @@ if TYPE_CHECKING:
 from .dialect import A2UI_LIST_MAX, render_a2ui_schema  # noqa: E402
 from .render import get_renderer, supported_formats  # noqa: E402
 
-
 class FormAPIHandler:
     """Serves JSON REST API endpoints for form management.
 
@@ -997,9 +996,7 @@ class FormAPIHandler:
                     status=400,
                 )
             for descriptor in forms:
-                descriptor["surface_url"] = (
-                    f"{prefix}/{tenant}/forms/{descriptor['form_uid']}/schema?dialect=a2ui"
-                )
+                descriptor["surface_url"] = f"{prefix}/{tenant}/forms/{descriptor['form_uid']}/schema?dialect=a2ui"
                 if not include_surface:
                     continue
                 try:
