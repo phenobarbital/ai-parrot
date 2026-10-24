@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-24T01:04:01+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-24T01:43:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -299,7 +299,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -310,8 +310,9 @@
       "parallelism_notes": "TASK-4693: drives MSTeamsAgentWrapper._handle_card_submission through the new seams (wrapper.py); TASK-4685: calls the section_index render contract (api/render.py).",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4694-formdesigner-serve-roundtrip-and-docs.md"
+      "completed_at": "2026-10-24T01:43:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4694-formdesigner-serve-roundtrip-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
