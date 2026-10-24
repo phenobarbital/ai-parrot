@@ -278,7 +278,7 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -290,8 +290,9 @@
       "parallelism_notes": "EXCLUSIVE: edits the dependency manifest packages/parrot-formdesigner/pyproject.toml (adds click). Needs A2UIExportService (TASK-4196, services/a2ui_export.py), translate_jsonschema_to_a2ui (TASK-4199, services/a2ui_translate.py) and A2UIExtractor heuristic mode (TASK-4202, extractors/a2ui.py).",
       "assigned_to": null,
       "started_at": "2026-10-24T00:06:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4204-formdesigner-cli.md"
+      "completed_at": "2026-10-24T00:33:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4204-formdesigner-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4205",
