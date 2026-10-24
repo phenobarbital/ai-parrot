@@ -50,7 +50,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +58,9 @@
       "parallelism_notes": "Leaf (wave 1): no FEAT-734 symbol needed; creates FormReader/FormDescriptor/RenderedCard that TASK-4688/4689/4690 import.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4682-formdesigner-read-client.md"
+      "completed_at": "2026-10-24T01:12:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4682-formdesigner-read-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4683",
@@ -68,7 +69,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -76,8 +77,9 @@
       "parallelism_notes": "Leaf (wave 1): pure functions + Protocols; consumes FEAT-729 auth.py structurally only, imports nothing from this feature.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4683-formdesigner-tenant-bearer-resolution.md"
+      "completed_at": "2026-10-24T01:12:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4683-formdesigner-tenant-bearer-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4684",
@@ -86,7 +88,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -94,8 +96,9 @@
       "parallelism_notes": "Leaf (wave 1): self-contained WizardStore/WizardState (stdlib only); TASK-4691/4692 consume it.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4684-formdesigner-wizard-store.md"
+      "completed_at": "2026-10-24T01:12:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4684-formdesigner-wizard-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4685",
@@ -104,7 +107,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -112,8 +115,9 @@
       "parallelism_notes": "Leaf (wave 1): server-side only (parrot-formdesigner api/render.py); no client-side symbol. TASK-4694 consumes the wire contract.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4685-formdesigner-server-section-render.md"
+      "completed_at": "2026-10-24T01:12:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4685-formdesigner-server-section-render.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4686",
@@ -122,7 +126,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -130,8 +134,9 @@
       "parallelism_notes": "Leaf (wave 1): pure ContextVar module (stdlib only); TASK-4691 binds it per turn.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4686-formdesigner-turn-context.md"
+      "completed_at": "2026-10-24T01:12:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4686-formdesigner-turn-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4687",
