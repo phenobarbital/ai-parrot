@@ -206,8 +206,30 @@ async def handle_render(request: web.Request) -> web.Response:
     render_kwargs: dict[str, Any] = {"locale": locale}
     if getattr(renderer, "accepts_tenant", False):
         render_kwargs["tenant"] = tenant
+    raw_section = request.query.get("section_index")
+    section_index: int | None = None
+    if raw_section is not None:
+        if format_key != "teams":
+            return web.json_response({"error": "section_index is only supported for format 'teams'"}, status=400)
+        try:
+            section_index = int(raw_section)
+        except ValueError:
+            return web.json_response({"error": "section_index must be an integer"}, status=400)
+        if not 0 <= section_index < len(form.sections):
+            return web.json_response({"error": "section_index out of range"}, status=400)
     try:
-        rendered = await renderer.render(form, **render_kwargs)
+        if section_index is None:
+            rendered = await renderer.render(form, **render_kwargs)
+        else:
+            rendered = await renderer.render_section(
+                form, section_index, show_back=False, show_skip=False, **render_kwargs
+            )
+            rendered.metadata = {
+                **(rendered.metadata or {}),
+                "section_index": section_index,
+                "total_sections": len(form.sections),
+                "form_version": form.published_version or form.version,
+            }
     except ValueError as exc:  # TeamsRenderConfigError is a ValueError
         logger.warning("render dispatcher: %s renderer refused: %s", format_key, exc)
         return web.json_response({"error": str(exc)}, status=400)
