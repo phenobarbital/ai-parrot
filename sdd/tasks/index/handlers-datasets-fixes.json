@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-24T00:10:19.526069+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-24T00:18:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -60,7 +60,7 @@
       "feature_id": "FEAT-738",
       "feature": "handlers-datasets-fixes",
       "spec": "sdd/specs/handlers-datasets-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -70,8 +70,9 @@
       "parallelism_notes": "Imports request_scoped_copy created by TASK-4678 (packages/ai-parrot/src/parrot/tools/dataset_manager/sources/scoped_copy.py); no file overlap with it.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:16:22.067112+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4679-clone-agent-dm-isolated-source.md"
+      "completed_at": "2026-10-24T00:18:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4679-clone-agent-dm-isolated-source.md",
+      "verification": "verified"
     }
   ]
 }
