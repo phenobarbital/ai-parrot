@@ -295,7 +295,9 @@ async def test_remote_wizard_section_contract(aiohttp_server, three_section_form
     client = FormDesignerClient(str(server.make_url("")))
 
     cards = [
-        await client.render_teams(tenant=TENANT, form_uid=three_section_form.form_uid, bearer_token="nav-tok", section_index=i)
+        await client.render_teams(
+            tenant=TENANT, form_uid=three_section_form.form_uid, bearer_token="nav-tok", section_index=i
+        )
         for i in range(3)
     ]
 
