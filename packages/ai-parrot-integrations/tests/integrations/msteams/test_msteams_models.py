@@ -2,6 +2,7 @@
 
 Tests the voice_config field and voice_enabled property on MSTeamsAgentConfig.
 """
+
 from parrot.integrations.msteams.models import MSTeamsAgentConfig
 from parrot.integrations.msteams.voice.models import (
     TranscriberBackend,
