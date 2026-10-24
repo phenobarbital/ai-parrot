@@ -256,7 +256,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -266,8 +266,9 @@
       "parallelism_notes": "TASK-4691: modifies the formdesigner_mixin.py and test_formdesigner_serve.py it creates, and calls its _fd_identity/_fd_reader/_fd_send_card/serve_form helpers.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4692-formdesigner-mixin-card-handler.md"
+      "completed_at": "2026-10-24T01:29:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4692-formdesigner-mixin-card-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4693",
