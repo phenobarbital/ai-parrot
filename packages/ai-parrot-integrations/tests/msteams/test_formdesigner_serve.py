@@ -443,7 +443,9 @@ async def test_wizard_walks_sections_then_submits(monkeypatch):
     state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
     for answer in ("one", "two"):
         control = _wizard_control(state, "next")
-        assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": control, f"field_{state.section_index}": answer})
+        assert await agent.handle_formdesigner_card(
+            _ctx(), {"_formdesigner_action": control, f"field_{state.section_index}": answer}
+        )
     control = _wizard_control(state, "submit")
     data = _signed_submission()
     data.update({"_formdesigner_action": control, "field_2": "three"})
@@ -466,7 +468,9 @@ async def test_wizard_rejects_stale_foreign_and_concurrent_actions():
     wrong_wizard["wizard_id"] = str(uuid.uuid4())
     assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": wrong_wizard}) is True
     assert state.section_index == 0
-    agent._fd_store = FakeStore(SimpleNamespace(authenticated=True, nav_session_token="nav-token", nav_user_id="other", tenant_id=GUID))
+    agent._fd_store = FakeStore(
+        SimpleNamespace(authenticated=True, nav_session_token="nav-token", nav_user_id="other", tenant_id=GUID)
+    )
     foreign = _wizard_control(state, "next")
     assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": foreign}) is True
     assert state.section_index == 0
@@ -498,7 +502,9 @@ async def test_wizard_control_object_never_reaches_post(monkeypatch):
     agent = _agent(FakeReader(form=_wizard_form()))
     await agent.serve_form(_ctx(), form_ref="survey")
     state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
-    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "next")}) is True
+    assert (
+        await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "next")}) is True
+    )
     post.assert_not_awaited()
 
 
@@ -509,7 +515,9 @@ async def test_wizard_cancel_removes_state_without_post(monkeypatch):
     agent = _agent(FakeReader(form=_wizard_form()))
     await agent.serve_form(_ctx(), form_ref="survey")
     state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
-    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "cancel")}) is True
+    assert (
+        await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "cancel")}) is True
+    )
     assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
     post.assert_not_awaited()
 

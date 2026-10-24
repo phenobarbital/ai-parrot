@@ -427,7 +427,9 @@ class TeamsFormDesignerMixin:
             await self._fd_send_card(build_reply_card(outcome, env), turn_context)
         except EnvelopeRejected as exc:
             self._fd_logger.warning("formdesigner submit rejected: %s", exc)
-            await self._fd_send_card(build_error_card("This form can't be submitted. Please request it again."), turn_context)
+            await self._fd_send_card(
+                build_error_card("This form can't be submitted. Please request it again."), turn_context
+            )
         except Exception:  # noqa: BLE001
             self._fd_logger.exception("formdesigner submit failed")
             await self._fd_send_card(build_error_card("Could not process your submission."), turn_context)
@@ -478,7 +480,9 @@ class TeamsFormDesignerMixin:
                 form = await reader.get_form(tenant=turn.tenant, form_uid=form_uid, bearer_token=turn.bearer)
                 if (form.published_version or form.version) != state.form_version:
                     self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
-                    await self._fd_send_card(build_error_card("This form changed. Send /getform to start again."), turn_context)
+                    await self._fd_send_card(
+                        build_error_card("This form changed. Send /getform to start again."), turn_context
+                    )
                     return
                 raw_answers = extract_answers(
                     {key: value for key, value in submitted_data.items() if key != PICKER_ACTION_KEY}
@@ -502,7 +506,9 @@ class TeamsFormDesignerMixin:
             except FormDesignerError as exc:
                 self._fd_logger.warning("formdesigner wizard failed status=%s", exc.status)
                 self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
-                await self._fd_send_card(build_error_card("Forms are unavailable. Send /getform to start again."), turn_context)
+                await self._fd_send_card(
+                    build_error_card("Forms are unavailable. Send /getform to start again."), turn_context
+                )
 
     async def aclose(self) -> None:
         """Close FormDesigner client and submission session resources."""
