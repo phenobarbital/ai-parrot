@@ -12,6 +12,7 @@ Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml
 # be imported without the optional ``aiogram`` (Telegram) dependency installed.
 from __future__ import annotations
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
@@ -1072,6 +1073,16 @@ class IntegrationBotManager:
                 await wrapper.close_voice_transcriber()
             except Exception as e:
                 self.logger.error("Error closing voice transcriber for MS Teams bot '%s': %s", name, e)
+            # FEAT-734: the agent's own FormDesigner client (TeamsFormDesignerMixin.aclose)
+            try:
+                closer = getattr(getattr(wrapper, "agent", None), "aclose", None)
+                if closer is not None:
+                    result = closer()
+                    if inspect.isawaitable(result):
+                        self.logger.debug("Closing agent FormDesigner client for MS Teams bot '%s'", name)
+                        await result
+            except Exception as e:
+                self.logger.error("Error closing agent resources for MS Teams bot '%s': %s", name, e)
 
         # FEAT-555: stop dev-loop services first (cancels state tails only — children keep running by decision).
         for name, service in self._devloop_services.items():
