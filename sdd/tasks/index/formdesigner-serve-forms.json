@@ -145,7 +145,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -153,8 +153,9 @@
       "parallelism_notes": "Leaf (wave 1): models.py fields + manager.py getattr-guarded agent.aclose(); needs no mixin symbol at runtime.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4687-formdesigner-config-and-shutdown.md"
+      "completed_at": "2026-10-24T01:19:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4687-formdesigner-config-and-shutdown.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4688",
@@ -163,7 +164,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -173,8 +174,9 @@
       "parallelism_notes": "TASK-4682: imports FormDescriptor from formdesigner_client.py for build_picker_card.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4688-formdesigner-card-builders.md"
+      "completed_at": "2026-10-24T01:19:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4688-formdesigner-card-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4689",
@@ -183,7 +185,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -193,8 +195,9 @@
       "parallelism_notes": "TASK-4682: imports FormReader, FormDesignerError and parse_form_ref from formdesigner_client.py.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4689-formdesigner-toolkit.md"
+      "completed_at": "2026-10-24T01:19:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4689-formdesigner-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4690",
@@ -203,7 +206,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -214,8 +217,9 @@
       "parallelism_notes": "TASK-4682: imports FormDescriptor/FormDesignerError/RenderedCard (formdesigner_client.py); TASK-4683: imports LocalFormAuthorizer (formdesigner_identity.py).",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4690-formdesigner-local-reader.md"
+      "completed_at": "2026-10-24T01:19:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4690-formdesigner-local-reader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4691",
