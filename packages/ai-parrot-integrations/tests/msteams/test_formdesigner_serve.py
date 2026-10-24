@@ -1,5 +1,6 @@
-"""FEAT-734 M4 outbound Teams FormDesigner mixin tests."""
+"""FEAT-734 M4 Teams FormDesigner mixin tests."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 import uuid
@@ -10,6 +11,8 @@ pytest.importorskip("botbuilder")
 
 from parrot.integrations.msteams.formdesigner_client import FormDescriptor, FormDesignerError, RenderedCard
 from parrot.integrations.msteams.formdesigner_mixin import TeamsFormDesignerMixin
+from parrot.integrations.msteams.formdesigner_submit import SubmitOutcome
+from parrot_formdesigner.renderers.teams import ENVELOPE_KEY, TeamsSubmitEnvelope
 
 GUID = "11111111-2222-3333-4444-555555555555"
 FORM_UID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -92,10 +95,13 @@ class FakeReader:
             "body": [],
             "actions": [{"type": "Action.Submit", "data": {"_action": "next"}}],
         }
+        metadata = {}
+        if kwargs.get("section_index") is not None:
+            metadata = {"section_index": kwargs["section_index"], "total_sections": len(self.form.sections)}
         return RenderedCard(
             content=card,
             content_type="application/vnd.microsoft.card.adaptive",
-            metadata={"total_sections": len(self.form.sections)} if kwargs.get("section_index") is not None else {},
+            metadata=metadata,
         )
 
     async def close(self):
@@ -116,12 +122,13 @@ def _form(sections=1):
     )
 
 
-def _ctx(text="/getform", conv_type="personal"):
+def _ctx(text="/getform", conv_type="personal", activity_id=None):
     ctx = MagicMock()
     ctx.activity.text = text
     ctx.activity.conversation.id = "conv-1"
     ctx.activity.conversation.conversation_type = conv_type
     ctx.activity.channel_data = {"tenant": {"id": GUID}}
+    ctx.activity.id = activity_id
     ctx.send_activity = AsyncMock()
     return ctx
 
@@ -138,6 +145,43 @@ def _agent(reader=None, store=None, **kwargs):
     )
     agent._fd_tenant_map = {GUID: "workspace"}
     return agent
+
+
+def _wizard_form(sections=3, version="1"):
+    """Build a minimal sectioned schema-shaped form for inbound wizard tests."""
+    return SimpleNamespace(
+        form_uid=FORM_UID,
+        form_id="survey",
+        version=version,
+        published_version=None,
+        sections=[SimpleNamespace(fields=[SimpleNamespace(field_id=f"field_{index}")]) for index in range(sections)],
+    )
+
+
+def _signed_submission(*, tenant="workspace", version="1", signed=True):
+    """Build terminal submit data matching the test agent's configured remote origin."""
+    envelope = TeamsSubmitEnvelope(
+        form_uid=FORM_UID,
+        tenant=tenant,
+        form_version=version,
+        is_public=False,
+        submit_url=f"https://forms.example/api/v1/{tenant}/forms/{FORM_UID}/data",
+        form_url=f"https://forms.example/{tenant}/forms/{FORM_UID}",
+    )
+    if signed:
+        envelope = envelope.sign("secret")
+    return {ENVELOPE_KEY: envelope.model_dump(mode="json")}
+
+
+def _wizard_control(state, action, *, index=None):
+    """Build the control object emitted for a wizard action."""
+    return {
+        "kind": "wizard",
+        "action": action,
+        "form_uid": str(FORM_UID),
+        "wizard_id": str(state.wizard_id),
+        "section_index": state.section_index if index is None else index,
+    }
 
 
 @pytest.mark.asyncio
@@ -318,3 +362,169 @@ async def test_aclose_closes_sessions():
     await agent.aclose()
     assert reader.closed
     http.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_picker_submit_serves_form():
+    reader = FakeReader()
+    agent = _agent(reader)
+    handled = await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": "get_form", "form_uid": FORM_UID})
+    assert handled is True
+    assert any(name == "form" for name, _ in reader.calls)
+
+
+@pytest.mark.asyncio
+async def test_single_card_submit_uses_user_bearer_not_service_token(monkeypatch):
+    captured = []
+
+    async def fake_post(session, env, answers, *, bearer_token, timeout):
+        captured.append((bearer_token, answers))
+        return SubmitOutcome(status=200)
+
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", fake_post)
+    agent = _agent(formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret")
+    data = _signed_submission()
+    data["answer"] = "yes"
+    assert await agent.handle_formdesigner_card(_ctx(), data) is True
+    assert captured == [("nav-token", {"answer": "yes"})]
+    await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_unsigned_or_unsecured_envelope_refused(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    for agent in (
+        _agent(formdesigner_base_url="https://forms.example"),
+        _agent(formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret"),
+    ):
+        ctx = _ctx()
+        assert await agent.handle_formdesigner_card(ctx, _signed_submission(signed=False)) is True
+        assert "can't be submitted" in _card(ctx)["body"][0]["text"]
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_envelope_tenant_mismatch_refused(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    agent = _agent(formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret")
+    ctx = _ctx()
+    assert await agent.handle_formdesigner_card(ctx, _signed_submission(tenant="other")) is True
+    assert "can't be submitted" in _card(ctx)["body"][0]["text"]
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_activity_not_double_posted(monkeypatch):
+    post = AsyncMock(return_value=SubmitOutcome(status=200))
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    agent = _agent(formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret")
+    data = _signed_submission()
+    assert await agent.handle_formdesigner_card(_ctx(activity_id="activity-1"), data) is True
+    assert await agent.handle_formdesigner_card(_ctx(activity_id="activity-1"), data) is True
+    post.assert_awaited_once()
+    await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_wizard_walks_sections_then_submits(monkeypatch):
+    captured = []
+
+    async def fake_post(session, env, answers, *, bearer_token, timeout):
+        captured.append((bearer_token, answers))
+        return SubmitOutcome(status=200)
+
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", fake_post)
+    reader = FakeReader(form=_wizard_form())
+    agent = _agent(reader, formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret")
+    ctx = _ctx()
+    await agent.serve_form(ctx, form_ref="survey")
+    state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
+    for answer in ("one", "two"):
+        control = _wizard_control(state, "next")
+        assert await agent.handle_formdesigner_card(
+            _ctx(), {"_formdesigner_action": control, f"field_{state.section_index}": answer}
+        )
+    control = _wizard_control(state, "submit")
+    data = _signed_submission()
+    data.update({"_formdesigner_action": control, "field_2": "three"})
+    assert await agent.handle_formdesigner_card(_ctx(), data) is True
+    assert captured == [("nav-token", {"field_0": "one", "field_1": "two", "field_2": "three"})]
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_wizard_rejects_stale_foreign_and_concurrent_actions():
+    reader = FakeReader(form=_wizard_form())
+    agent = _agent(reader)
+    await agent.serve_form(_ctx(), form_ref="survey")
+    state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
+    stale = _wizard_control(state, "next", index=1)
+    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": stale}) is True
+    assert state.section_index == 0
+    wrong_wizard = _wizard_control(state, "next")
+    wrong_wizard["wizard_id"] = str(uuid.uuid4())
+    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": wrong_wizard}) is True
+    assert state.section_index == 0
+    agent._fd_store = FakeStore(
+        SimpleNamespace(authenticated=True, nav_session_token="nav-token", nav_user_id="other", tenant_id=GUID)
+    )
+    foreign = _wizard_control(state, "next")
+    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": foreign}) is True
+    assert state.section_index == 0
+    agent._fd_store = FakeStore()
+    agent._fd_tenant_map = {GUID: "other-workspace"}
+    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": foreign}) is True
+    assert state.section_index == 0
+    agent._fd_tenant_map = {GUID: "workspace"}
+    control = _wizard_control(state, "next")
+    await asyncio.gather(
+        agent.handle_formdesigner_card(_ctx(activity_id="a"), {"_formdesigner_action": control, "field_0": "one"}),
+        agent.handle_formdesigner_card(_ctx(activity_id="b"), {"_formdesigner_action": control, "field_0": "one"}),
+    )
+    assert state.section_index == 1
+    reader.form.version = "changed"
+    changed = _wizard_control(state, "next")
+    assert await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": changed}) is True
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    expired = _wizard_control(state, "next")
+    expired_ctx = _ctx()
+    assert await agent.handle_formdesigner_card(expired_ctx, {"_formdesigner_action": expired}) is True
+    assert "expired" in _card(expired_ctx)["body"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_wizard_control_object_never_reaches_post(monkeypatch):
+    post = AsyncMock(return_value=SubmitOutcome(status=200))
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    agent = _agent(FakeReader(form=_wizard_form()))
+    await agent.serve_form(_ctx(), form_ref="survey")
+    state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
+    assert (
+        await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "next")}) is True
+    )
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wizard_cancel_removes_state_without_post(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    agent = _agent(FakeReader(form=_wizard_form()))
+    await agent.serve_form(_ctx(), form_ref="survey")
+    state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
+    assert (
+        await agent.handle_formdesigner_card(_ctx(), {"_formdesigner_action": _wizard_control(state, "cancel")}) is True
+    )
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mixin_declines_when_not_configured():
+    agent = _agent()
+    agent._fd_client = None
+    agent._fd_base_url = None
+    assert await agent.handle_formdesigner_card(_ctx(), _signed_submission()) is False
