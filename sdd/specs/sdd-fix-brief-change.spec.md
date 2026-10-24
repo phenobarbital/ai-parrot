@@ -330,6 +330,9 @@ tests:
 - tests/sdd/test_codex_sdd_sync.py
 - tests/sdd_scripts/test_pr_policy_wording_contract.py
 - tests/sdd_scripts/test_sdd_brief_twin_contract.py
+- tests/sdd_scripts/test_sdd_brief_command_contract.py
+- tests/sdd_scripts/test_command_contracts.py
+- tests/sdd_scripts/test_feat722_doc_contract.py
 markers: none
 
 ### Test Data / Fixtures
@@ -650,3 +653,4 @@ sdd-fix-brief-change` (see §8 Q5).
 |---|---|---|---|
 | 0.1 | 2026-10-24 | Jesus Lara | Initial draft from `sdd/proposals/sdd-fix-brief-change.brainstorm.md` (Option A) |
 | 0.2 | 2026-10-24 | Jesus Lara | Approved for decomposition |
+| 0.3 | 2026-10-24 | Jesus Lara | Validation Contract += test_sdd_brief_command_contract, test_command_contracts, test_feat722_doc_contract (found reading the edited files during /sdd-task) |
