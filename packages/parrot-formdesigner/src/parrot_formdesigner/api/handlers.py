@@ -1049,7 +1049,7 @@ class FormAPIHandler:
         return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/schema — Get JSON Schema (structural)."""
+        """GET /api/v1/forms/{form_uid}/schema — Get the negotiated schema dialect."""
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
@@ -1075,6 +1075,35 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
+        from ..core import FormDialect
+
+        requested_dialect = request.query.get("dialect")
+        accepts_a2ui = isinstance(request.headers.get("Accept", ""), str) and "application/a2ui+json" in request.headers.get(
+            "Accept", ""
+        )
+        if form.dialect is FormDialect.A2UI or isinstance(requested_dialect, str) or accepts_a2ui:
+            from .dialect import DialectError, render_a2ui_schema, resolve_dialect
+
+            try:
+                dialect = resolve_dialect(request, form)
+            except DialectError as exc:
+                return JSONResponse(exc.payload, status=exc.status)
+            if dialect is FormDialect.A2UI:
+                locale = request.query.get("locale", "en")
+                envelopes, a2ui_rendered, a2ui_warnings = await render_a2ui_schema(
+                    form, locale=locale, overrides=resolution.schema_overrides
+                )
+                if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+                    return web.json_response(
+                        {
+                            "content": envelopes[0] if len(envelopes) == 1 else {"messages": envelopes},
+                            "content_type": a2ui_rendered.content_type,
+                            "warnings": [warning.model_dump(mode="json") for warning in a2ui_rendered.warnings]
+                            + a2ui_warnings,
+                            "metadata": a2ui_rendered.metadata,
+                        }
+                    )
+                return a2ui_wire.a2ui_response(envelopes, status=200)
         content = rendered.content
         if resolution.schema_overrides:
             content = apply_schema_overrides(content, dict(resolution.schema_overrides))
