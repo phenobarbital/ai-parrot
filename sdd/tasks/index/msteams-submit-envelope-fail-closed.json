@@ -40,7 +40,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -48,8 +48,9 @@
       "parallelism_notes": "Sole owner of models.py; no symbol from another task. Carries M6's config fields too because they share that file.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4653-msteams-config-fail-closed.md"
+      "completed_at": "2026-10-24T00:58:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4653-msteams-config-fail-closed.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4654",
@@ -58,7 +59,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -66,8 +67,9 @@
       "parallelism_notes": "Sole owner of formdesigner_submit.py; both pure helpers are self-contained and import nothing from another task.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4654-verify-envelope-require-signature.md"
+      "completed_at": "2026-10-24T00:58:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4654-verify-envelope-require-signature.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4655",
@@ -97,7 +99,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -105,8 +107,9 @@
       "parallelism_notes": "Sole owner of routes.py, in a different distribution (parrot-formdesigner); register_teams_renderer already accepts signing_secret so no symbol is needed from another task.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4656-setup-form-api-teams-signing-secret.md"
+      "completed_at": "2026-10-24T00:58:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4656-setup-form-api-teams-signing-secret.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4657",
