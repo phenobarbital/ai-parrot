@@ -79,6 +79,19 @@ class UnknownFieldsPolicy(str, Enum):
     REJECT = "reject"  # fail the submission with 422
 
 
+class FormDialect(str, Enum):
+    """Wire dialect served by the form contract endpoints (FEAT-650).
+
+    ``JSON_SCHEMA`` keeps the legacy ``JsonSchemaRenderer`` body on
+    ``GET /forms/{uid}/schema``; ``A2UI`` serves the FEAT-544 ``createSurface``
+    envelope. ``GET /forms/{uid}`` ignores this flag — it always returns the
+    raw ``FormSchema``.
+    """
+
+    JSON_SCHEMA = "json_schema"
+    A2UI = "a2ui"
+
+
 class FormField(BaseModel):
     """A single field within a form section.
 
@@ -477,6 +490,9 @@ class FormSchema(BaseModel):
             schema does not declare (FEAT-458). Defaults to
             ``UnknownFieldsPolicy.DROP`` — discard silently, identical to
             pre-FEAT-458 behaviour.
+        dialect: Wire dialect served by the form contract endpoints (FEAT-650).
+            Defaults to ``FormDialect.JSON_SCHEMA`` to preserve the legacy
+            JSON Schema response body.
     """
 
     form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -502,6 +518,8 @@ class FormSchema(BaseModel):
     persistence: FormPersistenceConfig | None = None
     # FEAT-458 — Unknown-Field Capture
     unknown_fields: UnknownFieldsPolicy = UnknownFieldsPolicy.DROP
+    # FEAT-650 — A2UI dialect flag (default keeps every legacy consumer unchanged)
+    dialect: FormDialect = FormDialect.JSON_SCHEMA
     # FEAT-649 — typed voice-mode block (owner decision: typed, not meta).
     voice: VoiceFormConfig | None = None
     # FEAT-649 — LLM-assisted answer plausibility (all channels).
