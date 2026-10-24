@@ -15,7 +15,7 @@ from aiohttp import web
 
 from ..core import FormDialect
 from ..core.options import FieldOption
-from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
 from .render import get_renderer, supported_formats
 
 logger = logging.getLogger(__name__)
