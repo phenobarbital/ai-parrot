@@ -10,7 +10,7 @@ tags: [sdd-fix, fix-lane, worktree, ledger, pull-request]
 **Feature ID**: FEAT-740
 **Date**: 2026-10-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.4
 
 ---
@@ -649,3 +649,4 @@ sdd-fix-brief-change` (see §8 Q5).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-24 | Jesus Lara | Initial draft from `sdd/proposals/sdd-fix-brief-change.brainstorm.md` (Option A) |
+| 0.2 | 2026-10-24 | Jesus Lara | Approved for decomposition |
