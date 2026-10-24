@@ -30,6 +30,7 @@ from .resolution import find_field_by_uid, resolve_answer, resolve_rule_referenc
 from .schema import (
     BUILTIN_METADATA_SOURCE_NAMES,
     FormField,
+    FormDialect,
     FormMetadataField,
     FormSchema,
     FormSection,
@@ -164,6 +165,7 @@ __all__ = [
     "FormSchema",
     "FormType",
     "UnknownFieldsPolicy",
+    "FormDialect",
     "FormMetadataField",
     "MetadataSource",
     "BUILTIN_METADATA_SOURCE_NAMES",
