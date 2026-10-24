@@ -26,13 +26,40 @@ TENANT = "navigator"
 
 
 def _form(fid="rt", tenant=TENANT) -> FormSchema:
-    return FormSchema(form_id=fid, title={"en": "RT"}, tenant=tenant, is_public=True, sections=[
-        FormSection(section_id="s1", title={"en": "One"}, fields=[
-            FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"}, required=True),
-            FormField(field_id="nps", field_type=FieldType.NPS, label={"en": "NPS"})]),
-        FormSection(section_id="s2", title={"en": "Two"}, fields=[FormSubsection(subsection_id="s2a", title={"en": "A"}, fields=[
-            FormField(field_id="color", field_type=FieldType.SELECT, label={"en": "Color"}, options=[{"value": "r", "label": "Red"}])])]),
-    ])
+    return FormSchema(
+        form_id=fid,
+        title={"en": "RT"},
+        tenant=tenant,
+        is_public=True,
+        sections=[
+            FormSection(
+                section_id="s1",
+                title={"en": "One"},
+                fields=[
+                    FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"}, required=True),
+                    FormField(field_id="nps", field_type=FieldType.NPS, label={"en": "NPS"}),
+                ],
+            ),
+            FormSection(
+                section_id="s2",
+                title={"en": "Two"},
+                fields=[
+                    FormSubsection(
+                        subsection_id="s2a",
+                        title={"en": "A"},
+                        fields=[
+                            FormField(
+                                field_id="color",
+                                field_type=FieldType.SELECT,
+                                label={"en": "Color"},
+                                options=[{"value": "r", "label": "Red"}],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        ],
+    )
 
 
 def _golden_form() -> FormSchema:
@@ -44,15 +71,26 @@ def _golden_form() -> FormSchema:
         tenant=TENANT,
         is_public=True,
         sections=[
-            FormSection(section_id="identity", title={"en": "Identity"}, fields=[
-                FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"}, required=True),
-                FormField(field_id="choice", field_type=FieldType.SELECT, label={"en": "Choice"},
-                          options=[{"value": "one", "label": "One"}, {"value": "two", "label": "Two"}]),
-            ]),
-            FormSection(section_id="details", fields=[
-                FormField(field_id="quantity", field_type=FieldType.NUMBER, label={"en": "Quantity"}),
-                FormField(field_id="confirmed", field_type=FieldType.BOOLEAN, label={"en": "Confirmed"}),
-            ]),
+            FormSection(
+                section_id="identity",
+                title={"en": "Identity"},
+                fields=[
+                    FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"}, required=True),
+                    FormField(
+                        field_id="choice",
+                        field_type=FieldType.SELECT,
+                        label={"en": "Choice"},
+                        options=[{"value": "one", "label": "One"}, {"value": "two", "label": "Two"}],
+                    ),
+                ],
+            ),
+            FormSection(
+                section_id="details",
+                fields=[
+                    FormField(field_id="quantity", field_type=FieldType.NUMBER, label={"en": "Quantity"}),
+                    FormField(field_id="confirmed", field_type=FieldType.BOOLEAN, label={"en": "Confirmed"}),
+                ],
+            ),
         ],
     )
 
@@ -97,8 +135,14 @@ def _projection(form: FormSchema) -> list:
             if isinstance(item, FormSubsection):
                 out.append(("sub", item.subsection_id, fields(item.fields)))
             else:
-                out.append((item.field_id, item.field_type.value, bool(item.required),
-                            [o["value"] if isinstance(o, dict) else getattr(o, "value", o) for o in (item.options or [])]))
+                out.append(
+                    (
+                        item.field_id,
+                        item.field_type.value,
+                        bool(item.required),
+                        [o["value"] if isinstance(o, dict) else getattr(o, "value", o) for o in (item.options or [])],
+                    )
+                )
         return out
 
     return [(s.section_id, fields(s.fields)) for s in form.sections]
@@ -139,8 +183,13 @@ async def test_export_then_import_tenant():
     rows = [r async for r in A2UIExportService(src, renderer=A2UIFormRenderer()).export_tenant("a")]
     dst = FormRegistry(storage=None, default_tenant="b")
     for r in rows:
-        await dst.register(A2UIExtractor().extract(r.envelope, tenant="b").form.model_copy(update={"tenant": "b"}), tenant="b")
-    assert sorted(f.form_id for f in await dst.list_forms(tenant="b")) == ["x", "y"] and await src.list_forms(tenant="b") == []
+        await dst.register(
+            A2UIExtractor().extract(r.envelope, tenant="b").form.model_copy(update={"tenant": "b"}), tenant="b"
+        )
+    assert (
+        sorted(f.form_id for f in await dst.list_forms(tenant="b")) == ["x", "y"]
+        and await src.list_forms(tenant="b") == []
+    )
 
 
 async def test_fieldsync_golden_unchanged(handler):
