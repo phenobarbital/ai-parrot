@@ -12,6 +12,7 @@ from parrot.integrations.msteams.formdesigner_submit import (
     extract_answers,
     parse_envelope,
     post_submission,
+    resolve_submit_tenant,
     verify_envelope,
 )
 from parrot.integrations.msteams.models import MSTeamsAgentConfig
@@ -53,7 +54,7 @@ def test_parse_envelope_rejects_malformed():
 )
 def test_verify_envelope_rules(over, reason):
     with pytest.raises(EnvelopeRejected, match=reason):
-        verify_envelope(_env(**over), allowed_hosts=["forms.test"], secret=None)
+        verify_envelope(_env(**over), allowed_hosts=["forms.test"], secret=None, require_signature=False)
 
 
 def test_verify_envelope_signature():
@@ -178,3 +179,98 @@ def test_config_from_dict_formdesigner_fields():
     assert cfg.formdesigner_allowed_hosts == ["forms.test"]
     assert cfg.formdesigner_submit_timeout == 5.0
     assert MSTeamsAgentConfig.from_dict("bot", {}).formdesigner_allowed_hosts in (None, [])
+
+
+class TestRequireSignature:
+    """FEAT-733 — an unsigned envelope is refused unless explicitly permitted."""
+
+    def test_verify_envelope_rejects_unsigned_by_default(self):
+        """secret=None with default args -> EnvelopeRejected."""
+        with pytest.raises(EnvelopeRejected, match="signature is invalid"):
+            verify_envelope(_env(), allowed_hosts=["forms.test"], secret=None)
+
+    def test_verify_envelope_skips_when_not_required(self):
+        """secret=None, require_signature=False -> passes."""
+        verify_envelope(_env(), allowed_hosts=["forms.test"], secret=None, require_signature=False)
+
+    def test_verify_envelope_rejects_bad_sig(self):
+        """A secret set and a wrong sig -> EnvelopeRejected (unchanged behaviour)."""
+        with pytest.raises(EnvelopeRejected, match="signature is invalid"):
+            verify_envelope(_env(sig="wrong"), allowed_hosts=["forms.test"], secret="s3cr3t")
+
+    def test_verify_envelope_accepts_valid_sig(self):
+        """Round-trip through TeamsSubmitEnvelope.sign() -> passes."""
+        verify_envelope(_env().sign("s3cr3t"), allowed_hosts=["forms.test"], secret="s3cr3t")
+
+    def test_verify_envelope_message_does_not_leak_cause(self):
+        """Unsigned and bad-signature produce the SAME user-facing text."""
+        with pytest.raises(EnvelopeRejected) as unsigned_exc:
+            verify_envelope(_env(), allowed_hosts=["forms.test"], secret=None)
+        with pytest.raises(EnvelopeRejected) as bad_signature_exc:
+            verify_envelope(_env(sig="wrong"), allowed_hosts=["forms.test"], secret="s3cr3t")
+
+        assert str(unsigned_exc.value) == str(bad_signature_exc.value)
+
+
+class TestResolveSubmitTenant:
+    """FEAT-733 — a mapped AAD GUID overrides the envelope's tenant claim."""
+
+    def test_resolve_tenant_mapped_guid_overrides_envelope(self):
+        """Mapped GUID != env.tenant -> tenant and submit_url rewritten, overridden True."""
+        env = _env()
+
+        resolved, overridden = resolve_submit_tenant(
+            env, asserted_tenant_id="aad-guid", tenant_map={"aad-guid": "other"}
+        )
+
+        assert overridden is True
+        assert resolved.tenant == "other"
+        assert str(resolved.submit_url) == f"https://forms.test/api/v1/other/forms/{FORM_UID}/data"
+        assert env.tenant == "navigator"
+
+    def test_resolve_tenant_mapped_guid_matching_is_noop(self):
+        """Mapped GUID == env.tenant -> unchanged, overridden False."""
+        env = _env()
+
+        resolved, overridden = resolve_submit_tenant(
+            env, asserted_tenant_id="aad-guid", tenant_map={"aad-guid": "navigator"}
+        )
+
+        assert resolved is env
+        assert overridden is False
+
+    def test_resolve_tenant_unmapped_guid_falls_back(self):
+        """GUID absent from the map -> envelope untouched."""
+        env = _env()
+
+        resolved, overridden = resolve_submit_tenant(
+            env, asserted_tenant_id="unmapped-guid", tenant_map={"aad-guid": "other"}
+        )
+
+        assert resolved is env
+        assert overridden is False
+
+    def test_resolve_tenant_no_asserted_id_falls_back(self):
+        """asserted_tenant_id=None (non-Teams channel) -> untouched, no raise."""
+        env = _env()
+
+        resolved, overridden = resolve_submit_tenant(
+            env, asserted_tenant_id=None, tenant_map={"aad-guid": "other"}
+        )
+
+        assert resolved is env
+        assert overridden is False
+
+    def test_resolve_tenant_rebuilds_url_not_string_replace(self):
+        """A tenant slug that ALSO appears in the host survives the rewrite intact."""
+        env = _env(
+            tenant="forms",
+            submit_url=f"https://forms.test/api/v1/forms/forms/{FORM_UID}/data",
+        )
+
+        resolved, overridden = resolve_submit_tenant(
+            env, asserted_tenant_id="aad-guid", tenant_map={"aad-guid": "other"}
+        )
+
+        assert overridden is True
+        assert str(resolved.submit_url) == f"https://forms.test/api/v1/other/forms/{FORM_UID}/data"
