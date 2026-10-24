@@ -78,7 +78,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -89,8 +89,9 @@
       "parallelism_notes": "Reads formdesigner_allow_unsigned_submissions and formdesigner_tenant_map from TASK-4653 (models.py); calls resolve_submit_tenant and passes require_signature from TASK-4654 (formdesigner_submit.py). Sole owner of wrapper.py.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4655-wrapper-signature-and-tenant-wiring.md"
+      "completed_at": "2026-10-24T01:02:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4655-wrapper-signature-and-tenant-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4656",
