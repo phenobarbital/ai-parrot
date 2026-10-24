@@ -84,7 +84,11 @@ def test_import_dry_run_prints_report(tmp_path) -> None:
     form = FormSchema(
         form_id="example",
         title={"en": "Example"},
-        sections=[FormSection(section_id="main", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"})])],
+        sections=[
+            FormSection(
+                section_id="main", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"})]
+            )
+        ],
     )
     surface = asyncio.run(A2UIFormRenderer().render(form))
     path = tmp_path / "surface.json"

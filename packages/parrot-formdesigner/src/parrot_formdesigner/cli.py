@@ -11,9 +11,7 @@ from typing import Any
 
 import click
 
-dsn_option = click.option(
-    "--dsn", envvar="FORMDESIGNER_DSN", default=None, help="Postgres DSN (env FORMDESIGNER_DSN)."
-)
+dsn_option = click.option("--dsn", envvar="FORMDESIGNER_DSN", default=None, help="Postgres DSN (env FORMDESIGNER_DSN).")
 tenant_option = click.option("--tenant", "tenants", multiple=True, required=True, help="Tenant slug (repeatable).")
 
 
@@ -130,7 +128,9 @@ async def _export(
 @click.option("--overwrite", is_flag=True, default=False)
 @click.option("--dry-run", is_flag=True, default=False)
 @dsn_option
-def import_surface(surface: Path, tenant: str, form_id: str | None, overwrite: bool, dry_run: bool, dsn: str | None) -> None:
+def import_surface(
+    surface: Path, tenant: str, form_id: str | None, overwrite: bool, dry_run: bool, dsn: str | None
+) -> None:
     """Extract an A2UI surface and persist it unless ``--dry-run`` is supplied."""
     sys.exit(asyncio.run(_import(surface, tenant, form_id, overwrite, dry_run, dsn)))
 
