@@ -37,7 +37,7 @@
       "feature_id": "FEAT-739",
       "feature": "fixgroup-6630fd230436",
       "spec": "sdd/specs/fixgroup-6630fd230436.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -45,8 +45,9 @@
       "parallelism_notes": "No dependencies; touches agent.ts, upload-status.ts and their tests only, none of which TASK-4681 declares.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:35:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4680-upload-response-types-and-formatter.md"
+      "completed_at": "2026-10-24T00:37:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4680-upload-response-types-and-formatter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4681",
