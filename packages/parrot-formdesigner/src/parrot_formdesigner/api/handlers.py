@@ -1154,6 +1154,59 @@ class FormAPIHandler:
             content = apply_schema_overrides(content, dict(resolution.schema_overrides))
         return JSONResponse(content)
 
+    async def export_forms(self, request: web.Request) -> web.Response:
+        """Stream one export row per form for the route tenant as NDJSON.
+
+        Args:
+            request: Request containing export dialect and filter options.
+
+        Returns:
+            A streaming NDJSON response or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "body must be an object"}, status=400)
+
+        raw_dialect = body.get("dialect", "a2ui")
+        try:
+            dialect = FormDialect(raw_dialect)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": f"unknown dialect {raw_dialect!r}", "supported": [item.value for item in FormDialect]},
+                status=400,
+            )
+        if dialect is FormDialect.A2UI and get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        raw_form_uids = body.get("form_uids")
+        if raw_form_uids is not None and not isinstance(raw_form_uids, list):
+            return JSONResponse({"error": "form_uids must be a list"}, status=400)
+        try:
+            form_uids = None if raw_form_uids is None else [_uuid.UUID(form_uid) for form_uid in raw_form_uids]
+        except (AttributeError, TypeError, ValueError):
+            return JSONResponse({"error": "form_uids entries must be UUIDs"}, status=400)
+
+        published_only = body.get("published_only", False)
+        if not isinstance(published_only, bool):
+            return JSONResponse({"error": "published_only must be a boolean"}, status=400)
+        locale = body.get("locale", "en")
+        if not isinstance(locale, str):
+            return JSONResponse({"error": "locale must be a string"}, status=400)
+
+        from ..services.a2ui_export import A2UIExportService
+
+        service = A2UIExportService(self.registry, dialect=dialect.value, locale=locale)
+        response = web.StreamResponse(status=200, headers={"Content-Type": "application/x-ndjson"})
+        await response.prepare(request)
+        async for row in service.export_tenant(tenant, form_uids=form_uids, published_only=published_only):
+            await response.write((json.dumps(row.model_dump(mode="json")) + "\n").encode("utf-8"))
+        await response.write_eof()
+        return response
+
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid}/style — Get style schema."""
         form_uid = extract_form_uid(request)

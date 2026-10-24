@@ -423,6 +423,9 @@ def setup_form_api(
     # Clone endpoint
     app.router.add_post(f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form))
 
+    # FEAT-650 — bulk export (NDJSON). Literal sibling of /forms/blank.
+    app.router.add_post(f"{tp}/forms/export", _wrap_auth(handler.export_forms))
+
     # Contract endpoints (schema, style). /schema is one of the five
     # public-form globs (services/public_forms.py); /style is not.
     app.router.add_get(
