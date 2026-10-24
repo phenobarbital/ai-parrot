@@ -283,4 +283,34 @@ server package, do not change enforcement semantics. Read
 
 ## Completion Note
 
-_(fill in on completion)_
+**Completed 2026-10-24.** `_apply_rls` now returns a request-scoped copy instead of
+mutating `self._inner`; `fetch()` delegates to that copy. All four branches were
+converted (SQLQuerySource, TableSource, QuerySlugSource, and the Mongo/else branch
+including its fall-through `return scoped`).
+
+The copy rule lives in the new `sources/scoped_copy.py` (`request_scoped_copy`), exported
+from `sources/__init__.py` and added to its `__all__`, so TASK-4679 consumes the same
+definition rather than re-deriving it.
+
+**Deviation from the blueprint (approved by evidence, not assumption):** the existing
+`test_rls_injected_before_fetch` asserted `"_rls" in inner.sql` after a fetch — i.e. it
+asserted the vulnerable behaviour itself. It could not be left as-is. It was rewritten to
+assert both halves: the source actually fetched from carries the RLS wrapper (AC3) **and**
+`inner.sql` is unchanged (AC1). This replaces the planned `test_fetch_does_not_mutate_inner_sql`
+and `test_rls_predicates_still_applied`, which would otherwise have duplicated it.
+
+Four further tests were added in a new `TestRequestScopedRls` class, including
+`test_two_wrappers_sharing_one_source_do_not_cross_contaminate`, which reproduces the
+cross-subject leak directly (two subjects, one shared source, assert Bob's query does not
+carry Alice's region).
+
+**Regression value verified**: with `authorizing.py` reverted to HEAD, all five
+new/rewritten tests fail (`5 failed, 10 passed`); with the fix they pass (`15 passed`).
+
+**Validation**: `tests/auth/` → 11 failed / 298 passed in the worktree vs 11 failed /
+273 passed on `dev` baseline — the same 11 pre-existing failures
+(`test_pbac_setup.py` ×5, `test_dataset_guard.py` ×4, `test_integrations_status.py` ×2),
+none of them in files this task touches, and 25 net new passes. The a2ui linked golden
+tests pass, so the `cache_key`-drift risk flagged in the spec did not materialise.
+`ruff check` clean on all four touched files (the 5 `PIE810` errors under `sources/` are
+pre-existing in `deltatable.py`, untouched here).

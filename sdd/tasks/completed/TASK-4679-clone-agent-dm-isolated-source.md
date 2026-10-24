@@ -189,4 +189,23 @@ touching the handler classes or routes.
 
 ## Completion Note
 
-_(fill in on completion)_
+**Completed 2026-10-24.** Exactly the two lines the blueprint specified: one import of
+`request_scoped_copy` from `..tools.dataset_manager.sources`, and
+`source=request_scoped_copy(entry.source) if entry.source else None` in the clone loop.
+No other `DatasetEntry` field touched, no refactor of `_clone_agent_dm`.
+
+Five tests added in the new `tests/handlers/test_datasets_clone.py` — the first coverage
+this function has ever had. Beyond the three the task listed, two more earn their place:
+`test_clone_agent_dm_two_users_do_not_see_each_other` (two clones of one agent catalog,
+the actual cross-subject shape) and `test_clone_agent_dm_copies_dataframe_without_source`
+(a df-backed entry gets an `InMemorySource`, which must be isolated too — the `if
+entry.source` guard would otherwise be easy to over-trust).
+
+**Regression value verified**: with `datasets.py` reverted to HEAD all five fail; with the
+fix all five pass.
+
+**Validation**: `test_datasets_clone.py` + `test_agent_uploads.py` → 9 passed. Whole
+`packages/ai-parrot-server/tests/handlers/` suite → 2 failed / 759 passed / 4 skipped; the
+two failures are `test_agent_a2ui_stream.py::TestA2UIStreamContract::{test_chunked_wire_contract_unchanged,
+test_a2ui_envelope_added_to_final_stream_dict}`, which fail identically on `dev` baseline
+and are unrelated to this change. `ruff check` clean on both touched files.
