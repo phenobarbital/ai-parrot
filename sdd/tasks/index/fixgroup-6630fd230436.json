@@ -56,7 +56,7 @@
       "feature_id": "FEAT-739",
       "feature": "fixgroup-6630fd230436",
       "spec": "sdd/specs/fixgroup-6630fd230436.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -65,7 +65,7 @@
       "parallel": true,
       "parallelism_notes": "Imports formatUploadStatus, uploadPayloadFromError and UploadStatusType from TASK-4680 (ui/src/lib/components/agents/upload-status.ts), and its validation command runs TASK-4680's bridge test_vitest_upload_status.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-24T00:37:27+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4681-modal-accepts-any-file-and-renders-report.md"
     }
