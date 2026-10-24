@@ -21,6 +21,9 @@ def _wrapper(allowed_hosts=("forms.test",)) -> MSTeamsAgentWrapper:
         formdesigner_submit_token=None,
         formdesigner_submit_secret=None,
         formdesigner_submit_timeout=5.0,
+        formdesigner_allow_unsigned_submissions=True,
+        formdesigner_tenant_map=None,
+        formdesigner_api_base_path="/api/v1",
     )
     w.logger = MagicMock()
     w._command_router = MagicMock()
@@ -140,3 +143,103 @@ async def test_teams_wrapper_malformed_envelope_is_text_reply():
 
         # continue_dialog should NOT be called
         dialog_context.continue_dialog.assert_not_awaited()
+
+
+def _submission_data(tenant: str = "testtenant") -> dict:
+    """Build a valid legacy FormDesigner submission envelope."""
+    form_uid = "f0000000-0000-0000-0000-000000000001"
+    return {
+        "_formdesigner": {
+            "v": 1,
+            "wire": "legacy",
+            "form_uid": form_uid,
+            "tenant": tenant,
+            "form_version": "1.0",
+            "is_public": True,
+            "submit_url": f"https://forms.test/api/v1/{tenant}/forms/{form_uid}/data",
+            "form_url": f"https://forms.test/{tenant}/forms/{form_uid}",
+        },
+        "_action": "submit",
+        "name": "John Doe",
+    }
+
+
+class TestFormDesignerSubmitSecurity:
+    """FEAT-733 wrapper security wiring."""
+
+    @pytest.mark.parametrize(("allow_unsigned", "require_signature"), [(False, True), (True, False)])
+    async def test_require_signature_passed_from_config(self, allow_unsigned: bool, require_signature: bool):
+        """The unsigned-submission hatch controls verification explicitly."""
+        w = _wrapper()
+        w.config.formdesigner_allow_unsigned_submissions = allow_unsigned
+
+        with (
+            patch.object(wrapper_mod, "verify_envelope") as mock_verify,
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        assert mock_verify.call_args.kwargs["require_signature"] is require_signature
+
+    async def test_refused_envelope_never_posts(self):
+        """An EnvelopeRejected refusal is returned as text before any POST."""
+        w = _wrapper()
+        with (
+            patch.object(wrapper_mod, "verify_envelope", side_effect=wrapper_mod.EnvelopeRejected("refused")),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+        ):
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        mock_post.assert_not_awaited()
+        w.send_text.assert_awaited_once_with("refused", w.send_text.call_args.args[1])
+
+    async def test_derivation_runs_after_verification(self):
+        """Failed verification prevents tenant resolution."""
+        w = _wrapper()
+        with (
+            patch.object(wrapper_mod, "verify_envelope", side_effect=wrapper_mod.EnvelopeRejected("refused")),
+            patch.object(wrapper_mod, "resolve_submit_tenant") as mock_resolve,
+        ):
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        mock_resolve.assert_not_called()
+
+    async def test_mapped_tenant_rebinds_env_for_post(self):
+        """A mapped Bot Framework tenant is used for the outbound submission."""
+        w = _wrapper()
+        w.config.formdesigner_tenant_map = {"aad-tenant": "resolved-tenant"}
+        ctx = _ctx(_submission_data())
+        ctx.activity.channel_data = {"tenant": {"id": "aad-tenant"}}
+        with (
+            patch.object(wrapper_mod, "verify_envelope"),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(ctx, _submission_data())
+
+        assert mock_post.call_args.args[1].tenant == "resolved-tenant"
+        override_calls = [call for call in w.logger.info.call_args_list if "tenant claim overridden" in call.args[0]]
+        assert len(override_calls) == 1
+
+    @pytest.mark.parametrize("channel_data", [None, {}, "not-a-dict"])
+    async def test_missing_channel_data_does_not_raise(self, channel_data):
+        """Missing or non-dict channel data leaves the envelope tenant intact."""
+        w = _wrapper()
+        ctx = _ctx(_submission_data())
+        ctx.activity.channel_data = channel_data
+        with (
+            patch.object(wrapper_mod, "verify_envelope"),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(ctx, _submission_data())
+
+        assert mock_post.call_args.args[1].tenant == "testtenant"
+        assert all("tenant claim overridden" not in call.args[0] for call in w.logger.info.call_args_list)
