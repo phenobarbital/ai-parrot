@@ -91,7 +91,7 @@ def public_form() -> FormSchema:
 
 
 def _build_app(registry: FormRegistry) -> web.Application:
-    register_teams_renderer(public_base_url="https://forms.test")
+    register_teams_renderer(public_base_url="https://forms.test", signing_secret=SIGNING_SECRET)
     handler = FormAPIHandler(registry)
     app = web.Application()
     app["form_registry"] = registry
@@ -113,7 +113,7 @@ async def test_teams_card_roundtrip_public_form(app_client, public_form):
     meta = await resp.json()
     submit = next(a for a in meta["content"]["actions"] if a["data"].get("_action") == "submit")
     env = TeamsSubmitEnvelope.model_validate(submit["data"][ENVELOPE_KEY])
-    verify_envelope(env, allowed_hosts=["forms.test"], secret=None)  # S3 passes on the rendered https URL
+    verify_envelope(env, allowed_hosts=["forms.test"], secret=SIGNING_SECRET)  # S3 passes on the rendered https URL
 
     # What Teams would put in activity.value: the card's control keys plus the user's answers.
     value = {**submit["data"], "name": "Ada", "ok": "true"}
