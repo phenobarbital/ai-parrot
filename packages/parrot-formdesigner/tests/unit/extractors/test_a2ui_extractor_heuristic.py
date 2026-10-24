@@ -81,7 +81,11 @@ def test_tabs_flatten_to_sections_and_collisions_suffix() -> None:
     surface = _surface(
         [
             _c("root", "Column", children=["tabs"]),
-            _c("tabs", "Tabs", tabs=[{"title": "First", "child": "tab1_body"}, {"title": "Second", "child": "tab2_body"}]),
+            _c(
+                "tabs",
+                "Tabs",
+                tabs=[{"title": "First", "child": "tab1_body"}, {"title": "Second", "child": "tab2_body"}],
+            ),
             _c("tab1_body", "Column", children=["tab1_title", "first"]),
             _c("tab1_title", "Text", text="First"),
             _c("first", "TextField", label="First", value={"path": "/answers/x"}),
@@ -131,4 +135,6 @@ def test_text_variants_and_checks() -> None:
 
 def test_never_raises_on_content() -> None:
     out = A2UIExtractor().extract(_surface([_c("root", "Column", children=["v"]), _c("v", "Video", url="v.mp4")]))
-    assert out.form.sections and not list(out.form.iter_all_fields()) and out.dropped[0].reason == "unsupported_component"
+    assert (
+        out.form.sections and not list(out.form.iter_all_fields()) and out.dropped[0].reason == "unsupported_component"
+    )

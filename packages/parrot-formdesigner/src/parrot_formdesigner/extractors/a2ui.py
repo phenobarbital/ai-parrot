@@ -314,7 +314,9 @@ class A2UIExtractor:
                 if comp.component == "Text":
                     if cid in consumed_text_ids or cid in {text_id for text_id, _ in inferred_labels.values()}:
                         continue
-                    dropped.append(DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component"))
+                    dropped.append(
+                        DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component")
+                    )
                     continue
                 if comp.component == "Button":
                     event = getattr(getattr(comp.action, "event", None), "name", None)
@@ -346,11 +348,7 @@ class A2UIExtractor:
                     elif card_id:
                         sid = card_id.removeprefix("sec-")
                         ssid = next(
-                            (
-                                aid
-                                for aid in reversed(ancestors)
-                                if (sid, aid) in subsections_meta
-                            ),
+                            (aid for aid in reversed(ancestors) if (sid, aid) in subsections_meta),
                             None,
                         )
                         if ssid:
@@ -604,7 +602,11 @@ class A2UIExtractor:
         key = _primitive_key(comp, props)
         field_type = HEURISTIC_PRIMITIVE_MAP.get(key, HEURISTIC_PRIMITIVE_MAP.get(comp.component, FieldType.TEXT))
         binding = props.get("value")
-        if isinstance(binding, dict) and isinstance(binding.get("path"), str) and binding["path"].startswith("/answers/"):
+        if (
+            isinstance(binding, dict)
+            and isinstance(binding.get("path"), str)
+            and binding["path"].startswith("/answers/")
+        ):
             field_id = field_id_from_pointer_token(binding["path"].rsplit("/", 1)[-1])
             default = (data_model.get("answers") or {}).get(field_id)
         else:
