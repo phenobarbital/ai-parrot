@@ -212,7 +212,9 @@ class A2UIExtractor:
                     continue
                 is_field = comp.component in _INPUT_PRIMITIVES or "parrot_field_type" in ext or role == "notice"
                 if not is_field:
-                    dropped.append(DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component"))
+                    dropped.append(
+                        DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component")
+                    )
                     continue
             else:
                 if comp.component in _CONTAINERS:
@@ -239,9 +241,7 @@ class A2UIExtractor:
                 hint = state["hints"].get(item.field_id)
                 if hint and item.hint is None:
                     item.hint = hint
-        form = self._build_form(
-            root, mode, form_id, title, tenant, sections_meta, subsections_meta, state, warnings
-        )
+        form = self._build_form(root, mode, form_id, title, tenant, sections_meta, subsections_meta, state, warnings)
         return ExtractedForm(form=resolve_rule_references(form), mode=mode, warnings=warnings, dropped=dropped)
 
     def _parse(self, surface: Any, m: Any) -> Any:
@@ -249,7 +249,9 @@ class A2UIExtractor:
         if isinstance(surface, m.CreateSurface):
             return surface
         try:
-            parsed = m.deserialize(surface)  # legacy payloads emit DeprecationWarning → surfaced by the caller's warnings
+            parsed = m.deserialize(
+                surface
+            )  # legacy payloads emit DeprecationWarning → surfaced by the caller's warnings
         except (ValueError, TypeError) as exc:
             raise ValueError(f"payload is not an A2UI createSurface envelope: {exc}") from exc
         msg = parsed[0] if isinstance(parsed, list) and parsed else parsed

@@ -14,7 +14,12 @@ from .yaml import YAMLExtractor, YamlExtractor
 
 # FEAT-650 — the A2UI extractor imports ai-parrot lazily inside its functions, but keep the symbol itself lazy too
 # (PEP 562, same pattern as renderers/__init__.py) so `import parrot_formdesigner.extractors` stays cheap.
-_LAZY_EXPORTS = {"A2UIExtractor": ".a2ui", "ExtractedForm": ".a2ui", "ExtractionMode": ".a2ui", "DroppedComponent": ".a2ui"}
+_LAZY_EXPORTS = {
+    "A2UIExtractor": ".a2ui",
+    "ExtractedForm": ".a2ui",
+    "ExtractionMode": ".a2ui",
+    "DroppedComponent": ".a2ui",
+}
 
 
 def __getattr__(name: str):
