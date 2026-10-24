@@ -41,9 +41,8 @@ The token budget is configured via the `TokenBudgetPolicy` model or passed direc
 
 ```python
 from parrot.clients.amazon import BedrockConverseClient
-from parrot.models.token_budget import TokenBudgetPolicy
 
-# Configure a client with a default policy
+# Constructor-level defaults for every call on this instance
 client = BedrockConverseClient(
     region="us-east-1",
     token_budget=10_000,
@@ -51,14 +50,21 @@ client = BedrockConverseClient(
     final_answer_reserve=1500,
 )
 
-# Or pass a policy dynamically per-request
-policy = TokenBudgetPolicy(token_budget=10000, final_answer_reserve=1500)
+# Or per-request. The keywords are the same scalars as above — `token_budget`
+# is an `int`, never a `TokenBudgetPolicy`: the resolver builds the policy
+# itself (`TokenBudgetPolicy(token_budget=<the int>, ...)`), so passing an
+# object raises a Pydantic validation error.
 response = await client.ask(
     "Analyze this dataset...",
     model="anthropic.claude-3-haiku",
-    token_budget=policy,
+    token_budget=10_000,
+    final_answer_reserve=1500,
 )
 ```
+
+`TokenBudgetPolicy` is the record the ledger holds internally; construct one
+directly only when you drive a scope by hand (`BudgetRegistry.create(policy)`),
+not to pass it to `ask`/`ask_stream`/`invoke`/`resume`.
 
 ---
 

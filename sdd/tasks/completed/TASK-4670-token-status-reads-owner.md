@@ -13,7 +13,7 @@
 
 ## Context
 
-Implements **spec §3 Module 2**. `OAuth2Service._token_status`
+Implements **spec §3 Module 2**. `IntegrationsService._token_status`
 (`service.py:173`) decides the integrations UI badge — `connected` vs
 `needs_reconnect` — from `VaultTokenSync.read_tokens_result`
 (`service.py:190`), i.e. from the **Session Vault**: the one copy of the Jira
@@ -43,7 +43,7 @@ buried in an `if`.
 
 ## Scope
 
-- Add an `IdentityStore` accessor to `OAuth2Service`, mirroring the existing
+- Add an `IdentityStore` accessor to `IntegrationsService`, mirroring the existing
   lazy, guarded `_vault_sync` (`service.py:151`).
 - Branch `_token_status` on the provider: the owner for Jira, the vault for
   everyone else.
@@ -85,7 +85,7 @@ from navigator_auth.identity.types import TokenResponse                         
 
 ```python
 # packages/ai-parrot/src/parrot/auth/oauth2/service.py
-class OAuth2Service:
+class IntegrationsService:
     def _vault_sync(self, request: Any) -> Any:                      # line 151
         # the pattern to copy: returns a cached instance, else builds one from
         # app.get("authdb"); returns None when the app or the pool is missing,
@@ -122,7 +122,10 @@ class IdentityStore:                                                 # store.py:
 
 ### Does NOT Exist
 
-- ~~a test file for `OAuth2Service`~~ — `grep -rln "_token_status\|OAuth2Service"
+- ~~a class named `OAuth2Service`~~ — the class in this module is
+  **`IntegrationsService`** (`service.py:73`). The spec's §6 said `OAuth2Service`;
+  the method anchor was correct, the class name was not.
+- ~~a test file for it~~ — `grep -rln "_token_status\|IntegrationsService"
   packages/*/tests/` returns nothing, 2026-10-23. This task creates the first
   one; there is no existing fixture to reuse.
 - ~~`await store.decrypt_credential(...)`~~ — **synchronous** (`store.py:444`).
@@ -146,7 +149,7 @@ class IdentityStore:                                                 # store.py:
     {"path": "packages/ai-parrot/tests/unit/test_oauth2_service_token_status.py", "action": "CREATE"}
   ],
   "contract_symbols": [
-    "sym:packages/ai-parrot/src/parrot/auth/oauth2/service.py#OAuth2Service"
+    "sym:packages/ai-parrot/src/parrot/auth/oauth2/service.py#IntegrationsService"
   ]
 }
 ```
@@ -236,7 +239,7 @@ this feature does not own, and the diff stays reviewable.
 ### `packages/ai-parrot/tests/unit/test_oauth2_service_token_status.py` (CREATE)
 
 ```python
-"""Unit tests for OAuth2Service._token_status (FEAT-735 / TASK-4670)."""
+"""Unit tests for IntegrationsService._token_status (FEAT-735 / TASK-4670)."""
 # FILL IN: a fake request exposing .app as a dict, a fake IdentityStore and a
 # fake VaultTokenSync, injected via the service's cached attributes so no
 # Postgres is needed. One test per Acceptance Criterion below.
@@ -302,4 +305,31 @@ TASK-4664 made. Touch no file outside the two listed.
 
 ## Completion Note
 
-_To be filled on completion._
+**Completed 2026-10-23** (verification: verified).
+
+`IntegrationsService` gained `_identity_store` (lazy, cached, `None`-guarded,
+mirroring `_vault_sync`) and `_identity_token_status`; `_token_status` now
+branches on `_IDENTITY_OWNED_PROVIDERS` at its first line and leaves the
+existing vault body untouched below it.
+
+**Contract error found and corrected** — the spec's §6 and this task both
+named the class **`OAuth2Service`**. There is no such class: it is
+**`IntegrationsService`** (`service.py:73`). The method anchor
+(`async def _token_status(...)`) was correct and unique, so the edits landed
+in the right place, but the first test run failed at import. Both the spec
+and this task's contract were corrected in the closing commit. This is the
+second stale name in the spec's contract (the first was
+`test_jira_oauth.py`), which is worth remembering when the remaining task
+cites §6.
+
+**Evidence**: `pytest test_oauth2_service_token_status.py -q` → 7 passed
+(new file); with the two sink suites → 60 passed; `ruff check` clean (the
+pre-existing `F401 JiraTokenSet` under `TYPE_CHECKING` in `service.py` is
+untouched and predates this task — verified against `HEAD`).
+
+**Second failure worth recording**: `IdentityCredentialError` takes
+`(provider, field, reason)`, not a single message. Constructing it with one
+argument raises `TypeError` — the test, not the implementation, had it wrong.
+
+Non-Jira providers are proven unaffected by two tests that assert the vault
+is read and the identity store is not.

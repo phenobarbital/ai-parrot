@@ -2,6 +2,7 @@
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,27 @@ from parrot.flows.dev_loop.test_scope.baseline import classify_failures, gate_fa
 
 PASS = "def test_x():\n    assert True\n"
 FAIL = "def test_x():\n    assert False\n"
+
+
+def _patch_native_artifacts(monkeypatch, fake_sync, *, main_root=Path("/main")):
+    """Replace the native-artifact module `prepare_baseline_checkout` actually resolves.
+
+    There is no `baseline.sync_native_artifacts` to patch: FEAT-563 made the kernel
+    importable both as `parrot.flows.dev_loop.test_scope` and as a top-level
+    `test_scope`, so `baseline` resolves its sibling lazily through
+    `_native_artifacts()` and calls `main_checkout_root` / `sync_native_artifacts`
+    on the returned module. Patching `_native_artifacts` (a real attribute, so a
+    rename fails this helper loudly) is the only seam that covers both layouts.
+
+    `main_checkout_root` must be stubbed too: it returns None for a hermetic tmp
+    repo, which would skip the whole native block and make these tests vacuous.
+    """
+    module = SimpleNamespace(
+        main_checkout_root=lambda worktree: main_root,
+        sync_native_artifacts=fake_sync,
+    )
+    monkeypatch.setattr(baseline, "_native_artifacts", lambda: module)
+    return module
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -122,7 +144,7 @@ def test_baseline_checkout_still_refuses_unbuilt_extension(hermetic_repo, tmp_pa
             missing=[MissingArtifact(group="core", reason="unpaired_source", detail="pkg/ext.pyx")],
         )
 
-    monkeypatch.setattr(baseline, "sync_native_artifacts", fake_sync)
+    _patch_native_artifacts(monkeypatch, fake_sync)
     scratch = tmp_path / "s"
     scratch.mkdir()
     with pytest.raises(baseline.BaselineUnavailable, match="no compiled extension for pkg/ext.pyx"):
@@ -142,8 +164,10 @@ def test_baseline_checkout_tolerates_non_source_missing_artifacts(hermetic_repo,
     from parrot.flows.dev_loop.native_artifacts import MissingArtifact, NativeSyncReport
 
     repo, base = hermetic_repo
+    seen = {}
 
     def fake_sync(*, main_root, target, autobuild=True, **kwargs):
+        seen["called"] = True
         return NativeSyncReport(
             enabled=True,
             missing=[
@@ -152,9 +176,39 @@ def test_baseline_checkout_tolerates_non_source_missing_artifacts(hermetic_repo,
             ],
         )
 
-    monkeypatch.setattr(baseline, "sync_native_artifacts", fake_sync)
+    _patch_native_artifacts(monkeypatch, fake_sync)
     scratch = tmp_path / "s"
     scratch.mkdir()
     target = baseline.prepare_baseline_checkout(worktree=repo, base_ref=base, scratch=scratch)
+    assert seen.get("called") is True, "the patched native sync never ran -- the test would pass vacuously"
     assert target.is_dir()
+    baseline.remove_baseline_checkout(repo, target)
+
+
+def test_baseline_resolves_native_artifacts_lazily(monkeypatch, hermetic_repo, tmp_path):
+    """issue:49f17da18522 — the patchable seam is `_native_artifacts()`, not a module attribute.
+
+    These tests used to `monkeypatch.setattr(baseline, "sync_native_artifacts", ...)`, which
+    raised AttributeError because `baseline` never had that name; both native-artifact
+    branches went unexercised. Pin the real contract so a future refactor that reintroduces a
+    module-level import has to update the helper deliberately.
+    """
+    assert not hasattr(baseline, "sync_native_artifacts")
+    assert callable(baseline._native_artifacts)
+
+    # The module `_native_artifacts()` returns is the one that gets called.
+    repo, base = hermetic_repo
+    calls = []
+
+    def fake_sync(*, main_root, target, autobuild=True, **kwargs):
+        from parrot.flows.dev_loop.native_artifacts import NativeSyncReport
+
+        calls.append((main_root, autobuild))
+        return NativeSyncReport(enabled=True)
+
+    _patch_native_artifacts(monkeypatch, fake_sync, main_root=Path("/sentinel-main"))
+    scratch = tmp_path / "s"
+    scratch.mkdir()
+    target = baseline.prepare_baseline_checkout(worktree=repo, base_ref=base, scratch=scratch)
+    assert calls == [(Path("/sentinel-main"), False)], "baseline must pass the resolved main root and autobuild=False"
     baseline.remove_baseline_checkout(repo, target)

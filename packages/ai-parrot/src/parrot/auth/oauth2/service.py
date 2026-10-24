@@ -14,6 +14,7 @@ without a request), the service fails **closed** for the integrations surface
 (overrides the general fail-open convention in ``AgentTalk._check_pbac_agent_access``).
 This was resolved as the correct behaviour for FEAT-144 Q-B.
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,7 +26,7 @@ from navconfig.logging import logging  # noqa: F811
 from parrot.auth.oauth2 import _WEB_CHANNEL
 
 if TYPE_CHECKING:  # pragma: no cover
-    from parrot.auth.jira_oauth import JiraTokenSet
+    pass
 from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
@@ -44,6 +45,12 @@ from parrot.auth.oauth2.persistence import (
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
+
+#: Providers whose durable credential lives in navigator-auth's Identity
+#: Vault (``auth.user_identities``) rather than the Session Vault. FEAT-735
+#: moved Jira there and retired its Session Vault copy; every other provider
+#: is still served by :class:`VaultTokenSync`.
+_IDENTITY_OWNED_PROVIDERS = frozenset({"jira"})
 
 
 def _get_allowed_origins() -> List[str]:
@@ -78,6 +85,7 @@ class IntegrationsService:
 
     def __init__(self, vault_token_sync: Any = None) -> None:
         self._vault_token_sync = vault_token_sync
+        self._identity_store_instance: Any = None
 
     async def list_for_user(
         self,
@@ -121,9 +129,7 @@ class IntegrationsService:
 
         for provider in providers:
             # Check whether a per-provider PBAC check passes
-            if not await self._check_pbac(
-                request, "integration:list", provider.provider_id
-            ):
+            if not await self._check_pbac(request, "integration:list", provider.provider_id):
                 continue
 
             integration_row = await get_users_integration(user_id, provider.provider_id)
@@ -138,9 +144,7 @@ class IntegrationsService:
                 status=status,
                 enabled_on_agent=provider.provider_id in enabled_provider_ids,
                 account_id=integration_row.account_id if integration_row else None,
-                display_account_name=(
-                    integration_row.display_name if integration_row else None
-                ),
+                display_account_name=(integration_row.display_name if integration_row else None),
                 email=integration_row.email if integration_row else None,
                 connected_at=integration_row.connected_at if integration_row else None,
             )
@@ -170,12 +174,89 @@ class IntegrationsService:
         self._vault_token_sync = VaultTokenSync(db_pool=db_pool, redis=app.get("redis"))
         return self._vault_token_sync
 
+    def _identity_store(self, request: Any) -> Any:
+        """One ``IdentityStore`` per service, or ``None`` when unavailable.
+
+        Mirrors :meth:`_vault_sync`: built lazily from the app's ``authdb``
+        pool and cached, and ``None`` whenever the app, the pool or the
+        optional dependency is missing — so the caller can fail open.
+
+        Returns:
+            An ``IdentityStore`` bound to the auth pool, or ``None``.
+        """
+        if self._identity_store_instance is not None:
+            return self._identity_store_instance
+        app = getattr(request, "app", None)
+        if app is None:
+            return None
+        try:
+            from navigator_auth.identity.store import IdentityStore
+        except ImportError:  # pragma: no cover - navigator-auth not installed
+            return None
+        db_pool = app.get("authdb")
+        if db_pool is None:
+            return None
+        self._identity_store_instance = IdentityStore(db_pool)
+        return self._identity_store_instance
+
+    async def _identity_token_status(self, user_id: str, provider_id: str, request: Any) -> str:
+        """Status of a provider whose credential lives in the Identity Vault.
+
+        Same contract as :meth:`_token_status`: ``"connected"`` or
+        ``"needs_reconnect"``, failing open to ``"connected"`` whenever the
+        store cannot be probed, so an outage never hides a working
+        integration. Only a credential that is provably unusable — no
+        identity row, or one whose sealed token will not open — reports
+        ``needs_reconnect``.
+
+        Returns:
+            ``"connected"`` or ``"needs_reconnect"``.
+        """
+        store = self._identity_store(request)
+        if store is None:
+            return "connected"
+        try:
+            from navigator_auth.identity.store import IdentityCredentialError
+        except ImportError:  # pragma: no cover - navigator-auth not installed
+            return "connected"
+        try:
+            identity = await store.get_by_provider(user_id, provider_id)
+            if identity is None:
+                logger.info(
+                    "Integrations: provider=%s has no identity row for user=%s",
+                    provider_id,
+                    user_id,
+                )
+                return "needs_reconnect"
+            # Synchronous on purpose — IdentityStore.decrypt_credential is not
+            # a coroutine. Opening the credential IS the probe.
+            store.decrypt_credential(identity)
+        except IdentityCredentialError:
+            logger.info(
+                "Integrations: provider=%s credential unreadable for user=%s",
+                provider_id,
+                user_id,
+            )
+            return "needs_reconnect"
+        except Exception:  # noqa: BLE001 - probing must never break the listing
+            logger.warning(
+                "Integrations: identity probe failed for user=%s provider=%s",
+                user_id,
+                provider_id,
+            )
+            return "connected"
+        return "connected"
+
     async def _token_status(self, user_id: str, provider_id: str, request: Any) -> str:
         """Status of a connected provider based on its stored vault tokens.
 
-        A ``users_integrations`` row only says the user linked the provider; the
-        tokens live in the Session Vault. When they are missing or fail the
-        vault's integrity checks the UI must offer a re-connect instead of
+        A ``users_integrations`` row only says the user linked the provider;
+        the credential lives elsewhere. For a provider in
+        :data:`_IDENTITY_OWNED_PROVIDERS` that is the Identity Vault
+        (FEAT-735) and the probe is delegated to
+        :meth:`_identity_token_status`; for every other provider it is the
+        Session Vault, probed below. When the credential is missing or fails
+        its integrity checks the UI must offer a re-connect instead of
         showing the integration as usable.
 
         Returns:
@@ -183,6 +264,8 @@ class IntegrationsService:
             ``"connected"`` when the vault cannot be probed, so a vault outage
             never hides working integrations.
         """
+        if provider_id in _IDENTITY_OWNED_PROVIDERS:
+            return await self._identity_token_status(user_id, provider_id, request)
         sync = self._vault_sync(request)
         if sync is None:
             return "connected"
@@ -191,13 +274,16 @@ class IntegrationsService:
         except Exception:  # noqa: BLE001 - probing must never break the listing
             logger.warning(
                 "Integrations: token probe failed for user=%s provider=%s",
-                user_id, provider_id,
+                user_id,
+                provider_id,
             )
             return "connected"
         if result.status in ("missing", "unreadable"):
             logger.info(
                 "Integrations: provider=%s needs reconnect for user=%s (%s)",
-                provider_id, user_id, result.status,
+                provider_id,
+                user_id,
+                result.status,
             )
             return "needs_reconnect"
         return "connected"
