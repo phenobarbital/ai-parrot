@@ -131,8 +131,8 @@ work ledger: `wikitoolkit ledger open --kind … --severity … --discovered-fro
 `/sdd-fix` drains it (`wikitoolkit ledger plan-fix --json`): `critical`/`major`,
 any `vulnerability`, or unscoped groups go through the **SDD lane** (spec →
 tasks → worktree → `/sdd-done`); single-file `minor`/`low` `tech_debt` go
-through the **Fast lane** (branch `fix/<id>-<slug>` off `origin/dev`, always
-`gh pr create --base dev`). `ledger claim` is authoritative; close with `ledger close --resolved-by`.
+through the **Fast lane** (worktree `fix-<id>-<slug>` off `origin/dev`, always
+`gh pr create --base dev`, worktree reaped after the PR). `ledger claim` is authoritative; close with `ledger close --resolved-by`.
 
 ---
 
