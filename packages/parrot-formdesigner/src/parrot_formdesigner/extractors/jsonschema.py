@@ -18,7 +18,7 @@ from ..core.constraints import (
 from ..core.options import FieldOption, OptionsSource
 from ..core.relations import EntityRef, RelationSpec
 from ..core.resolution import resolve_rule_references
-from ..core.schema import FormField, FormSchema, FormSection
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
 from ..core.types import FieldType
 
 logger = logging.getLogger(__name__)
@@ -111,34 +111,89 @@ class JsonSchemaExtractor:
         # Extract fields from top-level properties
         required_set = set(schema.get("required", []))
         properties = schema.get("properties", {})
-        fields: list[FormField] = []
-
+        entries: list[tuple[FormField, dict[str, Any]]] = []
         for prop_name, prop_schema in properties.items():
-            is_required = prop_name in required_set
             field = self._property_to_field(
                 name=prop_name,
                 prop=prop_schema,
-                required=is_required,
+                required=prop_name in required_set,
                 root_schema=root_schema,
             )
-            fields.append(field)
+            entries.append((field, prop_schema if isinstance(prop_schema, dict) else {}))
 
         form = FormSchema(
             form_id=resolved_form_id,
             title=resolved_title,
-            sections=[
-                FormSection(
-                    section_id="fields",
-                    title=resolved_title,
-                    fields=fields,
-                )
-            ],
+            sections=self._group_sections(entries, resolved_title),
         )
         # FEAT-393: mint UIDs (free — model default_factory) and resolve any
         # rule references before returning. JSON Schema itself carries no
         # depends_on/post_depends, but this keeps every extractor's output
         # uniformly resolved before it reaches the registry/storage.
         return resolve_rule_references(form)
+
+    def _group_sections(
+        self,
+        entries: list[tuple[FormField, dict[str, Any]]],
+        title: str,
+    ) -> list[FormSection]:
+        """Rebuild the section/subsection tree from ``x-section`` / ``x-subsection`` (FEAT-650).
+
+        Properties without ``x-section`` fall into the legacy ``"fields"`` section so
+        Pydantic/OpenAPI input is unchanged. Order is first-seen.
+        """
+        sections: dict[str, FormSection] = {}
+        subsections: dict[tuple[str, str], FormSubsection] = {}
+
+        for field, prop in entries:
+            sec_meta = prop.get("x-section") if isinstance(prop.get("x-section"), dict) else None
+            if sec_meta is None:
+                section = sections.setdefault("fields", FormSection(section_id="fields", title=title, fields=[]))
+                section.fields.append(field)
+                continue
+
+            section_id = str(sec_meta.get("section_id") or "fields")
+            if section_id not in sections:
+                sections[section_id] = FormSection(
+                    section_id=section_id,
+                    title=sec_meta.get("title"),
+                    description=sec_meta.get("description"),
+                    fields=[],
+                    depends_on=self._dependency(prop.get("x-section-depends-on"), section_id),
+                )
+
+            sub_meta = prop.get("x-subsection") if isinstance(prop.get("x-subsection"), dict) else None
+            if sub_meta is None:
+                sections[section_id].fields.append(field)
+                continue
+
+            subsection_id = str(sub_meta.get("subsection_id") or "subsection")
+            subsection_key = (section_id, subsection_id)
+            subsection = subsections.get(subsection_key)
+            if subsection is None:
+                subsection = FormSubsection(
+                    subsection_id=subsection_id,
+                    title=sub_meta.get("title"),
+                    description=sub_meta.get("description"),
+                    fields=[],
+                    depends_on=self._dependency(prop.get("x-subsection-depends-on"), subsection_id),
+                )
+                subsections[subsection_key] = subsection
+                sections[section_id].fields.append(subsection)
+            subsection.fields.append(field)
+
+        return list(sections.values())
+
+    def _dependency(self, raw: Any, owner: str) -> DependencyRule | None:
+        """Accept a dict or model with ``model_dump()`` for section dependencies."""
+        if raw is None:
+            return None
+        data = raw.model_dump() if hasattr(raw, "model_dump") else raw
+        try:
+            return DependencyRule.model_validate(data)
+        except Exception:  # noqa: BLE001 — malformed extensions are non-fatal
+            logger.warning("Could not reconstruct section depends_on for '%s'", owner)
+            return None
 
     def _resolve_ref(self, ref: str, root_schema: dict[str, Any]) -> dict[str, Any]:
         """Resolve a JSON Schema $ref to the referenced schema dict.
@@ -228,11 +283,26 @@ class JsonSchemaExtractor:
         default = prop.get("default")
         constraints = self._extract_constraints(prop)
 
-        # Handle enum → SELECT
+        # Options: labelled x-options (renderer, single AND array-typed) win over bare enum / items.enum (FEAT-650)
         options: list[FieldOption] | None = None
-        if "enum" in prop:
+        x_options = prop.get("x-options")
+        if isinstance(x_options, list) and x_options:
+            options = [
+                FieldOption(
+                    value=str(option.get("value")),
+                    label=option.get("label") or str(option.get("value")),
+                    disabled=bool(option.get("disabled", False)),
+                )
+                for option in x_options
+                if isinstance(option, dict) and option.get("value") is not None
+            ]
+            if "x-field-type" not in prop and field_type not in (FieldType.MULTI_SELECT, FieldType.TAGS):
+                field_type = FieldType.SELECT
+        elif "enum" in prop:
             field_type = FieldType.SELECT
             options = [FieldOption(value=str(v), label=str(v)) for v in prop["enum"] if v is not None]
+        placeholder = prop.get("x-placeholder")
+        read_only = bool(prop.get("x-read-only", False))
 
         # Handle x-options-source → OptionsSource (FEAT-167)
         options_source: OptionsSource | None = None
@@ -347,6 +417,8 @@ class JsonSchemaExtractor:
             description=description,
             required=required,
             default=default,
+            placeholder=placeholder,
+            read_only=read_only,
             constraints=constraints if constraints and self._has_constraints(constraints) else None,
             options=options,
             options_source=options_source,
