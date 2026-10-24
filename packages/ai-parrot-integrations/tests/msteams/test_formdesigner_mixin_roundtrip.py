@@ -226,7 +226,13 @@ def _agent(*, mode: str, form: FormSchema, server=None) -> FormAgent:
 def _wrapper(agent: FormAgent, store: FakeStore) -> MSTeamsAgentWrapper:
     """Construct the wrapper through its established lightweight test seam."""
     wrapper = MSTeamsAgentWrapper.__new__(MSTeamsAgentWrapper)
-    wrapper.config = SimpleNamespace(allowed_conversation_ids=None, allowed_user_ids=None, name="forms-agent")
+    wrapper.config = SimpleNamespace(
+        allowed_conversation_ids=None,
+        allowed_user_ids=None,
+        name="forms-agent",
+        formdesigner_allowed_hosts=["forms.test"],
+        formdesigner_tenant_map={GUID: TENANT},
+    )
     wrapper.logger = MagicMock()
     wrapper._command_router = MagicMock()
     wrapper.form_orchestrator = MagicMock()
@@ -307,7 +313,12 @@ async def test_remote_wizard_section_contract(aiohttp_server, three_section_form
         assert card.metadata["section_index"] == index
     assert ENVELOPE_KEY not in str(cards[0].content)
     assert ENVELOPE_KEY in str(cards[-1].content)
-    assert TeamsSubmitEnvelope.model_validate(cards[-1].metadata["envelope"]).verify(SECRET)
+    terminal = next(
+        action
+        for action in cards[-1].content["actions"]
+        if action["type"] == "Action.Submit" and action["data"].get("_action") == "submit"
+    )
+    assert TeamsSubmitEnvelope.model_validate(terminal["data"][ENVELOPE_KEY]).verify(SECRET)
     await client.close()
 
 
