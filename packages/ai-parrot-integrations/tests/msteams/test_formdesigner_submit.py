@@ -254,9 +254,7 @@ class TestResolveSubmitTenant:
         """asserted_tenant_id=None (non-Teams channel) -> untouched, no raise."""
         env = _env()
 
-        resolved, overridden = resolve_submit_tenant(
-            env, asserted_tenant_id=None, tenant_map={"aad-guid": "other"}
-        )
+        resolved, overridden = resolve_submit_tenant(env, asserted_tenant_id=None, tenant_map={"aad-guid": "other"})
 
         assert resolved is env
         assert overridden is False
