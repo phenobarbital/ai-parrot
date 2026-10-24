@@ -829,6 +829,13 @@ in embedded mode. These are new contracts to implement, not existing symbols.
 tests:
 - packages/parrot-formdesigner/tests/unit/api/test_render_dispatcher.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_serve.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_client.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_identity.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_wizard.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_turn.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_cards.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_toolkit.py
+- packages/ai-parrot-integrations/tests/msteams/test_formdesigner_local.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_mixin_roundtrip.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_roundtrip.py
 - packages/ai-parrot-integrations/tests/msteams/test_formdesigner_wrapper.py
