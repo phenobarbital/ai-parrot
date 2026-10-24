@@ -1523,6 +1523,16 @@ class FormAPIHandler:
         """POST /api/v1/forms — Create a form from a natural language prompt."""
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "create_form")
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        tenant = self._get_tenant(request)
+        # FEAT-650 — dual-wire: an A2UI createSurface body is an import, not a prompt (S5: before the LLM guard)
+        if a2ui_wire.is_a2ui_surface_body(request, body):
+            return await self._import_a2ui_surface(request, body, tenant=tenant)
+
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -1531,16 +1541,11 @@ class FormAPIHandler:
                 {"error": "No LLM client configured for form creation"},
                 status=503,
             )
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, ValueError):
-            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
             return JSONResponse({"error": "prompt is required"}, status=400)
 
-        tenant = self._get_tenant(request)
         from ..tools.create_form import CreateFormTool
 
         create_tool = CreateFormTool(
@@ -1572,6 +1577,56 @@ class FormAPIHandler:
                 "title": title,
                 "url": f"{prefix}/{tenant}/forms/{form_uid}",
             }
+        )
+
+    async def _import_a2ui_surface(self, request: web.Request, body: dict[str, Any], *, tenant: str) -> web.Response:
+        """Import an A2UI surface as a persisted form."""
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+            surface = body.get("createSurface")
+            surface_id = surface.get("surfaceId") if isinstance(surface, dict) else None
+            return a2ui_wire.a2ui_response(
+                [error_envelope(A2UIErrorCode.INTERNAL, "body too large", surface_id=surface_id or "form-import")],
+                status=413,
+            )
+
+        from ..extractors import A2UIExtractor
+
+        try:
+            result = A2UIExtractor().extract(body, tenant=tenant)
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status=415)
+        except ValueError as exc:
+            return JSONResponse({"error": "invalid surface", "details": str(exc)}, status=422)
+
+        form = result.form.model_copy(update={"tenant": tenant})
+        overwrite = request.query.get("overwrite", "").lower() in ("1", "true", "yes")
+        existing = await self.registry.get(form.form_uid, tenant=tenant)
+        if existing is not None:
+            if not overwrite:
+                return JSONResponse({"error": "form already exists", "form_uid": str(form.form_uid)}, status=409)
+            form = form.model_copy(update={"version": _bump_version(existing.version)})
+
+        try:
+            await self.registry.register(form, persist=True, overwrite=True, tenant=tenant)
+        except FormAlreadyExistsError as exc:
+            return JSONResponse({"error": str(exc), "form_id": form.form_id}, status=409)
+
+        prefix = request.app.get("_form_prefix", "")
+        return JSONResponse(
+            {
+                "form_uid": str(form.form_uid),
+                "form_id": form.form_id,
+                "url": f"{prefix}/{tenant}/forms/{form.form_uid}",
+                "dialect": form.dialect.value,
+                "import": {
+                    "mode": result.mode.value,
+                    "warnings": result.warnings,
+                    "dropped": [d.model_dump() for d in result.dropped],
+                },
+            },
+            status=201,
         )
 
     async def edit_form(self, request: web.Request) -> web.Response:
