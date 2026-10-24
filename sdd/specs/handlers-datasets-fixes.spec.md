@@ -166,12 +166,21 @@ No new models. No signature change to any public API; `_apply_rls` is private.
 
 ### Validation Contract
 
-```bash
-PYTHONPATH=packages/ai-parrot/src python -m pytest packages/ai-parrot/tests/auth/ -q
-PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src python -m pytest packages/ai-parrot-server/tests/handlers/ -q
-PYTHONPATH=packages/ai-parrot/src python -m pytest packages/ai-parrot/tests/outputs/a2ui/linked/ -q
-ruff check packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py packages/ai-parrot-server/src/parrot/handlers/datasets.py
-```
+tests:
+- packages/ai-parrot/tests/auth/test_authorizing_data_source.py
+- packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py
+- packages/ai-parrot/tests/outputs/a2ui/linked/test_epson_dashboard_golden.py
+- packages/ai-parrot/tests/outputs/a2ui/linked/test_derived_sources.py
+- packages/ai-parrot-server/tests/handlers/test_datasets_clone.py
+- packages/ai-parrot-server/tests/handlers/test_agent_uploads.py
+markers: none
+
+### Test Data / Fixtures
+
+No new fixtures or test data files. Both modules are covered by pure unit tests:
+`tests/auth/test_authorizing_data_source.py` already provides fake guard / `pctx`
+fixtures, and `_clone_agent_dm` only reads `agent._dataset_manager`, so a small
+stand-in class is enough. No live database, no aiohttp app.
 
 ---
 
