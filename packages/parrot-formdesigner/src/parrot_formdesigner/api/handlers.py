@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, get_args
 from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
+from ..core import FormDialect
 from ..core.events import FormEventAbort, FormEventName
 
 from ..core.llm_validation import wire_report
@@ -114,6 +115,10 @@ if TYPE_CHECKING:
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
     from ..tools.services.networkninja import ImportDiffReport
+
+# Delayed until after ``extract_form_uid``: ``api.render`` imports that helper.
+from .dialect import A2UI_LIST_MAX, render_a2ui_schema  # noqa: E402
+from .render import get_renderer, supported_formats  # noqa: E402
 
 
 class FormAPIHandler:
@@ -873,6 +878,9 @@ class FormAPIHandler:
         Supports ``?slug=<form_id>`` (FEAT-389) to filter results down to
         forms whose slug matches — resolved via
         ``FormRegistry.get_by_slug()`` rather than scanning the full list.
+        ``?dialect=a2ui`` adds a surface URL manifest, while
+        ``?dialect=a2ui&include=surface`` also renders inline surfaces. The
+        optional ``locale`` query parameter selects the rendering locale.
 
         Args:
             request: Incoming HTTP request.
@@ -885,6 +893,21 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
 
         slug = request.query.get("slug")
+        # FEAT-650 — ?dialect=a2ui → manifest (surface_url); &include=surface → inline envelopes (capped)
+        raw_dialect = request.query.get("dialect")
+        want_a2ui = False
+        if raw_dialect is not None:
+            try:
+                want_a2ui = FormDialect(raw_dialect) is FormDialect.A2UI
+            except ValueError:
+                return JSONResponse(
+                    {"error": f"unknown dialect {raw_dialect!r}", "supported": [d.value for d in FormDialect]},
+                    status=400,
+                )
+            if want_a2ui and get_renderer("a2ui") is None:
+                return JSONResponse({"supported": supported_formats()}, status=415)
+        include_surface = want_a2ui and request.query.get("include") == "surface"
+
         if slug:
             form = await self.registry.get_by_slug(slug, tenant=tenant)
             if form is None:
@@ -901,6 +924,7 @@ class FormAPIHandler:
                             "description": _loc_to_str(form.description),
                             "version": form.version,
                             "source": "memory",
+                            "dialect": form.dialect.value,
                             "created_at": ts.isoformat() if ts is not None else None,
                         }
                     ]
@@ -919,6 +943,7 @@ class FormAPIHandler:
                 "description": _loc_to_str(form.description),
                 "version": form.version,
                 "source": "memory",
+                "dialect": form.dialect.value,
                 "created_at": ts.isoformat() if ts is not None else None,
             }
 
@@ -964,6 +989,29 @@ class FormAPIHandler:
                     }
 
         forms = sorted(descriptors.values(), key=lambda d: d["form_id"] or "")
+        if want_a2ui:
+            prefix = request.app.get("_form_prefix", "")
+            if include_surface and len(forms) > A2UI_LIST_MAX:
+                return JSONResponse(
+                    {"error": "too many forms for inline a2ui; use POST /forms/export", "max": A2UI_LIST_MAX},
+                    status=400,
+                )
+            for descriptor in forms:
+                descriptor["surface_url"] = (
+                    f"{prefix}/{tenant}/forms/{descriptor['form_uid']}/schema?dialect=a2ui"
+                )
+                if not include_surface:
+                    continue
+                try:
+                    form = await self.registry.get(descriptor["form_uid"], tenant=tenant)
+                    envelopes, _rendered, warnings = await render_a2ui_schema(
+                        form,
+                        locale=request.query.get("locale", "en"),
+                    )
+                    descriptor["surface"], descriptor["warnings"] = envelopes[0], warnings
+                except Exception as exc:  # noqa: BLE001 — one bad form must not 500 the list
+                    self.logger.warning("list_forms: a2ui render failed for %s: %s", descriptor["form_uid"], exc)
+                    descriptor["surface"], descriptor["warnings"] = None, [f"render_failed: {exc}"]
         return JSONResponse({"forms": forms})
 
     @staticmethod
