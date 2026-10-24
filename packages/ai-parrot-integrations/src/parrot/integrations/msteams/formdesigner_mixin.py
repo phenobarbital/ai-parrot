@@ -107,7 +107,8 @@ class TeamsFormDesignerMixin:
             self._fd_api_base_path = getattr(config, "formdesigner_api_base_path", None) or "/api/v1"
         if not self._fd_mode_explicit:
             mode = getattr(config, "formdesigner_mode", None)
-            if mode in ("remote", "local"):
+            # Never downgrade a class-level ``formdesigner_mode = "local"`` to the config default.
+            if mode == "local" or (mode == "remote" and self.formdesigner_mode not in ("remote", "local")):
                 self.formdesigner_mode = mode
         self._fd_render_timeout = float(getattr(config, "formdesigner_render_timeout", self._fd_render_timeout))
         self._fd_submit_timeout = float(getattr(config, "formdesigner_submit_timeout", self._fd_submit_timeout))
@@ -316,7 +317,14 @@ class TeamsFormDesignerMixin:
     @asynccontextmanager
     async def formdesigner_turn(self, turn_context: TurnContext) -> AsyncIterator[None]:
         """Bind a fresh request-local identity and pending-card queue."""
-        turn = await self._fd_identity(turn_context)
+        try:
+            turn = await self._fd_identity(turn_context)
+        except Exception:  # noqa: BLE001 - identity failure must never break ordinary chat turns
+            self._fd_logger.exception("formdesigner: identity resolution failed")
+            turn = FormDesignerTurn(
+                conversation_id=getattr(getattr(turn_context.activity, "conversation", None), "id", "")
+            )
+            turn.error = "Forms are temporarily unavailable."
         async with bind_turn(turn):
             yield None
 
