@@ -178,10 +178,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4697
+- Feature: sdd-fix-brief-change
+- Implementation SHA: 5f471c5f2a3fce9fdd2a5e8849743c052f29c1ad
+- Closed at (UTC): 2026-10-24T01:20:18+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 49.2s · Tokens: 553083/1527 |
+| validation | merge-tier, exit_code 0, 11 + 93 passed |
+| verdict | accepted, no corrections |

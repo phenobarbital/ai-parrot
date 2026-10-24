@@ -79,7 +79,7 @@
       "feature_id": "FEAT-740",
       "feature": "sdd-fix-brief-change",
       "spec": "sdd/specs/sdd-fix-brief-change.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -87,8 +87,9 @@
       "parallelism_notes": "no deps: only the Claude + agy sdd-brief surfaces, disjoint from TASK-4695/4696; agy twin equality is self-contained within this task's two files",
       "assigned_to": null,
       "started_at": "2026-10-24T01:00:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4697-sdd-brief-handoff-clarity.md"
+      "completed_at": "2026-10-24T01:20:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4697-sdd-brief-handoff-clarity.md",
+      "verification": "verified"
     }
   ]
 }
