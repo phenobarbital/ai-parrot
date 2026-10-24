@@ -60,7 +60,7 @@
       "feature_id": "FEAT-738",
       "feature": "handlers-datasets-fixes",
       "spec": "sdd/specs/handlers-datasets-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -69,7 +69,7 @@
       "parallel": true,
       "parallelism_notes": "Imports request_scoped_copy created by TASK-4678 (packages/ai-parrot/src/parrot/tools/dataset_manager/sources/scoped_copy.py); no file overlap with it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-24T00:16:22.067112+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4679-clone-agent-dm-isolated-source.md"
     }
