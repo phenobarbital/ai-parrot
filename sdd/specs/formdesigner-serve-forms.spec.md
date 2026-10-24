@@ -11,12 +11,12 @@ tags: [msteams, formdesigner, adaptive-card, mixin, toolkit, tenant]
 **Feature ID**: FEAT-734
 **Date**: 2026-10-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Inputs**: `sdd/proposals/formdesigner-serve-forms.brainstorm.md` (Recommended
 > Option A), whose eight resolved questions are carried forward verbatim into this
-> spec (§8). Every code reference below was verified at commit `a9e3c9f5f`.
+> spec (§8). Every code reference below was verified at commit `87341f43c`.
 
 ---
 
@@ -34,7 +34,7 @@ The agent side of the loop is missing:
 
 1. **Nobody can ask for a form.** There is no `/getform` command and no code path
    that *fetches* a form. The only FormDesigner HTTP traffic the bot makes is the
-   submit-only POST at `wrapper.py:1091`; there is no FormDesigner read client
+   submit-only POST at `wrapper.py:1214`; there is no FormDesigner read client
    anywhere in the repository, and no `formdesigner_list_forms` /
    `formdesigner_get_form` tool for an LLM to call.
 2. **The card has to be posted by hand.** FEAT-551's documentation ends with
@@ -93,7 +93,7 @@ agent's `agent_tools()` seam, (3) the picker / login / error / form cards, and (
 form submission.
 
 **Additive wrapper seams.** At the existing `if ENVELOPE_KEY in
-submitted_data:` branch (`wrapper.py:473`) the wrapper asks the agent first via
+submitted_data:` branch (`wrapper.py:576`) the wrapper asks the agent first via
 `handle_formdesigner_card(turn_context, submitted_data) -> bool`; only a `False`
 or a missing attribute runs `_handle_formdesigner_submit`. A second hook lets the
 agent contribute commands that receive the `TurnContext` — the existing
@@ -157,10 +157,10 @@ conversation history where FEAT-525 compaction would prune it unpredictably.
  /getform <slug>            picker Submit               form / section Submit
        │                          │                              │
        ▼                          ▼                              ▼
-MSTeamsCommandRouter      _handle_card_submission (wrapper.py:385)
+MSTeamsCommandRouter      _handle_card_submission (wrapper.py:482)
   try_dispatch :74          ① a2ui_token  ② a2ui_action
        │                    ③ NEW agent-first seam ──► handle_formdesigner_card()
-       │                    ④ ENVELOPE_KEY :473 (fallback, FEAT-551/733)
+       │                    ④ ENVELOPE_KEY :576 (fallback, FEAT-551/733)
        │                    ⑤ command  ⑥ dialogs
        ▼                          │
             TeamsFormDesignerMixin (M4)
@@ -188,8 +188,8 @@ MSTeamsCommandRouter      _handle_card_submission (wrapper.py:385)
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `MSTeamsAgentWrapper._handle_card_submission` | modifies | new agent-first branch immediately before `wrapper.py:473` |
-| `MSTeamsAgentWrapper.__init__` (command wiring) | modifies | agent command-contribution hook after `agent_commands.register` (`wrapper.py:182`) |
+| `MSTeamsAgentWrapper._handle_card_submission` | modifies | new agent-first branch immediately before `wrapper.py:576` |
+| `MSTeamsAgentWrapper.__init__` (command wiring) | modifies | agent command-contribution hook after `agent_commands.register` (`wrapper.py:191`) |
 | `MSTeamsCommandRouter.register()` | uses | `/getform`, `/listforms` registered like any built-in command |
 | `MessageHandler.send_card()` | uses | card first, `turn_context` second (`handler.py:60`) |
 | `TeamsFormRenderer.render()` / `.render_section()` | uses | local mode; `tenant=` is mandatory |
@@ -197,7 +197,7 @@ MSTeamsCommandRouter      _handle_card_submission (wrapper.py:385)
 | `FormRegistry.get()` / `.get_by_slug()` / `.list_forms()` | uses | local mode only |
 | `GET {tp}/forms`, `GET …/{uid}`, `…/render/{format}`, `POST …/data` | calls | remote mode; `GET /forms` is `tenant="required"`, so a bearer is mandatory |
 | `MSTeamsAgentConfig` | modifies | new `formdesigner_*` read/render fields + `{NAME}_FORMDESIGNER_*` env fallbacks |
-| `IntegrationManager.shutdown()` | modifies | close the mixin's client (and the FEAT-551 session it already leaks — ledger `a9514c9232ad`) |
+| `IntegrationManager.shutdown()` | modifies | add the agent's `aclose()` to the EXISTING per-bot close loop (`manager.py:1067`); the FEAT-551 session is **already** closed there and ledger `a9514c9232ad` is closed (`resolved_by task:TASK-4059`) |
 | `Agent.agent_tools()` | extends | toolkit contribution (`agent.py:469`) |
 | FEAT-729 `MSTeamsUserSession` / `MSTeamsSessionStore` | **depends on** (landed 2026-10-23) | `nav_session_token` is the bearer; `tenant_id` is an AAD GUID, not a slug; consumed through M2's Protocols |
 | FEAT-733 `resolve_submit_tenant` / `formdesigner_tenant_map` / `require_signature` | **depends on** | tenant precedence and mandatory signature |
@@ -616,7 +616,7 @@ class TeamsFormDesignerMixin:
 - **Depends on**: M4.
 - **Interface Skeleton**:
   ```python
-  # modifies packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py:473
+  # modifies packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py:576
   # (new branch immediately BEFORE the existing `if ENVELOPE_KEY in submitted_data:`)
   handler = getattr(self.agent, "handle_formdesigner_card", None)
   if handler is not None and (ENVELOPE_KEY in submitted_data or PICKER_ACTION_KEY in submitted_data):
@@ -624,7 +624,7 @@ class TeamsFormDesignerMixin:
           return
   # falls through to the FEAT-551/733 branch unchanged
 
-  # modifies packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py:182
+  # modifies packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py:191
   # (after `agent_cmd_handler.register(self._command_router)`)
   def _register_agent_commands(self) -> None:
       """Register TurnContext-carrying commands the agent contributes via
@@ -639,14 +639,18 @@ class TeamsFormDesignerMixin:
       formdesigner_tenant: Optional[str] = None              # NEW — last-resort tenant
       formdesigner_public_url: Optional[str] = None          # NEW — local-mode envelope URLs
       formdesigner_render_timeout: float = 15.0              # NEW
-      # env fallbacks resolved in __post_init__ beside models.py:96, same
+      # env fallbacks resolved in __post_init__ beside models.py:101, same
       # {NAME}_FORMDESIGNER_* convention as the FEAT-551 fields.
 
-  # modifies packages/ai-parrot-integrations/src/parrot/integrations/manager.py:988
+  # modifies packages/ai-parrot-integrations/src/parrot/integrations/manager.py:1067
   async def shutdown(self) -> None:
-      """Also await wrapper.close_formdesigner_client() and the agent's
-      aclose() for every msteams bot before msteams_bots.clear()
-      (manager.py:1109) — fixes ledger a9514c9232ad as a side effect.
+      """Add `await agent.aclose()` to the EXISTING per-bot close loop.
+
+      That loop already awaits wrapper.close_formdesigner_client() and
+      close_voice_transcriber(), each in its own try (manager.py:1067), and
+      ledger a9514c9232ad is closed (resolved_by task:TASK-4059). So this
+      feature adds ONLY the agent's own aclose() beside them, still before
+      msteams_bots.clear() (manager.py:1139). Do not re-fix the FEAT-551 leak.
       """
   ```
 
@@ -906,8 +910,8 @@ def sectioned_form():
 - [ ] An agent **without** the mixin behaves exactly as FEAT-551 does today
       (`test_formdesigner_roundtrip.py` unchanged and passing).
 - [ ] A duplicate `activity.id` delivery posts once.
-- [ ] `IntegrationManager.shutdown()` closes the mixin's client **and** the FEAT-551
-      session (ledger `a9514c9232ad` closed).
+- [ ] `IntegrationManager.shutdown()` also closes the mixin's own client; the
+      FEAT-551 session is already closed in that same loop (`manager.py:1067`).
 - [ ] Every test in §4's Validation Contract passes with
       `PYTHONPATH=packages/ai-parrot-integrations/src:packages/ai-parrot/src:packages/parrot-formdesigner/src`.
 - [ ] `ruff check` clean on every touched file; no `requests`/`httpx` import.
@@ -921,7 +925,7 @@ def sectioned_form():
 ## 6. Codebase Contract
 
 > **CRITICAL — Anti-Hallucination Anchor**
-> Verified at commit `a9e3c9f5f`. Implementation agents MUST NOT reference imports,
+> Verified at commit `87341f43c`. Implementation agents MUST NOT reference imports,
 > attributes or methods not listed here without verifying them first.
 
 ### Verified Imports
@@ -944,7 +948,7 @@ from .formdesigner_submit import (                       # verified: wrapper.py:
 )
 from .commands import MSTeamsCommandRouter               # verified: wrapper.py:44
 from .models import MSTeamsAgentConfig                   # verified: wrapper.py:28
-from parrot.forms import FormSchema                      # verified: wrapper.py:46 (shim → parrot_formdesigner.core)
+from parrot.forms import FormSchema                      # verified: wrapper.py:51 (shim → parrot_formdesigner.core)
 from parrot.tools.toolkit import AbstractToolkit         # verified: parrot/tools/toolkit.py:225
 from parrot_formdesigner.services.registry import FormRegistry   # verified: services/registry.py:240
 from .auth import (                                      # verified: FEAT-729, landed 2026-10-23
@@ -1084,22 +1088,26 @@ async def send_card(                                                     # line 
 
 ```python
 # packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py
-class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):              # line 94
-    self._formdesigner_session: Optional[aiohttp.ClientSession] = None   # line 163
-    self._formdesigner_recent = RecentActivityCache()                    # line 164
-    self._command_router: MSTeamsCommandRouter = MSTeamsCommandRouter()  # line 180
-    agent_cmd_handler.register(self._command_router)                     # line 182
-    async def _handle_card_submission(self, turn_context, dialog_context): ...  # line 385
-    #   dispatch order: auth → a2ui_token (:424) → a2ui_action (:446)
-    #                   → ENVELOPE_KEY (:473) → command (:484) → _action/dialogs
-        if ENVELOPE_KEY in submitted_data:                               # line 473
-            await self._handle_formdesigner_submit(turn_context, submitted_data)  # line 474
-    async def on_message_activity(self, turn_context: TurnContext): ...  # line 554
-        dispatched = await self._command_router.try_dispatch(clean_text, turn_context)  # line 575
-    async def _handle_formdesigner_submit(self, turn_context, submitted_data) -> None: ...  # line 1057
-    async def _get_formdesigner_session(self) -> aiohttp.ClientSession: ...  # line 1091
-    async def close_formdesigner_client(self) -> None: ...               # line 1097
-FORMDESIGNER_API_BASE_PATH: str = "/api/v1"                              # line 71 (fallback only)
+class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):              # line 98
+    self._formdesigner_session: Optional[aiohttp.ClientSession] = None   # line 172
+    self._formdesigner_recent = RecentActivityCache()                    # line 173
+    self._command_router: MSTeamsCommandRouter = MSTeamsCommandRouter()  # line 189
+    agent_cmd_handler.register(self._command_router)                     # line 191
+    self._session_store = MSTeamsSessionStore(...)                       # line 223 (FEAT-729)
+    self._auth = MSTeamsAuthStrategy(..., store=self._session_store)     # line 229 (FEAT-729)
+    async def _effective_user_id(self, turn_context, fallback) -> str: ...  # line 345
+    #   read-only session precedent: get_or_create + is_expired, never an exchange
+    async def _handle_card_submission(self, turn_context, dialog_context): ...  # line 482
+    #   dispatch order: _is_authorized → a2ui_token (:508) → a2ui_action (:546)
+    #                   → ENVELOPE_KEY (:576) → command (:586) → _action/dialogs
+        if ENVELOPE_KEY in submitted_data:                               # line 576
+            await self._handle_formdesigner_submit(turn_context, submitted_data)  # line 577
+    async def on_message_activity(self, turn_context: TurnContext): ...  # line 657
+        dispatched = await self._command_router.try_dispatch(clean_text, turn_context)  # line 700
+    async def _handle_formdesigner_submit(self, turn_context, submitted_data) -> None: ...  # line 1180
+    async def _get_formdesigner_session(self) -> aiohttp.ClientSession: ...  # line 1214
+    async def close_formdesigner_client(self) -> None: ...               # line 1220
+FORMDESIGNER_API_BASE_PATH: str = "/api/v1"                              # line 75 (fallback only)
 ```
 
 ```python
@@ -1169,8 +1177,8 @@ class WizardFormDialog(BaseFormDialog):                                  # line 
 
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| wrapper agent-first branch | `TeamsFormDesignerMixin.handle_formdesigner_card()` | `getattr(self.agent, …)` + await | `wrapper.py:473` |
-| wrapper fallback | `MSTeamsAgentWrapper._handle_formdesigner_submit()` | unchanged call | `wrapper.py:474` |
+| wrapper agent-first branch | `TeamsFormDesignerMixin.handle_formdesigner_card()` | `getattr(self.agent, …)` + await | `wrapper.py:576` |
+| wrapper fallback | `MSTeamsAgentWrapper._handle_formdesigner_submit()` | unchanged call | `wrapper.py:577` |
 | `_register_agent_commands` | `MSTeamsCommandRouter.register()` | method call | `commands/__init__.py:56` |
 | `TeamsFormDesignerMixin.serve_form` | `MessageHandler.send_card()` | `send_card(card, turn_context)` | `handler.py:60` |
 | `TeamsFormDesignerMixin` (local) | `TeamsFormRenderer.render()` / `.render_section()` | `tenant=` kwarg required | `renderers/teams.py:126`, `:150` |
@@ -1179,7 +1187,7 @@ class WizardFormDialog(BaseFormDialog):                                  # line 
 | `FormDesignerClient.list_forms` | `GET {tp}/forms` | aiohttp + Bearer | `routes.py:383` |
 | `FormDesignerClient.render_teams` | `GET …/render/teams?with_meta=true` | aiohttp + Bearer | `routes.py:416`, `render.py:218` |
 | Remote section rendering (M9) | `handle_render` → `TeamsFormRenderer.render_section` | NEW optional section_index query, with unchanged membership checks | `api/render.py:199-210`, `renderers/teams.py:150` |
-| Normal-turn toolkit delivery (M4/M7) | all wrapper `form_orchestrator.process_message` calls | NEW formdesigner_turn context and flush_formdesigner_cards hook | `wrapper.py:557`, `:794`, `:1144` |
+| Normal-turn toolkit delivery (M4/M7) | all wrapper `form_orchestrator.process_message` calls | NEW formdesigner_turn context and flush_formdesigner_cards hook | `wrapper.py:514`, `:557`, `:794`, `:1144` |
 | Local membership authorization (M2/M4) | host LocalFormAuthorizer adapter | NEW required injection before registry operations | Registry does not authorize; HTTP policy precedent `api/render.py:199-202` |
 | `FormDesignerToolkit` | `Agent.agent_tools()` | `super().agent_tools() + get_tools()` | `agent.py:469`, `toolkit.py:522` |
 | `resolve_form_tenant` | FEAT-733 `formdesigner_tenant_map` | dict lookup on BOTH AAD GUID tiers | spec `msteams-submit-envelope-fail-closed.spec.md` M6 |
@@ -1187,7 +1195,7 @@ class WizardFormDialog(BaseFormDialog):                                  # line 
 | `resolve_form_tenant` (session tier) | `MSTeamsUserSession.tenant_id` | `UserSessionLike` Protocol attribute (AAD GUID) | `auth.py:51`, filled `auth.py:159-164` |
 | mixin session reads | `MSTeamsSessionStore.get_or_create()` / `.is_expired()` | `TeamsSessionStoreLike` Protocol | `auth.py:134`, `:130` |
 | `bind_teams_identity` | `MSTeamsAgentWrapper._session_store` | `getattr(self.agent, "bind_teams_identity")` at wiring | `wrapper.py:223` |
-| `IntegrationManager.shutdown` | `wrapper.close_formdesigner_client()` + `agent.aclose()` | await before `clear()` | `manager.py:988`, `:1109` |
+| `IntegrationManager.shutdown` | `agent.aclose()` appended to the existing per-bot close loop | `close_formdesigner_client()` is ALREADY awaited there; await before `clear()` | `manager.py:1067`, `:1139` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -1215,7 +1223,7 @@ class WizardFormDialog(BaseFormDialog):                                  # line 
 - ~~`FormDesignerToolkit`~~, ~~`formdesigner_list_forms`~~,
   ~~`formdesigner_get_form`~~ — 0 hits anywhere under `packages/`.
 - ~~A FormDesigner **read** client~~ — the only FormDesigner HTTP code is
-  `post_submission()` and the submit-only session at `wrapper.py:1091`.
+  `post_submission()` and the submit-only session at `wrapper.py:1214`.
 - ~~`MSTeamsAgentWrapper.send_card`~~ — `send_card` is defined on `MessageHandler`
   (`handler.py:60`) and on `dialogs/presets/base.py:182`; the wrapper inherits it.
 - ~~An agent→wrapper command seam carrying the `TurnContext`~~ — only
@@ -1231,17 +1239,16 @@ class WizardFormDialog(BaseFormDialog):                                  # line 
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `a9e3c9f5f`
+Verified against: `87341f43c`
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        if ENVELOPE_KEY in submitted_data:` | `wrapper.py:473` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        agent_cmd_handler.register(self._command_router)` | `wrapper.py:182` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `    async def close_formdesigner_client(self) -> None:` | `wrapper.py:1097` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        if ENVELOPE_KEY in submitted_data:` | `wrapper.py:576` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        agent_cmd_handler.register(self._command_router)` | `wrapper.py:191` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `    async def close_formdesigner_client(self) -> None:` | `wrapper.py:1220` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/models.py` | MODIFY | `    formdesigner_api_base_path: str = "/api/v1"  # must match setup_form_api(base_path=...) on the FormDesigner side` | `models.py:66` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/models.py` | MODIFY | `        if self.formdesigner_api_base_path == "/api/v1":` | `models.py:96` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `    async def shutdown(self) -> None:` | `manager.py:988` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `        self.msteams_bots.clear()` | `manager.py:1109` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/models.py` | MODIFY | `        if self.formdesigner_api_base_path == "/api/v1":` | `models.py:101` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `                await wrapper.close_formdesigner_client()` | `manager.py:1067` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/formdesigner_client.py` | CREATE | — | — | — |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/formdesigner_identity.py` | CREATE | — | — | — |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/formdesigner_cards.py` | CREATE | — | — | — |
@@ -1263,7 +1270,7 @@ Verified against: `a9e3c9f5f`
 - `aiohttp` only — never `requests`/`httpx` (TID251 fails the merge gate).
 - Pydantic v2 for the client's models; `MSTeamsAgentConfig` is a **dataclass**, so
   new fields follow its style and resolve env fallbacks in `__post_init__` with the
-  `{NAME}_FORMDESIGNER_*` convention (`models.py:96`).
+  `{NAME}_FORMDESIGNER_*` convention (`models.py:101`).
 - Mixin style follows `SkillRegistryMixin` (`parrot/skills/mixin.py:47`): a
   cooperative `__init__(*args, **kwargs)`, lazy configuration, and tool
   contribution through `agent_tools()`.
@@ -1277,13 +1284,13 @@ Verified against: `a9e3c9f5f`
 
 ### Known Risks / Gotchas
 
-- **The picker key must never be `_formdesigner`.** `wrapper.py:473` routes on that
+- **The picker key must never be `_formdesigner`.** `wrapper.py:576` routes on that
   key alone, and `extract_answers` treats everything outside
   `RESERVED_CONTROL_KEYS` as an answer. A picker card using `ENVELOPE_KEY` would be
   parsed as a submission with garbage answers. Use `PICKER_ACTION_KEY`
   (`_formdesigner_action`) and add it to the seam's condition. Underscore-prefixed
   additive keys are safe for the dialog lane too (finding F021).
-- **Dispatch order.** The two A2UI branches (`wrapper.py:424`, `:446`) run before
+- **Dispatch order.** The two A2UI branches (`wrapper.py:508`, `:546`) run before
   the envelope branch. A picker card must not carry `a2ui_token` or `a2ui_action`.
 - **The dialog lane is a trap.** `WizardFormDialog` renders with a plain
   `AdaptiveCardRenderer` and completes via `FormOrchestrator`, so a form served
@@ -1312,9 +1319,11 @@ Verified against: `a9e3c9f5f`
 - **Shared-file contention.** `wrapper.py` and `models.py` are edited by FEAT-733
   (TASK-4653/4655) and FEAT-729. M7 should land last and rebase onto whichever
   merges first.
-- **Session leak precedent.** `IntegrationManager.shutdown()` never closes the
-  FEAT-551 session (ledger `a9514c9232ad`); M7 must close both, or this feature
-  doubles the leak.
+- **The FEAT-551 session leak is ALREADY FIXED — do not re-fix it.**
+  `IntegrationManager.shutdown()` closes the FormDesigner client and the voice
+  transcriber in a per-bot loop, each in its own `try` (`manager.py:1067`), and
+  ledger `a9514c9232ad` is closed (`resolved_by task:TASK-4059`). M7 adds only the
+  agent's own `aclose()` there.
 - **Teams caps Adaptive Cards at schema 1.6** and supports no upload inputs. The
   card payload byte cap is unconfirmed (§8), so the wizard is the mitigation for
   large forms, with the web-form link as the floor.
@@ -1434,10 +1443,10 @@ To run it: set the brainstorm's `**Status**` to `accepted`, then re-run
   - M8 → M1…M7, M9 (tests and docs cover both local and remote section serving).
 - **Shared files** — three, all inside M7, which is why M7 is a single module
   rather than split per file:
-  - `wrapper.py`: the agent-first seam (`:473`), the command hook (`:182`) and the
-    shutdown path (`:1097`).
-  - `models.py`: the new config fields (`:66`) and their env fallbacks (`:96`).
-  - `manager.py`: `shutdown()` (`:988`) and `msteams_bots.clear()` (`:1109`).
+  - `wrapper.py`: the agent-first seam (`:576`), the command hook (`:191`) and the
+    shutdown path (`:1220`).
+  - `models.py`: the new config fields (`:66`) and their env fallbacks (`:101`).
+  - `manager.py`: one `aclose()` added to the existing per-bot close loop (`:1067`).
 - **Exclusive resources**: none. No migration, no lockfile change, no native
   extension rebuild.
 - **Cross-feature dependencies** — this is the constraining factor:
