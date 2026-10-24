@@ -1207,6 +1207,51 @@ class FormAPIHandler:
         await response.write_eof()
         return response
 
+    async def translate_form(self, request: web.Request) -> web.Response:
+        """Translate a JSON Schema into a stateless A2UI surface.
+
+        Args:
+            request: Request containing ``schema`` and optional form metadata.
+
+        Returns:
+            The translated createSurface envelope, or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            return JSONResponse({"error": "body too large", "max_bytes": a2ui_wire.A2UI_MAX_BODY_BYTES}, status=413)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        schema = body.get("schema") if isinstance(body, dict) else None
+        if not isinstance(schema, dict):
+            return JSONResponse({"error": "schema (object) is required"}, status=400)
+        if get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        from ..services.a2ui_translate import translate_jsonschema_to_a2ui
+
+        try:
+            rendered = await translate_jsonschema_to_a2ui(
+                schema,
+                form_id=body.get("form_id"),
+                title=body.get("title"),
+                tenant=tenant,
+                locale=body.get("locale", "en"),
+            )
+        except (ValidationError, ValueError) as exc:
+            return JSONResponse({"error": "invalid schema", "details": str(exc)}, status=400)
+        if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+            return web.json_response(
+                {
+                    "content": rendered.content,
+                    "content_type": rendered.content_type,
+                    "warnings": [warning.model_dump(mode="json") for warning in rendered.warnings],
+                    "metadata": rendered.metadata,
+                }
+            )
+        return a2ui_wire.a2ui_response([rendered.content], status=200)
+
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid}/style — Get style schema."""
         form_uid = extract_form_uid(request)
