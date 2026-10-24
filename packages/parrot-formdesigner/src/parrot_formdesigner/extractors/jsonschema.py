@@ -176,9 +176,7 @@ class JsonSchemaExtractor:
                     title=sub_meta.get("title"),
                     description=sub_meta.get("description"),
                     fields=[],
-                    depends_on=self._dependency(
-                        prop.get("x-subsection-depends-on"), subsection_id
-                    ),
+                    depends_on=self._dependency(prop.get("x-subsection-depends-on"), subsection_id),
                 )
                 subsections[subsection_key] = subsection
                 sections[section_id].fields.append(subsection)
