@@ -205,7 +205,9 @@ async def test_group_chat_refused():
 @pytest.mark.asyncio
 async def test_local_mode_renders_with_teams_renderer(monkeypatch):
     reader = FakeReader()
-    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader)
+    monkeypatch.setattr(
+        "parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader
+    )
     ctx = _ctx("/getform survey")
     await _agent(formdesigner_mode="local", formdesigner_registry=object()).handle_getform(ctx)
     assert _card(ctx)["type"] == "AdaptiveCard"
@@ -222,7 +224,9 @@ async def test_local_mode_without_secret_refuses():
 async def test_local_membership_denied_before_registry(monkeypatch):
     reader = FakeReader()
     reader.error = FormDesignerError("denied", status=403)
-    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader)
+    monkeypatch.setattr(
+        "parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader
+    )
     ctx = _ctx()
     await _agent(formdesigner_mode="local", formdesigner_registry=object()).handle_listforms(ctx)
     assert "don't have access" in _card(ctx)["body"][0]["text"]
@@ -231,7 +235,9 @@ async def test_local_membership_denied_before_registry(monkeypatch):
 @pytest.mark.asyncio
 async def test_local_membership_authorized(monkeypatch):
     reader = FakeReader()
-    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader)
+    monkeypatch.setattr(
+        "parrot.integrations.msteams.formdesigner_mixin.LocalFormReader", lambda *args, **kwargs: reader
+    )
     ctx = _ctx()
     await _agent(formdesigner_mode="local", formdesigner_registry=object()).handle_listforms(ctx)
     assert reader.calls[0][0] == "list"
@@ -268,7 +274,12 @@ async def test_flush_rechecks_expired_session():
     ctx = _ctx()
     async with agent.formdesigner_turn(ctx):
         agent._fd_wizards.start(
-            conversation_id="conv-1", form_uid=FORM_UID, tenant="workspace", total_sections=1, owner_user_id="user-1", form_version="1"
+            conversation_id="conv-1",
+            form_uid=FORM_UID,
+            tenant="workspace",
+            total_sections=1,
+            owner_user_id="user-1",
+            form_version="1",
         )
         from parrot.integrations.msteams.formdesigner_turn import active_turn
 

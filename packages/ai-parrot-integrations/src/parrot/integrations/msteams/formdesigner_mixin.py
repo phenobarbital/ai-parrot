@@ -22,7 +22,13 @@ from .formdesigner_cards import (
     build_picker_card,
 )
 from .formdesigner_client import FormDescriptor, FormDesignerClient, FormDesignerError, parse_form_ref
-from .formdesigner_identity import LocalFormAuthorizer, TeamsSessionStoreLike, TenantUnresolved, resolve_bearer, resolve_form_tenant
+from .formdesigner_identity import (
+    LocalFormAuthorizer,
+    TeamsSessionStoreLike,
+    TenantUnresolved,
+    resolve_bearer,
+    resolve_form_tenant,
+)
 from .formdesigner_local import LocalFormReader
 from .formdesigner_submit import RecentActivityCache
 from .formdesigner_turn import FormDesignerTurn, active_turn, bind_turn
@@ -94,7 +100,9 @@ class TeamsFormDesignerMixin:
                 self.formdesigner_mode = mode
         self._fd_render_timeout = float(getattr(config, "formdesigner_render_timeout", self._fd_render_timeout))
         self._fd_submit_timeout = float(getattr(config, "formdesigner_submit_timeout", self._fd_submit_timeout))
-        self._fd_allowed_hosts = [str(host).lower() for host in (getattr(config, "formdesigner_allowed_hosts", None) or [])]
+        self._fd_allowed_hosts = [
+            str(host).lower() for host in (getattr(config, "formdesigner_allowed_hosts", None) or [])
+        ]
         self._fd_tenant_map = dict(getattr(config, "formdesigner_tenant_map", None) or {})
 
     def bind_teams_identity(self, store: TeamsSessionStoreLike) -> None:
@@ -252,7 +260,9 @@ class TeamsFormDesignerMixin:
                     raise FormDesignerError("section rendering mismatch", status=200)
                 card = self._fd_decorate_wizard(rendered.content, state)
             else:
-                rendered = await reader.render_teams(tenant=turn.tenant, form_uid=form.form_uid, bearer_token=turn.bearer)
+                rendered = await reader.render_teams(
+                    tenant=turn.tenant, form_uid=form.form_uid, bearer_token=turn.bearer
+                )
                 card = rendered.content
             await self._fd_send_card(append_render_warnings(card, rendered.warnings), turn_context)
         except FormDesignerError as exc:
