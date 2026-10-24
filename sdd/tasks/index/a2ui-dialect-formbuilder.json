@@ -77,7 +77,7 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,8 +87,9 @@
       "parallelism_notes": "calls render_a2ui_schema/resolve_dialect from TASK-4192 and needs the final overrides translation from TASK-4193 (api/dialect.py) for the messages-framing test.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:06:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4194-get-schema-a2ui-branch.md"
+      "completed_at": "2026-10-24T00:48:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4194-get-schema-a2ui-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4195",
