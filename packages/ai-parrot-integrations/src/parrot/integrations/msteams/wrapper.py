@@ -34,6 +34,7 @@ from .formdesigner_submit import (
     parse_envelope,
     post_submission,
     verify_envelope,
+    resolve_submit_tenant,
 )
 from parrot_formdesigner.renderers.teams import ENVELOPE_KEY
 from .adapter import Adapter
@@ -1190,7 +1191,25 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 allowed_hosts=allowed,
                 secret=self.config.formdesigner_submit_secret,
                 api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+                require_signature=not self.config.formdesigner_allow_unsigned_submissions,
             )
+            # Tenant derivation runs AFTER verification: resolve_submit_tenant can rewrite
+            # submit_url, and a rewrite before the SSRF/path guard would launder the envelope.
+            channel_data = getattr(turn_context.activity, "channel_data", None)
+            tenant_info = channel_data.get("tenant") if isinstance(channel_data, dict) else None
+            asserted_tenant_id = tenant_info.get("id") if isinstance(tenant_info, dict) else None
+            env, tenant_overridden = resolve_submit_tenant(
+                env,
+                asserted_tenant_id=asserted_tenant_id,
+                tenant_map=self.config.formdesigner_tenant_map,
+                api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+            )
+            if tenant_overridden:
+                self.logger.info(
+                    "formdesigner submit: tenant claim overridden by the bot-asserted tenant (form=%s, tenant=%s)",
+                    env.form_uid,
+                    env.tenant,
+                )
             activity_id = getattr(turn_context.activity, "id", None)
             if activity_id and self._formdesigner_recent.seen(activity_id):
                 self.logger.info("formdesigner submit: duplicate activity %s ignored", activity_id)
