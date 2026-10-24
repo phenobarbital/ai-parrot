@@ -1,4 +1,5 @@
 """FEAT-734 M6 — FormDesignerToolkit with a fake reader."""
+
 import json
 import uuid
 from types import SimpleNamespace
@@ -38,12 +39,15 @@ class FakeReader:
 
 def _toolkit(reader, *, tenant="acme", bearer="nav-tok", queue=None, accept=True):
     queue = [] if queue is None else queue
-    return FormDesignerToolkit(
-        reader,
-        tenant_resolver=lambda: tenant,
-        bearer_resolver=lambda: bearer,
-        enqueue_card=lambda uid: queue.append(uid) or accept,
-    ), queue
+    return (
+        FormDesignerToolkit(
+            reader,
+            tenant_resolver=lambda: tenant,
+            bearer_resolver=lambda: bearer,
+            enqueue_card=lambda uid: queue.append(uid) or accept,
+        ),
+        queue,
+    )
 
 
 async def test_toolkit_get_form_returns_metadata_not_card():
@@ -62,7 +66,12 @@ async def test_toolkit_list_forms_scoped_to_tenant():
     tk, _ = _toolkit(reader)
     result = await tk.formdesigner_list_forms()
     assert result["tenant"] == "acme"
-    assert result["forms"][0] == {"form_uid": str(UID), "form_id": "store-visit", "title": "Store Visit", "description": "d"}
+    assert result["forms"][0] == {
+        "form_uid": str(UID),
+        "form_id": "store-visit",
+        "title": "Store Visit",
+        "description": "d",
+    }
     assert reader.calls == [("list_forms", "acme", "nav-tok")]
 
 
