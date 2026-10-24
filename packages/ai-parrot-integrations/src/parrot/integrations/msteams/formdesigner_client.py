@@ -1,4 +1,5 @@
 """FormDesigner read client (FEAT-734 M1): list, fetch and render forms over aiohttp."""
+
 from __future__ import annotations
 
 import asyncio
@@ -99,9 +100,7 @@ class FormDesignerClient:
             self._owns_session = True
         return self._session
 
-    async def _request_json(
-        self, url: str, *, bearer_token: str | None, params: dict[str, str] | None = None
-    ) -> Any:
+    async def _request_json(self, url: str, *, bearer_token: str | None, params: dict[str, str] | None = None) -> Any:
         """GET ``url`` and return a bounded, parsed JSON response for HTTP 200."""
         headers = {"Accept": "application/json"}
         if bearer_token:
@@ -194,7 +193,11 @@ class FormDesignerClient:
         body = await self._request_json(
             self._forms_url(tenant, str(form_uid), "render", "teams"), bearer_token=bearer_token, params=params
         )
-        if not isinstance(body, dict) or body.get("content_encoding") == "base64" or not isinstance(body.get("content"), dict):
+        if (
+            not isinstance(body, dict)
+            or body.get("content_encoding") == "base64"
+            or not isinstance(body.get("content"), dict)
+        ):
             raise FormDesignerError("malformed Teams card response", status=200)
         try:
             card = RenderedCard.model_validate(body)

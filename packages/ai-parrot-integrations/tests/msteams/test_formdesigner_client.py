@@ -1,4 +1,5 @@
 """FEAT-734 M1 — FormDesignerClient against a fake aiohttp server."""
+
 import uuid
 
 import pytest
@@ -64,6 +65,7 @@ async def test_client_list_forms_parses_descriptors(aiohttp_server, seen):
 
 async def test_client_list_forms_sends_bearer(aiohttp_server, seen):
     """Authorization is sent only for a non-empty bearer token."""
+
     async def handler(_request):
         return web.json_response({"forms": []})
 
@@ -79,6 +81,7 @@ async def test_client_list_forms_sends_bearer(aiohttp_server, seen):
 
 async def test_client_render_teams_with_meta(aiohttp_server, seen):
     """A ``with_meta`` render envelope produces a complete ``RenderedCard``."""
+
     async def handler(_request):
         return web.json_response(
             {
@@ -101,6 +104,7 @@ async def test_client_render_teams_with_meta(aiohttp_server, seen):
 
 async def test_client_render_teams_415_raises(aiohttp_server, seen):
     """An unsupported teams renderer surfaces its HTTP 415 status."""
+
     async def handler(_request):
         return web.json_response({"supported": ["html"]}, status=415)
 
@@ -116,6 +120,7 @@ async def test_client_render_teams_415_raises(aiohttp_server, seen):
 
 async def test_client_no_redirects_and_bounded_body(aiohttp_server, seen):
     """A redirect is not followed and oversized bodies are refused."""
+
     async def redirect_handler(request):
         if request.path.endswith("redirect"):
             raise web.HTTPFound("/api/v1/acme/forms")
@@ -137,6 +142,7 @@ async def test_client_no_redirects_and_bounded_body(aiohttp_server, seen):
 
 async def test_client_section_render_requires_matching_metadata(aiohttp_server, seen):
     """A server that ignores required section metadata is rejected as old."""
+
     async def handler(_request):
         return web.json_response(
             {
