@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Golden description",
+  "properties": {
+    "choice": {
+      "enum": ["one", "two"],
+      "title": "Choice",
+      "type": "string",
+      "x-field-type": "select",
+      "x-options": [
+        {"disabled": false, "label": "One", "value": "one"},
+        {"disabled": false, "label": "Two", "value": "two"}
+      ],
+      "x-section": {"description": null, "section_id": "identity", "title": "Identity"}
+    },
+    "confirmed": {
+      "title": "Confirmed",
+      "type": "boolean",
+      "x-field-type": "boolean",
+      "x-section": {"description": null, "section_id": "details", "title": null}
+    },
+    "name": {
+      "title": "Name",
+      "type": "string",
+      "x-field-type": "text",
+      "x-section": {"description": null, "section_id": "identity", "title": "Identity"}
+    },
+    "quantity": {
+      "title": "Quantity",
+      "type": "number",
+      "x-field-type": "number",
+      "x-section": {"description": null, "section_id": "details", "title": null}
+    }
+  },
+  "required": ["name"],
+  "title": "Golden Form",
+  "type": "object"
+}
