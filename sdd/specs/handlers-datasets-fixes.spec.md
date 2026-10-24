@@ -105,14 +105,17 @@ No new models. No signature change to any public API; `_apply_rls` is private.
 
 ## 3. Module Breakdown
 
-### Module 1: Request-scoped RLS injection (`ai-parrot`)
+### Module 1: Shared copy helper + request-scoped RLS injection (`ai-parrot`)
+
+**New** `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/scoped_copy.py`
+
+- Public `request_scoped_copy(source: DataSource) -> DataSource`: returns `copy.copy(source)`
+  and, when the copy exposes a `_permanent_filter` dict, rebinds it to
+  `dict(source._permanent_filter)` so no injector can write through to the original.
+  Both modules use this one function — the mutation surface in §1 is defined once.
+- Re-exported from `sources/__init__.py` alongside the existing source classes.
 
 `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py`
-
-- Add `import copy` at module scope.
-- Add a private helper `_request_scoped_copy(inner: DataSource) -> DataSource` that returns
-  `copy.copy(inner)` and, when the copy exposes a `_permanent_filter` dict, rebinds it to
-  `dict(inner._permanent_filter)` so the injectors cannot reach the original.
 - Change `_apply_rls(self, predicates, resources) -> DataSource`: it operates on the copy,
   never on `self._inner`, and returns the copy. Every branch that currently writes to
   `self._inner` writes to the local copy instead. The unsupported-source branch returns the
@@ -126,9 +129,10 @@ No new models. No signature change to any public API; `_apply_rls` is private.
 
 `packages/ai-parrot-server/src/parrot/handlers/datasets.py`
 
-- `_clone_agent_dm()` passes an isolated source to each `DatasetEntry` rather than
-  `entry.source`, using the same shallow-copy-plus-container-isolation rule so a per-user
-  manager can never write through to the agent's catalog object.
+- `_clone_agent_dm()` passes `request_scoped_copy(entry.source)` to each `DatasetEntry`
+  rather than `entry.source`, so a per-user manager can never write through to the agent's
+  catalog object. Imported from `..tools.dataset_manager.sources` (the module already
+  imports `DatasetEntry, DatasetManager` from `..tools.dataset_manager`).
 - The existing `try/except Exception` per entry keeps its behaviour: a source that cannot be
   copied logs the existing warning and that entry is skipped, never silently shared.
 
@@ -217,7 +221,9 @@ from parrot.tools.dataset_manager.tool import DatasetEntry, DatasetManager
 ### Does NOT Exist (Anti-Hallucination)
 
 - There is **no** `DataSource.clone()`, `.copy()` or `.with_rls()` method — the copy must be
-  built with `copy.copy` in the caller.
+  built with `copy.copy` inside the new `request_scoped_copy` helper.
+- There is **no** existing module `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/scoped_copy.py`
+  and no existing symbol named `request_scoped_copy` anywhere in the repo.
 - There is **no** existing test file `packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`.
 - `_clone_agent_dm` has **no** test coverage anywhere today.
 - `authorizing.py` does **not** currently import `copy`.
