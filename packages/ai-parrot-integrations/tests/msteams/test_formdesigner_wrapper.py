@@ -223,9 +223,7 @@ class TestFormDesignerSubmitSecurity:
             await w._handle_formdesigner_submit(ctx, _submission_data())
 
         assert mock_post.call_args.args[1].tenant == "resolved-tenant"
-        override_calls = [
-            call for call in w.logger.info.call_args_list if "tenant claim overridden" in call.args[0]
-        ]
+        override_calls = [call for call in w.logger.info.call_args_list if "tenant claim overridden" in call.args[0]]
         assert len(override_calls) == 1
 
     @pytest.mark.parametrize("channel_data", [None, {}, "not-a-dict"])
