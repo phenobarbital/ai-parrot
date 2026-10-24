@@ -66,7 +66,58 @@ The terminal Submit action's `data` carries a `TeamsSubmitEnvelope`:
 
 `sig` is the HMAC-SHA256 hex digest of the envelope's canonical JSON (every field except `sig`,
 keys sorted, compact separators), computed with `TeamsSubmitEnvelope.sign()` when the renderer
-is configured with a `signing_secret`. `sig` is omitted (`null`) when no secret is configured.
+is configured with a `signing_secret`.
+
+The signature is **required**, not optional. `tenant` and `form_uid` inside the envelope are
+client-supplied Adaptive Card data: without a valid signature the bot has no way to tell a
+legitimate card from one a user crafted to target another tenant, and it forwards the submission
+under its own bearer token. A bot configured with a bearer token but no signing secret therefore
+refuses to start, raising `UnsignedSubmitConfigError`.
+
+## Configuring Teams submissions securely
+
+The signing secret is **one setting in two places**. Both sides must be given the same value;
+nothing in the code compares them.
+
+| Side | Setting | Environment variable |
+|---|---|---|
+| FormDesigner (emits + signs) | `setup_form_api(teams_signing_secret=...)` | `FORMDESIGNER_TEAMS_SIGNING_SECRET` |
+| Teams bot (verifies) | `MSTeamsAgentConfig.formdesigner_submit_secret` | `<NAME>_FORMDESIGNER_SUBMIT_SECRET` |
+
+Configure **both or neither**:
+
+- Neither → envelopes carry `sig: null`. Acceptable only when the bot has no
+  `formdesigner_submit_token`: with no bearer there is nothing to escalate with.
+- FormDesigner only → the bot ignores the signature. No protection.
+- Bot only → every submission is refused, because nothing signs the envelopes.
+
+Passing an explicit `teams_renderer=` to `setup_form_api()` takes precedence; configure
+`signing_secret` on that renderer instead.
+
+### The escape hatch
+
+`formdesigner_allow_unsigned_submissions=True` (or `<NAME>_FORMDESIGNER_ALLOW_UNSIGNED`) permits
+the unsigned combination and logs a `WARNING` on every startup.
+
+**Development only.** With it set, any user who can reach the bot can submit into any tenant whose
+form is served from an allowed host. Never set it in an environment holding real data.
+
+### Tenant resolution
+
+When `formdesigner_tenant_map` (or `<NAME>_FORMDESIGNER_TENANT_MAP`, a JSON object) is configured,
+the bot prefers the tenant Microsoft Teams asserts over the one the card claims:
+
+```
+{"<azure-ad-tenant-guid>": "<formdesigner-tenant-slug>"}
+```
+
+The GUID comes from the activity (`channelData.tenant.id`) and is asserted by Bot Framework, not
+by the card. On a mapped GUID the bot rewrites the envelope's `tenant` and the `{tenant}` segment
+of `submit_url`; on an unmapped or absent GUID it uses the envelope's `tenant` unchanged.
+
+**This does not replace the signature.** Because an unmapped caller falls back to the envelope,
+the mapping constrains mapped tenants only. What it buys is blast radius: for a mapped tenant, a
+leaked or replayed signing secret is no longer enough to write into a different tenant.
 
 ## Bot configuration
 
@@ -76,7 +127,7 @@ is configured with a `signing_secret`. `sig` is omitted (`null`) when no secret 
 |---|---|---|
 | `formdesigner_allowed_hosts` | `{NAME}_FORMDESIGNER_ALLOWED_HOSTS` (comma-separated) | Host allowlist for `submit_url`. Empty/unset disables the whole branch. |
 | `formdesigner_submit_token` | `{NAME}_FORMDESIGNER_SUBMIT_TOKEN` | Bearer token sent to the FormDesigner API (needed for private forms). |
-| `formdesigner_submit_secret` | `{NAME}_FORMDESIGNER_SUBMIT_SECRET` | HMAC secret; when set, every envelope must carry a valid `sig`. |
+| `formdesigner_submit_secret` | `{NAME}_FORMDESIGNER_SUBMIT_SECRET` | HMAC secret; every envelope must carry a valid `sig`. Required whenever `formdesigner_submit_token` is set (see below). |
 | `formdesigner_submit_timeout` | — | Seconds before the forwarding POST gives up (default `15.0`). |
 | `formdesigner_api_base_path` | `{NAME}_FORMDESIGNER_API_BASE_PATH` | Must match the `base_path` passed to `setup_form_api()` on the FormDesigner side (default `/api/v1`). A mismatch makes `verify_envelope`'s path check reject every submission. |
 
@@ -94,8 +145,8 @@ order:
 3. **Path/tenant/uid match** — `submit_url`'s path must equal
    `{api_base_path}/{tenant}/forms/{form_uid}/data` built from the envelope's own fields (never
    trusted verbatim from the activity).
-4. **Signature** — when `formdesigner_submit_secret` is configured, the envelope's `sig` must
-   verify against it.
+4. **Signature** — the envelope's `sig` must verify against `formdesigner_submit_secret`. With no
+   secret configured the envelope is refused unless `formdesigner_allow_unsigned_submissions` is set.
 
 `post_submission()` never follows redirects (`allow_redirects=False`), bounds the response body
 size, and never raises into the bot adapter — HTTP/timeout errors come back as
