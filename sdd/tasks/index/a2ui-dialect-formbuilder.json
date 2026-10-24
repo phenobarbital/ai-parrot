@@ -56,7 +56,7 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "replaces the baseline body of overrides_to_envelopes that TASK-4192 creates in api/dialect.py (same file).",
       "assigned_to": null,
       "started_at": "2026-10-24T00:06:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4193-dialect-overrides-translation.md"
+      "completed_at": "2026-10-24T00:43:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4193-dialect-overrides-translation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4194",
