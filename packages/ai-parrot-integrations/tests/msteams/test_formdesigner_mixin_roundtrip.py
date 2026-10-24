@@ -276,6 +276,7 @@ async def test_wizard_generated_actions_route_to_mixin(aiohttp_server, three_sec
         posted.append(answers)
         return SubmitOutcome(status=200, body={"submission_id": "submission-1"})
 
+    context = initial
     with patch("parrot.integrations.msteams.formdesigner_mixin.post_submission", side_effect=capture_submission):
         for index, answer in enumerate(({"name": "Ada"}, {"day": "2026-10-24"}, {"notes": "done"})):
             card = first if index == 0 else _sent_card(context)
