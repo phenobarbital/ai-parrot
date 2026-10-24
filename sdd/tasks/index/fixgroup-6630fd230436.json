@@ -1,0 +1,72 @@
+{
+  "feature": "fixgroup-6630fd230436",
+  "feature_id": "FEAT-739",
+  "spec": "sdd/specs/fixgroup-6630fd230436.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-24T01:05:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-server/tests/ui/test_vitest_upload_status.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_data_management_modal.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:e959d598f593b16be9be831b7d14e8f65c582480c0c96c5e787a7e08c41848e4"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4680",
+      "slug": "upload-response-types-and-formatter",
+      "title": "Typed upload response and the status formatter",
+      "feature_id": "FEAT-739",
+      "feature": "fixgroup-6630fd230436",
+      "spec": "sdd/specs/fixgroup-6630fd230436.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; touches agent.ts, upload-status.ts and their tests only, none of which TASK-4681 declares.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4680-upload-response-types-and-formatter.md"
+    },
+    {
+      "id": "TASK-4681",
+      "slug": "modal-accepts-any-file-and-renders-report",
+      "title": "Data-management modal accepts any file and renders the server's report",
+      "feature_id": "FEAT-739",
+      "feature": "fixgroup-6630fd230436",
+      "spec": "sdd/specs/fixgroup-6630fd230436.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4680"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports formatUploadStatus, uploadPayloadFromError and UploadStatusType from TASK-4680 (ui/src/lib/components/agents/upload-status.ts), and its validation command runs TASK-4680's bridge test_vitest_upload_status.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4681-modal-accepts-any-file-and-renders-report.md"
+    }
+  ]
+}
