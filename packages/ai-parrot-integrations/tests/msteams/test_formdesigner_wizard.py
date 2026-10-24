@@ -1,4 +1,5 @@
 """FEAT-734 M5 — WizardStore."""
+
 import uuid
 
 from parrot.integrations.msteams.formdesigner_wizard import WizardStore
@@ -7,8 +8,9 @@ UID = uuid.uuid4()
 
 
 def _start(store, conv="c1", uid=UID):
-    return store.start(conversation_id=conv, form_uid=uid, tenant="acme", total_sections=3,
-                       owner_user_id="u1", form_version="1.0")
+    return store.start(
+        conversation_id=conv, form_uid=uid, tenant="acme", total_sections=3, owner_user_id="u1", form_version="1.0"
+    )
 
 
 def test_wizard_advance_accumulates_answers():

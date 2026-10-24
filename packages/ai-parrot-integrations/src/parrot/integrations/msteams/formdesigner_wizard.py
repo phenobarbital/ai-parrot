@@ -1,4 +1,5 @@
 """Per-conversation wizard state for sectioned FormDesigner cards (FEAT-734 M5). Process-local."""
+
 from __future__ import annotations
 
 import asyncio
