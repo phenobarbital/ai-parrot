@@ -34,9 +34,7 @@ def test_picker_card_choiceset_and_action_key() -> None:
     assert len(choice_sets) == 1
     assert choice_sets[0]["id"] == "form_uid"
     assert choice_sets[0]["isRequired"] is True
-    assert choice_sets[0]["choices"] == [
-        {"title": form.title, "value": str(form.form_uid)} for form in forms
-    ]
+    assert choice_sets[0]["choices"] == [{"title": form.title, "value": str(form.form_uid)} for form in forms]
     assert choice_sets[0]["value"] == str(forms[0].form_uid)
     assert len(submit_actions) == 1
     assert submit_actions[0]["data"] == {PICKER_ACTION_KEY: PICKER_GET_FORM, "tenant": "acme"}
