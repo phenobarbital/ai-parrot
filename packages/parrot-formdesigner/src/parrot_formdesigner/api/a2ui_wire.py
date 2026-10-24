@@ -88,10 +88,12 @@ def _a2ui_ns() -> Any:
         from parrot.a2a.models import A2UI_MEDIA_TYPE
         from parrot.outputs.a2ui.models import (
             A2UIRendererMessage,
+            CheckRule,
             Component,
             ComponentMetadata,
             ErrorMessage,
             Extensions,
+            FunctionCall,
             UpdateComponents,
             UpdateDataModel,
         )
@@ -106,10 +108,12 @@ def _a2ui_ns() -> Any:
     ns = _A2UIWireNamespace()
     ns.A2UI_MEDIA_TYPE = A2UI_MEDIA_TYPE
     ns.A2UIRendererMessage = A2UIRendererMessage
+    ns.CheckRule = CheckRule
     ns.Component = Component
     ns.ComponentMetadata = ComponentMetadata
     ns.ErrorMessage = ErrorMessage
     ns.Extensions = Extensions
+    ns.FunctionCall = FunctionCall
     ns.UpdateComponents = UpdateComponents
     ns.UpdateDataModel = UpdateDataModel
     ns.A2UIErrorCode = A2UIErrorCode
