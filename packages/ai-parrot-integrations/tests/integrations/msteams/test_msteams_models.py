@@ -263,9 +263,7 @@ class TestFormDesignerSubmitConfig:
         monkeypatch.setattr(
             msteams_models.config,
             "get",
-            lambda key: '{"aad-guid": "formdesigner-tenant"}'
-            if key == "TESTBOT_FORMDESIGNER_TENANT_MAP"
-            else None,
+            lambda key: '{"aad-guid": "formdesigner-tenant"}' if key == "TESTBOT_FORMDESIGNER_TENANT_MAP" else None,
         )
 
         config = MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
