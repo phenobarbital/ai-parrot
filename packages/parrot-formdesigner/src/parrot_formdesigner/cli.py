@@ -99,7 +99,7 @@ async def _export(
     """
     from .services.a2ui_export import A2UIExportService
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
     report: dict[str, Any] = {"exported": 0, "failed": 0, "warnings": {}}
     uids = [uuid.UUID(value) for value in form_uids] or None
     for tenant in tenants:
@@ -154,7 +154,7 @@ async def _import(
     from .extractors import A2UIExtractor
 
     try:
-        result = A2UIExtractor().extract(surface.read_text(), form_id=form_id, tenant=tenant)
+        result = A2UIExtractor().extract(await asyncio.to_thread(surface.read_text), form_id=form_id, tenant=tenant)
     except RuntimeError as exc:
         _config_error(str(exc))
     click.echo(
