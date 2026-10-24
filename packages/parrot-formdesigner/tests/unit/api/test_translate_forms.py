@@ -108,9 +108,7 @@ async def client(registry: FormRegistry) -> AsyncIterator[_HandlerClient]:
     _RENDERERS.update(snapshot)
 
 
-async def test_translate_stamps_route_tenant_and_never_persists(
-    client: _HandlerClient, registry: FormRegistry
-) -> None:
+async def test_translate_stamps_route_tenant_and_never_persists(client: _HandlerClient, registry: FormRegistry) -> None:
     """The route tenant wins over body input and translation remains stateless."""
     before = len(await registry.list_forms(tenant="navigator"))
     response = await client.post(
