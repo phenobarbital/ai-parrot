@@ -19,7 +19,6 @@ from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.a2ui import A2UIFormRenderer
 from parrot_formdesigner.services.registry import FormRegistry
 
-
 TENANT = "route-tenant"
 
 
