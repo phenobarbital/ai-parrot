@@ -277,7 +277,7 @@
       "feature_id": "FEAT-734",
       "feature": "formdesigner-serve-forms",
       "spec": "sdd/specs/formdesigner-serve-forms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -288,8 +288,9 @@
       "parallelism_notes": "TASK-4688: imports PICKER_ACTION_KEY (formdesigner_cards.py); TASK-4692: calls handle_formdesigner_card and the rest of the mixin surface (formdesigner_mixin.py) behind the formdesigner_serving marker.",
       "assigned_to": null,
       "started_at": "2026-10-24T01:07:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4693-formdesigner-wrapper-seams.md"
+      "completed_at": "2026-10-24T01:33:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4693-formdesigner-wrapper-seams.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4694",
