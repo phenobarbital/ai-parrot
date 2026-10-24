@@ -34,6 +34,55 @@ _CONTAINERS = frozenset({"Column", "Row", "Card", "List", "Tabs", "Modal"})
 # Text roles emitted by the FEAT-544 renderer that carry no form structure of their own.
 _SILENT_ROLES = frozenset({"status", "error", "description"})
 
+#: Basic primitive (+ variant / flag qualifier) -> FieldType (spec section 7).
+HEURISTIC_PRIMITIVE_MAP: dict[str, FieldType] = {
+    "TextField": FieldType.TEXT,
+    "TextField:shortText": FieldType.TEXT,
+    "TextField:longText": FieldType.TEXT_AREA,
+    "TextField:number": FieldType.NUMBER,
+    "TextField:obscured": FieldType.PASSWORD,
+    "CheckBox": FieldType.BOOLEAN,
+    "ChoicePicker": FieldType.SELECT,
+    "ChoicePicker:multipleSelection": FieldType.MULTI_SELECT,
+    "Slider": FieldType.NUMBER,
+    "DateTimeInput:date": FieldType.DATE,
+    "DateTimeInput:time": FieldType.TIME,
+    "DateTimeInput:datetime": FieldType.DATETIME,
+}
+#: Basic check function -> how it lands on the FormField.
+CHECK_FUNCTION_TO_CONSTRAINT: dict[str, str] = {
+    "required": "required",
+    "regex": "pattern",
+    "length": "min_length/max_length",
+    "numeric": "min_value/max_value",
+    "email": "field_type=EMAIL",
+}
+_UNSUPPORTED = {"Image", "Video", "AudioPlayer", "Icon", "Divider", "List", "Modal"}
+_INPUTS = {"TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"}
+
+
+def _primitive_key(comp: Any, props: dict[str, Any]) -> str:
+    """Return the ``component:variant`` key used by the heuristic map."""
+    if comp.component == "DateTimeInput":
+        date, time = bool(props.get("enableDate")), bool(props.get("enableTime"))
+        suffix = "datetime" if date and time else "time" if time else "date"
+        return f"DateTimeInput:{suffix}"
+    variant = props.get("variant")
+    return f"{comp.component}:{variant}" if variant else comp.component
+
+
+def _component_children(component: Any) -> list[str]:
+    """Return static child ids from a component."""
+    children: list[str] = []
+    if component.child:
+        children.append(component.child)
+    if isinstance(component.children, list):
+        children.extend(component.children)
+    for tab in (component.model_extra or {}).get("tabs") or []:
+        if isinstance(tab, dict) and isinstance(tab.get("child"), str):
+            children.append(tab["child"])
+    return children
+
 
 class ExtractionMode(str, Enum):
     """How a surface was interpreted."""
@@ -152,6 +201,7 @@ class A2UIExtractor:
             warnings.append(_STRICT_WARNING)
         data_model = cs.data_model if isinstance(cs.data_model, dict) else {}
         reached: set[str] = set()
+        self._seen_field_ids: set[str] = set()
         # sections_meta[sid] = {"title": str|None, "order": [FormField | ssid]}
         sections_meta: dict[str, dict[str, Any]] = {}
         # subsections_meta[(sid, ssid)] = {"title": str|None, "fields": [FormField]}
@@ -168,6 +218,43 @@ class A2UIExtractor:
                 section(sid)["order"].append(ssid)
             return subsections_meta[key]
 
+        def first_text_descendant(component: Any) -> tuple[str, str] | None:
+            """Find the first literal Text descendant in depth-first order."""
+            pending = list(reversed(_component_children(component)))
+            visited: set[str] = set()
+            while pending:
+                child_id = pending.pop()
+                if child_id in visited or child_id not in by_id:
+                    continue
+                visited.add(child_id)
+                child = by_id[child_id]
+                if child.component == "Text":
+                    value = _text(child)
+                    if value is not None:
+                        return child_id, value
+                pending.extend(reversed(_component_children(child)))
+            return None
+
+        inferred_labels: dict[str, tuple[str, str]] = {}
+        consumed_text_ids: set[str] = set()
+        tab_sections: dict[str, str] = {}
+        for parent in by_id.values():
+            children = _component_children(parent)
+            for previous_id, next_id in zip(children, children[1:], strict=False):
+                previous = by_id.get(previous_id)
+                next_component = by_id.get(next_id)
+                next_props = dict(next_component.model_extra or {}) if next_component else {}
+                if (
+                    previous is not None
+                    and previous.component == "Text"
+                    and next_component is not None
+                    and next_component.component in _INPUTS
+                    and not next_props.get("label")
+                ):
+                    label = _text(previous)
+                    if label is not None:
+                        inferred_labels[next_id] = (previous_id, label)
+
         def card_of(ancestors: list[str]) -> str | None:
             for aid in reversed(ancestors):
                 if aid.startswith("sec-") and by_id[aid].component == "Card":
@@ -180,6 +267,107 @@ class A2UIExtractor:
             ext = _ext(comp)
             role = ext.get("parrot_role")
             cid = comp.id
+            if mode is ExtractionMode.HEURISTIC:
+                if comp.component == "Card":
+                    section_id = cid.removeprefix("sec-")
+                    section_meta = section(section_id)
+                    text = first_text_descendant(comp)
+                    if text is not None:
+                        section_meta["title"] = text[1]
+                        consumed_text_ids.add(text[0])
+                    continue
+                if comp.component == "TabItem":
+                    text = first_text_descendant(comp)
+                    section_meta = section(cid)
+                    if text is not None:
+                        section_meta["title"] = text[1]
+                        consumed_text_ids.add(text[0])
+                    warnings.append("tabs_flattened") if "tabs_flattened" not in warnings else None
+                    continue
+                if comp.component == "Tabs":
+                    warnings.append("tabs_flattened") if "tabs_flattened" not in warnings else None
+                    for tab in (comp.model_extra or {}).get("tabs") or []:
+                        if not isinstance(tab, dict) or not isinstance(tab.get("child"), str):
+                            continue
+                        child_id = tab["child"]
+                        tab_sections[child_id] = child_id
+                        section_meta = section(child_id)
+                        title_value = tab.get("title")
+                        if isinstance(title_value, str):
+                            section_meta["title"] = title_value
+                        text = first_text_descendant(by_id[child_id]) if child_id in by_id else None
+                        if text is not None:
+                            section_meta["title"] = section_meta["title"] or text[1]
+                            consumed_text_ids.add(text[0])
+                    continue
+                if comp.component in {"Column", "Row"}:
+                    first_child = _component_children(comp)[:1]
+                    in_card = next((aid for aid in reversed(ancestors) if by_id[aid].component == "Card"), None)
+                    if in_card and first_child and by_id[first_child[0]].component == "Text":
+                        sid = in_card.removeprefix("sec-")
+                        ssid = cid
+                        title_text = _text(by_id[first_child[0]])
+                        subsection_meta = subsection(sid, ssid)
+                        subsection_meta["title"] = title_text
+                        consumed_text_ids.add(first_child[0])
+                    continue
+                if comp.component == "Text":
+                    if cid in consumed_text_ids or cid in {text_id for text_id, _ in inferred_labels.values()}:
+                        continue
+                    dropped.append(DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component"))
+                    continue
+                if comp.component == "Button":
+                    event = getattr(getattr(comp.action, "event", None), "name", None)
+                    if event == "form.cancel":
+                        state["cancel"] = True
+                    elif event != "form.submit":
+                        dropped.append(
+                            DroppedComponent(component_id=cid, component=comp.component, reason="unsupported_component")
+                        )
+                    continue
+                if comp.component in _INPUTS:
+                    field_props = dict(comp.model_extra or {})
+                    inferred = inferred_labels.get(cid)
+                    if inferred is not None:
+                        field_props["label"] = inferred[1]
+                        warning = f"label_inferred_from_text:{cid}"
+                        if warning not in warnings:
+                            warnings.append(warning)
+                    field = self._field_from_component(comp, mode, data_model, warnings, dropped, props=field_props)
+                    if field is None:
+                        continue
+                    tab_id = next(
+                        (aid for aid in reversed(ancestors) if aid in tab_sections),
+                        next((aid for aid in reversed(ancestors) if by_id[aid].component == "TabItem"), None),
+                    )
+                    card_id = next((aid for aid in reversed(ancestors) if by_id[aid].component == "Card"), None)
+                    if tab_id:
+                        section(tab_id)["order"].append(field)
+                    elif card_id:
+                        sid = card_id.removeprefix("sec-")
+                        ssid = next(
+                            (
+                                aid
+                                for aid in reversed(ancestors)
+                                if (sid, aid) in subsections_meta
+                            ),
+                            None,
+                        )
+                        if ssid:
+                            subsection(sid, ssid)["fields"].append(field)
+                        else:
+                            section(sid)["order"].append(field)
+                    else:
+                        section(self.default_section_id)["order"].append(field)
+                    continue
+                dropped.append(
+                    DroppedComponent(
+                        component_id=cid,
+                        component=comp.component,
+                        reason="unsupported_component" if comp.component in _UNSUPPORTED else "not_in_basic_catalog",
+                    )
+                )
+                continue
             if mode is ExtractionMode.STRICT:
                 if comp.component == "Card" and cid.startswith("sec-"):
                     section(cid[4:])
@@ -281,11 +469,9 @@ class A2UIExtractor:
             reached.add(cid)
             comp = by_id[cid]
             yield comp, ancestors
-            kids = [comp.child] if comp.child else []
+            kids = _component_children(comp)
             children = comp.children
-            if isinstance(children, list):
-                kids.extend(children)
-            elif children is not None:
+            if children is not None and not isinstance(children, list):
                 tpl_id = getattr(children, "component_id", None)
                 if tpl_id is not None:
                     tpl = by_id.get(tpl_id)
@@ -307,10 +493,11 @@ class A2UIExtractor:
         data_model: dict[str, Any],
         warnings: list[str],
         dropped: list[DroppedComponent],
+        props: dict[str, Any] | None = None,
     ) -> FormField | None:
         """Strict: parrot_* extensions decide identity/type; missing → heuristic hook (warning)."""
         ext = _ext(comp)
-        props = dict(comp.model_extra or {})
+        props = props if props is not None else dict(comp.model_extra or {})
         raw_type = ext.get("parrot_field_type")
         if mode is ExtractionMode.STRICT and raw_type in {t.value for t in FieldType}:
             from ..renderers.a2ui import FIELD_LOWERING  # lazy: keep module import light
@@ -402,11 +589,85 @@ class A2UIExtractor:
         warnings: list[str],
         dropped: list[DroppedComponent],
     ) -> FormField | None:
-        """TASK-4202 implements HEURISTIC_PRIMITIVE_MAP here; until then every component is dropped."""
-        dropped.append(
-            DroppedComponent(component_id=comp.id, component=comp.component, reason="heuristic_not_implemented")
+        """Map a Basic Catalog input into a lossy :class:`FormField`."""
+        if comp.component in _UNSUPPORTED or comp.component not in _INPUTS:
+            reason = (
+                "unsupported_component"
+                if comp.component in _UNSUPPORTED
+                or comp.component in {"Text", "Button", "Card", "Column", "Row", "Tabs", "TabItem"}
+                else "not_in_basic_catalog"
+            )
+            dropped.append(DroppedComponent(component_id=comp.id, component=comp.component, reason=reason))
+            return None
+        from ..renderers.a2ui import field_id_from_pointer_token
+
+        key = _primitive_key(comp, props)
+        field_type = HEURISTIC_PRIMITIVE_MAP.get(key, HEURISTIC_PRIMITIVE_MAP.get(comp.component, FieldType.TEXT))
+        binding = props.get("value")
+        if isinstance(binding, dict) and isinstance(binding.get("path"), str) and binding["path"].startswith("/answers/"):
+            field_id = field_id_from_pointer_token(binding["path"].rsplit("/", 1)[-1])
+            default = (data_model.get("answers") or {}).get(field_id)
+        else:
+            field_id = comp.id.removeprefix("f-")
+            default = binding if not isinstance(binding, dict) else None
+            warnings.append(f"no_binding:{comp.id}")
+        field_id = self._unique_field_id(field_id, warnings)
+        required = False
+        constraints = FieldConstraints()
+        for rule in comp.checks or []:
+            condition = rule.condition
+            call = getattr(condition, "call", None)
+            args = getattr(condition, "args", None) or {}
+            if call == "required":
+                required = True
+            elif call == "regex":
+                constraints.pattern = args.get("pattern")
+            elif call == "length":
+                constraints.min_length = args.get("min")
+                constraints.max_length = args.get("max")
+            elif call == "numeric":
+                constraints.min_value = args.get("min")
+                constraints.max_value = args.get("max")
+            elif call == "email" and comp.component == "TextField":
+                field_type = FieldType.EMAIL
+        if comp.component == "Slider":
+            constraints.min_value = float(props.get("min", 0))
+            constraints.max_value = float(props["max"]) if "max" in props else None
+            steps = props.get("steps")
+            if steps and constraints.max_value is not None:
+                constraints.step = (constraints.max_value - constraints.min_value) / float(steps)
+        if comp.component == "DateTimeInput" and (props.get("min") is not None or props.get("max") is not None):
+            warnings.append(f"datetime_bounds_dropped:{comp.id}")
+        options = [
+            FieldOption(value=str(option.get("value")), label=option.get("label") or str(option.get("value")))
+            for option in props.get("options") or []
+            if isinstance(option, dict)
+        ] or None
+        has_constraints = any(value is not None for value in constraints.model_dump().values())
+        return FormField(
+            field_id=field_id,
+            field_type=field_type,
+            label=props.get("label") or field_id.replace("_", " ").title(),
+            required=required,
+            placeholder=props.get("placeholder") if comp.component == "TextField" else None,
+            options=options,
+            constraints=constraints if has_constraints else None,
+            default=default,
         )
-        return None
+
+    def _unique_field_id(self, field_id: str, warnings: list[str]) -> str:
+        """Suffix field-id collisions deterministically and report the loss."""
+        seen = self._seen_field_ids
+        if field_id not in seen:
+            seen.add(field_id)
+            return field_id
+        suffix = 2
+        while f"{field_id}_{suffix}" in seen:
+            suffix += 1
+        warnings.append(f"field_id_collision:{field_id}")
+        unique_id = f"{field_id}_{suffix}"
+        seen.add(unique_id)
+        return unique_id
 
     def _build_form(
         self,
