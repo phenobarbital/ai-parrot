@@ -111,7 +111,7 @@ class A2UIExportService:
         """
         if self.registry.storage is not None:
             await self.registry.load_from_storage(tenant=tenant)
-        wanted = {str(form_uid) for form_uid in form_uids} if form_uids else None
+        wanted = {str(form_uid) for form_uid in form_uids} if form_uids is not None else None
         for form in await self.registry.list_forms(tenant=tenant):
             if wanted is not None and str(form.form_uid) not in wanted:
                 continue
