@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-23T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-24T01:11:47+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -119,7 +119,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -130,8 +130,9 @@
       "parallelism_notes": "Exercises the wired handler from TASK-4655 (wrapper.py) end to end, and needs teams_signing_secret from TASK-4656 (routes.py) to render a signed card. Sole owner of test_formdesigner_roundtrip.py.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4657-teams-submit-security-roundtrip-tests.md"
+      "completed_at": "2026-10-24T01:11:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4657-teams-submit-security-roundtrip-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4658",
@@ -140,7 +141,7 @@
       "feature_id": "FEAT-733",
       "feature": "msteams-submit-envelope-fail-closed",
       "spec": "sdd/specs/msteams-submit-envelope-fail-closed.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -153,8 +154,9 @@
       "parallelism_notes": "Documents the final names of formdesigner_allow_unsigned_submissions and formdesigner_tenant_map (TASK-4653), require_signature (TASK-4654), the wired handler (TASK-4655) and teams_signing_secret (TASK-4656). Sole owner of docs/formdesigner-msteams-renderer.md.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:05:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4658-msteams-submit-security-docs.md"
+      "completed_at": "2026-10-24T01:11:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4658-msteams-submit-security-docs.md",
+      "verification": "verified"
     }
   ]
 }
