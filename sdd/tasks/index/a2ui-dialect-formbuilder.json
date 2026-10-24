@@ -138,7 +138,7 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "calls A2UIExportService.export_tenant from TASK-4196 (services/a2ui_export.py); modifies api/handlers.py after TASK-4195 (same file) and api/routes.py.",
       "assigned_to": null,
       "started_at": "2026-10-24T00:06:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4197-export-forms-endpoint.md"
+      "completed_at": "2026-10-24T01:05:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4197-export-forms-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4198",
