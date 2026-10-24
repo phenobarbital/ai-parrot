@@ -97,9 +97,7 @@ async def test_composition_preserves_sections_and_validates() -> None:
     assert [card.id for card in cards] == ["sec-s1", "sec-s2"]
 
     field_sections = {
-        component.metadata.extensions.root["parrot_field_id"]: component.metadata.extensions.root[
-            "parrot_section_id"
-        ]
+        component.metadata.extensions.root["parrot_field_id"]: component.metadata.extensions.root["parrot_section_id"]
         for component in surface.components
         if component.metadata is not None
         and component.metadata.extensions is not None
