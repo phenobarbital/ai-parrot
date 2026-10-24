@@ -86,8 +86,10 @@ nothing in the code compares them.
 
 Configure **both or neither**:
 
-- Neither → envelopes carry `sig: null`. Acceptable only when the bot has no
-  `formdesigner_submit_token`: with no bearer there is nothing to escalate with.
+- Neither → envelopes carry `sig: null`. The bot constructs when it has no
+  `formdesigner_submit_token`, but every submission is still refused unless
+  `formdesigner_allow_unsigned_submissions` is set (development only). Tokenless
+  deployments that relied on unsigned envelopes must now configure the secret.
 - FormDesigner only → the bot ignores the signature. No protection.
 - Bot only → every submission is refused, because nothing signs the envelopes.
 
@@ -113,7 +115,7 @@ the bot prefers the tenant Microsoft Teams asserts over the one the card claims:
 
 The GUID comes from the activity (`channelData.tenant.id`) and is asserted by Bot Framework, not
 by the card. On a mapped GUID the bot rewrites the envelope's `tenant` and the `{tenant}` segment
-of `submit_url`; on an unmapped or absent GUID it uses the envelope's `tenant` unchanged.
+of `submit_url`; on an unmapped or absent GUID it uses the envelope's `tenant` unchanged. An unmapped GUID is **not rejected**: the map is not an allowlist.
 
 **This does not replace the signature.** Because an unmapped caller falls back to the envelope,
 the mapping constrains mapped tenants only. What it buys is blast radius: for a mapped tenant, a
