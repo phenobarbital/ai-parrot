@@ -14,7 +14,8 @@ from typing import Any
 from aiohttp import web
 
 from ..core import FormDialect
-from ..core.schema import FormSchema, RenderedForm
+from ..core.options import FieldOption
+from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
 from .render import get_renderer, supported_formats
 
 logger = logging.getLogger(__name__)
@@ -105,8 +106,7 @@ def overrides_to_envelopes(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Translate shallow schema overrides into A2UI envelopes.
 
-    This baseline implementation reports every override as untranslatable.
-    TASK-4193 implements the translation table while preserving this signature.
+    The translation follows the shallow override table in FEAT-650 spec §7.
 
     Args:
         form: Source form schema.
@@ -115,7 +115,180 @@ def overrides_to_envelopes(
         locale: BCP 47 locale selected for rendering.
 
     Returns:
-        No envelopes and one warning for every override key.
+        Serialized A2UI update envelopes and warnings for unsupported overrides.
     """
-    del form, rendered, locale
-    return [], [f"override_not_translatable:{key}" for key in overrides]
+    from . import a2ui_wire
+    from ..renderers.a2ui import A2UIFormRenderer, field_pointer
+
+    m = a2ui_wire._a2ui_ns()
+    renderer = get_renderer("a2ui")
+    surface_id = f"form-{form.form_uid}"
+    surface = rendered.content.get("createSurface", {})
+    components = surface.get("components")
+    if not isinstance(components, list):
+        return [], [f"override_not_translatable:{key}" for key in overrides]
+
+    present_ids = {component["id"] for component in components if isinstance(component, dict) and "id" in component}
+    fields_by_id = {field.field_id: field for field in form.iter_all_fields()}
+    envelopes: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    property_keys = {
+        "title",
+        "description",
+        "x-placeholder",
+        "x-read-only",
+        "x-options",
+        "enum",
+        "default",
+    }
+
+    for key, value in overrides.items():
+        if key in ("title", "description"):
+            component_id = f"root-{key}"
+            text = m.Component(
+                id=component_id,
+                component="Text",
+                text=str(value),
+                metadata=m.ComponentMetadata(extensions=m.Extensions({"parrot_role": key})),
+            )
+            if component_id not in present_ids:
+                root = next((component for component in components if component.get("id") == "root"), None)
+                if root is None:
+                    warnings.append(f"override_not_translatable:{key}")
+                    continue
+                root_component = m.Component.model_validate(root)
+                root_component = root_component.model_copy(
+                    update={"children": [component_id, *(root_component.children or [])]}
+                )
+                envelopes.append(m.serialize(m.UpdateComponents(surface_id=surface_id, components=[root_component])))
+                present_ids.add(component_id)
+            envelopes.append(m.serialize(m.UpdateComponents(surface_id=surface_id, components=[text])))
+        elif key == "properties" and isinstance(value, dict):
+            for field_id, prop in value.items():
+                field = fields_by_id.get(field_id)
+                if field is None or f"f-{field_id}" not in present_ids or not isinstance(prop, dict):
+                    warnings.append(f"override_unknown_field:{field_id}")
+                    continue
+                supported = {prop_key: prop_value for prop_key, prop_value in prop.items() if prop_key in property_keys}
+                for prop_key in prop:
+                    if prop_key not in property_keys:
+                        warnings.append(f"override_not_translatable:properties.{field_id}.{prop_key}")
+                if not supported:
+                    continue
+                if "default" in supported:
+                    envelopes.append(
+                        m.serialize(
+                            m.UpdateDataModel(
+                                surface_id=surface_id,
+                                path=field_pointer(field_id),
+                                value=supported["default"],
+                            )
+                        )
+                    )
+                if not isinstance(renderer, A2UIFormRenderer):
+                    warnings.append(f"override_not_translatable:properties.{field_id}")
+                    continue
+                relowered = _relower(renderer, form, field_id, _patched_field(field, supported), locale, m)
+                if relowered:
+                    envelopes.append(m.serialize(m.UpdateComponents(surface_id=surface_id, components=relowered)))
+        elif key == "required" and isinstance(value, list):
+            required_ids = set(value)
+            for field_id in value:
+                if field_id not in fields_by_id:
+                    warnings.append(f"override_unknown_field:{field_id}")
+            if not isinstance(renderer, A2UIFormRenderer):
+                warnings.append("override_not_translatable:required")
+                continue
+            relowered_components: list[Any] = []
+            for field_id, field in fields_by_id.items():
+                required = field_id in required_ids
+                if field.required == required:
+                    continue
+                if f"f-{field_id}" not in present_ids:
+                    warnings.append(f"override_unknown_field:{field_id}")
+                    continue
+                relowered_components.extend(
+                    _relower(renderer, form, field_id, field.model_copy(update={"required": required}), locale, m)
+                )
+            if relowered_components:
+                envelopes.append(
+                    m.serialize(m.UpdateComponents(surface_id=surface_id, components=relowered_components))
+                )
+        else:
+            warnings.append(f"override_not_translatable:{key}")
+    return envelopes, warnings
+
+
+def _patched_field(field: FormField, prop: Mapping[str, Any]) -> FormField:
+    """Copy ``field`` with JSON-Schema-level overrides applied.
+
+    Args:
+        field: The source field to copy.
+        prop: Direct property overrides for the field.
+
+    Returns:
+        The copied field with supported overrides applied.
+    """
+    update: dict[str, Any] = {}
+    if "title" in prop:
+        update["label"] = prop["title"]
+    if "description" in prop:
+        update["description"] = prop["description"]
+    if "x-placeholder" in prop:
+        update["placeholder"] = prop["x-placeholder"]
+    if "x-read-only" in prop:
+        update["read_only"] = bool(prop["x-read-only"])
+    if "default" in prop:
+        update["default"] = prop["default"]
+    if "x-options" in prop:
+        update["options"] = [FieldOption.model_validate(option) for option in prop["x-options"]]
+    elif "enum" in prop:
+        update["options"] = [FieldOption(value=str(option), label=str(option)) for option in prop["enum"]]
+    return field.model_copy(update=update)
+
+
+def _relower(
+    renderer: Any,
+    form: FormSchema,
+    field_id: str,
+    patched: FormField,
+    locale: str,
+    m: Any,
+) -> list[Any]:
+    """Re-lower one field through the A2UI renderer's field table.
+
+    Args:
+        renderer: Registered A2UI renderer.
+        form: Form containing the field.
+        field_id: Identifier of the field to locate.
+        patched: Field copy carrying the override values.
+        locale: Locale used by the renderer.
+        m: Lazy A2UI model namespace.
+
+    Returns:
+        Component models replacing the field's existing components.
+
+    Raises:
+        ValueError: If the field has no owning section or subsection.
+    """
+    for section in form.sections:
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                if any(field.field_id == field_id for field in item.fields):
+                    subsection = item
+                    break
+            elif item.field_id == field_id:
+                subsection = None
+                break
+        else:
+            continue
+        break
+    else:
+        raise ValueError(f"field {field_id!r} has no owning section")
+
+    renderer._m = m
+    try:
+        components, _warning = renderer._lower_field(patched, section, subsection, locale, {})
+    finally:
+        renderer._m = None
+    return components
