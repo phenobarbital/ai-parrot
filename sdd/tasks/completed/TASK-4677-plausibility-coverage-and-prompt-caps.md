@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-737 — Plausibility coverage reporting and prompt length caps
 **Spec**: `sdd/specs/services-plausibility-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4676
@@ -567,12 +567,59 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix SDD lane, FEAT-737)
+**Date**: 2026-10-24
+**Notes**: Split `eligible_fields` into `select_fields` (returns
+`(picked, not_examined)`) plus a one-line wrapper, so the public signature and
+return type are byte-for-byte what they were (AC8, checked with
+`inspect.signature`). The filter/sort body was moved verbatim — the only new
+logic is `{f.field_id: NOT_EXAMINED_MAX_FIELDS for f in picked[cfg.max_fields:]}`,
+which is exactly the tail the old `picked[: cfg.max_fields]` discarded.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Added `_truncate(text, limit)` and threaded an optional cap through
+`_answer_text(..., max_chars=)` and `build_items(..., max_answer_chars=)`
+(default `None` = uncapped). Truncation is applied to the FINAL rendered string
+in all three render branches, so option labels are still resolved first
+(`test_option_labels_still_resolved_under_cap`), and `_answer_text` returning
+`None` still means "unrenderable" — truncation never converts a renderable
+answer into a dropped one.
 
-**AC11 follow-up ledger issue**: `issue:<id>` — audio/engine.py ignores `not_examined`
+`check()` now composes `not_examined` on all three `ok` paths; the `_fail()`
+path keeps it empty by design. The unrenderable set is derived as `known - sent`
+from state `check()` already held, so `build_items` needed no out-parameter.
 
-**Deviations from spec**: none | describe if any
+**Two deliberate deviations from the blueprint, both narrowing:**
+
+1. `_truncate`'s `limit` is typed `int | None` rather than `int`. The blueprint
+   implied a second `None`-handling helper at each call site; widening the one
+   helper avoids introducing a symbol the Codebase Contract did not list, and
+   `_truncate("x"*2000, 50) == 50 chars` still holds as AC6 requires.
+2. The verdict-drop guard changed from `if out.field_id not in known` to
+   `not in sent`. AC5 demands `items` and `not_examined` be disjoint on EVERY
+   path, and with the old guard a model returning a verdict for an eligible but
+   never-sent field (e.g. the unrenderable `doc`) would have put the same id in
+   both maps. Gating on what was actually sent closes that and is strictly
+   safer — a verdict for an unseen answer is unattributable. Covered by
+   `test_check_drops_verdict_for_unsent_field`. The existing
+   `test_unknown_id_dropped_and_clamped` passes unchanged.
+
+Also corrected one of my own test expectations rather than the code: with the
+shared fixture, `doc` sorts last, so any `max_fields` cap claims it before the
+unrenderable path can be reached — the two reason codes cannot co-occur on that
+form. `test_check_reports_cap_and_unrenderable_together` therefore builds a
+3-field form whose unrenderable field is `required=True`, so the required-first
+sort keeps it inside the cap window while a third field falls off.
+
+Verified: 102 passed across all four Validation Commands (24 in
+`test_plausibility_checker.py`, including the 11 pre-existing ones unchanged;
+the `test_audio_ws_adapter.py` / `test_audio_engine_review_resume.py` guards
+confirm the widened `plausibility_summary` wire shape broke nothing).
+`ruff check` clean (its one autofix was import ordering); `black` applied.
+
+**AC11 follow-up ledger issue**: `issue:a80ba017766e` — audio/engine.py ignores
+`not_examined`: `_pl_unchecked -= requested` (engine.py:949) marks capped and
+unrenderable fields checked, and the delta path's `model_copy(update=...)` field
+list omits `not_examined` while the `current is None` path carries it.
+
+**Deviations from spec**: none — both deviations above are from the task
+blueprint, not the spec; each satisfies the spec AC it is bounded by.
