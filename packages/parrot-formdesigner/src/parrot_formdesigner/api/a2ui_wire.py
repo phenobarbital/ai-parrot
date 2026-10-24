@@ -123,6 +123,20 @@ def _a2ui_ns() -> Any:
     return ns
 
 
+def is_a2ui_surface_body(request: web.Request, body: Any) -> bool:
+    """Return whether a request body is an A2UI ``createSurface`` envelope.
+
+    ``Content-Type: application/a2ui+json`` is sufficient to select the
+    surface import path. JSON requests also select it when their top-level
+    object is a v1.0 ``createSurface`` envelope. This helper deliberately
+    has no ``parrot.*`` imports so detection works without the optional A2UI
+    extra installed.
+    """
+    if request.content_type == "application/a2ui+json":
+        return True
+    return isinstance(body, dict) and body.get("version") == "v1.0" and isinstance(body.get("createSurface"), dict)
+
+
 def is_a2ui_request(request: web.Request, body: Any) -> bool:
     """Detect whether an inbound request is speaking the A2UI wire.
 
