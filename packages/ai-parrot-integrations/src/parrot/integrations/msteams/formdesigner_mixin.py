@@ -7,13 +7,16 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar, Literal
+from urllib.parse import urlparse
 
 import aiohttp
 from botbuilder.core import CardFactory, TurnContext
 from botbuilder.schema import Activity, ActivityTypes
+from parrot_formdesigner.renderers.teams import ENVELOPE_KEY
 
 from .formdesigner_cards import (
     PICKER_ACTION_KEY,
+    PICKER_GET_FORM,
     append_render_warnings,
     build_empty_forms_card,
     build_error_card,
@@ -30,7 +33,15 @@ from .formdesigner_identity import (
     resolve_form_tenant,
 )
 from .formdesigner_local import LocalFormReader
-from .formdesigner_submit import RecentActivityCache
+from .formdesigner_submit import (
+    EnvelopeRejected,
+    RecentActivityCache,
+    build_reply_card,
+    extract_answers,
+    parse_envelope,
+    post_submission,
+    verify_envelope,
+)
 from .formdesigner_turn import FormDesignerTurn, active_turn, bind_turn
 from .formdesigner_wizard import WizardState, WizardStore
 from .tools.formdesigner import FormDesignerToolkit
@@ -322,6 +333,176 @@ class TeamsFormDesignerMixin:
         if self._fd_http is None or self._fd_http.closed:
             self._fd_http = aiohttp.ClientSession()
         return self._fd_http
+
+    async def handle_formdesigner_card(self, turn_context: TurnContext, submitted_data: dict[str, Any]) -> bool:
+        """Route picker, wizard, and signed terminal FormDesigner card submissions."""
+        control = submitted_data.get(PICKER_ACTION_KEY)
+        if control == PICKER_GET_FORM:
+            form_ref = submitted_data.get("form_uid")
+            if not form_ref:
+                await self._fd_send_card(build_error_card("Please choose a form."), turn_context)
+            else:
+                await self.serve_form(turn_context, form_ref=str(form_ref))
+            return True
+        if isinstance(control, dict) and control.get("kind") == "wizard":
+            await self._fd_wizard_action(turn_context, submitted_data, control)
+            return True
+        if ENVELOPE_KEY in submitted_data and control is None:
+            if not self._fd_enabled():
+                return False
+            turn = await self._fd_identity(turn_context)
+            if await self._fd_send_turn_problem(turn, turn_context):
+                return True
+            activity_id = getattr(turn_context.activity, "id", None)
+            if activity_id and self._fd_recent.seen(activity_id):
+                return True
+            answers = extract_answers({key: value for key, value in submitted_data.items() if key != PICKER_ACTION_KEY})
+            await self._fd_submit(turn_context, turn, submitted_data, answers, state=None)
+            return True
+        return False
+
+    def _fd_allowed_hosts_for(self) -> list[str]:
+        """Return configured submission hosts or the configured FormDesigner origin host."""
+        if self._fd_allowed_hosts:
+            return list(self._fd_allowed_hosts)
+        origin = self._fd_public_url if self.formdesigner_mode == "local" else self._fd_base_url
+        host = urlparse(origin).hostname if origin else None
+        return [host.lower()] if host else []
+
+    @staticmethod
+    def _fd_section_field_ids(form: Any, index: int) -> set[str]:
+        """Return leaf field IDs for one section, flattening subsections."""
+        field_ids: set[str] = set()
+
+        def visit(items: Any) -> None:
+            for item in items:
+                nested = getattr(item, "fields", None)
+                if nested is not None:
+                    visit(nested)
+                else:
+                    field_id = getattr(item, "field_id", None)
+                    if field_id:
+                        field_ids.add(field_id)
+
+        visit(form.sections[index].fields)
+        return field_ids
+
+    async def _fd_submit(
+        self,
+        turn_context: TurnContext,
+        turn: FormDesignerTurn,
+        submitted_data: dict[str, Any],
+        answers: dict[str, Any],
+        *,
+        state: WizardState | None,
+    ) -> None:
+        """Verify and submit a card using the speaking user's bearer token."""
+        try:
+            if not self._fd_signing_secret:
+                raise EnvelopeRejected("no signing secret configured")
+            env = parse_envelope(submitted_data)
+            if not env.sig:
+                raise EnvelopeRejected("unsigned envelope")
+            verify_envelope(
+                env,
+                allowed_hosts=self._fd_allowed_hosts_for(),
+                secret=self._fd_signing_secret,
+                api_base_path=self._fd_api_base_path,
+            )
+            if env.tenant != turn.tenant:
+                raise EnvelopeRejected("envelope tenant does not match the speaking user's tenant")
+            if state is not None:
+                if env.form_uid != state.form_uid or env.form_version != state.form_version:
+                    raise EnvelopeRejected("envelope form does not match wizard state")
+                state.consumed = True
+                answers = {**state.answers, **answers}
+            outcome = await post_submission(
+                await self._fd_get_http(),
+                env,
+                answers,
+                bearer_token=turn.bearer,
+                timeout=self._fd_submit_timeout,
+            )
+            self._fd_logger.info("formdesigner submit: form=%s status=%s", env.form_uid, outcome.status)
+            await self._fd_send_card(build_reply_card(outcome, env), turn_context)
+        except EnvelopeRejected as exc:
+            self._fd_logger.warning("formdesigner submit rejected: %s", exc)
+            await self._fd_send_card(build_error_card("This form can't be submitted. Please request it again."), turn_context)
+        except Exception:  # noqa: BLE001
+            self._fd_logger.exception("formdesigner submit failed")
+            await self._fd_send_card(build_error_card("Could not process your submission."), turn_context)
+        finally:
+            if state is not None:
+                self._fd_wizards.finish(conversation_id=turn.conversation_id, form_uid=state.form_uid)
+
+    async def _fd_wizard_action(
+        self, turn_context: TurnContext, submitted_data: dict[str, Any], control: dict[str, Any]
+    ) -> None:
+        """Validate and handle one wizard Next, Cancel, or terminal Submit action."""
+        turn = await self._fd_identity(turn_context)
+        if await self._fd_send_turn_problem(turn, turn_context):
+            return
+        try:
+            form_uid = uuid.UUID(str(control.get("form_uid")))
+        except ValueError:
+            await self._fd_send_card(build_error_card("This form step is not valid."), turn_context)
+            return
+        state = self._fd_wizards.get(conversation_id=turn.conversation_id, form_uid=form_uid)
+        if state is None:
+            await self._fd_send_card(build_error_card("This form expired. Send /getform to start again."), turn_context)
+            return
+        async with state.lock:
+            action = control.get("action")
+            valid = (
+                not state.consumed
+                and control.get("wizard_id") == str(state.wizard_id)
+                and control.get("section_index") == state.section_index
+                and state.owner_user_id == turn.user_id
+                and state.tenant == turn.tenant
+                and action in {"next", "cancel", "submit"}
+                and (action != "next" or state.section_index < state.total_sections - 1)
+                and (action != "submit" or state.section_index == state.total_sections - 1)
+            )
+            if not valid:
+                await self._fd_send_card(build_error_card("This form step is not valid."), turn_context)
+                return
+            activity_id = getattr(turn_context.activity, "id", None)
+            if activity_id and self._fd_recent.seen(activity_id):
+                return
+            if action == "cancel":
+                self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
+                await self._fd_send_card(build_error_card("Form cancelled."), turn_context)
+                return
+            try:
+                reader = self._fd_reader(turn)
+                form = await reader.get_form(tenant=turn.tenant, form_uid=form_uid, bearer_token=turn.bearer)
+                if (form.published_version or form.version) != state.form_version:
+                    self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
+                    await self._fd_send_card(build_error_card("This form changed. Send /getform to start again."), turn_context)
+                    return
+                raw_answers = extract_answers(
+                    {key: value for key, value in submitted_data.items() if key != PICKER_ACTION_KEY}
+                )
+                allowed = self._fd_section_field_ids(form, state.section_index)
+                answers = {key: value for key, value in raw_answers.items() if key in allowed}
+                if action == "submit":
+                    await self._fd_submit(turn_context, turn, submitted_data, answers, state=state)
+                    return
+                self._fd_wizards.advance(state, answers)
+                rendered = await reader.render_teams(
+                    tenant=turn.tenant,
+                    form_uid=form_uid,
+                    bearer_token=turn.bearer,
+                    section_index=state.section_index,
+                )
+                if rendered.metadata.get("section_index") != state.section_index:
+                    raise FormDesignerError("section rendering mismatch", status=200)
+                card = append_render_warnings(self._fd_decorate_wizard(rendered.content, state), rendered.warnings)
+                await self._fd_send_card(card, turn_context)
+            except FormDesignerError as exc:
+                self._fd_logger.warning("formdesigner wizard failed status=%s", exc.status)
+                self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
+                await self._fd_send_card(build_error_card("Forms are unavailable. Send /getform to start again."), turn_context)
 
     async def aclose(self) -> None:
         """Close FormDesigner client and submission session resources."""
