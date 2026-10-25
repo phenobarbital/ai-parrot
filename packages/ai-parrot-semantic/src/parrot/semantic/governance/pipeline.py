@@ -205,7 +205,9 @@ class GovernancePipeline:
         except SemanticError:
             raise
         except SqlglotError as exc:
-            raise SemanticValidationError("unqualifiable_sql", "The SQL cannot be qualified against the schema") from exc
+            raise SemanticValidationError(
+                "unqualifiable_sql", "The SQL cannot be qualified against the schema"
+            ) from exc
         resources = resources_from_ast(tree, model.schema.driver)
         uses = resolve_column_uses(tree, model.schema)
         return _Prepared(tree=tree, resources=resources, uses=uses)
