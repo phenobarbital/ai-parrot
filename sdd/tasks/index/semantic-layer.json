@@ -16,14 +16,14 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: workspace dependency manifest/uv.lock resolution and shared conftest.py setup",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4463-semantic-distribution-skeleton.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4463: consumes packages/ai-parrot-semantic/pyproject.toml, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (MIT satellite packaging, workspace and CI (M1))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4464-semantic-query-contracts.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticQuery/ModelMember in models.py and SemanticPolicyError in errors.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4465-semantic-model-policy.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticPolicyError from errors.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4466-semantic-ossie-validation.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,7 +105,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4465: consumes packages/ai-parrot-semantic/src/parrot/semantic/policy.py (Model policy validation and role grants (M3)); TASK-4466: consumes packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json, packages/ai-parrot-semantic/src/parrot/semantic/ossie.py (Vendored Ossie 0.1.1 validation (M4 import boundary)); TASK-4705: consumes packages/ai-parrot-semantic/src/parrot/semantic/model.py (Frozen semantic graph and structural validation (M4a))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4467-semantic-loader-sidemantic-engine.md"
     },
@@ -116,7 +116,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,7 +126,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b)); TASK-4475: consumes packages/ai-parrot-semantic/src/parrot/semantic/execution.py, packages/ai-parrot-semantic/src/parrot/semantic/cache.py (Execution bridge and pre-governance compile cache (M9a))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4468-semantic-native-compiler.md"
     },
@@ -137,7 +137,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,7 +146,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4469-semantic-pbac-gate-lineage.md"
     },
@@ -157,7 +157,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,7 +166,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4469: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py, packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py (Fail-closed PBAC and full column lineage (M6a))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4470-semantic-rls-pushdown.md"
     },
@@ -177,7 +177,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,7 +186,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4469: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py, packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py (Fail-closed PBAC and full column lineage (M6a))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4471-semantic-masking-positive-guard.md"
     },
@@ -197,7 +197,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4470: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/rls.py (Request-local RLS below aggregation (M6b)); TASK-4471: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py, packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py (Projection masks and positive SQL guard (M6c))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4472-semantic-governance-pipeline.md"
     },
@@ -218,7 +218,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -227,7 +227,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4473-semantic-role-catalog.md"
     },
@@ -238,7 +238,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -247,7 +247,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticExecutionError for required-audit failures",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4474-semantic-audit-ledger.md"
     },
@@ -258,7 +258,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -267,7 +267,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: GovernedQuery/CompiledQuery for source execution and immutable cache entries",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4475-semantic-execution-compile-cache.md"
     },
@@ -278,7 +278,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -287,7 +287,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticRequestIdentity and SemanticResultError for owner-bound claims",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4476-semantic-result-handles.md"
     },
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -314,7 +314,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4706: consumes packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py (Join-grain safety, filtered and derived metrics (M5b)); TASK-4472: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py (Governance composition and subject/provenance digest (M6d)); TASK-4473: consumes packages/ai-parrot-semantic/src/parrot/semantic/catalog.py (Authorized catalog and saved-query expansion (M7)); TASK-4474: consumes packages/ai-parrot-semantic/src/parrot/semantic/audit.py, packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql (Signed audit ledger and optional Postgres sink (M8)); TASK-4475: consumes packages/ai-parrot-semantic/src/parrot/semantic/execution.py, packages/ai-parrot-semantic/src/parrot/semantic/cache.py (Execution bridge and pre-governance compile cache (M9a)); TASK-4476: consumes packages/ai-parrot-semantic/src/parrot/semantic/results.py (Scoped result handles and exact retained provenance (M9b)); TASK-4707: consumes packages/ai-parrot-semantic/src/parrot/semantic/context.py (Scoped identity binding and exception-safe cleanup (M10 context)); TASK-4709: consumes packages/ai-parrot-semantic/src/parrot/semantic/handoff.py (Guarded dataset sink and read-time authorization (M9H))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4477-semantic-toolkit-core.md"
     },
@@ -325,7 +325,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -335,7 +335,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4477: consumes packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (Governed catalog, compile and query toolkit (M10a)); TASK-4708: consumes packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py (Repair stock DuckDB source execution (M9D))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4478-semantic-e2e-security-suite.md"
     },
@@ -346,7 +346,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -355,7 +355,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4478: consumes packages/ai-parrot-semantic/tests/test_e2e_governed.py (Real-DuckDB governed-query security gate (M10 gate))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4479-semantic-raw-sql-and-handoff.md"
     },
@@ -366,7 +366,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -375,7 +375,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4710: consumes packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py (MCP-local identity and configured PBAC bootstrap (M10c)); consumer evidence: LocalSemanticLayerToolkit class rejection and final run_sql/save tool behavior",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4480-semantic-http-handler.md"
     },
@@ -386,7 +386,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -395,7 +395,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4710: consumes packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py (MCP-local identity and configured PBAC bootstrap (M10c)); consumer evidence: LocalSemanticLayerToolkit constructor and explicit fixture guard factory for actual MCP startup",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4481-semantic-docs-mcp-local.md"
     },
@@ -406,9 +406,9 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "priority": "medium",
       "effort": "M",
@@ -426,7 +426,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -435,7 +435,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: FilterGroup/Grain from models.py and SemanticPolicyError from errors.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4705-semantic-typed-model-graph.md"
     },
@@ -446,7 +446,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -455,7 +455,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4468: consumes packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py, packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py (Native single-table compiler and async compile entry (M5a))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4706-semantic-native-compiler-extensions.md"
     },
@@ -466,7 +466,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -475,7 +475,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticRequestIdentity in context.py; serializes the M2 CREATE with this MODIFY",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4707-semantic-request-context-binding.md"
     },
@@ -486,7 +486,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -495,7 +495,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4463: consumes packages/ai-parrot-semantic/pyproject.toml, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (MIT satellite packaging, workspace and CI (M1))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4708-semantic-duckdb-source-repair.md"
     },
@@ -506,7 +506,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -517,7 +517,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4472: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py (Governance composition and subject/provenance digest (M6d)); TASK-4473: consumes packages/ai-parrot-semantic/src/parrot/semantic/catalog.py (Authorized catalog and saved-query expansion (M7)); TASK-4476: consumes packages/ai-parrot-semantic/src/parrot/semantic/results.py (Scoped result handles and exact retained provenance (M9b))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4709-semantic-guarded-dataset-sink.md"
     },
@@ -528,7 +528,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -537,7 +537,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4479: consumes packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py (Security-gated raw SQL and guarded hand-off tools (M10b))",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-25T23:06:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4710-semantic-local-pbac-bootstrap.md"
     }
