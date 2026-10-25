@@ -1,4 +1,5 @@
 """Regression contract: execution bridge (M9a)."""
+
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,8 +13,16 @@ from parrot.semantic.models import GovernedQuery
 
 def _governed(limit: int = 2) -> GovernedQuery:
     return GovernedQuery(
-        sql="select a from t", dialect="duckdb", driver="duckdb", tables=("t",), rls_applied=(),
-        masked_columns=(), limit=limit, subject_digest="s", members=("a",), physical_columns=("a",),
+        sql="select a from t",
+        dialect="duckdb",
+        driver="duckdb",
+        tables=("t",),
+        rls_applied=(),
+        masked_columns=(),
+        limit=limit,
+        subject_digest="s",
+        members=("a",),
+        physical_columns=("a",),
     )
 
 
@@ -62,9 +71,7 @@ async def test_queryresult_unwrap_and_execution_failure(monkeypatch: pytest.Monk
     _, n, trunc, _ = await Executor(_Toolkit(_Source(exact)), resolver).run(_governed(2), connection="c")
     assert n == 2 and trunc is False
     empty = SimpleNamespace(rows=[], row_count=0, columns=["a", "b"])
-    _, _, _, _, cols = await Executor(_Toolkit(_Source(empty)), resolver).run_with_columns(
-        _governed(), connection="c"
-    )
+    _, _, _, _, cols = await Executor(_Toolkit(_Source(empty)), resolver).run_with_columns(_governed(), connection="c")
     assert cols == ["a", "b"]
     with pytest.raises(SemanticExecutionError) as ei:
         await Executor(_Toolkit(_Source(exc=RuntimeError("select a from t boom"))), resolver).run(

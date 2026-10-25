@@ -1,4 +1,5 @@
 """Regression contract: compile cache (M9a)."""
+
 import json
 
 import pytest

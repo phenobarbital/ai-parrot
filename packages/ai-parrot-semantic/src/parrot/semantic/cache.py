@@ -1,4 +1,5 @@
 """LRU of pre-governance CompiledQuery objects only (AC8)."""
+
 from __future__ import annotations
 
 import json
