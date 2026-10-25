@@ -16,14 +16,15 @@
       "feature_id": "FEAT-744",
       "feature": "unit-reel-tech-debt",
       "spec": "sdd/specs/unit-reel-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task in this feature, no shared-file collisions",
-      "assigned_to": "unassigned",
-      "file": "sdd/tasks/active/TASK-4700-unit-reel-tech-debt.md"
+      "assigned_to": "agent:claude",
+      "file": "sdd/tasks/active/TASK-4700-unit-reel-tech-debt.md",
+      "started_at": "2026-10-25T22:10:00Z"
     }
   ]
 }
