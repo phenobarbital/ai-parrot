@@ -164,7 +164,7 @@ class TeamsFormDesignerMixin:
             turn.error = "No forms workspace is configured for your organization."
             return turn
         turn.tenant, turn.tenant_source = resolution.tenant, resolution.source
-        self._fd_logger.info("formdesigner: tenant %s via %s", resolution.tenant, resolution.source)
+        self._fd_logger.debug("formdesigner: tenant %s via %s", resolution.tenant, resolution.source)
         return turn
 
     def _fd_reader(self, turn: FormDesignerTurn | None) -> Any:
@@ -224,12 +224,15 @@ class TeamsFormDesignerMixin:
             return
         try:
             forms = await self._fd_reader(turn).list_forms(tenant=turn.tenant, bearer_token=turn.bearer)
-            card = build_picker_card(forms, tenant=turn.tenant) if forms else build_empty_forms_card(tenant=turn.tenant)
+            card = build_picker_card(forms, tenant=turn.tenant) if forms else build_empty_forms_card()
             await self._fd_send_card(card, turn_context)
         except FormDesignerError as exc:
             self._fd_logger.warning("formdesigner: list_forms failed status=%s", exc.status)
             message = "You don't have access to these forms." if exc.status == 403 else "Forms are unavailable."
             await self._fd_send_card(build_error_card(message), turn_context)
+        except Exception:  # noqa: BLE001 - listing forms must never raise into a Teams turn
+            self._fd_logger.exception("formdesigner: list_forms failed")
+            await self._fd_send_card(build_error_card("Forms are unavailable."), turn_context)
 
     async def serve_form(
         self, turn_context: TurnContext, *, form_ref: str | uuid.UUID, turn: FormDesignerTurn | None = None
@@ -244,6 +247,7 @@ class TeamsFormDesignerMixin:
         if self.formdesigner_mode == "local" and (not self._fd_signing_secret or not self._fd_public_url):
             await self._fd_send_card(build_error_card("Forms are not configured for this bot."), turn_context)
             return
+        wizard_state: WizardState | None = None
         try:
             reader = self._fd_reader(turn)
             ref = parse_form_ref(form_ref)
@@ -257,7 +261,7 @@ class TeamsFormDesignerMixin:
                 form_uid = descriptor.form_uid
             form = await reader.get_form(tenant=turn.tenant, form_uid=form_uid, bearer_token=turn.bearer)
             if len(form.sections) > 1:
-                state = self._fd_wizards.start(
+                wizard_state = self._fd_wizards.start(
                     conversation_id=turn.conversation_id,
                     form_uid=form.form_uid,
                     tenant=turn.tenant,
@@ -270,7 +274,15 @@ class TeamsFormDesignerMixin:
                 )
                 if rendered.metadata.get("total_sections") != len(form.sections):
                     raise FormDesignerError("section rendering mismatch", status=200)
-                card = self._fd_decorate_wizard(rendered.content, state)
+                rendered_version = rendered.metadata.get("form_version")
+                if rendered_version is not None and rendered_version != wizard_state.form_version:
+                    self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form.form_uid)
+                    wizard_state = None
+                    await self._fd_send_card(
+                        build_error_card("This form changed. Send /getform to start again."), turn_context
+                    )
+                    return
+                card = self._fd_decorate_wizard(rendered.content, wizard_state)
             else:
                 rendered = await reader.render_teams(
                     tenant=turn.tenant, form_uid=form.form_uid, bearer_token=turn.bearer
@@ -278,6 +290,8 @@ class TeamsFormDesignerMixin:
                 card = rendered.content
             await self._fd_send_card(append_render_warnings(card, rendered.warnings), turn_context)
         except FormDesignerError as exc:
+            if wizard_state is not None:
+                self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=wizard_state.form_uid)
             self._fd_logger.warning("formdesigner: serve_form failed status=%s", exc.status)
             if exc.status == 404:
                 card = build_form_not_found_card(str(form_ref))
@@ -288,6 +302,11 @@ class TeamsFormDesignerMixin:
             else:
                 card = build_error_card("Forms are unavailable.")
             await self._fd_send_card(card, turn_context)
+        except Exception:  # noqa: BLE001 - serve_form must never raise into a Teams turn
+            if wizard_state is not None:
+                self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=wizard_state.form_uid)
+            self._fd_logger.exception("formdesigner: serve_form failed")
+            await self._fd_send_card(build_error_card("Forms are unavailable."), turn_context)
 
     def _fd_decorate_wizard(self, card: dict[str, Any], state: WizardState) -> dict[str, Any]:
         """Add wizard controls to every terminal/navigation ``Action.Submit``."""
@@ -343,7 +362,14 @@ class TeamsFormDesignerMixin:
         return self._fd_http
 
     async def handle_formdesigner_card(self, turn_context: TurnContext, submitted_data: dict[str, Any]) -> bool:
-        """Route picker, wizard, and signed terminal FormDesigner card submissions."""
+        """Route picker, wizard, and signed terminal FormDesigner card submissions.
+
+        Every submission carrying ``PICKER_ACTION_KEY`` is answered here (``True``),
+        so a stale or malformed control can never fall through to the wrapper's
+        FEAT-551 service-token branch. The one deliberate ``False`` fallback is an
+        envelope-only submission while this mixin is not enabled: the wrapper's
+        standalone FEAT-551 branch then verifies and forwards it.
+        """
         control = submitted_data.get(PICKER_ACTION_KEY)
         if control == PICKER_GET_FORM:
             form_ref = submitted_data.get("form_uid")
@@ -355,7 +381,10 @@ class TeamsFormDesignerMixin:
         if isinstance(control, dict) and control.get("kind") == "wizard":
             await self._fd_wizard_action(turn_context, submitted_data, control)
             return True
-        if ENVELOPE_KEY in submitted_data and control is None:
+        if control is not None:
+            await self._fd_send_card(build_error_card("This form action is not valid."), turn_context)
+            return True
+        if ENVELOPE_KEY in submitted_data:
             if not self._fd_enabled():
                 return False
             turn = await self._fd_identity(turn_context)
@@ -509,6 +538,13 @@ class TeamsFormDesignerMixin:
                 )
                 if rendered.metadata.get("section_index") != state.section_index:
                     raise FormDesignerError("section rendering mismatch", status=200)
+                rendered_version = rendered.metadata.get("form_version")
+                if rendered_version is not None and rendered_version != state.form_version:
+                    self._fd_wizards.discard(conversation_id=turn.conversation_id, form_uid=form_uid)
+                    await self._fd_send_card(
+                        build_error_card("This form changed. Send /getform to start again."), turn_context
+                    )
+                    return
                 card = append_render_warnings(self._fd_decorate_wizard(rendered.content, state), rendered.warnings)
                 await self._fd_send_card(card, turn_context)
             except FormDesignerError as exc:

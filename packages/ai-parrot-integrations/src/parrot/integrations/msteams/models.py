@@ -18,6 +18,25 @@ class UnsignedSubmitConfigError(ValueError):
     """The FormDesigner Teams branch has a bearer token but no signing secret."""
 
 
+def _validated_tenant_map(value: Any, *, source: str) -> Optional[Dict[str, str]]:
+    """Validate a FormDesigner tenant map fail-closed.
+
+    ``None`` and ``{}`` mean "no map". Anything else must be a dict of
+    non-empty strings to non-empty strings — a configured-but-broken map
+    silently changes tenant resolution, so it raises instead of being ignored.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if not value:
+            return None
+        if all(
+            isinstance(key, str) and key and isinstance(val, str) and val for key, val in value.items()
+        ):
+            return dict(value)
+    raise ValueError(f"formdesigner_tenant_map from {source} must be a JSON object of non-empty strings")
+
+
 if TYPE_CHECKING:
     from .voice.models import VoiceTranscriberConfig
 
@@ -149,22 +168,18 @@ class MSTeamsAgentConfig:
                 self.formdesigner_allow_unsigned_submissions = raw_allow
             elif isinstance(raw_allow, str):
                 self.formdesigner_allow_unsigned_submissions = raw_allow.lower() in {"1", "true", "yes"}
+        self.formdesigner_tenant_map = _validated_tenant_map(
+            self.formdesigner_tenant_map, source=f"MSTeams[{self.name}] config"
+        )
         if self.formdesigner_tenant_map is None:
-            raw_map = config.get(f"{self.name.upper()}_FORMDESIGNER_TENANT_MAP")
+            env_name = f"{self.name.upper()}_FORMDESIGNER_TENANT_MAP"
+            raw_map = config.get(env_name)
             if raw_map:
                 try:
-                    tenant_map = json.loads(raw_map)
-                    if not isinstance(tenant_map, dict) or not all(
-                        isinstance(key, str) and isinstance(value, str) for key, value in tenant_map.items()
-                    ):
-                        raise ValueError("tenant map must be a JSON object of strings")
-                    self.formdesigner_tenant_map = tenant_map
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    logger.warning(
-                        "%s: ignoring invalid %s_FORMDESIGNER_TENANT_MAP; expected a JSON object of strings.",
-                        self.name,
-                        self.name.upper(),
-                    )
+                    parsed_map = json.loads(raw_map)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"formdesigner_tenant_map from {env_name} is not valid JSON") from exc
+                self.formdesigner_tenant_map = _validated_tenant_map(parsed_map, source=env_name)
         if self.formdesigner_allowed_hosts and self.formdesigner_submit_token and not self.formdesigner_submit_secret:
             if self.formdesigner_allow_unsigned_submissions:
                 logger.warning(

@@ -528,3 +528,105 @@ async def test_mixin_declines_when_not_configured():
     agent._fd_client = None
     agent._fd_base_url = None
     assert await agent.handle_formdesigner_card(_ctx(), _signed_submission()) is False
+
+class _RenderFailReader(FakeReader):
+    """Reader whose render step fails while resolution succeeds."""
+
+    def __init__(self, form=None, error=None):
+        super().__init__(form=form)
+        self.render_error = error or FormDesignerError("render boom", status=500)
+
+    async def render_teams(self, **kwargs):
+        raise self.render_error
+
+
+class _VersionedReader(FakeReader):
+    """Reader whose section renders report a server-side form version."""
+
+    def __init__(self, form=None, rendered_version="1"):
+        super().__init__(form=form)
+        self.rendered_version = rendered_version
+
+    async def render_teams(self, **kwargs):
+        card = await super().render_teams(**kwargs)
+        if kwargs.get("section_index") is not None:
+            card.metadata["form_version"] = self.rendered_version
+        return card
+
+
+@pytest.mark.asyncio
+async def test_unknown_control_string_returns_true_with_error_card():
+    ctx = _ctx()
+    assert await _agent().handle_formdesigner_card(ctx, {"_formdesigner_action": "bogus"}) is True
+    assert "not valid" in _card(ctx)["body"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_control_dict_returns_true_with_error_card():
+    ctx = _ctx()
+    assert await _agent().handle_formdesigner_card(ctx, {"_formdesigner_action": {"kind": "other"}}) is True
+    assert "not valid" in _card(ctx)["body"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_control_with_envelope_never_reaches_submit(monkeypatch):
+    post = AsyncMock()
+    monkeypatch.setattr("parrot.integrations.msteams.formdesigner_mixin.post_submission", post)
+    agent = _agent(formdesigner_base_url="https://forms.example", formdesigner_signing_secret="secret")
+    data = _signed_submission()
+    data["_formdesigner_action"] = "bogus"
+    ctx = _ctx()
+    assert await agent.handle_formdesigner_card(ctx, data) is True
+    assert "not valid" in _card(ctx)["body"][0]["text"]
+    post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_serve_form_render_failure_discards_wizard_state():
+    agent = _agent(_RenderFailReader(form=_wizard_form()))
+    ctx = _ctx()
+    await agent.serve_form(ctx, form_ref="survey")
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    assert "unavailable" in _card(ctx)["body"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_serve_form_rendered_version_mismatch_discards_state():
+    agent = _agent(_VersionedReader(form=_wizard_form(version="1"), rendered_version="2"))
+    ctx = _ctx()
+    await agent.serve_form(ctx, form_ref="survey")
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    assert "form changed" in _card(ctx)["body"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_wizard_next_rendered_version_mismatch_discards_state():
+    reader = _VersionedReader(form=_wizard_form(version="1"), rendered_version="1")
+    agent = _agent(reader)
+    await agent.serve_form(_ctx(), form_ref="survey")
+    state = agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID)
+    assert state is not None
+    reader.rendered_version = "2"
+    ctx = _ctx()
+    control = _wizard_control(state, "next")
+    assert await agent.handle_formdesigner_card(ctx, {"_formdesigner_action": control, "field_0": "x"}) is True
+    assert agent._fd_wizards.get(conversation_id="conv-1", form_uid=FORM_UID) is None
+    assert "form changed" in _card(ctx)["body"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_serve_form_unexpected_exception_sends_error_card():
+    reader = FakeReader()
+    reader.error = RuntimeError("registry blew up")
+    ctx = _ctx()
+    await _agent(reader).serve_form(ctx, form_ref="survey")
+    assert "unavailable" in _card(ctx)["body"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_listforms_unexpected_exception_sends_error_card():
+    reader = FakeReader()
+    reader.error = RuntimeError("registry blew up")
+    ctx = _ctx()
+    await _agent(reader).handle_listforms(ctx)
+    assert "unavailable" in _card(ctx)["body"][0]["text"].lower()

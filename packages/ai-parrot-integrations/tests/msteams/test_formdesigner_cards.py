@@ -48,7 +48,7 @@ def test_picker_card_choiceset_and_action_key() -> None:
 def test_login_and_empty_cards() -> None:
     """Login and empty states are plain cards without actions."""
     login_card = build_login_required_card()
-    empty_card = build_empty_forms_card(tenant="acme")
+    empty_card = build_empty_forms_card()
 
     for card in (login_card, empty_card):
         assert card["type"] == "AdaptiveCard"

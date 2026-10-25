@@ -258,9 +258,6 @@ class RecentActivityCache:
                 break
 
         if activity_id in self._seen:
-            # Update timestamp to keep it fresh or just return True?
-            # Spec S9: "Return True if activity_id was recorded within the TTL; otherwise record it and return False."
-            # Let's just return True.
             return True
 
         # Evict oldest if we exceed max_items
