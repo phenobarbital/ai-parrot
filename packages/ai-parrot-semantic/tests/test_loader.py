@@ -77,7 +77,9 @@ def test_reload_atomicity_and_bad_policy(tmp_path: Path) -> None:
     assert loader.reload_if_changed() is False
 
     policy_path = models_dir / "orders.policy.yaml"
-    policy_path.write_text("governed: true\nconnection: semantic_test\nroles: {analyst: {metrics: [missing]}}\n", encoding="utf-8")
+    policy_path.write_text(
+        "governed: true\nconnection: semantic_test\nroles: {analyst: {metrics: [missing]}}\n", encoding="utf-8"
+    )
     with pytest.raises(SemanticPolicyError, match="unknown"):
         loader.reload_if_changed()
     assert loader._snapshot is initial

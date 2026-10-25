@@ -110,7 +110,9 @@ class SemanticModelLoader:
             tables = {graph_model.table for graph_model in graph_models.values()}
             policy_path = self.models_dir / f"{name}.policy.yaml"
             if not policy_path.is_file():
-                raise SemanticPolicyError("missing_policy", "Each semantic model requires a policy side-file", details={"model": name})
+                raise SemanticPolicyError(
+                    "missing_policy", "Each semantic model requires a policy side-file", details={"model": name}
+                )
             policy = load_policy(policy_path, members, tables)
             schema = PhysicalSchema(
                 driver=self.driver,
@@ -134,18 +136,26 @@ class SemanticModelLoader:
         paths = [
             path
             for path in sorted(self.models_dir.iterdir())
-            if path.is_file() and path.suffix.lower() in {".yaml", ".yml", ".json"} and not path.name.endswith(".policy.yaml")
+            if path.is_file()
+            and path.suffix.lower() in {".yaml", ".yml", ".json"}
+            and not path.name.endswith(".policy.yaml")
         ]
         if not paths:
             raise SemanticPolicyError("missing_model", "Model directory contains no model documents")
         documents: list[dict[str, Any]] = []
         for path in paths:
             try:
-                loaded = json.loads(path.read_text()) if path.suffix.lower() == ".json" else yaml.safe_load(path.read_text())
+                loaded = (
+                    json.loads(path.read_text()) if path.suffix.lower() == ".json" else yaml.safe_load(path.read_text())
+                )
             except (OSError, ValueError, yaml.YAMLError) as exc:
-                raise SemanticPolicyError("invalid_model", "Unable to parse model document", details={"path": path.name}) from exc
+                raise SemanticPolicyError(
+                    "invalid_model", "Unable to parse model document", details={"path": path.name}
+                ) from exc
             if not isinstance(loaded, dict):
-                raise SemanticPolicyError("invalid_model", "Model documents must be mappings", details={"path": path.name})
+                raise SemanticPolicyError(
+                    "invalid_model", "Model documents must be mappings", details={"path": path.name}
+                )
             documents.append(loaded)
         return documents
 
@@ -156,7 +166,9 @@ class SemanticModelLoader:
             lowered = _lower_ossie(document) if is_ossie_document(document) else _lower_own_format(document)
             for model in lowered:
                 if model.name in models:
-                    raise SemanticPolicyError("duplicate_model", "Model names must be unique", details={"model": model.name})
+                    raise SemanticPolicyError(
+                        "duplicate_model", "Model names must be unique", details={"model": model.name}
+                    )
                 models[model.name] = model
         return models
 
@@ -225,7 +237,9 @@ def _lower_ossie(document: dict[str, Any]) -> list[SemanticModel]:
             dimension = field.get("dimension")
             if dimension is not None:
                 dimensions.append(
-                    Dimension(name=name, kind="time" if dimension.get("is_time") else "categorical", column=name, grain="day")
+                    Dimension(
+                        name=name, kind="time" if dimension.get("is_time") else "categorical", column=name, grain="day"
+                    )
                     if dimension.get("is_time")
                     else Dimension(name=name, kind="categorical", column=name)
                 )
@@ -248,7 +262,9 @@ def _lower_ossie(document: dict[str, Any]) -> list[SemanticModel]:
                 )
             )
         except Exception as exc:
-            raise SemanticPolicyError("unsupported_ossie", "Ossie document cannot be lowered into the typed graph") from exc
+            raise SemanticPolicyError(
+                "unsupported_ossie", "Ossie document cannot be lowered into the typed graph"
+            ) from exc
     return result
 
 
