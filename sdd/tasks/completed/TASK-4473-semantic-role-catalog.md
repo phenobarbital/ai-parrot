@@ -209,4 +209,5 @@ Use `$sdd-start TASK-4473` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: opus (native), 1 attempt. Masked members stay visible to granted roles (coder decision, to confirm). Coder commit carried hook-appended ledger lines; orchestrator removed them.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
