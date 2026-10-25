@@ -15,7 +15,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import SemanticAccessError, SemanticResultError
 
-
 class SemanticRequestIdentity(BaseModel, frozen=True):
     """Host-authenticated identity for retained semantic results."""
 

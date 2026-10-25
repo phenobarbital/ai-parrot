@@ -50,8 +50,12 @@ async def test_trusted_scope_and_context_only_calls(tmp_path: Path) -> None:
         assert require_identity().session_id == "sess-1"
     assert _unbound()
 
-    for other in (_ctx("bob", groups="g1"), _ctx("alice", tenant="t2", groups="g1"),
-                  _ctx("alice", roles=frozenset({"x"}), groups="g1"), _ctx("alice", groups="g2")):
+    for other in (
+        _ctx("bob", groups="g1"),
+        _ctx("alice", tenant="t2", groups="g1"),
+        _ctx("alice", roles=frozenset({"x"}), groups="g1"),
+        _ctx("alice", groups="g2"),
+    ):
         with pytest.raises(SemanticAccessError):
             async with bind_semantic_context(other, identity=identity):
                 pass
