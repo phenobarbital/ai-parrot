@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-747",
+  "feature_slug": "local-inter-agent",
+  "started_at": "2026-10-25T22:37:00Z",
+  "updated_at": "2026-10-25T23:55:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "artifacts/interagent/Brainstorm Local Inter-Agent Protocol.md",
+    "raw_path": "sdd/state/FEAT-747/source.md",
+    "fetched_at": "2026-10-25T22:37:00Z",
+    "summary_oneline": "Local inter-agent protocol: FIPA-style performatives, interaction protocols, LLM-free gating, capability registry, blackboard, local carriers (sister of the cross-boundary binary protocol)"
+  },
+  "mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-25T22:37:00Z",
+      "completed_at": "2026-10-25T22:37:00Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-25T22:38:00Z",
+      "completed_at": "2026-10-25T22:40:00Z",
+      "duration_seconds": 120,
+      "queries_total": 49,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-747/research_plan.json",
+      "gate": "auto-proceeded: autonomous session, no user watching; plan printed in transcript"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-25T22:40:00Z",
+      "completed_at": "2026-10-25T23:09:00Z",
+      "duration_seconds": 1740,
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-10-26T00:14:00Z",
+            "completed_at": "2026-10-26T00:21:00Z",
+            "queries_executed": 25,
+            "queries_skipped": 1,
+            "files_read": 24,
+            "grep_calls": 20,
+            "git_calls": 0,
+            "findings": [
+              "FC-001",
+              "FC-002",
+              "FC-003",
+              "FC-004",
+              "FC-005",
+              "FC-006",
+              "FC-007",
+              "FC-008",
+              "FC-009",
+              "FC-010",
+              "FC-011",
+              "FC-012",
+              "FC-013",
+              "FC-014",
+              "FC-015",
+              "FC-016",
+              "FC-017",
+              "FC-018"
+            ],
+            "note": "first dispatch (2026-10-25T22:40Z) never wrote findings; re-dispatched on resume (\u00a74.0)"
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-10-25T22:40:00Z",
+            "completed_at": "2026-10-25T22:42:00Z",
+            "queries_executed": 6,
+            "queries_skipped": 0,
+            "files_read": 4,
+            "grep_calls": 0,
+            "git_calls": 6,
+            "findings": [
+              "FG-001",
+              "FG-002",
+              "FG-003",
+              "FG-004",
+              "FG-005",
+              "FG-006"
+            ]
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-10-25T22:40:00Z",
+            "completed_at": "2026-10-25T22:46:00Z",
+            "queries_executed": 17,
+            "queries_skipped": 0,
+            "files_read": 0,
+            "grep_calls": 0,
+            "git_calls": 0,
+            "findings": [
+              "FW-001",
+              "FW-002",
+              "FW-003",
+              "FW-004",
+              "FW-005",
+              "FW-006",
+              "FW-007",
+              "FW-008",
+              "FW-009",
+              "FW-010",
+              "FW-011",
+              "FW-012",
+              "FW-013",
+              "FW-014"
+            ]
+          }
+        },
+        "merge": {
+          "started_at": "2026-10-25T23:09:00Z",
+          "completed_at": "2026-10-25T23:09:00Z",
+          "input_count": 38,
+          "output_count": 22,
+          "merged_count": 16,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "queries_executed": 48,
+      "queries_skipped": 1,
+      "depth_reached": 1,
+      "files_read": 28,
+      "grep_calls": 20,
+      "git_calls": 6,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-25T23:20:00Z",
+      "completed_at": "2026-10-25T23:40:00Z",
+      "duration_seconds": 1200,
+      "synthesis_path": "sdd/state/FEAT-747/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 17,
+      "claims_high_conf": 13,
+      "claims_medium_conf": 4,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1,
+      "citation_probe": {
+        "checks": 293,
+        "sheets": 8,
+        "stale": 5,
+        "missing": 0,
+        "report": "sdd/state/FEAT-747/probe_results.json"
+      }
+    },
+    "review_gate": {
+      "status": "skipped",
+      "reason": "autonomous session, no user watching; synthesis summary printed in the transcript"
+    },
+    "qa": {
+      "status": "skipped",
+      "reason": "autonomous session; 5 unknowns carried unresolved into the proposal (status: discussion)",
+      "questions_total": 5,
+      "questions_answered": 0
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/local-inter-agent.proposal.md",
+      "commit_sha": "bebcac407b4e987140f3e4b4214eb6256fe49d22"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 28,
+    "grep_calls": 20,
+    "git_calls": 6,
+    "wall_seconds": 1740
+  },
+  "errors": [
+    {
+      "phase": "source_resolved",
+      "at": "2026-10-25T22:37:00Z",
+      "message": "reserve_ids would refuse: main checkout dirty with another session's semantic-layer task edits (TASK-4463..4710); FEAT-ID deferred to commit time, state dir keyed by slug like the parallel sdd/state/inter-agent-protocol run",
+      "recoverable": true
+    },
+    {
+      "phase": "source_resolved",
+      "at": "2026-10-25T23:09:00Z",
+      "recoverable": true,
+      "message": "FEAT-747 reserved via reserve_ids.py once the checkout was clean (commit 89ffda894); state dir moved from sdd/state/local-inter-agent/"
+    }
+  ],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-747 after the FEAT-746 spec"
+  }
+}

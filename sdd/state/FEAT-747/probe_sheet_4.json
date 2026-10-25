@@ -1,0 +1,293 @@
+[
+ {
+  "id": "c269",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/types.py",
+  "line": null
+ },
+ {
+  "id": "c47",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": "async def run_sequential(self, query: str, user_id: str = None, session_id: str = None,",
+  "expected_line": 1744
+ },
+ {
+  "id": "c48",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": null,
+  "expected_line": 1825
+ },
+ {
+  "id": "c49",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": null,
+  "expected_line": 1862
+ },
+ {
+  "id": "c50",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_loop",
+  "expected": "async def run_loop(self, ..., max_iterations: int = 2,",
+  "expected_line": 2090
+ },
+ {
+  "id": "c51",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_flow",
+  "expected": "async def run_flow(self, ..., max_iterations: int = 100,",
+  "expected_line": 2933
+ },
+ {
+  "id": "c52",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_flow",
+  "expected": null,
+  "expected_line": 3037
+ },
+ {
+  "id": "c53",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_build_reexecution_prompt",
+  "expected": null,
+  "expected_line": 3745
+ },
+ {
+  "id": "c54",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "AgentCrew",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c55",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_extract_result",
+  "expected": "def _extract_result(self, response): Extract result string from response.",
+  "expected_line": null
+ },
+ {
+  "id": "c56",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_build_context_summary",
+  "expected": "def _build_context_summary(self, context): Build a human-readable summary of results accumulated so far.",
+  "expected_line": null
+ },
+ {
+  "id": "c57",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_evaluate_loop_condition",
+  "expected": "def _evaluate_loop_condition(self): Ask the configured LLM whether the loop condition has been satisfied.",
+  "expected_line": null
+ },
+ {
+  "id": "c58",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_loop",
+  "expected": "def run_loop(self, initial_task, condition, max_iterations, user_id, session_id, agent_sequence, pass_full_context, ...)",
+  "expected_line": null
+ },
+ {
+  "id": "c59",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_register_agents_as_tools",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c60",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "add_tool_node",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c28",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/flow/actions.py",
+  "name": "SetContextAction",
+  "expected": null,
+  "expected_line": 309
+ },
+ {
+  "id": "c45",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/tools.py",
+  "name": "ResultRetrievalTool",
+  "expected": "class ResultRetrievalTool(AbstractTool):",
+  "expected_line": 16
+ },
+ {
+  "id": "c46",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/tools.py",
+  "name": "_execute",
+  "expected": "async def _execute(self, action: str, agent_id=None, query=None, page_id=None) -> str:",
+  "expected_line": 124
+ },
+ {
+  "id": "c189",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PBACToolCallGuardrail",
+  "expected": "class PBACToolCallGuardrail(Guardrail):",
+  "expected_line": 53
+ },
+ {
+  "id": "c190",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "anchor": "result = self._evaluator.check_access(ctx=eval_ctx, resource_type=ResourceType.TOOL,",
+  "for": "check"
+ },
+ {
+  "id": "c191",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "_policy_enforcement",
+  "expected": null,
+  "expected_line": 143
+ },
+ {
+  "id": "c231",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PBACToolCallGuardrail",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c232",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PolicyDenialReport",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c23",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "MSTeamsHook",
+  "expected": null,
+  "expected_line": 231
+ },
+ {
+  "id": "c93",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "_MessagingHookBase",
+  "expected": "class _MessagingHookBase(BaseHook): ...  class TelegramHook(_MessagingHookBase):",
+  "expected_line": 21
+ },
+ {
+  "id": "c94",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "TelegramHook",
+  "expected": null,
+  "expected_line": 21
+ },
+ {
+  "id": "c95",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "line": 1
+ },
+ {
+  "id": "c240",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "setup_event_fanout",
+  "expected": "def setup_event_fanout(bus): Attach a dedicated Streams/publish-only bus and subscribe usage events.",
+  "expected_line": 1
+ },
+ {
+  "id": "c241",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "_validate_bus",
+  "expected": "def _validate_bus(bus): Require a Streams transport configured in publish-only mode.",
+  "expected_line": 1
+ },
+ {
+  "id": "c242",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "redact_usage_event",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c31",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
+  "line": 1
+ },
+ {
+  "id": "c32",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/trace.py",
+  "line": 1
+ },
+ {
+  "id": "c284",
+  "kind": "absent",
+  "name": "find_capability",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c285",
+  "kind": "absent",
+  "name": "locality",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c288",
+  "kind": "absent",
+  "name": "allowed_agents",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c289",
+  "kind": "absent",
+  "name": "inter_agent",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c290",
+  "kind": "absent",
+  "name": "can_call",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c13",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+  "anchor": "agent_registry = AgentRegistry(agents_dir=AGENTS_DIR, extra_agent_dirs=[PLUGINS_DIR / \"agents\"])",
+  "for": "agent_registry"
+ },
+ {
+  "id": "c14",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+  "anchor": "register_agent = agent_registry.register_bot_decorator",
+  "for": "register_agent"
+ }
+]
