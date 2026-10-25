@@ -1,0 +1,1245 @@
+[
+ {
+  "id": "c1",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2AClient",
+  "expected_line": 40
+ },
+ {
+  "id": "c2",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "send_message",
+  "expected_line": 213
+ },
+ {
+  "id": "c3",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "stream_message",
+  "expected_line": 245
+ },
+ {
+  "id": "c4",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2ARemoteAgentTool",
+  "expected_line": 543
+ },
+ {
+  "id": "c5",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "_execute",
+  "expected_line": 607
+ },
+ {
+  "id": "c6",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2ARemoteSkillTool",
+  "expected_line": 695
+ },
+ {
+  "id": "c7",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "discover",
+  "expected_line": 144
+ },
+ {
+  "id": "c8",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "symbol": "A2AServer",
+  "expected_line": 85
+ },
+ {
+  "id": "c9",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "symbol": "_handle_send_message",
+  "expected_line": 1249
+ },
+ {
+  "id": "c10",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "symbol": "_handle_jsonrpc",
+  "expected_line": 1842
+ },
+ {
+  "id": "c11",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "symbol": "_invoke_tool_with_credential_gate",
+  "expected_line": 965
+ },
+ {
+  "id": "c12",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "symbol": "A2AEnabledMixin",
+  "expected_line": 2039
+ },
+ {
+  "id": "c13",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/security.py",
+  "symbol": "A2ASecurityMiddleware",
+  "expected_line": 1409
+ },
+ {
+  "id": "c14",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/security.py",
+  "symbol": "SecureA2AClient",
+  "expected_line": 1682
+ },
+ {
+  "id": "c15",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/models.py",
+  "symbol": "AgentCard",
+  "expected_line": 1007
+ },
+ {
+  "id": "c16",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/models.py",
+  "symbol": "AgentCardSignature",
+  "expected_line": 785
+ },
+ {
+  "id": "c17",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+  "symbol": "A2AEndpoint",
+  "expected_line": 73
+ },
+ {
+  "id": "c18",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "symbol": "A2AClientMixin",
+  "expected_line": 34
+ },
+ {
+  "id": "c19",
+  "kind": "file",
+  "path": "pyproject.toml",
+  "line": 150
+ },
+ {
+  "id": "c20",
+  "kind": "symbol",
+  "path": "pyproject.toml",
+  "symbol": "protobuf",
+  "expected_line": 199
+ },
+ {
+  "id": "c21",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/pyproject.toml",
+  "symbol": "pyarrow",
+  "expected_line": 174
+ },
+ {
+  "id": "c22",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/pyproject.toml",
+  "symbol": "grpc",
+  "expected_line": 707
+ },
+ {
+  "id": "c23",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/pyproject.toml",
+  "symbol": "pyarrow",
+  "expected_line": 37
+ },
+ {
+  "id": "c24",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/pyproject.toml",
+  "line": 52
+ },
+ {
+  "id": "c25",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/pyproject.toml",
+  "line": 116
+ },
+ {
+  "id": "c26",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-tools/pyproject.toml",
+  "symbol": "powerbi",
+  "expected_line": 118
+ },
+ {
+  "id": "c27",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "ToolFormat",
+  "expected_line": 75
+ },
+ {
+  "id": "c28",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "clean_schema_for_provider",
+  "expected_line": 87
+ },
+ {
+  "id": "c29",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "ToolManager",
+  "expected_line": 289
+ },
+ {
+  "id": "c30",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_tool",
+  "expected_line": 853
+ },
+ {
+  "id": "c31",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_toolkit",
+  "expected_line": 1190
+ },
+ {
+  "id": "c32",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "get_tool_schemas",
+  "expected_line": 1313
+ },
+ {
+  "id": "c33",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "list_categories",
+  "expected_line": 1404
+ },
+ {
+  "id": "c34",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "unregister_tool",
+  "expected_line": 1434
+ },
+ {
+  "id": "c35",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "rank_tools",
+  "expected_line": 723
+ },
+ {
+  "id": "c36",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "execute_tool",
+  "expected_line": 1787
+ },
+ {
+  "id": "c37",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "set_resolver",
+  "expected_line": 435
+ },
+ {
+  "id": "c38",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_a2a_agent",
+  "expected_line": 2302
+ },
+ {
+  "id": "c39",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "import",
+  "expected_line": 18
+ },
+ {
+  "id": "c40",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "_apply_output_guards",
+  "expected_line": 2429
+ },
+ {
+  "id": "c41",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "share_dataframe",
+  "expected_line": 2895
+ },
+ {
+  "id": "c42",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "cleanup_toolkits",
+  "expected_line": 2952
+ },
+ {
+  "id": "c43",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "get_tool_schema",
+  "expected_line": 703
+ },
+ {
+  "id": "c44",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/clients/base.py",
+  "symbol": "_apply_cache_hints",
+  "expected_line": 565
+ },
+ {
+  "id": "c45",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/decorators.py",
+  "symbol": "tool_schema",
+  "expected_line": 39
+ },
+ {
+  "id": "c46",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "BotMetadata",
+  "expected_line": 50
+ },
+ {
+  "id": "c47",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "AgentRegistry",
+  "expected_line": 258
+ },
+ {
+  "id": "c48",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register",
+  "expected_line": 526
+ },
+ {
+  "id": "c49",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register_instance",
+  "expected_line": 586
+ },
+ {
+  "id": "c50",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "_collect_and_register_policies",
+  "expected_line": 379
+ },
+ {
+  "id": "c51",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register_bot_decorator",
+  "expected_line": 1324
+ },
+ {
+  "id": "c52",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "instantiate_startup_agents",
+  "expected_line": 1471
+ },
+ {
+  "id": "c53",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "AgentFactory",
+  "expected_line": 43
+ },
+ {
+  "id": "c54",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c55",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "CapabilityEntry",
+  "expected_line": 48
+ },
+ {
+  "id": "c56",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "ResourceType",
+  "expected_line": 25
+ },
+ {
+  "id": "c57",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "RoutingDecision",
+  "expected_line": 91
+ },
+ {
+  "id": "c58",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "line": 1
+ },
+ {
+  "id": "c59",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c60",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "AuditLedgerEntry",
+  "expected_line": 80
+ },
+ {
+  "id": "c61",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "sign",
+  "expected_line": 135
+ },
+ {
+  "id": "c62",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "LocalHMACSigner",
+  "expected_line": 166
+ },
+ {
+  "id": "c63",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "__init__",
+  "expected_line": 296
+ },
+ {
+  "id": "c64",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "append",
+  "expected_line": 338
+ },
+ {
+  "id": "c65",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "verify",
+  "expected_line": 407
+ },
+ {
+  "id": "c66",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c67",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "symbol": "AuditLedger",
+  "expected_line": 65
+ },
+ {
+  "id": "c68",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/ledger.py",
+  "symbol": "PostgresLedgerBackend",
+  "expected_line": 12
+ },
+ {
+  "id": "c69",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/ledger.py",
+  "symbol": "EventLedger",
+  "expected_line": 247
+ },
+ {
+  "id": "c70",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "can_execute",
+  "expected_line": 25
+ },
+ {
+  "id": "c71",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "PBACPermissionResolver",
+  "expected_line": 247
+ },
+ {
+  "id": "c72",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "line": 289
+ },
+ {
+  "id": "c73",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "filter_tools",
+  "expected_line": 341
+ },
+ {
+  "id": "c74",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "execute",
+  "expected_line": 916
+ },
+ {
+  "id": "c75",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "_ensure_open",
+  "expected_line": 999
+ },
+ {
+  "id": "c76",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataplane_guard.py",
+  "symbol": "DataPlanePolicyGuard",
+  "expected_line": 45
+ },
+ {
+  "id": "c77",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataset_guard.py",
+  "symbol": "DatasetPolicyGuard",
+  "expected_line": 56
+ },
+ {
+  "id": "c78",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataset_guard.py",
+  "symbol": "usage",
+  "expected_line": 19
+ },
+ {
+  "id": "c79",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/eval_context.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c80",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/models.py",
+  "symbol": "PolicyRuleConfig",
+  "expected_line": 32
+ },
+ {
+  "id": "c81",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/pbac.py",
+  "line": 1
+ },
+ {
+  "id": "c82",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/redaction.py",
+  "symbol": "ScrubPolicy",
+  "expected_line": 128
+ },
+ {
+  "id": "c83",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+  "symbol": "pbac_action_namespace",
+  "expected_line": 52
+ },
+ {
+  "id": "c84",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/__init__.py",
+  "symbol": "eventbus",
+  "expected_line": 8
+ },
+ {
+  "id": "c85",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+  "symbol": "lifecycle",
+  "expected_line": 18
+ },
+ {
+  "id": "c86",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+  "symbol": "subscribers",
+  "expected_line": 54
+ },
+ {
+  "id": "c87",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/events/tool.py",
+  "symbol": "tool",
+  "expected_line": 1
+ },
+ {
+  "id": "c88",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/subscribers/opentelemetry.py",
+  "symbol": "OTel",
+  "expected_line": 22
+ },
+ {
+  "id": "c89",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/legacy_bridge.py",
+  "symbol": "EventRegistry",
+  "expected_line": 23
+ },
+ {
+  "id": "c90",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/transport/base.py",
+  "symbol": "autonomous",
+  "expected_line": 1
+ },
+ {
+  "id": "c91",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "symbol": "ensure_shared_cost_calculator",
+  "expected_line": 24
+ },
+ {
+  "id": "c92",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
+  "symbol": "UsageRecord",
+  "expected_line": 22
+ },
+ {
+  "id": "c93",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/context.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c94",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/context.py",
+  "symbol": "agent_identity",
+  "expected_line": 86
+ },
+ {
+  "id": "c95",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/attributes.py",
+  "symbol": "cost",
+  "expected_line": 240
+ },
+ {
+  "id": "c96",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/__init__.py",
+  "symbol": "exports",
+  "expected_line": 63
+ },
+ {
+  "id": "c97",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/exporters.py",
+  "symbol": "OTLP",
+  "expected_line": 52
+ },
+ {
+  "id": "c98",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/base.py",
+  "symbol": "recorder",
+  "expected_line": 17
+ },
+ {
+  "id": "c99",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/logging_recorder.py",
+  "symbol": "LoggingUsageRecorder",
+  "expected_line": 17
+ },
+ {
+  "id": "c100",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/provider.py",
+  "symbol": "provider",
+  "expected_line": 9
+ },
+ {
+  "id": "c101",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/run_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c102",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "WorkingMemoryToolkit",
+  "expected_line": 47
+ },
+ {
+  "id": "c103",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "store_result",
+  "expected_line": 374
+ },
+ {
+  "id": "c104",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "list_tool_dataframes",
+  "expected_line": 917
+ },
+ {
+  "id": "c105",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "from_runtime",
+  "expected_line": 217
+ },
+ {
+  "id": "c106",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "store",
+  "expected_line": 357
+ },
+ {
+  "id": "c107",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "search_stored",
+  "expected_line": 562
+ },
+ {
+  "id": "c108",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "symbol": "preview",
+  "expected_line": 178
+ },
+ {
+  "id": "c109",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "symbol": "dataframe",
+  "expected_line": 545
+ },
+ {
+  "id": "c110",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "symbol": "WorkingMemoryCatalog",
+  "expected_line": 778
+ },
+ {
+  "id": "c111",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/artifacts.py",
+  "symbol": "InMemoryArtifactStore",
+  "expected_line": 290
+ },
+ {
+  "id": "c112",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/config.py",
+  "symbol": "transport",
+  "expected_line": 139
+ },
+ {
+  "id": "c113",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/config.py",
+  "symbol": "grpc_host",
+  "expected_line": 203
+ },
+ {
+  "id": "c114",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py",
+  "symbol": "GrpcMCPConfig",
+  "expected_line": 1
+ },
+ {
+  "id": "c115",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py",
+  "symbol": "GrpcMCPSession",
+  "expected_line": 19
+ },
+ {
+  "id": "c116",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py",
+  "symbol": "send_request",
+  "expected_line": 83
+ },
+ {
+  "id": "c117",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/base.py",
+  "symbol": "RemoteMCPServerBase",
+  "expected_line": 19
+ },
+ {
+  "id": "c118",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/base.py",
+  "symbol": "register_tool",
+  "expected_line": 64
+ },
+ {
+  "id": "c119",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/base.py",
+  "symbol": "_authenticate_request",
+  "expected_line": 174
+ },
+ {
+  "id": "c120",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/mcp/_quic.py",
+  "symbol": "load_quic",
+  "expected_line": 1
+ },
+ {
+  "id": "c121",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/mcp/registry.py",
+  "symbol": "transport",
+  "expected_line": 292
+ },
+ {
+  "id": "c122",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c123",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/redaction.py",
+  "line": 1
+ },
+ {
+  "id": "c124",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/grants.py",
+  "line": 1
+ },
+ {
+  "id": "c125",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/approval_token.py",
+  "line": 1
+ },
+ {
+  "id": "c126",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/s3_overflow.py",
+  "line": 1
+ },
+ {
+  "id": "c127",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/backends/postgres.py",
+  "line": 1
+ },
+ {
+  "id": "c128",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/principal_guard.py",
+  "line": 1
+ },
+ {
+  "id": "c129",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/agent_resources.py",
+  "line": 1
+ },
+ {
+  "id": "c130",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/quic.py",
+  "line": 1
+ },
+ {
+  "id": "c131",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/transports/streamable_http.py",
+  "line": 1
+ },
+ {
+  "id": "c132",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/session_store.py",
+  "line": 1
+ },
+ {
+  "id": "c133",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/",
+  "line": null
+ },
+ {
+  "id": "c134",
+  "kind": "file",
+  "path": "sdd/tasks/index/a2a-protocol-compatibility.json",
+  "line": null
+ },
+ {
+  "id": "c135",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/mcp/",
+  "line": null
+ },
+ {
+  "id": "c136",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/",
+  "line": null
+ },
+ {
+  "id": "c137",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/registry/",
+  "line": null
+ },
+ {
+  "id": "c138",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/",
+  "line": null
+ },
+ {
+  "id": "c139",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/",
+  "line": null
+ },
+ {
+  "id": "c140",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/",
+  "line": null
+ },
+ {
+  "id": "c141",
+  "kind": "file",
+  "path": "sdd/tasks/index/parrot-telemetry-event-fanout.json",
+  "line": null
+ },
+ {
+  "id": "c142",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/subscribers/opentelemetry.py",
+  "line": null
+ },
+ {
+  "id": "c143",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/",
+  "line": null
+ },
+ {
+  "id": "c144",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/outputs/",
+  "line": null
+ },
+ {
+  "id": "c145",
+  "kind": "file",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "line": null
+ },
+ {
+  "id": "c146",
+  "kind": "file",
+  "path": "sdd/tasks/index/semantic-layer.json",
+  "line": null
+ },
+ {
+  "id": "c147",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/core/events/bus/ingress/grpc.py",
+  "line": null
+ },
+ {
+  "id": "c148",
+  "kind": "symbol",
+  "path": "sdd/tasks/completed/TASK-1791-ws-grpc-ingress.md",
+  "symbol": "Completion",
+  "expected_line": null
+ },
+ {
+  "id": "c149",
+  "kind": "symbol",
+  "path": "sdd/tasks/completed/TASK-1804-ingress-ws-grpc.md",
+  "symbol": "Completion",
+  "expected_line": null
+ },
+ {
+  "id": "c150",
+  "kind": "file",
+  "path": "sdd/tasks/index/eventbus-core-extraction.json",
+  "line": null
+ },
+ {
+  "id": "c151",
+  "kind": "file",
+  "path": "sdd/tasks/index/parrot-eventbus-migration.json",
+  "line": null
+ },
+ {
+  "id": "c152",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "PBACToolCallGuardrail",
+  "expected_line": null
+ },
+ {
+  "id": "c153",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/tests/test_toolmanager_ranker.py",
+  "symbol": "rank_tools",
+  "expected_line": null
+ },
+ {
+  "id": "c154",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py",
+  "line": null
+ },
+ {
+  "id": "c155",
+  "kind": "file",
+  "path": "sdd/specs/per-tool-connection.spec.md",
+  "line": null
+ },
+ {
+  "id": "c156",
+  "kind": "file",
+  "path": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
+  "line": null
+ },
+ {
+  "id": "c157",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "exclude_tools",
+  "expected_line": null
+ },
+ {
+  "id": "c158",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "check",
+  "expected_line": null
+ },
+ {
+  "id": "c159",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "PolicyDenialReport",
+  "expected_line": null
+ },
+ {
+  "id": "c160",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+  "symbol": "PermissionContext",
+  "expected_line": null
+ },
+ {
+  "id": "c161",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "line": null
+ },
+ {
+  "id": "c162",
+  "kind": "file",
+  "path": "docs/security/pbac-guardrails.md",
+  "line": null
+ },
+ {
+  "id": "c163",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "DataPlanePolicyGuard",
+  "expected_line": null
+ },
+ {
+  "id": "c164",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/mcp/oauth_server.py",
+  "line": null
+ },
+ {
+  "id": "c165",
+  "kind": "file",
+  "path": "docs/events/eventbus-v2.md",
+  "line": null
+ },
+ {
+  "id": "c166",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "symbol": "setup_event_fanout",
+  "expected_line": null
+ },
+ {
+  "id": "c167",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1827-delete-rewire-events-bus-core.md",
+  "line": null
+ },
+ {
+  "id": "c168",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1804-ingress-ws-grpc.md",
+  "line": null
+ },
+ {
+  "id": "c169",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/events.py",
+  "symbol": "AfterClientCallEvent",
+  "expected_line": null
+ },
+ {
+  "id": "c170",
+  "kind": "file",
+  "path": "docs/events/eventbus-migration.md",
+  "line": null
+ },
+ {
+  "id": "c171",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/__init__.py",
+  "line": null
+ },
+ {
+  "id": "c172",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/trace.py",
+  "symbol": "GenAIOpenTelemetrySubscriber",
+  "expected_line": null
+ },
+ {
+  "id": "c173",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/openlit_recorder.py",
+  "symbol": "OpenLitUsageRecorder",
+  "expected_line": null
+ },
+ {
+  "id": "c174",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/setup.py",
+  "symbol": "setup_telemetry",
+  "expected_line": null
+ },
+ {
+  "id": "c175",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/cost.py",
+  "symbol": "ensure_shared_cost_calculator",
+  "expected_line": null
+ },
+ {
+  "id": "c176",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/metrics.py",
+  "line": null
+ },
+ {
+  "id": "c177",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "ResultHandleStore",
+  "expected_line": 634
+ },
+ {
+  "id": "c178",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "SemanticAuditLedger",
+  "expected_line": 605
+ },
+ {
+  "id": "c179",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "GovernedDatasetSink",
+  "expected_line": 679
+ },
+ {
+  "id": "c180",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "GovernancePipeline",
+  "expected_line": 541
+ },
+ {
+  "id": "c181",
+  "kind": "file",
+  "path": "sdd/tasks/active/TASK-4476-semantic-result-handles.md",
+  "line": null
+ },
+ {
+  "id": "c182",
+  "kind": "file",
+  "path": "sdd/proposals/semantic-layer-rev2.proposal.md",
+  "line": null
+ },
+ {
+  "id": "c183",
+  "kind": "file",
+  "path": "sdd/proposals/agent-host-protocol-session-state.proposal.md",
+  "line": 1
+ },
+ {
+  "id": "c184",
+  "kind": "file",
+  "path": "sdd/proposals/agent-host-protocol-session-state.proposal.md",
+  "line": 60
+ },
+ {
+  "id": "c185",
+  "kind": "file",
+  "path": "sdd/proposals/structured-artifact-contract.brainstorm.md",
+  "line": 1
+ }
+]
