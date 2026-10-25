@@ -3,7 +3,7 @@
   "feat_id": "FEAT-747",
   "feature_slug": "local-inter-agent",
   "started_at": "2026-10-25T22:37:00Z",
-  "updated_at": "2026-10-25T23:55:00Z",
+  "updated_at": "2026-10-26T00:30:00Z",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -164,10 +164,12 @@
       "reason": "autonomous session, no user watching; synthesis summary printed in the transcript"
     },
     "qa": {
-      "status": "skipped",
-      "reason": "autonomous session; 5 unknowns carried unresolved into the proposal (status: discussion)",
-      "questions_total": 5,
-      "questions_answered": 0
+      "status": "completed",
+      "started_at": "2026-10-26T00:20:00Z",
+      "completed_at": "2026-10-26T00:30:00Z",
+      "questions_total": 9,
+      "questions_answered": 9,
+      "note": "5 synthesis unknowns + 4 questions carried from the source, answered interactively"
     },
     "output": {
       "status": "completed",
@@ -212,6 +214,6 @@
   ],
   "resume_hint": {
     "next_phase": "done",
-    "next_action": "/sdd-spec FEAT-747 after the FEAT-746 spec"
+    "next_action": "/sdd-spec FEAT-747 after the FEAT-746 spec; proposal status review"
   }
 }

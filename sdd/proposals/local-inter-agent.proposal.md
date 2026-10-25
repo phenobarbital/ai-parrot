@@ -4,7 +4,7 @@ title: Local inter-agent protocol — performatives, LLM-free gating, capability
 slug: local-inter-agent
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -19,6 +19,7 @@ research_state: sdd/state/FEAT-747/
 depends_on: [FEAT-746]
 created: 2026-10-25
 updated: 2026-10-26
+resolved_questions: 9
 ---
 
 # FEAT-747 — Local inter-agent protocol (sister of FEAT-746)
@@ -180,12 +181,12 @@ The registry has been stable since 2026-09-23; flows activity is FEAT-590 (tool-
 
 ### What's New
 
-- **Performative model** — an enum (`inform`, `request`, `query`, `agree`, `refuse`, `failure`, `cfp`, `propose`, `accept`, `reject`, `subscribe`, `not_understood`) plus message fields `performative` / `protocol` / `conversation_id` / `in_reply_to` / `sender` / `receivers` | capability filter, layered on the FEAT-746 envelope. The harness maps origin tools to acts (`AgentTool` → request|query; a generic send tool with a small enum). *Evidence*: F002, F021, F006
-- **Protocol engine** — per-conversation state machines for Inform, Request, Query, Contract Net and Subscribe; `not_understood` for out-of-state messages; timeout → `failure(TIMEOUT)`; hop budget → `failure(HOP_LIMIT)`; token budget. Modelled after the flows FSM precedent and the `ask_agent` status enum. *Evidence*: F003, F006
-- **Gating dispatcher** — addressing (receivers | capability filter) → protocol state → decision-needed; an inform handler registry (store / blackboard update / wake LLM only when a handler asks); the wakes-per-message metric of spike L-S1. *Evidence*: F006
+- **Performative model** — all eleven acts in v0 (`inform`, `request`, `query`, `agree`, `refuse`, `failure`, `cfp`, `propose`, `accept`, `reject`, `subscribe`, plus `not_understood`) and message fields `performative` / `protocol` / `conversation_id` / `in_reply_to` / `sender` / `receivers` | capability filter, layered on the FEAT-746 envelope. The harness maps origin tools to acts (`AgentTool` → request|query; a generic send tool with a small enum). *Evidence*: F002, F021, F006
+- **Protocol engine** — per-conversation state machines for all five protocols in v0 (Inform, Request, Query, Contract Net with fixed-weight scoring and a pluggable override, Subscribe); `not_understood` for out-of-state messages; timeout → `failure(TIMEOUT)`; hop budget → `failure(HOP_LIMIT)`; token budget. Modelled after the flows FSM precedent and the `ask_agent` status enum. *Evidence*: F003, F006
+- **Gating dispatcher** — addressing (receivers | capability filter) → protocol state → decision-needed; a directly addressed `inform` wakes the receiver, an unaddressed one goes to a handler registry (store / blackboard update / wake only when a handler asks); the wakes-per-message metric of spike L-S1. *Evidence*: F006
 - **Capability directory** — `ResourceType.AGENT` + exact cap-id/keyword index + locality/cost ranking exposed as `AgentRegistry.find_capability`; per-agent contract advertisement on the registry entry; the inter-agent grant as scoped configuration enforced by the harness. *Evidence*: F001, F014, F010
-- **Blackboard** — versioned single-writer keyed store (`roster`, `definitions`, `tasks`, `digest`, `artifacts`) with ACLs and subscriptions; in-process backend (successor to `FlowContext.shared_data` for protocol runs) and Matrix room-state backend. *Evidence*: F003, F006, F008
-- **Local carriers** — in-process asyncio queue passing objects by reference; same-host Arrow IPC/shm reusing the repl_worker transport ownership rules; navigator-eventbus carrier (dedicated instance, `reply_to` / correlation / idempotency / DLQ); Matrix carrier adapter over `m.parrot.*` events with a human-readable body. *Evidence*: F022, F018, F006
+- **Blackboard** — versioned single-writer keyed store (`roster`, `definitions`, `tasks`, `digest` owned by the last agent that closed a Request when no coordinator exists, `artifacts`) with ACLs and subscriptions; in-process backend (successor to `FlowContext.shared_data` for protocol runs) and Matrix room-state backend. *Evidence*: F003, F006, F008
+- **Local carriers** — in-process asyncio queue carrying the full envelope with payloads by reference; same-host Arrow IPC/shm reusing the repl_worker transport ownership rules; navigator-eventbus carrier (dedicated instance, `reply_to` / correlation / idempotency / DLQ); Matrix carrier adapter over `m.parrot.*` events with a human-readable body. *Evidence*: F022, F018, F006
 - **Audit** — a performative entry kind for the signed ledger (or a sibling ledger sharing the signer), joined by `trace_id`. *Evidence*: F009, F003
 
 ### What Changes
@@ -262,43 +263,47 @@ Distribution: **13** high, **4** medium, **0** low.
 
 ## 5. Open Questions
 
-### Resolved (by the codebase during research)
+### Resolved (during proposal phase, 2026-10-26)
 
-- [x] **Matrix: custom event types under an `ai.parrot.*` namespace, or `m.room.message` with `msgtype` extensions?** — *Resolved by code*: the namespace is already `m.parrot.*` with message events (task/result/status/feedback) and state events (agent_card/channel/tunnel); `m.room.message` carries the human-readable text beside them. *Resolves claims*: C7, C13
+- [x] **Matrix: custom event types under an `ai.parrot.*` namespace, or `m.room.message` with `msgtype` extensions?** — *Resolved by code*: the namespace is already `m.parrot.*` with message events (task/result/status/feedback) and state events (agent_card/channel/tunnel); `m.room.message` carries the human-readable text beside them.
+  *Resolves claims*: C7, C13
 
-### Unresolved (defer to spec)
+- [x] **U1 — Which performative set ships in v0?** — *Resolved*: all eleven acts and all five protocols (Inform, Request, Query, Contract Net, Subscribe) ship in v0, so FEAT-463's tunnels can be subsumed in one pass.
+  *Resolves claims*: C1, C9
 
-- [ ] **U1 — Which performative set ships in v0: all eleven acts (with Contract Net and Subscribe), or a minimal `inform`/`request`/`query`/`failure` core with cfp/propose/accept/reject and subscribe deferred?** — *Owner*: tbd
-  *Blocks claims*: C1, C9
-  *Plausible answers*: a) all eleven, five protocols, so FEAT-463's tunnels can be subsumed in one pass · b) minimal four acts + Inform/Request/Query protocols; Contract Net and Subscribe as a follow-up spec · c) minimal four acts but reserve the enum values now
+- [x] **U2 — Matrix carrier vs the FEAT-463 swarm?** — *Resolved*: subsume. `AgentSwarmToolkit.ask_agent` becomes a Request over the protocol engine; tunnels stay as the room topology; hops, status and correlation come from one place. FEAT-195's rejection is reinterpreted, not overturned: Matrix is one carrier among four and the human-readable `body` stays mandatory.
+  *Resolves claims*: C7, C13
 
-- [ ] **U2 — Does the Matrix carrier subsume FEAT-463's `ask_agent`/tunnel/`HybridDelegator` path (routing them through the protocol engine), or sit beside it as new `m.parrot.*` event types, given FEAT-195's rejection of `m.parrot.*` pub/sub as the primary path?** — *Owner*: tbd
-  *Blocks claims*: C7, C13
-  *Plausible answers*: a) subsume: `ask_agent` becomes a Request over the engine; tunnels stay as the room topology · b) coexist in v0: new event types + state keys, migrate FEAT-463 later · c) revisit FEAT-195 explicitly in the spec and make the protocol the primary path on Matrix
+- [x] **U3 — Where does the capability directory live?** — *Resolved*: extend `parrot.registry.capabilities`. Add `ResourceType.AGENT`, an exact cap-id/keyword index and locality/cost ranking to `CapabilityRegistry`; embedding search stays as the fallback; `AgentRegistry.find_capability` delegates to it.
+  *Resolves claims*: C3, C2
 
-- [ ] **U3 — Where does the capability directory live: extend `parrot.registry.capabilities` (`ResourceType.AGENT` + exact index + locality) or a new sibling index owned by `AgentRegistry`, leaving the FEAT-070 intent router untouched?** — *Owner*: tbd
-  *Blocks claims*: C3, C2
-  *Plausible answers*: a) extend `CapabilityRegistry` (one index, add AGENT + exact path) · b) new `AgentRegistry`-owned directory that also fronts ToolManager A2A cards and `A2AMeshDiscovery` · c) new directory in v0, unify with `CapabilityRegistry` when FEAT-746's catalog lands
+- [x] **U4 — How do existing crews map onto the protocol in v0?** — *Resolved*: untouched in v0. The protocol applies to registry-discovered peers and shared channels; `AgentCrew.run_*` and `FlowContext.shared_data` stay as they are; crew-to-channel mapping is a follow-up spec.
+  *Resolves claims*: C8
 
-- [ ] **U4 — How do existing crews map onto the protocol in v0: crews untouched (protocol only for registry-discovered peers), or a crew is a channel with the coordinator as digest owner and each step a Request?** — *Owner*: tbd
-  *Blocks claims*: C8
-  *Plausible answers*: a) untouched in v0; mapping is a follow-up · b) crew = channel, steps = Requests, coordinator owns digest · c) opt-in per `CrewDefinition` flag
+- [x] **U5 — In-process carrier: envelope or direct call?** — *Resolved*: keep the full envelope with payloads passed by reference inside it (Pydantic models, Arrow tables, handles). Uniform audit, gating and protocol state on every carrier; zero serialization in-process.
+  *Resolves claims*: C6, C10
 
-- [ ] **U5 — Does the in-process carrier bypass the envelope (direct method call with the performative as a parameter) or keep the full envelope for uniform audit and gating?** — *Owner*: tbd
-  *Blocks claims*: C6, C10
-  *Plausible answers*: a) keep the envelope; pass payloads by reference inside it · b) bypass for in-process, audit from the engine instead of the carrier · c) envelope-lite: headers only, payload by reference
+- [x] **Who owns `digest` in a channel with no coordinator?** — *Resolved*: the last agent that closed a Request; ownership moves with the work and the harness enforces single-writer per key version.
 
-Carried from the source for the spec's §8 (the codebase cannot answer them): who owns `digest` in a channel with no coordinator; whether an `inform` ever wakes an LLM by default; the Contract Net scoring rule (fixed weights vs pluggable strategy); the family name shared with FEAT-746.
+- [x] **Does an `inform` ever wake the receiver's LLM by default?** — *Resolved*: wake if addressed directly. An `inform` that names the receiver in `receivers` wakes it; broadcast or capability-filtered `inform`s are stored (WorkingMemory / blackboard) and wake only when a registered handler asks for a decision. The L-S1 target becomes: addressed `inform` 1 wake, unaddressed `inform` with no handler 0.
+
+- [x] **Contract Net bid scoring?** — *Resolved*: fixed default with a pluggable override. The harness scores `propose(cost, time, confidence)` with fixed weights from contract annotations; a channel may register a scoring strategy; the requester's LLM wakes only when the rule cannot decide.
+
+- [x] **Name: shared with FEAT-746 or a family name with two profiles?** — *Resolved*: two names, shared envelope. FEAT-747 gets its own protocol name for the performative layer and references FEAT-746's envelope by name; naming the two is a spec-time task.
+
+### Unresolved (defer to spec / implementation)
+
+None. All nine questions were answered on 2026-10-26; the spec inherits them as fixed decisions.
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-747`** — *Rationale*: decisions L1–L9 are fixed by the source, localization is high-confidence (C1–C10, C13–C15) and the remaining forks U1–U5 are bounded open questions a spec can carry. **Sequence it after the FEAT-746 spec**: this spec reuses the parent's envelope, handles, blob store, catalog and policy gate, and its Codebase Contract cannot close until those models exist (C16).
+**`/sdd-spec FEAT-747`** — *Rationale*: decisions L1–L9 are fixed by the source, localization is high-confidence (C1–C10, C13–C15) and the forks U1–U5 plus the four carried questions were resolved on 2026-10-26 (§5), so the spec starts with no open architecture. **Sequence it after the FEAT-746 spec**: this spec reuses the parent's envelope, handles, blob store, catalog and policy gate, and its Codebase Contract cannot close until those models exist (C16).
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-747`** — if U2 (subsume vs coexist with FEAT-463) or U3 (directory home) should be explored as competing architectures before committing; both touch approved specs (FEAT-195, FEAT-463, FEAT-070).
+- **`/sdd-brainstorm FEAT-747`** — no longer needed: U2 (subsume FEAT-463) and U3 (extend CapabilityRegistry) are decided; reopen only if the FEAT-746 spec changes the envelope in a way that breaks the shared-envelope naming decision.
 - **`/sdd-task FEAT-747`** — not applicable: six new subsystems across two distributions.
 - **Manual review** — run spikes L-S1 (wakes per message) and L-S3 (registry lookup) as throwaway prototypes first if the medium-confidence claims C11, C16, C17 need hard numbers before the spec.
 
@@ -340,4 +345,4 @@ Carried from the source for the spec's §8 (the codebase cannot answer them): wh
 | Synthesis prompt | `sdd/templates/synthesis.prompt.md v1.0` |
 | Plan prompt | `sdd/templates/research_plan.prompt.md v1.0` |
 | Schema versions | state=1.0, synthesis=1.0, research_plan=1.0 |
-| Operator | Jesus Lara / Claude Fable 5.1 (autonomous session; plan and review gates auto-proceeded, Q&A skipped → status `discussion`) |
+| Operator | Jesus Lara / Claude Fable 5.1 (plan and review gates auto-proceeded in the autonomous run; Q&A answered interactively on 2026-10-26 → status `review`) |

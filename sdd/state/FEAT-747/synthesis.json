@@ -809,7 +809,9 @@
         "minimal four acts + Inform/Request/Query protocols; Contract Net and Subscribe as a follow-up spec",
         "minimal four acts but reserve the enum values now"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "all eleven acts, five protocols in v0",
+      "resolved_at": "2026-10-26"
     },
     {
       "id": "U2",
@@ -823,7 +825,9 @@
         "coexist in v0: new event types + state keys, migrate FEAT-463 later",
         "revisit FEAT-195 explicitly in the spec and make the protocol the primary path on Matrix"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "subsume: ask_agent becomes a Request over the engine; tunnels stay as room topology; Matrix one carrier among four, human body mandatory",
+      "resolved_at": "2026-10-26"
     },
     {
       "id": "U3",
@@ -837,7 +841,9 @@
         "new AgentRegistry-owned directory that also fronts ToolManager A2A cards and A2AMeshDiscovery",
         "new directory in v0, unify with CapabilityRegistry when FEAT-746's catalog lands"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "extend CapabilityRegistry: ResourceType.AGENT + exact cap-id/keyword index + locality ranking; embedding search as fallback",
+      "resolved_at": "2026-10-26"
     },
     {
       "id": "U4",
@@ -850,7 +856,9 @@
         "crew = channel, steps = Requests, coordinator owns digest",
         "opt-in per CrewDefinition flag"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "crews untouched in v0; mapping is a follow-up spec",
+      "resolved_at": "2026-10-26"
     },
     {
       "id": "U5",
@@ -864,7 +872,9 @@
         "bypass for in-process, audit from the engine instead of the carrier",
         "envelope-lite: headers only, payload by reference"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "keep the full envelope, payloads by reference",
+      "resolved_at": "2026-10-26"
     }
   ],
   "recommended_next_command": {
@@ -899,6 +909,12 @@
       "F012",
       "F016"
     ],
-    "notes": "Mode resolved to enrichment (additive verbs, explicit VERIFY list). Scope confidence is medium because the parent FEAT-746 models are unspecified and the Matrix path has a prior rejection to reconcile. Source open questions OQ2 (digest owner), OQ3 (inform wakes), OQ4 (bid scoring) and OQ8 (name) are carried into the proposal's unresolved list for the spec; the codebase cannot answer them. OQ7 (Matrix event types) is answered by the codebase: m.parrot.* already exists. Follow-up queries for the spec phase: locate the TraceContext definition in navigator dependencies; read navigator_eventbus for reply_to/correlation support; read sdd/state/FEAT-746 findings for the envelope model. Citation probe (\u00a74d): 293 checks over 8 sheets at HEAD 14d4fc780; 5 stale (renamed/misattributed symbols, line drift), 0 missing after inline resolution; see probe_results.json."
+    "notes": "Mode resolved to enrichment (additive verbs, explicit VERIFY list). Scope confidence is medium because the parent FEAT-746 models are unspecified and the Matrix path has a prior rejection to reconcile. Source open questions OQ2 (digest owner), OQ3 (inform wakes), OQ4 (bid scoring) and OQ8 (name) are carried into the proposal's unresolved list for the spec; the codebase cannot answer them. OQ7 (Matrix event types) is answered by the codebase: m.parrot.* already exists. Follow-up queries for the spec phase: locate the TraceContext definition in navigator dependencies; read navigator_eventbus for reply_to/correlation support; read sdd/state/FEAT-746 findings for the envelope model. Citation probe (\u00a74d): 293 checks over 8 sheets at HEAD 14d4fc780; 5 stale (renamed/misattributed symbols, line drift), 0 missing after inline resolution; see probe_results.json.",
+    "carried_questions_resolved": {
+      "digest_owner": "last agent that closed a Request",
+      "inform_wakes": "wake if addressed directly; broadcast informs stored, handler-driven wake",
+      "bid_scoring": "fixed weights from contract annotations, pluggable override per channel, LLM only if undecidable",
+      "name": "two names, shared envelope (FEAT-747 names the performative layer, references FEAT-746's envelope)"
+    }
   }
 }
