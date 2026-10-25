@@ -54,3 +54,5 @@ lane_origin: FG-009-binary-transport-attempts
 ## Notes
 
 Implications for the brainstorm: (1) the VERIFY line "no gRPC transport in ai-parrot / no protobuf-defined envelope" holds for the ai-parrot repo, but a protobuf envelope + grpc.aio server pattern already exists in the sibling `navigator-eventbus` package, including auth-in-metadata and a "JSON strings for open dicts" convention; (2) the `[grpc]` extra may or may not still be in `packages/ai-parrot/pyproject.toml` after the extraction — [cross-lane: type=grep, intent=check whether packages/ai-parrot/pyproject.toml still declares the grpc extra (grpcio/grpcio-tools) after FEAT-312]; (3) the eventbus RPC-on-bus pattern (reply_to/correlation) should be checked in navigator-eventbus, not in parrot — [cross-lane: type=read, intent=inspect how parrot publishes to navigator-eventbus (FEAT-317 migration) for envelope/headers/correlation support].
+
+- [citation-check: missing] packages/ai-parrot/src/parrot/core/events/bus/ingress/grpc.py — absent on dev, as the finding itself states (moved to navigator-eventbus in FEAT-312). Historical citation only.

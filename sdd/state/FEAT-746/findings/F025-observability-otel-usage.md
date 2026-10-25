@@ -41,9 +41,16 @@ lane_origin: FW-010-observability-otel-usage
     from parrot.observability.cost import ensure_shared_cost_calculator   # used by fanout.py
 - path: `packages/ai-parrot/src/parrot/observability/subscribers/metrics.py`
   wiki_page_id: file:packages/ai-parrot/src/parrot/observability/subscribers/metrics.py (score 0.36)
+- path: `packages/ai-parrot/src/parrot/observability/cost/__init__.py`
+  lines: 57
+  symbol: `ensure_shared_cost_calculator`
+  excerpt: |
+    def ensure_shared_cost_calculator() -> "CostCalculator":   # corrected citation (probe c175): cost is a package, not cost.py
 
 ## Notes
 
 - Ledger issue:1874ef259510 — usage.estimated_cost backfill not delivered (FEAT-710 follow-up); cost plumbing is still settling.
 - `PermissionContext.trace_context` exists (FW-008) — a possible carrier for trace ids inside a request, but nothing documents it crossing a network hop.
 - [cross-lane: type=grep, intent=grep "traceparent|inject(|extract(" in parrot/observability and parrot/a2a to confirm absence of cross-hop propagation]
+
+- [citation-check: missing] packages/ai-parrot/src/parrot/observability/cost.py — no such module; `ensure_shared_cost_calculator` is defined in packages/ai-parrot/src/parrot/observability/cost/__init__.py:57 (verified 2026-10-26).

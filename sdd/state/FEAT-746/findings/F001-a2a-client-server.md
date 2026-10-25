@@ -213,3 +213,6 @@ The A2A client layer is in the core package, not ai-parrot-server (wiki `dir:pac
 
 - The server already has the two hooks the brainstorm wants below the LLM (credential broker gate + audit ledger), but they are credential-shaped (per-user OAuth credentials), not capability/policy-shaped.
 - [cross-lane: type=read, intent=read server.py _try_invoke_with_gate and _execute_tool to see what the serving-side tool execution path looks like without an LLM]
+
+- [citation-check: missing] packages/ai-parrot-server/src/parrot/a2a/server.py:965-985 — cited symbol `_invoke_tool_with_credential_gate` does not exist; the method at line 961 is `async def _try_invoke_with_gate(`. Use `_try_invoke_with_gate` (already cited by the merged FW-002 block).
+- [citation-check: stale] packages/ai-parrot/src/parrot/a2a/client.py:607 — `_execute` is ambiguous (two defs: 607 A2ARemoteAgentTool, 745 A2ARemoteSkillTool); the cited line range 607-625 selects A2ARemoteAgentTool correctly.

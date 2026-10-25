@@ -45,9 +45,15 @@ The bus core was extracted to the external `navigator-eventbus` package (TASK-18
     AfterInvokeEvent, InvokeFailedEvent, AfterClientCallEvent, ClientCallFailedEvent  (typed hot-path events; forward_to_bus bridge)
 - path: `docs/events/eventbus-migration.md`
   wiki_page_id: file:docs/events/eventbus-migration.md (score 0.93)
+- path: `packages/ai-parrot/src/parrot/core/events/lifecycle/events/client.py`
+  symbol: `AfterClientCallEvent`
+  excerpt: |
+    class AfterClientCallEvent   # corrected citation (probe c169): lives in lifecycle/events/client.py, not lifecycle/events.py
 
 ## Notes
 
 - Doctrine in the doc: two subscription systems by design — typed `EventRegistry` hot path vs topic bus. A call/result envelope on the bus would be a topic-bus citizen, serialized JSON today (binary payloads would need a bytes-safe serializer on the backend).
 - Grep in packages/*/src found no `GrpcIngress` / `parrot.events.v1` — confirms they live in navigator-eventbus now.
 - [cross-lane: type=grep, intent=grep navigator_eventbus usages beyond fanout.py (subscribers/consumers) to see whether parrot consumes anything from the bus today]
+
+- [citation-check: missing] packages/ai-parrot/src/parrot/core/events/lifecycle/events.py — no such module; `AfterClientCallEvent` lives in packages/ai-parrot/src/parrot/core/events/lifecycle/events/client.py (verified 2026-10-26).

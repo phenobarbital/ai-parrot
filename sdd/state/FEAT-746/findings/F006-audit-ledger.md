@@ -131,3 +131,5 @@ The msagentsdk integration also consumes the ledger (`integrations/msagentsdk/au
 ## Notes
 
 - Storage failure in `AuditLedger.append` is swallowed (in-memory is source of truth); the semantic design adds `required=True` to fail closed. The served ledger for a cross-boundary protocol would want the fail-closed variant.
+
+- [citation-check: stale] packages/ai-parrot/src/parrot/security/audit_ledger.py — `sign`/`verify`/`__init__` are ambiguous (defined on AbstractKMSSigner 143/154, LocalHMACSigner 183/187, AzureKeyVaultSigner 253/269, AuditLedger.__init__ 327); the cited line ranges disambiguate, bare symbol names do not.

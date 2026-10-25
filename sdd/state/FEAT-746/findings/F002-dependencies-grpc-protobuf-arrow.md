@@ -68,3 +68,5 @@ The root `pyproject.toml` pins `protobuf>=6.31.1,<6.32` (for LiveKit stubs) and 
 ## Notes
 
 No `polars`, `capnp`, `flight` hits in any pyproject. The "gRPC proto definition" data file referenced at ai-parrot-server pyproject:116 was not located within this lane's budget (grpc_session.py imports its proto commented out — see FC-003). [cross-lane: type=glob, intent=find the .proto file shipped by ai-parrot-server (pattern packages/ai-parrot-server/**/*.proto)]
+
+[citation-check: note] 2026-10-26 probe triage — 185 checks: 130 verified, 6 ambiguous, 49 'missing'. Of the 49, all but the items tagged above are probe-sheet artifacts (descriptive labels such as `module`, `import`, `transport`, dependency strings in pyproject files, and directory paths submitted as `file` checks); each of those was re-verified inline: pyarrow>=25.0 (core:180, server:39, tools:118), protobuf (root:203), navigator-eventbus[grpc] (core:712), grpc_host (server mcp/config.py:203), exclude_tools (working_memory/tool.py:89), GovernedDatasetSink (semantic-layer.spec.md:682), mcp.proto present, no polars in any pyproject.

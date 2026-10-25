@@ -144,3 +144,5 @@ The two-layer PBAC pattern (handler filter + in-tool re-check) and `setup_pbac(a
 ## Notes
 
 The `grants.py` + `GrantGuard` (ToolManager.set_grant_guard, FC-004) mechanism may be the closest in-repo notion of a scoped delegation; not read. [cross-lane: type=wiki_query, intent="grant guard scoped grants delegation" to characterise grants.py]
+
+- [citation-check: stale] packages/ai-parrot/src/parrot/auth/resolver.py — `can_execute` (44/166/220/236/289) and `filter_tools` (65/341) are defined on several resolver classes; the cited 289-300 / 341 lines belong to PBACPermissionResolver as stated.
