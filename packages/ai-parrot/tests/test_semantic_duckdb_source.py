@@ -21,10 +21,7 @@ def _create_warehouse(path: Path) -> dict[str, str]:
     connection = duckdb.connect(str(path))
     try:
         connection.execute("CREATE TABLE orders (id INTEGER, region VARCHAR, amount DOUBLE)")
-        connection.execute(
-            "INSERT INTO orders VALUES "
-            "(1, 'EU', 10.0), (2, 'US', 20.0), (3, 'EU', 30.0)"
-        )
+        connection.execute("INSERT INTO orders VALUES " "(1, 'EU', 10.0), (2, 'US', 20.0), (3, 'EU', 30.0)")
     finally:
         connection.close()
     return {"database": str(path)}

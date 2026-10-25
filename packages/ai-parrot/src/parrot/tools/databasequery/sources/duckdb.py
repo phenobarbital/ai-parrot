@@ -8,6 +8,7 @@ using the ``duckdb`` Python API in a worker thread. Queries
 
 Part of FEAT-062 — DatabaseToolkit.
 """
+
 from __future__ import annotations
 
 import asyncio
