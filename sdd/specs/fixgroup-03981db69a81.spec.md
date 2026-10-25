@@ -195,6 +195,7 @@ decisions remain (see §8 — none).
 | `test_include_surface_honors_on_schema_loaded` (new) | M2 | Monkeypatch `dispatch` (as `test_a2ui_with_overrides_is_messages` does in `test_get_schema_dialect.py`) to return `schema_overrides`; assert the inlined envelope for an authorized member reflects the override (parity with the single-form route). |
 | `test_inline_render_failure_is_isolated` (existing, update) | M2 | Give the request tenant-membership so the render path is reached; update `form["warnings"] == ["render_failed: broken surface"]` to `form["warnings"] == ["render_failed"]` — no exception text leaked. |
 | `test_storage_list_forms_dialect_fallback` (new) | M3 | `FormStorage.list_forms()` against a row whose `schema_json` has no `"dialect"` key (or a malformed one) returns `"json_schema"`; a row with `"dialect": "a2ui"` in its `schema_json` returns `"a2ui"`. |
+| `test_list_forms_localized_title_flattens` (existing, update) | M3 | This test asserts the full output dict via `assert out == [{...}]` (`test_storage_list.py:76-93`); its `schema_json` carries no `"dialect"` key, so the expected literal must gain `"dialect": "json_schema"` once `PostgresFormStorage.list_forms()` always emits the key — otherwise the added key makes this exact-equality assertion fail. |
 
 ### Integration Tests
 
@@ -322,7 +323,7 @@ Verified against: `81ccf8e03` (origin/dev)
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/storage.py` | MODIFY | `from ..core.schema import FormSchema` | `storage.py:59` | 1 |
 | `packages/parrot-formdesigner/tests/unit/api/test_import_a2ui.py` | MODIFY | `async def test_conflict_then_overwrite_bumps_version(handler: FormAPIHandler, surface: dict) -> None:` | `test_import_a2ui.py:86` | 1 |
 | `packages/parrot-formdesigner/tests/unit/api/test_list_forms_dialect.py` | MODIFY | `async def get(self, target: str) -> _Response:` | `test_list_forms_dialect.py:58` | 1 |
-| `packages/parrot-formdesigner/tests/unit/test_storage_list.py` | MODIFY | — (append new test) | — | — |
+| `packages/parrot-formdesigner/tests/unit/test_storage_list.py` | MODIFY | `    assert out == [{` | `test_storage_list.py:77` | 1 |
 
 - The anchor at `handlers.py:1009` covers the `except Exception` clause that
   must gain two new `except` clauses above it (`TenantForbiddenError`,
