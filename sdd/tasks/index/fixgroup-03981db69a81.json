@@ -1,0 +1,53 @@
+{
+  "feature": "fixgroup-03981db69a81",
+  "feature_id": "FEAT-743",
+  "spec": "sdd/specs/fixgroup-03981db69a81.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-25T22:03:38Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/parrot-formdesigner/tests/unit/api/test_import_a2ui.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_list_forms_dialect.py",
+          "packages/parrot-formdesigner/tests/unit/test_storage_list.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f58d691fcdcb4503cc6d922d98d4f575fb916bf6f34f50e442dd839ec64ed0f0"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4699",
+      "slug": "fixgroup-03981db69a81",
+      "title": "formdesigner A2UI import/list membership + leak fixes",
+      "feature_id": "FEAT-743",
+      "feature": "fixgroup-03981db69a81",
+      "spec": "sdd/specs/fixgroup-03981db69a81.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "sole task in this feature; no other task to conflict with",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4699-fixgroup-03981db69a81.md"
+    }
+  ]
+}
