@@ -93,29 +93,41 @@ def test_typed_literals_and_render_failure(tmp_path: Path) -> None:
     """Type numeric/string literals safely, deny absent values, and map render failures."""
     assert tmp_path.is_dir()
     numeric = _registry(_rule("sales.orders", "customer_id", "customer_ids", "customer scope"))
-    numeric_tree, _, _ = RlsPushdown(numeric)._for_schema(_schema()).apply(
-        sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
-        _context("numeric-user", customer_ids=["7"]),
-        "pg",
+    numeric_tree, _, _ = (
+        RlsPushdown(numeric)
+        ._for_schema(_schema())
+        .apply(
+            sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
+            _context("numeric-user", customer_ids=["7"]),
+            "pg",
+        )
     )
     assert "customer_id IN (7)" in numeric_tree.sql()
 
     malicious = "east'); DROP TABLE sales.orders; --"
     text = _registry(_rule("sales.orders", "region", "regions", "region scope"))
-    text_tree, _, _ = RlsPushdown(text)._for_schema(_schema()).apply(
-        sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
-        _context("text-user", regions=[malicious]),
-        "pg",
+    text_tree, _, _ = (
+        RlsPushdown(text)
+        ._for_schema(_schema())
+        .apply(
+            sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
+            _context("text-user", regions=[malicious]),
+            "pg",
+        )
     )
     parsed_again = sqlglot.parse_one(text_tree.sql())
     literal = next(node for node in parsed_again.find_all(exp.Literal) if node.is_string)
     assert literal.this == malicious
     assert len(sqlglot.parse(text_tree.sql())) == 1
 
-    denied, _, _ = RlsPushdown(text)._for_schema(_schema()).apply(
-        sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
-        _context("missing-user"),
-        "pg",
+    denied, _, _ = (
+        RlsPushdown(text)
+        ._for_schema(_schema())
+        .apply(
+            sqlglot.parse_one("SELECT SUM(o.amount) FROM sales.orders AS o"),
+            _context("missing-user"),
+            "pg",
+        )
     )
     assert "WHERE 1 = 0" in denied.sql()
 
