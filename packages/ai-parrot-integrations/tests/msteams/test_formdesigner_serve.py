@@ -529,6 +529,7 @@ async def test_mixin_declines_when_not_configured():
     agent._fd_base_url = None
     assert await agent.handle_formdesigner_card(_ctx(), _signed_submission()) is False
 
+
 class _RenderFailReader(FakeReader):
     """Reader whose render step fails while resolution succeeds."""
 

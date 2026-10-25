@@ -30,9 +30,7 @@ def _validated_tenant_map(value: Any, *, source: str) -> Optional[Dict[str, str]
     if isinstance(value, dict):
         if not value:
             return None
-        if all(
-            isinstance(key, str) and key and isinstance(val, str) and val for key, val in value.items()
-        ):
+        if all(isinstance(key, str) and key and isinstance(val, str) and val for key, val in value.items()):
             return dict(value)
     raise ValueError(f"formdesigner_tenant_map from {source} must be a JSON object of non-empty strings")
 

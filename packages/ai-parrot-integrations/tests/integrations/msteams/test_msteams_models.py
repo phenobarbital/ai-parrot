@@ -2,6 +2,7 @@
 
 Tests the voice_config field and voice_enabled property on MSTeamsAgentConfig.
 """
+
 import logging
 
 import pytest
