@@ -171,4 +171,5 @@ Use `$sdd-start TASK-4706` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: sonnet (native), 1 attempt. Notes: related-model members compile but policy/governance only knows root members (for governance tasks); derived division has no float cast (postgres integer division risk); dependencies() public helper added.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
