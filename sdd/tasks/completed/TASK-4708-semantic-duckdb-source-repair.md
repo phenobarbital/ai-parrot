@@ -203,4 +203,15 @@ Use `$sdd-start TASK-4708` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+
+- Task: TASK-4708
+- Feature: semantic-layer
+- Implementation SHA: 86c4b64caa606753d70937cb29ddcb38fe72c95d
+- Closed at (UTC): 2026-10-25T23:20:27+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 198s · Tokens: n/a |
