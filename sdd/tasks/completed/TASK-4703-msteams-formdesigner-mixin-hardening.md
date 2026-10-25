@@ -156,4 +156,4 @@ controls. Never touch `verify_envelope` or wrapper.py.
 
 ## Completion Note
 
-(filled on close)
+Implemented in commit 0e4aa7ab7. Wizard fall-through guard (unknown control -> error card + True, not-enabled envelope fallback documented), fail-closed _validated_tenant_map on all construction paths, rendered form_version check + wizard-state discard on serve/next failures, broad exception guards in serve_form/handle_listforms, tenant log at DEBUG, unused card-builder params removed, exploratory comment deleted. 67 tests green (serve/cards/models).
