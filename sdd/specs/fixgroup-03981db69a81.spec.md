@@ -103,8 +103,19 @@ lifecycle hook, `self.schema_renderer`, and `FormDialect`.
    first and dispatch `onSchemaLoaded` exactly as `get_schema` does
    (`handlers.py:1107-1122`), passing `resolution.schema_overrides` into
    `render_a2ui_schema(..., overrides=...)` — same call, same kwarg,
-   reused as-is. On a genuine render exception (the existing `except
-   Exception` branch), keep setting `"surface": None` but set
+   reused as-is. `render_a2ui_schema` returns ONE envelope when there are
+   no overrides and SEVERAL when there are (`api/dialect.py:70-94`: the
+   base `createSurface` envelope plus one `updateComponents` envelope per
+   translatable override from `overrides_to_envelopes`) — so
+   `descriptor["surface"]` must use the same single-vs-multi framing
+   `a2ui_wire.a2ui_response` already uses for the single-form route
+   (`api/a2ui_wire.py:293-311`): `envelopes[0]` when there is exactly one
+   envelope, `{"messages": envelopes}` when there are several.
+   Unconditionally keeping `envelopes[0]` (today's behavior) would
+   silently drop every override envelope, defeating the point of
+   dispatching `onSchemaLoaded` at all. On a genuine render exception (the
+   existing `except Exception` branch), keep setting `"surface": None` but
+   set
    `"warnings": ["render_failed"]` — a fixed, generic string — instead of
    interpolating `exc` into the response; the real exception stays in the
    existing `self.logger.warning(...)` call, server-side only.
@@ -195,7 +206,7 @@ decisions remain (see §8 — none).
 | `test_descriptor_carries_dialect_for_memory_entries` (existing, update) | M3 | Update the `"dialect" not in forms["f3"]` assertion to `forms["f3"]["dialect"] == "json_schema"` now that storage-only descriptors carry it. |
 | `test_include_surface_inlines_envelopes` (existing, update) | M2 | Give the simulated request tenant-membership (so the forms, all private by default, are inlined as before) — behavior for an authorized member is unchanged. |
 | `test_include_surface_filters_unauthorized_forms` (new) | M2 | Without a membership session, `include=surface` still returns 200 with every descriptor's `"surface_url"` present but no `"surface"`/`"warnings"` keys (manifest-only degradation), proving the membership gate applies per-descriptor, not as a whole-list 403. |
-| `test_include_surface_honors_on_schema_loaded` (new) | M2 | Monkeypatch `dispatch` (as `test_a2ui_with_overrides_is_messages` does in `test_get_schema_dialect.py`) to return `schema_overrides`; assert the inlined envelope for an authorized member reflects the override (parity with the single-form route). |
+| `test_include_surface_honors_on_schema_loaded` (new) | M2 | Monkeypatch `dispatch` (as `test_a2ui_with_overrides_is_messages` does in `test_get_schema_dialect.py`) to return `schema_overrides`; assert the inlined descriptor for an authorized member becomes `{"messages": [...]}` (≥2 envelopes) with an `updateComponents` entry, matching the single-form route's multi-envelope framing. |
 | `test_inline_render_failure_is_isolated` (existing, update) | M2 | Give the request tenant-membership so the render path is reached; update `form["warnings"] == ["render_failed: broken surface"]` to `form["warnings"] == ["render_failed"]` — no exception text leaked. |
 | `test_storage_list_forms_dialect_fallback` (new) | M3 | `FormStorage.list_forms()` against a row whose `schema_json` has no `"dialect"` key (or a malformed one) returns `"json_schema"`; a row with `"dialect": "a2ui"` in its `schema_json` returns `"a2ui"`. |
 | `test_list_forms_localized_title_flattens` (existing, update) | M3 | This test asserts the full output dict via `assert out == [{...}]` (`test_storage_list.py:76-93`); its `schema_json` carries no `"dialect"` key, so the expected literal must gain `"dialect": "json_schema"` once `PostgresFormStorage.list_forms()` always emits the key — otherwise the added key makes this exact-equality assertion fail. |
@@ -304,6 +315,10 @@ self.schema_renderer = JsonSchemaRenderer()  # .render(form) -> RenderedForm wit
 class FormDialect(str, Enum):
     JSON_SCHEMA = "json_schema"
     A2UI = "a2ui"
+
+# api/a2ui_wire.py:293-311 — framing convention this spec's M2 reuses
+def a2ui_response(envelopes: list[dict[str, Any]], *, status: int) -> web.Response:
+    """1 envelope -> bare dict; 2+ -> {"messages": [...]}."""
 ```
 
 ### Integration Points
