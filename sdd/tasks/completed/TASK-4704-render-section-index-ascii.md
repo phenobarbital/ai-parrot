@@ -84,4 +84,4 @@ One guard, no refactors.
 
 ## Completion Note
 
-(filled on close)
+Implemented in commit 8428a7cc1. section_index now requires isascii()+isdecimal() before int(); ' 1', '+1', unicode digits and '1_0' now 400. Render dispatcher tests green.
