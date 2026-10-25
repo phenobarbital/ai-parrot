@@ -647,4 +647,40 @@ When you pick up this task:
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent on close. -->
+Implemented all three fixes exactly as blueprinted, with no deviations
+from the task's planned shape:
+
+- **M1**: `enforce_membership_unless_public(request, existing, tenant)`
+  inserted in `_import_a2ui_surface` right after the overwrite-conflict
+  return, before the version bump.
+- **M2**: `list_forms`'s `include_surface` loop now resolves the form,
+  enforces membership, renders via `self.schema_renderer`, dispatches
+  `onSchemaLoaded`, and calls `render_a2ui_schema(..., overrides=...)`;
+  `TenantForbiddenError`/`FormEventAbort` are caught ahead of the generic
+  `except Exception` and `continue` (manifest-only degradation); the
+  multi-envelope case uses `{"messages": envelopes}`; the leaked
+  exception text is replaced with the fixed string `"render_failed"`.
+- **M3**: `FormStorage.list_forms()` now always sets `entry["dialect"]`
+  (coerced through `FormDialect`, falling back to `json_schema` on a
+  missing or invalid value, including on the malformed-`schema_json`
+  exception path); `list_forms`'s storage-only descriptor branch copies
+  it through.
+
+One blueprint gap found during implementation, fixed before committing:
+the blueprint's test fixtures for `test_list_forms_dialect.py` didn't set
+`request.headers`, so once M2 started calling `self._build_auth_context(request)`
+(via the new `dispatch(...)` call), `request.headers.get("Authorization", "")`
+returned an unconfigured `MagicMock` and failed `AuthContext` pydantic
+validation. Fixed by adding `request.headers = {}` and
+`request.__contains__ = MagicMock(return_value=False)` to
+`_HandlerClient.get`, matching the existing convention in
+`test_get_schema_dialect.py`'s `_request` helper.
+
+Validation: `pytest packages/parrot-formdesigner/tests/unit/api/test_import_a2ui.py
+packages/parrot-formdesigner/tests/unit/api/test_list_forms_dialect.py
+packages/parrot-formdesigner/tests/unit/test_storage_list.py -q` — 22 passed.
+`ruff check` on the five touched files: clean. `black --check` flags
+substantial PRE-EXISTING formatting drift in `storage.py` and parts of
+the two edited test files (unrelated to this task's lines); running a
+full `black` pass was deliberately skipped to keep the diff scoped to
+this task — see spec/task scope notes.
