@@ -329,4 +329,5 @@ Use `$sdd-start TASK-4475` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: sonnet (native), 1 attempt. Added public Executor.run_with_columns (task said private helper); cache_key is JSON array with model digest first; truncation assumes limit+1 overfetch by TASK-4468 (to verify there).
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
