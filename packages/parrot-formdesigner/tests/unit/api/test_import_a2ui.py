@@ -22,7 +22,9 @@ from parrot_formdesigner.services.registry import FormRegistry
 TENANT = "route-tenant"
 
 
-def _request(body: dict, *, content_length: int | None = None, overwrite: str = "") -> MagicMock:
+def _request(
+    body: dict, *, content_length: int | None = None, overwrite: str = "", session: dict | None = None
+) -> MagicMock:
     """Build the request contract consumed by ``create_form``."""
     request = MagicMock(spec=web.Request)
     request.content_type = "application/json"
@@ -31,6 +33,8 @@ def _request(body: dict, *, content_length: int | None = None, overwrite: str = 
     request.json = AsyncMock(return_value=body)
     request.get = MagicMock(side_effect=lambda key, default=None: TENANT if key == "tenant" else default)
     request.app.get = MagicMock(return_value="/forms")
+    if session is not None:
+        request.session = {"session": session}
     return request
 
 
@@ -84,10 +88,12 @@ async def test_import_creates_form_without_llm_client(handler: FormAPIHandler, s
 
 
 async def test_conflict_then_overwrite_bumps_version(handler: FormAPIHandler, surface: dict) -> None:
-    """The same surface conflicts unless overwrite is explicitly requested."""
+    """The same surface conflicts unless overwrite is explicitly requested, and overwrite requires membership."""
     first = await handler.create_form(_request(surface))
     conflict = await handler.create_form(_request(surface))
-    overwritten = await handler.create_form(_request(surface, overwrite="true"))
+    overwritten = await handler.create_form(
+        _request(surface, overwrite="true", session={"programs": [TENANT]})
+    )
 
     assert first.status == 201
     assert conflict.status == 409
@@ -95,6 +101,20 @@ async def test_conflict_then_overwrite_bumps_version(handler: FormAPIHandler, su
     assert overwritten.status == 201
     form_uid = uuid.UUID(json.loads(first.body)["form_uid"])
     assert (await handler.registry.get(form_uid, tenant=TENANT)).version == "1.1"
+
+
+async def test_overwrite_without_membership_is_forbidden(handler: FormAPIHandler, surface: dict) -> None:
+    """A caller with no tenant-membership session cannot overwrite a private form."""
+    from parrot_formdesigner.core.tenant_errors import TenantForbiddenError
+
+    first = await handler.create_form(_request(surface))
+    assert first.status == 201
+
+    with pytest.raises(TenantForbiddenError):
+        await handler.create_form(_request(surface, overwrite="true"))
+
+    form_uid = uuid.UUID(json.loads(first.body)["form_uid"])
+    assert (await handler.registry.get(form_uid, tenant=TENANT)).version == "1.0"
 
 
 async def test_invalid_surface_returns_422_and_oversize_returns_413(

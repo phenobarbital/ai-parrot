@@ -56,7 +56,7 @@ from typing import Any
 
 from ._identifiers import qualified_table, validate_identifier
 from .registry import FormStorage
-from ..core.schema import FormSchema
+from ..core.schema import FormDialect, FormSchema
 from ..core.style import StyleSchema
 
 logger = logging.getLogger(__name__)
@@ -688,6 +688,12 @@ class PostgresFormStorage(FormStorage):
                 if isinstance(desc, dict):
                     desc = next(iter(desc.values()), None)
                 entry["description"] = str(desc) if desc else None
+
+                raw_dialect = data.get("dialect", FormDialect.JSON_SCHEMA.value)
+                try:
+                    entry["dialect"] = FormDialect(raw_dialect).value
+                except ValueError:
+                    entry["dialect"] = FormDialect.JSON_SCHEMA.value
             except Exception as exc:
                 self.logger.debug(
                     "Malformed schema_json for form %s: %s",
@@ -696,6 +702,7 @@ class PostgresFormStorage(FormStorage):
                 )
                 entry["title"] = ""
                 entry["description"] = None
+                entry["dialect"] = FormDialect.JSON_SCHEMA.value
             result.append(entry)
 
         return result

@@ -32,6 +32,7 @@ from ..services.validators import FormValidator
 from . import a2ui_wire
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 from .tenant import (
+    TenantForbiddenError,
     assert_body_tenant_matches,
     declared_tenant,
     enforce_membership_unless_public,
@@ -984,6 +985,7 @@ class FormAPIHandler:
                         "description": _loc_to_str(row.get("description")),
                         "version": row.get("version", "1.0"),
                         "source": "db",
+                        "dialect": row.get("dialect", FormDialect.JSON_SCHEMA.value),
                         "created_at": row.get("created_at"),
                     }
 
@@ -1001,14 +1003,28 @@ class FormAPIHandler:
                     continue
                 try:
                     form = await self.registry.get(descriptor["form_uid"], tenant=tenant)
+                    enforce_membership_unless_public(request, form, tenant)
+                    rendered = await self.schema_renderer.render(form)
+                    resolution = await dispatch(
+                        "onSchemaLoaded",
+                        form=form,
+                        request=request,
+                        tenant=tenant,
+                        auth_context=self._build_auth_context(request),
+                        schema_dump=rendered.content,
+                    )
                     envelopes, _rendered, warnings = await render_a2ui_schema(
                         form,
                         locale=request.query.get("locale", "en"),
+                        overrides=resolution.schema_overrides,
                     )
-                    descriptor["surface"], descriptor["warnings"] = envelopes[0], warnings
+                    descriptor["surface"] = envelopes[0] if len(envelopes) == 1 else {"messages": envelopes}
+                    descriptor["warnings"] = warnings
+                except (TenantForbiddenError, FormEventAbort):
+                    continue
                 except Exception as exc:  # noqa: BLE001 — one bad form must not 500 the list
                     self.logger.warning("list_forms: a2ui render failed for %s: %s", descriptor["form_uid"], exc)
-                    descriptor["surface"], descriptor["warnings"] = None, [f"render_failed: {exc}"]
+                    descriptor["surface"], descriptor["warnings"] = None, ["render_failed"]
         return JSONResponse({"forms": forms})
 
     @staticmethod
@@ -1606,6 +1622,7 @@ class FormAPIHandler:
         if existing is not None:
             if not overwrite:
                 return JSONResponse({"error": "form already exists", "form_uid": str(form.form_uid)}, status=409)
+            enforce_membership_unless_public(request, existing, tenant)
             form = form.model_copy(update={"version": _bump_version(existing.version)})
 
         try:

@@ -143,6 +143,7 @@ async def test_list_forms_localized_title_flattens(storage_factory) -> None:
         "title": "Hello",
         "description": "Daily report",
         "tenant": None,
+        "dialect": "json_schema",
         "created_at": "2026-04-12T10:31:00+00:00",
     }]
 
@@ -249,3 +250,41 @@ def test_postgres_storage_list_forms_includes_form_uid() -> None:
     """PostgresFormStorage.list_forms docstring documents form_uid (FEAT-389)."""
     doc = PostgresFormStorage.list_forms.__doc__ or ""
     assert "form_uid" in doc
+
+
+@pytest.mark.asyncio
+async def test_list_forms_dialect_fallback_and_passthrough(storage_factory) -> None:
+    """A row with no dialect falls back to json_schema; an explicit a2ui dialect passes through."""
+    rows = [
+        _StubRow(
+            form_uid="uid-no-dialect",
+            form_id="no-dialect",
+            version="1.0",
+            schema_json=json.dumps({"title": "No Dialect"}),
+            tenant=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+        _StubRow(
+            form_uid="uid-a2ui",
+            form_id="a2ui-form",
+            version="1.0",
+            schema_json=json.dumps({"title": "A2UI Form", "dialect": "a2ui"}),
+            tenant=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+        _StubRow(
+            form_uid="uid-malformed-dialect",
+            form_id="malformed-dialect",
+            version="1.0",
+            schema_json=json.dumps({"title": "Bad Dialect", "dialect": "xml"}),
+            tenant=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+    ]
+    out = await storage_factory(rows).list_forms()
+    assert out[0]["dialect"] == "json_schema"
+    assert out[1]["dialect"] == "a2ui"
+    assert out[2]["dialect"] == "json_schema"
