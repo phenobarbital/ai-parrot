@@ -311,4 +311,4 @@ new fixture shape.
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent when the task is closed. -->
+Delivered by gpt-5.6-luna (codex), 1 attempt, merged by engine. test_setup_form_api passes (6 passed).
