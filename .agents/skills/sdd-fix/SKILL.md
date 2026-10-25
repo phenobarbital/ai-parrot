@@ -36,11 +36,21 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
    issue merely because an earlier plan listed it. Skip groups with no successful claims; preserve the planned lane for remaining issues.
 4. **Prime** — `wikitoolkit ledger context <group.files…> --max-tokens 3000` (full repo-relative paths from the plan, never basenames).
 5. **Route** by `group.lane`:
-   - Before changing branches, require a clean checkout; never carry unrelated changes into a fix.
+   - NEVER switch the main checkout's branch and never require it to be clean; every lane
+     works inside a worktree provisioned by `python -m scripts.sdd.ensure_worktree`.
      If execution cannot proceed, release successful claims in step 7.
-   - **Fast lane** (`lane == "fast"`): in the MAIN checkout (no worktree), `git fetch origin dev && git switch -c fix/<issue-short-id>-<suggested_slug> origin/dev`,
-     edit, run the affected package's tests, commit, `git push -u origin <branch>`, then `gh pr create --base dev --title … --body …`.
-     ALWAYS a PR — there is no direct-push path.
+   - **Fast lane** (`lane == "fast"`): one worktree and one PR per group.
+     `python -m scripts.sdd.ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch dev`
+     plans `fix-<issue-short-id>-<suggested_slug>` off `origin/dev` and returns `<wt>`;
+     `--base-branch dev` is what selects the `fix-` prefix. Edit inside `<wt>`, run the affected
+     package's tests from `<wt>` with `PYTHONPATH=packages/<dist>/src` (a bare `pytest` there
+     imports the main checkout), `ruff check --fix` the changed files, `git -C <wt> commit`,
+     `git -C <wt> push -u origin fix-<issue-short-id>-<suggested_slug>` (the tree has no
+     upstream by design), then `gh pr create --base dev --title … --body …`.
+     ALWAYS a PR — there is no direct-push path. Once step 6 has closed the group's issues, reap
+     the tree: `python scripts/remove_worktree.py remove fix-<issue-short-id>-<suggested_slug>`
+     — never `--force`, never `--delete-branch` (the PR needs the remote branch). A refusal
+     means something is uncommitted or unpushed: keep the tree and report it.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`$sdd-task <spec> --from-issue …` per issue);
      otherwise `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `$sdd-task`, then
@@ -63,6 +73,9 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
    **SDD-lane hand-off**: an issue whose `Discovered-from` task is filed in the feature's per-spec index but not yet
    implemented STAYS claimed and is reported as `handed off to $sdd-done <FEAT-ID>`, which closes it by the same two
    keys once the task is verified. Release it instead when no filed task cites it.
+   **Fast-lane failure**: when tests, commit, push or `gh pr create` fails, KEEP the worktree,
+   report its path, and unclaim every issue claimed for that group. Never reap a tree whose
+   work is not on origin, and never force-push to rescue a rejected push.
 
 ## Output
 Per group processed:

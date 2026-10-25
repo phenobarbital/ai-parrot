@@ -213,10 +213,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4696
+- Feature: sdd-fix-brief-change
+- Implementation SHA: eb774cef667c0533111f438c2f8b69310a726637
+- Closed at (UTC): 2026-10-24T01:20:39+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 98.7s · Tokens: n/a |
+| validation | merge-tier, exit_code 0, 11 + 93 passed |
+| verdict | accepted, no corrections |
