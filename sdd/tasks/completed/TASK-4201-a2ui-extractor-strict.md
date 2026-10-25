@@ -487,10 +487,10 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native sonnet; merged by sdd-worker orchestrator; merge-tier validation green (2132 passed, 14 skipped).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator
+**Date**: 2026-10-24
+**Notes**: A2UIExtractor core + strict mode (lazy exports).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Strict mode skips URL/phone default regex and the default pattern_message; slider min/max and HIDDEN fields are not restored; _parse wraps deserialize errors in ValueError. Orchestrator removed a hook-injected sdd/ledger/events.jsonl line from the coder commit.

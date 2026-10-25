@@ -88,10 +88,12 @@ def _a2ui_ns() -> Any:
         from parrot.a2a.models import A2UI_MEDIA_TYPE
         from parrot.outputs.a2ui.models import (
             A2UIRendererMessage,
+            CheckRule,
             Component,
             ComponentMetadata,
             ErrorMessage,
             Extensions,
+            FunctionCall,
             UpdateComponents,
             UpdateDataModel,
         )
@@ -106,10 +108,12 @@ def _a2ui_ns() -> Any:
     ns = _A2UIWireNamespace()
     ns.A2UI_MEDIA_TYPE = A2UI_MEDIA_TYPE
     ns.A2UIRendererMessage = A2UIRendererMessage
+    ns.CheckRule = CheckRule
     ns.Component = Component
     ns.ComponentMetadata = ComponentMetadata
     ns.ErrorMessage = ErrorMessage
     ns.Extensions = Extensions
+    ns.FunctionCall = FunctionCall
     ns.UpdateComponents = UpdateComponents
     ns.UpdateDataModel = UpdateDataModel
     ns.A2UIErrorCode = A2UIErrorCode
@@ -117,6 +121,20 @@ def _a2ui_ns() -> Any:
     ns.deserialize = deserialize
     ns.serialize = serialize
     return ns
+
+
+def is_a2ui_surface_body(request: web.Request, body: Any) -> bool:
+    """Return whether a request body is an A2UI ``createSurface`` envelope.
+
+    ``Content-Type: application/a2ui+json`` is sufficient to select the
+    surface import path. JSON requests also select it when their top-level
+    object is a v1.0 ``createSurface`` envelope. This helper deliberately
+    has no ``parrot.*`` imports so detection works without the optional A2UI
+    extra installed.
+    """
+    if request.content_type == "application/a2ui+json":
+        return True
+    return isinstance(body, dict) and body.get("version") == "v1.0" and isinstance(body.get("createSurface"), dict)
 
 
 def is_a2ui_request(request: web.Request, body: Any) -> bool:

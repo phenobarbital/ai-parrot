@@ -274,10 +274,10 @@ See the CREATE blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native sonnet; merged by sdd-worker orchestrator; merge-tier validation green (6 passed; integration round-trips run directly: 10 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker orchestrator
+**Date**: 2026-10-24
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

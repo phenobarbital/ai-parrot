@@ -320,10 +320,10 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by codex gpt-5.6-sol; merged by sdd-worker orchestrator; merge-tier validation green (2132 passed, 14 skipped).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator
+**Date**: 2026-10-24
+**Notes**: A2UIExportService + model in services/a2ui_export.py.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

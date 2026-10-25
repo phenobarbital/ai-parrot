@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, get_args
 from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
+from ..core import FormDialect
 from ..core.events import FormEventAbort, FormEventName
 
 from ..core.llm_validation import wire_report
@@ -115,6 +116,9 @@ if TYPE_CHECKING:
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
     from ..tools.services.networkninja import ImportDiffReport
 
+# Delayed until after ``extract_form_uid``: ``api.render`` imports that helper.
+from .dialect import A2UI_LIST_MAX, render_a2ui_schema  # noqa: E402
+from .render import get_renderer, supported_formats  # noqa: E402
 
 class FormAPIHandler:
     """Serves JSON REST API endpoints for form management.
@@ -873,6 +877,9 @@ class FormAPIHandler:
         Supports ``?slug=<form_id>`` (FEAT-389) to filter results down to
         forms whose slug matches — resolved via
         ``FormRegistry.get_by_slug()`` rather than scanning the full list.
+        ``?dialect=a2ui`` adds a surface URL manifest, while
+        ``?dialect=a2ui&include=surface`` also renders inline surfaces. The
+        optional ``locale`` query parameter selects the rendering locale.
 
         Args:
             request: Incoming HTTP request.
@@ -885,6 +892,21 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
 
         slug = request.query.get("slug")
+        # FEAT-650 — ?dialect=a2ui → manifest (surface_url); &include=surface → inline envelopes (capped)
+        raw_dialect = request.query.get("dialect")
+        want_a2ui = False
+        if raw_dialect is not None:
+            try:
+                want_a2ui = FormDialect(raw_dialect) is FormDialect.A2UI
+            except ValueError:
+                return JSONResponse(
+                    {"error": f"unknown dialect {raw_dialect!r}", "supported": [d.value for d in FormDialect]},
+                    status=400,
+                )
+            if want_a2ui and get_renderer("a2ui") is None:
+                return JSONResponse({"supported": supported_formats()}, status=415)
+        include_surface = want_a2ui and request.query.get("include") == "surface"
+
         if slug:
             form = await self.registry.get_by_slug(slug, tenant=tenant)
             if form is None:
@@ -901,6 +923,7 @@ class FormAPIHandler:
                             "description": _loc_to_str(form.description),
                             "version": form.version,
                             "source": "memory",
+                            "dialect": form.dialect.value,
                             "created_at": ts.isoformat() if ts is not None else None,
                         }
                     ]
@@ -919,6 +942,7 @@ class FormAPIHandler:
                 "description": _loc_to_str(form.description),
                 "version": form.version,
                 "source": "memory",
+                "dialect": form.dialect.value,
                 "created_at": ts.isoformat() if ts is not None else None,
             }
 
@@ -964,6 +988,27 @@ class FormAPIHandler:
                     }
 
         forms = sorted(descriptors.values(), key=lambda d: d["form_id"] or "")
+        if want_a2ui:
+            prefix = request.app.get("_form_prefix", "")
+            if include_surface and len(forms) > A2UI_LIST_MAX:
+                return JSONResponse(
+                    {"error": "too many forms for inline a2ui; use POST /forms/export", "max": A2UI_LIST_MAX},
+                    status=400,
+                )
+            for descriptor in forms:
+                descriptor["surface_url"] = f"{prefix}/{tenant}/forms/{descriptor['form_uid']}/schema?dialect=a2ui"
+                if not include_surface:
+                    continue
+                try:
+                    form = await self.registry.get(descriptor["form_uid"], tenant=tenant)
+                    envelopes, _rendered, warnings = await render_a2ui_schema(
+                        form,
+                        locale=request.query.get("locale", "en"),
+                    )
+                    descriptor["surface"], descriptor["warnings"] = envelopes[0], warnings
+                except Exception as exc:  # noqa: BLE001 — one bad form must not 500 the list
+                    self.logger.warning("list_forms: a2ui render failed for %s: %s", descriptor["form_uid"], exc)
+                    descriptor["surface"], descriptor["warnings"] = None, [f"render_failed: {exc}"]
         return JSONResponse({"forms": forms})
 
     @staticmethod
@@ -1049,7 +1094,7 @@ class FormAPIHandler:
         return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/schema — Get JSON Schema (structural)."""
+        """GET /api/v1/forms/{form_uid}/schema — Get the negotiated schema dialect."""
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
@@ -1075,10 +1120,137 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
+        from ..core import FormDialect
+
+        requested_dialect = request.query.get("dialect")
+        accepts_a2ui = isinstance(
+            request.headers.get("Accept", ""), str
+        ) and "application/a2ui+json" in request.headers.get("Accept", "")
+        if form.dialect is FormDialect.A2UI or isinstance(requested_dialect, str) or accepts_a2ui:
+            from .dialect import DialectError, render_a2ui_schema, resolve_dialect
+
+            try:
+                dialect = resolve_dialect(request, form)
+            except DialectError as exc:
+                return JSONResponse(exc.payload, status=exc.status)
+            if dialect is FormDialect.A2UI:
+                locale = request.query.get("locale", "en")
+                envelopes, a2ui_rendered, a2ui_warnings = await render_a2ui_schema(
+                    form, locale=locale, overrides=resolution.schema_overrides
+                )
+                if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+                    return web.json_response(
+                        {
+                            "content": envelopes[0] if len(envelopes) == 1 else {"messages": envelopes},
+                            "content_type": a2ui_rendered.content_type,
+                            "warnings": [warning.model_dump(mode="json") for warning in a2ui_rendered.warnings]
+                            + a2ui_warnings,
+                            "metadata": a2ui_rendered.metadata,
+                        }
+                    )
+                return a2ui_wire.a2ui_response(envelopes, status=200)
         content = rendered.content
         if resolution.schema_overrides:
             content = apply_schema_overrides(content, dict(resolution.schema_overrides))
         return JSONResponse(content)
+
+    async def export_forms(self, request: web.Request) -> web.Response:
+        """Stream one export row per form for the route tenant as NDJSON.
+
+        Args:
+            request: Request containing export dialect and filter options.
+
+        Returns:
+            A streaming NDJSON response or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "body must be an object"}, status=400)
+
+        raw_dialect = body.get("dialect", "a2ui")
+        try:
+            dialect = FormDialect(raw_dialect)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": f"unknown dialect {raw_dialect!r}", "supported": [item.value for item in FormDialect]},
+                status=400,
+            )
+        if dialect is FormDialect.A2UI and get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        raw_form_uids = body.get("form_uids")
+        if raw_form_uids is not None and not isinstance(raw_form_uids, list):
+            return JSONResponse({"error": "form_uids must be a list"}, status=400)
+        try:
+            form_uids = None if raw_form_uids is None else [_uuid.UUID(form_uid) for form_uid in raw_form_uids]
+        except (AttributeError, TypeError, ValueError):
+            return JSONResponse({"error": "form_uids entries must be UUIDs"}, status=400)
+
+        published_only = body.get("published_only", False)
+        if not isinstance(published_only, bool):
+            return JSONResponse({"error": "published_only must be a boolean"}, status=400)
+        locale = body.get("locale", "en")
+        if not isinstance(locale, str):
+            return JSONResponse({"error": "locale must be a string"}, status=400)
+
+        from ..services.a2ui_export import A2UIExportService
+
+        service = A2UIExportService(self.registry, dialect=dialect.value, locale=locale)
+        response = web.StreamResponse(status=200, headers={"Content-Type": "application/x-ndjson"})
+        await response.prepare(request)
+        async for row in service.export_tenant(tenant, form_uids=form_uids, published_only=published_only):
+            await response.write((json.dumps(row.model_dump(mode="json")) + "\n").encode("utf-8"))
+        await response.write_eof()
+        return response
+
+    async def translate_form(self, request: web.Request) -> web.Response:
+        """Translate a JSON Schema into a stateless A2UI surface.
+
+        Args:
+            request: Request containing ``schema`` and optional form metadata.
+
+        Returns:
+            The translated createSurface envelope, or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            return JSONResponse({"error": "body too large", "max_bytes": a2ui_wire.A2UI_MAX_BODY_BYTES}, status=413)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        schema = body.get("schema") if isinstance(body, dict) else None
+        if not isinstance(schema, dict):
+            return JSONResponse({"error": "schema (object) is required"}, status=400)
+        if get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        from ..services.a2ui_translate import translate_jsonschema_to_a2ui
+
+        try:
+            rendered = await translate_jsonschema_to_a2ui(
+                schema,
+                form_id=body.get("form_id"),
+                title=body.get("title"),
+                tenant=tenant,
+                locale=body.get("locale", "en"),
+            )
+        except (ValidationError, ValueError) as exc:
+            return JSONResponse({"error": "invalid schema", "details": str(exc)}, status=400)
+        if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+            return web.json_response(
+                {
+                    "content": rendered.content,
+                    "content_type": rendered.content_type,
+                    "warnings": [warning.model_dump(mode="json") for warning in rendered.warnings],
+                    "metadata": rendered.metadata,
+                }
+            )
+        return a2ui_wire.a2ui_response([rendered.content], status=200)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid}/style — Get style schema."""
@@ -1351,6 +1523,16 @@ class FormAPIHandler:
         """POST /api/v1/forms — Create a form from a natural language prompt."""
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "create_form")
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        tenant = self._get_tenant(request)
+        # FEAT-650 — dual-wire: an A2UI createSurface body is an import, not a prompt (S5: before the LLM guard)
+        if a2ui_wire.is_a2ui_surface_body(request, body):
+            return await self._import_a2ui_surface(request, body, tenant=tenant)
+
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -1359,16 +1541,11 @@ class FormAPIHandler:
                 {"error": "No LLM client configured for form creation"},
                 status=503,
             )
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, ValueError):
-            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
             return JSONResponse({"error": "prompt is required"}, status=400)
 
-        tenant = self._get_tenant(request)
         from ..tools.create_form import CreateFormTool
 
         create_tool = CreateFormTool(
@@ -1400,6 +1577,56 @@ class FormAPIHandler:
                 "title": title,
                 "url": f"{prefix}/{tenant}/forms/{form_uid}",
             }
+        )
+
+    async def _import_a2ui_surface(self, request: web.Request, body: dict[str, Any], *, tenant: str) -> web.Response:
+        """Import an A2UI surface as a persisted form."""
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+            surface = body.get("createSurface")
+            surface_id = surface.get("surfaceId") if isinstance(surface, dict) else None
+            return a2ui_wire.a2ui_response(
+                [error_envelope(A2UIErrorCode.INTERNAL, "body too large", surface_id=surface_id or "form-import")],
+                status=413,
+            )
+
+        from ..extractors import A2UIExtractor
+
+        try:
+            result = A2UIExtractor().extract(body, tenant=tenant)
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status=415)
+        except ValueError as exc:
+            return JSONResponse({"error": "invalid surface", "details": str(exc)}, status=422)
+
+        form = result.form.model_copy(update={"tenant": tenant})
+        overwrite = request.query.get("overwrite", "").lower() in ("1", "true", "yes")
+        existing = await self.registry.get(form.form_uid, tenant=tenant)
+        if existing is not None:
+            if not overwrite:
+                return JSONResponse({"error": "form already exists", "form_uid": str(form.form_uid)}, status=409)
+            form = form.model_copy(update={"version": _bump_version(existing.version)})
+
+        try:
+            await self.registry.register(form, persist=True, overwrite=True, tenant=tenant)
+        except FormAlreadyExistsError as exc:
+            return JSONResponse({"error": str(exc), "form_id": form.form_id}, status=409)
+
+        prefix = request.app.get("_form_prefix", "")
+        return JSONResponse(
+            {
+                "form_uid": str(form.form_uid),
+                "form_id": form.form_id,
+                "url": f"{prefix}/{tenant}/forms/{form.form_uid}",
+                "dialect": form.dialect.value,
+                "import": {
+                    "mode": result.mode.value,
+                    "warnings": result.warnings,
+                    "dropped": [d.model_dump() for d in result.dropped],
+                },
+            },
+            status=201,
         )
 
     async def edit_form(self, request: web.Request) -> web.Response:

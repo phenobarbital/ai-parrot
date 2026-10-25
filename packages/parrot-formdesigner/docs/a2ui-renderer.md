@@ -115,6 +115,98 @@ detection is by `Content-Type: application/a2ui+json` OR a body shaped
 `{"version": "v1.0", "action": {...}}`; anything else takes the original
 code path, byte-identical.
 
+## Dialect flag and negotiation (FEAT-650)
+
+`FormSchema.dialect` (`json_schema` default | `a2ui`) is persisted inside `schema_json` (no migration) and editable
+with `PATCH /forms/{uid}`. The contract endpoints resolve the effective dialect as
+**`?dialect=` query > `Accept: application/a2ui+json` > stored `form.dialect`**; `?dialect=json_schema` always forces the
+legacy body. `GET /forms/{uid}` never changes (it is the form's identity). `GET /forms` exposes `dialect` per in-memory
+entry and, with `?dialect=a2ui`, a `surface_url` manifest (`&include=surface` inlines envelopes, capped by
+`FORMDESIGNER_A2UI_LIST_MAX`). Errors: 400 unknown dialect, 415 `{"supported": [...]}` when the extra is missing.
+`onSchemaLoaded.schema_overrides` are translated into `updateComponents`/`updateDataModel` envelopes
+(`{"messages": [...]}` framing); untranslatable keys become `override_not_translatable:<key>` warnings.
+
+## Bulk export
+
+`POST /api/v1/{tenant}/forms/export` streams NDJSON (`Content-Type: application/x-ndjson`), one `ExportedSurface` row
+(`form_uid`, `form_id`, `version`, `dialect`, `envelope`, `warnings`, `error`) per form. Body (all optional):
+`dialect` (`a2ui` default | `json_schema`), `form_uids` (list of UUIDs), `published_only` (bool), `locale`. The tenant
+comes from the route and the body cannot override it. A renderer failure on one form is reported in that row's `error`
+and does not stop the stream. Errors: 400 unknown dialect or malformed body, 415 when `a2ui` is requested without the
+`ai-parrot` extra.
+
+From the command line:
+
+```bash
+parrot formdesigner export --tenant acme [--tenant other] [--dialect a2ui|json_schema] \
+    [--form-uid UUID ...] [--published-only] [--locale en] --out DIR [--dsn DSN]
+```
+
+It writes `<form_id>-<form_uid>.<dialect>.json` per form plus `export-report.json` (`exported`, `failed`, `warnings`).
+Exit codes: `0` success, `1` when any form failed, `2` on configuration errors. The DSN comes from `--dsn` or
+`FORMDESIGNER_DSN`.
+
+There is deliberately **no `--all-tenants`**: the registry only knows tenants it has hydrated in memory and the
+PostgreSQL storage resolves one tenant schema per call, so a cross-tenant sweep would silently miss tenants. Pass every
+tenant explicitly.
+
+## Importing a surface
+
+`POST /api/v1/{tenant}/forms` is dual-wire: a body whose `Content-Type` is `application/a2ui+json`, or a JSON body
+`{"version": "v1.0", "createSurface": {...}}`, is imported instead of treated as an LLM prompt (the legacy
+`{"prompt": ...}` path is untouched). The surface is extracted in strict mode when the root carries
+`parrot_variant: "form"`, otherwise heuristically. The response is `201` with
+`{form_uid, form_id, url, dialect, import: {mode, warnings, dropped}}`.
+
+- `409` when the form already exists, unless `?overwrite=true` (the version is then bumped).
+- `413` over the A2UI body limit; `422 {"error": "invalid surface", "details": ...}` for an invalid surface;
+  `415` when the extra is missing.
+- The tenant is always stamped from the route (or `--tenant`), never from `parrot_tenant` in the surface;
+  `parrot_submit_url` is discarded because the renderer regenerates it.
+
+CLI: `parrot formdesigner import SURFACE.json --tenant T [--form-id ID] [--dry-run] [--overwrite] [--dsn DSN]`.
+`--dry-run` prints the import report without persisting; exit `3` when the form exists and `--overwrite` is absent.
+
+## Translating JSON Schema
+
+Library: `await translate_jsonschema_to_a2ui(schema, form_id=..., title=..., tenant=..., locale="en")` in
+`parrot_formdesigner.services.a2ui_translate` runs `JsonSchemaExtractor` -> tenant stamp -> `A2UIFormRenderer` and returns
+a `RenderedForm`. HTTP: `POST /api/v1/{tenant}/forms/translate` with `{"schema": {...}, "form_id"?, "title"?, "locale"?}`
+is stateless (nothing is persisted); `?with_meta=true` adds warnings and metadata. CLI:
+`parrot formdesigner translate SCHEMA.json [--form-id ID] [--tenant T] [--locale en] [--out FILE]` (warnings go to stderr).
+
+## Loss rules
+
+The export/import round-trip is exact only for the **strict projection**, i.e. what `A2UIFormRenderer` emits and
+`A2UIExtractor` strict mode can recover: root extensions (`parrot_form_uid`, `parrot_form_id`, `parrot_form_version`,
+`parrot_tenant`), the `root-title`/`root-description` texts, `sec-<section_id>` cards and their title texts,
+`sub-<subsection_id>` columns and their title texts, per-field `parrot_field_id/_uid/_type/_section_id/_subsection_id/_read_only`,
+`label`, `placeholder` (TextField), `options`, `checks`, and the `dataModel.answers` default. Everything else
+(descriptions, dependencies, ...) is not reconstructed.
+
+**Heuristic map** (surfaces not produced by parrot, Basic catalog only):
+
+| Component | `FieldType` | Extras |
+|---|---|---|
+| `TextField` / `TextField:shortText` | `TEXT` | `placeholder` |
+| `TextField:longText` | `TEXT_AREA` | |
+| `TextField:number` | `NUMBER` | |
+| `TextField:obscured` | `PASSWORD` | |
+| `CheckBox` | `BOOLEAN` | |
+| `ChoicePicker` | `SELECT` | `options` |
+| `ChoicePicker:multipleSelection` | `MULTI_SELECT` | |
+| `Slider` | `NUMBER` | `min_value`/`max_value`; `step` from `steps` |
+| `DateTimeInput` date only / time only / both | `DATE` / `TIME` / `DATETIME` | min/max not expressible (warning) |
+| `Button` (`form.submit` / `form.cancel`) | not a field | `cancel_allowed` from a cancel button |
+| `Card` | section | title from the first `Text`; a nested `Column`/`Row` with a leading `Text` becomes a subsection |
+| `Tabs`/`TabItem` | one section per tab | warning `tabs_flattened` |
+| `Text` before an unlabeled input | that input's label | warning `label_inferred_from_text:<id>` |
+| `Image`, `Video`, `AudioPlayer`, `Icon`, `Divider`, `List`, `Modal`, non-Basic | dropped | `DroppedComponent` (`unsupported_component` / `not_in_basic_catalog`) |
+
+**Checks** become constraints: `required` -> `required=True`; `regex` -> `pattern`; `length` -> `min_length`/`max_length`;
+`numeric` -> `min_value`/`max_value`; `email` -> `EMAIL` (on a `TextField`). The `field_id` is the last token of the
+`value` binding path, else the component id without its `f-` prefix; collisions get `_2`, `_3`, ... and a warning.
+
 ## FieldType coverage
 
 Every `FieldType` lowers to a Basic Catalog primitive, to `"hidden"`
