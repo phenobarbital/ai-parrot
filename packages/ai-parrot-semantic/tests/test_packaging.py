@@ -62,7 +62,7 @@ def test_workspace_ci_duckdb_extra(tmp_path: Path) -> None:
     )
 
     assert root_config["tool"]["uv"]["sources"]["ai-parrot-semantic"] == {"workspace": True}
-    assert 'Package("ai-parrot-semantic"' in release_script
+    assert 'Package(\n        "ai-parrot-semantic",' in release_script
     assert "packages/ai-parrot-semantic/src/parrot/semantic/version.py" in release_script
     assert "uv sync --all-packages --extra duckdb --package ai-parrot-semantic" in ci_workflow
     assert "uv run pytest packages/ai-parrot-semantic/tests -q --tb=short" in ci_workflow
