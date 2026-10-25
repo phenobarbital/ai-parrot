@@ -324,4 +324,4 @@ most likely to break, and nothing else in the suite would notice.
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent when the task is closed. -->
+Delivered by gpt-5.6-terra (codex), 1 attempt, merged by engine. Merge-tier run: wrapper tests green; sole remaining red is test_formdesigner_roundtrip (owned by TASK-4657).

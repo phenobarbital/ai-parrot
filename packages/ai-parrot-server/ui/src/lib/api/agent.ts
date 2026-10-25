@@ -150,11 +150,37 @@ export const refreshAgentData = async (
   return response.data;
 };
 
+/** One persisted file as the session store reports it (FEAT-639). */
+export interface AgentUploadFileRecord {
+  file_id: string;
+  filename?: string;
+  [key: string]: unknown;
+}
+
+/** One file the backend refused, with its reason. */
+export interface AgentUploadFileError {
+  filename: string;
+  error: string;
+}
+
+/**
+ * The agent upload report (FEAT-639).
+ *
+ * The same shape arrives on a 200 and, inside `ApiError.raw.response.data`,
+ * on the 400 the handler returns when nothing was stored.
+ */
+export interface AgentUploadResponse {
+  files: AgentUploadFileRecord[];
+  dataframes: string[];
+  errors: AgentUploadFileError[];
+  agent?: string;
+}
+
 export const uploadAgentData = async (
   agentName: string,
   formData: FormData,
   client?: AxiosInstance,
-): Promise<any> => {
+): Promise<AgentUploadResponse> => {
   const http = client ?? apiClient;
   const response = await http.put(`${BASE_PATH}/${agentName}`, formData, {
     headers: {

@@ -276,4 +276,4 @@ signature is now optional.
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent when the task is closed. -->
+Seat qwen failed fidelity twice (edited test_formdesigner_roundtrip.py and sdd/ledger/events.jsonl, out of scope); attempt 3 implemented by the orchestrator (docs only). Merge-tier validation green.

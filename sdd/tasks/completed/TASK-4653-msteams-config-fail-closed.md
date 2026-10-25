@@ -377,4 +377,4 @@ take effect depending on when navconfig loaded.
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent when the task is closed. -->
+Delivered by gpt-5.6-terra (codex), 1 attempt, merged by engine. Task tests pass; orchestrator reviewed the diff. Merge-tier run showed 2 expected reds (test_formdesigner_roundtrip, test_formdesigner_wrapper) caused by the intended fail-closed change; fixed by TASK-4655/4657.

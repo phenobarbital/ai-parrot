@@ -403,8 +403,30 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Opus 5.5 (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-10-24
+**Notes**: Deleted the `.xlsx`/`.xls` guard and the `accept=".xlsx"` attribute,
+renamed `handleUploadExcel` -> `handleUpload` (and its `onclick`), and replaced
+the hardcoded `"Uploaded"` with `formatUploadStatus(result)`. The catch branch
+reads `uploadPayloadFromError(error)` first and only falls back to
+`error.message` when there is no body, so a 400 shows `bad.docx: invalid`
+instead of the literal `HTTP 400`. `uploadFiles` is now cleared only when the
+status is not an error, and the 3-second auto-clear runs only on success.
+Status paragraph widened to three colours (red / amber / green). Copy updated:
+"Upload File", "Any file is stored for the agent; .xlsx, .xls and .csv also
+register as datasets", "Click to choose a file".
 
-**Deviations from spec**: none | describe if any
+Evidence: `pnpm exec vitest run` over the feature's three files -> 3 files,
+28 tests passed; `pytest .../test_vitest_data_management_modal.py
+.../test_vitest_upload_status.py -q` -> 2 passed; `pnpm exec vite build` -> exit 0.
+
+Two test-harness facts worth recording, both found by running the tests rather
+than assumed: (1) `AppDialog` portals its content to `document.body`, so the
+upload controls are NOT inside render()'s `container` — the test queries
+`document`. (2) `bind:files` assigns back to `input.files`, so the stubbed
+`FileList` must be defined `writable: true` or Svelte throws
+"Cannot assign to read only property 'files'". The module mock also had to
+spread `importOriginal()`, because the modal mounts `MCPServerTab`, which eagerly
+calls `getAgentMCPServers` from the same module on render.
+
+**Deviations from spec**: none

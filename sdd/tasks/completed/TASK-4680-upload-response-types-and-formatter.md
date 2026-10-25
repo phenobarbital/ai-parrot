@@ -496,8 +496,26 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Opus 5.5 (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-10-24
+**Notes**: Declared `AgentUploadFileRecord`, `AgentUploadFileError` and
+`AgentUploadResponse` in `agent.ts` and typed `uploadAgentData` as
+`Promise<AgentUploadResponse>`; the request body is byte-identical to
+`be519ab78`. Added `upload-status.ts` with `formatUploadStatus` (success /
+warning / error per spec §3 Module 1, parts joined with " · ") and
+`uploadPayloadFromError` (guarded walk to `raw.response.data`). Both are total
+— the tests assert no-throw for `null`, `undefined`, a string, a number, `{}`
+and wrong-typed fields. Added `upload-status.test.ts` (18 tests), one
+`uploadAgentData` test in `agent.test.ts`, and the pytest bridge
+`test_vitest_upload_status.py`.
 
-**Deviations from spec**: none | describe if any
+Evidence: `pnpm exec vitest run` → 2 files, 23 tests passed;
+`pytest packages/ai-parrot-server/tests/ui/test_vitest_upload_status.py -q` → 1 passed.
+
+Two additions beyond the blueprint stubs, both inside the stated grammar:
+proper singular/plural ("Stored 1 file" / "2 files", "dataset" / "datasets")
+rather than the literal `file(s)` notation, and a `describeError` helper that
+degrades a half-filled error entry to `file: rejected` instead of rendering
+`undefined: undefined`.
+
+**Deviations from spec**: none

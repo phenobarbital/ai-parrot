@@ -8,6 +8,11 @@
   } from "$lib/api/agent";
   import { toastStore } from "$lib/stores/toast.svelte";
   import { notificationStore } from "$lib/stores/notifications.svelte";
+  import {
+    formatUploadStatus,
+    uploadPayloadFromError,
+  } from "./upload-status";
+  import type { UploadStatusType } from "./upload-status";
   import MCPServerTab from "./MCPServerTab.svelte";
   import MyToolkitSettings from "./MyToolkitSettings.svelte";
 
@@ -36,7 +41,7 @@
   let querySlug = $state("");
   let isRefreshing = $state(false);
   let uploadStatus = $state<{
-    type: "success" | "error" | null;
+    type: UploadStatusType | null;
     message: string;
   }>({ type: null, message: "" });
   let queryStatus = $state<{
@@ -97,7 +102,7 @@
     }
   }
 
-  async function handleUploadExcel() {
+  async function handleUpload() {
     if (!uploadFiles || uploadFiles.length === 0) {
       uploadStatus = {
         type: "error",
@@ -106,31 +111,36 @@
       return;
     }
     const file = uploadFiles[0];
-    if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
-      uploadStatus = {
-        type: "error",
-        message: "Only Excel files (.xlsx, .xls) are allowed.",
-      };
-      return;
-    }
 
     uploadStatus = { type: null, message: "Uploading..." };
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      await uploadAgentData(agentId, formData);
-      uploadStatus = { type: "success", message: "Uploaded" };
+      const result = await uploadAgentData(agentId, formData);
+      uploadStatus = formatUploadStatus(result);
+    } catch (error: any) {
+      console.error("Upload Error", error);
+      // The 400 body carries the per-file reasons, but it has no
+      // error/message/detail key, so ApiError.message is the literal
+      // "HTTP 400". Read the preserved body first; fall back to the message
+      // only for a network or timeout failure, which has no body at all.
+      const payload = uploadPayloadFromError(error);
+      uploadStatus =
+        payload === undefined
+          ? { type: "error", message: error.message || "Upload failed." }
+          : formatUploadStatus(payload);
+    }
+
+    // Keep a rejected file selected so the user can see what failed, and let
+    // a warning or an error stay on screen instead of being cleared away.
+    if (uploadStatus.type !== "error") {
       uploadFiles = null;
+    }
+    if (uploadStatus.type === "success") {
       setTimeout(() => {
         uploadStatus = { type: null, message: "" };
       }, 3000);
-    } catch (error: any) {
-      console.error("Upload Error", error);
-      uploadStatus = {
-        type: "error",
-        message: error.message || "Upload failed.",
-      };
     }
   }
 
@@ -222,10 +232,10 @@
             <div class="flex flex-col">
               <span
                 class="text-sm font-semibold text-slate-700 dark:text-slate-200"
-                >Upload Excel</span
+                >Upload File</span
               >
               <span class="text-xs text-slate-500 dark:text-slate-400"
-                >Upload .xlsx file as dataset</span
+                >Any file is stored for the agent; .xlsx, .xls and .csv also register as datasets</span
               >
             </div>
           </div>
@@ -240,19 +250,18 @@
                 >
               {:else}
                 <span class="text-xs text-slate-500 dark:text-slate-400"
-                  >Click to choose .xlsx file</span
+                  >Click to choose a file</span
                 >
               {/if}
               <input
                 type="file"
                 class="hidden"
-                accept=".xlsx"
                 bind:files={uploadFiles}
               />
             </label>
             <button
               class="btn btn-primary btn-sm h-10 w-20 transition-all hover:shadow-md"
-              onclick={handleUploadExcel}
+              onclick={handleUpload}
               disabled={!uploadFiles || uploadFiles.length === 0}
             >
               Upload
@@ -260,7 +269,7 @@
           </div>
           {#if uploadStatus.type}
             <p
-              class={`mt-2 text-xs font-medium ${uploadStatus.type === "error" ? "text-red-500" : "text-green-500"}`}
+              class={`mt-2 text-xs font-medium ${uploadStatus.type === "error" ? "text-red-500" : uploadStatus.type === "warning" ? "text-amber-500" : "text-green-500"}`}
             >
               {uploadStatus.message}
             </p>

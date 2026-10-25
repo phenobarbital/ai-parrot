@@ -388,4 +388,4 @@ shortcut is the obvious thing to write. Keep its fixture deliberately adversaria
 
 ## Completion Note
 
-<!-- Filled in by the implementing agent when the task is closed. -->
+Delivered by gpt-5.6-sol (codex), 1 attempt, merged by engine. Task tests pass; diff reviewed. Same 2 expected downstream reds as TASK-4653, owned by TASK-4655/4657.
