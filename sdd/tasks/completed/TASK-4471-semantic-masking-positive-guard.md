@@ -278,4 +278,5 @@ Use `$sdd-start TASK-4471` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: opus (native), 1 attempt. Added optional trusted_nodes kwarg to PositiveGuard.check_and_limit (pipeline task 4472 must pass it) and error code invalid_limit; masking imports private lineage._resolve_column.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
