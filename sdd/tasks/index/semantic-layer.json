@@ -422,6 +422,48 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4482-core-request-scoped-rls-fix.md"
+    },
+    {
+      "id": "TASK-4701",
+      "slug": "semantic-rust-proposal",
+      "title": "Research-first proposal for FEAT-742 — Rust/PyO3 semantic compiler (/sdd-proposal)",
+      "feature_id": "FEAT-704",
+      "feature": "semantic-layer",
+      "spec": "sdd/specs/semantic-layer.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4468"
+      ],
+      "parallel": true,
+      "parallelism_notes": "SDD-command task run interactively on dev (writes sdd/proposals/ + sdd/state/FEAT-742/, no code); only ordered after TASK-4468 so the proposal targets the landed sole-engine IR",
+      "file": "sdd/tasks/active/TASK-4701-semantic-rust-proposal.md"
+    },
+    {
+      "id": "TASK-4702",
+      "slug": "semantic-agent-example",
+      "title": "End-to-end example — Agent with SemanticLayerToolkit + DatasetManager hand-off",
+      "feature_id": "FEAT-704",
+      "feature": "semantic-layer",
+      "spec": "sdd/specs/semantic-layer.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4477",
+        "TASK-4479",
+        "TASK-4481"
+      ],
+      "parallel": true,
+      "parallelism_notes": "creates only examples/semantic/* (gitignored — git add -f) and its own test file; no shared files with M10/M11 tasks",
+      "file": "sdd/tasks/active/TASK-4702-semantic-agent-example.md"
     }
   ]
 }
