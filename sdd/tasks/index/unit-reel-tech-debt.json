@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-25T22:05:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-25T22:00:52+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "manual",
   "tasks": [
@@ -16,15 +16,17 @@
       "feature_id": "FEAT-744",
       "feature": "unit-reel-tech-debt",
       "spec": "sdd/specs/unit-reel-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task in this feature, no shared-file collisions",
       "assigned_to": "agent:claude",
-      "file": "sdd/tasks/active/TASK-4700-unit-reel-tech-debt.md",
-      "started_at": "2026-10-25T22:10:00Z"
+      "file": "sdd/tasks/completed/TASK-4700-unit-reel-tech-debt.md",
+      "started_at": "2026-10-25T22:10:00Z",
+      "completed_at": "2026-10-25T22:00:52+00:00",
+      "verification": "verified"
     }
   ]
 }
