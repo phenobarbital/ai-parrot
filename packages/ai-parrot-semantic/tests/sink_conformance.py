@@ -106,7 +106,7 @@ async def assert_sink_conformance(
     published = await sink.publish("probe", handle, authorize_read)
     assert isinstance(published, dict)
     assert not any(type(value).__name__ in {"DatasetManager", "DataFrame"} for value in published.values())
-    route = getattr(sink, "route")
+    route = sink.route
 
     for exposure in EXPOSURES:
         before = len(seen)

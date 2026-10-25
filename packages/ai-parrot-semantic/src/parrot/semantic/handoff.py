@@ -192,7 +192,10 @@ def build_read_authorizer(
             raise _deny()
         loaded = _current(models())
         if loaded.policy.governed:
-            visible = {member.name for member in catalog().visible_members(snapshot.model, frozenset(ctx.roles), authorized=True)}
+            visible = {
+                member.name
+                for member in catalog().visible_members(snapshot.model, frozenset(ctx.roles), authorized=True)
+            }
             if not set(snapshot.members).issubset(visible):
                 raise _deny()
             driver = loaded.schema.driver
