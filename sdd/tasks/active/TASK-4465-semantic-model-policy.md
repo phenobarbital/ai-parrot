@@ -1,72 +1,77 @@
-# TASK-4465: Model policy side-file (M3)
+# TASK-4465: Model policy validation and role grants (M3)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4464
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 3 + §8 Q4: parse `<model>.policy.yaml` into `ModelPolicy` — role grants, masks, RLS rules, saved queries, limits and the additive `allowed_functions` extension — and answer role questions for the catalog and the governance pipeline.
-
----
+Spec rev 0.4, §3 M3; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/policy.py`: `RoleGrant`, `MaskRule`, `SavedQuery`, `ModelPolicy` (+ `digest`, `allowed_members`, `usage_allowed`, `mask_for`), `load_policy`.
-- `governed` defaults to `true`; unknown members/tables/roles syntax → `SemanticPolicyError`; missing `connection` when governed → error.
-- `allowed_functions: list[str]` — upper-cased at load; anything not a bare SQL identifier (`^[A-Za-z_][A-Za-z0-9_]*$`) → `SemanticPolicyError` (§8 Q4, §7 risk).
-- Parse every `rls[].predicate_template` with sqlglot at load (placeholders → typed dummies): single boolean expression over columns of its table, else error.
-- Write `test_policy.py`.
+- Implement ModelPolicy/RoleGrant/MaskRule/SavedQuery and load_policy exactly as the spec; remove the engine field and reject unknown keys. Governed defaults true.
+- Validate policy members, physical table references and RLS template boolean expressions before use. Unknown bindings must fail rather than remove restrictions.
+- Union matching role grants, distinguish usage from projection and mask exemptions; implement additive function allowlist and canonical policy digest. Expand model-local saved query definitions with the enclosing model before validating SemanticQuery.
 
-**NOT in scope**: registering RLS rules into a registry (TASK-4477 does it at toolkit construction); the positive guard's use of `allowed_functions` (TASK-4471).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/policy.py` | CREATE | policy side-file parser |
-| `packages/ai-parrot-semantic/tests/test_policy.py` | CREATE | policy tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/policy.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_policy.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.auth import RlsRule                       # verified: packages/ai-parrot/src/parrot/auth/__init__.py:47 (lazy map); class at auth/rls_registry.py:49
-from parrot.semantic.models import SemanticQuery, ModelMember, Limits   # TASK-4464
-from parrot.semantic.errors import SemanticPolicyError                 # TASK-4464
-import sqlglot; from sqlglot import exp                                # sqlglot 30.23.0 in venv
-import yaml, hashlib, json
+from .errors import SemanticPolicyError
+from .models import Limits, ModelMember, SemanticQuery
+from __future__ import annotations
+from datetime import date
+from parrot.auth import RlsRule
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import Literal
+import hashlib
+import json
+import pytest
+import re
+import sqlglot
+import yaml
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/auth/rls_registry.py
-class RlsRule(BaseModel):   # line 49
-    driver: str; table: str; predicate_template: str; subject_attribute: str; description: str = ""   # lines 63-67
-    # predicate_template uses ":subject.<attr>" placeholders; table is "schema.table"
+# packages/ai-parrot/src/parrot/auth/rls_registry.py:49
+class RlsRule(BaseModel):
 ```
 
-### Does NOT Exist
-- ~~`ModelPolicy.remove_functions` / a deny-list~~ — `allowed_functions` is additive only (§8 Q4).
-- ~~`RlsRule.validate_template()`~~ — no such method; the sqlglot parse at load is implemented here.
-- ~~`load_policy` reading the sidemantic model~~ — it receives `members` and `tables` from the loader (TASK-4467).
+### Dependency Contracts and Parallelism Evidence
 
----
+- TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2))
+
+- Consumer-specific evidence: SemanticQuery/ModelMember in models.py and SemanticPolicyError in errors.py
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -89,35 +94,24 @@ class RlsRule(BaseModel):   # line 49
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Policy YAML example: spec §2 Data Models (`<model>.policy.yaml`).
-- `digest()` = SHA-256 hex of `json.dumps(self.model_dump(mode='json'), sort_keys=True)` — part of every cache key and audit entry.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write the models from the spec §3 M3 skeleton — *why*: fixed contract.
-2. Implement role answers — *why*: catalog (TASK-4473) and lineage (TASK-4469) depend on them.
-3. Implement `load_policy` with member/table/function/RLS validation — *why*: a misspelled binding must never silently remove a restriction.
-4. Write the tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/policy.py` (CREATE)
+
 ```python
 """`<model>.policy.yaml` side-file: grants, masks, RLS, saved queries (spec §3 Module 3)."""
 from __future__ import annotations
@@ -139,18 +133,15 @@ from .models import Limits, ModelMember, SemanticQuery
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-
 class RoleGrant(BaseModel):
     metrics: list[str] | Literal["*"] = Field(default_factory=list)
     dimensions: list[str] | Literal["*"] = Field(default_factory=list)
     usage: list[str] | Literal["*"] = Field(default_factory=list)
 
-
 class MaskRule(BaseModel):
     strategy: Literal["null", "hash", "partial"]
     projection_roles: list[str] = Field(default_factory=list)
     usage_roles: list[str] = Field(default_factory=list)
-
 
 class SavedQuery(BaseModel):
     name: str
@@ -159,11 +150,9 @@ class SavedQuery(BaseModel):
     verified_at: date
     description: str = ""
 
-
 class ModelPolicy(BaseModel):
     governed: bool = True
-    engine: Literal["sidemantic", "native"] = "sidemantic"
-    connection: str | None = None
+    connection: str
     limits: Limits = Field(default_factory=Limits)
     roles: dict[str, RoleGrant] = Field(default_factory=dict)
     masks: dict[str, MaskRule] = Field(default_factory=dict)
@@ -191,7 +180,6 @@ class ModelPolicy(BaseModel):
         # FILL IN: masked + roles ∩ projection_roles empty -> rule; else None
         raise NotImplementedError
 
-
 def load_policy(path: Path, members: list[ModelMember], tables: set[str]) -> ModelPolicy:
     """Parse and validate a policy file.
 
@@ -206,84 +194,69 @@ def load_policy(path: Path, members: list[ModelMember], tables: set[str]) -> Mod
     #   the WHERE must be one boolean expression (no subquery / no exp.Command)
     raise NotImplementedError
 ```
-**Why this shape**: verbatim spec §3 M3 skeleton plus `allowed_functions` (§8 Q4). `connection` is optional in the model so the governed-requires-connection rule is enforced in `load_policy` with a precise error code.
 
-### FILL IN checklist
-- [ ] `allowed_members` — `*` expansion; bounded by AC19.
-- [ ] `usage_allowed` / `mask_for` — bounded by AC6.
-- [ ] `load_policy` validation — bounded by AC15 (unknown members rejected) and §8 Q4.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
-
-## Acceptance Criteria
-
-- [ ] `test_policy_unknown_member_rejected`, `test_policy_defaults_governed`, `test_policy_allowed_functions_additive` (policy half) pass.
-- [ ] A policy with an RLS template `region IN (:subject.programs); DROP TABLE x` is rejected at load.
-- [ ] `ModelPolicy().digest()` is stable across key order.
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_policy.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_policy.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_policy.py
+"""Regression contract: Model policy validation and role grants (M3)."""
+from pathlib import Path
 import pytest
-from parrot.semantic.policy import load_policy
-from parrot.semantic.models import ModelMember
-from parrot.semantic.errors import SemanticPolicyError
-
-MEMBERS = [ModelMember(name="revenue", kind="metric"), ModelMember(name="region", kind="dimension")]
-TABLES = {"sales.orders", "dim.customers"}
 
 
-def test_policy_unknown_member_rejected(tmp_path):
-    p = tmp_path / "orders.policy.yaml"
-    p.write_text("connection: wh\nroles:\n  analyst: {metrics: [revenu]}\n")
-    with pytest.raises(SemanticPolicyError):
-        load_policy(p, MEMBERS, TABLES)
-
-
-def test_policy_defaults_governed(tmp_path):
-    # FILL IN: missing `governed` -> True; `governed: false` honoured (connection optional then)
+def test_governed_defaults_and_unknown_bindings(tmp_path: Path) -> None:
+    """Verify governed defaults and unknown bindings."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 
 
-def test_policy_allowed_functions_additive(tmp_path):
-    # FILL IN: `allowed_functions: [regexp_replace]` -> ["REGEXP_REPLACE"]; `["x; drop"]` rejected
+def test_role_usage_and_mask_permissions(tmp_path: Path) -> None:
+    """Verify role usage and mask permissions."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_typed_rls_template_and_additive_functions(tmp_path: Path) -> None:
+    """Verify typed rls template and additive functions."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/policy.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_policy.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Implement ModelPolicy/RoleGrant/MaskRule/SavedQuery and load_policy exactly as the spec; remove the engine field and reject unknown keys. Governed defaults true.
+- [ ] Validate policy members, physical table references and RLS template boolean expressions before use. Unknown bindings must fail rather than remove restrictions.
+- [ ] Union matching role grants, distinguish usage from projection and mask exemptions; implement additive function allowlist and canonical policy digest. Expand model-local saved query definitions with the enclosing model before validating SemanticQuery.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_policy.py -q`
+
+## Test Specification
+
+- `test_governed_defaults_and_unknown_bindings`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_role_usage_and_mask_permissions`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_typed_rls_template_and_additive_functions`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4465 — Model policy side-file (M3)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4465 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4465` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

@@ -1,77 +1,81 @@
-# TASK-4480: SemanticLayerHandler HTTP routes + manager registration (M11a)
+# TASK-4480: Authenticated HTTP routes and guarded hand-off wiring (M11a)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: medium
-**Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4479
+**Estimated effort**: M (2–4h)
+**Depends-on**: TASK-4710
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 11 (handler) + AC14: `SemanticLayerHandler(BaseView)` with a role-filtered catalog GET and compile/query/hand-off POSTs; `PermissionContext` from the navigator-auth session; routes registered only when `parrot.semantic` is importable; 401 without a session.
-
----
+Spec rev 0.4, §3 M11; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Create `packages/ai-parrot-server/src/parrot/handlers/semantic.py`.
-- Register the two views in `manager.py` behind `importlib.util.find_spec("parrot.semantic")`.
-- Hand-off factory = the per-user, per-agent `DatasetManager` resolved like `DatasetManagerHandler._get_dataset_manager` (datasets.py:162) — call the module-level `_resolve_dataset_manager` helper.
-- Write `packages/ai-parrot-server/tests/handlers/test_semantic_handler.py`.
+- Create SemanticLayerHandler GET catalog and POST compile/query/results-id/dataset; session-auth decorators and lazy package registration follow current BaseView patterns.
+- Resolve trusted authorized agent id and authenticated server session id, bind SemanticRequestIdentity across direct toolkit calls. Drop caller-supplied identity/context fields and reject LocalSemanticLayerToolkit.
+- No default DatasetManager session factory: require configured conforming sink or return handoff_unavailable. Test 401, malformed input, denial, agent/session separation and absent sink.
+- Register only when parrot.semantic is importable; do not touch handlers/datasets.py or alter existing server public APIs.
 
-**NOT in scope**: changes to `handlers/datasets.py` (owned by TASK-4482); MCP/docs (TASK-4481).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-server/src/parrot/handlers/semantic.py` | CREATE | SemanticLayerHandler |
-| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | guarded route registration |
-| `packages/ai-parrot-server/tests/handlers/test_semantic_handler.py` | CREATE | routes + 401 tests |
-
----
+| `packages/ai-parrot-server/src/parrot/handlers/semantic.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | Scoped deliverable per blueprint |
+| `packages/ai-parrot-server/tests/unit/test_semantic_handler.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
+from ..handlers.semantic import SemanticLayerHandler
+from __future__ import annotations
 from aiohttp import web
-from navigator.views import BaseView                                   # verified: packages/ai-parrot-server/src/parrot/handlers/datasets.py:19
-from navigator_auth.decorators import is_authenticated, user_session   # verified: handlers/datasets.py:20
-from navigator_session import get_session                              # verified: handlers/datasets.py:21
-from parrot.auth import PermissionContext, UserSession                 # verified: auth/__init__.py lazy map
-# handlers/datasets.py module-level helper (server package, relative import from handlers/semantic.py):
-from .datasets import _resolve_dataset_manager                         # verified: handlers/datasets.py:91 (async def _resolve_dataset_manager(request, agent_id, session_key, logger))
+from navigator.views import BaseView
+from navigator_auth.decorators import is_authenticated, user_session
+from navigator_session import get_session
+from parrot.auth import PermissionContext
+from pathlib import Path
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot-server/src/parrot/handlers/datasets.py
-async def _resolve_dataset_manager(request: web.Request, agent_id: str, session_key: str, logger: object)   # line 91
-class DatasetManagerHandler(BaseView):   # line 141 — decorators + user_objects_handler.get_session_key(agent_id, "dataset_manager") (162-177)
-# packages/ai-parrot-server/src/parrot/manager/manager.py
-from ..handlers.datasets import DatasetManagerHandler                                  # line 45
-router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)          # line 2571
-router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)   # line 2572
+# packages/ai-parrot-server/src/parrot/handlers/datasets.py:142
+class DatasetManagerHandler(BaseView):
 ```
 
-### Does NOT Exist
-- ~~`packages/ai-parrot-server/tests/unit/`~~ — does not exist; server handler tests live in `packages/ai-parrot-server/tests/handlers/` (spec Edit Sites row drift).
-- ~~A module-level `from parrot.semantic import ...` in handlers/semantic.py~~ — import lazily inside methods so the server imports without the satellite.
-- ~~How the agent exposes its configured toolkit~~ — FILL IN: read how `DatasetManagerHandler` finds the agent (BotManager lookup in `_resolve_dataset_manager`) and locate the agent's `SemanticLayerToolkit` instance among its tools; 404 when absent.
+```python
+# packages/ai-parrot-server/src/parrot/manager/manager.py:212
+class BotManager():
+    # line 222
+    def __init__(self, enable_database_bots: bool=ENABLE_DATABASE_BOTS, enable_crews: bool=ENABLE_CREWS, enable_registry_bots: bool=ENABLE_REGISTRY_BOTS, enable_swagger_api: bool=ENABLE_SWAGGER) -> None:
+```
 
----
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4710: consumes packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py (MCP-local identity and configured PBAC bootstrap (M10c))
+
+- Consumer-specific evidence: LocalSemanticLayerToolkit class rejection and final run_sql/save tool behavior
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -88,158 +92,148 @@ router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManage
       "action": "MODIFY"
     },
     {
-      "path": "packages/ai-parrot-server/tests/handlers/test_semantic_handler.py",
+      "path": "packages/ai-parrot-server/tests/unit/test_semantic_handler.py",
       "action": "CREATE"
     }
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot-server/src/parrot/handlers/datasets.py#DatasetManagerHandler",
-    "sym:packages/ai-parrot-server/src/parrot/handlers/datasets.py#_resolve_dataset_manager"
+    "sym:packages/ai-parrot-server/src/parrot/manager/manager.py#BotManager"
   ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Session id for result handles: put the navigator session id into `PermissionContext.extra['session_id']` (TASK-4476 reads it there).
-- Errors map: `SemanticAccessError` → 403, `SemanticValidationError` → 400, `SemanticResultError` → 404, `SemanticExecutionError` → 502; never include SQL beyond the governed SQL the toolkit already returns.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write the handler (lazy satellite import) — *why*: server must import without the satellite.
-2. Register routes guarded by find_spec — *why*: AC14.
-3. Write tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-server/src/parrot/handlers/semantic.py` (CREATE)
+
 ```python
-"""HTTP surface of the semantic layer (FEAT-704 spec §3 Module 11)."""
+"""Authenticated semantic-layer HTTP views with trusted session identity."""
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 from aiohttp import web
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
-
-from ..auth import PermissionContext, UserSession
-
-if TYPE_CHECKING:
-    from parrot.semantic import SemanticLayerToolkit
-
+from navigator_session import get_session
+from parrot.auth import PermissionContext
 
 @is_authenticated()
 @user_session()
 class SemanticLayerHandler(BaseView):
-    """GET catalog; POST compile | query | results/{result_id}/dataset for /api/v1/agents/semantic/{agent_id}."""
-
+    """Resolve host identity and call semantic tools within scoped binding."""
     async def get(self) -> web.Response:
-        """Role-filtered catalog for {agent_id}."""
-        # FILL IN: tk = await self._toolkit(agent_id); run tk.list_models under the session pctx
-        raise NotImplementedError
-
+        """Return only the authenticated subject's authorized catalog."""
+        # FILL IN: trusted session + scoped identity, authorized catalog only.
+        ...
     async def post(self) -> web.Response:
-        """Dispatch on the tail route: compile | query | results/{result_id}/dataset."""
-        # FILL IN: tail = self.request.match_info.get("tail", ""); parse JSON body into SemanticQuery
-        #   (ValidationError -> 400); call the toolkit through its tool path with _permission_context=pctx
-        raise NotImplementedError
-
-    async def _toolkit(self, agent_id: str) -> "SemanticLayerToolkit":
-        """Agent's configured toolkit (lazy import of parrot.semantic); 404 when the agent has none."""
-        raise NotImplementedError
-
+        """Dispatch compile/query or guarded result publication."""
+        # FILL IN: validated request, trusted agent/session, bind/reset context,
+        # reject local-only subclass and return handoff_unavailable without sink.
+        ...
+    async def _toolkit(self, agent_id: str) -> object:
+        """Resolve the authorized agent's ordinary SemanticLayerToolkit lazily."""
+        ...
     async def _pctx(self) -> PermissionContext:
-        """From the navigator-auth session; 401 when absent."""
-        # FILL IN: mirror how DatasetManagerHandler reads the session user (datasets.py); session id -> extra
-        raise NotImplementedError
+        """Build from authenticated navigator session, never caller JSON."""
+        ...
 ```
-**Why**: same decorator pattern as `DatasetManagerHandler` (datasets.py:141); `..auth` matches the server's relative-import style (verify — if datasets.py imports `parrot.auth` absolutely, do the same).
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### `packages/ai-parrot-server/src/parrot/manager/manager.py` (MODIFY)
+
+Anchor `from ..handlers.datasets import DatasetManagerHandler` — occurrences: **1**, freshly verified at `packages/ai-parrot-server/src/parrot/manager/manager.py:45`.
+
+Anchor `        router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)` — occurrences: **1**, freshly verified at `packages/ai-parrot-server/src/parrot/manager/manager.py:2571`.
+
 ```python
-# occurrences: 1 (verified: grep -c -F '        router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)' manager.py)
-# AFTER — insert below that line (verified: manager.py:2572)
-        # Semantic layer (FEAT-704) — only when the opt-in satellite is installed.
-        if importlib.util.find_spec("parrot.semantic") is not None:
-            from ..handlers.semantic import SemanticLayerHandler
-            router.add_view("/api/v1/agents/semantic/{agent_id}", SemanticLayerHandler)
-            router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
+# At the two verified DatasetManagerHandler import/route anchors (counts below):
+# FILL IN: use importlib.util.find_spec("parrot.semantic") and lazy handler import
+# only when the satellite is installed; add views beside the existing datasets routes.
+if importlib.util.find_spec("parrot.semantic") is not None:
+    from ..handlers.semantic import SemanticLayerHandler
+    router.add_view("/api/v1/agents/semantic/{agent_id}", SemanticLayerHandler)
+    router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
+# Preserve datasets registration unchanged; no edits to handlers/datasets.py.
 ```
-**Why**: AC14. FILL IN: `manager.py` imports `contextlib, os, time, asyncio, copy` at lines 10-14 — add `import importlib.util` there if it is not already imported (grep first).
 
-### FILL IN checklist
-- [ ] Handler bodies — bounded by AC14 and the error map in Notes.
-- [ ] Agent→toolkit lookup.
-- [ ] `import importlib.util` in manager.py if missing.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
-
-## Acceptance Criteria
-
-- [ ] `test_handler_routes_and_401` passes: routes registered only when `parrot.semantic` is importable (monkeypatch find_spec), 401 without a session (AC14).
-- [ ] Server package imports with the satellite absent.
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-server/tests/handlers/test_semantic_handler.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-server/tests/unit/test_semantic_handler.py` (CREATE)
 
 ```python
-# packages/ai-parrot-server/tests/handlers/test_semantic_handler.py
+"""Regression contract: Authenticated HTTP routes and guarded hand-off wiring (M11a)."""
+from pathlib import Path
 import pytest
 
 
-def test_handler_routes_and_401(monkeypatch):
-    # FILL IN: find_spec("parrot.semantic") -> None => no /api/v1/agents/semantic routes; present => routes;
-    #          aiohttp test client without session -> 401 (follow test_knowledge_handler.py's client setup)
+def test_routes_session_401_and_no_satellite(tmp_path: Path) -> None:
+    """Verify routes session 401 and no satellite."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_trusted_agent_session_and_local_class_rejection(tmp_path: Path) -> None:
+    """Verify trusted agent session and local class rejection."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_handoff_unavailable_without_guarded_sink(tmp_path: Path) -> None:
+    """Verify handoff unavailable without guarded sink."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-server/src/parrot/handlers/semantic.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-server/src/parrot/manager/manager.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-server/tests/unit/test_semantic_handler.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Create SemanticLayerHandler GET catalog and POST compile/query/results-id/dataset; session-auth decorators and lazy package registration follow current BaseView patterns.
+- [ ] Resolve trusted authorized agent id and authenticated server session id, bind SemanticRequestIdentity across direct toolkit calls. Drop caller-supplied identity/context fields and reject LocalSemanticLayerToolkit.
+- [ ] No default DatasetManager session factory: require configured conforming sink or return handoff_unavailable. Test 401, malformed input, denial, agent/session separation and absent sink.
+- [ ] Register only when parrot.semantic is importable; do not touch handlers/datasets.py or alter existing server public APIs.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-server/tests/unit/test_semantic_handler.py -q`
+
+## Test Specification
+
+- `test_routes_session_401_and_no_satellite`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_trusted_agent_session_and_local_class_rejection`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_handoff_unavailable_without_guarded_sink`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4480 — SemanticLayerHandler HTTP routes + manager registration (M11a)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4480 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4480` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

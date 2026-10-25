@@ -1,67 +1,80 @@
-# TASK-4464: Query & result contracts + error taxonomy (M2)
+# TASK-4464: Query/result contracts and trusted identity model (M2)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4463
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §2 Data Models and §3 Module 2: the pydantic request/response contracts every other module consumes (`SemanticQuery`, `CompiledQuery`, `GovernedQuery`, `SemanticQueryResult`, `ModelMember`) and the `SemanticError` hierarchy.
-
----
+Spec rev 0.4, §3 M2; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/errors.py`: `SemanticError(code, details)` and the five subclasses.
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/models.py`: `Grain`, `FilterOp`, `TimeDimension`, `FilterLeaf`, `FilterGroup`, `OrderBy`, `SemanticQuery` (+ `canonical_json`, `validate_against`), `CompiledQuery`, `GovernedQuery`, `SemanticQueryResult`, `ModelMember`, `Limits`.
-- Model validators: `saved_query` XOR `metrics`; `offset > 0` requires `order_by`; `limit >= 1` when set; `extra="forbid"`.
-- Write `test_models.py`.
+- Implement all §2 query/result contracts and SemanticError hierarchy; no engine selector. Saved query excludes explicit members/filters/order, otherwise at least one metric/dimension/time dimension is required. Preserve valid dimensions-only lookups.
+- Validate positive limits, offset ordering, grains, filter arity and mixed WHERE/HAVING groups; validate_against resolves kinds. Canonical JSON uses sorted keys and deterministic values.
+- Add SemanticRequestIdentity in context.py: trusted PermissionContext snapshot, channel http/agent/mcp-local, nonempty agent_id/session_id. Do not add fields to core PermissionContext. Runtime binding helpers belong to the context-binding task.
+- GovernedQuery carries exact members and qualified physical_columns, in addition to tables. CompiledQuery never carries governed subject data.
 
-**NOT in scope**: member-kind resolution against a real model (TASK-4467/4473 call `validate_against`); policy models (TASK-4465).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/errors.py` | CREATE | exception hierarchy |
-| `packages/ai-parrot-semantic/src/parrot/semantic/models.py` | CREATE | pydantic contracts |
-| `packages/ai-parrot-semantic/tests/test_models.py` | CREATE | validator tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/errors.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/models.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/context.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_models.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from pydantic import BaseModel, ConfigDict, Field, model_validator   # pydantic v2 (core dependency)
+from __future__ import annotations
+from parrot.auth import PermissionContext
+from pathlib import Path
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Any
+from typing import Literal
+from typing import Literal, Any
 import json
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
+
+`import json` is a standard-library dependency used by canonical_json.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (TASK-4463)
-__all__ = ["__version__"]
+# packages/ai-parrot/src/parrot/auth/permission.py:81
+class PermissionContext():
 ```
 
-### Does NOT Exist
-- ~~`Limits` in core~~ — defined here (`default: int = 1000`, `max: int = 10000`); TASK-4465's `ModelPolicy.limits` uses it.
-- ~~`ModelMember.sensitive` driving masking~~ — masking is policy-driven (TASK-4471); `sensitive` is descriptive only.
-- ~~pydantic `model_dump_json(sort_keys=...)`~~ — not a pydantic option; use `json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))`.
+```python
+# packages/ai-parrot/src/parrot/auth/permission.py:21
+class UserSession():
+```
 
----
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4463: consumes packages/ai-parrot-semantic/pyproject.toml, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (MIT satellite packaging, workspace and CI (M1))
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -78,43 +91,39 @@ __all__ = ["__version__"]
       "action": "CREATE"
     },
     {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/context.py",
+      "action": "CREATE"
+    },
+    {
       "path": "packages/ai-parrot-semantic/tests/test_models.py",
       "action": "CREATE"
     }
   ],
-  "contract_symbols": []
+  "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/auth/permission.py#PermissionContext",
+    "sym:packages/ai-parrot/src/parrot/auth/permission.py#UserSession"
+  ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Field lists are fixed verbatim by spec §2 Data Models — copy them; do not rename.
-- `FilterGroup.items` is recursive: call `FilterGroup.model_rebuild()` after the class.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `errors.py` — *why*: models raise `SemanticValidationError`.
-2. Write `models.py` copying spec §2 field lists — *why*: the contracts are fixed by the spec.
-3. Implement `canonical_json` and `validate_against` — *why*: cache keys (AC8) and mixed WHERE/HAVING rejection (spec §7).
-4. Write the tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/errors.py` (CREATE)
+
 ```python
 """Semantic-layer exception hierarchy (spec §3 Module 2)."""
 from __future__ import annotations
@@ -157,144 +166,201 @@ class SemanticResultError(SemanticError):
     """Result handle unknown, foreign, expired or stale (context/policy changed)."""
 ```
 
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
 ### `packages/ai-parrot-semantic/src/parrot/semantic/models.py` (CREATE)
+
 ```python
-"""Pydantic request/response contracts (spec §2 Data Models)."""
+"""Semantic query and result contracts."""
 from __future__ import annotations
 
+from typing import Literal, Any
 import json
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from .errors import SemanticValidationError
 
 Grain = Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"]
 FilterOp = Literal["equals", "not_equals", "in", "not_in", "contains", "gt", "gte", "lt", "lte",
                    "between", "is_set", "not_set", "in_date_range", "before_date", "after_date"]
 
+class TimeDimension(BaseModel):
+    name: str
+    grain: Grain | None = None          # required when the dimension is a time dimension
+    date_range: tuple[str, str] | None = None   # ISO-8601 inclusive bounds
+
+class FilterLeaf(BaseModel):
+    member: str                         # metric or dimension name; kind resolved against the model
+    op: FilterOp
+    values: list[str | int | float | bool] = Field(default_factory=list)
+
+class FilterGroup(BaseModel):
+    op: Literal["and", "or"]
+    items: list["FilterLeaf | FilterGroup"]
+    # validator: a group never mixes metric (HAVING) and dimension (WHERE) leaves
+
+class OrderBy(BaseModel):
+    member: str
+    grain: Grain | None = None
+    desc: bool = False
+
+class SemanticQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")   # credential-like or unknown fields are rejected (never carried by a query)
+    model: str
+    metrics: list[str] = Field(default_factory=list)
+    dimensions: list[str] = Field(default_factory=list)
+    time_dimensions: list[TimeDimension] = Field(default_factory=list)
+    filters: FilterGroup | None = None
+    order_by: list[OrderBy] = Field(default_factory=list)
+    limit: int | None = None            # None → policy default; clamped to policy max
+    offset: int = 0                     # requires order_by
+    timezone: str | None = None
+    saved_query: str | None = None      # exclusive with explicit members; expanded before compile
+    def canonical_json(self) -> str:
+        """Return sorted-key, whitespace-free JSON for versioned cache keys."""
+        # FILL IN: use json.dumps(model_dump(mode="json"), sort_keys=True).
+        ...
+    def validate_against(self, member_kinds: dict[str, str], time_dimensions: set[str]) -> None:
+        """Reject unknown members, mixed filter kinds and missing time grains."""
+        # FILL IN: semantic validation after structural Pydantic validation.
+        ...
+
+class CompiledQuery(BaseModel, frozen=True):
+    """Pre-governance compiler output. MUST contain no subject-derived predicates or values."""
+    sql: str
+    dialect: str
+    # (rev 0.3) no `engine` field — the native compiler is the sole engine; `compiler_version` below
+    # replaces the old "engine+version" cache-key component (invalidates on compiler codegen changes).
+    members: tuple[str, ...]            # metrics + dimensions referenced
+    tables: tuple[str, ...]             # "schema.table" physical tables referenced
+    cache_key: str                      # (model digest, policy digest, canonical query, dialect, compiler_version, connection id)
+
+class GovernedQuery(BaseModel, frozen=True):
+    sql: str
+    dialect: str
+    driver: str
+    tables: tuple[str, ...]
+    rls_applied: tuple[str, ...]        # rule descriptions applied (never values)
+    masked_columns: tuple[str, ...]
+    limit: int
+    subject_digest: str
+    members: tuple[str, ...]            # exact semantic provenance including dependencies
+    physical_columns: tuple[str, ...]   # resolved qualified lineage; never inferred from output aliases
+
+```
+
+```python
+class SemanticQueryResult(BaseModel):
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int
+    truncated: bool
+    duration_ms: int
+    compiled_sql: str                   # governed SQL as executed
+    audit_id: str
+    result_id: str | None = None        # present only when the ResultHandleStore is enabled
 
 class Limits(BaseModel):
-    """Row limits from the policy file."""
+    """Default/max row caps with positive ordered values."""
     default: int = 1000
     max: int = 10000
-
+    # FILL IN: require 1 <= default <= max.
 
 class ModelMember(BaseModel):
-    """One metric/dimension of a loaded model, as the catalog sees it."""
+    """Catalog member metadata; policy determines access, not sensitive alone."""
     name: str
     kind: Literal["metric", "dimension", "time_dimension", "entity"]
     description: str = ""
     grain: Grain | None = None
     sensitive: bool = False
-
-# FILL IN: TimeDimension, FilterLeaf, FilterGroup (+ FilterGroup.model_rebuild()), OrderBy —
-#          fields verbatim from spec §2 Data Models
-
-
-class SemanticQuery(BaseModel):
-    """Structured metric query; credential-like/unknown fields are rejected (extra=forbid)."""
-    model_config = ConfigDict(extra="forbid")
-    # FILL IN: fields verbatim from spec §2 (model, metrics, dimensions, time_dimensions, filters,
-    #          order_by, limit, offset, timezone, saved_query)
-
-    @model_validator(mode="after")
-    def _check_shape(self) -> "SemanticQuery":
-        # FILL IN: saved_query XOR metrics (exactly one present); offset>0 requires order_by; limit>=1 —
-        #          raise ValueError (pydantic wraps it) — bounded by spec §3 M2 validators
-        return self
-
-    def canonical_json(self) -> str:
-        """Sorted-key, whitespace-free JSON used in CompiledQuery.cache_key."""
-        return json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-
-    def validate_against(self, member_kinds: dict[str, str], time_dimensions: set[str]) -> None:
-        """Raise SemanticValidationError for unknown members, mixed filter groups, missing grains."""
-        # FILL IN: unknown metric/dimension/order/filter member -> code "unknown_member";
-        #          a FilterGroup whose leaves mix metric and dimension kinds -> "mixed_filter_group";
-        #          a time_dimensions entry naming a time dimension with grain None -> "grain_required"
-        raise NotImplementedError
-
-# FILL IN: CompiledQuery(frozen), GovernedQuery(frozen), SemanticQueryResult — verbatim from spec §2
+# FILL IN: saved-query exclusivity, dimensions-only queries and validation errors.
 ```
-**Why**: the spec fixes every field; the validator split (shape in `model_validator`, model-dependent checks in `validate_against`) is spec §3 M2.
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/context.py` (CREATE)
+
+```python
+"""Trusted semantic identity; runtime binding is added separately."""
+from __future__ import annotations
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from parrot.auth import PermissionContext
+
+class SemanticRequestIdentity(BaseModel, frozen=True):
+    """Host-authenticated identity for retained results."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+    ctx: PermissionContext
+    channel: Literal["http", "agent", "mcp-local"]
+    agent_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    # FILL IN: defensively copy trusted context/metadata, reject blank identifiers;
+    # never infer identity from tool arguments or PermissionContext.request_id.
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_models.py` (CREATE)
+
+```python
+"""Regression contract: Query/result contracts and trusted identity model (M2)."""
+from pathlib import Path
+import pytest
+
+
+def test_dimensions_only_and_saved_query_exclusivity(tmp_path: Path) -> None:
+    """Verify dimensions only and saved query exclusivity."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_invalid_grains_limits_and_mixed_filters(tmp_path: Path) -> None:
+    """Verify invalid grains limits and mixed filters."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_identity_snapshot_and_provenance_fields(tmp_path: Path) -> None:
+    """Verify identity snapshot and provenance fields."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### FILL IN checklist
-- [ ] Remaining model classes verbatim from spec §2.
-- [ ] `_check_shape` rules — bounded by spec §3 M2.
-- [ ] `validate_against` error codes — `unknown_member` / `mixed_filter_group` / `grain_required`.
 
----
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/errors.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/models.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/context.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_models.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] `test_semantic_query_validators` and `test_canonical_json_stable` pass.
-- [ ] `SemanticQuery(model='m', metrics=['x'], password='p')` raises `ValidationError` (extra=forbid).
-- [ ] `CompiledQuery`/`GovernedQuery` are frozen (assignment raises).
-
----
+- [ ] Implement all §2 query/result contracts and SemanticError hierarchy; no engine selector. Saved query excludes explicit members/filters/order, otherwise at least one metric/dimension/time dimension is required. Preserve valid dimensions-only lookups.
+- [ ] Validate positive limits, offset ordering, grains, filter arity and mixed WHERE/HAVING groups; validate_against resolves kinds. Canonical JSON uses sorted keys and deterministic values.
+- [ ] Add SemanticRequestIdentity in context.py: trusted PermissionContext snapshot, channel http/agent/mcp-local, nonempty agent_id/session_id. Do not add fields to core PermissionContext. Runtime binding helpers belong to the context-binding task.
+- [ ] GovernedQuery carries exact members and qualified physical_columns, in addition to tables. CompiledQuery never carries governed subject data.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
 
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
 - `pytest packages/ai-parrot-semantic/tests/test_models.py -q`
-
----
 
 ## Test Specification
 
-```python
-# packages/ai-parrot-semantic/tests/test_models.py
-import pytest
-from pydantic import ValidationError
-from parrot.semantic.models import SemanticQuery, FilterGroup, FilterLeaf
-from parrot.semantic.errors import SemanticValidationError
-
-
-def test_semantic_query_validators():
-    """saved_query XOR metrics; offset needs order_by; mixed filter group; grain required."""
-    with pytest.raises(ValidationError):
-        SemanticQuery(model="orders", metrics=["revenue"], saved_query="monthly")
-    with pytest.raises(ValidationError):
-        SemanticQuery(model="orders", metrics=["revenue"], offset=10)
-    q = SemanticQuery(model="orders", metrics=["revenue"],
-                      filters=FilterGroup(op="and", items=[FilterLeaf(member="revenue", op="gt", values=[1]),
-                                                           FilterLeaf(member="region", op="equals", values=["n"])]))
-    with pytest.raises(SemanticValidationError):
-        q.validate_against({"revenue": "metric", "region": "dimension"}, set())
-    # FILL IN: grain_required case
-
-
-def test_canonical_json_stable():
-    a = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
-    b = SemanticQuery(dimensions=["region"], metrics=["revenue"], model="orders")
-    assert a.canonical_json() == b.canonical_json()
-```
-
----
+- `test_dimensions_only_and_saved_query_exclusivity`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_invalid_grains_limits_and_mixed_filters`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_identity_snapshot_and_provenance_fields`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4464 — Query & result contracts + error taxonomy (M2)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4464 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4464` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

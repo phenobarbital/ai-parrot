@@ -1,77 +1,101 @@
-# TASK-4469: Governance: PBAC gate and column-usage lineage (M6a)
+# TASK-4469: Fail-closed PBAC and full column lineage (M6a)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: L (4-8h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4467
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 6 (pbac + lineage) and §2 item 3: two-phase PBAC (manifest before compile, AST tables ⊆ manifest after) that never lets `ctx=None` reach the fail-open guard (AC3, AC4, AC19), and column-usage lineage that distinguishes projection from usage rights and fails closed on unresolved lineage (AC6).
-
----
+Spec rev 0.4, §3 M6; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Create `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` (docstring only).
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py`: `PbacGate` (`available`, `authorize_manifest`, `authorize`), `resources_from_ast`.
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/governance/lineage.py`: `ColumnUse`, `resolve_column_uses`, `enforce_usage_rights`.
-- Write `test_pbac.py` and `test_lineage.py`.
+- Implement PbacGate and resources_from_ast; require context and probe exact navigator_auth.abac.policies.environment/evaluator modules, not only the root package.
+- Authorize the declared manifest before compilation and require every physical table after qualification to be in that manifest. Resolve CTE aliases to base resources, not fictitious physical tables.
+- Implement ColumnUse, resolve_column_uses and enforce_usage_rights through aliases/CTEs/subqueries/window/derived expressions. Deny unresolved lineage and any ungranted usage of hidden/masked columns.
+- Define governance package marker. Nodes trusted by pipeline identity must have strong references for the full pass; caller labels are never trusted.
 
-**NOT in scope**: RLS push-down (TASK-4470), masking/guard (TASK-4471), pipeline ordering (TASK-4472).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` | CREATE | subpackage marker |
-| `packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py` | CREATE | PbacGate |
-| `packages/ai-parrot-semantic/src/parrot/semantic/governance/lineage.py` | CREATE | column lineage + usage rights |
-| `packages/ai-parrot-semantic/tests/test_pbac.py` | CREATE | fail-closed PBAC tests |
-| `packages/ai-parrot-semantic/tests/test_lineage.py` | CREATE | masked-inference matrix |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/governance/lineage.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_pbac.py` | CREATE | Focused regression evidence |
+| `packages/ai-parrot-semantic/tests/test_lineage.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.auth import PermissionContext, DataPlanePolicyGuard              # verified: auth/__init__.py lazy map (33, 45)
-from parrot.auth.exceptions import AuthorizationRequired                    # verified: packages/ai-parrot/src/parrot/auth/exceptions.py:12
-from parrot.tools.dataset_manager.sources.resolver import PhysicalResources  # verified: resolver.py:47
-from parrot.semantic.loader import LoadedModel, PhysicalSchema              # TASK-4467
-from parrot.semantic.policy import ModelPolicy                              # TASK-4465
-from parrot.semantic.errors import SemanticAccessError                      # TASK-4464
-from sqlglot import exp; from sqlglot.optimizer.qualify import qualify; from sqlglot.optimizer.scope import build_scope   # sqlglot 30.23.0
+from ..errors import SemanticAccessError
+from ..loader import LoadedModel
+from ..loader import PhysicalSchema
+from ..policy import ModelPolicy
+from __future__ import annotations
+from parrot.auth import DataPlanePolicyGuard, PermissionContext
+from parrot.auth.exceptions import AuthorizationRequired
+from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
+from pathlib import Path
+from pydantic import BaseModel
+from sqlglot import exp
+from typing import Literal
+import importlib.util
+import logging
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/auth/dataplane_guard.py
-class DataPlanePolicyGuard:     # line 45 — ctx None → FAIL-OPEN (52, 193-200); ImportError navigator-auth → fail-open; evaluator error → fail-closed
-    async def authorize_source(self, ctx: Optional[PermissionContext], resources: "PhysicalResources") -> None   # line 193 — raises AuthorizationRequired
-# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py
-class PhysicalResources(BaseModel):   # line 47 — driver: Optional[str]; tables: set[str] ("driver:schema.table"); source_type; source_id
+# packages/ai-parrot/src/parrot/auth/dataplane_guard.py:45
+class DataPlanePolicyGuard():
+    # line 71
+    def __init__(self, evaluator: 'PolicyEvaluator', rls_registry: 'RlsRegistry', sensitive_drivers: frozenset[str]=frozenset(), logger: Optional[logging.Logger]=None) -> None:
+    # line 193
+    async def authorize_source(self, ctx: Optional[PermissionContext], resources: 'PhysicalResources') -> None:
 ```
 
-### Does NOT Exist
-- ~~`DataPlanePolicyGuard` failing closed on `ctx=None`~~ — it fails OPEN; `PbacGate` must deny first.
-- ~~`resolve_physical_resources(sql, driver)`~~ — takes a DataSource (resolver.py:120); build `PhysicalResources` directly.
-- ~~`DataPlanePolicyGuard.is_available()`~~ — no such method; probe `guard is not None` and `importlib.util.find_spec("navigator_auth")` at construction.
+```python
+# packages/ai-parrot/src/parrot/auth/permission.py:81
+class PermissionContext():
+```
 
----
+```python
+# packages/ai-parrot/src/parrot/auth/exceptions.py:12
+class AuthorizationRequired(Exception):
+    # line 34
+    def __init__(self, tool_name: str, message: str, auth_url: Optional[str]=None, provider: str='unknown', scopes: Optional[List[str]]=None) -> None:
+```
+
+```python
+# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py:47
+class PhysicalResources(BaseModel):
+```
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b))
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -102,39 +126,39 @@ class PhysicalResources(BaseModel):   # line 47 — driver: Optional[str]; table
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/auth/dataplane_guard.py#DataPlanePolicyGuard",
+    "sym:packages/ai-parrot/src/parrot/auth/permission.py#PermissionContext",
+    "sym:packages/ai-parrot/src/parrot/auth/exceptions.py#AuthorizationRequired",
     "sym:packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py#PhysicalResources"
   ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Trusted nodes are tracked by `id(node)` within one pipeline pass — never by caller labels (spec §7).
-- Lineage must resolve through aliases, CTEs, subqueries, windows and derived expressions; `SELECT *` is expanded by `qualify` first.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `pbac.py` — *why*: AC3/AC4/AC19 fail-closed rules.
-2. Write `lineage.py` using `qualify` + `build_scope` — *why*: AC6 usage rights.
-3. Write the tests incl. the masked-inference matrix (WHERE/HAVING/JOIN/GROUP/ORDER/window/alias/CTE/derived).
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` (CREATE)
+
+```python
+"""Governance pipeline: PBAC, lineage, RLS push-down, masking, positive guard (spec §3 Module 6)."""
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py` (CREATE)
+
 ```python
 """Two-phase PBAC gate over DataPlanePolicyGuard — never reaches its fail-open branch."""
 from __future__ import annotations
@@ -156,7 +180,9 @@ class PbacGate:
     def __init__(self, guard: DataPlanePolicyGuard | None) -> None:
         """Probe evaluator availability at construction (navigator-auth importable, guard not None)."""
         self.guard = guard
-        self.available = guard is not None and importlib.util.find_spec("navigator_auth") is not None
+        self.available = False
+        # FILL IN: import exact environment AND evaluator modules safely; catch
+        # ImportError/ModuleNotFoundError, require configured guard/evaluator.
         self.logger = logging.getLogger(__name__)
 
     async def authorize_manifest(self, ctx: PermissionContext | None, model: LoadedModel) -> PhysicalResources:
@@ -184,7 +210,10 @@ def resources_from_ast(tree: exp.Expression, driver: str) -> PhysicalResources:
     return PhysicalResources(driver=driver, tables=tables)
 ```
 
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
 ### `packages/ai-parrot-semantic/src/parrot/semantic/governance/lineage.py` (CREATE)
+
 ```python
 """Column-usage lineage: projection rights ≠ usage rights; unresolved lineage fails closed."""
 from __future__ import annotations
@@ -222,84 +251,108 @@ def enforce_usage_rights(uses: list[ColumnUse], policy: ModelPolicy, roles: froz
     #   (resolve_column_uses must accept them) — nodes injected by RLS/masking are trusted by identity only
     raise NotImplementedError
 ```
-**Why**: spec §3 M6 skeleton; the `ColumnUse` context literal set is fixed.
 
-### `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` (CREATE)
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_pbac.py` (CREATE)
+
 ```python
-"""Governance pipeline: PBAC, lineage, RLS push-down, masking, positive guard (spec §3 Module 6)."""
+"""Regression contract: Fail-closed PBAC and full column lineage (M6a)."""
+from pathlib import Path
+import pytest
+
+
+def test_manifest_and_exact_evaluator_failure(tmp_path: Path) -> None:
+    """Verify manifest and exact evaluator failure."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_cte_alias_physical_resources(tmp_path: Path) -> None:
+    """Verify cte alias physical resources."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_sensitive_usage_lineage_matrix(tmp_path: Path) -> None:
+    """Verify sensitive usage lineage matrix."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
 ```
 
-### FILL IN checklist
-- [ ] `PbacGate.authorize` error codes — bounded by AC3/AC4/AC19.
-- [ ] CTE exclusion in `resources_from_ast`.
-- [ ] `resolve_column_uses` — bounded by AC6 (fail closed).
-- [ ] `enforce_usage_rights` + trusted-node handling (by `id()` only).
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
+### `packages/ai-parrot-semantic/tests/test_lineage.py` (CREATE)
+
+```python
+"""Regression contract: Fail-closed PBAC and full column lineage (M6a)."""
+from pathlib import Path
+import pytest
+
+
+def test_manifest_and_exact_evaluator_failure(tmp_path: Path) -> None:
+    """Verify manifest and exact evaluator failure."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_cte_alias_physical_resources(tmp_path: Path) -> None:
+    """Verify cte alias physical resources."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_sensitive_usage_lineage_matrix(tmp_path: Path) -> None:
+    """Verify sensitive usage lineage matrix."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/governance/lineage.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_pbac.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_lineage.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] `test_pbac_gate_fail_closed`, `test_pbac_denied_table_blocks_sql`, `test_lineage_masked_column_inference` pass.
-- [ ] `authorize_source` is never called with `ctx=None` (assert on the guard double) (AC3).
-
----
+- [ ] Implement PbacGate and resources_from_ast; require context and probe exact navigator_auth.abac.policies.environment/evaluator modules, not only the root package.
+- [ ] Authorize the declared manifest before compilation and require every physical table after qualification to be in that manifest. Resolve CTE aliases to base resources, not fictitious physical tables.
+- [ ] Implement ColumnUse, resolve_column_uses and enforce_usage_rights through aliases/CTEs/subqueries/window/derived expressions. Deny unresolved lineage and any ungranted usage of hidden/masked columns.
+- [ ] Define governance package marker. Nodes trusted by pipeline identity must have strong references for the full pass; caller labels are never trusted.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
 
 - `pytest packages/ai-parrot-semantic/tests/test_pbac.py -q`
 - `pytest packages/ai-parrot-semantic/tests/test_lineage.py -q`
 
----
-
 ## Test Specification
 
-```python
-# packages/ai-parrot-semantic/tests/test_pbac.py
-import pytest
-from parrot.semantic.governance.pbac import PbacGate
-from parrot.semantic.errors import SemanticAccessError
-from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
-
-
-async def test_pbac_gate_fail_closed(allow_all_guard, pctx_factory):
-    res = PhysicalResources(driver="duckdb", tables={"duckdb:sales.orders"})
-    with pytest.raises(SemanticAccessError):
-        await PbacGate(allow_all_guard).authorize(None, res, governed=True)
-    allow_all_guard.authorize_source.assert_not_called()
-    with pytest.raises(SemanticAccessError):
-        await PbacGate(None).authorize(pctx_factory(), res, governed=True)
-    await PbacGate(None).authorize(None, res, governed=False)   # ungoverned passes
-    # FILL IN: navigator_auth missing (monkeypatch importlib.util.find_spec) -> unavailable -> deny
-
-# FILL IN: test_pbac_denied_table_blocks_sql (deny_table_guard("dim.customers")) in test_pbac.py;
-#          test_lineage_masked_column_inference matrix in test_lineage.py
-```
-
----
+- `test_manifest_and_exact_evaluator_failure`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_cte_alias_physical_resources`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_sensitive_usage_lineage_matrix`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4469 — Governance: PBAC gate and column-usage lineage (M6a)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4469 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4469` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

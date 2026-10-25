@@ -1,66 +1,73 @@
-# TASK-4468: Native fallback compiler (M5)
+# TASK-4468: Native single-table compiler and async compile entry (M5a)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
-**Priority**: medium
-**Estimated effort**: L (4-8h)
-**Depends-on**: TASK-4467
+**Priority**: high
+**Estimated effort**: M (2–4h)
+**Depends-on**: TASK-4467, TASK-4475
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 5 + Non-Goals: compile the v1 subset (simple aggregations, dimensions, DATE_TRUNC grains, declared one-to-many joins, filter tree, order/limit/offset) directly to a sqlglot AST, with row-for-row parity against sidemantic on DuckDB (AC11).
-
----
+Spec rev 0.4, §3 M5; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py`: `NATIVE_AGGREGATIONS`, `NativeCompiler` (`compile`, `_grain_expr`).
-- Many-to-many (fan-out) joins and non-subset metric types → `SemanticValidationError`.
-- Write `test_native_compiler.py` (subset + parity + postgres/bigquery snapshots for the native engine).
+- Create sole NativeCompiler and engines.compile; no engine field, dispatch, plugin protocol or parity oracle. Compile via asyncio.to_thread; cache hits skip compilation only.
+- Compile single-table aggregates, dimensions including dimensions-only DISTINCT, grains, typed WHERE/HAVING filter trees, ordering and pagination. Enforce the closed subset and no database access.
+- Fix contains wildcard escaping for backslash/percent/underscore using dialect-valid AST generation; do not embed user SQL. Close issue:46e8f6219bf5 only after literal wildcard regression evidence.
+- Advanced joins/filtered measures/derived metrics extend this compiler in a dependent task; this task must reject unsupported forms explicitly. Add three-dialect single-table snapshots and DuckDB row oracle.
+- Use an unambiguous canonical JSON tuple for CompiledQuery.cache_key (model digest, policy digest, canonical query, dialect, compiler version, connection id), so CompileCache.put can index model_digest without another parameter.
 
-**NOT in scope**: symmetric aggregates, cumulative/time-comparison metrics (spec Non-Goals); editing `engines/__init__.py` (its lazy import already targets this module).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` | CREATE | native sqlglot compiler |
-| `packages/ai-parrot-semantic/tests/test_native_compiler.py` | CREATE | subset + parity tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_native_compiler.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from sqlglot import exp                                              # sqlglot 30.23.0
-from parrot.semantic.loader import LoadedModel                      # TASK-4467
-from parrot.semantic.models import SemanticQuery, CompiledQuery, Grain   # TASK-4464
-from parrot.semantic.errors import SemanticValidationError          # TASK-4464
+from ..cache import CompileCache
+from ..errors import SemanticValidationError
+from ..loader import LoadedModel
+from ..models import SemanticQuery, CompiledQuery
+from ..models import SemanticQuery, CompiledQuery, Grain
+from .native import NativeCompiler
+from __future__ import annotations
+from pathlib import Path
+from sqlglot import exp
+import asyncio
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
-```python
-# TASK-4467 — parrot/semantic/engines/__init__.py calls: NativeCompiler(model).compile(query, dialect) under asyncio.to_thread
-# TASK-4467 — LoadedModel.layer holds the sidemantic model objects; read metric/dimension DEFINITIONS only (no compile)
-```
+
+No existing project symbol is extended; consume only dependency-created satellite contracts and the installed libraries below.
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b))
+- TASK-4475: consumes packages/ai-parrot-semantic/src/parrot/semantic/execution.py, packages/ai-parrot-semantic/src/parrot/semantic/cache.py (Execution bridge and pre-governance compile cache (M9a))
 
 ### Does NOT Exist
-- ~~`exp.DateTrunc(this=..., unit='month')` accepting a bare str in every dialect~~ — pass `unit=exp.Var(this=grain.upper())` and check rendering per dialect in tests.
-- ~~A relationship cardinality API in core~~ — cardinalities come from the sidemantic model objects (names confirmed in TASK-4467's Completion Note).
 
----
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -68,6 +75,10 @@ from parrot.semantic.errors import SemanticValidationError          # TASK-4464
 {
   "schema_version": 1,
   "targets": [
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py",
+      "action": "CREATE"
+    },
     {
       "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py",
       "action": "CREATE"
@@ -81,136 +92,133 @@ from parrot.semantic.errors import SemanticValidationError          # TASK-4464
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Read TASK-4467's Completion Note for the confirmed sidemantic model-object attribute names before starting.
-- WHERE gets dimension leaves; HAVING gets metric leaves (M2 already rejects mixed groups).
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Read the spike notes — *why*: metric/relationship definitions come from sidemantic objects.
-2. Build the select: projections, joins, group by, where/having, order, limit/offset — *why*: AC11 subset.
-3. Reject fan-out — *why*: only sidemantic handles many-to-many in v1.
-4. Write parity tests against `engines.compile` with `engine: sidemantic` on DuckDB.
 
-### `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` (CREATE)
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py` (CREATE)
+
 ```python
-"""Native fallback compiler: v1 subset straight to a sqlglot AST (spec §3 Module 5)."""
+"""Single native compiler entry point; caches contain pre-governance output only."""
 from __future__ import annotations
-
-import logging
-
-from sqlglot import exp
-
-from ..errors import SemanticValidationError
+import asyncio
+from ..cache import CompileCache
 from ..loader import LoadedModel
-from ..models import CompiledQuery, Grain, SemanticQuery
+from ..models import SemanticQuery, CompiledQuery
+from .native import NativeCompiler
 
-NATIVE_AGGREGATIONS = ("sum", "count", "count_distinct", "avg", "min", "max")
-
-
-class NativeCompiler:
-    """Compile a SemanticQuery against one LoadedModel without sidemantic's compiler."""
-
-    def __init__(self, model: LoadedModel) -> None:
-        self.model = model
-        self.logger = logging.getLogger(__name__)
-
-    def compile(self, query: SemanticQuery, dialect: str) -> CompiledQuery:
-        """Build exp.Select; raise SemanticValidationError for unsupported metrics or many-to-many joins."""
-        # FILL IN: validate_against(member kinds); aggregation map (count_distinct -> exp.Count(distinct)),
-        #   dimensions + _grain_expr for time dimensions, joins only along declared one-to-many paths
-        #   (anything else -> SemanticValidationError("fan_out")), WHERE (dimension leaves) / HAVING (metric
-        #   leaves) with typed literals, GROUP BY, ORDER BY, LIMIT/OFFSET; render .sql(dialect=dialect)
-        raise NotImplementedError
-
-    def _grain_expr(self, column: exp.Column, grain: Grain) -> exp.Expression:
-        """exp.DateTrunc(unit=grain)."""
-        return exp.DateTrunc(this=column, unit=exp.Var(this=grain.upper()))
-```
-
-### FILL IN checklist
-- [ ] `NativeCompiler.compile` — bounded by the v1 subset (spec §2 Non-Goals) and AC11.
-
----
-
-## Acceptance Criteria
-
-- [ ] `test_native_compiler_subset` and `test_native_vs_sidemantic_parity` pass (AC11).
-- [ ] Many-to-many on a native model raises `SemanticValidationError` (AC11).
-- [ ] Native postgres/bigquery snapshots added and passing (AC18).
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_native_compiler.py -q`
-
----
-
-## Test Specification
-
-```python
-# packages/ai-parrot-semantic/tests/test_native_compiler.py
-import pytest
-from ._models import models_dir, loaded_models, duckdb_warehouse  # noqa: F401
-from parrot.semantic.engines.native import NativeCompiler
-from parrot.semantic.models import SemanticQuery
-
-
-def test_native_compiler_subset(loaded_models):
-    cq = NativeCompiler(loaded_models["orders"]).compile(
-        SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]), "duckdb")
-    assert "GROUP BY" in cq.sql.upper()
-    # FILL IN: grains, 1:N join, many-to-many -> SemanticValidationError
-
-
-async def test_native_vs_sidemantic_parity(loaded_models, duckdb_warehouse):
-    # FILL IN: compile with both engines, execute both on duckdb_warehouse (duckdb.connect), compare sorted rows
+async def compile(query: SemanticQuery, model: LoadedModel, dialect: str, *,
+                  cache: CompileCache | None = None) -> CompiledQuery:
+    """Compile under to_thread, or return immutable pre-governance cache output."""
+    # FILL IN: canonical versioned key, cache lookup/put and await asyncio.to_thread;
+    # model digest invalidation must work and no subject data may enter the cache.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` (CREATE)
+
+```python
+"""Sole native SQL AST compiler; no warehouse connection or engine dispatch."""
+from __future__ import annotations
+from sqlglot import exp
+from ..loader import LoadedModel
+from ..models import SemanticQuery, CompiledQuery, Grain
+from ..errors import SemanticValidationError
+NATIVE_AGGREGATIONS = ("sum", "count", "count_distinct", "avg", "min", "max")
+
+class NativeCompiler:
+    """Compile the closed semantic grammar to deterministic dialect SQL."""
+    def __init__(self, model: LoadedModel) -> None:
+        self.model = model
+    def compile(self, query: SemanticQuery, dialect: str) -> CompiledQuery:
+        """Build SELECT with typed filters, physical provenance and deterministic keys."""
+        # FILL IN: single-table subset, dimensions-only DISTINCT, WHERE/HAVING,
+        # order/limit/offset and LIKE escaping; reject advanced forms until extension.
+        ...
+    def _grain_expr(self, column: exp.Column, grain: Grain) -> exp.Expression:
+        """Return a DATE_TRUNC expression for the requested grain."""
+        return exp.DateTrunc(this=column, unit=exp.Var(this=grain.upper()))
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_native_compiler.py` (CREATE)
+
+```python
+"""Regression contract: Native single-table compiler and async compile entry (M5a)."""
+from pathlib import Path
+import pytest
+
+
+def test_single_table_dialect_sql_and_rows(tmp_path: Path) -> None:
+    """Verify single table dialect sql and rows."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_literal_like_wildcards(tmp_path: Path) -> None:
+    """Verify literal like wildcards."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_cache_key_and_no_database_at_compile(tmp_path: Path) -> None:
+    """Verify cache key and no database at compile."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_native_compiler.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Create sole NativeCompiler and engines.compile; no engine field, dispatch, plugin protocol or parity oracle. Compile via asyncio.to_thread; cache hits skip compilation only.
+- [ ] Compile single-table aggregates, dimensions including dimensions-only DISTINCT, grains, typed WHERE/HAVING filter trees, ordering and pagination. Enforce the closed subset and no database access.
+- [ ] Fix contains wildcard escaping for backslash/percent/underscore using dialect-valid AST generation; do not embed user SQL. Close issue:46e8f6219bf5 only after literal wildcard regression evidence.
+- [ ] Advanced joins/filtered measures/derived metrics extend this compiler in a dependent task; this task must reject unsupported forms explicitly. Add three-dialect single-table snapshots and DuckDB row oracle.
+- [ ] Use an unambiguous canonical JSON tuple for CompiledQuery.cache_key (model digest, policy digest, canonical query, dialect, compiler version, connection id), so CompileCache.put can index model_digest without another parameter.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_native_compiler.py -q`
+
+## Test Specification
+
+- `test_single_table_dialect_sql_and_rows`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_literal_like_wildcards`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_cache_key_and_no_database_at_compile`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4468 — Native fallback compiler (M5)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4468 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4468` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

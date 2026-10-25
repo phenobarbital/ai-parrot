@@ -1,64 +1,66 @@
-# TASK-4473: Role catalog and saved queries (M7)
+# TASK-4473: Authorized catalog and saved-query expansion (M7)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: medium
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4467
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 7 + AC19: the role-filtered view the LLM sees; member-right checks on every referenced member (incl. filters/order/dimension values) with ≤3 suggestions among ALLOWED members; saved-query expansion before compile; a governed model exposes nothing without an authorized subject.
-
----
+Spec rev 0.4, §3 M7; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py`: `RoleCatalog` (`visible_members`, `check_query_rights`, `expand_saved_query`, `search`).
-- Write `test_catalog.py`.
+- Implement RoleCatalog visible_members/check_query_rights/expand_saved_query/search. Require authorized subject before catalog exposure; filter denied models instead of failing the entire multi-model listing.
+- Check every selected/filter/order/time member plus derived dependencies; suggestions must come only from allowed members. Preserve projected masking rules.
+- Expand a saved query into the same model before rights validation; unknown name denies clearly. No hidden member names or descriptions in search/suggestions.
 
-**NOT in scope**: PBAC manifest authorization (the toolkit passes `authorized=` after calling `PbacGate.authorize_manifest`, TASK-4477).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py` | CREATE | role-filtered catalog |
-| `packages/ai-parrot-semantic/tests/test_catalog.py` | CREATE | catalog tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_catalog.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
+from .errors import SemanticAccessError, SemanticValidationError
+from .loader import LoadedModel
+from .models import ModelMember, SemanticQuery
+from __future__ import annotations
+from pathlib import Path
 import difflib
-from parrot.semantic.loader import LoadedModel                     # TASK-4467
-from parrot.semantic.models import SemanticQuery, ModelMember      # TASK-4464
-from parrot.semantic.errors import SemanticAccessError, SemanticValidationError   # TASK-4464
+import logging
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
-```python
-# no core signature used
-```
+
+No existing project symbol is extended; consume only dependency-created satellite contracts and the installed libraries below.
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4467: consumes packages/ai-parrot-semantic/src/parrot/semantic/loader.py (Clean-room model loader, graph scoping and fixtures (M4b))
 
 ### Does NOT Exist
-- ~~Suggestions drawn from all members~~ — only from members the subject may see (never leak hidden names).
-- ~~`RoleCatalog.durable()`~~ — the spec text places `durable` near M7 by layout only; it belongs to `SemanticAuditLedger` (TASK-4474).
 
----
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -79,32 +81,24 @@ from parrot.semantic.errors import SemanticAccessError, SemanticValidationError 
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Suggestions: top-3 by `difflib.SequenceMatcher(None, a, b).ratio()` among allowed members (spec §3 delegation table).
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `RoleCatalog` per the skeleton — *why*: AC19.
-2. Write tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py` (CREATE)
+
 ```python
 """Role-filtered catalog, member-right checks and saved-query expansion (spec §3 Module 7)."""
 from __future__ import annotations
@@ -150,73 +144,69 @@ class RoleCatalog:
         ranked = sorted(allowed, key=lambda a: difflib.SequenceMatcher(None, name, a).ratio(), reverse=True)
         return ranked[:3]
 ```
-**Why**: spec §3 M7 skeleton; `search` gains keyword-only `authorized` so governed models stay invisible (AC19) — record as a deviation.
 
-### FILL IN checklist
-- [ ] `visible_members` — bounded by AC19.
-- [ ] `check_query_rights` — bounded by AC19 + spec M7.
-- [ ] `expand_saved_query`.
-- [ ] `search`.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
-
-## Acceptance Criteria
-
-- [ ] `test_catalog_role_filtering_and_suggestions` and `test_saved_query_expansion` pass.
-- [ ] A governed model with `authorized=False` returns `[]` from `visible_members` and nothing from `search` (AC19).
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_catalog.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_catalog.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_catalog.py
-from ._models import models_dir, loaded_models  # noqa: F401
-from parrot.semantic.catalog import RoleCatalog
+"""Regression contract: Authorized catalog and saved-query expansion (M7)."""
+from pathlib import Path
+import pytest
 
 
-def test_catalog_role_filtering_and_suggestions(loaded_models):
-    cat = RoleCatalog(loaded_models)
-    assert cat.visible_members("orders", frozenset({"analyst"}), authorized=False) == []
-    # FILL IN: authorized analyst sees only granted members; unknown "revenu" -> suggestions ["revenue", ...] (<=3)
+def test_catalog_denied_models_and_safe_suggestions(tmp_path: Path) -> None:
+    """Verify catalog denied models and safe suggestions."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
 
 
-def test_saved_query_expansion(loaded_models):
-    # FILL IN: saved_query="monthly_revenue" expands; unknown name -> SemanticValidationError
+def test_all_referenced_members_checked(tmp_path: Path) -> None:
+    """Verify all referenced members checked."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_saved_query_same_model_expansion(tmp_path: Path) -> None:
+    """Verify saved query same model expansion."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_catalog.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Implement RoleCatalog visible_members/check_query_rights/expand_saved_query/search. Require authorized subject before catalog exposure; filter denied models instead of failing the entire multi-model listing.
+- [ ] Check every selected/filter/order/time member plus derived dependencies; suggestions must come only from allowed members. Preserve projected masking rules.
+- [ ] Expand a saved query into the same model before rights validation; unknown name denies clearly. No hidden member names or descriptions in search/suggestions.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_catalog.py -q`
+
+## Test Specification
+
+- `test_catalog_denied_models_and_safe_suggestions`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_all_referenced_members_checked`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_saved_query_same_model_expansion`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4473 — Role catalog and saved queries (M7)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4473 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4473` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
