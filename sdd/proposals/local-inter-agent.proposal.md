@@ -1,6 +1,6 @@
 ---
 id: FEAT-747
-title: Local inter-agent protocol — performatives, LLM-free gating, capability directory, blackboard and local carriers (sister of FEAT-746)
+title: Roost — local inter-agent sub-protocol (performatives, LLM-free gating, capability directory, blackboard, local carriers) over the Squawk envelope (FEAT-746)
 slug: local-inter-agent
 type: feature
 mode: enrichment
@@ -14,7 +14,7 @@ source:
 overall_confidence: medium
 base_branch: dev
 projects: [ai-parrot, ai-parrot-integrations, ai-parrot-server]
-tags: [inter-agent, performatives, agent-registry, blackboard, matrix, eventbus, working-memory]
+tags: [roost, squawk, inter-agent, performatives, agent-registry, blackboard, matrix, eventbus, working-memory]
 research_state: sdd/state/FEAT-747/
 depends_on: [FEAT-746]
 created: 2026-10-25
@@ -22,12 +22,12 @@ updated: 2026-10-26
 resolved_questions: 9
 ---
 
-# FEAT-747 — Local inter-agent protocol (sister of FEAT-746)
+# FEAT-747 — Roost: local inter-agent sub-protocol over Squawk (FEAT-746)
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `file: artifacts/interagent/Brainstorm Local Inter-Agent Protocol.md`
-> **Parent**: [FEAT-746 inter-agent-protocol](inter-agent-protocol.proposal.md) — envelope, handles, blob store, catalog tools, policy gate (reused, never redefined here)
+> **Parent**: [FEAT-746 inter-agent-protocol (Squawk)](inter-agent-protocol.proposal.md) — envelope, handles, blob store, catalog tools, policy gate (reused, never redefined here)
 > **Audit**: [`sdd/state/FEAT-747/`](../state/FEAT-747/)
 
 ---
@@ -289,7 +289,7 @@ Distribution: **13** high, **4** medium, **0** low.
 
 - [x] **Contract Net bid scoring?** — *Resolved*: fixed default with a pluggable override. The harness scores `propose(cost, time, confidence)` with fixed weights from contract annotations; a channel may register a scoring strategy; the requester's LLM wakes only when the rule cannot decide.
 
-- [x] **Name: shared with FEAT-746 or a family name with two profiles?** — *Resolved*: two names, shared envelope. FEAT-747 gets its own protocol name for the performative layer and references FEAT-746's envelope by name; naming the two is a spec-time task.
+- [x] **Name: shared with FEAT-746 or a family name with two profiles?** — *Resolved*: two names, shared envelope. The FEAT-746 protocol is **Squawk** (parrot-to-parrot call across a boundary); this sub-protocol is **Roost** (where parrots of one network gather: performatives, gating, directory, blackboard, local carriers). Roost messages ride the Squawk envelope and reference it by name.
 
 ### Unresolved (defer to spec / implementation)
 
