@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-25T21:27:32Z",
-  "completed_at": null,
+  "completed_at": "2026-10-25T21:34:33+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "manual",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-741",
       "feature": "fixgroup-01a13d714596",
       "spec": "sdd/specs/fixgroup-01a13d714596.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "sole task in this feature, no shared-file collisions",
       "assigned_to": "agent:claude",
       "started_at": "2026-10-25T21:34:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4698-fixgroup-01a13d714596.md"
+      "completed_at": "2026-10-25T21:34:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4698-fixgroup-01a13d714596.md",
+      "verification": "verified"
     }
   ]
 }
