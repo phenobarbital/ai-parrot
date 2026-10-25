@@ -215,4 +215,5 @@ Use `$sdd-start TASK-4472` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: opus (native), 1 attempt. Dialect derived from driver; ctx None + RLS rules denied; RLS output re-qualified; members computed for root model only.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
