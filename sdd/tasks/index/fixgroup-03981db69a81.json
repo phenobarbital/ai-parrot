@@ -38,14 +38,14 @@
       "feature_id": "FEAT-743",
       "feature": "fixgroup-03981db69a81",
       "spec": "sdd/specs/fixgroup-03981db69a81.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task in this feature; no other task to conflict with",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-25T22:10:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4699-fixgroup-03981db69a81.md"
     }
