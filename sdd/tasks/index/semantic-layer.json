@@ -98,7 +98,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -110,8 +110,9 @@
       "parallelism_notes": "TASK-4465: consumes packages/ai-parrot-semantic/src/parrot/semantic/policy.py (Model policy validation and role grants (M3)); TASK-4466: consumes packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json, packages/ai-parrot-semantic/src/parrot/semantic/ossie.py (Vendored Ossie 0.1.1 validation (M4 import boundary)); TASK-4705: consumes packages/ai-parrot-semantic/src/parrot/semantic/model.py (Frozen semantic graph and structural validation (M4a))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4467-semantic-loader-sidemantic-engine.md"
+      "completed_at": "2026-10-25T23:39:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4467-semantic-loader-sidemantic-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4468",
