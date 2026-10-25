@@ -89,4 +89,18 @@ The full-directory run in the Acceptance Criteria is checked by hand before clos
 
 ## Completion Note
 
-_(filled on close)_
+**Completed**: 2026-10-25 — agent:claude (via /sdd-fix), commit `2fa8691e0`.
+
+- `tests/unit/reel/` (`not e2e and not real_llm and not integration`): 211 passed in 34 s
+  (before: 1 failed, 14 errors). Validation command (veo + orchestration files) passes.
+- The ledger issue's slowness did not reproduce, with or without network
+  (`bwrap --unshare-net`): ~30 s for the whole directory. The timeout guard is the
+  issue's suggested prevention, not a fix for an observed hang.
+- Deviation from Scope: the test-only Veo profile lives in the new `conftest.py`
+  as the shared fixture `veo_test_profile` (used by both test files) instead of
+  being built inside `test_reel_veo.py`. Its shape is the pre-FEAT-719 Developer-API
+  Veo profile (`person_generation_values=["allow_adult", "allow_all", "dont_allow"]`),
+  which the wire-config assertions require.
+- AC3 checked: all 211 collected items carry `timeout(120)`; a probe test sleeping
+  5 s under a 2 s limit failed with `Timeout (>2.0s) from pytest-timeout` (probe removed).
+- No `src/` file changed.

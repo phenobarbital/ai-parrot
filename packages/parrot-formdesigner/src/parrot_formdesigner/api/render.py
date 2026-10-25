@@ -211,10 +211,9 @@ async def handle_render(request: web.Request) -> web.Response:
     if raw_section is not None:
         if format_key != "teams":
             return web.json_response({"error": "section_index is only supported for format 'teams'"}, status=400)
-        try:
-            section_index = int(raw_section)
-        except ValueError:
+        if not (raw_section.isascii() and raw_section.isdecimal()):
             return web.json_response({"error": "section_index must be an integer"}, status=400)
+        section_index = int(raw_section)
         if not 0 <= section_index < len(form.sections):
             return web.json_response({"error": "section_index out of range"}, status=400)
     try:

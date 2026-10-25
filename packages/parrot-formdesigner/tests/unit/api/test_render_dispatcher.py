@@ -621,3 +621,14 @@ async def test_whole_form_render_unchanged_without_query(aiohttp_client, three_s
     meta = (await resp.json())["metadata"]
     assert "section_index" not in meta
     assert "total_sections" not in meta
+
+
+async def test_section_render_rejects_non_ascii_decimal_index(aiohttp_client, three_section_form):
+    """Only plain ASCII digits are accepted: no whitespace, signs, or unicode decimals."""
+    client = await _teams_app(aiohttp_client, three_section_form)
+    for bad in (" 1", "+1", "١", "1_0"):
+        resp = await client.get(_url(three_section_form), params={"section_index": bad})
+        assert resp.status == 400, repr(bad)
+        assert "must be an integer" in (await resp.json())["error"]
+    ok = await client.get(_url(three_section_form), params={"section_index": "1"})
+    assert ok.status == 200
