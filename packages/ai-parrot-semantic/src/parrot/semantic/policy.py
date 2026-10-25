@@ -101,11 +101,7 @@ class ModelPolicy(BaseModel):
         mask = self.masks.get(column)
         if mask is not None:
             return bool(roles.intersection(mask.usage_roles))
-        return any(
-            grant.usage == "*" or column in grant.usage
-            for role, grant in self.roles.items()
-            if role in roles
-        )
+        return any(grant.usage == "*" or column in grant.usage for role, grant in self.roles.items() if role in roles)
 
     def mask_for(self, roles: frozenset[str], column: str) -> MaskRule | None:
         """Return the applicable projection mask, if the roles lack exemption."""
@@ -182,7 +178,9 @@ def _validate_roles(policy: ModelPolicy, member_kinds: dict[str, str]) -> None:
                 continue
             unknown = sorted(set(grant_members).difference(member_kinds))
             if unknown:
-                raise SemanticPolicyError("unknown_member", "Role grant references an unknown member", details={"members": unknown})
+                raise SemanticPolicyError(
+                    "unknown_member", "Role grant references an unknown member", details={"members": unknown}
+                )
         metric_members = set() if grant.metrics == "*" else set(grant.metrics)
         dimension_members = set() if grant.dimensions == "*" else set(grant.dimensions)
         invalid_metrics = sorted(member for member in metric_members if member_kinds[member] != "metric")
@@ -202,15 +200,15 @@ def _validate_masks(policy: ModelPolicy, member_names: set[str]) -> None:
         if not separator or not table or not _IDENT.fullmatch(member):
             raise SemanticPolicyError("invalid_policy", "Mask keys must be table.column")
         if member not in member_names:
-            raise SemanticPolicyError("unknown_member", "Mask references an unknown member", details={"members": [member]})
+            raise SemanticPolicyError(
+                "unknown_member", "Mask references an unknown member", details={"members": [member]}
+            )
         for role in (*rule.projection_roles, *rule.usage_roles):
             if not _IDENT.fullmatch(role):
                 raise SemanticPolicyError("invalid_policy", "Mask role names must be identifiers")
 
 
-def _validate_saved_queries(
-    policy: ModelPolicy, member_kinds: dict[str, str], time_dimensions: set[str]
-) -> None:
+def _validate_saved_queries(policy: ModelPolicy, member_kinds: dict[str, str], time_dimensions: set[str]) -> None:
     """Validate fully expanded saved queries against enclosing members."""
     for saved_query in policy.saved_queries:
         try:
