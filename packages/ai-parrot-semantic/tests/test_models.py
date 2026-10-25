@@ -1,4 +1,5 @@
 """Regression contract: query/result contracts and trusted identity model (M2)."""
+
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,10 @@ def test_dimensions_only_and_saved_query_exclusivity(tmp_path: Path) -> None:
     """Allow dimension lookups and reject explicit saved-query clauses."""
     del tmp_path
     query = SemanticQuery(model="sales", dimensions=["region"])
-    assert query.canonical_json() == '{"dimensions":["region"],"filters":null,"limit":null,"metrics":[],"model":"sales","offset":0,"order_by":[],"saved_query":null,"time_dimensions":[],"timezone":null}'
+    assert (
+        query.canonical_json()
+        == '{"dimensions":["region"],"filters":null,"limit":null,"metrics":[],"model":"sales","offset":0,"order_by":[],"saved_query":null,"time_dimensions":[],"timezone":null}'
+    )
     with pytest.raises(ValidationError, match="saved_query is exclusive"):
         SemanticQuery(model="sales", saved_query="regional_sales", dimensions=["region"])
     with pytest.raises(ValidationError, match="requires at least one"):
@@ -71,7 +75,9 @@ def test_identity_snapshot_and_provenance_fields(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="must not be blank"):
         SemanticRequestIdentity(ctx=context, channel="http", agent_id=" ", session_id="session-1")
 
-    compiled = CompiledQuery(sql="SELECT 1", dialect="postgres", members=("revenue",), tables=("public.sales",), cache_key="k")
+    compiled = CompiledQuery(
+        sql="SELECT 1", dialect="postgres", members=("revenue",), tables=("public.sales",), cache_key="k"
+    )
     governed = GovernedQuery(
         sql="SELECT 1",
         dialect="postgres",

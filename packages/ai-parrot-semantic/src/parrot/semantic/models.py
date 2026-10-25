@@ -1,4 +1,5 @@
 """Semantic query and result contracts."""
+
 from __future__ import annotations
 
 import json
@@ -152,12 +153,16 @@ class SemanticQuery(BaseModel):
         referenced_members.update(filter_members)
         unknown = sorted(member for member in referenced_members if member not in member_kinds)
         if unknown:
-            raise SemanticValidationError("unknown_member", "Query references an unknown member", details={"members": unknown})
+            raise SemanticValidationError(
+                "unknown_member", "Query references an unknown member", details={"members": unknown}
+            )
 
         for dimension in self.time_dimensions:
             if dimension.name not in time_dimensions:
                 raise SemanticValidationError(
-                    "invalid_time_dimension", "Query references a non-time dimension as time", details={"member": dimension.name}
+                    "invalid_time_dimension",
+                    "Query references a non-time dimension as time",
+                    details={"member": dimension.name},
                 )
             if dimension.grain is None:
                 raise SemanticValidationError("missing_grain", "Time dimensions require a grain")

@@ -1,4 +1,5 @@
 """Trusted semantic identity; runtime binding is added separately."""
+
 from __future__ import annotations
 
 from copy import deepcopy
