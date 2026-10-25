@@ -60,11 +60,15 @@ def test_all_referenced_members_checked(tmp_path: Path) -> None:
     roles = frozenset({"r"})
     catalog.check_query_rights(SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]), roles)
     denied = [
-        SemanticQuery(model="orders", metrics=["revenue"], time_dimensions=[TimeDimension(name="order_date", grain="day")]),
+        SemanticQuery(
+            model="orders", metrics=["revenue"], time_dimensions=[TimeDimension(name="order_date", grain="day")]
+        ),
         SemanticQuery(
             model="orders",
             metrics=["revenue"],
-            filters=FilterGroup(op="and", items=[FilterGroup(op="or", items=[FilterLeaf(member="order_date", op="is_set")])]),
+            filters=FilterGroup(
+                op="and", items=[FilterGroup(op="or", items=[FilterLeaf(member="order_date", op="is_set")])]
+            ),
         ),
         SemanticQuery(model="orders", metrics=["revenue"], order_by=[OrderBy(member="order_date", grain="day")]),
     ]
@@ -74,8 +78,13 @@ def test_all_referenced_members_checked(tmp_path: Path) -> None:
         assert exc.value.details["member"] == "order_date"
     # Derived dependency: granted derived metric over a non-granted metric is denied.
     model = orders.model.model_copy(
-        update={"metrics": (*orders.model.metrics, Metric(name="aov", sql="orders.secret / orders.order_count"),
-                            Metric(name="secret", agg="count"))}
+        update={
+            "metrics": (
+                *orders.model.metrics,
+                Metric(name="aov", sql="orders.secret / orders.order_count"),
+                Metric(name="secret", agg="count"),
+            )
+        }
     )
     policy = policy.model_copy(update={"roles": {"r": RoleGrant(metrics=["aov", "order_count"])}})
     catalog.models["orders"] = orders.model_copy(update={"model": model, "policy": policy})
