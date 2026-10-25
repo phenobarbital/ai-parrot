@@ -363,4 +363,4 @@ Use `$sdd-start TASK-4464` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Implemented by seat gpt-5.6-terra (codex, 1 attempt, 123s); engine fidelity gate clean; merge-tier validation green (test_models, 3 passed). Closed via close_task.sh because it was merged in a parallel chunk with TASK-4708 (finalize_task requires HEAD == implementation SHA). A stale finalize journal from the discarded rev 0.2 run was moved aside.

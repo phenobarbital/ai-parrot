@@ -35,7 +35,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "TASK-4463: consumes packages/ai-parrot-semantic/pyproject.toml, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (MIT satellite packaging, workspace and CI (M1))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4464-semantic-query-contracts.md"
+      "completed_at": "2026-10-25T23:21:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4464-semantic-query-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4465",
