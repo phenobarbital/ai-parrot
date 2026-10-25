@@ -184,6 +184,9 @@ PACKAGES: list[Package] = [
             [("packages/ai-parrot-openlit-bridge/pyproject.toml", "toml")],
             "packages/ai-parrot-openlit-bridge",
             aliases=["openlit-bridge", "openlit"]),
+    Package("ai-parrot-semantic",
+            [("packages/ai-parrot-semantic/src/parrot/semantic/version.py", "python")],
+            "packages/ai-parrot-semantic", aliases=["semantic"]),
 ]
 
 CORE = PACKAGES[0]
