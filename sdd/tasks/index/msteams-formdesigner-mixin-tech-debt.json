@@ -11,9 +11,9 @@
       "id": "TASK-4703",
       "feature_id": "FEAT-745",
       "feature": "msteams-formdesigner-mixin-tech-debt",
-      "title": "MS Teams FormDesigner mixin hardening — wizard fall-through, tenant-map validation, cleanup",
+      "title": "MS Teams FormDesigner mixin hardening \u2014 wizard fall-through, tenant-map validation, cleanup",
       "file": "sdd/tasks/active/TASK-4703-msteams-formdesigner-mixin-hardening.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "depends_on": [],
       "discovered_from": [
@@ -21,7 +21,8 @@
         "issue:ec85bd42970e",
         "issue:cc81b5eee807",
         "issue:337359a3ec81"
-      ]
+      ],
+      "started_at": "2026-10-25T22:16:45+00:00"
     },
     {
       "id": "TASK-4704",
@@ -29,12 +30,13 @@
       "feature": "msteams-formdesigner-mixin-tech-debt",
       "title": "Strict ASCII-decimal parsing for render section_index",
       "file": "sdd/tasks/active/TASK-4704-render-section-index-ascii.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "depends_on": [],
       "discovered_from": [
         "issue:cc81b5eee807"
-      ]
+      ],
+      "started_at": "2026-10-25T22:16:45+00:00"
     }
   ]
 }
