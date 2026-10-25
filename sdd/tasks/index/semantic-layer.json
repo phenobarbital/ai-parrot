@@ -284,7 +284,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -294,8 +294,9 @@
       "parallelism_notes": "TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2)); consumer evidence: SemanticRequestIdentity and SemanticResultError for owner-bound claims",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4476-semantic-result-handles.md"
+      "completed_at": "2026-10-25T23:33:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4476-semantic-result-handles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4477",
