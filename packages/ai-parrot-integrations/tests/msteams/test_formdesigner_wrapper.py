@@ -1,5 +1,6 @@
 """Routing tests for the FEAT-551 `_formdesigner` branch (skips without botbuilder, like test_a2ui_submit.py)."""
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -140,3 +141,135 @@ async def test_teams_wrapper_malformed_envelope_is_text_reply():
 
         # continue_dialog should NOT be called
         dialog_context.continue_dialog.assert_not_awaited()
+
+
+class _FDAgent:
+    """Minimal FormDesigner mixin stand-in with observable request-local state."""
+
+    formdesigner_serving = True
+
+    def __init__(self, handled: bool = True) -> None:
+        self.handled = handled
+        self.events: list[str] = []
+        self.handle_formdesigner_card = AsyncMock(side_effect=self._handle_card)
+        self.apply_teams_config = MagicMock()
+        self.bind_teams_identity = MagicMock()
+        self.getform_handler = AsyncMock()
+        self.listforms_handler = AsyncMock()
+        self.flush_formdesigner_cards = AsyncMock(side_effect=self._flush)
+
+    async def _handle_card(self, *args) -> bool:
+        return self.handled
+
+    def teams_commands(self) -> dict[str, AsyncMock]:
+        return {"getform": self.getform_handler, "listforms": self.listforms_handler}
+
+    @asynccontextmanager
+    async def formdesigner_turn(self, turn_context):
+        self.events.append("enter")
+        try:
+            yield None
+        finally:
+            self.events.append("exit")
+
+    async def _flush(self, turn_context) -> None:
+        self.events.append("flush")
+
+
+async def test_wrapper_falls_back_without_mixin():
+    """A non-mixin agent keeps the legacy envelope route."""
+    w = _wrapper()
+    w.agent = MagicMock()
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    w._handle_formdesigner_submit.assert_awaited_once_with(context, {"_formdesigner": {}})
+
+
+async def test_wrapper_asks_mixin_first():
+    """A mixin that handles an envelope prevents the legacy POST branch."""
+    w = _wrapper()
+    agent = _FDAgent(handled=True)
+    w.agent = agent
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    agent.handle_formdesigner_card.assert_awaited_once_with(context, {"_formdesigner": {}})
+    w._handle_formdesigner_submit.assert_not_awaited()
+
+
+async def test_mixin_declines_unknown_envelope_falls_back():
+    """A declined envelope continues into the legacy submission handler."""
+    w = _wrapper()
+    agent = _FDAgent(handled=False)
+    w.agent = agent
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    agent.handle_formdesigner_card.assert_awaited_once()
+    w._handle_formdesigner_submit.assert_awaited_once_with(context, {"_formdesigner": {}})
+
+
+async def test_picker_action_routed_to_mixin():
+    """Picker actions are handled by the mixin before dialog processing."""
+    w = _wrapper()
+    agent = _FDAgent(handled=True)
+    w.agent = agent
+    context = _ctx({"_formdesigner_action": "get_form"})
+    dialog_context = MagicMock(continue_dialog=AsyncMock())
+
+    await w._handle_card_submission(context, dialog_context)
+
+    agent.handle_formdesigner_card.assert_awaited_once_with(context, {"_formdesigner_action": "get_form"})
+    dialog_context.continue_dialog.assert_not_awaited()
+
+
+async def test_wire_registers_commands_and_binds_store():
+    """Wiring uses the wrapper-owned config and session store exactly once."""
+    w = _wrapper()
+    agent = _FDAgent()
+    w.agent = agent
+    w.config.name = "forms-agent"
+    w._session_store = object()
+
+    w._wire_formdesigner_agent()
+
+    agent.apply_teams_config.assert_called_once_with(w.config)
+    agent.bind_teams_identity.assert_called_once_with(w._session_store)
+    assert w._command_router.register.call_args_list == [
+        (("getform", agent.getform_handler),),
+        (("listforms", agent.listforms_handler),),
+    ]
+
+
+async def test_toolkit_voice_and_card_continuations():
+    """A2UI and voice process-message calls bind and flush only successful turns."""
+    w = _wrapper()
+    agent = _FDAgent()
+    w.agent = agent
+    successful = SimpleNamespace(has_error=False, raw_response=None, response_text="done", needs_form=False)
+    failed = SimpleNamespace(has_error=True, error="failed")
+    w.form_orchestrator.process_message = AsyncMock(side_effect=[successful, failed])
+    w._effective_user_id = AsyncMock(return_value="user-1")
+    w.dialogs = MagicMock(create_context=AsyncMock(return_value=MagicMock()))
+    w.send_typing = AsyncMock()
+
+    await w._handle_card_submission(_ctx({"a2ui_action": {"name": "save"}}), MagicMock())
+    await w._process_transcribed_message(_ctx({}), "voice note", "conv-1")
+
+    assert agent.events == ["enter", "flush", "exit", "enter", "exit"]
+    agent.flush_formdesigner_cards.assert_awaited_once()
+
+
+async def test_magicmock_agent_is_not_treated_as_mixin():
+    """MagicMock's synthetic attributes cannot activate FormDesigner seams."""
+    w = _wrapper()
+    w.agent = MagicMock()
+
+    assert w._formdesigner_agent() is None
