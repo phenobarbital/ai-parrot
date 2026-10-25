@@ -15,9 +15,7 @@ def _identity(
     *, user_id: str = "user-1", tenant_id: str = "tenant-1", agent_id: str = "agent-1", session_id: str = "session-1"
 ) -> SemanticRequestIdentity:
     """Build a trusted, isolated semantic identity for a claim test."""
-    context = PermissionContext(
-        session=UserSession(user_id, tenant_id, frozenset({"analyst"}), {"region": "EU"})
-    )
+    context = PermissionContext(session=UserSession(user_id, tenant_id, frozenset({"analyst"}), {"region": "EU"}))
     return SemanticRequestIdentity(ctx=context, channel="agent", agent_id=agent_id, session_id=session_id)
 
 
