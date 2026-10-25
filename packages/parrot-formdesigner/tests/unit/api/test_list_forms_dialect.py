@@ -150,9 +150,7 @@ async def test_include_surface_filters_unauthorized_forms(client: _HandlerClient
     assert all("warnings" not in form for form in body["forms"])
 
 
-async def test_include_surface_honors_on_schema_loaded(
-    client: _HandlerClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_include_surface_honors_on_schema_loaded(client: _HandlerClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """onSchemaLoaded overrides reach the inlined descriptor as a multi-envelope message list."""
 
     async def resolve(*_args, **_kwargs):

@@ -13,10 +13,10 @@ import pytest
 from parrot_formdesigner.services.registry import FormStorage
 from parrot_formdesigner.services.storage import PostgresFormStorage
 
-
 # ---------------------------------------------------------------------------
 # asyncpg stubs — duck-typed doubles
 # ---------------------------------------------------------------------------
+
 
 class _StubRow(dict):
     """asyncpg.Record duck-type — supports row['key'] indexing."""
@@ -104,6 +104,7 @@ class _StubPool:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def storage_factory():
     """Factory fixture that creates a PostgresFormStorage with stubbed pool.
@@ -111,8 +112,10 @@ def storage_factory():
     Returns:
         Callable accepting a list of rows and returning a configured storage.
     """
+
     def make(rows: list[_StubRow]) -> PostgresFormStorage:
         return PostgresFormStorage(pool=_StubPool(rows))
+
     return make
 
 
@@ -120,32 +123,39 @@ def storage_factory():
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_list_forms_localized_title_flattens(storage_factory) -> None:
     """Localized title dict should be flattened to the first value."""
-    rows = [_StubRow(
-        form_uid="uid-f-1",
-        form_id="f-1",
-        version="1.0",
-        schema_json=json.dumps({
-            "title": {"en": "Hello", "es": "Hola"},
-            "description": "Daily report",
-        }),
-        tenant=None,
-        created_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
-        updated_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
-    )]
+    rows = [
+        _StubRow(
+            form_uid="uid-f-1",
+            form_id="f-1",
+            version="1.0",
+            schema_json=json.dumps(
+                {
+                    "title": {"en": "Hello", "es": "Hola"},
+                    "description": "Daily report",
+                }
+            ),
+            tenant=None,
+            created_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
+        )
+    ]
     out = await storage_factory(rows).list_forms()
-    assert out == [{
-        "form_uid": "uid-f-1",
-        "form_id": "f-1",
-        "version": "1.0",
-        "title": "Hello",
-        "description": "Daily report",
-        "tenant": None,
-        "dialect": "json_schema",
-        "created_at": "2026-04-12T10:31:00+00:00",
-    }]
+    assert out == [
+        {
+            "form_uid": "uid-f-1",
+            "form_id": "f-1",
+            "version": "1.0",
+            "title": "Hello",
+            "description": "Daily report",
+            "tenant": None,
+            "dialect": "json_schema",
+            "created_at": "2026-04-12T10:31:00+00:00",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -179,15 +189,17 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
 @pytest.mark.asyncio
 async def test_list_forms_created_at_none_defensive(storage_factory) -> None:
     """NULL created_at in the row (defensive case) should produce None."""
-    rows = [_StubRow(
-        form_uid="uid-x",
-        form_id="x",
-        version="1.0",
-        schema_json=json.dumps({"title": "X"}),
-        tenant=None,
-        created_at=None,
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )]
+    rows = [
+        _StubRow(
+            form_uid="uid-x",
+            form_id="x",
+            version="1.0",
+            schema_json=json.dumps({"title": "X"}),
+            tenant=None,
+            created_at=None,
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+    ]
     out = await storage_factory(rows).list_forms()
     assert out[0]["created_at"] is None
 
@@ -195,15 +207,17 @@ async def test_list_forms_created_at_none_defensive(storage_factory) -> None:
 @pytest.mark.asyncio
 async def test_list_forms_malformed_schema_json(storage_factory) -> None:
     """Malformed schema_json should fall back to title='', description=None."""
-    rows = [_StubRow(
-        form_uid="uid-bad",
-        form_id="bad",
-        version="1.0",
-        schema_json="not-json",
-        tenant=None,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )]
+    rows = [
+        _StubRow(
+            form_uid="uid-bad",
+            form_id="bad",
+            version="1.0",
+            schema_json="not-json",
+            tenant=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+    ]
     out = await storage_factory(rows).list_forms()
     assert out[0]["title"] == ""
     assert out[0]["description"] is None

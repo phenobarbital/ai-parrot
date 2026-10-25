@@ -91,9 +91,7 @@ async def test_conflict_then_overwrite_bumps_version(handler: FormAPIHandler, su
     """The same surface conflicts unless overwrite is explicitly requested, and overwrite requires membership."""
     first = await handler.create_form(_request(surface))
     conflict = await handler.create_form(_request(surface))
-    overwritten = await handler.create_form(
-        _request(surface, overwrite="true", session={"programs": [TENANT]})
-    )
+    overwritten = await handler.create_form(_request(surface, overwrite="true", session={"programs": [TENANT]}))
 
     assert first.status == 201
     assert conflict.status == 409
