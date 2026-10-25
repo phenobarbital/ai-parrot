@@ -59,9 +59,7 @@ def test_aggregate_inputs_and_derived_cycles(tmp_path: Path) -> None:
                         Metric(
                             name="filtered",
                             agg="count",
-                            filter=FilterGroup(
-                                op="and", items=[FilterLeaf(member="orders", op="gt", values=[0])]
-                            ),
+                            filter=FilterGroup(op="and", items=[FilterLeaf(member="orders", op="gt", values=[0])]),
                         ),
                     ),
                 )

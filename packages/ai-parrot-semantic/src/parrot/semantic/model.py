@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict
 from .errors import SemanticPolicyError
 from .models import FilterGroup, Grain
 
-
 _ARITHMETIC_OPERATORS = (ast.Add, ast.Sub, ast.Mult, ast.Div)
 _TYPE_PARAMETERS = re.compile(r"\s*\([^)]*\)\s*$")
 _TYPE_ALIASES = {
@@ -298,11 +297,7 @@ def _validate_unambiguous_paths(adjacency: dict[str, set[str]]) -> None:
 
 def _validate_derived_metrics(models: dict[str, SemanticModel], adjacency: dict[str, set[str]]) -> None:
     """Validate derived expressions and walk their dependencies deterministically."""
-    nodes = {
-        f"{model.name}.{metric.name}": metric
-        for model in models.values()
-        for metric in model.metrics
-    }
+    nodes = {f"{model.name}.{metric.name}": metric for model in models.values() for metric in model.metrics}
     dependencies: dict[str, tuple[str, ...]] = {}
     for qualified_name in sorted(nodes):
         metric = nodes[qualified_name]
@@ -364,7 +359,9 @@ def _derived_references(expression: str, metric_name: str) -> set[str]:
             walk(node.right)
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             walk(node.operand)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        elif (
+            isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
+        ):
             return
         elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
             references.add(f"{node.value.id}.{node.attr}")
