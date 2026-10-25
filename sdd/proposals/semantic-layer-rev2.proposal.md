@@ -5,7 +5,7 @@ title: "Semantic layer rev2 — native sqlglot compiler as the only engine, side
 slug: semantic-layer-rev2
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -188,7 +188,7 @@ Branch state: base `05d62af07` (2026-10-19), 1,379 `dev` commits behind, no PR, 
 | C14 | Two open ledger issues attach to salvaged toolkit/catalog code | F014 | high | ledger list read |
 | C15 | "No joins in v1" conflicts with the branch's working one-to-many subset | F001, F007 | high | both texts read; resolution is U4 |
 
-Distribution: **12** high, **3** medium, **0** low. Overall = min(median high, localization high, scope medium) = **medium** — the facts are firm; the task-graph shape depends on U2/U4/U6.
+Distribution: **12** high, **3** medium, **0** low. Overall = min(median high, localization high, scope medium) = **medium** — the facts are firm; U2/U4/U6 were resolved on 2026-10-25, leaving only U3/U5 open; confidence stays medium because the Rust phase and BSL recording are still unscoped.
 
 ---
 
@@ -198,33 +198,33 @@ Distribution: **12** high, **3** medium, **0** low. Overall = min(median high, l
 
 - [x] **Is the FEAT-704 branch a merge base or a salvage source?** — *Resolved (owner, 2026-10-25)*: "we can discard that branch because was focused on sidemantic, that is discarded, or re-used the code no related to sidemantic" → salvage source only.
   *Resolves claims*: C1, C4
+- [x] **U2 — Stay inside FEAT-704 (spec rev 0.3; TASK-4467/4468 re-scoped; TASK-4482 dropped) or supersede with a new FEAT id?** — *Resolved (owner, 2026-10-25)*: amend FEAT-704 (spec rev 0.3; TASK-4467/4468 re-scoped; TASK-4482 dropped); no new FEAT id.
+  *Resolves claims*: C2
+- [x] **U4 — v1 join scope: keep the branch's declared one-to-many joins with fan-out rejection, or enforce "sin joins en v1" (single-table models)?** — *Resolved (owner, 2026-10-25)*: keep the branch's declared one-to-many joins with fan-out rejection in v1.
+  *Resolves claims*: C5, C15
+- [x] **U6 — Who creates `packages/ai-parrot-semantic/` first, FEAT-713 or FEAT-704 rev2, and does the other "extend" with a byte-level check?** — *Resolved (owner, 2026-10-25)*: FEAT-704 rev2 creates `packages/ai-parrot-semantic/`; FEAT-713 M1 becomes "extend" (resolves 713 Q10).
+  *Resolves claims*: C8
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **U2 — Stay inside FEAT-704 (spec rev 0.3; TASK-4467/4468 re-scoped; TASK-4482 dropped) or supersede with a new FEAT id?** — *Owner*: Jesus
-  *Blocks claims*: C2 · *Plausible answers*: a) amend FEAT-704 (recommended — 20 TASK ids reserved, spec ~80% unchanged) · b) new FEAT superseding 704, 704 closed as abandoned
 - [ ] **U3 — Rust phase: own FEAT now or after the Python compiler ships? Crate inside the satellite (`packages/ai-parrot-semantic/rust/`, navrules style) or a separate distribution?** — *Owner*: Jesus
   *Blocks claims*: C10, C12 · *Plausible answers*: a) defer; rev2 fixes the IR shape and the `THIRD_PARTY.md` rule (recommended) · b) own FEAT now, crate inside the satellite · c) own FEAT now, separate distribution
-- [ ] **U4 — v1 join scope: keep the branch's declared one-to-many joins with fan-out rejection, or enforce "sin joins en v1" (single-table models)?** — *Owner*: Jesus
-  *Blocks claims*: C5, C15 · *Plausible answers*: a) keep one-to-many + fan-out rejection (recommended — already tested) · b) single-table only; joins wait for the BSL/Rust phase
 - [ ] **U5 — How is "BSL/Ibis reserved for the joins phase" recorded against the Ibis NO-GO?** — *Owner*: Jesus
   *Blocks claims*: C7 · *Plausible answers*: a) rev 0.3 note re-scoping the NO-GO to connections, compile-only re-evaluable by a later spec (recommended) · b) research text only, no repo commitment
-- [ ] **U6 — Who creates `packages/ai-parrot-semantic/` first, FEAT-713 or FEAT-704 rev2, and does the other "extend" with a byte-level check?** — *Owner*: Jesus
-  *Blocks claims*: C8 · *Plausible answers*: a) rev2 creates it (owns the generic layer); FEAT-713 M1 → "extend" · b) FEAT-713 creates it as written; rev2 M1 → "extend" (resolves 713 Q10)
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-704`** (amend `sdd/specs/semantic-layer.spec.md` to rev 0.3) — *Rationale*: the architectural fork is closed by the owner's 2026-10-21 decision block and the 2026-10-25 branch disposition; localization is high-confidence and 62% of the code exists; U2–U6 are spec-level scoping choices for §8, not alternatives to brainstorm.
+**`/sdd-spec FEAT-704`** (amend `sdd/specs/semantic-layer.spec.md` to rev 0.3) — *Rationale*: the architectural fork is closed by the owner's 2026-10-21 decision block and the 2026-10-25 branch disposition; localization is high-confidence and 62% of the code exists; U3/U5 are the only spec-level choices left for §8 (U2/U4/U6 resolved 2026-10-25), not alternatives to brainstorm.
 
-Suggested shape of the amendment: M1 skeleton (owner per U6) → M2/M3 contracts and policy (salvage) → M4 typed model + loader (new, clean-room) → M5 sole compiler + golden tests → M6–M11 salvage with import re-verification and the two ledger issues → M12 removed. Rust phase as a follow-up FEAT referencing this proposal §3.
+Suggested shape of the amendment: M1 skeleton (created by rev2, per U6) → M2/M3 contracts and policy (salvage) → M4 typed model + loader (new, clean-room) → M5 sole compiler + golden tests → M6–M11 salvage with import re-verification and the two ledger issues → M12 removed. Rust phase as a follow-up FEAT referencing this proposal §3.
 
 ### Alternatives
 
-- **`/sdd-brainstorm`** — only if U4 (single-table v1) or U3 (Rust now) is answered in a way that reopens the compiler design.
+- **`/sdd-brainstorm`** — only if U3 (Rust now) is answered in a way that reopens the compiler design (U4 kept one-to-many joins, so the compiler scope is settled).
 - **`/sdd-task`** — not applicable; this is a multi-module amendment.
-- **Manual review** — read `sdd/state/FEAT-704/rev2/findings/F004` and `F009` before deciding U2/U6; they quantify what the branch gives for free.
+- **Manual review** — `sdd/state/FEAT-704/rev2/findings/F004` and `F009` quantify what the branch gives for free (they grounded the U2/U6 answers).
 
 ---
 
@@ -251,7 +251,7 @@ Suggested shape of the amendment: M1 skeleton (owner per U6) → M2/M3 contracts
 
 **Gates**: autonomous run — plan and review gates were not presented; `approved_by_user: false` is recorded in `state.json`, and this document carries the Q&A as §5 Unresolved for `/sdd-spec` §8.
 
-**State directory**: kept under the existing `sdd/state/FEAT-704/` as `rev2/` because this proposal amends an approved spec whose TASK ids are already reserved; a new FEAT id is reserved by `/sdd-spec` only if U2 is answered "supersede".
+**State directory**: kept under the existing `sdd/state/FEAT-704/` as `rev2/` because this proposal amends an approved spec whose TASK ids are already reserved; U2 was answered "amend", so no new FEAT id is reserved.
 
 ---
 

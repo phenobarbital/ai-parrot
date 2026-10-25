@@ -3,7 +3,7 @@
   "feat_id": "FEAT-704",
   "feature_slug": "semantic-layer-rev2",
   "started_at": "2026-10-25T10:00:00Z",
-  "updated_at": "2026-10-25T11:45:00Z",
+  "updated_at": "2026-10-25T18:50:54+00:00",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -72,13 +72,13 @@
       "lint_iterations": 1
     },
     "qa": {
-      "status": "skipped",
+      "status": "partial",
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-10-25T18:50:54+00:00",
       "duration_seconds": null,
       "questions_total": 6,
-      "questions_answered": 1,
-      "skipped_reason": "autonomous run: U1 answered by the owner mid-run (branch = salvage only); U2–U6 carried as Unresolved in proposal §5 for /sdd-spec §8"
+      "questions_answered": 4,
+      "skipped_reason": "autonomous run: U1 answered mid-run; U2/U4/U6 answered by the owner on 2026-10-25 after the commit; U3/U5 still open for /sdd-spec §8"
     },
     "output": {
       "status": "completed",
