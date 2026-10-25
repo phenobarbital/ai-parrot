@@ -14,7 +14,7 @@ source:
 overall_confidence: medium
 base_branch: dev
 projects: [ai-parrot, ai-parrot-server]
-tags: [inter-agent, protocol, grpc, handles, policy-gate, a2a]
+tags: [inter-agent, protocol, capnproto, handles, policy-gate, a2a]
 research_state: sdd/state/FEAT-746/
 created: 2026-10-26
 updated: 2026-10-26
