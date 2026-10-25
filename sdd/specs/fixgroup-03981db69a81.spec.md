@@ -161,9 +161,12 @@ decisions remain (see §8 — none).
 - **Depends on**: `enforce_membership_unless_public`, `dispatch`,
   `FormEventAbort` (already imported at `handlers.py:21,37`),
   `self.schema_renderer`, `render_a2ui_schema` (already imported at
-  `handlers.py:120`). Needs one **new** import:
-  `TenantForbiddenError` from `..core.tenant_errors` (not currently
-  imported in this file — verified by grep, see §6 Does NOT Exist).
+  `handlers.py:120`). Needs `TenantForbiddenError` added to the existing
+  `from .tenant import (...)` tuple at `handlers.py:34-38` (not currently
+  imported in this file — verified by grep, see §6 Does NOT Exist; the
+  shim at `api/tenant.py` already re-exports it from `core/tenant_errors.py`,
+  so this is a one-name addition to an existing import, not a new import
+  line).
 - **Interface Skeleton**: no new interface — the existing `for descriptor
   in forms:` loop body in `list_forms` is rewritten per Edit Sites §6.
 
@@ -262,8 +265,15 @@ from ..core.tenant import (
     ...,
     enforce_membership_unless_public,
 )
-# handlers.py — NEW import needed (not currently in this file)
-from ..core.tenant_errors import TenantForbiddenError  # verified: core/tenant_errors.py:53 class TenantForbiddenError(web.HTTPForbidden)
+# handlers.py:34-38 — extend the EXISTING `from .tenant import (...)` tuple
+# (api/tenant.py is a compat re-export shim over core/tenant.py +
+# core/tenant_errors.py — verified: api/tenant.py re-exports TenantForbiddenError)
+from .tenant import (
+    TenantForbiddenError,
+    assert_body_tenant_matches,
+    declared_tenant,
+    enforce_membership_unless_public,
+)
 
 # storage.py:59 (already present)
 from ..core.schema import FormSchema
@@ -306,7 +316,7 @@ class FormDialect(str, Enum):
 | M3 producer | `FormDialect(raw_dialect).value` fallback | enum coercion | `core/schema.py:82` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`TenantForbiddenError` imported anywhere in `api/handlers.py`~~ — verified absent (`grep -n "TenantForbiddenError" api/handlers.py` returns no import, only `enforce_membership_unless_public` call sites). Must be imported fresh for M2's `except TenantForbiddenError` clause.
+- ~~`TenantForbiddenError` imported anywhere in `api/handlers.py`~~ — verified absent (`grep -n "TenantForbiddenError" api/handlers.py` returns no import, only `enforce_membership_unless_public` call sites). Must be added to the existing `from .tenant import (...)` tuple for M2's `except TenantForbiddenError` clause — NOT a new `from ..core.tenant_errors import ...` line (`..core.tenant_errors` is a valid module but this file imports tenant helpers exclusively through the `.tenant` compat shim; mixing both import styles for the same symbol family is inconsistent with the rest of this file).
 - ~~`FormStorage.list_forms()` returning a `"dialect"` key today~~ — verified absent; its `entry` dict only sets `form_uid, form_id, version, tenant, created_at, title, description`.
 - ~~A `tenant` kwarg on `render_a2ui_schema`~~ — its only kwargs are `locale` and `overrides`.
 
@@ -316,6 +326,7 @@ Verified against: `81ccf8e03` (origin/dev)
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `    enforce_membership_unless_public,` | `handlers.py:37` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `            if not overwrite:` | `handlers.py:1607` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `                except Exception as exc:  # noqa: BLE001 — one bad form must not 500 the list` | `handlers.py:1009` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `                        "created_at": row.get("created_at"),` | `handlers.py:987` | 1 |
