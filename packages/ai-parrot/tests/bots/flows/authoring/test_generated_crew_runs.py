@@ -30,10 +30,7 @@ from parrot.bots.flows.authoring.blueprint import (
 )
 from parrot.bots.flows.crew.crew import AgentCrew
 
-# tests/_crew_test_helpers.py lives at the tests-root, which is not a package
-# path segment for this module.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from _crew_test_helpers import DummyAgent, DummyTool  # noqa: E402
+from ...._crew_test_helpers import DummyAgent, DummyTool
 
 
 class _DefinitionAgent(DummyAgent):

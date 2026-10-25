@@ -24,7 +24,22 @@ from .persistence import FormPersistenceConfig
 from .relations import RelationSpec
 from .types import FieldType, LocalizedString
 from .llm_validation import LLMValidationConfig
+from .audit_trail import AuditTrailConfig
 from .voice import VoiceFormConfig
+from .public_access import PublicAccessConfig
+
+# FEAT-730 — field types that cannot serve as ``public_access.unique_key_field``.
+_NON_SCALAR_KEY_TYPES = frozenset(
+    {
+        FieldType.GROUP,
+        FieldType.ARRAY,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.SIGNATURE,
+    }
+)
 
 # Legal (field_type) sets for each (mode, cardinality) combination of
 # FormField.relation — spec §2 "Canonical combinations" table (FEAT-456).
@@ -62,6 +77,19 @@ class UnknownFieldsPolicy(str, Enum):
     DROP = "drop"  # discard silently (default — pre-FEAT-458 behaviour)
     KEEP = "keep"  # capture into FormSubmission.extra_data, subject to caps
     REJECT = "reject"  # fail the submission with 422
+
+
+class FormDialect(str, Enum):
+    """Wire dialect served by the form contract endpoints (FEAT-650).
+
+    ``JSON_SCHEMA`` keeps the legacy ``JsonSchemaRenderer`` body on
+    ``GET /forms/{uid}/schema``; ``A2UI`` serves the FEAT-544 ``createSurface``
+    envelope. ``GET /forms/{uid}`` ignores this flag — it always returns the
+    raw ``FormSchema``.
+    """
+
+    JSON_SCHEMA = "json_schema"
+    A2UI = "a2ui"
 
 
 class FormField(BaseModel):
@@ -439,6 +467,8 @@ class FormSchema(BaseModel):
         metadata: Declared contextual metadata fields captured on submission.
         voice: Optional typed voice-mode configuration block (FEAT-649).
         llm_validation: Optional LLM answer-plausibility block (FEAT-649).
+        audit_trail: Optional deterministic validation audit-trail block (FEAT-732);
+            ``None`` means the ``summary`` default.
         events: Optional lifecycle event bindings (FEAT-188). Maps each
             lifecycle event name (``onBeforeOpen``, ``onSchemaLoaded``,
             ``onBeforeSubmit``, ``onAfterSubmit``, ``onError``) to a
@@ -460,6 +490,9 @@ class FormSchema(BaseModel):
             schema does not declare (FEAT-458). Defaults to
             ``UnknownFieldsPolicy.DROP`` — discard silently, identical to
             pre-FEAT-458 behaviour.
+        dialect: Wire dialect served by the form contract endpoints (FEAT-650).
+            Defaults to ``FormDialect.JSON_SCHEMA`` to preserve the legacy
+            JSON Schema response body.
     """
 
     form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -485,10 +518,17 @@ class FormSchema(BaseModel):
     persistence: FormPersistenceConfig | None = None
     # FEAT-458 — Unknown-Field Capture
     unknown_fields: UnknownFieldsPolicy = UnknownFieldsPolicy.DROP
+    # FEAT-650 — A2UI dialect flag (default keeps every legacy consumer unchanged)
+    dialect: FormDialect = FormDialect.JSON_SCHEMA
     # FEAT-649 — typed voice-mode block (owner decision: typed, not meta).
     voice: VoiceFormConfig | None = None
     # FEAT-649 — LLM-assisted answer plausibility (all channels).
     llm_validation: LLMValidationConfig | None = None
+    # FEAT-732 — deterministic audit trail. SEPARATE from llm_validation on
+    # purpose: turning the LLM check off must never turn auditing off.
+    audit_trail: AuditTrailConfig | None = None
+    # FEAT-730 — public response controls (typed block, not meta).
+    public_access: PublicAccessConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.
@@ -581,6 +621,31 @@ class FormSchema(BaseModel):
                     f"'{entry.key}_ext')."
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_public_access(self) -> FormSchema:
+        """Validate ``public_access`` against the form (FEAT-730)."""
+        cfg = self.public_access
+        if cfg is None:
+            return self
+        key = cfg.unique_key_field
+        if key is not None:
+            matches = [f for f in self.iter_all_fields() if f.field_id == key]
+            if not matches:
+                raise ValueError(
+                    f"public_access.unique_key_field {key!r} does not match any field_id in the form"
+                )
+            if matches[0].field_type in _NON_SCALAR_KEY_TYPES:
+                raise ValueError(
+                    f"public_access.unique_key_field {key!r} must be a scalar field, "
+                    f"got {matches[0].field_type.value!r}"
+                )
+        if (cfg.max_responses is not None or key is not None) and self.persistence is not None:
+            raise ValueError(
+                "public_access.max_responses / unique_key_field cannot be combined with "
+                "persistence: counting is only atomic over FormSubmissionStorage"
+            )
         return self
 
     @model_validator(mode="after")

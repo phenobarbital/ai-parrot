@@ -83,8 +83,10 @@ from navigator_eventbus.lifecycle.global_registry import get_global_registry
 from parrot.observability.context import (
     current_agent_name,
     current_session_id,
+    current_tenant,
     current_user_id,
 )
+from parrot.observability.cost import get_shared_cost_calculator, last_call_cost
 
 # FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
 _BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
@@ -734,7 +736,7 @@ $backstory
         input_tokens: "Optional[int]" = None,
         output_tokens: "Optional[int]" = None,
         finish_reason: "Optional[str]" = None,
-    ) -> None:
+    ) -> "Optional[float]":
         """Emit ``AfterClientCallEvent`` for a successful call.
 
         Must NOT be called when :meth:`_emit_failed_call` was called.
@@ -747,7 +749,12 @@ $backstory
             input_tokens: Input token count (provider-dependent; may be ``None``).
             output_tokens: Output token count (provider-dependent; may be ``None``).
             finish_reason: Stop reason from the provider.
+
+        Returns:
+            The call cost in USD computed once for the event (FEAT-710), or
+            ``None`` when pricing is unavailable.
         """
+        cost_usd = self._compute_call_cost(client_name, model, input_tokens, output_tokens)
         event = AfterClientCallEvent(
             trace_context=tc,
             client_name=client_name,
@@ -764,6 +771,8 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
+            cost_usd=cost_usd,
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -777,6 +786,32 @@ $backstory
         # the event reaches MetricsSubscriber before the next line of the caller
         # executes.
         await self._forward_to_global_awaited(event)
+        last_call_cost.set(cost_usd)
+        return cost_usd
+
+    def _compute_call_cost(
+        self,
+        client_name: str,
+        model: "Optional[str]",
+        input_tokens: "Optional[int]",
+        output_tokens: "Optional[int]",
+    ) -> "Optional[float]":
+        """FEAT-710: one cost computation per call, with the shared calculator. Never raises."""
+        calc = get_shared_cost_calculator()
+        if calc is None:
+            return None
+        try:
+            from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
+
+            return calc.cost_usd(
+                provider=resolve_gen_ai_system(client_name),
+                model=model or "",
+                input_tokens=input_tokens or 0,
+                output_tokens=output_tokens or 0,
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break the call path
+            self.logger.debug("cost computation failed for %s/%s", client_name, model, exc_info=True)
+            return None
 
     async def _emit_failed_call(
         self,
@@ -813,6 +848,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         await self.events.emit(event)
         # AWAITED — same FEAT-548 Finding #2 rationale as _emit_after_call.

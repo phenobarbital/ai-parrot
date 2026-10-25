@@ -132,6 +132,8 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      when it says `rerun`, run in the background
      `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
      then `python -m scripts.sdd.test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
+     (always writes the file and exits 0; an unusable index renders a visible `## Tests — no data`
+     section rather than failing — issue:326c8c0da36c)
      (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: done`. The feature tier always re-runs fresh at the final HEAD, driven by the index's `test_contract`; the table has New red / Baseline red / Unknown columns and a `cached` line, and the PR is blocked only by new reds or unknowns; baseline reds are reported, not blocking; rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners
    - lint residuals and any missing review evidence
 7. Respect flags:
@@ -204,7 +206,8 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 12. Integrate:
     - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
     - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
-      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD")`) after `<N>/<total> tasks verified.`.
+      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD" 2>/dev/null)`) after `<N>/<total> tasks verified.`.
+      Guard any `--body-file "$TEST_REPORT_MD"` fallback with `[ -s "$TEST_REPORT_MD" ]`.
     - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan

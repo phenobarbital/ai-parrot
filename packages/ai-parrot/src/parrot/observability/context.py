@@ -24,6 +24,9 @@ Public surface:
     can scope its omission-store lookup without a bot reference. Bound
     *after* ``user_id``/``session_id`` are defaulted, so it is never set
     while the other two are still ``None``.
+  * ``current_tenant`` — module-level ``ContextVar[Optional[str]]`` with
+    default ``None``. FEAT-710: the server-resolved tenant of the current
+    invocation. ``parrot.skills.tenancy`` aliases this single tenant carrier.
   * ``agent_identity(name)`` — context-manager helper that does a token-based
     ``set()`` / ``reset()`` so nested scopes restore the prior value.
   * ``invocation_context(agent_name, user_id, session_id, memory_key_id)`` —
@@ -53,6 +56,7 @@ __all__ = [
     "current_user_id",
     "current_session_id",
     "current_memory_key_id",
+    "current_tenant",
     "agent_identity",
     "invocation_context",
     "current_run_id",
@@ -71,6 +75,11 @@ current_session_id: ContextVar[Optional[str]] = ContextVar("parrot_current_sessi
 #: ``bots/base.py``) so ``read_omitted_content`` never observes a session
 #: that is only partially scoped.
 current_memory_key_id: ContextVar[Optional[str]] = ContextVar("parrot_current_memory_key_id", default=None)
+
+#: FEAT-710 — server-resolved tenant of the current invocation (FEAT-707
+#: resolution), or None. The single tenant ContextVar of the codebase;
+#: ``parrot.skills.tenancy`` aliases it.
+current_tenant: ContextVar[Optional[str]] = ContextVar("parrot_current_tenant", default=None)
 
 
 @contextmanager

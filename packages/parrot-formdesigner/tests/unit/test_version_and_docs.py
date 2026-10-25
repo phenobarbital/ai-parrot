@@ -1,14 +1,19 @@
 """Unit tests for the FEAT-421 version bump and migration guide (TASK-2207)."""
 
+from importlib.metadata import version as dist_version
 from pathlib import Path
+
+from packaging.version import Version
 
 import parrot_formdesigner.version as v
 
 GUIDE = Path(__file__).parents[4] / "docs" / "migration" / "feat-421-forms-tenant-in-url.md"
 
 
-def test_version_bumped():
-    assert v.__version__ == "0.9.0"
+def test_version_bumped() -> None:
+    """The module version matches distribution metadata and is valid PEP 440."""
+    assert v.__version__ == dist_version("parrot-formdesigner")
+    assert str(Version(v.__version__)) == v.__version__
 
 
 def test_migration_guide_exists():

@@ -12,6 +12,7 @@ Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml
 # be imported without the optional ``aiogram`` (Telegram) dependency installed.
 from __future__ import annotations
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
@@ -74,6 +75,34 @@ def _build_jira_toolkit() -> Any:
         )
     except Exception:  # noqa: BLE001 - Jira is optional; never fatal for the Slack bot
         logging.getLogger(__name__).warning("JiraToolkit not available; Slack dev-loop identity resolution degraded.")
+        return None
+
+
+def _build_jira_credential_sink(app: Any) -> Any:
+    """Build the Identity Vault sink for a ``JiraOAuthManager``, else ``None``.
+
+    The durable owner of a Jira grant is navigator-auth's Identity Vault
+    (FEAT-735); the sink is what keeps it in step with the Redis hot cache on
+    every refresh. It needs the ``authdb`` pool, so a deployment without one
+    simply gets today's Redis-only behaviour.
+
+    Returns:
+        An ``IdentityVaultCredentialSink``, or ``None`` when ``app['authdb']``
+        is absent or the server package is not installed.
+    """
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_credential_sink import (  # noqa: PLC0415
+            IdentityVaultCredentialSink,
+        )
+
+        return IdentityVaultCredentialSink(db_pool=db_pool)
+    except Exception:  # noqa: BLE001 - the durable copy is optional, never fatal
+        logging.getLogger(__name__).warning(
+            "IdentityVaultCredentialSink unavailable; Jira refreshes will update Redis only."
+        )
         return None
 
 
@@ -340,6 +369,7 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_sink=_build_jira_credential_sink(app),
                     )
                     self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -898,6 +928,7 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_sink=_build_jira_credential_sink(app),
                     )
                     self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -1042,6 +1073,16 @@ class IntegrationBotManager:
                 await wrapper.close_voice_transcriber()
             except Exception as e:
                 self.logger.error("Error closing voice transcriber for MS Teams bot '%s': %s", name, e)
+            # FEAT-734: the agent's own FormDesigner client (TeamsFormDesignerMixin.aclose)
+            try:
+                closer = getattr(getattr(wrapper, "agent", None), "aclose", None)
+                if closer is not None:
+                    result = closer()
+                    if inspect.isawaitable(result):
+                        self.logger.debug("Closing agent FormDesigner client for MS Teams bot '%s'", name)
+                        await result
+            except Exception as e:
+                self.logger.error("Error closing agent resources for MS Teams bot '%s': %s", name, e)
 
         # FEAT-555: stop dev-loop services first (cancels state tails only — children keep running by decision).
         for name, service in self._devloop_services.items():

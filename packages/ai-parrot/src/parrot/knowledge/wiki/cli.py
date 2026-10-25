@@ -3550,6 +3550,26 @@ def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
         raise SystemExit(2) from exc
 
 
+@ledger.command("retract-feedback")
+@click.argument("feedback_ids", nargs=-1, required=True)
+@click.option("--reason", required=True, help="Why the recorded correction is wrong (kept in the audit trail).")
+@click.option("--actor", default="agent:cli", help="Actor withdrawing the correction, e.g. human:jesus.")
+def ledger_retract_feedback(feedback_ids: tuple[str, ...], reason: str, actor: str) -> None:
+    """Withdraw misattributed coder feedback (`coder-feedback:<digest>` ids) from model lessons."""
+    from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackStore
+
+    store = CoderFeedbackStore.from_root(Path.cwd())
+    missing = 0
+    for feedback_id in feedback_ids:
+        if _run(store.retract(feedback_id, reason, actor)):
+            click.echo(f"Retracted {feedback_id}")
+        else:
+            click.echo(f"Could not retract {feedback_id} (unknown or already retracted)")
+            missing += 1
+    if missing:
+        raise SystemExit(1)
+
+
 @ledger.command("context")
 @click.argument("file_paths", nargs=-1, required=True)
 @click.option("--max-tokens", default=3000, help="Token budget for context.")
@@ -3635,7 +3655,16 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
         if stage and (report.added > 0 or report.created):
-            subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3691,7 +3720,16 @@ def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | No
                 str(SHARED_LOG_REL_PATH),
                 *(str(path.relative_to(root)) for path in report.archives_touched),
             ]
-            subprocess.run(["git", "-C", str(root), "add", "--", *staged_paths], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", *staged_paths],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:

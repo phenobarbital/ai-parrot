@@ -1,11 +1,11 @@
 """Unit tests for JiraPostAuthProvider (FEAT-108 / TASK-758)."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.integrations.core.auth.post_auth import PostAuthProvider
 from parrot.integrations.telegram.post_auth_jira import JiraPostAuthProvider
-
 
 # ----------------------------------------------------------------------
 # Fixtures
@@ -72,9 +72,7 @@ def mock_identity_service():
 
 @pytest.fixture
 def provider(mock_oauth_manager, mock_identity_service, mock_vault_sync):
-    return JiraPostAuthProvider(
-        mock_oauth_manager, mock_identity_service, mock_vault_sync
-    )
+    return JiraPostAuthProvider(mock_oauth_manager, mock_identity_service, mock_vault_sync)
 
 
 @pytest.fixture
@@ -94,34 +92,20 @@ def session():
 
 
 class TestBuildAuthUrl:
-    async def test_returns_atlassian_url(
-        self, provider, session, mock_oauth_manager
-    ):
-        url = await provider.build_auth_url(
-            session, MagicMock(), "https://example.com"
-        )
+    async def test_returns_atlassian_url(self, provider, session, mock_oauth_manager):
+        url = await provider.build_auth_url(session, MagicMock(), "https://example.com")
         assert url.startswith("https://auth.atlassian.com/authorize")
         mock_oauth_manager.create_authorization_url.assert_awaited_once()
 
-    async def test_passes_telegram_channel_and_id(
-        self, provider, session, mock_oauth_manager
-    ):
-        await provider.build_auth_url(
-            session, MagicMock(), "https://example.com"
-        )
+    async def test_passes_telegram_channel_and_id(self, provider, session, mock_oauth_manager):
+        await provider.build_auth_url(session, MagicMock(), "https://example.com")
         kwargs = mock_oauth_manager.create_authorization_url.call_args.kwargs
         assert kwargs["channel"] == "telegram"
         assert kwargs["user_id"] == "123456"
 
-    async def test_embeds_primary_auth_in_extra_state(
-        self, provider, session, mock_oauth_manager
-    ):
-        await provider.build_auth_url(
-            session, MagicMock(), "https://example.com"
-        )
-        extra = mock_oauth_manager.create_authorization_url.call_args.kwargs[
-            "extra_state"
-        ]
+    async def test_embeds_primary_auth_in_extra_state(self, provider, session, mock_oauth_manager):
+        await provider.build_auth_url(session, MagicMock(), "https://example.com")
+        extra = mock_oauth_manager.create_authorization_url.call_args.kwargs["extra_state"]
         assert extra["flow"] == "combined"
         assert extra["telegram_id"] == 123456
         assert extra["telegram_username"] == "jdoe"
@@ -137,36 +121,38 @@ class TestBuildAuthUrl:
 
 
 class TestHandleResultSuccess:
-    async def test_returns_true_on_clean_exchange(
-        self, provider, session, mock_vault_sync, mock_identity_service
-    ):
+    async def test_returns_true_on_clean_exchange(self, provider, session, mock_vault_sync, mock_identity_service):
         data = {"code": "auth-code", "state": "nonce-123"}
-        result = await provider.handle_result(
-            data, session, {"user_id": "nav-user-1"}
-        )
+        result = await provider.handle_result(data, session, {"user_id": "nav-user-1"})
         assert result is True
-        mock_vault_sync.store_tokens.assert_awaited_once()
+        # FEAT-735: the credential is written by JiraOAuthManager's sink, not
+        # here — this provider only writes the two non-secret mapping rows.
+        mock_vault_sync.store_tokens.assert_not_awaited()
         assert mock_identity_service.upsert_identity.await_count == 2
 
-    async def test_vault_called_with_jira_provider_and_flat_keys(
-        self, provider, session, mock_vault_sync
-    ):
-        await provider.handle_result(
-            {"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"}
-        )
-        kwargs = mock_vault_sync.store_tokens.call_args.kwargs
-        assert kwargs["nav_user_id"] == "nav-user-1"
-        assert kwargs["provider"] == "jira"
-        tokens = kwargs["tokens"]
-        assert tokens["access_token"] == "at-123"
-        assert tokens["refresh_token"] == "rt-456"
-        assert tokens["cloud_id"] == "cloud-abc"
-        assert tokens["site_url"] == "https://site.atlassian.net"
-        assert tokens["account_id"] == "acc-789"
+    async def test_jira_not_written_to_session_vault(self, provider, session, mock_vault_sync):
+        """FEAT-735 / TASK-4671 — the Session Vault no longer stores Jira.
 
-    async def test_identity_upsert_creates_telegram_and_jira_records(
-        self, provider, session, mock_identity_service
-    ):
+        It used to receive flat ``jira:access_token`` / ``refresh_token`` /
+        ``cloud_id`` / ``site_url`` / ``account_id`` keys here. That copy had
+        exactly one reader, the integrations badge, which TASK-4670 moved onto
+        the Identity Vault; writing it again would just be a second copy to
+        drift.
+        """
+        await provider.handle_result({"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"})
+        mock_vault_sync.store_tokens.assert_not_awaited()
+
+    async def test_post_auth_jira_upsert_carries_no_token(self, provider, session, mock_identity_service):
+        """The sink is the single writer of the sealed credential."""
+        await provider.handle_result({"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"})
+        calls = mock_identity_service.upsert_identity.await_args_list
+        jira_call = next(c for c in calls if c.kwargs["auth_provider"] == "jira")
+        assert "token" not in jira_call.kwargs
+        # ...but the non-secret mapping row is still written in full.
+        assert jira_call.kwargs["provider_user_id"] == "acc-789"
+        assert jira_call.kwargs["auth_data"]["cloud_id"] == "cloud-abc"
+
+    async def test_identity_upsert_creates_telegram_and_jira_records(self, provider, session, mock_identity_service):
         await provider.handle_result(
             {"code": "c", "state": "s"},
             session,
@@ -180,81 +166,50 @@ class TestHandleResultSuccess:
         providers = [c.kwargs["auth_provider"] for c in calls]
         assert set(providers) == {"telegram", "jira"}
 
-        tg_call = next(c for c in calls
-                       if c.kwargs["auth_provider"] == "telegram")
+        tg_call = next(c for c in calls if c.kwargs["auth_provider"] == "telegram")
         assert tg_call.kwargs["auth_data"]["telegram_id"] == 123456
         assert tg_call.kwargs["auth_data"]["username"] == "jdoe"
 
-        jira_call = next(c for c in calls
-                         if c.kwargs["auth_provider"] == "jira")
+        jira_call = next(c for c in calls if c.kwargs["auth_provider"] == "jira")
         assert jira_call.kwargs["auth_data"]["account_id"] == "acc-789"
         assert jira_call.kwargs["auth_data"]["cloud_id"] == "cloud-abc"
         assert jira_call.kwargs["auth_data"]["site_url"] == "https://site.atlassian.net"
 
-    async def test_falls_back_to_extra_state_user_id(
-        self, provider, session, mock_vault_sync
-    ):
+    async def test_falls_back_to_extra_state_user_id(self, provider, session, mock_identity_service):
         session.nav_user_id = None  # Force fallback
-        await provider.handle_result(
-            {"code": "c", "state": "s"}, session, {}  # No primary_auth_data
-        )
+        await provider.handle_result({"code": "c", "state": "s"}, session, {})  # No primary_auth_data
         # Should still succeed using the extra.nav_user_id in the state payload.
-        kwargs = mock_vault_sync.store_tokens.call_args.kwargs
-        assert kwargs["nav_user_id"] == "nav-user-1"
+        # Asserted on the identity rows now that the vault write is gone.
+        calls = mock_identity_service.upsert_identity.await_args_list
+        assert {c.kwargs["nav_user_id"] for c in calls} == {"nav-user-1"}
 
 
 class TestHandleResultFailure:
-    async def test_missing_code_returns_false(
-        self, provider, session
-    ):
-        result = await provider.handle_result(
-            {"state": "s"}, session, {}
-        )
+    async def test_missing_code_returns_false(self, provider, session):
+        result = await provider.handle_result({"state": "s"}, session, {})
         assert result is False
 
-    async def test_missing_state_returns_false(
-        self, provider, session
-    ):
-        result = await provider.handle_result(
-            {"code": "c"}, session, {}
-        )
+    async def test_missing_state_returns_false(self, provider, session):
+        result = await provider.handle_result({"code": "c"}, session, {})
         assert result is False
 
-    async def test_oauth_exchange_failure_returns_false(
-        self, provider, session, mock_oauth_manager, mock_vault_sync
-    ):
-        mock_oauth_manager.handle_callback.side_effect = ValueError(
-            "Invalid state"
-        )
-        result = await provider.handle_result(
-            {"code": "bad", "state": "bad"}, session, {}
-        )
+    async def test_oauth_exchange_failure_returns_false(self, provider, session, mock_oauth_manager, mock_vault_sync):
+        mock_oauth_manager.handle_callback.side_effect = ValueError("Invalid state")
+        result = await provider.handle_result({"code": "bad", "state": "bad"}, session, {})
         assert result is False
         # No side effects on vault if the OAuth exchange fails.
         mock_vault_sync.store_tokens.assert_not_called()
 
-    async def test_vault_failure_does_not_block_success(
-        self, provider, session, mock_vault_sync
-    ):
+    async def test_vault_failure_does_not_block_success(self, provider, session, mock_vault_sync):
         """Vault write errors are swallowed — core auth still succeeds."""
-        mock_vault_sync.store_tokens.side_effect = RuntimeError(
-            "vault unavailable"
-        )
-        result = await provider.handle_result(
-            {"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"}
-        )
+        mock_vault_sync.store_tokens.side_effect = RuntimeError("vault unavailable")
+        result = await provider.handle_result({"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"})
         # Vault failed but the OAuth succeeded → overall True.
         assert result is True
 
-    async def test_identity_failure_does_not_block_success(
-        self, provider, session, mock_identity_service
-    ):
-        mock_identity_service.upsert_identity.side_effect = RuntimeError(
-            "db down"
-        )
-        result = await provider.handle_result(
-            {"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"}
-        )
+    async def test_identity_failure_does_not_block_success(self, provider, session, mock_identity_service):
+        mock_identity_service.upsert_identity.side_effect = RuntimeError("db down")
+        result = await provider.handle_result({"code": "c", "state": "s"}, session, {"user_id": "nav-user-1"})
         assert result is True
 
 

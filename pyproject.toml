@@ -166,10 +166,15 @@ override-dependencies = [
     # `version.parse(protobuf.__version__).major`), an API unchanged in 26.
     # Override the ceiling open so xai-sdk and sdmx1 share one packaging.
     "packaging>=26.2",
-    # moviepy 2.2.1 caps pillow<12.0, but Pillow 12.3.0 fixes 7 high-severity
-    # CVEs (Dependabot #116-#120, #126-#127). moviepy's pillow usage (basic
-    # Image.open/save/fromarray) is unaffected by the 11→12 changes.
-    "pillow>=12.3.0",
+    # moviepy 2.2.1 caps pillow<12.0, but Pillow 13.0.0 is the first release
+    # that fixes CVE-2026-112900 / GHSA-w889-685w-c8fh (Dependabot #216,
+    # critical: Ghostscript argument injection via an unsanitized EPS filename,
+    # chainable to RCE), on top of the 7 high-severity CVEs that 12.3.0 fixed
+    # (Dependabot #116-#120, #126-#127). moviepy's pillow usage (basic
+    # Image.open/save/fromarray) is unaffected by the 11→13 changes, and
+    # nothing here touches the APIs Pillow 13 removed (Image._show,
+    # get_child_images, ImageCms product_name/product_info, IFD.Makernote).
+    "pillow>=13.0.0",
     # --- Dependabot security overrides over sibling-package exact pins ---
     # flowtask 5.12.14 pins asyncssh[...]==2.23.0; 2.23.1/2.24.0 fix 3
     # advisories, 1 high + 2 medium (Dependabot #129 high, #128/#133 medium).
@@ -244,27 +249,9 @@ navrules = { workspace = true }
 # ---------------------------------------------------------------------------
 # Shared tool configs
 # ---------------------------------------------------------------------------
-[tool.pytest.ini_options]
-addopts = [
-    "--strict-config",
-    "--strict-markers",
-]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-log_cli = true
-log_cli_level = "DEBUG"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-filterwarnings = [
-    "error",
-    'ignore:The loop argument is deprecated since Python 3\.8, and scheduled for removal in Python 3\.10:DeprecationWarning:asyncio',
-]
-markers = [
-    "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
-    "real_llm: mark a test as requiring a live LLM provider",
-    "live_google: Opt-in paid Google GenAI (Veo/Omni/Lyria) reel smoke tests. Require real credentials and PARROT_TEST_LIVE_GOOGLE=1; skipped by default, never run at collection time (FEAT-564 TASK-3335).",
-]
+# pytest is configured in the tracked root `pytest.ini`, NOT here: pytest gives pytest.ini precedence, so a
+# [tool.pytest.ini_options] table in this file would be silently ignored (FEAT-720). Per-package tables under
+# packages/*/pyproject.toml are still honoured when a run is rooted inside that package.
 
 [tool.black]
 line-length = 120
@@ -303,3 +290,34 @@ disable = ["C0330", "C0326", "W1203"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.parrot.worktree]
+# Native build artifacts a fresh `git worktree add` cannot carry, because every
+# one of them is gitignored. `ensure_worktree` and the sdd-coder pool copy these
+# from the main checkout into a new worktree before any agent runs in it, and
+# build them there when they are missing (FEAT-722).
+enabled = true
+
+[[tool.parrot.worktree.native_group]]
+name = "cython-core"
+copy_globs = ["packages/ai-parrot/src/parrot/**/*.so"]
+pair_sources = ["packages/ai-parrot/src/parrot/**/*.pyx"]
+abi_scoped = true
+autobuild = true
+build = ["{python}", "setup.py", "build_ext", "--inplace"]
+build_cwd = "packages/ai-parrot"
+build_timeout_s = 900
+manual_hint = "cd packages/ai-parrot && python setup.py build_ext --inplace"
+
+[[tool.parrot.worktree.native_group]]
+name = "navrules-pyo3"
+copy_globs = ["packages/navrules/src/navrules/_native/*.so"]
+required = true
+# abi3-py311: one .so covers CPython 3.11-3.13, so presence is NOT ABI-scoped.
+abi_scoped = false
+autobuild = true
+# `build-rust-wheel`, never the Makefile's `build-rust` (= `maturin develop`,
+# which reinstalls navrules into the SHARED venv — banned in automated paths).
+build = ["make", "-C", "packages/navrules", "build-rust-wheel"]
+build_timeout_s = 900
+manual_hint = "make -C packages/navrules build-rust-wheel"

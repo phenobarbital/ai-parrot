@@ -12,8 +12,10 @@ from parrot_formdesigner.services.plausibility import (
     AnswerPlausibilityChecker,
     PlausibilityBatch,
     PlausibilityBlocked,
+    _truncate,
     build_items,
     eligible_fields,
+    select_fields,
 )
 
 
@@ -29,7 +31,11 @@ class FakeClient:
             await asyncio.sleep(self.delay)
         if self.exc:
             raise self.exc
-        return type("Msg", (), {"structured_output": self.result, "output": self.result})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": self.result, "output": self.result, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 def _make_form(cfg: LLMValidationConfig | None = None) -> FormSchema:
@@ -91,6 +97,26 @@ class TestEligibility:
     def test_only_subset(self, form):
         got = eligible_fields(form, SCALARS, form.llm_validation, only={"color"})
         assert [f.field_id for f in got] == ["color"]
+
+    def test_select_fields_reports_cap_drops(self):
+        """The max_fields tail is returned as not_examined, not silently dropped (FEAT-737 AC3)."""
+        cfg = LLMValidationConfig(enabled=True, max_fields=2)
+        picked, not_examined = select_fields(_make_form(cfg), SCALARS, cfg)
+        assert [f.field_id for f in picked][0] == "name" and len(picked) == 2
+        assert set(not_examined) == {"nick0", "name", "color", "doc"} - {f.field_id for f in picked}
+        assert set(not_examined.values()) == {"max_fields_cap"}
+
+    def test_select_fields_uncapped_drops_nothing(self, form):
+        """Under the default cap every eligible field is sent, so not_examined is empty."""
+        picked, not_examined = select_fields(form, SCALARS, form.llm_validation)
+        assert {f.field_id for f in picked} == {"nick0", "name", "color", "doc"}
+        assert not_examined == {}
+
+    def test_eligible_fields_signature_unchanged(self, form):
+        """eligible_fields still returns a bare list of fields (FEAT-737 AC8)."""
+        got = eligible_fields(form, SCALARS, form.llm_validation)
+        assert isinstance(got, list)
+        assert {f.field_id for f in got} == {"nick0", "name", "color", "doc"}
 
     def test_prompt_has_no_blob_or_data_url(self, form):
         fields = eligible_fields(form, SCALARS, form.llm_validation)
@@ -157,3 +183,118 @@ class TestCheck:
         )
         rep = await AnswerPlausibilityChecker(client, config=form.llm_validation).check(form, SCALARS, locale="en")
         assert set(rep.items) == {"name"} and rep.items["name"].confidence == 1.0
+
+
+class TestLengthCaps:
+    """FEAT-737: the prompt's answers and the model's reason are both bounded."""
+
+    def test_truncate_marks_cut_and_respects_limit(self):
+        """Over-limit text is cut TO the limit with a marker; short text is untouched."""
+        cut = _truncate("x" * 2000, 50)
+        assert len(cut) == 50 and cut.endswith("…")
+        assert _truncate("ab", 50) == "ab"
+        assert _truncate("exactly10!", 10) == "exactly10!"
+        assert _truncate("x" * 20, None) == "x" * 20
+
+    def test_build_items_caps_answer(self, form):
+        """max_answer_chars bounds the rendered answer; None leaves it verbatim."""
+        scalars = {**SCALARS, "name": "y" * 2000}
+        capped = build_items(
+            form, eligible_fields(form, scalars, form.llm_validation), scalars, locale="en", max_answer_chars=50
+        )
+        answer = next(i for i in capped if i["field_id"] == "name")["answer"]
+        assert len(answer) == 50 and answer.endswith("…")
+        uncapped = build_items(form, eligible_fields(form, scalars, form.llm_validation), scalars, locale="en")
+        assert next(i for i in uncapped if i["field_id"] == "name")["answer"] == "y" * 2000
+
+    def test_option_labels_still_resolved_under_cap(self, form):
+        """Truncation happens after option-label mapping, not instead of it."""
+        items = build_items(
+            form, eligible_fields(form, SCALARS, form.llm_validation), SCALARS, locale="en", max_answer_chars=50
+        )
+        assert next(i for i in items if i["field_id"] == "color")["answer"] == "Red"
+
+
+class TestCoverageReporting:
+    """FEAT-737: a status="ok" report can no longer over-claim coverage."""
+
+    async def test_check_reports_unrenderable(self, form):
+        """The dict-valued `doc` answer is reported, not silently omitted (AC4)."""
+        client = FakeClient(_batch({"field_id": "name", "plausible": True, "confidence": 0.9, "reason": "ok"}))
+        rep = await AnswerPlausibilityChecker(client, config=form.llm_validation).check(form, SCALARS, locale="en")
+        assert rep.status == "ok"
+        assert rep.not_examined == {"doc": "unrenderable_answer"}
+        assert set(rep.items) & set(rep.not_examined) == set()
+
+    async def test_check_reports_cap_and_unrenderable_together(self):
+        """Both reason codes can appear at once, and items stays disjoint (AC5).
+
+        ``blob`` is ``required``, so the required-first sort keeps it inside the
+        ``max_fields=2`` window and it is dropped as unrenderable, while ``late``
+        falls off the cap — the only arrangement that exercises both codes in one
+        report.
+        """
+        cfg = LLMValidationConfig(enabled=True, max_fields=2)
+        fields = [
+            FormField(field_id="blob", field_type=FieldType.TEXT, label="Blob", required=True),
+            FormField(field_id="keep", field_type=FieldType.TEXT, label="Keep"),
+            FormField(field_id="late", field_type=FieldType.TEXT, label="Late"),
+        ]
+        form = FormSchema(
+            form_id="f",
+            title="F",
+            sections=[FormSection(section_id="s", fields=fields)],
+            llm_validation=cfg,
+        )
+        scalars = {"blob": {"blob_ref": "b1"}, "keep": "kept", "late": "cut"}
+        client = FakeClient(_batch({"field_id": "keep", "plausible": True, "confidence": 0.9, "reason": "ok"}))
+        rep = await AnswerPlausibilityChecker(client, config=cfg).check(form, scalars, locale="en")
+        assert rep.status == "ok"
+        assert rep.not_examined == {"blob": "unrenderable_answer", "late": "max_fields_cap"}
+        assert set(rep.items) == {"keep"}
+        assert set(rep.items) & set(rep.not_examined) == set()
+
+    async def test_check_all_unrenderable_is_not_silent(self):
+        """An all-unrenderable batch is distinguishable from a clean pass, and skips the LLM (AC4)."""
+        fields = [FormField(field_id="doc", field_type=FieldType.TEXT, label="Doc")]
+        form = FormSchema(
+            form_id="f",
+            title="F",
+            sections=[FormSection(section_id="s", fields=fields)],
+            llm_validation=LLMValidationConfig(enabled=True),
+        )
+        client = FakeClient()
+        rep = await AnswerPlausibilityChecker(client, config=form.llm_validation).check(
+            form, {"doc": {"blob_ref": "b1"}}, locale="en"
+        )
+        assert rep.status == "ok" and rep.items == {}
+        assert rep.not_examined == {"doc": "unrenderable_answer"}
+        assert client.calls == []
+
+    async def test_check_truncates_reason(self, form):
+        """A verbose model reason is capped before it is stored (AC7)."""
+        cfg = LLMValidationConfig(enabled=True, max_reason_chars=20)
+        form = _make_form(cfg)
+        client = FakeClient(_batch({"field_id": "name", "plausible": True, "confidence": 0.9, "reason": "z" * 5000}))
+        rep = await AnswerPlausibilityChecker(client, config=cfg).check(form, SCALARS, locale="en")
+        assert len(rep.items["name"].reason) == 20 and rep.items["name"].reason.endswith("…")
+
+    async def test_check_drops_verdict_for_unsent_field(self, form):
+        """A verdict for an eligible-but-unsent field is dropped, keeping the two maps disjoint (AC5)."""
+        client = FakeClient(_batch({"field_id": "doc", "plausible": True, "confidence": 0.9, "reason": "invented"}))
+        rep = await AnswerPlausibilityChecker(client, config=form.llm_validation).check(form, SCALARS, locale="en")
+        assert "doc" not in rep.items
+        assert rep.not_examined == {"doc": "unrenderable_answer"}
+
+    async def test_fail_path_has_empty_not_examined(self, form):
+        """A skipped report leaves not_examined empty — status already says it all."""
+        rep = await AnswerPlausibilityChecker(None, config=form.llm_validation).check(form, SCALARS, locale="en")
+        assert rep.status == "skipped" and rep.not_examined == {}
+
+    async def test_zero_eligible_has_empty_not_examined(self):
+        """Nothing eligible means nothing cut — the map stays empty (AC3)."""
+        form = _make_form(LLMValidationConfig(enabled=False))
+        rep = await AnswerPlausibilityChecker(FakeClient(), config=form.llm_validation).check(
+            form, SCALARS, locale="en"
+        )
+        assert rep.status == "ok" and rep.not_examined == {}

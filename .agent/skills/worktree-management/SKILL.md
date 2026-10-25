@@ -27,7 +27,7 @@ python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # 
 python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/main
 ```
 
-- Created by whoever implements: `/sdd-start`, `sdd-worker`, and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
+- Created by whoever implements: `/sdd-start`, `sdd-worker`, `/sdd-fix` (Fast lane, via `--brief-key <ledger-short-id> --base-branch dev`), and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
 - **Never** `claude --worktree` (it branches from `main`, which has no SDD artifacts) and never hand-build `git worktree add` for SDD work.
 - Skip the worktree entirely for docs-only changes, single-commit fixes, single-task specs and brainstorms — work on a plain branch.
 
@@ -48,6 +48,7 @@ inside `<path>`* — never in the primary checkout.
 
 - Run git as `git -C <path> ...` (or `cd` in). Small commits, one task per commit, and **push early** (`git push -u origin <branch>`): other sessions may merge or `reset --hard` the shared tree, and only pushed commits are safe.
 - The shared `.venv` is editable-installed against the **main checkout**, so a bare `pytest` inside a worktree imports the wrong branch. Prefix with `PYTHONPATH=packages/ai-parrot/src` (one entry per changed package). Never `uv sync` inside a worktree — it repoints the shared venv's `.pth` and breaks `import parrot` for every session once the worktree is removed.
+- Compiled artifacts arrive with the worktree (FEAT-722): every `.so` is gitignored, so `ensure_worktree` copies the ones declared in the root `pyproject.toml` (`[tool.parrot.worktree]`) from the main checkout on create **and** on reuse, and the `sdd-coder` pool does the same for each attempt sub-worktree. A missing artifact is built automatically in the main checkout, under a per-group lock. Do NOT hand-copy `.so` files and never run `maturin develop` to repair a tree — it rewrites the shared `.venv`. If a warning says a build was refused or failed, run it yourself: `cd packages/ai-parrot && python setup.py build_ext --inplace` or `make -C packages/navrules build-rust-wheel`. Opt out with `--no-native-sync` / `--no-autobuild`, or `PARROT_WORKTREE_SYNC_NATIVE=0` / `PARROT_WORKTREE_AUTOBUILD=0`.
 - Run the tests your task names; do not start with a full baseline sweep.
 
 ## 5. Finish

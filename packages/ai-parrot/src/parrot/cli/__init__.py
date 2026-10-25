@@ -115,6 +115,8 @@ cli._lazy_commands = {
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
     "toolkits": "parrot.cli.toolkits",
+    # FEAT-650 — FormDesigner dialect tools, ships in parrot-formdesigner.
+    "formdesigner": "parrot_formdesigner.cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
@@ -149,6 +151,7 @@ cli._lazy_extras = {
     "mcp-serve": _AGENTD_INSTALL_HINT,
     "e2e": _E2E_INSTALL_HINT,
     "manuals": "ai-parrot-tools: pip install ai-parrot-tools ai-parrot[manuals]",
+    "formdesigner": "parrot-formdesigner: pip install parrot-formdesigner[ai-parrot]",
     "jiratoolkit": "ai-parrot-tools: pip install ai-parrot-tools",
 }
 

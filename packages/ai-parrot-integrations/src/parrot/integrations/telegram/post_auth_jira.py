@@ -17,6 +17,7 @@ the combined Telegram auth flow:
 Vault and identity-mapping failures are logged but do NOT fail the auth
 — Redis is the primary store and the flow must stay resilient.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,11 @@ class JiraPostAuthProvider:
             obtained from ``app["jira_oauth_manager"]``).
         identity_service: :class:`IdentityMappingService` for writing
             ``auth.user_identities`` rows.
-        vault_sync: :class:`VaultTokenSync` for encrypted token persistence.
+        vault_sync: :class:`VaultTokenSync`, retained for the disconnect
+            path only. Since FEAT-735 the Jira credential is owned by the
+            Identity Vault and written by ``JiraOAuthManager``'s credential
+            sink, so this provider no longer stores tokens here.
+            See ``docs/auth/jira-credential-ownership.md``.
     """
 
     provider_name = "jira"
@@ -141,21 +146,16 @@ class JiraPostAuthProvider:
         state = data.get("state")
         if not code or not state:
             self.logger.warning(
-                "JiraPostAuthProvider.handle_result: missing code/state "
-                "(code=%s state=%s)",
+                "JiraPostAuthProvider.handle_result: missing code/state " "(code=%s state=%s)",
                 bool(code),
                 bool(state),
             )
             return False
 
         try:
-            token_set, state_payload = await self._oauth.handle_callback(
-                code, state
-            )
+            token_set, state_payload = await self._oauth.handle_callback(code, state)
         except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: Jira handle_callback failed"
-            )
+            self.logger.exception("JiraPostAuthProvider: Jira handle_callback failed")
             return False
 
         # Resolve the navigator user_id: prefer the one carried in the
@@ -168,9 +168,10 @@ class JiraPostAuthProvider:
             or session.nav_user_id
         )
 
-        # Best-effort Vault write. The JiraOAuthManager already wrote to Redis.
-        await self._store_in_vault(nav_user_id, token_set)
-
+        # The credential itself is written by JiraOAuthManager's credential
+        # sink (FEAT-735): the Identity Vault owns it, Redis caches it, and
+        # the Session Vault's jira:* keys were retired. Only the non-secret
+        # mapping rows are this provider's business now.
         # Best-effort identity mappings (Telegram + Jira).
         await self._write_identity_records(
             nav_user_id=nav_user_id,
@@ -190,13 +191,10 @@ class JiraPostAuthProvider:
                 cloud_id=token_set.cloud_id,
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: failed to stamp jira identity on session"
-            )
+            self.logger.exception("JiraPostAuthProvider: failed to stamp jira identity on session")
 
         self.logger.info(
-            "JiraPostAuthProvider: combined auth complete "
-            "(nav_user_id=%s jira_account=%s jira_email=%s)",
+            "JiraPostAuthProvider: combined auth complete " "(nav_user_id=%s jira_account=%s jira_email=%s)",
             nav_user_id,
             token_set.account_id,
             token_set.email,
@@ -204,37 +202,6 @@ class JiraPostAuthProvider:
         return True
 
     # ---------------------------------------------------------- helpers
-
-    async def _store_in_vault(
-        self,
-        nav_user_id: Optional[str],
-        token_set: "JiraTokenSet",
-    ) -> None:
-        """Write the Jira token fields as flat keys in the user's vault."""
-        if not nav_user_id:
-            self.logger.warning(
-                "JiraPostAuthProvider: no nav_user_id — skipping vault write"
-            )
-            return
-        tokens: Dict[str, Any] = {
-            "access_token": token_set.access_token,
-            "refresh_token": token_set.refresh_token,
-            "cloud_id": token_set.cloud_id,
-            "site_url": token_set.site_url,
-            "account_id": token_set.account_id,
-        }
-        try:
-            await self._vault.store_tokens(
-                nav_user_id=str(nav_user_id),
-                provider=self.provider_name,
-                tokens=tokens,
-            )
-        except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: vault store failed "
-                "(nav_user_id=%s)",
-                nav_user_id,
-            )
 
     async def _write_identity_records(
         self,
@@ -245,15 +212,14 @@ class JiraPostAuthProvider:
     ) -> None:
         """Upsert ``telegram`` and ``jira`` identities for ``nav_user_id``."""
         if not nav_user_id:
-            self.logger.warning(
-                "JiraPostAuthProvider: no nav_user_id — skipping identity mapping"
-            )
+            self.logger.warning("JiraPostAuthProvider: no nav_user_id — skipping identity mapping")
             return
         # Telegram identity
         try:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider="telegram",
+                provider_user_id=str(session.telegram_id),
                 auth_data={
                     "telegram_id": session.telegram_id,
                     "username": session.telegram_username,
@@ -262,15 +228,17 @@ class JiraPostAuthProvider:
                 email=primary_auth_data.get("email"),
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: telegram identity upsert failed"
-            )
+            self.logger.exception("JiraPostAuthProvider: telegram identity upsert failed")
 
         # Jira identity
         try:
             await self._identity.upsert_identity(
                 nav_user_id=str(nav_user_id),
                 auth_provider=self.provider_name,
+                provider_user_id=token_set.account_id,
+                # No credential here: the sink behind JiraOAuthManager is the
+                # single writer of the sealed token (FEAT-735). This row is
+                # the channel mapping, and auth_data stays non-secret.
                 auth_data={
                     "account_id": token_set.account_id,
                     "cloud_id": token_set.cloud_id,
@@ -281,6 +249,4 @@ class JiraPostAuthProvider:
                 email=token_set.email,
             )
         except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "JiraPostAuthProvider: jira identity upsert failed"
-            )
+            self.logger.exception("JiraPostAuthProvider: jira identity upsert failed")

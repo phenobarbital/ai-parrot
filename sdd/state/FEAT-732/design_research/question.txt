@@ -1,0 +1,1 @@
+Given this design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?

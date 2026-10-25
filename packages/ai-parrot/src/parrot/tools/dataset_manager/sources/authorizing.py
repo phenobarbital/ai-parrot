@@ -143,19 +143,22 @@ class AuthorizingDataSource(DataSource):
         await self._guard.authorize_source(ctx, resources)
         predicates = await self._guard.rls_predicates(ctx, resources)
 
-        # Step 5: inject RLS if predicates were collected
-        if predicates:
-            self._apply_rls(predicates, resources)
+        # Step 5: inject RLS into a request-scoped copy, never into self._inner
+        target = self._apply_rls(predicates, resources) if predicates else self._inner
 
-        # Step 6: delegate to inner
-        return await self._inner.fetch(**params)
+        # Step 6: delegate to the (possibly RLS-filtered) per-request source
+        return await target.fetch(**params)
 
     def _apply_rls(
         self,
         predicates: "list[RlsPredicate]",
         resources: "PhysicalResources",
-    ) -> None:
-        """Inject RLS predicates into the inner source.
+    ) -> DataSource:
+        """Return a request-scoped copy of the inner source with RLS applied.
+
+        ``self._inner`` is never mutated: the caller fetches from the returned
+        copy, so predicates cannot accumulate across requests nor leak to other
+        holders of the same source (``issue:90cf04ce8edd``).
 
         Strategy (Spec §2 Module 5):
         - :class:`~parrot.tools.dataset_manager.sources.sql.SQLQuerySource`:
@@ -181,36 +184,43 @@ class AuthorizingDataSource(DataSource):
             inject_rls_query_slug,
         )
         from parrot.tools.dataset_manager.sources.dialects import driver_to_dialect
+        from parrot.tools.dataset_manager.sources.scoped_copy import request_scoped_copy
+
+        # Every branch below writes to this copy; self._inner stays pristine.
+        scoped = request_scoped_copy(self._inner)
 
         if isinstance(self._inner, SQLQuerySource):
-            dialect = driver_to_dialect(self._inner.driver) or "generic"
+            dialect = driver_to_dialect(scoped.driver) or "generic"
             rewritten_sql, _bound_params = inject_rls_sql(
-                self._inner.sql, dialect, predicates
+                scoped.sql, dialect, predicates
             )
-            # Mutate the sql attribute so the inner fetch uses the rewritten SQL.
-            self._inner.sql = rewritten_sql
+            # Rewrite the copy's sql so the request fetches the filtered query.
+            scoped.sql = rewritten_sql
             self._logger.debug(
                 "AuthorizingDataSource: injected RLS into SQLQuerySource "
                 "(driver=%s, %d predicates)",
-                self._inner.driver,
+                scoped.driver,
                 len(predicates),
             )
+            return scoped
         elif isinstance(self._inner, TableSource):
-            inject_rls_table_source(self._inner, predicates)
+            inject_rls_table_source(scoped, predicates)
             self._logger.debug(
                 "AuthorizingDataSource: injected RLS into TableSource "
                 "(table=%s, %d predicates)",
-                self._inner.table,
+                scoped.table,
                 len(predicates),
             )
+            return scoped
         elif isinstance(self._inner, QuerySlugSource):
-            inject_rls_query_slug(self._inner, predicates)
+            inject_rls_query_slug(scoped, predicates)
             self._logger.debug(
                 "AuthorizingDataSource: injected RLS into QuerySlugSource "
                 "(slug=%s, %d predicates)",
-                self._inner.slug,
+                scoped.slug,
                 len(predicates),
             )
+            return scoped
         else:
             # Try to detect MongoSource and apply Mongo RLS filter.
             # We use a lazy import + isinstance check to avoid hard dependency.
@@ -219,23 +229,23 @@ class AuthorizingDataSource(DataSource):
                 from parrot.tools.dataset_manager.sources.rls import inject_rls_mongo
 
                 if isinstance(self._inner, MongoSource):
-                    mongo_filter = inject_rls_mongo(self._inner, predicates)
+                    mongo_filter = inject_rls_mongo(scoped, predicates)
                     if mongo_filter:
                         # MongoSource exposes `required_filter` which is merged
                         # into every query.  Merge the RLS $and conditions.
-                        existing = getattr(self._inner, "required_filter", None) or {}
+                        existing = getattr(scoped, "required_filter", None) or {}
                         if existing:
-                            self._inner.required_filter = {
+                            scoped.required_filter = {
                                 "$and": [existing, mongo_filter]
                             }
                         else:
-                            self._inner.required_filter = mongo_filter
+                            scoped.required_filter = mongo_filter
                     self._logger.debug(
                         "AuthorizingDataSource: injected RLS into MongoSource "
                         "(%d predicates)",
                         len(predicates),
                     )
-                    return
+                    return scoped
             except ImportError:
                 pass
 
@@ -249,6 +259,7 @@ class AuthorizingDataSource(DataSource):
                 "(post-fetch RLS for Airtable/Smartsheet is deferred — FEAT-228 TODO)",
                 type(self._inner).__name__,
             )
+            return scoped
 
     # ──────────────────────────────────────────────────────────────────────
     # Transparent delegation to inner source

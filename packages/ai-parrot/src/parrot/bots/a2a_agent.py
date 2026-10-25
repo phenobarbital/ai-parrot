@@ -16,4 +16,6 @@ class A2AAgent(BasicAgent, A2AEnabledMixin):
     async def configure(self):
         """Configure the agent and initialize A2A server."""
         await super().configure()
+        if self.configure_skipped:
+            return
         self.setup_a2a(self.app, self.url)

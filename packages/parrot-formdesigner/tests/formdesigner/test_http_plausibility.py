@@ -33,7 +33,11 @@ class FakeLLM:
         self.calls.append((prompt, kwargs))
         if self._exc:
             raise self._exc
-        return type("Msg", (), {"structured_output": self._batch, "output": self._batch})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": self._batch, "output": self._batch, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 def _form(cfg: LLMValidationConfig | None = None) -> FormSchema:
@@ -58,9 +62,32 @@ def _request(body: dict) -> MagicMock:
     req.query.get = MagicMock(return_value="")
     req.__contains__ = lambda self, key: False
     req.json = AsyncMock(return_value=body)
-    req.get = MagicMock(side_effect=lambda key, default=None: _TENANT if key == "tenant" else default)
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: (
+            _TENANT if key == "tenant" else ({"id": "user-1"} if key == "session" else default)
+        )
+    )
     req.session = {"session": {"programs": [_TENANT]}}
     return req
+
+
+def _a2ui_request(form: FormSchema, answers: dict) -> MagicMock:
+    """Build an A2UI validate request carrying the supplied answers."""
+    body = {
+        "version": "v1.0",
+        "action": {
+            "name": "form.validate",
+            "surfaceId": f"form-{form.form_uid}",
+            "sourceComponentId": "root-submit",
+            "timestamp": "2026-10-22T00:00:00Z",
+            "context": {"form_uid": str(form.form_uid)},
+            "dataModel": {"answers": answers},
+        },
+    }
+    request = _request(body)
+    request.content_type = "application/json"
+    request.content_length = len(json.dumps(body))
+    return request
 
 
 @pytest.fixture
@@ -147,6 +174,130 @@ class TestBlockMode:
         resp = await handler.submit_data(_request({"name": "Ann"}))
         assert resp.status == 200 and _json(resp)["plausibility"]["status"] == "skipped"
         storage.store.assert_called_once()
+
+
+class TestEnforcementPolicy:
+    """FEAT-728 — the plausibility gate on HTTP and A2UI."""
+
+    async def test_annotate_low_confidence_still_200(self, make_handler):
+        """Regression: the default annotate policy preserves current behaviour."""
+        handler, storage = make_handler(_form(LLMValidationConfig(enabled=True)), FakeLLM(_LOW))
+
+        response = await handler.submit_data(_request({"name": "Ann"}))
+
+        assert response.status == 200
+        assert _json(response)["plausibility"]["items"]["name"]["plausible"] is False
+        storage.store.assert_awaited_once()
+
+    async def test_review_422_then_ack_200(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        handler, storage = make_handler(_form(config), FakeLLM(_LOW))
+
+        blocked = await handler.submit_data(_request({"name": "Ann"}))
+        blocked_body = _json(blocked)
+        assert blocked.status == 422
+        assert blocked_body["code"] == "PLAUSIBILITY_REVIEW"
+        assert blocked_body["errors"] == {"name": ["odd"]}
+        storage.store.assert_not_awaited()
+
+        accepted = await handler.submit_data(_request({"name": "Ann", "plausibility_ack": True}))
+        assert accepted.status == 200
+        stored = storage.store.call_args.args[0]
+        assert stored.context["llm_validation"]["acknowledged"] is True
+
+    async def test_reject_422_even_with_ack(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="reject")
+        handler, storage = make_handler(_form(config), FakeLLM(_LOW))
+
+        for body in ({"name": "Ann"}, {"name": "Ann", "plausibility_ack": True}):
+            response = await handler.submit_data(_request(body))
+            assert response.status == 422
+            assert _json(response)["code"] == "PLAUSIBILITY_REJECTED"
+        storage.store.assert_not_awaited()
+
+    async def test_ack_query_flag_accepted(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        handler, storage = make_handler(_form(config), FakeLLM(_LOW))
+        request = _request({"name": "Ann"})
+        request.query.get.side_effect = lambda key, default="": "true" if key == "plausibility_ack" else default
+
+        response = await handler.submit_data(request)
+
+        assert response.status == 200
+        storage.store.assert_awaited_once()
+
+    async def test_ack_not_reported_as_unknown_field(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        form = _form(config).model_copy(update={"unknown_fields": "reject"})
+        handler, storage = make_handler(form, FakeLLM(_LOW))
+
+        response = await handler.submit_data(_request({"name": "Ann", "plausibility_ack": True}))
+
+        assert response.status == 200
+        stored = storage.store.call_args.args[0]
+        assert stored.extra_data is None
+        assert stored.data == {"name": "Ann"}
+
+    async def test_validate_dry_run_matches_submit(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        handler, storage = make_handler(_form(config), FakeLLM(_LOW))
+
+        dry_run = await handler.validate(_request({"name": "Ann", "llm_validation": True}))
+        commit = await handler.submit_data(_request({"name": "Ann"}))
+
+        dry_run_body = _json(dry_run)
+        commit_body = _json(commit)
+        assert dry_run.status == commit.status == 422
+        assert dry_run_body["code"] == commit_body["code"] == "PLAUSIBILITY_REVIEW"
+        assert dry_run_body["errors"] == commit_body["errors"] == {"name": ["odd"]}
+        storage.store.assert_not_awaited()
+
+    async def test_validate_a2ui_review_envelopes(self, make_handler):
+        pytest.importorskip("parrot.outputs.a2ui")
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        form = _form(config)
+        handler, _ = make_handler(form, FakeLLM(_LOW))
+
+        response = await handler.validate(_a2ui_request(form, {"name": "Ann", "llm_validation": True}))
+
+        assert response.status == 422
+        envelopes = _json(response)["messages"]
+        errors = [envelope["error"] for envelope in envelopes if "error" in envelope]
+        assert len(errors) == 1
+        assert errors[0]["path"] == "/answers/name"
+        update = next(envelope["updateDataModel"] for envelope in envelopes if "updateDataModel" in envelope)
+        assert update["path"] == "/errors"
+
+
+class TestAuditFieldsStayOffTheWire:
+    """FEAT-732 R10 — persisted, never sent to the form client."""
+
+    async def test_submit_200_omits_identity_but_storage_keeps_it(self, make_handler):
+        handler, storage = make_handler(_form(LLMValidationConfig(enabled=True)), FakeLLM(_OK))
+
+        response = await handler.submit_data(_request({"name": "Ann"}))
+
+        assert response.status == 200
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
+        stored = storage.store.call_args.args[0]
+        assert stored.context["llm_validation"]["resolved_model"] == "fake-model-1"
+
+    async def test_validate_omits_identity(self, make_handler):
+        handler, _ = make_handler(_form(LLMValidationConfig(enabled=True)), FakeLLM(_OK))
+
+        response = await handler.validate(_request({"name": "Ann", "llm_validation": True}))
+
+        assert response.status == 200
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
+
+    async def test_review_422_omits_identity(self, make_handler):
+        config = LLMValidationConfig(enabled=True, on_implausible="review")
+        handler, _ = make_handler(_form(config), FakeLLM(_LOW))
+
+        response = await handler.submit_data(_request({"name": "Ann"}))
+
+        assert response.status == 422
+        assert not {"resolved_model", "provider", "usage"}.intersection(_json(response)["plausibility"])
 
 
 class TestRoutes:

@@ -313,6 +313,90 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
         ],
         "note": "Also accepts the legacy [{answer,blob_ref,display}] shape. See the FileEnvelope model.",
     },
+    # FEAT-448 — granular form field types
+    FieldType.SEARCH.value: {
+        "field_id": "search_query",
+        "field_type": "search",
+        "label": "Search",
+        "placeholder": "Type to search...",
+    },
+    FieldType.MASKED.value: {
+        "field_id": "credit_card_number",
+        "field_type": "masked",
+        "label": "Credit card number",
+        "placeholder": "•••• •••• •••• ••••",
+    },
+    FieldType.COLOR_PICKER.value: {
+        "field_id": "theme_color",
+        "field_type": "color_picker",
+        "label": "Theme color",
+        "default": "#0ea5e9",
+    },
+    FieldType.EMOJI.value: {
+        "field_id": "mood",
+        "field_type": "emoji",
+        "label": "Mood",
+        "placeholder": "Select an emoji...",
+    },
+    FieldType.CRON.value: {
+        "field_id": "schedule",
+        "field_type": "cron",
+        "label": "Schedule",
+        "placeholder": "0 0 * * *",
+    },
+    FieldType.TREE_SELECT.value: {
+        "field_id": "category_tree",
+        "field_type": "tree_select",
+        "label": "Category",
+        "options": [
+            {
+                "value": "electronics",
+                "label": "Electronics",
+                "children": [
+                    {"value": "phones", "label": "Phones"},
+                    {"value": "laptops", "label": "Laptops"},
+                ],
+            },
+            {
+                "value": "clothing",
+                "label": "Clothing",
+                "children": [
+                    {"value": "men", "label": "Men"},
+                    {"value": "women", "label": "Women"},
+                ],
+            },
+        ],
+    },
+    FieldType.SIGNATURE_PAD.value: {
+        "field_id": "digital_signature",
+        "field_type": "signature_pad",
+        "label": "Digital signature",
+        "required": True,
+    },
+    FieldType.PLACE.value: {
+        "field_id": "location",
+        "field_type": "place",
+        "label": "Location",
+        "required": True,
+    },
+    FieldType.AI_CAPTURE.value: {
+        "field_id": "ai_extracted_data",
+        "field_type": "ai_capture",
+        "label": "AI extracted data",
+        "description": "Automatically extracted information from documents or images",
+    },
+    FieldType.AUDIO.value: {
+        "field_id": "audio_recording",
+        "field_type": "audio",
+        "label": "Audio recording",
+        "description": "Record or upload an audio message",
+    },
+    FieldType.CREDIT_CARD.value: {
+        "field_id": "payment_method",
+        "field_type": "credit_card",
+        "label": "Payment method",
+        "required": True,
+    },
 }
 
 

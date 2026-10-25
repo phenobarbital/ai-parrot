@@ -30,6 +30,7 @@ from ..models.datasets import (
     DatasetUploadResponse,
 )
 from ..tools.dataset_manager import DatasetEntry, DatasetManager
+from ..tools.dataset_manager.sources import request_scoped_copy
 from .user_objects import UserObjectsHandler
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
         try:
             cloned_entry = DatasetEntry(
                 name=name,
-                source=entry.source,
+                source=request_scoped_copy(entry.source) if entry.source else None,
                 metadata=dict(entry.metadata or {}),
                 is_active=entry.is_active,
                 auto_detect_types=entry.auto_detect_types,

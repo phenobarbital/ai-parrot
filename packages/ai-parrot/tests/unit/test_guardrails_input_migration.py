@@ -15,6 +15,9 @@ regex engine, TRANSFORM wrapping, BLOCK conditions) is already covered by
 the *seam wiring*: does `BaseBot` correctly invoke the pipeline and
 correctly interpret its outcome.
 """
+import importlib.util
+import sys
+from pathlib import Path
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
@@ -30,7 +33,19 @@ from parrot.bots.guardrails.base import (
 from parrot.bots.middleware import PromptMiddleware, PromptPipeline
 from parrot.models import AIMessage, CompletionUsage
 
-from _injection_test_helpers import mock_pytector_engine  # shared test infrastructure
+def _load_injection_helpers():
+    """Load the shared helper by path: ``tests/unit`` is not a package, so it has no relative parent."""
+    name = "ai_parrot_tests_injection_test_helpers"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "_injection_test_helpers.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+mock_pytector_engine = _load_injection_helpers().mock_pytector_engine  # shared test infrastructure
 
 
 def _patched_bot(**kwargs):

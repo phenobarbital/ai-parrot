@@ -28,9 +28,16 @@ from parrot.knowledge.wiki.structural.service import StructuralService
 # ``polyglot_repo``/``force_no_astgrep`` come from
 # tests/knowledge/wiki/languages/conftest.py — pytest auto-discovers
 # fixtures from any conftest.py in a parent directory of the test file,
-# and languages/ is a sibling directory, not an ancestor, so it is
-# imported explicitly here as a plugin rather than relying on discovery.
-pytest_plugins = ["tests.knowledge.wiki.languages.conftest"]
+# and languages/ is a sibling directory, not an ancestor, so they are
+# imported into this module's namespace instead. A ``pytest_plugins``
+# entry would not work: whenever languages/ is collected in the same
+# run, pytest has already registered that conftest under its own path
+# and re-registering it by module name raises "Plugin already
+# registered under a different name".
+from tests.knowledge.wiki.languages.conftest import (  # noqa: E402
+    force_no_astgrep,  # noqa: F401
+    polyglot_repo,  # noqa: F401
+)
 
 
 def _open(root: Path, name: str) -> tuple[BaseWikiStore, SourceCollectionManager]:
