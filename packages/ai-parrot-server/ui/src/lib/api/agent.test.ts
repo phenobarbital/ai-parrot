@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import apiClient from "$lib/api/http";
 import { config } from "$lib/config";
 
-import { chatWithAgent } from "./agent";
+import { chatWithAgent, uploadAgentData } from "./agent";
 
 describe("chatWithAgent (stream: false path)", () => {
   afterEach(() => {
@@ -45,5 +45,29 @@ describe("chatWithAgent (stream: false path)", () => {
     }
 
     expect(capturedHeaders.Authorization).toBe("Bearer test-token");
+  });
+});
+
+describe("uploadAgentData", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("PUTs the multipart body and returns the response body", async () => {
+    const body = {
+      files: [{ file_id: "f-1", filename: "report.docx" }],
+      dataframes: [],
+      errors: [],
+      agent: "my-agent",
+    };
+    const put = vi.spyOn(apiClient, "put").mockResolvedValue({ data: body });
+    const formData = new FormData();
+
+    const result = await uploadAgentData("my-agent", formData);
+
+    expect(put).toHaveBeenCalledWith("/api/v1/agents/chat/my-agent", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    expect(result).toBe(body);
   });
 });
