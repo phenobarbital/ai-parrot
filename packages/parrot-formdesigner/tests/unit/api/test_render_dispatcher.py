@@ -508,3 +508,116 @@ async def test_dispatcher_render_config_error_400(aiohttp_client, sample_form):
     body = await resp.json()
     assert "error" in body
     assert body["error"] == "no base url configured"
+
+
+# --- M9: remote section render (TASK-4685) ---
+import json  # noqa: E402
+
+from parrot_formdesigner.renderers.teams import (  # noqa: E402
+    ENVELOPE_KEY,
+    TeamsFormRenderer,
+    TeamsSubmitEnvelope,
+)
+
+
+@pytest.fixture
+def three_section_form() -> FormSchema:
+    return FormSchema(
+        form_id="three-form",
+        title={"en": "Three"},
+        tenant="navigator",
+        is_public=True,
+        sections=[
+            FormSection(
+                section_id=f"s{i}",
+                fields=[
+                    FormField(
+                        field_id=f"f{i}",
+                        field_type=FieldType.TEXT,
+                        label={"en": f"Field {i}"},
+                    )
+                ],
+            )
+            for i in (1, 2, 3)
+        ],
+    )
+
+
+async def _teams_app(aiohttp_client, form):
+    register_renderer("teams", TeamsFormRenderer(public_base_url="https://forms.test", signing_secret="s3cret"))
+    registry = FormRegistry()
+    await registry.register(form)
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get("/api/v1/{tenant}/forms/{form_uid}/render/{format}", _tenant_wrapped_render)
+    return await aiohttp_client(app)
+
+
+def _url(form, fmt="teams", query=""):
+    return f"/api/v1/navigator/forms/{form.form_uid}/render/{fmt}{query}"
+
+
+async def test_section_render_returns_only_that_section(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    resp = await client.get(_url(three_section_form, query="?section_index=1"))
+    assert resp.status == 200
+    text = await resp.text()
+    assert "Field 2" in text
+    assert "Field 1" not in text
+    assert "Field 3" not in text
+
+
+async def test_section_render_terminal_carries_signed_envelope(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    last = await client.get(_url(three_section_form, query="?section_index=2"))
+    assert last.status == 200
+    assert ENVELOPE_KEY in await last.text()
+    card = json.loads(await last.text())
+    datas = [a.get("data") for a in card.get("actions", []) if isinstance(a.get("data"), dict)]
+    envs = [d[ENVELOPE_KEY] for d in datas if ENVELOPE_KEY in d]
+    assert envs
+    assert TeamsSubmitEnvelope.model_validate(envs[0]).verify("s3cret")
+    first = await client.get(_url(three_section_form, query="?section_index=0"))
+    assert first.status == 200
+    assert ENVELOPE_KEY not in await first.text()
+
+
+async def test_section_render_metadata(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    resp = await client.get(_url(three_section_form, query="?section_index=1&with_meta=true"))
+    assert resp.status == 200
+    meta = (await resp.json())["metadata"]
+    assert meta["section_index"] == 1
+    assert meta["total_sections"] == 3
+    assert meta["form_version"] == (three_section_form.published_version or three_section_form.version)
+
+
+async def test_section_render_rejects_bad_index(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    for bad in ("x", "-1", "3"):
+        resp = await client.get(_url(three_section_form, query=f"?section_index={bad}"))
+        assert resp.status == 400, bad
+
+
+async def test_section_render_rejects_other_format(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    register_renderer("adaptive", TeamsFormRenderer(public_base_url="https://forms.test", signing_secret="s3cret"))
+    resp = await client.get(_url(three_section_form, fmt="adaptive", query="?section_index=0"))
+    assert resp.status == 400
+
+
+async def test_section_render_private_form_still_requires_membership(aiohttp_client, three_section_form):
+    private = three_section_form.model_copy(update={"is_public": False})
+    client = await _teams_app(aiohttp_client, private)
+    resp = await client.get(_url(private, query="?section_index=99"))
+    assert resp.status != 200
+    assert resp.status != 400  # membership check precedes section validation
+
+
+async def test_whole_form_render_unchanged_without_query(aiohttp_client, three_section_form):
+    client = await _teams_app(aiohttp_client, three_section_form)
+    resp = await client.get(_url(three_section_form, query="?with_meta=true"))
+    assert resp.status == 200
+    meta = (await resp.json())["metadata"]
+    assert "section_index" not in meta
+    assert "total_sections" not in meta

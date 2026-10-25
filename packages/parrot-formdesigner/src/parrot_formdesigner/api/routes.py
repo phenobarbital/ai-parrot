@@ -32,6 +32,7 @@ exactly as before this feature existed.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any
@@ -223,6 +224,7 @@ def setup_form_api(
     alias_registry: "SinkAliasRegistry | None" = None,
     public_base_url: str | None = None,
     teams_renderer: "AbstractFormRenderer | None" = None,
+    teams_signing_secret: str | None = None,
     llm_quota: "LLMQuota | None" = None,
     tenant_scoped_submissions: bool = False,
     on_submitted: "SubmittedCallback | None" = None,
@@ -289,6 +291,13 @@ def setup_form_api(
             the ``teams`` format. When provided, takes precedence over
             constructing a ``TeamsFormRenderer`` from ``public_base_url``.
             ``None`` (default) defers to ``public_base_url`` / env var.
+        teams_signing_secret: HMAC secret used to sign the ``_formdesigner``
+            routing envelope of each Teams card. Falls back to the
+            ``FORMDESIGNER_TEAMS_SIGNING_SECRET`` environment variable.
+            ``None`` (default) emits envelopes with ``sig: null``, which a bot
+            configured with ``formdesigner_submit_secret`` rejects. Ignored
+            when ``teams_renderer`` is supplied; configure the secret on that
+            renderer instead.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -334,6 +343,7 @@ def setup_form_api(
         public_base_url=public_base_url,
         api_base_path=base_path,
         ui_base_path=app.get("_form_prefix", ""),
+        signing_secret=teams_signing_secret or os.environ.get("FORMDESIGNER_TEAMS_SIGNING_SECRET"),
         renderer=teams_renderer,
     )
 
