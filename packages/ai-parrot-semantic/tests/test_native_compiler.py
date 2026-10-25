@@ -71,7 +71,9 @@ def test_single_table_dialect_sql_and_rows(tmp_path: Path) -> None:
     try:
         connection.execute("CREATE SCHEMA sales")
         connection.execute("CREATE TABLE sales.orders (region VARCHAR, order_date TIMESTAMP, amount DECIMAL)")
-        connection.execute("INSERT INTO sales.orders VALUES ('eu', '2026-01-01', 12), ('eu', '2026-01-10', 8), ('us', '2026-01-02', 5)")
+        connection.execute(
+            "INSERT INTO sales.orders VALUES ('eu', '2026-01-01', 12), ('eu', '2026-01-10', 8), ('us', '2026-01-02', 5)"
+        )
         rows = connection.execute(rendered["duckdb"]).fetchall()
     finally:
         connection.close()

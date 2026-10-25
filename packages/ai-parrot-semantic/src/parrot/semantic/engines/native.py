@@ -29,7 +29,9 @@ class NativeCompiler:
         if query.saved_query is not None:
             raise SemanticValidationError("unsupported_query", "Saved queries must be expanded before compilation")
         if query.timezone is not None:
-            raise SemanticValidationError("unsupported_query", "Timezone conversion is not supported by the native compiler")
+            raise SemanticValidationError(
+                "unsupported_query", "Timezone conversion is not supported by the native compiler"
+            )
 
         member_kinds = {member.name: member.kind for member in self.model.members}
         time_dimensions = {member.name for member in self.model.members if member.kind == "time_dimension"}
@@ -86,7 +88,9 @@ class NativeCompiler:
                 ordered.append(exp.Ordered(this=expression, desc=order.desc))
             select.set("order", exp.Order(expressions=ordered))
 
-        limit = min(query.limit if query.limit is not None else self.model.policy.limits.default, self.model.policy.limits.max)
+        limit = min(
+            query.limit if query.limit is not None else self.model.policy.limits.default, self.model.policy.limits.max
+        )
         select.set("limit", exp.Limit(expression=exp.Literal.number(limit)))
         if query.offset:
             select.set("offset", exp.Offset(expression=exp.Literal.number(query.offset)))
