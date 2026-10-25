@@ -212,4 +212,5 @@ Use `$sdd-start TASK-4707` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: opus (native), 1 attempt. Coder commit also carried hook-appended sdd/ledger/events.jsonl lines; orchestrator removed them to pass the fidelity gate.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
