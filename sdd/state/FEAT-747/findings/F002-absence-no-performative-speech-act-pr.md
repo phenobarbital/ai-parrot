@@ -40,3 +40,5 @@ Case-insensitive grep over `packages/ai-parrot/src/parrot`, `packages/ai-parrot-
 ## Notes
 
 Files with `conversation_id`: core/hooks/messaging.py, mcp/context.py, mcp/integration.py, tools/reminder.py, integrations/msagentsdk/{resume,_patches,agent}.py, integrations/msteams/{formdesigner_turn,formdesigner_wizard,formdesigner_mixin,models,wrapper,dialogs/orchestrator,commands/agent_commands}.py, integrations/matrix/{appservice,crew/session_models,crew/mention}.py.
+
+[citation-check: stale] packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/mention.py:102 — the m.in_reply_to builder is `build_reply_content` (def at l.85), not `build_reply_relation`; lines 100-105 verified

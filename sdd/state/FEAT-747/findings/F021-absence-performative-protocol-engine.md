@@ -31,3 +31,5 @@ A free wiki query for 'performative speech act FIPA contract net protocol' retur
 ## Notes
 
 `[cross-lane: type=grep, intent=repo-wide grep performative|speech_act|in_reply_to|conversation_id|not_understood to close the absence claim at line level]` (Q023 covers this).
+
+[citation-check: verified] absent: performative (core, server, integrations), speech_act, not_understood, contract_net, FIPA

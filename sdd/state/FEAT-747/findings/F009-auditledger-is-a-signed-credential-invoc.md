@@ -100,3 +100,5 @@ merged_from: FC-012, FW-007
 [FC-012] A per-performative audit line (brainstorm §Security) would need a new entry kind or a sibling ledger; `append()` requires `credential_material`.
 
 [FW-007] `[cross-lane: type=read, intent=audit_ledger.py AuditLedgerEntry field list + the storage protocol signature to judge reuse for performative-level audit lines]`. Also `auth/broker/core.py::CredentialBroker` (FEAT-264) is the surface that writes to this ledger.
+
+[citation-check: verified] security/audit_ledger.py — AuditLedgerEntry 80, AbstractKMSSigner 135, LocalHMACSigner 166, AzureKeyVaultSigner 199, AuditLedger 296 (__init__ 327), append 338, verify 407, get_entry 436, entry_count 444

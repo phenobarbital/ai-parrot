@@ -75,3 +75,5 @@ Matches cluster in `bots/guardrails/builtin/pbac.py` (`PBACToolCallGuardrail`, T
 ## Notes
 
 The policy gate is keyed by *tool name* (`ResourceType.TOOL`). Mounting a remote capability as a local tool (brainstorm `catalog.mount`) would make it fall under this same gate for free, on the *caller* side; the *serving* agent's gate needs the caller's `PermissionContext` to travel with the message.
+
+[citation-check: verified] bots/guardrails/builtin/pbac.py — PBACToolCallGuardrail l.53, check l.233, check_access call l.274, _policy_enforcement l.143 (anchor probe used a joined excerpt and missed); auth/agent_guard.py parse_bot_permissions def at l.73

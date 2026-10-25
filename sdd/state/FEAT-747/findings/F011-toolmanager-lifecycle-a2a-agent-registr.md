@@ -90,3 +90,5 @@ merged_from: FC-014
 ## Notes
 
 Per-session caller identity is not a ToolManager attribute per se; it arrives as `PermissionContext` in guardrail extras (FC-013) and via `set_resolver`. `identity|session_id|user_id|principal|policy|pbac|guardrail` matches 86 lines in manager.py — the execute path threads them. Dynamic register/unregister exists, so a `catalog.mount` could add a tool at runtime with no new lifecycle machinery.
+
+[citation-check: stale] packages/ai-parrot/src/parrot/tools/manager.py:289-330 — `class ToolManager(MCPToolManagerMixin)` at l.289, its `__init__` at l.299 (the file's other `__init__` at l.284 belongs to a different class); add_tool 827, register_tool 853, unregister_tool 1434, clear_tools 1441, remove_tool 1447, execute_tool 1787, register_a2a_agent 2302, get_by_skill 2342, search_a2a_agents 2371, execute_tool_call 2403, clone 2824 verified

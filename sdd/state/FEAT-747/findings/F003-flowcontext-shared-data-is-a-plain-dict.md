@@ -180,3 +180,5 @@ merged_from: FC-004, FC-017, FW-011, FW-013
 [FW-011] `parrot.bots.flows.core` also exports an FSM (`AgentTaskMachine`, `TransitionCondition`) — a per-node state machine that a per-conversation protocol engine could be modelled after. In Matrix, room **state events** (`m.parrot.agent_card/channel/tunnel`, FW-005) are the existing 'replace-not-append' store the brainstorm maps the blackboard onto.
 
 [FW-013] `[cross-lane: type=grep, intent=class TraceContext in parrot/core/events/lifecycle — exact file and fields (trace_id, span, parent)]` (Q043 covers trace_id grep).
+
+[citation-check: verified] bots/flows/core/context.py — FlowContext 56, shared_data 94, agent_registry 97, trace_context 112, resolve_agent 123, mark_completed 177, get_input_for_node 259, to_snapshot 287; flows/flow/actions.py SetContextAction class at l.297 (cited 309-320 is its body)

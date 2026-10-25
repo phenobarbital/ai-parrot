@@ -58,3 +58,5 @@ Policy enforcement below the LLM already exists and is reusable: `bots/guardrail
 ## Notes
 
 Also relevant brainstorms: `sdd/proposals/policy-rules-abstractbot.brainstorm.md` (declarative PBAC on AbstractBot), `sdd/proposals/policy-based-access-control.brainstorm.md`. `[cross-lane: type=grep, intent=ToolManager.execute_tool guard chain order + where PermissionContext (caller identity) is built per session]`.
+
+[citation-check: verified] auth/agent_guard.py — enforce_agent_access l.172, AgentAccessDenied l.27, parse_bot_permissions l.73 (the cited 1-45 range is the module docstring)

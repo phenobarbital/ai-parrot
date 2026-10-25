@@ -58,3 +58,5 @@ merged_from: FC-018
 ## Notes
 
 Depth-1 follow-up of Q020. Exposes a seam: adding `ResourceType.AGENT` + a keyword/cap-id exact path alongside the embedding path would give `AgentRegistry.find_capability` without a new index class.
+
+[citation-check: verified] registry/capabilities — ResourceType 25, CapabilityEntry 48, IntentRouterConfig 149 (models.py); CapabilityRegistry 19, build_index 148, search 183 (registry.py)

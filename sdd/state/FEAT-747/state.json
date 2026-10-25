@@ -172,7 +172,8 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/local-inter-agent.proposal.md",
-      "commit_sha": "bebcac407b4e987140f3e4b4214eb6256fe49d22"
+      "commit_sha": "2fbd7c5a3f3f111b7cc1757c28738032ac2314c8",
+      "state_commit_sha": "bb0fe1984"
     }
   },
   "budget": {
@@ -201,6 +202,12 @@
       "at": "2026-10-25T23:09:00Z",
       "recoverable": true,
       "message": "FEAT-747 reserved via reserve_ids.py once the checkout was clean (commit 89ffda894); state dir moved from sdd/state/local-inter-agent/"
+    },
+    {
+      "phase": "committed",
+      "at": "2026-10-26T00:05:00Z",
+      "recoverable": true,
+      "message": "commit bb0fe1984 carried the peer-staged state dir but not the proposal file nor the citation-check tags (git add aborted on a stale pathspec); fixed by the follow-up commit recorded in output.commit_sha"
     }
   ],
   "resume_hint": {

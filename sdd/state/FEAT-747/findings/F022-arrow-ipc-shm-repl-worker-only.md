@@ -45,3 +45,5 @@ merged_from: FW-014
 ## Notes
 
 `[cross-lane: type=grep, intent=polars|pyarrow imports across packages to confirm Polars is absent from core (parent D6 picks Polars)]` (Q034 covers this partially; widen path to packages/).
+
+[citation-check: verified] tools/repl_worker/transport.py encode_dataframe 83, decode_dataframe_from_shm 266, unlink_shm 300; repl_worker/handle.py inject_dataframe 1060; pythonrepl.py inject_dataframe 1120; polars/shared_memory absent in tools/working_memory

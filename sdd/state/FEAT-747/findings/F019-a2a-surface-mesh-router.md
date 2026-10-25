@@ -80,3 +80,5 @@ merged_from: FW-009
 ## Notes
 
 TASK-2572 added Agent Card extension + inbound `DataPart` dispatch (structured, non-text payloads over A2A). TASK-1709 'A2A Bot Startup + Discovery Registry + Security' and FEAT-260 (audit ledger) show the A2A bridge already has the serving-side policy/audit hooks the parent spec lists as missing. `[cross-lane: type=read, intent=bots/a2a_agent.py + a2a/mesh.py register()/get_by_skill — entry fields to compare with the proposed registry contract entry]`.
+
+[citation-check: verified] a2a/client.py A2AClient 40, A2ARemoteAgentTool 543, _create_skill_input_model 630, A2ARemoteSkillTool 695; a2a/mixin.py A2AClientMixin 34, set_matrix_transport 105, discover_from_mesh 146, fan_out 346, pipeline 368, add_a2a_agent 396, ask_remote_agent 535, invoke_remote_skill 585; a2a/mesh.py A2AMeshDiscovery 136; a2a/router.py A2AProxyRouter 191

@@ -174,3 +174,5 @@ merged_from: FC-011, FG-004, FW-004
 - [cross-lane: type=read, intent=read task_memory/blob.py to see the blob tier API (storage_ref, verify-readable publish order)]
 
 [FW-004] Parent-spec D5 ('remote results land in WorkingMemory as references') has a natural seam: `store_result(key, data, data_type, metadata)` + a new `EntryType` for handles. Zero-copy claim: see FW-014 (Arrow IPC exists only on the REPL worker boundary). `[cross-lane: type=read, intent=working_memory/internals.py CatalogEntry/GenericEntry fields — is there a metadata slot for provenance]`.
+
+[citation-check: stale] packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py:135 — no `BlobKind` symbol; l.135 is the comment 'A DataFrame, written with pyarrow.parquet'; pyarrow imports verified at 244-245, 306, 331-332. All WorkingMemoryToolkit methods verified at the cited lines
