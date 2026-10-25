@@ -37,6 +37,7 @@ from .formdesigner_submit import (
     resolve_submit_tenant,
 )
 from parrot_formdesigner.renderers.teams import ENVELOPE_KEY
+from .formdesigner_cards import PICKER_ACTION_KEY
 from .adapter import Adapter
 from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
@@ -238,6 +239,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             register_auth_commands(self._command_router, self._auth)
         else:
             self.logger.info("MSTeams[%s]: no navigator_auth_url — auth lane disabled", config.name)
+
+        # FEAT-734: TeamsFormDesignerMixin seams (no-op for agents without the mixin)
+        self._wire_formdesigner_agent()
 
         # Route
         # Clean chatbot_id to be safe for URL
@@ -512,14 +516,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             if resume_helper is not None:
 
                 async def inject(*, session_id, user_id, agent_id, query):
-                    result = await self.form_orchestrator.process_message(
-                        message=query,
-                        conversation_id=conversation_id,
-                        context={
-                            "user_id": await self._effective_user_id(turn_context, user_id),
-                            "session_id": session_id,
-                        },
-                    )
+                    async with self._formdesigner_turn(turn_context):
+                        result = await self.form_orchestrator.process_message(
+                            message=query,
+                            conversation_id=conversation_id,
+                            context={
+                                "user_id": await self._effective_user_id(turn_context, user_id),
+                                "session_id": session_id,
+                            },
+                        )
+                        await self._flush_formdesigner_cards_if_ok(turn_context, result)
                     return result
 
                 outcome = await resume_helper.resume(a2ui_token, inject=inject)
@@ -555,14 +561,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 {"type": "a2ui_action", "action": a2ui_action, "values": values},
                 sort_keys=True,
             )
-            result = await self.form_orchestrator.process_message(
-                message=query,
-                conversation_id=conversation_id,
-                context={
-                    "user_id": await self._effective_user_id(turn_context, user_id),
-                    "session_id": conversation_id,
-                },
-            )
+            async with self._formdesigner_turn(turn_context):
+                result = await self.form_orchestrator.process_message(
+                    message=query,
+                    conversation_id=conversation_id,
+                    context={
+                        "user_id": await self._effective_user_id(turn_context, user_id),
+                        "session_id": conversation_id,
+                    },
+                )
+                await self._flush_formdesigner_cards_if_ok(turn_context, result)
             if result and result.raw_response is not None:
                 parsed = self._parse_response(result.raw_response)
                 await self._send_parsed_response(parsed, turn_context)
@@ -571,6 +579,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             else:
                 await self.send_text("Action processed.", turn_context)
             return
+
+        # FEAT-734: a TeamsFormDesignerMixin agent handles its picker, wizard and envelope cards first.
+        fd_agent = self._formdesigner_agent()
+        if fd_agent is not None and (ENVELOPE_KEY in submitted_data or PICKER_ACTION_KEY in submitted_data):
+            if await fd_agent.handle_formdesigner_card(turn_context, submitted_data):
+                return
 
         # FormDesigner standalone card (FEAT-551): card Submit carries {"_formdesigner": <envelope>, "_action": "submit",
         # **{field_id: value}}. Verified and forwarded to POST .../forms/{uid}/data — never routed to dialogs.
@@ -792,14 +806,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Process message with form orchestrator
         # (Orchestrator now handles trigger phrase detection for YAML forms)
-        result = await self.form_orchestrator.process_message(
-            message=text,
-            conversation_id=conversation_id,
-            context={
-                "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
-                "session_id": conversation_id,
-            },
-        )
+        async with self._formdesigner_turn(turn_context):
+            result = await self.form_orchestrator.process_message(
+                message=text,
+                conversation_id=conversation_id,
+                context={
+                    "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
+                    "session_id": conversation_id,
+                },
+            )
+            await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
         # Handle result
         if result.has_error:
@@ -1142,15 +1158,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         await self.send_typing(turn_context)
 
         # Process message with form orchestrator (same as text messages)
-        result = await self.form_orchestrator.process_message(
-            message=text,
-            conversation_id=conversation_id,
-            context={
-                "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
-                "session_id": conversation_id,
-                "source": "voice_note",  # Mark source for analytics
-            },
-        )
+        async with self._formdesigner_turn(turn_context):
+            result = await self.form_orchestrator.process_message(
+                message=text,
+                conversation_id=conversation_id,
+                context={
+                    "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
+                    "session_id": conversation_id,
+                    "source": "voice_note",  # Mark source for analytics
+                },
+            )
+            await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
         # Handle result (same as text flow)
         if result.has_error:
@@ -1241,6 +1259,36 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if self._formdesigner_session is not None and not getattr(self._formdesigner_session, "closed", False):
             await self._formdesigner_session.close()
         self._formdesigner_session = None
+
+    def _formdesigner_agent(self) -> Any | None:
+        """Return the marked FormDesigner agent, or ``None`` for ordinary agents."""
+        agent = getattr(self, "agent", None)
+        if agent is not None and getattr(type(agent), "formdesigner_serving", False) is True:
+            return agent
+        return None
+
+    def _wire_formdesigner_agent(self) -> None:
+        """Wire the wrapper's config, store, and TurnContext commands into the mixin."""
+        agent = self._formdesigner_agent()
+        if agent is None:
+            return
+        agent.apply_teams_config(self.config)
+        agent.bind_teams_identity(self._session_store)
+        for name, handler in agent.teams_commands().items():
+            self._command_router.register(name, handler)
+        self.logger.info("MSTeams[%s]: FormDesigner serving enabled", self.config.name)
+
+    def _formdesigner_turn(self, turn_context: TurnContext) -> Any:
+        """Return the mixin's request-local context manager or a no-op context."""
+        agent = self._formdesigner_agent()
+        return agent.formdesigner_turn(turn_context) if agent is not None else contextlib.nullcontext()
+
+    async def _flush_formdesigner_cards_if_ok(self, turn_context: TurnContext, result: Any) -> None:
+        """Flush cards queued by FormDesigner tools after a successful result."""
+        agent = self._formdesigner_agent()
+        if agent is None or result is None or getattr(result, "has_error", False):
+            return
+        await agent.flush_formdesigner_cards(turn_context)
 
     async def close_voice_transcriber(self) -> None:
         """Close voice transcriber and release resources."""

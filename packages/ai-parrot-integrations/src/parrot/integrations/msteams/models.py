@@ -88,6 +88,12 @@ class MSTeamsAgentConfig:
     auth_required: bool = False  # auth is opt-in; True fails closed
     navigator_auth_url: Optional[str] = None  # e.g. https://host/api/v1/login
     prefer_id_token: bool = True  # send id_token for strong JWKS verification
+    # FormDesigner form serving (FEAT-734) — read/render side used by TeamsFormDesignerMixin
+    formdesigner_mode: str = "remote"  # "remote" (HTTP) | "local" (in-process FormRegistry)
+    formdesigner_base_url: Optional[str] = None  # read/render origin (remote mode)
+    formdesigner_tenant: Optional[str] = None  # last-resort FormDesigner tenant slug
+    formdesigner_public_url: Optional[str] = None  # public origin for envelope URLs (local mode)
+    formdesigner_render_timeout: float = 15.0
 
     def __post_init__(self):
         """
@@ -121,6 +127,22 @@ class MSTeamsAgentConfig:
             env_base_path = config.get(f"{self.name.upper()}_FORMDESIGNER_API_BASE_PATH")
             if env_base_path:
                 self.formdesigner_api_base_path = str(env_base_path)
+        # FormDesigner form-serving env fallbacks (FEAT-734)
+        name_upper_fd = self.name.upper()
+        if not self.formdesigner_base_url:
+            self.formdesigner_base_url = config.get(f"{name_upper_fd}_FORMDESIGNER_BASE_URL")
+        if not self.formdesigner_tenant:
+            self.formdesigner_tenant = config.get(f"{name_upper_fd}_FORMDESIGNER_TENANT")
+        if not self.formdesigner_public_url:
+            self.formdesigner_public_url = config.get(f"{name_upper_fd}_FORMDESIGNER_PUBLIC_URL")
+        if self.formdesigner_mode == "remote":
+            env_mode = config.get(f"{name_upper_fd}_FORMDESIGNER_MODE")
+            if env_mode:
+                self.formdesigner_mode = str(env_mode).strip().lower()
+        if self.formdesigner_mode not in ("remote", "local"):
+            raise ValueError(
+                f"MSTeams[{self.name}]: formdesigner_mode must be 'remote' or 'local', got {self.formdesigner_mode!r}"
+            )
         if not self.formdesigner_allow_unsigned_submissions:
             raw_allow = config.get(f"{self.name.upper()}_FORMDESIGNER_ALLOW_UNSIGNED")
             if isinstance(raw_allow, bool):
@@ -238,4 +260,10 @@ class MSTeamsAgentConfig:
             auth_required=bool(data.get("auth_required", False)),
             navigator_auth_url=data.get("navigator_auth_url"),
             prefer_id_token=bool(data.get("prefer_id_token", True)),
+            # FormDesigner form serving (FEAT-734)
+            formdesigner_mode=data.get("formdesigner_mode", "remote"),
+            formdesigner_base_url=data.get("formdesigner_base_url"),
+            formdesigner_tenant=data.get("formdesigner_tenant"),
+            formdesigner_public_url=data.get("formdesigner_public_url"),
+            formdesigner_render_timeout=float(data.get("formdesigner_render_timeout", 15.0)),
         )

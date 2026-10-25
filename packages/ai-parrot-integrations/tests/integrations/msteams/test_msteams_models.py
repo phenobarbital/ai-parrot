@@ -297,3 +297,62 @@ class TestFormDesignerSubmitConfig:
 
         assert config.formdesigner_allow_unsigned_submissions is True
         assert config.formdesigner_tenant_map == {"aad-guid": "formdesigner-tenant"}
+
+
+class TestMSTeamsAgentConfigFormDesignerServe:
+    """Tests for FormDesigner form-serving configuration."""
+
+    def test_defaults_are_backward_compatible(self):
+        """FormDesigner read/render fields retain backwards-compatible defaults."""
+        config = MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
+
+        assert config.formdesigner_mode == "remote"
+        assert config.formdesigner_base_url is None
+        assert config.formdesigner_tenant is None
+        assert config.formdesigner_public_url is None
+        assert config.formdesigner_render_timeout == 15.0
+
+    def test_config_env_fallbacks(self, monkeypatch):
+        """FormDesigner read/render settings resolve from per-bot environment keys."""
+        values = {
+            "TESTBOT_FORMDESIGNER_BASE_URL": "https://forms.example.test",
+            "TESTBOT_FORMDESIGNER_TENANT": "example-tenant",
+            "TESTBOT_FORMDESIGNER_MODE": " LOCAL ",
+            "TESTBOT_FORMDESIGNER_PUBLIC_URL": "https://public.example.test",
+        }
+        monkeypatch.setattr("parrot.integrations.msteams.models.config.get", values.get)
+
+        config = MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
+
+        assert config.formdesigner_base_url == "https://forms.example.test"
+        assert config.formdesigner_tenant == "example-tenant"
+        assert config.formdesigner_mode == "local"
+        assert config.formdesigner_public_url == "https://public.example.test"
+
+    def test_invalid_mode_raises(self):
+        """Unsupported form-serving modes fail during configuration construction."""
+        try:
+            MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot", formdesigner_mode="unsupported")
+        except ValueError as error:
+            assert "formdesigner_mode must be 'remote' or 'local'" in str(error)
+        else:
+            raise AssertionError("Expected invalid FormDesigner mode to raise ValueError")
+
+    def test_from_dict_reads_fields(self):
+        """from_dict preserves all FormDesigner form-serving settings."""
+        config = MSTeamsAgentConfig.from_dict(
+            "TestBot",
+            {
+                "formdesigner_mode": "local",
+                "formdesigner_base_url": "https://forms.example.test",
+                "formdesigner_tenant": "example-tenant",
+                "formdesigner_public_url": "https://public.example.test",
+                "formdesigner_render_timeout": 8.5,
+            },
+        )
+
+        assert config.formdesigner_mode == "local"
+        assert config.formdesigner_base_url == "https://forms.example.test"
+        assert config.formdesigner_tenant == "example-tenant"
+        assert config.formdesigner_public_url == "https://public.example.test"
+        assert config.formdesigner_render_timeout == 8.5
