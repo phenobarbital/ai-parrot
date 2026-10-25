@@ -43,8 +43,7 @@ def test_manifest_and_exact_evaluator_failure(tmp_path: Path) -> None:
 def test_cte_alias_physical_resources(tmp_path: Path) -> None:
     """Carry WHERE usage through CTE and subquery projection aliases."""
     assert tmp_path.is_dir()
-    uses = _uses(
-        """
+    uses = _uses("""
         WITH compensation AS (
             SELECT o.salary * 2 AS annual_pay
             FROM sales.orders AS o
@@ -52,8 +51,7 @@ def test_cte_alias_physical_resources(tmp_path: Path) -> None:
         SELECT c.annual_pay
         FROM (SELECT annual_pay FROM compensation) AS c
         WHERE c.annual_pay > 100
-        """
-    )
+        """)
     assert ColumnUse(column="salary", table="sales.orders", context="where") in uses
     assert ColumnUse(column="salary", table="sales.orders", context="derived") in uses
     assert all(use.table != "compensation" for use in uses)
@@ -65,10 +63,7 @@ def test_sensitive_usage_lineage_matrix(tmp_path: Path) -> None:
     cases = {
         "where": "SELECT o.id FROM sales.orders o WHERE o.salary > 1",
         "having": "SELECT o.region FROM sales.orders o GROUP BY o.region HAVING MAX(o.salary) > 1",
-        "join": (
-            "SELECT o.id FROM sales.orders o JOIN sales.customers c "
-            "ON o.salary = c.id"
-        ),
+        "join": ("SELECT o.id FROM sales.orders o JOIN sales.customers c " "ON o.salary = c.id"),
         "group_by": "SELECT COUNT(*) FROM sales.orders o GROUP BY o.salary",
         "order_by": "SELECT o.salary AS pay FROM sales.orders o ORDER BY pay",
         "window": "SELECT SUM(o.id) OVER (PARTITION BY o.salary) FROM sales.orders o",
