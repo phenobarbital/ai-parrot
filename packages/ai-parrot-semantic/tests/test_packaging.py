@@ -7,7 +7,6 @@ import pytest
 
 from parrot.semantic import __version__
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPOSITORY_ROOT / "packages" / "ai-parrot-semantic"
 
