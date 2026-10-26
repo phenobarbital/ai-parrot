@@ -666,7 +666,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -679,8 +679,9 @@
       "parallelism_notes": "syncs the rewritten markdown from TASK-4089; serialized after TASK-4072 (pyproject.toml) and TASK-4076 (ci.yml); exclusive: edits packages/ai-parrot/pyproject.toml package-data; also edits flows/dev_loop/_subagent_defs.py and deletes the shipped-prompt copies under flows/dev_loop/_subagent_data/ and flows/dev_flow/ (C2)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4090-sdd-asset-packaging.md"
+      "completed_at": "2026-10-26T19:56:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4090-sdd-asset-packaging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4091",

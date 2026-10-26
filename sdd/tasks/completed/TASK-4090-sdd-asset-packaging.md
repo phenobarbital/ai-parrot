@@ -1158,10 +1158,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented check_asset_sync.py (write/check/wheel, deny-list, C16/C22 monorepo-path gate), generated 80-asset _assets tree + manifest, sdd/CONVENTIONS.md seed, package-data + MANIFEST.in graft, CI sync/scan steps + sdd-assets-wheel job, both loaders read packaged assets, 9 duplicated prompts deleted, test_prompt_parity removed. All validation commands pass; audit scan exit 0; ruff clean. Wheel check verified against a zip of the _assets tree only; a real 'uv build' was not run locally (needs isolated build env/Cython). Ledger issue ace18bef4e6e not closed (ledger write from sub-agent not attempted).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Also updated tests/sdd_scripts/test_feat709_doc_contract.py (not in the Files table; it read _subagent_data/ and would have failed). CI steps inserted after the task-state step (contract anchor line 113 now precedes a FEAT-712 step); sdd-assets-wheel job placed before install-guide.
