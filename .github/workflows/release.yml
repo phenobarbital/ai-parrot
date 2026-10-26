@@ -15,11 +15,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
         include:
-          - os: windows-latest
-            python-version: "3.12"
+          - { os: ubuntu-latest,    platform: linux,   archs: x86_64,  sdist: true }
+          - { os: ubuntu-24.04-arm, platform: linux,   archs: aarch64, sdist: false }
+          - { os: windows-latest,   platform: windows, archs: AMD64,   sdist: false }
+          - { os: macos-latest,     platform: macos,   archs: arm64,   sdist: false }
     defaults:
       run:
         working-directory: packages/ai-parrot
@@ -31,7 +31,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -49,37 +49,74 @@ jobs:
           python -m pip install --upgrade pip
           pip install cibuildwheel maturin twine cython build
 
-      - name: Build wheels on Linux
-        if: runner.os == 'Linux'
+      - name: Build wheels (${{ matrix.platform }} ${{ matrix.archs }})
         env:
-          CIBW_ARCHS: x86_64
-          CIBW_BEFORE_BUILD: "curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env"
-          CIBW_ENVIRONMENT: "PATH=/root/.cargo/bin:$PATH"
+          CIBW_ARCHS: ${{ matrix.archs }}
+          CIBW_BUILD: "cp3{11,12,13}-*"
+          CIBW_BEFORE_BUILD_LINUX: "curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env"
+          CIBW_ENVIRONMENT_LINUX: "PATH=/root/.cargo/bin:$PATH"
           RUST_SUBPACKAGE_PATH: src/parrot/yaml_rs
-          CIBW_BUILD: "cp3{11,12,13,14}-*"
-        run: |
-          cibuildwheel --platform linux --output-dir ${{ github.workspace }}/dist
-
-      - name: Build wheels on Windows
-        if: runner.os == 'Windows'
-        env:
-          CIBW_ARCHS: AMD64
-          CIBW_BUILD: "cp3{11,12,13,14}-*"
-        run: |
-          cibuildwheel --platform windows --output-dir ${{ github.workspace }}/dist
+          # macos-latest is arm64; 11.0 is the first macOS release that supports arm64.
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: cibuildwheel --platform ${{ matrix.platform }} --output-dir ${{ github.workspace }}/dist
 
       - name: Build sdist
-        if: matrix.python-version == '3.12' && runner.os == 'Linux'
+        if: matrix.sdist
         working-directory: packages/ai-parrot
         run: python -m build --sdist --outdir ${{ github.workspace }}/dist
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: core-dist-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: core-dist-${{ matrix.platform }}-${{ matrix.archs }}
           path: |
             ${{ github.workspace }}/dist/*.whl
             ${{ github.workspace }}/dist/*.tar.gz
+
+  smoke-core:
+    needs: [build-core, build-tools]
+    uses: ./.github/workflows/install-matrix.yml
+    with:
+      # download-artifact `pattern:` is a minimatch glob: braces match core-dist-* and dist-tools.
+      wheel-artifact-pattern: "{core-dist-*,dist-tools}"
+
+  # The RELEASED wheel drives the SDD flow in a foreign repo; guarded until `parrot sdd` ships.
+  smoke-sdd-foreign:
+    needs: [build-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/download-artifact@v8
+        with:
+          name: core-dist-linux-x86_64
+          path: dist
+      - name: Install the released wheel with its runtime dependencies into a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/wheelvenv"
+          "$RUNNER_TEMP/wheelvenv/bin/python" -m pip install dist/ai_parrot-*-cp312-*.whl pytest
+          WHEEL=$(ls "$PWD"/dist/ai_parrot-*-cp312-*.whl | head -1)
+          echo "PARROT_WHEEL_PATH=$WHEEL" >> "$GITHUB_ENV"
+      - name: Probe for parrot sdd + the wheel-only test
+        id: probe
+        run: |
+          if "$RUNNER_TEMP/wheelvenv/bin/parrot" sdd --help >/dev/null 2>&1 \
+             && test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run the SDD flow from the wheel in a foreign repo
+        if: steps.probe.outputs.ready == 'true'
+        run: |
+          env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV \
+            "$RUNNER_TEMP/wheelvenv/bin/python" -m pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q
+      - name: Not in this release yet
+        if: steps.probe.outputs.ready != 'true'
+        run: echo "::notice::smoke-sdd-foreign skipped - parrot sdd / wheel-only test not in this release yet"
 
   build-tools:
     runs-on: ubuntu-latest
@@ -529,7 +566,7 @@ jobs:
           path: dist/*
 
   deploy:
-    needs: [build-core, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules, build-parrot-codec, build-clients]
+    needs: [build-core, smoke-core, smoke-sdd-foreign, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules, build-parrot-codec, build-clients]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     environment:

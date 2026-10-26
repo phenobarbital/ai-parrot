@@ -1071,11 +1071,15 @@ markers = [
 ]
 
 [tool.cibuildwheel]
-build = "cp3{11,12,13,14}-*"
-skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"
+# cp314 is NOT built while requires-python is "<3.14" (spec §7) — keep both in sync.
+build = "cp3{11,12,13}-*"
+skip = "pp* *-musllinux* *-manylinux_i686 *-win32"
 
 [tool.cibuildwheel.linux]
-archs = ["x86_64"]
+archs = ["auto64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
