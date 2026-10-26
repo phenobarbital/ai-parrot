@@ -10,7 +10,7 @@ tags: [inter-agent, protocol, capnproto, handles, policy-gate, a2a]   # FEAT-576
 **Feature ID**: FEAT-746 (reserved 2026-10-26 by `reserve_ids.py`, commit `b261aa3b7`; reused verbatim — this slug owns it)
 **Date**: 2026-10-26
 **Author**: Jesus Lara (Claude Code, Fable 5.1)
-**Status**: draft — gate-first specification. Lane 0 (G1–G6) and the gate-independent modules (M0, M2, M13) are released for decomposition; the modules that depend on a gate or on FEAT-704 stay blocked until their gate amendment (or the FEAT-704 merge) lands in this document.
+**Status**: draft — gate-first specification. Lane 0 (G1–G6) and the gate-independent modules (M0, M1, M2, M5, M12 core seam, M13) are released for decomposition; the modules that depend on a gate stay blocked until their gate amendment lands in this document. Rev 0.2 resolved every §8 question (2026-10-26); no cross-feature merge blocks this feature any more.
 **Target version**: 0.30.0
 **Exploration**: `sdd/proposals/inter-agent-protocol.proposal.md` (status `review`, all 13 questions resolved 2026-10-26) · original brainstorm `sdd/state/FEAT-746/source.md` · research findings `sdd/state/FEAT-746/findings/`
 **Sister spec**: FEAT-747 Roost (`sdd/proposals/local-inter-agent.proposal.md`) rides the Squawk envelope and depends on this feature; nothing of Roost is defined here.
@@ -49,7 +49,7 @@ What we want instead is a typed remote procedure between two ai-parrot agents th
 - MCP transports (stdio/http/streamable-http/sse/unix/websocket/quic), `MCPClient`, `MCPToolProxy`: untouched; the MCP adapter is additive.
 - `parrot/clients/base.py` beyond consuming the existing `_apply_cache_hints` hook in G4.
 - The existing `AuditLedger` / `AuditLedgerEntry` schema and the `CredentialBroker` gate: reused only through the `AbstractKMSSigner` contract.
-- FEAT-704 semantic-layer tasks and the `ai-parrot-semantic` satellite: only the shared-contract decision (U1) touches them; whether FEAT-704 re-bases on the core contract is its owner's call (§8 Q1).
+- FEAT-704 semantic-layer tasks and the `ai-parrot-semantic` satellite: only the shared-contract decision (U1, refined by §8 Q1) touches them — TASK-4474/4476 are amended, outside this feature, to import `parrot.interagent` instead of defining their own handle/ledger models; nothing else of FEAT-704 changes here.
 - navigator-eventbus and navigator-auth internals: outside this repo; §7 records what the feature needs from them (a `reply_to` request/reply convention and a bytes-safe serializer; Biscuit issuance and attenuation) and G5/G6 measure the gap.
 - The conversation `ArtifactStore` (`parrot/storage/artifacts.py`) and the A2UI structured-artifact contract.
 - A `parrot squawk` CLI. Promotion approval and ledger rendering are Python APIs with a documented procedure in v0.
@@ -62,7 +62,7 @@ What we want instead is a typed remote procedure between two ai-parrot agents th
 
 ### Overview
 
-Squawk is a contract-driven, binary, streaming RPC between two ai-parrot agents, shipped as a **new satellite distribution `ai-parrot-squawk`** (U5) contributing the `parrot.squawk` namespace, with core receiving only (a) the neutral shared handle / descriptor / provenance / served-ledger-entry / error-code contract under `parrot/interagent/` (U1 + S5) and (b) four seams: ToolManager category mount/unmount, a handle-only WorkingMemory route, remote-agent discovery fields on `AgentRegistry` / `BotConfig` (U2), and a capability-call telemetry record + lifecycle event (S11). The dead gRPC MCP stub (`grpc_session.py`, `mcp.proto`) and the reserved `grpc_*` fields of `MCPServerConfig` are deleted in the same feature (U5).
+Squawk is a contract-driven, binary, streaming RPC between two ai-parrot agents, shipped as a **new satellite distribution `ai-parrot-squawk`** (U5) contributing the `parrot.squawk` namespace, with core receiving (a) the neutral, transport-free protocol contract under `parrot/interagent/` — handles / descriptors / provenance / served-ledger entry / error codes (U1 + S5) plus the contract models, category hashing, the Pydantic message mirrors, the capability → `ToolDefinition` compiler and the JSON bus-payload serializer (§8 Q3, so FEAT-747 Roost never imports the satellite; core stays free of `pycapnp` and `biscuit-python`) — and (b) four seams: ToolManager category mount/unmount, a handle-only WorkingMemory route, remote-agent discovery fields on `AgentRegistry` / `BotConfig` (U2), and a capability-call telemetry record + lifecycle event (S11). The dead gRPC MCP stub (`grpc_session.py`, `mcp.proto`) and the reserved `grpc_*` fields of `MCPServerConfig` are deleted in the same feature (U5).
 
 The **contract** is the only thing shared across the boundary: a versioned catalog of `SquawkCapability` entries grouped by `CapabilityCategory`, hashed per category (SHA-256 over the canonical Pydantic JSON — S4), exchanged once per version in the handshake and cached; afterwards calls carry only `cap_id`, `contract_hash` and canonical-JSON `args`. A call with a stale hash is refused with `STALE_CONTRACT` carrying the current category. Additive changes keep the major version; removals and type changes bump it and carry a deprecation window.
 
@@ -70,7 +70,7 @@ On the **serving side** a deterministic `CapabilityDispatcher` maps `cap_id` →
 
 On the **calling side** a `SquawkRemoteToolkit` (an `AbstractToolkit`) owns the always-mounted catalog tools (`catalog_list` / `catalog_mount` / `catalog_unmount` / `catalog_search` / `catalog_find`, D8). Mounting a category registers one `CapabilityTool` per capability in ToolManager through the new atomic `mount_category` seam (S3); the planner may pre-mount from intent with no LLM turn and the model may mount/unmount mid-conversation (Q11; G4 verifies prompt-cache behaviour). `CapabilityTool._execute` calls the remote, and routes the result by `returns`: an inline struct is returned as-is; an artifact is streamed as Arrow IPC batches (or opaque bytes) into the local `SquawkBlobStore`, verified against its sha256 key, and registered in WorkingMemory through the Python-only `register_handle` route as a `HandleEntry` whose summary is the descriptor and never the bytes (S6). Local affordance tools (`df_query`, `df_sample`, `df_join`, `df_describe`, `chart_from_df`, `df_to_text`) operate on handles with toolkit-enforced materialization caps and publish derived results as new handles, so derived data also stays out of context. Descriptors are session-only by default and durable when `task_memory` is configured (Q9).
 
-**Handles** are owner-bound and never bearer tokens: `HandleStore.claim()` re-verifies owner (or an explicit grant) and expiry, and every mismatch raises the same `handle_unavailable` code — the semantics FEAT-704 TASK-4476 specifies, lifted into core after that task merges (U1). The **blob store** is a byte-object store with content-hash keys, ACL, TTL, dedup-by-digest and streaming writes, with a local-disk and a file-manager (object storage) backend chosen per deployment (Q8); the task-memory `ArtifactBlobStore` is the pattern it follows (publish-then-reference, verify after write, bounded reads), not its base class (S9). Handshakes advertise known digests so the server skips bytes the client already holds.
+**Handles** are owner-bound and never bearer tokens: `HandleStore.claim()` re-verifies owner (or an explicit grant) and expiry, and every mismatch raises the same `handle_unavailable` code — the semantics FEAT-704 TASK-4476 specifies (`semantic-layer.spec.md:634-671`), lifted into core now; FEAT-704's TASK-4474/4476 are amended to import them (U1 refined by §8 Q1). The **blob store** is a byte-object store with content-hash keys, ACL, TTL, dedup-by-digest and streaming writes, with a local-disk and a file-manager (object storage) backend chosen per deployment (Q8); the task-memory `ArtifactBlobStore` is the pattern it follows (publish-then-reference, verify after write, bounded reads), not its base class (S9). Handshakes advertise known digests so the server skips bytes the client already holds.
 
 **Transport**: Cap'n Proto RPC (`pycapnp`) is the native carrier (Q6) — capabilities as first-class objects, promise pipelining, cancellation through a returned `Operation` capability, server streaming through a client-supplied `ProgressSink`. mTLS identifies the calling agent and its network; the Biscuit token travels in the `Hello` handshake message, never in the call payload. The message set (`squawk.capnp`) is transport-neutral by construction: the same structs are published on navigator-eventbus by the **bus carrier** (U4) with `reply_to`, `correlation_id` and dedup by `idempotency_key`. G2 (Cap'n Proto + Arrow IPC + cancellation + `PARTIAL`) and G6 (bus carrier) are hard v0 gates.
 
@@ -83,7 +83,7 @@ On the **calling side** a `SquawkRemoteToolkit` (an `AbstractToolkit`) owns the 
 | Cancellation | synchronous, reaches the running tool (`Operation.cancel`) | best-effort `Cancel` message; result may still arrive as `CANCELLED` or `PARTIAL` |
 | Delivery | exactly the RPC's | at-least-once; consumer dedups by `idempotency_key`; undeliverable results go to the DLQ |
 | Identity | mTLS peer + Biscuit in `Hello` | Biscuit in envelope metadata; peer identity from the bus principal |
-| Payload | binary frames | bytes-safe serialization — base64 inside the JSON `EventEnvelope.payload` until navigator-eventbus ships a bytes serializer (G6, §8 Q2) |
+| Payload | packed Cap'n Proto + binary frames | `BusPayloadSerializer` (core): the message's JSON with every `bytes` field base64-encoded, inside `EventEnvelope.payload`; a Squawk-owned convention that navigator-eventbus adopts later (§8 Q2) |
 | Trace | `trace_id` in `Call` | `trace_id` + `correlation_id` on the `EventEnvelope` |
 
 The bus carrier is never described as synchronous RPC (S1 nuance); it exists so that FEAT-747 and subscriber-style consumers use the same messages.
@@ -108,7 +108,7 @@ The bus carrier is never described as synchronous RPC (S1 nuance); it exists so 
               └──────── SquawkBusCarrier (M11) ── navigator-eventbus ──────┘
  AgentRegistry (kind: local|a2a|squawk, endpoint) (M13) ── resolves "who serves X" for the toolkit
  Adapters (M14): A2AContractAdapter (contract → AgentCard), MCPCategoryAdapter (category → MCP server) — both call the dispatcher
- Core contract (M1): parrot/interagent/{errors,handles,descriptors,provenance,ledger}.py
+ Core contract (M1): parrot/interagent/{errors,handles,descriptors,provenance,ledger,contract,messages,compiler,bus_codec}.py — pycapnp/biscuit-free; what Roost imports
 ```
 
 ### Integration Points
@@ -175,7 +175,7 @@ class ServedLedgerEntry(BaseModel):
     cost: CallCost; backing: Literal["deterministic", "llm_backed"]
     status: Literal["OK"] | SquawkErrorCode; trace_id: str; correlation_id: str | None; signature: str = ""
 
-# parrot/squawk/contract/models.py (satellite, M2)
+# parrot/interagent/contract.py (core, M1 — §8 Q3)
 class ReturnsSpec(BaseModel): kind: Literal["inline", "artifact"]; media_type: MediaType | None = None; schema_: dict[str, Any] | None = Field(default=None, alias="schema")
 class PolicyAnnotations(BaseModel):
     data_class: str = "internal"; redaction: str | None = None          # ScrubPolicy name registered on the gate
@@ -192,7 +192,7 @@ class CapabilityCategory(BaseModel): name: str; description: str; capabilities: 
 class SquawkContract(BaseModel): agent_id: str; major: int; categories: tuple[CapabilityCategory, ...]
 class ContractDelta(BaseModel): changed: tuple[CapabilityCategory, ...]; unchanged: tuple[str, ...]; removed: tuple[str, ...]
 
-# parrot/squawk/schema/messages.py (satellite, M3) — Pydantic mirrors of squawk.capnp
+# parrot/interagent/messages.py (core, M1 — §8 Q3) — Pydantic mirrors of squawk.capnp; the capnp codec itself stays in the satellite (M3)
 class Budget(BaseModel): tokens: int | None; ms: int | None; rows: int | None
 class HelloMessage(BaseModel): protocol_major: int; agent_id: str; token: bytes | None; known_hashes: dict[str, str]; known_digests: tuple[str, ...]; trace_id: str
 class WelcomeMessage(BaseModel): protocol_major: int; session_id: str; delta: ContractDelta; max_frame_bytes: int
@@ -228,6 +228,9 @@ class SquawkBlobStore(ABC): ...; LocalDiskBlobStore; FileManagerBlobStore   # M5
 class SquawkBusCarrier: ...                                # M11
 class A2AContractAdapter: ...; class MCPCategoryAdapter: ...   # M14
 def build_contract(bindings: Sequence[CapabilityBinding], *, agent_id: str, major: int) -> SquawkContract   # M2
+# parrot.interagent (core) — what FEAT-747 Roost and any carrier adapter import without the satellite
+class BusPayloadSerializer: ...                            # M1 — parrot.interagent.bus_codec (JSON + base64 bytes; no pycapnp)
+def compile_capability(cap: SquawkCapability, *, function: Callable) -> ToolDefinition   # M1 — parrot.interagent.compiler
 ```
 
 ---
@@ -236,7 +239,7 @@ def build_contract(bindings: Sequence[CapabilityBinding], *, agent_id: str, majo
 
 ### Gate and Dependency Rules (Lane 0 — the FEAT-571 pattern)
 
-G1–G6 are separate SDD gate tasks, initially unrun. Each commits a reproducible report under `sdd/state/FEAT-746/spikes/G<N>-<slug>/report.md` (commands, versions, data provenance, raw metrics, pass/fail, and a proposed amendment to this spec); logs go to `artifacts/logs/`. Passing requires review of the amendment — a prototype alone unblocks nothing. **G2 and G6 are hard v0 gates**: a failing G2 amends M3/M4 to the gRPC fallback (opaque-bytes fields, same message set) before any transport task starts; a failing G6 produces the navigator-eventbus change request (§8 Q2) and M11 waits for it. Missing data is reported, never invented.
+G1–G6 are separate SDD gate tasks, initially unrun. Each commits a reproducible report under `sdd/state/FEAT-746/spikes/G<N>-<slug>/report.md` (commands, versions, data provenance, raw metrics, pass/fail, and a proposed amendment to this spec); logs go to `artifacts/logs/`. Passing requires review of the amendment — a prototype alone unblocks nothing. **G2 and G6 are hard v0 gates**: a failing G2 amends M3/M4 to the gRPC fallback (opaque-bytes fields, same message set) before any transport task starts; a failing G6 amends M11's topic/reply convention and M11 waits for that amendment — the navigator-eventbus change request is filed regardless of outcome and never blocks M11 (§8 Q2). Missing data is reported, never invented.
 
 | Gate | Question it answers | Pass criterion | Blocks |
 |---|---|---|---|
@@ -245,16 +248,16 @@ G1–G6 are separate SDD gate tasks, initially unrun. Each commits a reproducibl
 | G3 — S3 contract → tool defs | Can a `SquawkCapability` compile to a `ToolDefinition` that OPENAI / ANTHROPIC / GOOGLE / GROQ accept? | One contract, `get_tool_schemas()` valid for the four `ToolFormat`s; a real call per provider succeeds under `PARROT_TEST_REAL_LLM=1` (schema validation only otherwise) | M2 compiler freeze |
 | G4 — S4 mount/unmount + prompt cache | Does mounting a category mid-conversation work with each provider's tool API and prompt caching? | Mount adds definitions without breaking the cached prefix on ≥ 2 providers (cache-read tokens observed via usage); amendment fixes whether mounted definitions sit in a separate cache segment via `_apply_cache_hints` | M7 premount policy |
 | G5 — S5 Biscuit attenuation | Can a Biscuit scoped to `hr.reports.*` be attenuated for a sub-agent and refused on `hr.people.*`, and how does navigator-auth issue it? | `biscuit-python` issue → attenuate → authorize passes/refuses as stated; navigator-auth issuance path documented as a change request if absent | M10 |
-| G6 — S6 envelope on the bus | Does Call/Result survive navigator-eventbus 0.4.0 Streams with correlation, `reply_to` and dedup? | Request on the bus, result consumed by the right subscriber, duplicate dropped, undeliverable to DLQ; bytes-safe payload strategy chosen (base64 interim vs upstream serializer) | M11 |
+| G6 — S6 envelope on the bus | Does Call/Result survive navigator-eventbus 0.4.0 Streams with correlation, the Squawk-owned `reply_to` topic convention and dedup? | Request on the bus, result consumed by the right subscriber, duplicate dropped, undeliverable to DLQ; `BusPayloadSerializer` payloads round-trip through Streams unchanged; the written navigator-eventbus change request (`reply_to` helper + bytes payload) is attached to the report (§8 Q2) | M11 |
 
 ### Dependency graph
 
 | Module | Lane | Depends on |
 |---|---|---|
 | M0 satellite scaffold + dead-stub removal | 0c | none |
-| M1 core shared contract | 1 | **FEAT-704 TASK-4474 + TASK-4476 merged** (U1) |
-| M2 contract model, hashing, compiler, cache | 1 | G3 (compiler freeze only; models can start) |
-| M3 wire schema + codecs + frames | 1 | G2 |
+| M1 core shared contract (handles, ledger entry, contract models, hashing, message mirrors, compiler, bus codec) | 0c | none — lifts FEAT-704's spec'd claim/ledger semantics (§8 Q1); G3 may amend the compiler's description wording only |
+| M2 bindings, `build_contract`, client contract cache | 1 | M1 |
+| M3 capnp schema + codec + frames | 1 | M1, G2 |
 | M4 RPC transport (server, client, identity hook) | 2 | M3, G2 |
 | M5 blob store | 2 | M1 |
 | M6 handle landing + affordances (core WM seam) | 3 | M1, M5, G1 |
@@ -262,13 +265,13 @@ G1–G6 are separate SDD gate tasks, initially unrun. Each commits a reproducibl
 | M8 dispatcher + policy gate + handshake | 3 | M2, M4, M10 |
 | M9 served ledger + renderer + promotion | 3 | M1, M8 |
 | M10 identity + Biscuit verification | 2 | G5 |
-| M11 bus carrier | 3 | M3, G6 |
-| M12 telemetry (trace, CapabilityCallRecord/Event, received ledger) | 2 | M3 (message fields); core seam independent |
+| M11 bus carrier | 3 | M1 (`BusPayloadSerializer`, messages), M8, G6 |
+| M12 telemetry (trace, CapabilityCallRecord/Event, received ledger) | 2 | M1 (message fields); core seam independent |
 | M13 discovery seam (AgentRegistry / BotConfig) | 0c | none |
 | M14 adapters (A2A, MCP) | 4 | M2, M8 |
 | M15 docs + examples | 5 | M6, M7, M8, M9, M11 |
 
-Modules without an edge between them are expected to run concurrently (M0 ∥ M13 ∥ M2-models ∥ M12-core-seam from day one).
+Modules without an edge between them are expected to run concurrently (M0 ∥ M1 ∥ M13 ∥ M12-core-seam from day one; M2, M5 as soon as M1 lands).
 
 #### Delegation-eligible modules
 
@@ -276,8 +279,8 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 |---|---|---|---|
 | G1–G6 | no | experimental acceptance above | design and evidence evaluation |
 | M0 | yes | advisors-style `pyproject.toml` (PEP 420 `namespaces = true`), `parrot/squawk/version.py`, root pyproject rows, delete list, `MCPServerConfig` field removal — all fixed below | — |
-| M1 | yes (after FEAT-704 merge) | models fixed in §2; claim semantics lifted from TASK-4476; `canonical_bytes` as `AuditLedgerEntry.canonical_bytes` | activation: TASK-4474/4476 merged |
-| M2 | yes | models, hash rule, delta rule, compiler mapping fixed | G3 may amend the description wording only |
+| M1 | yes | models fixed in §2; claim semantics lifted from `semantic-layer.spec.md:634-671`; `canonical_bytes` as `AuditLedgerEntry.canonical_bytes`; hash rule, delta rule, compiler mapping, message mirrors and bus codec fixed | G3 may amend the compiler's description wording only |
+| M2 | yes | bindings, `build_contract`, `ContractCache` fixed | — |
 | M3 | no | message set fixed; capnp schema layout fixed | G2 decides pycapnp vs gRPC gencode |
 | M4 | no | API fixed | G2 decides the binding; TLS/identity mechanics |
 | M5 | yes | interface + two backends + sweeper fixed; duck file-manager contract fixed | — |
@@ -303,15 +306,28 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
   # packages/ai-parrot-squawk/src/parrot/squawk/config.py  (new)
   SQUAWK_BLOB_BACKEND: str      # "local" | "filemanager"   — config.get("SQUAWK_BLOB_BACKEND", fallback="local")   # pattern verified: parrot/conf.py:44
   SQUAWK_BLOB_ROOT: Path; SQUAWK_BLOB_TTL_S: int; SQUAWK_MAX_FRAME_BYTES: int; SQUAWK_BISCUIT_ROOT_PUBLIC_KEY: str | None
+  SQUAWK_GATE_POLICY_PATH: Path | None    # §8 Q5 — YAML overriding DEFAULT_GATE_POLICIES per data class
   # packages/ai-parrot-server/src/parrot/mcp/config.py  (modifies :203-207) — delete grpc_host, grpc_port, grpc_use_tls, grpc_cert_path, grpc_use_protobuf
   ```
 
 ### Module 1: Core shared contract (`parrot.interagent`)
-- **Path**: `packages/ai-parrot/src/parrot/interagent/{__init__.py,errors.py,handles.py,descriptors.py,provenance.py,ledger.py}`
-- **Responsibility**: the neutral, transport-free data contract both Squawk and Roost import from core: error codes, `ArtifactHandle` family, `HandleStore` protocol with claim semantics, `ServedLedgerEntry`. Written **after** FEAT-704 TASK-4474 (signed ledger) and TASK-4476 (owner-bound handles) merge so their semantics are lifted, not re-invented: `claim()` re-verifies owner/grant/expiry and raises the SAME code for every mismatch; `append(required=True)` is the fail-closed contract. Nothing here imports `parrot.squawk` or `parrot.semantic`.
-- **Depends on**: FEAT-704 TASK-4474 / TASK-4476 (cross-feature).
+- **Path**: `packages/ai-parrot/src/parrot/interagent/{__init__.py,errors.py,handles.py,descriptors.py,provenance.py,ledger.py,contract.py,messages.py,compiler.py,bus_codec.py}`
+- **Responsibility**: the neutral, transport-free protocol contract both Squawk and Roost import from core (§8 Q3): error codes, the `ArtifactHandle` family, the `HandleStore` protocol with claim semantics, `ServedLedgerEntry`, the contract models (`SquawkCapability` / `CapabilityCategory` / `SquawkContract` / `ContractDelta`) with canonical per-category hashing (S4), the Pydantic message mirrors (§2), the capability → `ToolDefinition` compiler, and `BusPayloadSerializer` (JSON with base64 `bytes` fields — the only serializer Roost needs). Claim/ledger semantics are lifted from FEAT-704's spec (`semantic-layer.spec.md:605-671`), not re-invented: `claim()` re-verifies owner/grant/expiry and raises the SAME code for every mismatch; `append(required=True)` is the fail-closed contract (§8 Q1: FEAT-704's TASK-4474/4476 are amended to import these). Nothing here imports `parrot.squawk`, `parrot.semantic`, `pycapnp` or `biscuit`.
+- **Depends on**: none (G3 may amend the compiler's wording).
 - **Interface Skeleton**:
   ```python
+  # parrot/interagent/contract.py (new) — models in §2 Data Models, plus:
+  def category_hash(category: CapabilityCategory) -> str:
+      """'sha256:' + hexdigest of json.dumps(category.model_dump(mode="json", exclude={"hash"}), sort_keys=True, separators=(",", ":")). Never over provider schemas (S4)."""
+  def contract_delta(known: Mapping[str, str], contract: SquawkContract) -> ContractDelta: """Full definitions only for categories whose hash differs; names for the rest; removed names."""
+  # parrot/interagent/compiler.py (new)
+  def compile_capability(cap: SquawkCapability, *, function: Callable) -> ToolDefinition:   # ToolDefinition verified: parrot/tools/manager.py:31
+      """name=cap.cap_id with '.'→'__'; input_schema=cap.input_schema; description = cap.description + returns sentence ('returns a struct' | 'returns an artifact handle usable with <affordances>'); routing_meta={'squawk': {'category':…, 'backing':…, 'returns':…}}. `function` is supplied by the caller (Squawk's CapabilityTool, Roost's local wrapper)."""
+  # parrot/interagent/bus_codec.py (new)
+  class BusPayloadSerializer:
+      """Bytes-safe mapping of one message onto `EventEnvelope.payload` (dict): {'kind': <message type name>, 'v': 1, 'data': model_dump(mode="json") with every `bytes` field base64-encoded}. Squawk-owned convention (§8 Q2); no pycapnp. FEAT-747 M9 imports exactly this."""
+      def to_payload(self, message: CallMessage | ResultMessage | ProgressMessage | CancelMessage) -> dict[str, Any]: ...
+      def from_payload(self, payload: dict[str, Any]) -> CallMessage | ResultMessage | ProgressMessage | CancelMessage: """Unknown kind or version ⇒ SquawkError(UPSTREAM_FAILED, 'malformed')."""
   # parrot/interagent/errors.py (new)
   class SquawkErrorCode(str, Enum): ...                      # §2 Data Models
   class SquawkError(Exception):
@@ -330,22 +346,17 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
   # parrot/interagent/ledger.py (new)
   class ServedLedgerEntry(BaseModel):
       def canonical_bytes(self) -> bytes: """Sorted-key JSON without `signature` (same approach as AuditLedgerEntry.canonical_bytes, audit_ledger.py:109)."""
-  # parrot/interagent/__init__.py exports: SquawkErrorCode, SquawkError, MediaType, HandleOwner, HandleProvenance, HandleDescriptor, ArtifactHandle, HandleStore, InMemoryHandleStore, HandleClaimError, handle_key, CallerIdentity, CallCost, ServedLedgerEntry
+  # parrot/interagent/__init__.py exports: SquawkErrorCode, SquawkError, MediaType, HandleOwner, HandleProvenance, HandleDescriptor, ArtifactHandle, HandleStore, InMemoryHandleStore, HandleClaimError, handle_key, CallerIdentity, CallCost, ServedLedgerEntry,
+  #   ReturnsSpec, PolicyAnnotations, SquawkCapability, CapabilityCategory, SquawkContract, ContractDelta, category_hash, contract_delta,
+  #   Budget, HelloMessage, WelcomeMessage, CallMessage, ResultMessage, ProgressMessage, CancelMessage, compile_capability, BusPayloadSerializer
   ```
 
-### Module 2: Contract model, hashing, compiler and client cache
-- **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/contract/{__init__.py,models.py,hashing.py,compiler.py,cache.py,bindings.py}`
-- **Responsibility**: `SquawkCapability` / `CapabilityCategory` / `SquawkContract` (§2), per-category hashing over canonical JSON (S4), handshake deltas, version rules (additive keeps `major`; removal/type change bumps it and sets `deprecated_until`), `CapabilityBinding` (cap → tool name or LLM-backed spec) and `build_contract()`; the compiler turns a capability into a `ToolDefinition` whose description is worded by `returns.kind`; the client-side `ContractCache` answers `catalog_*` without a round trip.
-- **Depends on**: core `ToolDefinition`; G3 for the compiler's wording freeze.
+### Module 2: Bindings, contract builder and client contract cache
+- **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/contract/{__init__.py,cache.py,bindings.py}`
+- **Responsibility**: the serving-side `CapabilityBinding` (cap → tool name or LLM-backed spec) and `build_contract()` applying the version rules (additive keeps `major`; removal/type change bumps it and sets `deprecated_until`); the client-side `ContractCache` that answers `catalog_*` without a round trip. Models, hashing and the compiler come from core M1.
+- **Depends on**: M1.
 - **Interface Skeleton**:
   ```python
-  # parrot/squawk/contract/hashing.py (new)
-  def category_hash(category: CapabilityCategory) -> str:
-      """'sha256:' + hexdigest of json.dumps(category.model_dump(mode="json", exclude={"hash"}), sort_keys=True, separators=(",", ":")). Never over provider schemas."""
-  def contract_delta(known: Mapping[str, str], contract: SquawkContract) -> ContractDelta: """Full definitions only for categories whose hash differs; names for the rest; removed names."""
-  # parrot/squawk/contract/compiler.py (new)
-  def compile_capability(cap: SquawkCapability) -> ToolDefinition:   # ToolDefinition verified: parrot/tools/manager.py:31
-      """name=cap.cap_id with '.'→'__'; input_schema=cap.input_schema; description = cap.description + returns sentence ('returns a struct' | 'returns an artifact handle usable with <affordances>'); function bound later by M7; routing_meta={'squawk': {'category':…, 'backing':…, 'returns':…}}."""
   # parrot/squawk/contract/bindings.py (new)
   class LLMBackedSpec(BaseModel): system_prompt: str; output_schema: dict[str, Any]; tool_allowlist: tuple[str, ...]   # cap_ids only — never raw internal tools (D9)
   class CapabilityBinding(BaseModel): capability: SquawkCapability; tool_name: str | None = None; llm_backed: LLMBackedSpec | None = None   # exactly one set, matching capability.backing
@@ -362,13 +373,13 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
       def replace_category(self, category: CapabilityCategory) -> None: """STALE_CONTRACT recovery path."""
   ```
 
-### Module 3: Wire schema, codecs and Arrow frames
-- **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/schema/{__init__.py,squawk.capnp,messages.py,codec.py,frames.py}`
-- **Responsibility**: the Cap'n Proto schema (`struct Hello/Welcome/Call/Result/Progress/Cancel`, `interface Squawk { handshake; call; stream }`, `interface ProgressSink { progress; done }`, `interface Operation { cancel }`), loaded with `capnp.load()`; Pydantic mirrors (§2) and a codec that round-trips them; `frames.py` chunks a pandas frame into Arrow IPC stream frames under the strict rules of `encode_dataframe` (no pickle, no object dtype that fails Arrow conversion) and reassembles them, tolerating a truncated sequence (every complete batch is valid — the `PARTIAL` guarantee). The schema is transport-neutral: the bus carrier serializes the same structs with `to_bytes()`.
-- **Depends on**: G2.
+### Module 3: Wire schema, capnp codec and Arrow frames
+- **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/schema/{__init__.py,squawk.capnp,codec.py,frames.py}`
+- **Responsibility**: the Cap'n Proto schema (`struct Hello/Welcome/Call/Result/Progress/Cancel`, `interface Squawk { handshake; call; stream }`, `interface ProgressSink { progress; done }`, `interface Operation { cancel }`), loaded with `capnp.load()`; a codec that round-trips the core message mirrors (`parrot.interagent.messages`, M1) to packed capnp bytes; `frames.py` chunks a pandas frame into Arrow IPC stream frames under the strict rules of `encode_dataframe` (no pickle, no object dtype that fails Arrow conversion) and reassembles them, tolerating a truncated sequence (every complete batch is valid — the `PARTIAL` guarantee). The schema is transport-neutral: the bus carrier serializes the same structs with `to_bytes()`.
+- **Depends on**: M1, G2.
 - **Interface Skeleton**:
   ```python
-  # parrot/squawk/schema/codec.py (new)
+  # parrot/squawk/schema/codec.py (new) — message classes imported from parrot.interagent.messages (M1)
   def encode(message: HelloMessage | WelcomeMessage | CallMessage | ResultMessage | ProgressMessage | CancelMessage) -> bytes: """Packed capnp bytes."""
   def decode(kind: type[T], data: bytes) -> T: """Inverse; raises SquawkError(UPSTREAM_FAILED, 'malformed') on schema violation."""
   # parrot/squawk/schema/frames.py (new)
@@ -497,14 +508,23 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 
 ### Module 8: Serving dispatcher, policy gate and handshake
 - **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/server/{__init__.py,dispatcher.py,gate.py,handshake.py,llm_backed.py,idempotency.py}`
-- **Responsibility**: the deterministic serving core (§2 dispatch order). `Handshake` validates `protocol_major`, verifies the token (M10), computes the delta and records known digests per session. `CapabilityDispatcher.dispatch` enforces one authenticated path (S7): unknown cap ⇒ `UNKNOWN_CAPABILITY`; hash mismatch ⇒ `STALE_CONTRACT` + current category; token scope ⇒ `UNAUTHORIZED`; gate ⇒ `POLICY_DENIED` / `BUDGET_EXCEEDED`; execution only through `ToolManager.execute_tool(tool_name, args, permission_context=ctx)`; cancellation event checked between frames; results that are artifacts are published to the server-side blob store and streamed. `LLMBackedRunner` runs an LLM-backed capability with typed args, structured output and a tool allowlist equal to contract capabilities (D9), under `token_budget`, and its output passes the same `post_result`. `IdempotencyWindow` dedups `(caller, idempotency_key)` within a TTL and replays the stored result.
+- **Responsibility**: the deterministic serving core (§2 dispatch order). `Handshake` validates `protocol_major`, verifies the token (M10), computes the delta and records known digests per session. The gate resolves each capability's effective policy as `PolicyAnnotations` overlaid on `DEFAULT_GATE_POLICIES[data_class]` (§8 Q5: conservative built-in defaults per data class, overridable by the YAML at `SQUAWK_GATE_POLICY_PATH`; a data class with neither a default nor an override fails closed with `POLICY_DENIED('unknown_data_class')`). `CapabilityDispatcher.dispatch` enforces one authenticated path (S7): unknown cap ⇒ `UNKNOWN_CAPABILITY`; hash mismatch ⇒ `STALE_CONTRACT` + current category; token scope ⇒ `UNAUTHORIZED`; gate ⇒ `POLICY_DENIED` / `BUDGET_EXCEEDED`; execution only through `ToolManager.execute_tool(tool_name, args, permission_context=ctx)`; cancellation event checked between frames; results that are artifacts are published to the server-side blob store and streamed. `LLMBackedRunner` runs an LLM-backed capability with typed args, structured output and a tool allowlist equal to contract capabilities (D9), under `token_budget`, and its output passes the same `post_result`. `IdempotencyWindow` dedups `(caller, idempotency_key)` within a TTL and replays the stored result.
 - **Depends on**: M2, M4, M10, M9 (ledger), M5 (server blob store), M12 (events).
 - **Interface Skeleton**:
   ```python
   # parrot/squawk/server/gate.py (new)
   class GateDecision(BaseModel): policies_applied: tuple[str, ...]; data_classes: tuple[str, ...]; row_cap: int | None; scrub: ScrubPolicy | None   # ScrubPolicy verified: parrot/security/redaction.py:128
+  DEFAULT_GATE_POLICIES: Mapping[str, PolicyAnnotations] = {   # §8 Q5 — overridable via SQUAWK_GATE_POLICY_PATH (YAML: {data_class: PolicyAnnotations fields})
+      "public":   PolicyAnnotations(),
+      "internal": PolicyAnnotations(row_cap=100_000, rate_limit_per_caller="300/m"),
+      "hr":       PolicyAnnotations(redaction="hr", aggregation_min=5, row_cap=10_000, rate_limit_per_caller="60/m"),
+      "pii":      PolicyAnnotations(redaction="pii", aggregation_min=5, row_cap=10_000, rate_limit_per_caller="60/m"),
+  }
+  def load_gate_policies(path: Path | None) -> Mapping[str, PolicyAnnotations]: """DEFAULT_GATE_POLICIES overlaid with the YAML file when configured; malformed file ⇒ startup error, never a silent default."""
+  def effective_policy(cap: SquawkCapability, policies: Mapping[str, PolicyAnnotations]) -> PolicyAnnotations:
+      """Capability annotations win field-by-field over policies[cap.policy.data_class]; unknown data_class ⇒ SquawkError(POLICY_DENIED, 'unknown_data_class')."""
   class CapabilityPolicyGate:
-      def __init__(self, *, scrub_policies: Mapping[str, ScrubPolicy], rate_limiter: "RateLimiter", clock: Callable[[], float] = time.monotonic) -> None: ...
+      def __init__(self, *, scrub_policies: Mapping[str, ScrubPolicy], rate_limiter: "RateLimiter", policies: Mapping[str, PolicyAnnotations] = DEFAULT_GATE_POLICIES, clock: Callable[[], float] = time.monotonic) -> None: ...
       async def pre_call(self, cap: SquawkCapability, args: dict[str, Any], caller: CallerIdentity, ctx: PermissionContext | None) -> GateDecision:
           """ctx is None ⇒ SquawkError(POLICY_DENIED,'no_context') — never a pass; rate limit per caller ⇒ BUDGET_EXCEEDED; args free text is data (never prompt)."""
       async def post_result(self, cap: SquawkCapability, decision: GateDecision, result: Any) -> tuple[Any, bool]:
@@ -554,7 +574,7 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 
 ### Module 10: Identity and Biscuit verification
 - **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/security/{__init__.py,biscuit.py}`
-- **Responsibility**: verify a Biscuit (`biscuit-python`) presented in `Hello` against the deployment's root public key; derive a `TokenScope` (allowed cap_id globs, roles, expiry); authorize each call with facts `capability(cap_id)`, `category(name)`, `caller(agent_id)` so attenuation blocks are enforced (G5: `hr.reports.*` allowed, `hr.people.*` refused). Issuance and attenuation by navigator-auth are external (G5 documents the gap); `attenuate()` is provided for sub-agent delegation on the calling side.
+- **Responsibility**: verify a Biscuit (`biscuit-python`) presented in `Hello` against the deployment's root public key; derive a `TokenScope` (allowed cap_id globs, roles, expiry); authorize each call with facts `capability(cap_id)`, `category(name)`, `caller(agent_id)` so attenuation blocks are enforced (G5: `hr.reports.*` allowed, `hr.people.*` refused). **Issuance is navigator-auth's** (§8 Q4: root keypair config, token lifetime, attenuation endpoint — a deliverable outside this repo); Squawk only verifies, and `attenuate()` is provided for sub-agent delegation on the calling side. G5 validates against the navigator-auth issuer when it is available and against a test-only local issuer otherwise; no production issuer ships in this feature.
 - **Depends on**: G5.
 - **Interface Skeleton**:
   ```python
@@ -569,15 +589,11 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 
 ### Module 11: Bus carrier
 - **Path**: `packages/ai-parrot-squawk/src/parrot/squawk/transport/bus.py`
-- **Responsibility**: publish `CallMessage`s on a dedicated navigator-eventbus `EventBus(transport="streams")` (the FEAT-710 `setup_event_fanout` pattern) under `squawk:<agent_id>:calls` with `reply_to=squawk:<caller>:replies:<correlation_id>`, consume results; on the serving side consume calls, dedup by `idempotency_key` within a TTL window, run the same `CapabilityDispatcher`, publish `Progress`/`Result` to `reply_to`, and let undeliverable results reach the DLQ. Payloads use the M3 codec; until navigator-eventbus ships a bytes-safe serializer they are base64 inside `EventEnvelope.payload` (G6 decides; §8 Q2).
-- **Depends on**: M3, M8 (serving side), G6.
+- **Responsibility**: publish `CallMessage`s on a dedicated navigator-eventbus `EventBus(transport="streams")` (the FEAT-710 `setup_event_fanout` pattern) under `squawk:<agent_id>:calls` with `reply_to=squawk:<caller>:replies:<correlation_id>`, consume results; on the serving side consume calls, dedup by `idempotency_key` within a TTL window, run the same `CapabilityDispatcher`, publish `Progress`/`Result` to `reply_to`, and let undeliverable results reach the DLQ. Payloads go through core's `BusPayloadSerializer` (M1); the `reply_to` topic convention is Squawk-owned and documented in `docs/interagent/squawk-wire.md` (§8 Q2 — adopted by navigator-eventbus later; adoption is a transport swap inside this module only).
+- **Depends on**: M1, M8 (serving side), G6.
 - **Interface Skeleton**:
   ```python
-  # parrot/squawk/transport/bus.py (new)
-  class BusPayloadSerializer:
-      """Bytes-safe mapping of one Squawk message onto `EventEnvelope.payload` (dict): {'kind': <message type>, 'b64': base64(codec.encode(msg))} until navigator-eventbus ships a bytes serializer (G6, §8 Q2). This is the serializer FEAT-747 M9 imports (`from parrot.squawk.transport.bus import BusPayloadSerializer`)."""
-      def to_payload(self, message: CallMessage | ResultMessage | ProgressMessage | CancelMessage) -> dict[str, Any]: ...
-      def from_payload(self, payload: dict[str, Any]) -> CallMessage | ResultMessage | ProgressMessage | CancelMessage: ...
+  # parrot/squawk/transport/bus.py (new) — BusPayloadSerializer imported from parrot.interagent.bus_codec (M1)
   class SquawkBusCarrier:
       def __init__(self, bus: "EventBus", *, agent_id: str, topic_prefix: str = "squawk:", dedup_ttl_s: int = 600) -> None: ...   # EventBus: navigator_eventbus (usage verified: parrot/observability/fanout.py:24)
       async def publish_call(self, target_agent: str, call: CallMessage) -> str: """Sets reply_to; returns correlation_id."""
@@ -589,7 +605,7 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 ### Module 12: Telemetry — trace propagation, capability-call record/event, received ledger
 - **Path**: MODIFY `packages/ai-parrot/src/parrot/observability/recorders/{models.py,base.py,__init__.py}`, `packages/ai-parrot/src/parrot/core/events/lifecycle/events/__init__.py`; CREATE `packages/ai-parrot/src/parrot/core/events/lifecycle/events/capability.py`, `packages/ai-parrot-squawk/src/parrot/squawk/telemetry.py`, `packages/ai-parrot-squawk/src/parrot/squawk/client/received_ledger.py`
 - **Responsibility**: a `CapabilityCallRecord` sibling of `UsageRecord` (no fabricated provider/tokens — S11) and `CapabilityCallEvent(LifecycleEvent)` emitted on both sides with the caller-generated `trace_id` (D13); `AbstractLogger.record_capability` default no-op so existing recorders keep working; the served side binds `invocation_context(agent=..., user_id=f"agent:{caller}", session_id=session)` for the call; the client keeps a `ReceivedLedger` (remote agent, cap_id, contract hash, handle key, descriptor digest, cost, later affordance uses).
-- **Depends on**: core seam independent; satellite parts need M3 message fields.
+- **Depends on**: core seam independent; satellite parts need M1 message fields.
 - **Interface Skeleton**:
   ```python
   # parrot/observability/recorders/models.py  (modifies :22 — add sibling model after UsageRecord)
@@ -671,9 +687,12 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 | `test_mcp_config_no_grpc_fields` | M0 | `MCPServerConfig` rejects/ignores `grpc_host`; the stub module is gone |
 | `test_handle_claim_same_code` | M1 | non-owner, expired and unknown keys all raise `HandleClaimError` with identical message |
 | `test_served_entry_canonical_bytes_excludes_signature` | M1 | signature-independent canonical form |
-| `test_category_hash_canonical` | M2 | hash independent of field order and of provider schema; changes on any capability change |
-| `test_contract_delta` | M2 | changed/unchanged/removed partition |
-| `test_compile_capability_four_formats` | M2 | compiled `ToolDefinition` passes `get_tool_schemas()` for OPENAI/ANTHROPIC/GOOGLE/GROQ |
+| `test_category_hash_canonical` | M1 | hash independent of field order and of provider schema; changes on any capability change |
+| `test_contract_delta` | M1 | changed/unchanged/removed partition |
+| `test_compile_capability_four_formats` | M1 | compiled `ToolDefinition` passes `get_tool_schemas()` for OPENAI/ANTHROPIC/GOOGLE/GROQ |
+| `test_bus_payload_serializer_bytes_safe` | M1 | every message with non-UTF-8 `bytes` round-trips through `to_payload` → `json.dumps` → `from_payload`; unknown kind/version refused |
+| `test_interagent_has_no_satellite_imports` | M1 | `parrot.interagent` imports neither `pycapnp`, `biscuit`, `parrot.squawk` nor `parrot.semantic` |
+| `test_build_contract_version_rules` | M2 | duplicate cap_id refused; removal requires a major bump + `deprecated_until` |
 | `test_codec_roundtrip_all_messages` | M3 | every message type round-trips through `encode`/`decode` |
 | `test_arrow_frames_partial_assembly` | M3 | truncated frame list yields every complete batch, `complete=False` |
 | `test_arrow_frames_strict_refusal` | M3 | object dtype that Arrow cannot convert raises `StrictTransportError` |
@@ -689,6 +708,7 @@ Modules without an edge between them are expected to run concurrently (M0 ∥ M1
 | `test_capability_tool_stale_contract_retry` | M7 | one refresh + retry, then the error dict |
 | `test_dispatch_order_and_fail_closed` | M8 | no `PermissionContext` ⇒ `POLICY_DENIED`; execution path is `ToolManager.execute_tool` (spy) |
 | `test_gate_aggregation_min_and_row_cap` | M8 | k-anonymity refusal; truncation flag |
+| `test_gate_defaults_overlay_and_unknown_class` | M8 | unset annotations take `DEFAULT_GATE_POLICIES[data_class]`; YAML override wins over defaults, capability annotations win over both; unknown data class ⇒ `POLICY_DENIED('unknown_data_class')`; malformed YAML ⇒ startup error |
 | `test_idempotency_window_replay` | M8 | duplicate key ⇒ same result, single execution |
 | `test_llm_backed_allowlist_and_budget` | M8 | tools limited to contract caps; `BUDGET_EXCEEDED` |
 | `test_ledger_required_sink_failure_blocks_result` | M9 | sink raises ⇒ `LedgerUnavailable`; dispatcher yields `UPSTREAM_FAILED` and no payload |
@@ -778,6 +798,8 @@ def hmac_ledger() -> ServedLedger:
 - [ ] **AC18** `ai-parrot-squawk` is a workspace member installed by `uv sync`; `import parrot.squawk` and `import parrot.interagent` work; `src/parrot/` of the satellite has no `__init__.py`.
 - [ ] **AC19** The Validation Contract tests and every new test pass; `ruff check` is clean on touched files; `docs/interagent/squawk.md` and `squawk-wire.md` exist and the example runs over loopback.
 - [ ] **AC20** G1's measured descriptor cost is < 250 tokens for a 10k-row frame and the caps it froze are the ones `HandleDescriptor` and `HandleAffordanceToolkit` enforce.
+- [ ] **AC21** A capability with unset policy limits is governed by `DEFAULT_GATE_POLICIES[data_class]` (overridable via `SQUAWK_GATE_POLICY_PATH`); a data class with neither default nor override is refused with `POLICY_DENIED('unknown_data_class')`.
+- [ ] **AC22** `parrot.interagent` imports nothing from `parrot.squawk`, `parrot.semantic`, `pycapnp` or `biscuit`; FEAT-747's `EnvelopeLike` fields are satisfied by `parrot.interagent.messages.CallMessage` and its serializer by `parrot.interagent.bus_codec.BusPayloadSerializer`.
 
 ---
 
@@ -976,7 +998,8 @@ class MCPServerConfig: transport: str = "stdio"  # :142 ; grpc_host/grpc_port/gr
 - ~~`FileManagerInterface` byte-range / streaming read~~ — none; streaming goes RPC → blob-store writer.
 - ~~Importers of `grpc_session.py` / `GrpcMCPSession` / `GrpcMCPConfig` / `mcp.proto`~~ — none in `packages/*/src`, `packages/*/tests` or `docs`; the `"grpc"` hits in `conf.py`, `observability/*` are OTLP exporters, unrelated.
 - ~~`transport: "grpc"` in `MCPServerConfig.transport` docs~~ — the documented values are stdio/http/streamable-http/sse/unix/quic.
-- ~~`ResultHandle` / `SemanticAuditLedger` / `GovernedDatasetSink` code~~ — FEAT-704 specifies them (`sdd/specs/semantic-layer.spec.md:605-687`); 0/26 tasks done, TASK-4474/4476 `pending` (verified in `sdd/tasks/index/semantic-layer.json`). M1 waits for them.
+- ~~`ResultHandle` / `SemanticAuditLedger` / `GovernedDatasetSink` code~~ — FEAT-704 specifies them (`sdd/specs/semantic-layer.spec.md:605-687`); 0/26 tasks done, TASK-4474/4476 `pending` (verified in `sdd/tasks/index/semantic-layer.json`). M1 lifts their spec'd semantics now and those two tasks are amended to import `parrot.interagent` (§8 Q1) — never import `parrot.semantic` from this feature.
+- ~~`parrot.squawk.contract.models` / `parrot.squawk.schema.messages` / `parrot.squawk.transport.bus.BusPayloadSerializer`~~ — rev 0.1 paths; since rev 0.2 (§8 Q3) the models, message mirrors, compiler and bus serializer live in `parrot.interagent.{contract,messages,compiler,bus_codec}`.
 - ~~`CapabilityEntry` as a Squawk capability~~ — `parrot.registry.capabilities.models.CapabilityEntry` is FEAT-070's intent-router index (name collision; untouched here).
 - ~~`parrot.storage.artifacts.ArtifactStore` for handles~~ — the conversation/export store; unrelated (name collision).
 - ~~A `parrot squawk` CLI~~ — non-goal in v0.
@@ -1014,11 +1037,11 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 | `packages/ai-parrot/src/parrot/observability/recorders/__init__.py` | MODIFY | `__all__ = [` | `__init__.py:27` | 1 |
 | `packages/ai-parrot/src/parrot/core/events/lifecycle/events/__init__.py` | MODIFY | `__all__ = [` | `__init__.py:51` | 1 |
 | `packages/ai-parrot/src/parrot/core/events/lifecycle/events/capability.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/interagent/{__init__,errors,handles,descriptors,provenance,ledger}.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/interagent/{__init__,errors,handles,descriptors,provenance,ledger,contract,messages,compiler,bus_codec}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-squawk/pyproject.toml`, `README.md`, `tests/__init__.py` | CREATE | — | — | — |
 | `packages/ai-parrot-squawk/src/parrot/squawk/{__init__,version,config,telemetry}.py` | CREATE | — | — | — |
-| `packages/ai-parrot-squawk/src/parrot/squawk/contract/{__init__,models,hashing,compiler,cache,bindings}.py` | CREATE | — | — | — |
-| `packages/ai-parrot-squawk/src/parrot/squawk/schema/{__init__,messages,codec,frames}.py`, `squawk.capnp` | CREATE | — | — | — |
+| `packages/ai-parrot-squawk/src/parrot/squawk/contract/{__init__,cache,bindings}.py` | CREATE | — | — | — |
+| `packages/ai-parrot-squawk/src/parrot/squawk/schema/{__init__,codec,frames}.py`, `squawk.capnp` | CREATE | — | — | — |
 | `packages/ai-parrot-squawk/src/parrot/squawk/transport/{__init__,rpc_server,rpc_client,tls,bus}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-squawk/src/parrot/squawk/blobs/{__init__,store,local,filemanager,sweeper}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-squawk/src/parrot/squawk/client/{__init__,toolkit,capability_tool,landing,affordances,received_ledger}.py` | CREATE | — | — | — |
@@ -1050,9 +1073,10 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 
 ### Known Risks / Gotchas
 - **Cap'n Proto RPC in Python (Q6/S2)** — `pycapnp` 2.2.4 is the only maintained binding; its asyncio RPC layer is younger than grpc.aio and has no precedent here. G2 is a hard gate; on failure M3/M4 swap to gRPC with opaque `bytes` fields in the same message set (grpcio 1.84 / protobuf 6.31 already in the venv via `navigator-eventbus[grpc]`). The schema MUST stay transport-neutral (no capnp-only semantics leak into `messages.py`).
-- **Schedule dependency on FEAT-704 (U1)** — TASK-4474/4476 are `pending` and FEAT-704's built branch is salvage-only. M1 and everything below it (M5, M6, M9 ledger entry) wait; transport, contract, gate, identity and discovery do not. If FEAT-704 stalls, the user decides whether M1 lifts the *spec'd* semantics (`semantic-layer.spec.md:605-687`) instead of merged code — §8 Q1.
-- **Bus carrier depends on navigator-eventbus changes (U4/G6)** — no `reply_to` convention on Streams and JSON-only payloads. Interim: base64 payloads and a Squawk-owned `reply_to` topic convention; G6 files the upstream change request (§8 Q2).
-- **Biscuit issuance lives in navigator-auth (Q7/G5)** — none exists; M10 verifies and attenuates locally so the serving side is complete, and issuance is an external change request (§8 Q4).
+- **FEAT-704 overlap (U1 refined by §8 Q1)** — M1 lifts the *spec'd* claim/ledger semantics (`semantic-layer.spec.md:605-671`) rather than waiting for TASK-4474/4476 (0/26 done, built branch salvage-only). The cost is an amendment to those two FEAT-704 tasks (import `parrot.interagent`; drop their private `ResultHandle` owner tuple / `SemanticAuditLedger` append contract) that must land before they are implemented — tracked outside this feature; this spec never touches `parrot.semantic`.
+- **Core now carries protocol data models (§8 Q3)** — `parrot.interagent` must stay free of `pycapnp`, `biscuit-python`, `parrot.squawk` and `parrot.semantic` imports (AC22 tests it); the binary codec and every transport remain in the satellite. The price is that a wire-schema change touches core (`messages.py`) and the satellite (`squawk.capnp` + codec) together — one task owns both edits.
+- **Bus carrier runs on a Squawk-owned convention (U4/G6, §8 Q2)** — navigator-eventbus 0.4.0 has no `reply_to` helper on Streams and JSON-only payloads, so M11 ships `BusPayloadSerializer` (JSON + base64 bytes, ~33% overhead on frames) and its own reply-topic layout; the upstream change request is filed by G6 and its adoption is a later transport swap inside M11, not a redesign.
+- **Biscuit issuance lives in navigator-auth (Q7/G5, §8 Q4)** — none exists today; it is the user's deliverable in that package (root keypair, lifetime, attenuation endpoint). M10 verifies and attenuates locally so the serving side is complete; until navigator-auth ships, G5 and the test suite use a test-only issuer and no production tokens can be minted.
 - **Fail-open precedents nearby (S7)** — `PBACToolCallGuardrail` passes without a context and `PBACPermissionResolver` passes without navigator-auth; `A2AServer._invoke_tool` is ungated. The dispatcher must never route around `execute_tool`, and the gate must treat a `None` context as denial; AC05 tests both.
 - **Raw-data leak through generic WorkingMemory APIs (S6)** — `store_result` + `get_result(raw)` would reintroduce the leak; only `register_handle` lands remote results, and `_apply_raw_policy` skips `HANDLE` entries.
 - **Discovery conflation (S10, accepted risk under U2)** — remote entries in `AgentRegistry` carry discovery fields only; `get_instance` refuses them; `A2AMeshDiscovery` keeps health/skills for A2A. A later read-through from the mesh is out of scope.
@@ -1089,7 +1113,7 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 - [x] **U2 — Discovery (D10 was wrong as written).** — *Resolved in proposal*: extend `AgentRegistry` / `BotConfig` with `kind: local | a2a | squawk` + endpoint so one registry answers "who serves X"; `A2AMeshDiscovery` stays as the A2A-specific layer. → §3 M13.
 - [x] **U3 — Frame engine for the local affordance tools.** — *Resolved in proposal*: pandas + Arrow IPC for v0, no new dependency; Polars as an optional engine later (D6 amended). → §3 M6, AC17.
 - [x] **U4 — v0 scope and ordering.** — *Resolved in proposal*: both carriers in v0 (point-to-point RPC and the event-bus envelope) because the sister Local spec (FEAT-747) needs the bus from day one; S6 becomes a v0 gate. FEAT-746 remains the parent FEAT-747 depends on. → §2 Carrier semantics, §3 G6/M11.
-- [x] **U5 — Package placement and the dead gRPC stub.** — *Resolved in proposal*: new satellite distribution owning both client and server halves; core receives only the shared handle contract (via U1) and the ToolManager / WorkingMemory / AgentRegistry seams; delete `grpc_session.py` + `mcp.proto` in this feature. → §3 M0.
+- [x] **U5 — Package placement and the dead gRPC stub.** — *Resolved in proposal*: new satellite distribution owning both client and server halves; core receives only the shared handle contract (via U1) and the ToolManager / WorkingMemory / AgentRegistry seams; delete `grpc_session.py` + `mcp.proto` in this feature. → §3 M0. *Refined by Q3 (rev 0.2)*: core's share grows to the transport-free protocol data contract (contract models, message mirrors, compiler, JSON bus serializer) so Roost never imports the satellite; the satellite still owns every transport, the capnp codec, the dispatcher, gate, ledger, blob store, toolkit and adapters.
 - [x] **Q6 — Native transport.** — *Resolved in proposal*: Cap'n Proto RPC (capabilities as first-class objects, promise pipelining), Arrow IPC for frames. Python support is the acknowledged risk; S2 is re-scoped to Cap'n Proto and is a hard v0 gate; schema stays transport-neutral so gRPC remains a fallback swap. → §3 G2/M3/M4.
 - [x] **Q7 — Capability-token format.** — *Resolved in proposal*: Biscuit, issued and attenuated by navigator-auth; S5 proves issue → attenuate → refuse on `hr.people.*`. → §3 G5/M10.
 - [x] **Q8 — Blob-store location per network.** — *Resolved in proposal*: backend chosen per deployment: one blob-store interface (content-hash key, ACL, TTL, dedup-by-digest) with local-disk and object-storage (`FileManagerInterface`) implementations. → §3 M5.
@@ -1100,20 +1124,24 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 - [x] **Q13 — Protocol name.** — *Resolved in proposal*: Squawk (parrot-to-parrot call). → everywhere.
 - [x] **Shared-contract import path under U1** (proposal's first unresolved item) — *Resolved in this spec*: a core subpackage `parrot/interagent/` (no new distribution); the Squawk satellite depends only on `ai-parrot`; FEAT-704's models stay satellite-local and are reached by an explicit adapter, never imported by the Squawk satellite. The remaining half of that question is Q1 below.
 - [x] **Names FEAT-747 (Roost, `sdd/specs/local-inter-agent.spec.md`, committed `915c5045d`) pins on this feature** — *Resolved in this spec*, so Roost's §6 "provided by FEAT-746" block and its §8 Q1/Q2 can close against these exact paths:
-  - envelope: `parrot.squawk.schema.messages.CallMessage` satisfies Roost's structural `EnvelopeLike` (`envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`) — §2 Data Models;
-  - bytes-safe envelope serializer (Roost M9, its §8 Q2): `parrot.squawk.transport.bus.BusPayloadSerializer` (`to_payload` / `from_payload`) — §3 M11;
-  - catalog tools (Roost M11, its §8 Q1): `SquawkRemoteToolkit.catalog_list / catalog_mount / catalog_unmount / catalog_search / catalog_find` and the planner path `premount_for_intent`, in `parrot.squawk.client.toolkit`; the ToolManager seam is `mount_category` / `unmount_category` — §3 M7;
+  - envelope: `parrot.interagent.messages.CallMessage` (core, Q3) satisfies Roost's structural `EnvelopeLike` (`envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`) — §2 Data Models;
+  - bytes-safe envelope serializer (Roost M9, its §8 Q2): `parrot.interagent.bus_codec.BusPayloadSerializer` (`to_payload` / `from_payload`, core, no pycapnp) — §3 M1;
+  - mounting (Roost M11, its §8 Q1): a local peer's capabilities are mounted without the satellite — `parrot.interagent.compiler.compile_capability(cap, function=<Roost wrapper>)` + core `ToolManager.mount_category` / `unmount_category` (§3 M7 seam); the remote path keeps `SquawkRemoteToolkit.catalog_list / catalog_mount / catalog_unmount / catalog_search / catalog_find` and `premount_for_intent` in `parrot.squawk.client.toolkit` for `kind: squawk` peers;
   - registry `kind` (Roost M3): `parrot.registry.AgentKind` (`str` enum: `"local" | "a2a" | "squawk"`) on `BotMetadata.kind` / `BotConfig.kind`, plus `endpoint`, `contract_categories` — §3 M13;
   - WorkingMemory handle entry: `EntryType.HANDLE` + `WorkingMemoryToolkit.register_handle` — §3 M6;
   - handle class: `parrot.interagent.ArtifactHandle` (core), not FEAT-704's `ResultHandle` — Roost's §1 wording "handles (`ResultHandle`, via FEAT-704)" should read `ArtifactHandle` (`parrot.interagent`), lifted from FEAT-704's semantics.
 
+### Resolved in status review (rev 0.2, 2026-10-26, user)
+
+- [x] **Q1 — FEAT-704 re-base vs. waiting for merged code** — *Resolved*: **M1 lifts the spec'd semantics now; FEAT-704 re-bases.** M1 implements the claim/append semantics from `semantic-layer.spec.md` §M8/M9b immediately; FEAT-704's TASK-4474/4476 are amended (outside this feature) to import `parrot.interagent` instead of defining their own. M5/M6/M9 are unblocked; one handle/ledger contract in the repo. → §1 Non-Goals, §2 Overview, §3 M1 + dependency graph, §7.
+- [x] **Q2 — navigator-eventbus change request** — *Resolved*: **Squawk-owned convention, base64 interim; upstream later.** M11 ships `BusPayloadSerializer` (JSON + base64 bytes) and its own `reply_to` topic layout now; G6 files the navigator-eventbus change request (`reply_to` helper + bytes payload) and its adoption is a later transport swap inside M11. → §2 Carrier semantics, §3 G6/M1/M11, §7.
+- [x] **Q3 — Roost import direction** — *Resolved*: **move the envelope + serializer into core `parrot.interagent`.** The Pydantic message mirrors, the contract models with hashing, the capability → `ToolDefinition` compiler and `BusPayloadSerializer` live in core (pycapnp-free; the capnp codec stays in the satellite), so FEAT-747's M9/M11 import only `parrot.interagent` and core `ToolManager`. → §2 Overview + Data Models, §3 M1/M2/M3/M11, §6, AC22; FEAT-747's §6 "provided by FEAT-746" block should be re-pointed to these paths.
+- [x] **Q4 — Biscuit issuance** — *Resolved*: **navigator-auth issues; Squawk verifies.** navigator-auth gains a Biscuit issuer (root keypair config, token lifetime, attenuation endpoint) as a deliverable outside this repo; G5 validates against it when available; M10 only verifies and attenuates locally; no production issuer ships here. → §3 G5/M10, §7.
+- [x] **Q5 — Gate defaults when annotations are unset** — *Resolved*: **conservative built-in defaults per data class, overridable.** `DEFAULT_GATE_POLICIES` (`hr`/`pii`: redact + `aggregation_min=5` + `row_cap=10_000` + `60/m`; `internal`: `row_cap=100_000` + `300/m`; `public`: none), overridable via the YAML at `SQUAWK_GATE_POLICY_PATH`; capability annotations win field-by-field; an unknown data class fails closed (`POLICY_DENIED('unknown_data_class')`). → §3 M0 config, M8 gate, AC21.
+
 ### Unresolved
 
-- [ ] **Q1 — Will FEAT-704 re-base `ResultHandle` / `SemanticAuditLedger` on `parrot.interagent` once M1 lands, and if FEAT-704 stalls, may M1 lift the spec'd semantics (`semantic-layer.spec.md:605-687`) instead of waiting for merged code?** — *Owner: FEAT-704 owner + user*. (S5 ESCALATE-adjacent; the ordering decision U1 stands either way.)
-- [ ] **Q2 — navigator-eventbus change request for U4/G6**: a `reply_to` request/reply convention on Streams and a bytes-safe payload serializer; until then the carrier uses base64 payloads (`BusPayloadSerializer`) and a Squawk-owned reply topic convention. — *Owner: tbd (navigator-eventbus maintainer)*; G6 produces the written request.
-- [ ] **Q3 — Roost import direction (FEAT-747)**: Roost's spec keeps its code in `ai-parrot` / `ai-parrot-integrations` and avoids importing the envelope through `EnvelopeLike`, but its M9 (`BusPayloadSerializer`) and M11 (`catalog_mount`) would import `parrot.squawk` from core, inverting the core → satellite dependency. Either those two Roost modules ship inside `ai-parrot-squawk`, or they resolve the satellite lazily and degrade when it is absent. — *Owner: FEAT-747 spec author*; not a blocker for this feature.
-- [ ] **Q4 — navigator-auth Biscuit issuance/attenuation API** (root key management, token lifetime, attenuation endpoint). — *Owner: navigator-auth maintainer*; G5 documents the gap and M10 is complete without it (verification + local attenuation).
-- [ ] **Q5 — Rate-limit and aggregation-minimum defaults per data class** for the HR deployment (the gate takes them from contract annotations; the defaults are an operator policy). — *Owner: user*; decided at deployment, not in code.
+None. Every question is resolved; gate amendments (G1–G6) are the only remaining way this document changes before `/sdd-done`.
 
 ---
 
@@ -1128,7 +1156,7 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 | S2 | Gate Cap'n Proto behind a transport spike with a gRPC fallback (alternative) | CONFIRM | Already Q6's mitigation; G2 criteria extended (async streaming, cancellation, identity in handshake, partials); failure swaps M3/M4 to gRPC opaque bytes | §3 G2, §7 |
 | S3 | Do not assume ToolManager categories are maintained (architecture) | CONFIRM | Verified: `_categories` written only by `clear()`/`clone()`; M7 adds atomic `mount_category`/`unmount_category` and category-aware `unregister_tool` | §3 M7, §6, AC12 |
 | S4 | Hash canonical capability models before provider schema conversion (api) | CONFIRM | Verified: `get_tool_schemas` injects `_tool_instance`; hashes are over canonical Pydantic JSON per category | §2, §3 M2 |
-| S5 | Resolve the shared handle contract before implementing a second one (architecture) | CONFIRM | One neutral contract in core (`parrot/interagent/`, M1) after FEAT-704 TASK-4474/4476; task-memory descriptor via explicit adapter; FEAT-704 re-base is Q1 | §2, §3 M1/M6, §8 Q1 |
+| S5 | Resolve the shared handle contract before implementing a second one (architecture) | CONFIRM | One neutral contract in core (`parrot/interagent/`, M1) lifting FEAT-704's spec'd semantics; task-memory descriptor via explicit adapter; FEAT-704 re-bases on it (§8 Q1, resolved rev 0.2) | §2, §3 M1/M6, §8 Q1 |
 | S6 | Use a handle-only working-memory route for remote results (risk) | CONFIRM | `register_handle` + `HandleEntry`; raw policy bypassed for handles; materialization only via capped affordances | §3 M6, AC03/AC11 |
 | S7 | Enforce one authenticated capability dispatch path (risk) | CONFIRM | Verified fail-open precedents (pbac.py:251, resolver.py:315, server.py:1152/1164); handshake refuses unauthenticated peers, gate fails closed on `None` context, execution only via `execute_tool`, adapters share the dispatcher | §3 M8/M10/M14, AC05 |
 | S8 | Make required audit durability part of result acknowledgment (risk) | CONFIRM | `ServedLedger.append(required=True)`: sign → durable sink → ack; failure ⇒ `UPSTREAM_FAILED(audit_unavailable)`, no result | §3 M9, AC06 |
@@ -1145,12 +1173,12 @@ Summary: **10** confirmed · **2** rejected · **0** escalated.
 
 - **Isolation**: ONE feature worktree for this spec (`feat-FEAT-746-inter-agent-protocol`, created from `origin/dev` by the implementing lane); the `sdd-coder` engine gives each task its own sub-worktree inside it. Lane 0 gate reports and the gate-independent modules (M0, M2 models, M12 core seam, M13) start first; gated modules start only after their amendment is merged into this document.
 - **Module dependency graph** (edges = imports or merged amendments; modules without an edge run concurrently):
-  - M1 → FEAT-704 TASK-4474/4476 (lifts their claim/ledger semantics) · M5 → M1 (`HandleOwner`, `handle_key`) · M6 → M1, M5 (`ArtifactHandle`, `SquawkBlobStore`), G1 (caps) · M9 → M1 (`ServedLedgerEntry`), M8 (dispatch hook)
-  - M2 → G3 (compiler wording) · M3 → G2 · M4 → M3 (`messages`, `codec`), G2 · M7 → M2 (`ContractCache`, `compile_capability`), M4 (`SquawkClient`), M6 (`HandleLanding`), G4 · M8 → M2 (`CapabilityBinding`), M4 (`PeerIdentity`), M10 (`BiscuitVerifier`), M9 (`ServedLedger`), M5, M12 (`ServedTelemetry`) · M10 → G5 · M11 → M3, M8, G6 · M14 → M2, M8 · M15 → M6, M7, M8, M9, M11
-  - Independent from day one: M0, M13, M12-core-seam, M2-models, G1–G6 (each gate is independent of the others).
-- **Shared files** (their tasks are serialized): `packages/ai-parrot/src/parrot/tools/working_memory/{models,internals,tool,__init__}.py` (M6 only, but 4 files in one module → one task owns them); `packages/ai-parrot/src/parrot/tools/manager.py` (M7 only); `packages/ai-parrot/src/parrot/registry/{registry,__init__}.py` (M13 only); `packages/ai-parrot/src/parrot/observability/recorders/{models,base,__init__}.py` + `core/events/lifecycle/events/__init__.py` (M12 only); `packages/ai-parrot-squawk/src/parrot/squawk/__init__.py` (M0 creates it, M2/M6/M7/M8/M9/M11 each append exports → serialize those export edits or let M15 finalize `__init__`); root `pyproject.toml` (M0 only).
+  - M1 → G3 (compiler wording only; everything else in M1 starts day one) · M2 → M1 (models, `category_hash`) · M5 → M1 (`HandleOwner`, `handle_key`) · M6 → M1, M5 (`ArtifactHandle`, `SquawkBlobStore`), G1 (caps) · M9 → M1 (`ServedLedgerEntry`), M8 (dispatch hook)
+  - M3 → M1 (`messages`), G2 · M4 → M3 (`codec`), G2 · M7 → M1 (`compile_capability`), M2 (`ContractCache`), M4 (`SquawkClient`), M6 (`HandleLanding`), G4 · M8 → M2 (`CapabilityBinding`), M4 (`PeerIdentity`), M10 (`BiscuitVerifier`), M9 (`ServedLedger`), M5, M12 (`ServedTelemetry`) · M10 → G5 · M11 → M1 (`BusPayloadSerializer`), M8, G6 · M14 → M2, M8 · M15 → M6, M7, M8, M9, M11
+  - Independent from day one: M0, M1, M13, M12-core-seam, G1–G6 (each gate is independent of the others).
+- **Shared files** (their tasks are serialized): `packages/ai-parrot/src/parrot/interagent/__init__.py` and `messages.py` (M1 creates; a wire-schema change touches `messages.py` and the satellite's `squawk.capnp` + `codec.py` in ONE task); `packages/ai-parrot/src/parrot/tools/working_memory/{models,internals,tool,__init__}.py` (M6 only, but 4 files in one module → one task owns them); `packages/ai-parrot/src/parrot/tools/manager.py` (M7 only); `packages/ai-parrot/src/parrot/registry/{registry,__init__}.py` (M13 only); `packages/ai-parrot/src/parrot/observability/recorders/{models,base,__init__}.py` + `core/events/lifecycle/events/__init__.py` (M12 only); `packages/ai-parrot-squawk/src/parrot/squawk/__init__.py` (M0 creates it, M2/M6/M7/M8/M9/M11 each append exports → serialize those export edits or let M15 finalize `__init__`); root `pyproject.toml` (M0 only).
 - **Exclusive resources** (`parallel: false`): M0 (root `pyproject.toml` + `uv.lock` refresh for the new workspace member — a lockfile mutation); G3 and G4 when run with `PARROT_TEST_REAL_LLM=1` (provider quota); G6 needs a Redis Streams instance; G2 opens loopback ports.
-- **Cross-feature dependencies**: FEAT-704 TASK-4474 + TASK-4476 must merge before M1 (and therefore M5/M6/M9). FEAT-747 (Roost) depends on this feature and must not start its envelope-dependent modules before M3 freezes `messages.py`. FEAT-710 (telemetry fan-out) is merged; M12 builds on it.
+- **Cross-feature dependencies**: none block this feature (rev 0.2). Outbound: FEAT-704's TASK-4474/4476 must be amended to import `parrot.interagent` before they are implemented (§8 Q1); FEAT-747 (Roost) depends on this feature and must not start its envelope-dependent modules before M1 freezes `parrot/interagent/messages.py`; navigator-auth (Biscuit issuer, §8 Q4) and navigator-eventbus (`reply_to` + bytes payload, §8 Q2) receive change requests that never gate a module here. FEAT-710 (telemetry fan-out) is merged; M12 builds on it.
 
 ---
 
@@ -1159,3 +1187,4 @@ Summary: **10** confirmed · **2** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-26 | Jesus Lara / Claude (Fable 5.1) | Initial draft from the accepted proposal (U1–U5, Q6–Q13 carried); codex design research folded (10 confirm / 2 reject); gate-first structure (G1–G6) |
+| 0.2 | 2026-10-26 | Jesus Lara / Claude (Fable 5.1) | Status review: §8 Q1–Q5 resolved. M1 lifts FEAT-704's spec'd semantics (no cross-feature block); contract models, message mirrors, compiler and `BusPayloadSerializer` move to core `parrot.interagent` (Q3); Squawk-owned bus convention (Q2); navigator-auth issues Biscuits (Q4); `DEFAULT_GATE_POLICIES` + `SQUAWK_GATE_POLICY_PATH` (Q5); AC21/AC22 added |
