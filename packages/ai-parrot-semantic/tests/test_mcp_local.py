@@ -65,14 +65,14 @@ def test_yaml_and_json_example_contract(tmp_path: Path) -> None:
     )
     mcp_path = tmp_path / ".mcp.json"
     mcp_path.write_text(
-        '{"parrot-semantic-layer": {"command": "parrot", "args": ["mcp-local", "semantic-layer"]}}', encoding="utf-8"
+        '{"mcpServers": {"parrot-semantic-layer": {"command": "parrot", "args": ["mcp-local", "semantic-layer"]}}}', encoding="utf-8"
     )
 
     section = load_toolkits_config(tmp_path, config_path=config_path).toolkits["semantic-layer"]
     assert section.class_path == "parrot.semantic.bootstrap.LocalSemanticLayerToolkit"
     assert section.kwargs["agent_id"] == "local-semantic"
     assert section.kwargs["static_subject"]["user_id"] == "operator"
-    assert json.loads(mcp_path.read_text(encoding="utf-8"))["parrot-semantic-layer"]["args"] == [
+    assert json.loads(mcp_path.read_text(encoding="utf-8"))["mcpServers"]["parrot-semantic-layer"]["args"] == [
         "mcp-local",
         "semantic-layer",
     ]

@@ -129,9 +129,11 @@ Add the matching operator-local `.mcp.json` entry:
 
 ```json
 {
-  "parrot-semantic-layer": {
-    "command": "parrot",
-    "args": ["mcp-local", "semantic-layer"]
+  "mcpServers": {
+    "parrot-semantic-layer": {
+      "command": "parrot",
+      "args": ["mcp-local", "semantic-layer"]
+    }
   }
 }
 ```
