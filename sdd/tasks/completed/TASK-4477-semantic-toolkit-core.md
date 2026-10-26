@@ -273,4 +273,5 @@ Use `$sdd-start TASK-4477` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: gpt-5.6-terra (codex), 1 attempt, 335s. Merge-tier surfaced a brittle subprocess-stdout assertion in TASK-4706's test (parrot now prints startup banner once parrot.semantic imports core); fixed in 4feb75912.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.

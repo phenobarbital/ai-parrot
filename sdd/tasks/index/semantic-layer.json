@@ -312,7 +312,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -329,8 +329,9 @@
       "parallelism_notes": "TASK-4706: consumes packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py (Join-grain safety, filtered and derived metrics (M5b)); TASK-4472: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py (Governance composition and subject/provenance digest (M6d)); TASK-4473: consumes packages/ai-parrot-semantic/src/parrot/semantic/catalog.py (Authorized catalog and saved-query expansion (M7)); TASK-4474: consumes packages/ai-parrot-semantic/src/parrot/semantic/audit.py, packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql (Signed audit ledger and optional Postgres sink (M8)); TASK-4475: consumes packages/ai-parrot-semantic/src/parrot/semantic/execution.py, packages/ai-parrot-semantic/src/parrot/semantic/cache.py (Execution bridge and pre-governance compile cache (M9a)); TASK-4476: consumes packages/ai-parrot-semantic/src/parrot/semantic/results.py (Scoped result handles and exact retained provenance (M9b)); TASK-4707: consumes packages/ai-parrot-semantic/src/parrot/semantic/context.py (Scoped identity binding and exception-safe cleanup (M10 context)); TASK-4709: consumes packages/ai-parrot-semantic/src/parrot/semantic/handoff.py (Guarded dataset sink and read-time authorization (M9H))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4477-semantic-toolkit-core.md"
+      "completed_at": "2026-10-26T00:08:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4477-semantic-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4478",
