@@ -10,7 +10,7 @@ tags: [inter-agent, protocol, capnproto, handles, policy-gate, a2a]   # FEAT-576
 **Feature ID**: FEAT-746 (reserved 2026-10-26 by `reserve_ids.py`, commit `b261aa3b7`; reused verbatim — this slug owns it)
 **Date**: 2026-10-26
 **Author**: Jesus Lara (Claude Code, Fable 5.1)
-**Status**: draft — gate-first specification. Lane 0 (G1–G6) and the gate-independent modules (M0, M1, M2, M5, M12 core seam, M13) are released for decomposition; the modules that depend on a gate stay blocked until their gate amendment lands in this document. Rev 0.2 resolved every §8 question (2026-10-26); no cross-feature merge blocks this feature any more.
+**Status**: approved (2026-10-26) — gate-first specification. Lane 0 (G1–G6) and the gate-independent modules (M0, M1, M2, M5, M12 core seam, M13) are released for decomposition; the modules that depend on a gate stay blocked until their gate amendment lands in this document. Rev 0.2 resolved every §8 question (2026-10-26); no cross-feature merge blocks this feature any more.
 **Target version**: 0.30.0
 **Exploration**: `sdd/proposals/inter-agent-protocol.proposal.md` (status `review`, all 13 questions resolved 2026-10-26) · original brainstorm `sdd/state/FEAT-746/source.md` · research findings `sdd/state/FEAT-746/findings/`
 **Sister spec**: FEAT-747 Roost (`sdd/proposals/local-inter-agent.proposal.md`) rides the Squawk envelope and depends on this feature; nothing of Roost is defined here.
@@ -1187,4 +1187,5 @@ Summary: **10** confirmed · **2** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-26 | Jesus Lara / Claude (Fable 5.1) | Initial draft from the accepted proposal (U1–U5, Q6–Q13 carried); codex design research folded (10 confirm / 2 reject); gate-first structure (G1–G6) |
+| 0.3 | 2026-10-26 | Jesus Lara | Marked approved for task decomposition |
 | 0.2 | 2026-10-26 | Jesus Lara / Claude (Fable 5.1) | Status review: §8 Q1–Q5 resolved. M1 lifts FEAT-704's spec'd semantics (no cross-feature block); contract models, message mirrors, compiler and `BusPayloadSerializer` move to core `parrot.interagent` (Q3); Squawk-owned bus convention (Q2); navigator-auth issues Biscuits (Q4); `DEFAULT_GATE_POLICIES` + `SQUAWK_GATE_POLICY_PATH` (Q5); AC21/AC22 added |
