@@ -404,7 +404,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -414,8 +414,9 @@
       "parallelism_notes": "TASK-4710: consumes packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py (MCP-local identity and configured PBAC bootstrap (M10c)); consumer evidence: LocalSemanticLayerToolkit constructor and explicit fixture guard factory for actual MCP startup",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4481-semantic-docs-mcp-local.md"
+      "completed_at": "2026-10-26T22:44:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4481-semantic-docs-mcp-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4702",
