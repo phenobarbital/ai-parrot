@@ -344,4 +344,138 @@ async def test_guarded_sink_read_after_revocation(
     assert [entry.outcome for entry in toolkit._ledger.entries if entry.tool == "save_result_as_dataset"] == [
         "ok",
         "denied",
+        # Claim failures (changed subject, expiry, stale policy) are audited too.
+        "denied",
+        "denied",
+        "denied",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT tenant_id, id, customer_id FROM sales.orders",
+        "SELECT region, tenant_id FROM sales.orders",
+    ],
+)
+async def test_raw_sql_rejects_non_member_projection(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch, sql: str
+) -> None:
+    """Projected physical columns backing no granted member are denied even with usage '*'."""
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), allow_raw_sql=True)
+    ctx = _ctx()
+    async with bind_semantic_context(ctx, identity=_identity(ctx)):
+        with pytest.raises(SemanticAccessError) as denied:
+            await toolkit.run_sql("orders", sql)
+    assert denied.value.code == "member_not_granted"
+    assert toolkit._ledger.entries[-1].outcome == "denied"
+    assert toolkit._handles._data == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT salary, email FROM dim.customers",
+        "SELECT o.region, c.email FROM sales.orders o JOIN dim.customers c ON o.customer_id = c.id",
+    ],
+)
+async def test_raw_sql_rejects_cross_model_tables(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch, sql: str
+) -> None:
+    """Tables of other models are never reachable through the root model's raw SQL."""
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), allow_raw_sql=True)
+    ctx = _ctx()
+    async with bind_semantic_context(ctx, identity=_identity(ctx)):
+        with pytest.raises(SemanticAccessError):
+            await toolkit.run_sql("orders", sql)
+    assert toolkit._ledger.entries[-1].outcome == "denied"
+
+
+@pytest.mark.asyncio
+async def test_fresh_sink_per_call_same_owner(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host factory re-creating an equivalent sink per call keeps working for the same owner."""
+    created: list[PrivateManagerAdapter] = []
+
+    async def fresh_factory(identity: SemanticRequestIdentity) -> PrivateManagerAdapter:
+        sink = PrivateManagerAdapter("scope-fresh", _owner(identity))
+        created.append(sink)
+        return sink
+
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), factory=fresh_factory)
+    ctx = _ctx()
+    async with bind_semantic_context(ctx, identity=_identity(ctx)):
+        first = await toolkit.save_result_as_dataset(await _query(toolkit), "one")
+        second = await toolkit.save_result_as_dataset(await _query(toolkit), "two")
+    assert first["name"] == "one" and second["name"] == "two"
+    assert len(created) == 2 and created[0] is not created[1]
+    assert toolkit._sinks.is_registered(created[1])
+    assert not toolkit._sinks.is_registered(created[0])
+
+    # The same scope re-created for a DIFFERENT owner is still rejected.
+    other_ctx = _ctx(user="other")
+    other = _identity(other_ctx)
+    with pytest.raises(SemanticResultError) as rejected:
+        toolkit._sinks.register(PrivateManagerAdapter("scope-fresh", _owner(other)))
+    assert rejected.value.code == "sink_rejected"
+
+
+def test_sink_registry_is_bounded() -> None:
+    """The registry evicts the oldest scope beyond its bound."""
+    from parrot.semantic.handoff import GovernedSinkRegistry
+
+    registry = GovernedSinkRegistry(max_entries=2)
+    sinks = [PrivateManagerAdapter(f"s{i}", ("a", f"u{i}", "t", "s")) for i in range(3)]
+    for sink in sinks:
+        registry.register(sink)
+    assert not registry.is_registered(sinks[0])
+    assert registry.is_registered(sinks[1]) and registry.is_registered(sinks[2])
+
+
+@pytest.mark.asyncio
+async def test_unexpected_failures_are_audited_and_wrapped(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-semantic failures write an execution_error audit and surface as an opaque SemanticError."""
+    from parrot.semantic.errors import SemanticError
+
+    toolkit = _toolkit(
+        models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), allow_raw_sql=True, factory=_Factory()
+    )
+    ctx = _ctx()
+
+    async def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("driver exploded: secret detail")
+
+    async with bind_semantic_context(ctx, identity=_identity(ctx)):
+        result_id = await _query(toolkit)
+        monkeypatch.setattr(toolkit._executor, "run_with_columns", boom)
+        with pytest.raises(SemanticError) as structured:
+            await toolkit.query_metrics(SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]))
+        assert structured.value.code == "internal_error"
+        assert "secret" not in str(structured.value)
+        assert toolkit._ledger.entries[-1].outcome == "execution_error"
+
+        with pytest.raises(SemanticError) as raw:
+            await toolkit.run_sql("orders", "SELECT region FROM sales.orders")
+        assert raw.value.code == "internal_error"
+        last = toolkit._ledger.entries[-1]
+        assert (last.tool, last.outcome) == ("run_sql", "execution_error")
+
+        async def broken_sink(identity: SemanticRequestIdentity) -> Any:
+            raise RuntimeError("factory down")
+
+        monkeypatch.setattr(toolkit, "_sink_factory", broken_sink)
+        with pytest.raises(SemanticError) as handoff:
+            await toolkit.save_result_as_dataset(result_id, "x")
+        assert handoff.value.code == "internal_error"
+        last = toolkit._ledger.entries[-1]
+        assert (last.tool, last.outcome) == ("save_result_as_dataset", "execution_error")
+
+        with pytest.raises(SemanticResultError):
+            await toolkit.save_result_as_dataset("no-such-handle", "y")
+        last = toolkit._ledger.entries[-1]
+        assert (last.tool, last.outcome, last.error_code) == ("save_result_as_dataset", "denied", "result_unavailable")

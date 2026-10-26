@@ -95,6 +95,9 @@ class PbacGate:
         except AuthorizationRequired as exc:
             self.logger.warning("Semantic PBAC denied access to a governed resource")
             raise SemanticAccessError("pbac_denied", "PBAC denied the governed query") from exc
+        except Exception as exc:  # evaluator failure fails closed
+            self.logger.error("Semantic PBAC evaluator failed: %s", type(exc).__name__)
+            raise SemanticAccessError("pbac_unavailable", "The PBAC evaluator is unavailable") from exc
 
 
 def resources_from_ast(tree: exp.Expression, driver: str) -> PhysicalResources:

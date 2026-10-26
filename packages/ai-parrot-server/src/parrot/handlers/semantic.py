@@ -181,6 +181,6 @@ class SemanticLayerHandler(BaseView):
         elif isinstance(error, SemanticError):
             status = 400
         else:
-            self.logger.exception("Semantic HTTP request failed")
+            self.logger.error("Semantic HTTP request failed", exc_info=error)
             return self.json_response({"error": "semantic_unavailable"}, status=503)
         return self.json_response({"error": error.code}, status=status)

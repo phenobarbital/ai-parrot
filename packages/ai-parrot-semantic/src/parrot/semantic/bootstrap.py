@@ -127,8 +127,8 @@ class LocalSemanticLayerToolkit(SemanticLayerToolkit):
             evaluator_module, environment_module = (
                 importlib.import_module(module) for module in reversed(_EVALUATOR_MODULES)
             )
-            evaluator_module.PolicyEvaluator
-            environment_module.Environment
+            if not (hasattr(evaluator_module, "PolicyEvaluator") and hasattr(environment_module, "Environment")):
+                raise AttributeError("PolicyEvaluator or Environment is missing")
         except (AttributeError, ImportError, ModuleNotFoundError) as exc:
             raise SemanticPolicyError("pbac_unavailable", "Required PBAC evaluator modules are unavailable") from exc
 

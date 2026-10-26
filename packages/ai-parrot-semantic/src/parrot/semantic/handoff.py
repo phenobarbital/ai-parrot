@@ -74,25 +74,43 @@ def _validate_sink(sink: object) -> None:
 class GovernedSinkRegistry:
     """Explicit host registration of sinks; capability flags alone grant nothing."""
 
-    def __init__(self) -> None:
-        """Create an empty registry."""
+    def __init__(self, max_entries: int = 1024) -> None:
+        """Create an empty, bounded registry.
+
+        Args:
+            max_entries: Maximum registered scopes; the least recently registered is evicted.
+        """
+        self._max_entries = max(1, int(max_entries))
         self._by_scope: dict[str, GovernedDatasetSink] = {}
         self._owners: dict[tuple[str, str, str, str], str] = {}
 
     def register(self, sink: GovernedDatasetSink) -> None:
-        """Register a validated sink, refusing owner or scope reuse.
+        """Register or refresh a validated sink keyed by owner and scope.
+
+        An equivalent sink re-created for the same owner and scope replaces the
+        previous entry. A scope already bound to a different owner, or an owner
+        already bound to a different scope, is rejected.
 
         Args:
             sink: Trusted host adapter.
 
         Raises:
-            SemanticResultError: If validation fails or the scope/owner is already registered.
+            SemanticResultError: If validation fails or the scope/owner is bound elsewhere.
         """
         _validate_sink(sink)
-        if sink.scope_id in self._by_scope or sink.owner in self._owners:
-            raise SemanticResultError("sink_rejected", "Sink scope or owner is already registered")
+        existing = self._by_scope.get(sink.scope_id)
+        if existing is not None and existing.owner != sink.owner:
+            raise SemanticResultError("sink_rejected", "Sink scope is registered to a different owner")
+        bound_scope = self._owners.get(sink.owner)
+        if bound_scope is not None and bound_scope != sink.scope_id:
+            raise SemanticResultError("sink_rejected", "Sink owner is registered to a different scope")
+        self._by_scope.pop(sink.scope_id, None)
         self._by_scope[sink.scope_id] = sink
         self._owners[sink.owner] = sink.scope_id
+        while len(self._by_scope) > self._max_entries:
+            evicted_scope = next(iter(self._by_scope))
+            evicted = self._by_scope.pop(evicted_scope)
+            self._owners.pop(evicted.owner, None)
 
     def is_registered(self, sink: object) -> bool:
         """Return whether this exact sink instance was registered."""

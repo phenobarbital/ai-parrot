@@ -109,3 +109,18 @@ async def test_sensitive_usage_lineage_matrix(tmp_path: Path, monkeypatch: pytes
     assert denied.value.code == "pbac_denied"
 
     await PbacGate(None).authorize(None, resources, governed=False)
+
+
+@pytest.mark.asyncio
+async def test_unexpected_guard_failure_maps_to_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A guard raising anything other than AuthorizationRequired fails closed as pbac_unavailable."""
+
+    class _Broken(_Guard):
+        async def authorize_source(self, ctx: object, resources: PhysicalResources) -> None:
+            raise RuntimeError("evaluator crashed")
+
+    monkeypatch.setattr(pbac.importlib.util, "find_spec", lambda module: object())
+    gate = PbacGate(_Broken())  # type: ignore[arg-type]
+    with pytest.raises(SemanticAccessError) as error:
+        await gate.authorize(object(), PhysicalResources(driver="pg"), governed=True)  # type: ignore[arg-type]
+    assert error.value.code == "pbac_unavailable"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -277,6 +278,11 @@ class SemanticLayerToolkit(AbstractToolkit):
                     outcome = "execution_error"
                 await self._audit(loaded, query, governed, compiled_sql, outcome, error.code, started)
             raise
+        except Exception as exc:
+            self.logger.error("Semantic query failed unexpectedly: %s", type(exc).__name__)
+            if loaded is not None:
+                await self._audit(loaded, query, governed, compiled_sql, "execution_error", _UNEXPECTED, started)
+            raise _unexpected() from exc
 
     async def _audit(
         self,
@@ -409,6 +415,7 @@ class SemanticLayerToolkit(AbstractToolkit):
             await self._pbac.authorize_manifest(context, loaded)
             governed = await self._pipeline.govern(sql, model=loaded, ctx=context, roles=roles)
             self._check_members(loaded, governed.members, roles)
+            await self._check_raw_projection(loaded, sql, governed, roles)
             rows, row_count, truncated, duration_ms, columns = await self._executor.run_with_columns(
                 governed, connection=loaded.policy.connection
             )
@@ -454,6 +461,22 @@ class SemanticLayerToolkit(AbstractToolkit):
                     structured=structured,
                 )
             raise
+        except Exception as exc:
+            self.logger.error("Semantic raw SQL failed unexpectedly: %s", type(exc).__name__)
+            if loaded is not None:
+                await self._audit(
+                    loaded,
+                    None,
+                    governed,
+                    sql,
+                    "execution_error",
+                    _UNEXPECTED,
+                    started,
+                    tool="run_sql",
+                    raw_sql=True,
+                    structured=structured,
+                )
+            raise _unexpected() from exc
 
     async def save_result_as_dataset(self, result_id: str, name: str, description: str | None = None) -> dict:
         """Publish an owned result only through a conforming guarded host sink.
@@ -483,8 +506,14 @@ class SemanticLayerToolkit(AbstractToolkit):
         started = perf_counter()
         identity = require_identity()
         context = self._context()
-        handle, loaded = self._claim(result_id, identity, context)
         structured = {"dataset_name": name, "description": description}
+        try:
+            handle, loaded = self._claim(result_id, identity, context)
+        except Exception as exc:
+            await self._audit_claim_failure(result_id, exc, started, structured)
+            if isinstance(exc, SemanticError):
+                raise
+            raise _unexpected() from exc
         try:
             roles = frozenset(context.roles)
             await self._recheck_handle(handle, loaded, context, roles)
@@ -532,7 +561,47 @@ class SemanticLayerToolkit(AbstractToolkit):
                 structured=structured,
             )
             raise
+        except Exception as exc:
+            self.logger.error("Semantic dataset hand-off failed unexpectedly: %s", type(exc).__name__)
+            await self._audit(
+                loaded,
+                None,
+                None,
+                None,
+                "execution_error",
+                _UNEXPECTED,
+                started,
+                tool="save_result_as_dataset",
+                handle=handle,
+                structured=structured,
+            )
+            raise _unexpected() from exc
         return {**published, "audit_id": audit_id}
+
+    async def _audit_claim_failure(self, result_id: str, error: Exception, started: float, structured: dict) -> None:
+        """Audit a failed handle claim against the handle's model, or the first loaded model."""
+        stored = self._handles._data.get(result_id) if isinstance(result_id, str) else None
+        loaded = self._models.get(stored.model) if stored is not None else None
+        if loaded is None and self._models:
+            loaded = self._models[sorted(self._models)[0]]
+        if loaded is None:
+            return
+        if isinstance(error, SemanticError):
+            outcome, code = "denied", error.code
+        else:
+            self.logger.error("Semantic handle claim failed unexpectedly: %s", type(error).__name__)
+            outcome, code = "execution_error", _UNEXPECTED
+        await self._audit(
+            loaded,
+            None,
+            None,
+            None,
+            outcome,
+            code,
+            started,
+            tool="save_result_as_dataset",
+            structured=structured,
+        )
 
     def _claim(
         self, result_id: str, identity: SemanticRequestIdentity, context: Any
@@ -572,6 +641,45 @@ class SemanticLayerToolkit(AbstractToolkit):
         if hidden:
             raise SemanticAccessError("member_not_granted", "Result references a member that is not granted")
 
+    def _granted_member_columns(self, loaded: LoadedModel, roles: frozenset[str]) -> set[str]:
+        """Return root-table physical columns backing members granted to the roles."""
+        root = loaded.model
+        granted = {member.name for member in self._catalog.visible_members(loaded.name, roles, authorized=True)}
+        return {
+            f"{root.table}.{item.column}"
+            for item in (*root.dimensions, *root.metrics)
+            if item.name in granted and getattr(item, "column", None)
+        }
+
+    async def _check_raw_projection(
+        self, loaded: LoadedModel, sql: str, governed: GovernedQuery, roles: frozenset[str]
+    ) -> None:
+        """Bind raw SQL to the root model's table and its granted members.
+
+        Every table must be the root model's own table (other models' tables are
+        governed by their own policies and are never reachable through raw SQL).
+        Every projected physical column must back a granted member of the root
+        model; non-projection uses must back a granted member or carry usage rights.
+
+        Raises:
+            SemanticAccessError: When a table or column is not covered.
+        """
+        if not loaded.policy.governed:
+            return
+        root_table = loaded.model.table
+        if any(table != root_table for table in governed.tables):
+            raise SemanticAccessError("outside_model", "Raw SQL references a table outside the model")
+        prepared = await asyncio.to_thread(self._pipeline._prepare, sql, loaded, self._dialect)
+        member_columns = self._granted_member_columns(loaded, roles)
+        for use in prepared.uses:
+            column = f"{use.table}.{use.column}"
+            if use.table != root_table:
+                raise SemanticAccessError("outside_model", "Raw SQL references a table outside the model")
+            if column in member_columns:
+                continue
+            if use.context == "projection" or not loaded.policy.usage_allowed(roles, column):
+                raise SemanticAccessError("member_not_granted", "Raw SQL uses a column that is not granted")
+
     async def _recheck_handle(
         self, handle: ResultHandle, loaded: LoadedModel, context: Any, roles: frozenset[str]
     ) -> None:
@@ -585,13 +693,7 @@ class SemanticLayerToolkit(AbstractToolkit):
         tables = set(handle.physical_tables)
         if not tables.issubset(loaded.schema.tables):
             raise SemanticAccessError("outside_manifest", "Result uses resources outside the model manifest")
-        root = loaded.model
-        granted = {member.name for member in self._catalog.visible_members(loaded.name, roles, authorized=True)}
-        member_columns = {
-            f"{root.table}.{item.column}"
-            for item in (*root.dimensions, *root.metrics)
-            if item.name in granted and getattr(item, "column", None)
-        }
+        member_columns = self._granted_member_columns(loaded, roles)
         for column in handle.physical_columns:
             table, _, physical = column.rpartition(".")
             if table not in tables or physical not in loaded.schema.tables.get(table, {}):
@@ -610,9 +712,16 @@ class SemanticLayerToolkit(AbstractToolkit):
         sink = await produced if inspect.isawaitable(produced) else produced
         if getattr(sink, "owner", None) != handle_owner_of(identity):
             raise SemanticResultError("sink_rejected", "Sink owner does not match the trusted identity")
-        if not self._sinks.is_registered(sink):
-            self._sinks.register(sink)
+        self._sinks.register(sink)
         return sink
+
+
+_UNEXPECTED = "internal_error"
+
+
+def _unexpected() -> SemanticError:
+    """Build the opaque error raised for unexpected (non-semantic) failures."""
+    return SemanticError(_UNEXPECTED, "The semantic request failed")
 
 
 def handle_owner_of(identity: SemanticRequestIdentity) -> tuple[str, str, str, str]:
