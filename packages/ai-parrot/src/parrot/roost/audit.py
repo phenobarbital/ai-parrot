@@ -1,4 +1,5 @@
 """Roost audit ledger — one signed line per performative (FEAT-747 M10)."""
+
 from __future__ import annotations
 
 import hashlib

@@ -1,4 +1,5 @@
 """Tests for the Roost audit ledger (FEAT-747 M10)."""
+
 import hashlib
 from unittest.mock import AsyncMock
 
