@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from parrot.sdd.config import load_sdd_config
 from parrot.sdd.scripts.brief_meta import brief_worktree_plan
 from parrot.sdd.scripts.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
@@ -295,13 +296,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     try:
+        repo_root = Path.cwd()
+        cfg = load_sdd_config(repo_root)
         if args.brief_key:
             if args.feature_id or args.jira_key or args.type:
                 raise ValueError("--brief-key is mutually exclusive with --feature-id, --jira-key, and --type")
             plan = brief_worktree_plan(
                 slug=args.slug,
                 key=args.brief_key,
-                base_branch=args.base_branch or "main",
+                base_branch=args.base_branch or cfg.hotfix_base,
+                config=cfg,
             )
         else:
             # Resolve flow. `--jira-key` with no explicit `--type` implies a
@@ -315,13 +319,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.jira_key and not type_override:
                 type_override = "hotfix"
                 if not base_branch_override:
-                    base_branch_override = "main"
+                    base_branch_override = cfg.hotfix_base
 
             doc_path = Path(args.spec) if args.spec else None
             meta = resolve_flow(
                 doc_path=doc_path,
                 type_override=type_override,
                 base_branch_override=base_branch_override,
+                config=cfg,
             )
 
             # Plan worktree
@@ -340,7 +345,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_paths.append(args.index)
 
         # Run ensure
-        repo_root = Path.cwd()
         path, created = ensure(
             plan,
             repo_root=repo_root,

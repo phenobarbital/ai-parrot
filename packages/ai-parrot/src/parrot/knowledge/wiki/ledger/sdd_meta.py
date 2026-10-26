@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+from parrot.sdd.config import SddConfig, find_repo_root, load_sdd_config
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +108,23 @@ class FlowMeta(BaseModel):
 
     type: Literal["feature", "hotfix"]
     base_branch: str
+    #: Configured hotfix lane (``SddConfig.hotfix_base``); policy input only, never emitted.
+    hotfix_base: str = Field(default=DEFAULT_HOTFIX_BASE, exclude=True)
 
     @model_validator(mode="after")
     def _hotfix_implies_main(self) -> "FlowMeta":
-        if self.type == "hotfix" and self.base_branch != DEFAULT_HOTFIX_BASE:
-            raise ValueError("type='hotfix' requires base_branch='main' " f"(got base_branch={self.base_branch!r})")
+        if self.type == "hotfix" and self.base_branch != self.hotfix_base:
+            raise ValueError(
+                f"type='hotfix' requires base_branch={self.hotfix_base!r} (got base_branch={self.base_branch!r})"
+            )
         return self
+
+
+def _config_for(doc_path: Path | None, config: SddConfig | None) -> SddConfig:
+    """Return ``config`` when given, else the config of the repository holding ``doc_path`` (or cwd)."""
+    if config is not None:
+        return config
+    return load_sdd_config(find_repo_root(doc_path.parent) if doc_path is not None else None)
 
 
 def _read_frontmatter(doc_path: Path) -> dict[str, Any] | None:
@@ -151,7 +164,7 @@ def read_declared_base_branch(doc_path: Path) -> str | None:
     return value.strip()
 
 
-def parse(doc_path: Path) -> FlowMeta:
+def parse(doc_path: Path, *, config: SddConfig | None = None) -> FlowMeta:
     """Parse YAML frontmatter from a brainstorm/proposal/spec markdown file.
 
     The frontmatter block, when present, must be the first thing in the
@@ -162,9 +175,10 @@ def parse(doc_path: Path) -> FlowMeta:
 
     Args:
         doc_path: Path to the markdown file to inspect.
+        config: SDD configuration; ``None`` loads ``sdd/config.json`` of the document's repository.
 
     Returns:
-        ``FlowMeta(type="feature", base_branch="dev")`` when no
+        ``FlowMeta(type="feature", base_branch=<configured base>)`` when no
         frontmatter is present (backwards-compat for in-flight specs);
         otherwise a fully-validated ``FlowMeta``.
 
@@ -172,10 +186,12 @@ def parse(doc_path: Path) -> FlowMeta:
         pydantic.ValidationError: When frontmatter is present but
             invalid (e.g. ``type: hotfix`` without ``base_branch: main``).
     """
+    cfg = _config_for(doc_path, config)
     block = _read_frontmatter(doc_path)
     if block is None:
-        return FlowMeta(type="feature", base_branch=DEFAULT_FEATURE_BASE)
-    return FlowMeta(**block)
+        return FlowMeta(type="feature", base_branch=cfg.base_branch, hotfix_base=cfg.hotfix_base)
+    block = {k: v for k, v in block.items() if k != "hotfix_base"}
+    return FlowMeta(**block, hotfix_base=cfg.hotfix_base)
 
 
 def emit(meta: FlowMeta) -> str:
@@ -210,17 +226,18 @@ def normalize_tag(raw: str) -> str:
     return value
 
 
-def normalize_project(raw: str) -> str:
+def normalize_project(raw: str, *, known: frozenset[str] | None = None) -> str:
     """Normalize like a tag, then map through ``PROJECT_ALIASES``.
 
-    Logs a warning (never raises) when the canonical value is not in ``KNOWN_PROJECTS``.
+    Logs a warning (never raises) when the canonical value is not in ``known``
+    (``None`` means ``KNOWN_PROJECTS``).
 
     Raises:
         ValueError: only when the value is malformed (see :func:`normalize_tag`).
     """
     value = normalize_tag(raw)
     value = PROJECT_ALIASES.get(value, value)
-    if value not in KNOWN_PROJECTS:
+    if value not in (KNOWN_PROJECTS if known is None else known):
         logger.warning("Unknown SDD project %r (not in KNOWN_PROJECTS); keeping it", value)
     return value
 
@@ -248,11 +265,11 @@ class DocTaxonomy(BaseModel):
 
     @field_validator("projects", mode="before")
     @classmethod
-    def _norm_projects(cls, value: Any) -> list[str]:
+    def _norm_projects(cls, value: Any, info: ValidationInfo) -> list[str]:
         """Coerce None/str to a list, normalize each entry, dedupe preserving order."""
         result: list[str] = []
         for item in _as_list(value):
-            normalized = normalize_project(item)
+            normalized = normalize_project(item, known=(info.context or {}).get("known_projects"))
             if normalized not in result:
                 result.append(normalized)
         return result
@@ -269,11 +286,13 @@ class DocTaxonomy(BaseModel):
         return result
 
 
-def parse_taxonomy(doc_path: Path) -> DocTaxonomy:
+def parse_taxonomy(doc_path: Path, *, config: SddConfig | None = None) -> DocTaxonomy:
     """Parse ``projects``/``tags`` from a brainstorm/proposal/spec frontmatter (FEAT-576).
 
     Args:
         doc_path: Markdown document to inspect.
+        config: SDD configuration; ``None`` loads the document's repository config. A configured
+            ``projects`` list replaces ``KNOWN_PROJECTS`` as the (warn-only) vocabulary.
 
     Returns:
         A ``DocTaxonomy``; empty lists when the doc has no frontmatter or no keys.
@@ -281,8 +300,13 @@ def parse_taxonomy(doc_path: Path) -> DocTaxonomy:
     Raises:
         pydantic.ValidationError: when a tag/project is malformed.
     """
+    cfg = _config_for(doc_path, config)
+    known = frozenset(cfg.projects) if cfg.projects else KNOWN_PROJECTS
     block = _read_frontmatter(doc_path) or {}
-    return DocTaxonomy(projects=block.get("projects"), tags=block.get("tags"))
+    return DocTaxonomy.model_validate(
+        {"projects": block.get("projects"), "tags": block.get("tags")},
+        context={"known_projects": known},
+    )
 
 
 def resolve_flow(
@@ -291,6 +315,7 @@ def resolve_flow(
     doc_path: Path | None = None,
     type_override: str | None = None,
     base_branch_override: str | None = None,
+    config: SddConfig | None = None,
 ) -> FlowMeta:
     """Resolve the SDD flow type and base branch for a run.
 
@@ -298,7 +323,7 @@ def resolve_flow(
       1. ``type_override`` / ``base_branch_override`` (explicit caller intent)
       2. ``doc_path`` frontmatter, when the path is given AND exists
       3. ``WORK_KIND_FLOW[kind]``
-      4. ``("feature", "dev")``
+      4. ``("feature", <configured base_branch>)``
 
     Levels 1 and 2/3 compose: an explicit ``base_branch_override`` with no
     ``type_override`` keeps the type resolved from the lower level, and vice
@@ -313,34 +338,39 @@ def resolve_flow(
             document", NOT as an error.
         type_override: Explicit ``"feature"``/``"hotfix"``.
         base_branch_override: Explicit branch name.
+        config: SDD configuration; ``None`` loads ``sdd/config.json`` of the repository holding
+            ``doc_path`` (or the cwd). Absent file means today's ``dev``/``main`` defaults.
 
     Returns:
         A validated ``FlowMeta``.
 
     Raises:
         ValueError: When the resolved combination is invalid — e.g.
-            ``type="hotfix"`` with a base branch other than ``"main"``. Raised
+            ``type="hotfix"`` with a base branch other than the configured hotfix base. Raised
             by ``FlowMeta``'s own validator, not re-implemented here.
     """
+    cfg = _config_for(doc_path, config)
     resolved_type: str | None = None
     resolved_base: str | None = None
 
     if doc_path is not None and doc_path.exists():
-        from_doc = parse(doc_path)
+        from_doc = parse(doc_path, config=cfg)
         resolved_type, resolved_base = from_doc.type, from_doc.base_branch
     elif kind in WORK_KIND_FLOW:
-        resolved_type, resolved_base = WORK_KIND_FLOW[kind]
+        resolved_type = WORK_KIND_FLOW[kind][0]
+        resolved_base = cfg.hotfix_base if resolved_type == "hotfix" else cfg.base_branch
 
     final_type = type_override or resolved_type or "feature"
-    final_base = base_branch_override or resolved_base or DEFAULT_FEATURE_BASE
+    final_base = base_branch_override or resolved_base or cfg.base_branch
 
-    if final_base not in KNOWN_BRANCHES:
+    known = KNOWN_BRANCHES | {b for b in (cfg.base_branch, cfg.hotfix_base, cfg.staging_branch) if b}
+    if final_base not in known:
         logger.warning(
             "base_branch %r is not one of the canonical branches %s; " "assuming a sub-feature branch.",
             final_base,
-            sorted(KNOWN_BRANCHES),
+            sorted(known),
         )
-    return FlowMeta(type=final_type, base_branch=final_base)
+    return FlowMeta(type=final_type, base_branch=final_base, hotfix_base=cfg.hotfix_base)
 
 
 #: Every SDD worktree lives directly under this repo-relative directory.

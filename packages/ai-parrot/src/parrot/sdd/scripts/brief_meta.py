@@ -7,15 +7,18 @@ module therefore builds ``WorktreePlan`` directly and owns the brief's identity.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import re
+import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
+from parrot.sdd.config import SddConfig, load_sdd_config
 from parrot.sdd.scripts.sdd_meta import WORKTREE_ROOT, WorktreePlan
 
 logger = logging.getLogger(__name__)
@@ -24,8 +27,16 @@ logger = logging.getLogger(__name__)
 BRIEFS_DIR: str = "sdd/briefs"
 #: Prefix of the per-brief index ``feature_id`` — non-empty, never ``FEAT-<NNN>``.
 BRIEF_ID_PREFIX: str = "BRIEF-"
-#: Long-lived branches a brief may base on (CLAUDE.md "Git Configuration").
+#: Long-lived branches a brief may base on when no ``sdd/config.json`` exists (CLAUDE.md "Git Configuration").
 BRIEF_BASE_BRANCHES: frozenset[str] = frozenset({"main", "dev", "staging"})
+
+
+def brief_base_branches(config: SddConfig) -> frozenset[str]:
+    """Return the branches a brief may base on: the configured hotfix, base and (if set) staging branches."""
+    branches = {config.hotfix_base, config.base_branch}
+    if config.staging_branch:
+        branches.add(config.staging_branch)
+    return frozenset(branches)
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -42,15 +53,20 @@ def _is_safe_ref(value: str) -> bool:
     return ".." not in value and not value.endswith(".") and not value.endswith(".lock")
 
 
-def _check_base_branch(base_branch: str) -> str:
-    """Return ``base_branch`` when it is one of ``BRIEF_BASE_BRANCHES``.
+def _check_base_branch(base_branch: str, config: SddConfig | None = None) -> str:
+    """Return ``base_branch`` when it is one of the configured long-lived branches.
+
+    Args:
+        base_branch: Candidate branch name.
+        config: SDD configuration; ``None`` loads the current repository's.
 
     Raises:
-        ValueError: When the branch is not a long-lived Git Parrot Flow branch.
+        ValueError: When the branch is not a configured long-lived branch.
     """
+    allowed = brief_base_branches(config or load_sdd_config())
     value = base_branch.strip()
-    if value not in BRIEF_BASE_BRANCHES:
-        raise ValueError(f"base_branch must be one of {sorted(BRIEF_BASE_BRANCHES)}, got {base_branch!r}")
+    if value not in allowed:
+        raise ValueError(f"base_branch must be one of {sorted(allowed)}, got {base_branch!r}")
     return value
 
 
@@ -71,7 +87,7 @@ class BriefMeta(BaseModel):
     kind: Literal["brief"]
     slug: str
     key: str
-    base_branch: str = "main"
+    base_branch: str
     source: BriefSource
     jira_issue_key: str | None = None
     ledger_issue: str | None = None
@@ -86,17 +102,28 @@ class BriefMeta(BaseModel):
             raise ValueError("must be safe for a git branch and worktree directory name")
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def _default_base_branch(cls, data: Any, info: ValidationInfo) -> Any:
+        """Fill a missing ``base_branch`` with the configured hotfix base (``"main"`` by default)."""
+        if isinstance(data, dict) and "base_branch" not in data:
+            cfg = (info.context or {}).get("sdd_config") or load_sdd_config()
+            data = {**data, "base_branch": cfg.hotfix_base}
+        return data
+
     @field_validator("base_branch")
     @classmethod
-    def _known_base_branch(cls, value: str) -> str:
-        """Reject base branches outside the flow's long-lived set."""
-        return _check_base_branch(value)
+    def _known_base_branch(cls, value: str, info: ValidationInfo) -> str:
+        """Reject base branches outside the configured long-lived set."""
+        return _check_base_branch(value, (info.context or {}).get("sdd_config"))
 
     @model_validator(mode="after")
-    def _ledger_implies_dev(self) -> "BriefMeta":
-        """A ledger-sourced brief always bases on dev (binding brainstorm decision)."""
-        if self.source.type == "ledger" and self.base_branch != "dev":
-            raise ValueError("ledger-sourced briefs require base_branch='dev'")
+    def _ledger_implies_dev(self, info: ValidationInfo) -> "BriefMeta":
+        """A ledger-sourced brief always bases on the configured base branch (``dev`` by default)."""
+        if self.source.type == "ledger":
+            cfg = (info.context or {}).get("sdd_config") or load_sdd_config()
+            if self.base_branch != cfg.base_branch:
+                raise ValueError(f"ledger-sourced briefs require base_branch={cfg.base_branch!r}")
         return self
 
     @property
@@ -120,7 +147,7 @@ class BriefMeta(BaseModel):
         return f"{BRIEFS_DIR}/{self.slug}/tasks"
 
 
-def parse_brief(doc_path: Path) -> BriefMeta:
+def parse_brief(doc_path: Path, *, config: SddConfig | None = None) -> BriefMeta:
     """Parse a brief's leading YAML frontmatter.
 
     Raises:
@@ -138,7 +165,8 @@ def parse_brief(doc_path: Path) -> BriefMeta:
     block = yaml.safe_load(parts[1]) or {}
     if not isinstance(block, dict):
         raise ValueError(f"brief {doc_path} frontmatter must be a YAML mapping")
-    return BriefMeta.model_validate(block)
+    cfg = config or load_sdd_config()
+    return BriefMeta.model_validate(block, context={"sdd_config": cfg})
 
 
 def emit_brief_frontmatter(meta: BriefMeta) -> str:
@@ -147,23 +175,24 @@ def emit_brief_frontmatter(meta: BriefMeta) -> str:
     return f"---\n{body}\n---\n"
 
 
-def brief_worktree_plan(*, slug: str, key: str, base_branch: str) -> WorktreePlan:
+def brief_worktree_plan(*, slug: str, key: str, base_branch: str, config: SddConfig | None = None) -> WorktreePlan:
     """Build a brief worktree plan using its base branch and safe identity fields.
 
     Re-checks the ``BriefMeta`` invariants for callers that never build one —
     notably ``ensure_worktree --brief-key``, which plans straight from raw CLI
-    strings. The ``ledger => dev`` rule stays on ``BriefMeta`` alone: the
+    strings. ``config=None`` loads the current repository's ``sdd/config.json``. The ``ledger => dev`` rule stays on ``BriefMeta`` alone: the
     source type is not derivable from these arguments.
 
     Raises:
         ValueError: When ``slug``/``key`` are not safe ref components, or
-            ``base_branch`` is not one of ``BRIEF_BASE_BRANCHES``.
+            ``base_branch`` is not one of the configured long-lived branches.
     """
     if not _is_safe_ref(slug) or not _is_safe_ref(key):
         raise ValueError("slug and key must be safe for a git branch and worktree directory name")
-    base_branch = _check_base_branch(base_branch)
+    cfg = config or load_sdd_config()
+    base_branch = _check_base_branch(base_branch, cfg)
 
-    prefix = "hotfix" if base_branch == "main" else "fix"
+    prefix = "hotfix" if base_branch == cfg.hotfix_base else "fix"
     name = f"{prefix}-{key}-{slug}"
     return WorktreePlan(
         name=name,
@@ -172,9 +201,9 @@ def brief_worktree_plan(*, slug: str, key: str, base_branch: str) -> WorktreePla
     )
 
 
-def plan_brief_worktree(meta: BriefMeta) -> WorktreePlan:
+def plan_brief_worktree(meta: BriefMeta, *, config: SddConfig | None = None) -> WorktreePlan:
     """Plan the worktree for an already-validated brief."""
-    return brief_worktree_plan(slug=meta.slug, key=meta.key, base_branch=meta.base_branch)
+    return brief_worktree_plan(slug=meta.slug, key=meta.key, base_branch=meta.base_branch, config=config)
 
 
 def brief_task_id(meta: BriefMeta, n: int) -> str:
@@ -230,3 +259,37 @@ def write_brief_index(meta: BriefMeta, tasks: list[dict[str, Any]], worktree_roo
     path.write_text(json.dumps(header, indent=2) + "\n", encoding="utf-8")
     logger.info("Wrote brief index %s (%d task(s))", path, len(header["tasks"]))
     return path
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI for installed flows: ``plan`` prints a worktree plan, ``write-index`` writes the brief index."""
+    parser = argparse.ArgumentParser(prog="brief_meta", description="Brief helpers for /sdd-brief (FEAT-698).")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    plan_p = sub.add_parser("plan", help="Print the brief worktree plan as JSON.")
+    plan_p.add_argument("--slug", required=True)
+    plan_p.add_argument("--key", required=True)
+    plan_p.add_argument("--base-branch", required=True)
+
+    index_p = sub.add_parser("write-index", help="Write the per-brief index and print its path.")
+    index_p.add_argument("brief", help="Path to the brief markdown file.")
+    index_p.add_argument("--tasks", required=True, help="JSON file with the partial task records.")
+    index_p.add_argument("--worktree-root", required=True, help="Directory the artifacts are written under.")
+
+    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
+    try:
+        if args.command == "plan":
+            plan = brief_worktree_plan(slug=args.slug, key=args.key, base_branch=args.base_branch)
+            print(json.dumps(plan.model_dump()))
+        else:
+            meta = parse_brief(Path(args.brief))
+            tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
+            print(str(write_brief_index(meta, tasks, Path(args.worktree_root))))
+    except Exception as exc:  # CLI boundary: report and exit non-zero
+        sys.stderr.write(f"Error: {exc}\n")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
