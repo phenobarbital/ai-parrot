@@ -20,6 +20,7 @@ dependencies = [
     "ai-parrot-integrations",
     "ai-parrot-server",
     "ai-parrot-advisors",
+    "ai-parrot-squawk",
     "navrules",
 ]
 
@@ -240,6 +241,7 @@ ai-parrot-visualizations = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
 ai-parrot-integrations = { workspace = true }
 ai-parrot-advisors = { workspace = true }
+ai-parrot-squawk = { workspace = true }
 ai-parrot-server = { workspace = true }
 ai-parrot-openlit-bridge = { workspace = true }
 navrules = { workspace = true }
