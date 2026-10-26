@@ -47,12 +47,19 @@ def _handle(identity: SemanticRequestIdentity, *, ttl: timedelta = timedelta(hou
     )
 
 
-def _loaded(model_digest: str = "model-v1", policy_digest: str = "policy-v1") -> Any:
+def _loaded(
+    model_digest: str = "model-v1", policy_digest: str = "policy-v1", usage: frozenset[str] = frozenset()
+) -> Any:
     return SimpleNamespace(
         model_digest=model_digest,
         policy_digest=policy_digest,
-        policy=SimpleNamespace(governed=True),
-        schema=PhysicalSchema(driver="pg", tables={"public.sales": {"amount": "INT"}}),
+        policy=SimpleNamespace(governed=True, usage_allowed=lambda roles, column: column in usage),
+        model=SimpleNamespace(
+            table="public.sales",
+            dimensions=[SimpleNamespace(name="region", column="region")],
+            metrics=[SimpleNamespace(name="revenue", column="amount")],
+        ),
+        schema=PhysicalSchema(driver="pg", tables={"public.sales": {"amount": "INT", "cost": "INT"}}),
     )
 
 
@@ -200,3 +207,19 @@ async def test_cached_derived_inheritance_and_reload_race(tmp_path: Path) -> Non
     derived = await sink.route("derive", "d", owner)
     assert derived["expires_at"] == handle.expires_at
     assert derived["provenance"] == (handle.model, handle.model_digest, handle.policy_digest)
+
+
+@pytest.mark.asyncio
+async def test_read_rechecks_column_usage_grants() -> None:
+    """A physical column backing no granted member needs a usage grant on every read (issue:7e1d9700c5c1)."""
+    owner = _identity()
+    handle = _handle(owner).model_copy(update={"physical_columns": ("public.sales.amount", "public.sales.cost")})
+    state = _state()
+    with pytest.raises(SemanticResultError):
+        await _build(handle, state)(owner)
+    state["models"] = {"sales": _loaded(usage=frozenset({"public.sales.cost"}))}
+    await _build(handle, state)(owner)
+    # Revoking the member that backs `amount` also revokes the column on read.
+    state["catalog"] = _Catalog(("region",))
+    with pytest.raises(SemanticResultError):
+        await _build(handle.model_copy(update={"members": ("region",)}), state)(owner)

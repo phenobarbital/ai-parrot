@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import importlib
-from datetime import datetime, timezone
-from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -12,12 +10,8 @@ from parrot.auth import DataPlanePolicyGuard, PermissionContext, RlsRegistry, Us
 from parrot.tools.toolkit import ToolkitTool
 from pydantic import BaseModel, Field
 
-from .audit import SemanticAuditEntry
 from .context import SemanticRequestIdentity, bind_semantic_context, current_identity, current_pctx
 from .errors import SemanticAccessError, SemanticPolicyError
-from .loader import LoadedModel
-from .models import GovernedQuery, SemanticQuery
-from .results import ResultHandle
 from .toolkit import SemanticLayerToolkit
 
 _EVALUATOR_MODULES = (
@@ -185,52 +179,13 @@ class LocalSemanticLayerToolkit(SemanticLayerToolkit):
                 setattr(local_tool, attribute, getattr(base_tool, attribute))
         return local_tool
 
-    async def _audit(
-        self,
-        loaded: LoadedModel,
-        query: SemanticQuery | None,
-        governed: GovernedQuery | None,
-        compiled_sql: str | None,
-        outcome: str,
-        error_code: str | None,
-        started: float,
-        row_count: int | None = None,
-        *,
-        tool: str = "query_metrics",
-        raw_sql: bool = False,
-        handle: ResultHandle | None = None,
-        structured: dict | None = None,
-    ) -> str:
-        """Record semantic audit events with immutable local identity metadata."""
+    def _audit_identity(self) -> tuple[Any, str, str | None, bool]:
+        """Return the immutable local identity for audit entries; refuse any other binding.
+
+        Raises:
+            SemanticAccessError: When the bound identity is not this toolkit's static identity.
+        """
         context = current_pctx()
         if context is None or current_identity() != self._static_identity:
             raise SemanticAccessError("context_required", "A matching local semantic context is required")
-        entry = SemanticAuditEntry(
-            entry_id=str(uuid4()),
-            created_at=datetime.now(timezone.utc),
-            user_id=context.user_id,
-            tenant_id=context.tenant_id,
-            channel="mcp-local",
-            agent_id=self._static_identity.agent_id,
-            subject_digest=governed.subject_digest if governed else handle.subject_digest if handle else "unavailable",
-            roles=sorted(context.roles),
-            static_subject=True,
-            model=loaded.name,
-            model_digest=loaded.model_digest,
-            policy_digest=loaded.policy_digest,
-            tool=tool,
-            structured_query=structured if structured is not None else query.model_dump(mode="json") if query else None,
-            raw_sql=raw_sql,
-            compiled_sql=compiled_sql,
-            governed_sql=governed.sql if governed else handle.governed_sql if handle else None,
-            dialect=self._dialect,
-            driver=loaded.schema.driver,
-            rls_applied=list(governed.rls_applied) if governed else [],
-            masked_columns=list(governed.masked_columns) if governed else [],
-            pbac="allow" if governed or (handle is not None and outcome == "ok") else "deny",
-            outcome=outcome,
-            error_code=error_code,
-            row_count=row_count,
-            duration_ms=int((perf_counter() - started) * 1000),
-        )
-        return (await self._ledger.append(entry, required=self._audit_required)).entry_id
+        return context, "mcp-local", self._static_identity.agent_id, True

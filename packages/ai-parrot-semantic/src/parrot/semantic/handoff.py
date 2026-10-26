@@ -210,12 +210,22 @@ def build_read_authorizer(
             raise _deny()
         loaded = _current(models())
         if loaded.policy.governed:
-            visible = {
-                member.name
-                for member in catalog().visible_members(snapshot.model, frozenset(ctx.roles), authorized=True)
-            }
+            roles = frozenset(ctx.roles)
+            visible = {member.name for member in catalog().visible_members(snapshot.model, roles, authorized=True)}
             if not set(snapshot.members).issubset(visible):
                 raise _deny()
+            # Re-check per-column usage grants on every read, not only via the
+            # policy digest: a physical column must back a granted member or
+            # carry an explicit usage right for the caller's roles.
+            root = loaded.model
+            member_columns = {
+                f"{root.table}.{item.column}"
+                for item in (*root.dimensions, *root.metrics)
+                if item.name in visible and getattr(item, "column", None)
+            }
+            for column in snapshot.physical_columns:
+                if column not in member_columns and not loaded.policy.usage_allowed(roles, column):
+                    raise _deny()
             driver = loaded.schema.driver
             tables = {f"{driver}:{table}" for table in snapshot.physical_tables}
             columns_outside = [

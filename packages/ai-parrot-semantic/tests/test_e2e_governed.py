@@ -201,3 +201,49 @@ async def test_concurrent_context_and_required_audit_failure(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert current_pctx() is None and current_identity() is None
+
+
+@pytest.mark.asyncio
+async def test_truncated_flag_uses_probe_row(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LIMIT n+1 is executed and trimmed to n, so truncated is exact (issue:7e1d9700c5c1)."""
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch)
+    context = PermissionContext(
+        session=UserSession(
+            user_id="both", tenant_id="tenant-a", roles=frozenset({"analyst"}), metadata={"programs": ["eu", "us"]}
+        )
+    )
+    async with bind_semantic_context(context):
+        cut = await toolkit.query_metrics(
+            SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"], limit=1)
+        )
+        whole = await toolkit.query_metrics(
+            SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"], limit=2)
+        )
+    assert cut.row_count == 1 and cut.truncated is True
+    assert whole.row_count == 2 and whole.truncated is False
+
+
+@pytest.mark.asyncio
+async def test_audit_pbac_field_is_precise(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audit records not_governed for opted-out models and unavailable when PBAC cannot decide."""
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch)
+    query = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
+    toolkit._pbac.available = False
+    async with bind_semantic_context(_context("first", "eu")):
+        with pytest.raises(SemanticAccessError) as error:
+            await toolkit.query_metrics(query)
+    assert error.value.code == "pbac_unavailable"
+    assert toolkit._ledger.entries[-1].pbac == "unavailable"
+
+    (models_dir / "orders.policy.yaml").write_text(
+        "governed: false\nconnection: semantic_test\nroles: {analyst: {metrics: '*', dimensions: '*', usage: '*'}}\n",
+        encoding="utf-8",
+    )
+    toolkit.reload()
+    async with bind_semantic_context(_context("first", "eu")):
+        await toolkit.compile_query(query)
+    assert toolkit._ledger.entries[-1].pbac == "not_governed"

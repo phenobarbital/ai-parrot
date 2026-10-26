@@ -262,6 +262,10 @@ class GovernancePipeline:
         tree = guard.check_and_limit(tree, trusted_nodes=trusted)
         limit_node = tree.args.get("limit")
         limit_value = limit_node.expression if isinstance(limit_node, exp.Limit) else limit_node
+        limit = int(limit_value.this)
+        # Fetch one probe row past the cap so the executor can report truncation
+        # exactly; it trims the result back to ``limit`` rows.
+        tree.limit(limit + 1, copy=False)
         try:
             rendered = tree.sql(dialect=dialect)
         except SqlglotError as exc:
@@ -275,7 +279,7 @@ class GovernancePipeline:
             tables=tuple(tables),
             rls_applied=rls_applied,
             masked_columns=masked,
-            limit=int(limit_value.this),
+            limit=limit,
             subject_digest=digest,
             members=self._members(model, prepared, physical_columns),
             physical_columns=physical_columns,

@@ -77,7 +77,7 @@ async def test_fixed_order_and_input_immutability(
     assert len(guard.calls) == 2  # PBAC awaited on every request
     assert first == second
     assert first.rls_applied == ("orders by program",)
-    assert "'eu'" in first.sql and "LIMIT 1000" in first.sql
+    assert "'eu'" in first.sql and "LIMIT 1001" in first.sql
     assert first.limit == 1000
     assert first.tables == ("sales.orders",)
 

@@ -374,21 +374,19 @@ class SemanticLayerToolkit(AbstractToolkit):
         Returns:
             The audit entry identifier.
         """
-        context = current_pctx()
-        if context is None:
-            raise SemanticAccessError("context_required", "A trusted semantic context is required")
+        context, channel, agent_id, static_subject = self._audit_identity()
         entry = SemanticAuditEntry(
             entry_id=str(uuid4()),
             created_at=datetime.now(timezone.utc),
             user_id=context.user_id,
             tenant_id=context.tenant_id,
-            channel="agent",
-            agent_id=current_identity().agent_id if current_identity() else None,
+            channel=channel,
+            agent_id=agent_id,
             subject_digest=(
                 governed.subject_digest if governed else handle.subject_digest if handle else "unavailable"
             ),
             roles=sorted(context.roles),
-            static_subject=False,
+            static_subject=static_subject,
             model=loaded.name,
             model_digest=loaded.model_digest,
             policy_digest=loaded.policy_digest,
@@ -401,13 +399,25 @@ class SemanticLayerToolkit(AbstractToolkit):
             driver=loaded.schema.driver,
             rls_applied=list(governed.rls_applied) if governed else [],
             masked_columns=list(governed.masked_columns) if governed else [],
-            pbac="allow" if governed or (handle is not None and outcome == "ok") else "deny",
+            pbac=_pbac_outcome(loaded, governed, handle, outcome, error_code),
             outcome=outcome,
             error_code=error_code,
             row_count=row_count,
             duration_ms=int((perf_counter() - started) * 1000),
         )
         return (await self._ledger.append(entry, required=self._audit_required)).entry_id
+
+    def _audit_identity(self) -> tuple[Any, str, str | None, bool]:
+        """Return ``(context, channel, agent_id, static_subject)`` for an audit entry.
+
+        Raises:
+            SemanticAccessError: When no trusted context is bound.
+        """
+        context = current_pctx()
+        if context is None:
+            raise SemanticAccessError("context_required", "A trusted semantic context is required")
+        identity = current_identity()
+        return context, "agent", identity.agent_id if identity else None, False
 
     def _retain(
         self, loaded: LoadedModel, governed: GovernedQuery, columns: list[str], rows: list[dict], audit_id: str
@@ -772,6 +782,29 @@ class SemanticLayerToolkit(AbstractToolkit):
 
 
 _UNEXPECTED = "internal_error"
+
+
+def _pbac_outcome(
+    loaded: LoadedModel,
+    governed: GovernedQuery | None,
+    handle: ResultHandle | None,
+    outcome: str,
+    error_code: str | None,
+) -> str:
+    """Classify the PBAC decision recorded in an audit entry.
+
+    Returns:
+        ``not_governed`` for opted-out models, ``unavailable`` when the PBAC
+        evaluator could not decide, ``allow`` once governance (or a hand-off)
+        succeeded, otherwise ``deny``.
+    """
+    if not loaded.policy.governed:
+        return "not_governed"
+    if error_code == "pbac_unavailable":
+        return "unavailable"
+    if governed is not None or (handle is not None and outcome == "ok"):
+        return "allow"
+    return "deny"
 
 
 def _unexpected() -> SemanticError:

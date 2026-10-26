@@ -115,3 +115,22 @@ rls:
             {"sales.orders"},
         )
     assert error.value.code == "invalid_policy"
+
+
+def test_mask_targets_column_exposed_only_through_metric(tmp_path: Path) -> None:
+    """A mask may bind to a physical column behind a metric (issue:7e1d9700c5c1)."""
+    content = "connection: warehouse\nmasks:\n  sales.orders.amount: {strategy: \"null\"}\n"
+    with pytest.raises(SemanticPolicyError) as error:
+        load_policy(_write_policy(tmp_path, content), _members(), {"sales.orders"})
+    assert error.value.code == "unknown_member"
+    columns = {"sales.orders": {"id", "region", "amount"}}
+    policy = load_policy(_write_policy(tmp_path, content), _members(), {"sales.orders"}, columns)
+    assert policy.mask_for(frozenset({"analyst"}), "sales.orders.amount") is not None
+    with pytest.raises(SemanticPolicyError) as error:
+        load_policy(
+            _write_policy(tmp_path, "connection: warehouse\nmasks:\n  sales.orders.nope: {strategy: \"null\"}\n"),
+            _members(),
+            {"sales.orders"},
+            columns,
+        )
+    assert error.value.code == "unknown_member"

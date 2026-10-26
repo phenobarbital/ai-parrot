@@ -113,7 +113,8 @@ class SemanticModelLoader:
                 raise SemanticPolicyError(
                     "missing_policy", "Each semantic model requires a policy side-file", details={"model": name}
                 )
-            policy = load_policy(policy_path, members, tables)
+            columns = {graph_model.table: set(graph_model.columns) for graph_model in graph_models.values()}
+            policy = load_policy(policy_path, members, tables, columns)
             schema = PhysicalSchema(
                 driver=self.driver,
                 tables={graph_model.table: dict(graph_model.columns) for graph_model in graph_models.values()},

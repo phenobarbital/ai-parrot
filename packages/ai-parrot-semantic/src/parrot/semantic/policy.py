@@ -111,13 +111,20 @@ class ModelPolicy(BaseModel):
         return rule
 
 
-def load_policy(path: Path, members: list[ModelMember], tables: set[str]) -> ModelPolicy:
+def load_policy(
+    path: Path,
+    members: list[ModelMember],
+    tables: set[str],
+    columns: dict[str, set[str]] | None = None,
+) -> ModelPolicy:
     """Parse and validate a model policy file.
 
     Args:
         path: Path to the ``<model>.policy.yaml`` side-file.
         members: Semantic members available to the policy.
         tables: Physical tables available to RLS rules.
+        columns: Physical columns per table; lets a mask target a column that is
+            exposed only through a metric (e.g. ``amount`` behind ``revenue``).
 
     Raises:
         SemanticPolicyError: If the policy has invalid schema, bindings, or RLS.
@@ -144,7 +151,7 @@ def load_policy(path: Path, members: list[ModelMember], tables: set[str]) -> Mod
     member_kinds = {member.name: member.kind for member in members}
     time_dimensions = {member.name for member in members if member.kind == "time_dimension"}
     _validate_roles(policy, member_kinds)
-    _validate_masks(policy, member_names)
+    _validate_masks(policy, member_names, columns or {})
     _validate_saved_queries(policy, member_kinds, time_dimensions)
     _validate_functions(policy)
     _validate_rls(policy, tables)
@@ -193,13 +200,13 @@ def _validate_roles(policy: ModelPolicy, member_kinds: dict[str, str]) -> None:
             raise SemanticPolicyError("invalid_policy", "Only dimensions may appear in a dimensions grant")
 
 
-def _validate_masks(policy: ModelPolicy, member_names: set[str]) -> None:
-    """Validate physical mask keys and their member bindings."""
+def _validate_masks(policy: ModelPolicy, member_names: set[str], columns: dict[str, set[str]]) -> None:
+    """Validate physical mask keys: each must name a member or a known physical column of its table."""
     for column, rule in policy.masks.items():
         table, separator, member = column.rpartition(".")
         if not separator or not table or not _IDENT.fullmatch(member):
             raise SemanticPolicyError("invalid_policy", "Mask keys must be table.column")
-        if member not in member_names:
+        if member not in member_names and member not in columns.get(table, set()):
             raise SemanticPolicyError(
                 "unknown_member", "Mask references an unknown member", details={"members": [member]}
             )
