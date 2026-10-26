@@ -19,6 +19,8 @@ from typing import Any
 ENV_KEYS: tuple[str, ...] = ("CLAUDE_PROJECT_DIR", "VIRTUAL_ENV", "PARROT_PROJECT", "PWD", "CODEX_HOME")
 ENV_PREFIXES: tuple[str, ...] = ("GEMINI_",)
 LOG_ENV = "PARROT_PROBE_LOG"
+SECRET_MARKERS: tuple[str, ...] = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PWD")
+REDACTED = "<redacted>"
 SUPPORTED = ("2024-11-05", "2025-03-26", "2025-06-18")   # mirrors server_base.py:17-21
 
 
@@ -27,10 +29,20 @@ def log_path(env: Mapping[str, str]) -> Path:
     return Path(env.get(LOG_ENV) or Path(tempfile.gettempdir()) / "parrot-probe-mcp-env.jsonl")
 
 
+def _redact(name: str, value: str) -> str:
+    """Mask the value of any variable whose name looks secret-bearing (kept: that it is set)."""
+    upper = name.upper()
+    # PWD is the working directory, not a password: only mask names that merely *contain* a marker.
+    if name == "PWD":
+        return value
+    return REDACTED if any(m in upper for m in SECRET_MARKERS) else value
+
+
 def collect_snapshot(env: Mapping[str, str], argv: list[str], cwd: str) -> dict[str, Any]:
     """Return the record: timestamp, pid, cwd, argv, executable and the selected env vars."""
     selected = {k: env[k] for k in ENV_KEYS if k in env}
     selected.update({k: v for k, v in env.items() if k.startswith(ENV_PREFIXES)})
+    selected = {k: _redact(k, v) for k, v in selected.items()}
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "pid": os.getpid(),

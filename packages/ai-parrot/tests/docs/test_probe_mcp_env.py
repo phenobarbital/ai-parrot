@@ -44,3 +44,14 @@ def test_log_record_contents(tmp_path):
     assert record["env"]["GEMINI_FOO"] == "bar"
     assert record["env"]["PARROT_PROJECT"] == "/p"
     assert "executable" in record and "pid" in record
+
+
+def test_secret_valued_vars_are_redacted_everywhere(tmp_path, capfd):
+    """GEMINI_API_KEY-style values never reach the JSONL log (nor stderr)."""
+    _, log = _run(tmp_path, {"GEMINI_API_KEY": "s3cr3t-value", "GEMINI_DB_PASSWORD": "hunter2", "GEMINI_REGION": "eu"})
+    text = log.read_text(encoding="utf-8")
+    assert "s3cr3t-value" not in text and "hunter2" not in text
+    record = json.loads(text.splitlines()[-1])
+    assert record["env"]["GEMINI_API_KEY"] == "<redacted>"
+    assert record["env"]["GEMINI_DB_PASSWORD"] == "<redacted>"
+    assert record["env"]["GEMINI_REGION"] == "eu"
