@@ -474,10 +474,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Added requires_pip/post_install/requires_env to ToolkitTemplate + parser branches; headers in six templates; 13+36 tests pass. NOTE: querysource PG_USER/PG_PWD no-fallback claim (querysource/conf.py:38-44) could NOT be re-verified — querysource not installed here; values taken from the task as specified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
