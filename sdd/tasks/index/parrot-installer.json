@@ -819,19 +819,20 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-26T19:28:17+00:00",
       "effort": "M",
       "depends_on": [
         "TASK-4298",
         "TASK-4085"
       ],
       "parallelism_notes": "creates parrot/sdd/config.py (package root from TASK-4070 via TASK-4085) and edits sdd_meta.py after TASK-4298; TASK-4089 and TASK-4091 depend on it; its validation command runs tests/sdd_scripts/test_sdd_meta_branch_policy.py, which dependency TASK-4298 creates (check_task_graph validation-path-unknown warning is expected)",
-      "file": "sdd/tasks/active/TASK-4299-sdd-repo-config.md"
+      "file": "sdd/tasks/completed/TASK-4299-sdd-repo-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4334",

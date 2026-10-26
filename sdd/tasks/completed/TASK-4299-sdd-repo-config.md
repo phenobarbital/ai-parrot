@@ -538,4 +538,8 @@ release` both ways, `caplog` has no "canonical branches" warning for `develop`, 
 
 ## Completion Note
 
-_(filled in by close_task.sh / the implementing agent)_
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented SddConfig/loader/writer, wired sdd_meta (parse/resolve_flow/parse_taxonomy config kw, FlowMeta.hotfix_base, normalize_project known=), brief_meta + ensure_worktree read config, argparse CLIs for sdd_meta and brief_meta, committed sdd/config.json. All 10 validation test files pass (29+9 new tests); ruff clean on .py files; CLI acceptance outputs verified. Unverified: ruff on sdd/config.json is meaningless (JSON).
+
+**Deviations from spec**: none
