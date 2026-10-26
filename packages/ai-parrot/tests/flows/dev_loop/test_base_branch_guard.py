@@ -181,7 +181,7 @@ class TestGuard:
         await assert_base_is_clean("backport", "main", str(work), siblings=["dev", "feat-465"])
 
     async def test_default_siblings_used_when_none_passed(self, incident_repo):
-        """No explicit siblings -> defaults to _LONG_LIVED_BRANCHES - base,
+        """No explicit siblings -> defaults to KNOWN_BRANCHES - base,
         filtered to existing refs. 'staging' does not exist here, so only
         'dev'/'main' are candidates depending on base."""
         with pytest.raises(BaseBranchMismatch):

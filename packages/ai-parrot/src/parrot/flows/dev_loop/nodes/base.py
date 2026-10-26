@@ -30,19 +30,12 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node
 from parrot.flows.dev_loop.models import QAReport
+from parrot.knowledge.wiki.ledger.sdd_meta import KNOWN_BRANCHES
 
 # Matches the userinfo (``user:secret@``) of an https remote URL, e.g. the
 # ``x-access-token:<token>@github.com`` form GitToolkit injects for private
 # clones — so a token can never surface in git CLI error output (R2).
 _GIT_URL_USERINFO_RE = re.compile(r"(https://)[^@/\s]+:[^@/\s]+@")
-
-# FEAT-466 TASK-2505: the Git Parrot Flow's long-lived branches. Deliberately
-# a LOCAL copy of scripts.sdd.sdd_meta.KNOWN_BRANCHES — NOT an import.
-# `scripts.sdd` is not importable from this package's actual install/test
-# context (verified in TASK-2504's Completion Note: it fails once the
-# interpreter's cwd is anything other than the repo root).
-_LONG_LIVED_BRANCHES: frozenset[str] = frozenset({"main", "staging", "dev"})
-
 
 def scrub_git_output(text: str) -> str:
     """Redact credentials from raw git CLI output before surfacing it.
@@ -150,7 +143,7 @@ async def assert_base_is_clean(
         base: Resolved base branch (no ``origin/`` prefix).
         cwd: Repository or worktree directory to run git in.
         siblings: Long-lived branches to treat as foreign. Defaults to
-            ``_LONG_LIVED_BRANCHES`` minus ``base``, filtered to refs that
+            ``KNOWN_BRANCHES`` minus ``base``, filtered to refs that
             exist on the remote.
         logger: Optional logger for the INFO/measurement trail.
 
@@ -176,7 +169,7 @@ async def assert_base_is_clean(
     reasons — Jira wiring, docs artifacts, etc.), not a live failure mode
     worth hard-failing on.
     """
-    candidates = [s for s in (siblings if siblings is not None else _LONG_LIVED_BRANCHES) if s != base]
+    candidates = [s for s in (siblings if siblings is not None else KNOWN_BRANCHES) if s != base]
 
     # Fetch base FIRST. Two distinct failure shapes:
     #  - `cwd` is not a usable git repository at all (missing entirely, or

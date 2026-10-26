@@ -29,13 +29,18 @@ logger = logging.getLogger(__name__)
 #: sub-feature branches keep working (see CLAUDE.md).
 KNOWN_BRANCHES: frozenset[str] = frozenset({"main", "staging", "dev"})
 
+#: Default base branch for feature work and the mandatory base for hotfixes
+#: (Git Parrot Flow, FEAT-187). TASK-4299 makes them configurable per repo.
+DEFAULT_FEATURE_BASE: str = "dev"
+DEFAULT_HOTFIX_BASE: str = "main"
+
 #: WorkKind -> (flow type, base branch). A bugfix is a hotfix and lands on
 #: main; everything else is a feature and lands on dev. This mapping used to
 #: live only as prose in .claude/agents/sdd-research.md (FEAT-466).
 WORK_KIND_FLOW: dict[str, tuple[str, str]] = {
-    "bug": ("hotfix", "main"),
-    "enhancement": ("feature", "dev"),
-    "new_feature": ("feature", "dev"),
+    "bug": ("hotfix", DEFAULT_HOTFIX_BASE),
+    "enhancement": ("feature", DEFAULT_FEATURE_BASE),
+    "new_feature": ("feature", DEFAULT_FEATURE_BASE),
 }
 
 
@@ -104,7 +109,7 @@ class FlowMeta(BaseModel):
 
     @model_validator(mode="after")
     def _hotfix_implies_main(self) -> "FlowMeta":
-        if self.type == "hotfix" and self.base_branch != "main":
+        if self.type == "hotfix" and self.base_branch != DEFAULT_HOTFIX_BASE:
             raise ValueError("type='hotfix' requires base_branch='main' " f"(got base_branch={self.base_branch!r})")
         return self
 
@@ -124,6 +129,26 @@ def _read_frontmatter(doc_path: Path) -> dict[str, Any] | None:
         return None
     block = yaml.safe_load(parts[1]) or {}
     return block if isinstance(block, dict) else None
+
+
+def read_declared_base_branch(doc_path: Path) -> str | None:
+    """Return the ``base_branch`` a document's YAML frontmatter declares, or ``None``.
+
+    ``None`` means "nothing declared": the file is missing or unreadable, has no leading
+    frontmatter block, the YAML is malformed, the block is not a mapping, or
+    ``base_branch`` is absent, not a string, or blank. Callers decide the default —
+    this function never does and never raises.
+    """
+    try:
+        block = _read_frontmatter(doc_path)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return None
+    if not block:
+        return None
+    value = block.get("base_branch")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 def parse(doc_path: Path) -> FlowMeta:
@@ -149,7 +174,7 @@ def parse(doc_path: Path) -> FlowMeta:
     """
     block = _read_frontmatter(doc_path)
     if block is None:
-        return FlowMeta(type="feature", base_branch="dev")
+        return FlowMeta(type="feature", base_branch=DEFAULT_FEATURE_BASE)
     return FlowMeta(**block)
 
 
@@ -307,7 +332,7 @@ def resolve_flow(
         resolved_type, resolved_base = WORK_KIND_FLOW[kind]
 
     final_type = type_override or resolved_type or "feature"
-    final_base = base_branch_override or resolved_base or "dev"
+    final_base = base_branch_override or resolved_base or DEFAULT_FEATURE_BASE
 
     if final_base not in KNOWN_BRANCHES:
         logger.warning(
