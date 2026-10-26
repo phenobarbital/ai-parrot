@@ -179,4 +179,5 @@ Use `$sdd-start TASK-4479` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: qwen (nova), 1 attempt delivered a stub save_result_as_dataset (fake success); reworked by opus in fix commit e50b9bf1e600c9f2b7fbc2cc3001ef5ee57afe33. Open caveat: durable audit write occurs after sink publish (if audit required and write fails, dataset already exists in private sink). Failed claims are not audited by design.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
