@@ -132,3 +132,39 @@ def test_managed_venv_never_returned_as_virtual_env(tmp_path):
     make_venv(home / "venv", "parrot")
     env = {"PARROT_HOME": str(home), "VIRTUAL_ENV": str(home / "venv")}
     assert launcher.resolve_venv("parrot", argv=[], env=env, cwd=tmp_path) == (home / "venv", "managed")
+
+
+def _git_repo_with_venv(tmp_path: Path, *, tracked: bool) -> Path:
+    import subprocess
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    subprocess.run(["git", "init", "-q", str(proj)], check=True)
+    make_venv(proj / ".venv", "wikitoolkit")
+    if tracked:
+        subprocess.run(["git", "-C", str(proj), "add", "-f", ".venv"], check=True)
+    return proj
+
+
+def test_committed_project_venv_is_never_executed(tmp_path):
+    """A venv that arrives with a cloned repo (tracked by git) is untrusted: resolution falls back to managed."""
+    home = tmp_path / "home"
+    make_venv(home / "venv", "wikitoolkit")
+    proj = _git_repo_with_venv(tmp_path, tracked=True)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (home / "venv", "managed")
+
+
+def test_locally_created_untracked_project_venv_is_trusted(tmp_path):
+    home = tmp_path / "home"
+    make_venv(home / "venv", "wikitoolkit")
+    proj = _git_repo_with_venv(tmp_path, tracked=False)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (proj / ".venv", "project")
+
+
+def test_loop_guard_is_consumed_not_inherited(tmp_path, monkeypatch):
+    """PARROT_LAUNCHER_RESOLVED must not leak to grandchildren: the guarded process pops it."""
+    monkeypatch.setenv(launcher.LOOP_GUARD_ENV, "1")
+    assert launcher._resolved_target("wikitoolkit", []) is None
+    assert launcher.LOOP_GUARD_ENV not in launcher.os.environ

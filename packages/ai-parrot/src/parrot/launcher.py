@@ -130,6 +130,37 @@ def _warn_once(key: str, message: str) -> None:
     sys.stderr.write(f"parrot: {message}\n")
 
 
+def _project_venv_trusted(venv: Path, script: str) -> bool:
+    """Trust gate for a PROJECT venv before the shim executes its script (``resolve_venv`` rule ``project``).
+
+    A cloned, untrusted repository can commit ``.venv/pyvenv.cfg`` + ``.venv/bin/<script>``; the automatic
+    ``wikitoolkit claude-hook`` call would then run attacker code. The venv is trusted only when (POSIX) it is
+    owned by the current user AND nothing under it is tracked by git — a venv a developer created locally is
+    ignored/untracked, a committed one arrives with the clone. Fails closed when the repo cannot be queried.
+    """
+    import subprocess
+
+    try:
+        if os.name != "nt":
+            uid = os.getuid()
+            for path in (venv, venv / "pyvenv.cfg", script_path(venv, script)):
+                if os.lstat(path).st_uid != uid:
+                    return False
+        work_tree = venv.parent
+        if not (work_tree / ".git").exists():
+            return True  # not a git checkout (e.g. an explicit PARROT_PROJECT dir): nothing can be tracked
+        tracked = subprocess.run(
+            ["git", "-C", str(work_tree), "ls-files", "-z", "--", venv.name],
+            capture_output=True, check=False, timeout=5,
+        )
+        if tracked.returncode != 0:
+            # a `.git` that git itself rejects as a repository cannot be a clone's tracked content
+            return b"not a git repository" in tracked.stderr.lower()
+        return not tracked.stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def resolve_venv(script: str, *, argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> tuple[Path, str]:
     """Return ``(venv, rule)``; rule ∈ {'PARROT_VENV','project','VIRTUAL_ENV','managed'}.
 
@@ -159,6 +190,13 @@ def resolve_venv(script: str, *, argv: Sequence[str], env: Mapping[str, str], cw
             exists = venv.is_dir()
         except OSError:
             continue
+        if valid and rule == "project" and not _project_venv_trusted(venv, script):
+            _warn_once(
+                f"untrusted:{venv}",
+                f"project venv {venv} is tracked by git or not owned by you; refusing to run '{script}' from it "
+                "(untrusted repository?) — using the next candidate instead",
+            )
+            continue
         if valid:
             return venv, rule
         if rule == "PARROT_VENV":
@@ -179,7 +217,10 @@ def _strip_project(argv: list[str]) -> list[str]:
 
 def _resolved_target(script: str, argv: list[str]) -> Path | None:
     """Return the script to re-exec into, or None to run in this interpreter."""
-    if os.environ.get(LOOP_GUARD_ENV) or not is_managed():
+    # Consume the guard: it only protects THIS exec hop. Left in the environment it would be inherited by every
+    # grandchild, and a nested managed `parrot` run for another project would skip venv resolution.
+    guarded = os.environ.pop(LOOP_GUARD_ENV, None)
+    if guarded or not is_managed():
         return None
     try:
         venv, rule = resolve_venv(script, argv=argv, env=os.environ, cwd=Path.cwd())
