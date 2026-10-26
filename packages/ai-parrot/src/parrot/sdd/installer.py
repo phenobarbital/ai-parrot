@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import logging
 import re
 import shlex
@@ -380,6 +381,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
         recorded = target in receipt["files"]
         if state == "missing":
             plan.append(PlannedAction(action="skip-missing", target=target))
+            if recorded:
+                removed.add(target)  # deleted by hand: nothing left to remove, so it must not pin the receipt/hooks
         elif state == "edited":
             plan.append(PlannedAction(action="keep-edited", target=target, note="edited since parrot wrote it"))
         elif state == "foreign" or not recorded:
@@ -433,6 +436,11 @@ def _apply_asset(
     if action.action in {"skip-edited", "skip-foreign"}:
         logger.warning("sdd install: %s %s; skipped", entry["target"], action.note)
         return f"warning: {entry['target']} — {action.note}"
+    # The repository is untrusted input: a symlinked target or parent directory (e.g. `.claude/agents -> /etc/x`)
+    # would make the write land outside the repo. Refuse unless the fully resolved path stays under the root.
+    if target.is_symlink() or not _under(Path(os.path.realpath(target)), Path(os.path.realpath(root))):
+        logger.warning("sdd install: %s resolves outside the repository (symlink); skipped", entry["target"])
+        return f"warning: {entry['target']} — resolves outside the repository (symlink); skipped"
     payload = _rendered_payload(entry, hook)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
@@ -710,6 +718,7 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
         elif step.action == "keep-shared":
             actions.append(f"{step.target} — kept ({step.note})")
         elif step.action == "skip-missing":
+            receipt["files"].pop(step.target, None)  # forget the recorded-but-deleted asset
             continue
         elif step.action == "gitignore-remove":
             path = root / ".gitignore"

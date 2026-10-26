@@ -396,3 +396,51 @@ def test_guard_hook_status_flags_hand_patched_foreign(empty_repo: Path, no_launc
 
 def test_guard_hook_absent_is_resolvable(tmp_path: Path) -> None:
     assert sdd_status(tmp_path)["guard_hook"] == {"form": None, "command": None, "targets": [], "resolvable": True}
+
+
+_LINK_RE = re.compile(r"\]\((\.\./[^)#\s]+)")
+
+
+@pytest.mark.parametrize("host", ["codex", "google"])
+def test_non_claude_host_skills_have_every_file_they_read(empty_repo: Path, host: str) -> None:
+    """A codex/google-only install must ship the `.claude/commands/*.md` and `docs/sdd/CODEX.md` its skills link to."""
+    install_sdd_integration(empty_repo, hosts=(host,))
+    skills = sorted((empty_repo / ".agents/skills").glob("*/SKILL.md"))
+    assert skills
+    missing = [
+        f"{skill.relative_to(empty_repo)} -> {link}"
+        for skill in skills
+        for link in _LINK_RE.findall(skill.read_text(encoding="utf-8"))
+        if not (skill.parent / link).resolve().is_file()
+    ]
+    assert not missing, missing
+
+
+def test_agents_dispatched_by_packaged_autopilot_are_installed(empty_repo: Path) -> None:
+    """Every `claude --agent <name>` the shipped autopilot runs resolves to a shipped agent file."""
+    install_sdd_integration(empty_repo)
+    text = (empty_repo / ".claude/agents/sdd-autopilot.md").read_text(encoding="utf-8")
+    names = set(re.findall(r"claude --agent ([a-z][a-z-]*)", text))
+    assert {"code-reviewer", "qa-runner"} <= names
+    missing = sorted(n for n in names if not (empty_repo / ".claude/agents" / f"{n}.md").is_file())
+    assert not missing, missing
+
+
+def test_uninstall_after_hand_deleting_one_asset_still_cleans_up(empty_repo: Path) -> None:
+    """A managed file removed by hand must not leave the receipt, ledger hooks and blocks behind."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / ".claude/commands/sdd-done.md").unlink()
+    uninstall_sdd_integration(empty_repo)
+    assert not (empty_repo / RECEIPT_PATH).exists()
+    assert GITIGNORE_BEGIN not in (empty_repo / ".gitignore").read_text()
+    assert not any((empty_repo / t).exists() for t in _claude_targets())
+
+
+def test_install_never_writes_through_a_symlink_out_of_the_repo(empty_repo: Path, tmp_path_factory) -> None:
+    """A repo-supplied symlinked `.claude/agents` must not redirect managed writes outside the repository."""
+    outside = tmp_path_factory.mktemp("outside")
+    (empty_repo / ".claude").mkdir()
+    (empty_repo / ".claude/agents").symlink_to(outside, target_is_directory=True)
+    actions = install_sdd_integration(empty_repo)
+    assert list(outside.iterdir()) == [], "managed assets were written outside the repository"
+    assert any("outside the repository" in a for a in actions)

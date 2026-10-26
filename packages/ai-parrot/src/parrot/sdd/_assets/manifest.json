@@ -348,98 +348,126 @@
       "source": "claude/commands/sdd-brainstorm.md",
       "target": ".claude/commands/sdd-brainstorm.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-brief.md",
       "target": ".claude/commands/sdd-brief.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-codereview.md",
       "target": ".claude/commands/sdd-codereview.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-done.md",
       "target": ".claude/commands/sdd-done.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-explain.md",
       "target": ".claude/commands/sdd-explain.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-fix.md",
       "target": ".claude/commands/sdd-fix.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-fromjira.md",
       "target": ".claude/commands/sdd-fromjira.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-next.md",
       "target": ".claude/commands/sdd-next.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-proposal.md",
       "target": ".claude/commands/sdd-proposal.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-spec.md",
       "target": ".claude/commands/sdd-spec.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-start.md",
       "target": ".claude/commands/sdd-start.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-status.md",
       "target": ".claude/commands/sdd-status.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-task.md",
       "target": ".claude/commands/sdd-task.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
       "source": "claude/commands/sdd-tojira.md",
       "target": ".claude/commands/sdd-tojira.md",
       "hosts": [
-        "claude"
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
@@ -604,6 +632,28 @@
         "claude",
         "codex",
         "google"
+      ]
+    },
+    {
+      "source": "sdd/CODEX.md",
+      "target": "docs/sdd/CODEX.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "claude/agents/code-reviewer.md",
+      "target": ".claude/agents/code-reviewer.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/qa-runner.md",
+      "target": ".claude/agents/qa-runner.md",
+      "hosts": [
+        "claude"
       ]
     }
   ]
