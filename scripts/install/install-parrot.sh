@@ -186,6 +186,7 @@ preflight() {  # C14b — read-only checks, in order; never calls run(); never c
   uv_target >/dev/null 2>&1 || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64"
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || gate_fail "no download tool" "install curl or wget"
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || gate_fail "no checksum tool" "install coreutils (sha256sum) or perl (shasum)"
+  command -v mktemp >/dev/null 2>&1 || gate_fail "no mktemp" "install coreutils (mktemp)"
   command -v git >/dev/null 2>&1 || gate_fail "git not found" "install git (the SDD flow and parrot self doctor need it)"
   anc="$PARROT_HOME"; while [ ! -e "$anc" ]; do anc="$(dirname "$anc")"; done   # nearest existing ancestor
   [ -w "$anc" ] || gate_fail "$anc is not writable" "set PARROT_HOME to a writable directory"
@@ -253,11 +254,14 @@ global_install() {
   spec="ai-parrot[$ALL_EXTRAS]"; [ -z "$PARROT_VERSION" ] || spec="$spec==$PARROT_VERSION"
   # rev 0.5 C20 — ai-parrot-tools at the same version pin (wikitoolkit mcp's wiki tools live in parrot_tools.wiki)
   tools="ai-parrot-tools"; [ -z "$PARROT_VERSION" ] || tools="$tools==$PARROT_VERSION"
-  dl="${TMPDIR:-/tmp}/parrot-uv.$$"
+  dl="${TMPDIR:-/tmp}/parrot-uv.XXXXXX"   # real private dir (mktemp -d, 0700) is created below, never a predictable path
   print_plan "$url" "$spec $tools"    # C14a — before anything else
   preflight                    # C14b — exits 1 on any failed gate; nothing written yet
-  if [ "$DRY_RUN" -eq 0 ]; then trap rollback EXIT; mkdir_tracked "$PARROT_HOME"; mkdir_tracked "$PARROT_HOME/bin"; CREATED+=("$dl"); fi
-  run "create a scratch download dir" mkdir -p "$dl"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    trap rollback EXIT; mkdir_tracked "$PARROT_HOME"; mkdir_tracked "$PARROT_HOME/bin"
+    dl="$(mktemp -d "$dl")"; CREATED+=("$dl")
+  fi
+  printf '\xe2\x86\x92 create a scratch download dir: mktemp -d %s\n' "$dl"
   run "download pinned uv $UV_VERSION ($target)" fetch "$url" "$dl/$asset"
   run "download the uv checksum" fetch "$url.sha256" "$dl/$asset.sha256"
   run "verify the uv checksum" verify_sha256 "$dl/$asset" "$dl/$asset.sha256"
@@ -273,6 +277,8 @@ global_install() {
   run "install $spec $tools into the managed venv" "$uv" pip install --python "$PARROT_HOME/venv/bin/python" "$spec" "$tools"
   for s in parrot wikitoolkit bookstore; do run "expose $s" install_shim "$PARROT_HOME/venv/bin/$s" "$PARROT_HOME/bin/$s"; done
   run "add $PARROT_HOME/bin to PATH" add_path_block
+  # the profile edit only helps NEW shells: the doctor below runs in this one and checks PATH
+  [ "$DRY_RUN" -eq 1 ] || export PATH="$PARROT_HOME/bin:$PATH"
   # C14b — runtime scope only, pinned to the venv just built; a non-zero exit under set -e fires the rollback trap
   run "verify the managed runtime (parrot self doctor --runtime-only)" \
     env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor --runtime-only

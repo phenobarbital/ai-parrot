@@ -116,7 +116,7 @@ def test_global_dry_run_prints_plan_and_gate(tmp_path: Path) -> None:
 
 _TOOLS = (
     "bash", "uname", "df", "awk", "dirname", "tar", "gzip", "mkdir", "rm", "ln", "mv", "grep", "cat", "cp",
-    "chmod", "env", "sed", "sha256sum", "git", "curl", "wget",
+    "chmod", "mktemp", "stat", "env", "sed", "sha256sum", "git", "curl", "wget",
 )
 
 
@@ -178,6 +178,7 @@ dest=""; url=""
 while [ $# -gt 0 ]; do
   case "$1" in -o) dest="$2"; shift 2;; -*) shift;; *) url="$1"; shift;; esac
 done
+stat -c '%a %n' "$(dirname "$dest")" >> "$FIXTURES/dlmode"
 case "$url" in
   *.sha256) cp "$FIXTURES/uv.tar.gz.sha256" "$dest" ;;
   *) cp "$FIXTURES/uv.tar.gz" "$dest" ;;
@@ -250,3 +251,32 @@ def test_post_install_repo_readiness_failures_keep_runtime(tmp_path: Path) -> No
     assert (home / "bin" / "parrot").exists() and (home / "venv").exists()
     assert (home / "bin" / "uv").exists()
     assert "# >>> parrot >>>" in (tmp_path / "home" / ".bashrc").read_text(encoding="utf-8")
+
+
+def _real_doctor_path_parrot() -> str:
+    """A `parrot` shim that runs the REAL doctor PATH check (parrot.self_.doctor._check_path) and exits 1 on failure."""
+    import sys
+
+    src = Path(__file__).resolve().parents[2] / "src"
+    return (
+        "#!/bin/sh\n"
+        f'PYTHONPATH="{src}" exec "{sys.executable}" -c \''
+        "import sys; from parrot.self_.doctor import _check_path; c = _check_path(); print(c.detail); sys.exit(0 if c.ok else 1)"
+        "\'\n"
+    )
+
+
+def test_runtime_doctor_sees_managed_bin_on_path(tmp_path: Path) -> None:
+    """The in-process doctor PATH check must pass right after install: the installer exports PATH itself."""
+    result = _run_offline_install(tmp_path, fake_parrot=_real_doctor_path_parrot())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "home" / ".parrot" / "bin" / "parrot").exists()
+
+
+def test_download_dir_is_private_and_unpredictable(tmp_path: Path) -> None:
+    """The scratch download dir is created by mktemp -d (0700), not a predictable /tmp/parrot-uv.<pid>."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY)
+    assert result.returncode == 0, result.stderr
+    modes = (tmp_path / "fixtures" / "dlmode").read_text(encoding="utf-8").split()
+    assert modes[0] == "700"
+    assert "parrot-uv." in modes[1] and modes[1].rsplit("parrot-uv.", 1)[1] != str(os.getpid())
