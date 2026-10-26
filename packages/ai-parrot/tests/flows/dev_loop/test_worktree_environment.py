@@ -272,7 +272,9 @@ def test_scope_guard_import_error_allows(checkout: tuple[Path, Path], monkeypatc
 
 
 def test_standalone_loader_resolves_kernel_by_path() -> None:
-    hook_dir = str(Path(policy.__file__).parent)
+    from parrot.sdd.scripts import worktree_environment as moved
+
+    hook_dir = str(Path(moved.__file__).parent)
     code = (
         f"import sys; sys.path.insert(0, {hook_dir!r}); "
         "import worktree_environment as we; "
