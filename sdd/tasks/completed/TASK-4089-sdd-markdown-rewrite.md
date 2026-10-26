@@ -1538,10 +1538,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Rewrote 54 SDD assets via one-off script (total=210 residual=0, idempotent) to 'parrot sdd run <name>'; rule 6 (13 sdd_meta one-liners -> parse/taxonomy/resolve-flow; resolve-flow consumer uses sed on its JSON), rule 7 (worktree_environment hooks); C11b/C6/C9/C10 text edits (placeholders PROJ-123/your-org, base branches via sdd/config.json, CLAUDE.md pointers -> sdd/WORKFLOW.md, agy ban removed, codex conditional); C21 test_command prose on sdd-done/sdd-task/sdd-spec/worker/qa-runner/autopilot/spec template; C22 A-E (sdd/WORKFLOW.md Git Configuration/Release Cut rewritten generically; ai-parrot venv rule moved to three codebase-conventions twins, _rules_data now 6022 bytes); C24 E2E gate ported to .agent/workflows/sdd-done.md; hook PATH-first black lookup (only allowlisted line kept). New tests test_no_repo_script_refs.py (7) and test_test_command_fallback.py (9); the three TASK-4508 helpers now fail with a one-line stderr error when test_scope cannot load. Scanner --fail-on org-data,claude-md-ref,branch-literal exits 0. Not asserted/unverified: sdd/CONVENTIONS.md does not exist yet (TASK-4090 seeds it); sdd-insight untouched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Extra test pins updated beyond the listed ones because they asserted old literals: test_ledger_workflow_twins (gh pr create --base <base_branch>), test_sdd_done_brief_contract, test_e2e_spec_contract, test_done_optimization_contract, dev_flow/test_subagent_defs, sdd/test_audit::test_real_assets_reference_map. _subagent_data prompt copies (6 files) re-synced for parity (C2 ordering). _SUBSTITUTIONS in test_command_twin_parity emptied (twins now identical). Remaining ai-parrot-specific prose mentions of main/dev in sdd-done not flagged by scanner left as-is.

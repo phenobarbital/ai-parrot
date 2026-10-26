@@ -639,7 +639,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -655,8 +655,9 @@
       "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py); needs sdd/config.json field names from TASK-4299 (C6) and audit kinds org-data/claude-md-ref/branch-literal from TASK-4070 (C11a); TASK-4334 first: it edits the same sdd-spec/sdd-task twins and its spec_tools invocations are rewritten by rule 5a",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4089-sdd-markdown-rewrite.md"
+      "completed_at": "2026-10-26T19:51:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4089-sdd-markdown-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4090",
