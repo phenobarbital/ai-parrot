@@ -346,7 +346,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -357,8 +357,9 @@
       "parallelism_notes": "imports EnvelopeCodec/JsonEnvelopeCodec from TASK-4722 (roost/codec.py) and CapabilityMatch from TASK-4715 (roost/directory.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4724-roost-squawk-bridge.md"
+      "completed_at": "2026-10-26T13:16:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4724-roost-squawk-bridge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4725",
