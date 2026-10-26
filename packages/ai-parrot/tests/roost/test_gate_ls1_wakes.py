@@ -47,9 +47,7 @@ async def _channel() -> tuple[InProcessCarrier, list[RoostEndpoint]]:
         RoostAgentConfig(capabilities=["misc.one"]),
         RoostAgentConfig(capabilities=["misc.two"]),
     ]
-    endpoints = [
-        _endpoint(f"agent-{i}", carrier, cfg, AsyncMock(return_value=None)) for i, cfg in enumerate(configs)
-    ]
+    endpoints = [_endpoint(f"agent-{i}", carrier, cfg, AsyncMock(return_value=None)) for i, cfg in enumerate(configs)]
     for endpoint in endpoints:
         await endpoint.start()
     return carrier, endpoints

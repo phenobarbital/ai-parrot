@@ -61,9 +61,7 @@ async def test_arrow_table_by_reference() -> None:
         msg = await asyncio.wait_for(received, 1)
 
         assert msg.content is table
-        assert (
-            msg.content.column(0).chunk(0).buffers()[1].address == table.column(0).chunk(0).buffers()[1].address
-        )
+        assert msg.content.column(0).chunk(0).buffers()[1].address == table.column(0).chunk(0).buffers()[1].address
         handle_id = f"arrow:{id(table)}"
         entry = await blackboard.put(
             "artifacts",
