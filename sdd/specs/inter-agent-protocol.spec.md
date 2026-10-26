@@ -746,9 +746,37 @@ tests:
 - packages/ai-parrot-server/tests/mcp/test_result_policy.py
 - packages/ai-parrot-server/tests/mcp/test_agent_mount.py
 - packages/ai-parrot-server/tests/mcp/test_agent_mount_config.py
+- packages/ai-parrot-server/tests/mcp/test_no_grpc_stub.py
+- packages/ai-parrot/tests/registry/test_registry_tooling_normalize.py
+- packages/ai-parrot/tests/registry/test_remote_kind.py
+- packages/ai-parrot/tests/unit/observability/test_config.py
+- packages/ai-parrot/tests/unit/observability/test_capability_call_record.py
+- packages/ai-parrot/tests/interagent/test_handles.py
+- packages/ai-parrot/tests/interagent/test_ledger_entry.py
+- packages/ai-parrot/tests/interagent/test_contract.py
+- packages/ai-parrot/tests/interagent/test_messages.py
+- packages/ai-parrot/tests/interagent/test_bus_codec.py
+- packages/ai-parrot/tests/interagent/test_compiler.py
+- packages/ai-parrot-squawk/tests/test_satellite_imports.py
+- packages/ai-parrot-squawk/tests/test_telemetry.py
+- packages/ai-parrot-squawk/tests/contract/test_bindings.py
+- packages/ai-parrot-squawk/tests/contract/test_cache.py
+- packages/ai-parrot-squawk/tests/blobs/test_local_store.py
+- packages/ai-parrot-squawk/tests/blobs/test_filemanager_store.py
+- packages/ai-parrot-squawk/tests/blobs/test_sweeper.py
+- packages/ai-parrot-squawk/tests/server/test_served_ledger.py
+- packages/ai-parrot-squawk/tests/server/test_render.py
+- packages/ai-parrot-squawk/tests/server/test_promotion.py
+- packages/ai-parrot-squawk/tests/client/test_received_ledger.py
+- packages/ai-parrot-squawk/tests/spikes/test_g1_token_accounting.py
+- packages/ai-parrot-squawk/tests/spikes/test_g2_capnp_arrow.py
+- packages/ai-parrot-squawk/tests/spikes/test_g3_contract_tool_defs.py
+- packages/ai-parrot-squawk/tests/spikes/test_g4_mount_prompt_cache.py
+- packages/ai-parrot-squawk/tests/spikes/test_g5_biscuit_attenuation.py
+- packages/ai-parrot-squawk/tests/spikes/test_g6_bus_envelope.py
 markers: none
 
-The satellite's own `packages/ai-parrot-squawk/tests/` files do not exist yet; `/sdd-task` adds them to the per-spec index as tasks create them.
+> The satellite's own `packages/ai-parrot-squawk/tests/` files do not exist yet; each task lists its own test files in its Validation Commands and the contract above is extended at a later `/sdd-task` pass once they exist.
 
 ### Test Data / Fixtures
 ```python
