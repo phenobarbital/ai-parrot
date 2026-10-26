@@ -29,9 +29,11 @@ from __future__ import annotations
 import asyncio
 import errno
 import logging
+import os
 import re
 import sqlite3
 import struct
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -320,6 +322,67 @@ class WikiStoreBusy(sqlite3.OperationalError):
 
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+
+#: FEAT-633: a migration lockfile older than this is presumed abandoned (crashed holder).
+STALE_MIGRATION_LOCK_S: float = 600.0
+
+
+def _migration_lock_path(db_path: Path) -> Path:
+    """Sidecar lockfile guarding cross-process migration of ``db_path``."""
+    return db_path.with_name(db_path.name + ".migrate.lock")
+
+
+class WikiStoreMigrationError(RuntimeError):
+    """A stale plane cannot be migrated safely: the migration lock or the pre-migration backup could not be
+    created (spec rev 0.5 C24; PR #1746 review). Never a ``sqlite3.OperationalError`` — ``_read`` must not
+    degrade it into a read-only open."""
+
+    def __init__(self, directory: Path, step: str, cause: BaseException) -> None:
+        self.directory = directory
+        self.step = step
+        super().__init__(
+            f"cannot migrate the wiki store: could not {step} in {directory} "
+            f"({type(cause).__name__}: {cause}). Make {directory} writable, or open the store read-only."
+        )
+
+
+def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE_MIGRATION_LOCK_S) -> bool:
+    """Create ``lock_path`` atomically (O_CREAT|O_EXCL); True when this caller now holds it.
+
+    Works identically on POSIX and Windows — deliberately NOT the fcntl pattern of
+    ``project.py:39-42``, which degrades to a no-op without fcntl. A lock older than
+    ``stale_after_s`` is removed and acquisition retried once.
+    """
+    for _attempt in range(2):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except FileNotFoundError:
+                continue  # holder just released
+            except OSError as exc:
+                raise WikiStoreMigrationError(lock_path.parent, "inspect the migration lock", exc) from exc
+            if age <= stale_after_s:
+                return False
+            logger.warning("removing stale wiki migration lock %s (age %.0fs)", lock_path, age)
+            try:
+                lock_path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise WikiStoreMigrationError(lock_path.parent, "remove the stale migration lock", exc) from exc
+            continue
+        except OSError as exc:
+            # rev 0.5 C24 / PR #1746 review: never return False/True here — "never silently skipped"
+            raise WikiStoreMigrationError(lock_path.parent, "create the migration lock", exc) from exc
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{os.getpid()} {time.time()}")
+        return True
+    return False
+
+
+def _release_migration_lock(lock_path: Path) -> None:
+    """Remove the lockfile (idempotent)."""
+    lock_path.unlink(missing_ok=True)
 
 
 def _now_iso() -> str:
@@ -1433,8 +1496,98 @@ class SQLiteWikiStore(BaseWikiStore):
             return
         async with self._init_lock:
             if not self._migrated.is_set():
-                await self._migrate(conn)
+                await self._migrate_safely(conn)
                 self._migrated.set()
+
+    async def _has_migration_work(self, conn: aiosqlite.Connection) -> bool:
+        """Pure-read probe: columns/version (``_migration_needed``) or a legacy FTS shape."""
+        missing, version_stale = await self._migration_needed(conn)
+        if missing or version_stale:
+            return True
+        return any([await self._uses_legacy_fts(conn, table) for table in _FTS_TABLES])
+
+    async def _migrate_safely(self, conn: aiosqlite.Connection) -> None:
+        """Run ``_migrate`` under the cross-process lock with a restorable backup.
+
+        A current plane takes the unchanged read-first path (no lock, no backup, no write).
+        """
+        if not await self._has_migration_work(conn):
+            await self._migrate(conn)  # still read-first: attrs/FTS-trigger self-heal probes only
+            return
+        async with self._migration_lock():
+            await self._check_runtime_gate(conn)  # a newer runtime may have migrated while we waited
+            if not await self._has_migration_work(conn):
+                await self._migrate(conn)
+                return
+            # a failing backup raises WikiStoreMigrationError and removes its own partial .bak-*
+            backup = await asyncio.to_thread(self._backup_store)
+            self.logger.info("migrating wiki plane %s (backup: %s)", self._db_path, backup)
+            try:
+                await self._migrate(conn)
+            except BaseException:
+                try:
+                    await conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                await asyncio.to_thread(self._restore_store, backup)
+                self.logger.error("wiki migration of %s failed; restored from backup %s", self._db_path, backup)
+                raise
+
+    @asynccontextmanager
+    async def _migration_lock(self) -> AsyncIterator[None]:
+        """Hold the cross-process migration lockfile; raise WikiStoreBusy after busy_timeout_s."""
+        lock_path = _migration_lock_path(self._db_path)
+        deadline = time.monotonic() + self._policy.busy_timeout_s
+        # rev 0.5 C24 / D8 (3): _try_acquire_migration_lock raises WikiStoreMigrationError on any OSError other
+        # than FileExistsError — let it propagate; nothing to release yet
+        while not _try_acquire_migration_lock(lock_path):
+            if time.monotonic() >= deadline:
+                raise WikiStoreBusy(self._db_path, "migrate", self._policy.busy_timeout_s)
+            await asyncio.sleep(0.1)
+        try:
+            yield
+        finally:
+            _release_migration_lock(lock_path)
+
+    def _backup_store(self) -> Path:
+        """Online-backup the plane to ``<db>.bak-<UTC timestamp>``; run via ``asyncio.to_thread``.
+
+        Uses the SQLite backup API (WAL-consistent), never a raw file copy.
+        """
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}")
+        src = dst = None
+        try:
+            src = sqlite3.connect(self._db_path)
+            dst = sqlite3.connect(backup)
+            src.backup(dst)
+        except (OSError, sqlite3.OperationalError) as exc:
+            if dst is not None:
+                dst.close()
+                dst = None
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise WikiStoreMigrationError(backup.parent, "create the pre-migration backup", exc) from exc
+        finally:
+            if dst is not None:
+                dst.close()
+            if src is not None:
+                src.close()
+        return backup
+
+    def _restore_store(self, backup: Path) -> None:
+        """Copy ``backup`` back over the plane with the backup API (reverse direction)."""
+        src = sqlite3.connect(backup)
+        try:
+            dst = sqlite3.connect(self._db_path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
 
     @asynccontextmanager
     async def _read(self) -> AsyncIterator[aiosqlite.Connection]:
