@@ -501,10 +501,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: launcher.py (stdlib only) with constants, parrot_home, is_managed, repository_paths (no-raise port + temp-root stop), find_project_root (leading-only --project), script_path, resolve_venv (warn once). 10 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -261,7 +261,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -269,8 +269,9 @@
       "parallelism_notes": "no deps; creates parrot/launcher.py (parrot_home, is_managed, repository_paths, find_project_root, script_path, resolve_venv); no edge to TASK-4085 by design: the C16 port-source note only says to port from parrot/sdd/scripts/worktree_environment.py when TASK-4085 is already done (otherwise from flows/dev_loop/worktree_environment.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4071-launcher-core.md"
+      "completed_at": "2026-10-26T18:30:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4071-launcher-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4072",
