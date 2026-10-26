@@ -186,3 +186,17 @@ def test_global_gate_unwritable_home_exits_before_write(tmp_path: Path) -> None:
     # On a non-x64 host the platform gate fires first; either refusal must happen before any write.
     assert result.returncode == 1 and ("not writable" in out or "unsupported platform" in out)
     assert not (ro / ".parrot").exists()
+
+
+def test_run_turns_native_failures_into_errors() -> None:
+    """Run resets then checks $LASTEXITCODE so uv/pip/self add/npm failures cannot report success."""
+    run_body = _TEXT.split("function Run {", 1)[1].split("function Resolve-Extras", 1)[0]
+    assert "$global:LASTEXITCODE = 0" in run_body
+    assert "if ($LASTEXITCODE) { throw" in run_body
+    assert run_body.index("$global:LASTEXITCODE = 0") < run_body.index("& $Cmd") < run_body.index("if ($LASTEXITCODE)")
+
+
+def test_component_failure_warns_and_exits_nonzero_without_rollback() -> None:
+    """A failing `parrot self add` warns, keeps the base runtime and exits 1 (parity with install-parrot.sh)."""
+    assert "$script:ComponentFailed = $true" in _TEXT
+    assert "if ($script:ComponentFailed) { exit 1 }" in _TEXT

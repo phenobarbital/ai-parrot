@@ -80,7 +80,10 @@ function Run {
   )
   Write-Host "-> $($Why): $($Cmd.ToString().Trim())"
   if (-not $DryRun) {
+    # Native commands never throw on a non-zero exit: reset, run, then turn a failure into a terminating error.
+    $global:LASTEXITCODE = 0
     & $Cmd
+    if ($LASTEXITCODE) { throw "$Why failed (exit $LASTEXITCODE)" }
   }
 }
 
@@ -225,8 +228,10 @@ function Install-Global {
         if ($LASTEXITCODE) { throw "parrot self doctor --runtime-only failed (exit $LASTEXITCODE) — see its suggested fixes above" }
       } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
     }
+    # The base runtime is verified: a failing component warns and exits non-zero, never rolls it back (as install-parrot.sh).
     foreach ($c in ($With -split ',' | Where-Object { $_ })) {
-      Run -Why "add component $c (parrot self add $c)" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c }
+      try { Run -Why "add component $c (parrot self add $c)" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c } }
+      catch { Write-Warning "'parrot self add $c' failed: $($_.Exception.Message); the base runtime stays installed"; $script:ComponentFailed = $true }
     }
   } catch {
     Write-Warning "install failed: $($_.Exception.Message) — rolling back what this run created"
@@ -238,7 +243,7 @@ function Install-Global {
   }
 }
 
-if ($GlobalMode) { Install-Global; Write-Host 'Done.'; exit 0 }
+if ($GlobalMode) { Install-Global; Write-Host 'Done.'; if ($script:ComponentFailed) { exit 1 }; exit 0 }
 
 # Python guard (AC10) — refuse anything outside >=3.11,<3.14 BEFORE any
 # other step (including -DryRun), same as the POSIX installer.
