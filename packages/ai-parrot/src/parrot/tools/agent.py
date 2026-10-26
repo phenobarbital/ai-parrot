@@ -14,6 +14,7 @@ from ..models.outputs import OutputMode
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
 from ..roost.endpoint import RoostEndpoint, RoostFailure
+
 if TYPE_CHECKING:
     from ..bots.abstract import AbstractBot
 
