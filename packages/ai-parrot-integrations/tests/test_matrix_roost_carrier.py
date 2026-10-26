@@ -1,4 +1,5 @@
 """Tests for the Matrix Roost carrier (FEAT-747 M12), with a mocked client."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 

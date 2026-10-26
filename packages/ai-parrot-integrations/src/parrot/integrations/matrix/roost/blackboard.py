@@ -1,4 +1,5 @@
 """Room-state blackboard over ``m.parrot.blackboard`` state events (FEAT-747 M12)."""
+
 from __future__ import annotations
 
 import asyncio

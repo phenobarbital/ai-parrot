@@ -1,4 +1,5 @@
 """Matrix carrier for Roost (FEAT-747 M12). One carrier among four; body is mandatory."""
+
 from __future__ import annotations
 
 import dataclasses

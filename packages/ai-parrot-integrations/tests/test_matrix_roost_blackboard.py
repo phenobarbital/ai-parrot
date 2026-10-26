@@ -1,4 +1,5 @@
 """Tests for the Matrix room-state blackboard (FEAT-747 M12), with a mocked client."""
+
 from unittest.mock import MagicMock
 
 import pytest
