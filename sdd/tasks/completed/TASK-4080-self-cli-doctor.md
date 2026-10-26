@@ -1047,10 +1047,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented doctor.py (3 scopes, runtime/host/toolkit checks, full C15 SDD family incl. C23 ledger block+hooks, C25 guard hook, lazy absence-tolerant parrot.sdd.* imports), cli.py (add/update/doctor/env/uninstall), lazy 'self' registration. self_ tests + test_toolkits_cli: 49 passed; ruff clean. sdd_status() shape (hosts -> {current|outdated|edited: [paths]}, guard_hook) is assumed from the contract since parrot.sdd.installer does not exist yet; guard-hook/host-cli/jq paths are exercised via monkeypatched _sdd_status. Ledger-hook check uses _git_hook_path as contracted (it checks .git/hooks, not rev-parse --git-path).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test fixture ready_repo: added 'git config receive.denyDeleteCurrent ignore' on the bare origin so the base-branch deletion matrix row can run (blueprint fixture failed otherwise).

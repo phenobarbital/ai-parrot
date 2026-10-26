@@ -449,7 +449,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -459,8 +459,9 @@
       "parallelism_notes": "calls install_component/update/uninstall from TASK-4079 (parrot/self_/components.py); SDD readiness checks import parrot.sdd.{config,installer,audit} lazily and tolerate their absence (TASK-4299, TASK-4091 and TASK-4070 land later)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4080-self-cli-doctor.md"
+      "completed_at": "2026-10-26T18:56:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4080-self-cli-doctor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4081",
