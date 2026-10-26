@@ -161,3 +161,75 @@ async def test_read_only_open_in_unwritable_dir(tmp_path: Path) -> None:
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0] == "2"
     assert not list(tmp_path.glob("wiki.db.bak-*")) and not store_mod._migration_lock_path(db).exists()
+
+
+async def test_failed_migration_does_not_discard_concurrent_committed_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restoring the full pre-migration snapshot must not erase what another writer committed meanwhile."""
+    db = await _stale_plane(tmp_path)
+
+    async def boom(self, conn):  # noqa: ANN001
+        other = sqlite3.connect(db)  # an already-initialised writer: takes no migration lock
+        other.execute("INSERT INTO meta (key, value) VALUES ('concurrent', 'kept')")
+        other.commit()
+        other.close()
+        raise RuntimeError("migration failed")
+
+    monkeypatch.setattr(SQLiteWikiStore, "_migrate", boom)
+    with pytest.raises(RuntimeError, match="migration failed"):
+        await SQLiteWikiStore(db, "t").get_meta("k")
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT value FROM meta WHERE key = 'concurrent'").fetchone() == ("kept",)
+    assert list(tmp_path.glob("wiki.db.bak-*"))  # backup kept for manual recovery
+
+
+def test_stale_reclaim_never_deletes_a_fresh_replacement_lock(tmp_path: Path) -> None:
+    """Two contenders see the same stale lock; the loser must not unlink the winner's fresh lock."""
+    lock = tmp_path / "x.lock"
+    assert store_mod._try_acquire_migration_lock(lock) is True
+    observed = store_mod._lock_identity(lock)  # what contender B saw as stale
+    lock.unlink()  # contender A reclaimed it ...
+    assert store_mod._try_acquire_migration_lock(lock) is True  # ... and now holds a FRESH lock
+    store_mod._reclaim_stale_lock(lock, observed)  # B proceeds with its (outdated) decision
+    assert lock.exists(), "B deleted A's live lock — two owners"
+    store_mod._release_migration_lock(lock)
+
+
+def test_release_does_not_delete_a_lock_owned_by_someone_else(tmp_path: Path) -> None:
+    """A holder whose lock was reclaimed must not remove the new owner's lockfile on release."""
+    lock = tmp_path / "x.lock"
+    assert store_mod._try_acquire_migration_lock(lock) is True
+    lock.unlink()
+    lock.write_text("999999 0 someone-elses-token", encoding="utf-8")
+    store_mod._release_migration_lock(lock)
+    assert lock.exists()
+
+
+async def test_legacy_plane_is_untouched_when_backup_cannot_be_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy plane missing tables must not be altered by the schema replay before the lock + backup succeed."""
+    db = tmp_path / "wiki.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO meta VALUES ('schema_version', '1')")
+
+    def no_backup(self):  # noqa: ANN001
+        raise store_mod.WikiStoreMigrationError(tmp_path, "create the pre-migration backup", OSError("denied"))
+
+    monkeypatch.setattr(SQLiteWikiStore, "_backup_store", no_backup)
+    with pytest.raises(store_mod.WikiStoreMigrationError):
+        await SQLiteWikiStore(db, "t").get_meta("k")
+    with sqlite3.connect(db) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert tables == {"meta"}, f"legacy plane modified before backup: {tables}"
+    assert not store_mod._migration_lock_path(db).exists()
+
+
+async def test_backups_in_the_same_second_do_not_overwrite_each_other(tmp_path: Path) -> None:
+    """Backup names carry sub-second resolution and never collide."""
+    db = await _stale_plane(tmp_path)
+    store = SQLiteWikiStore(db, "t")
+    first, second = store._backup_store(), store._backup_store()
+    assert first != second and first.exists() and second.exists()

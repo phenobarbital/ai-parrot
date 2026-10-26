@@ -34,6 +34,7 @@ import re
 import sqlite3
 import struct
 import time
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -346,42 +347,93 @@ class WikiStoreMigrationError(RuntimeError):
         )
 
 
+#: Lock files this process holds: path -> ownership token (written into the lockfile). Release only deletes a
+#: lockfile that still carries OUR token, so a reclaimed/replaced lock is never removed by its former owner.
+_HELD_MIGRATION_LOCKS: dict[str, str] = {}
+
+
+def _lock_identity(path: Path) -> tuple[int, int]:
+    """(inode, mtime_ns) of ``path`` — what a stale-reclaimer observed."""
+    st = path.stat()
+    return st.st_ino, st.st_mtime_ns
+
+
+def _reclaim_stale_lock(lock_path: Path, observed: tuple[int, int]) -> None:
+    """Remove the stale lock whose identity is ``observed`` without ever deleting a FRESH lock.
+
+    ``unlink(pathname)`` after an age check races: another contender can replace the stale file with its own live
+    lock in between, and the unlink would delete THAT. The lockfile is instead renamed (atomic) to a private
+    name and the renamed file's identity is compared with what was observed stale: a mismatch means a live lock
+    was grabbed, so it is linked back.
+    """
+    trash = lock_path.with_name(f"{lock_path.name}.reclaim.{os.getpid()}.{uuid.uuid4().hex}")
+    try:
+        os.rename(lock_path, trash)
+    except FileNotFoundError:
+        return  # someone else reclaimed / the holder released
+    try:
+        if _lock_identity(trash) == observed:
+            return
+        logger.warning("wiki migration lock %s was replaced while being reclaimed; restoring it", lock_path)
+        try:
+            os.link(trash, lock_path)
+        except FileExistsError:
+            pass
+    finally:
+        trash.unlink(missing_ok=True)
+
+
 def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE_MIGRATION_LOCK_S) -> bool:
     """Create ``lock_path`` atomically (O_CREAT|O_EXCL); True when this caller now holds it.
 
     Works identically on POSIX and Windows — deliberately NOT the fcntl pattern of
     ``project.py:39-42``, which degrades to a no-op without fcntl. A lock older than
-    ``stale_after_s`` is removed and acquisition retried once.
+    ``stale_after_s`` is reclaimed race-free (see :func:`_reclaim_stale_lock`) and acquisition retried once.
+    A live holder keeps its lock fresh with a heartbeat (``SQLiteWikiStore._migration_lock``).
     """
     for _attempt in range(2):
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
             try:
-                age = time.time() - lock_path.stat().st_mtime
+                observed = _lock_identity(lock_path)
             except FileNotFoundError:
                 continue  # holder just released
             except OSError as exc:
                 raise WikiStoreMigrationError(lock_path.parent, "inspect the migration lock", exc) from exc
+            age = time.time() - observed[1] / 1e9
             if age <= stale_after_s:
                 return False
             logger.warning("removing stale wiki migration lock %s (age %.0fs)", lock_path, age)
             try:
-                lock_path.unlink(missing_ok=True)
+                _reclaim_stale_lock(lock_path, observed)
             except OSError as exc:
                 raise WikiStoreMigrationError(lock_path.parent, "remove the stale migration lock", exc) from exc
             continue
         except OSError as exc:
             # rev 0.5 C24 / PR #1746 review: never return False/True here — "never silently skipped"
             raise WikiStoreMigrationError(lock_path.parent, "create the migration lock", exc) from exc
+        token = uuid.uuid4().hex
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(f"{os.getpid()} {time.time()}")
+            handle.write(f"{os.getpid()} {time.time()} {token}")
+        _HELD_MIGRATION_LOCKS[str(lock_path)] = token
         return True
     return False
 
 
 def _release_migration_lock(lock_path: Path) -> None:
-    """Remove the lockfile (idempotent)."""
+    """Remove the lockfile (idempotent) — only if it is still OURS (token match)."""
+    token = _HELD_MIGRATION_LOCKS.pop(str(lock_path), None)
+    if token is not None:
+        try:
+            owner = lock_path.read_text(encoding="utf-8").split()[-1]
+        except (FileNotFoundError, IndexError):
+            return
+        except OSError:
+            owner = token
+        if owner != token:
+            logger.warning("wiki migration lock %s now belongs to another process; not removing it", lock_path)
+            return
     lock_path.unlink(missing_ok=True)
 
 
@@ -1456,26 +1508,52 @@ class SQLiteWikiStore(BaseWikiStore):
             "SELECT count(*) FROM sqlite_master" f" WHERE type = 'table' AND name IN ({placeholders})",
             sorted(_SCHEMA_TABLES),
         )
-        if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
+        present = (await cur.fetchone())[0]
+        if present < len(_SCHEMA_TABLES):
             # Serialize first-time init across concurrent tasks of this
             # instance; the DDL is idempotent, so the lock only avoids
             # spurious cross-task lock errors.
             async with self._init_lock:
-                await conn.executescript(WIKI_SCHEMA_SQL)
-                await conn.execute(
-                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                    ("schema_version", SCHEMA_VERSION),
-                )
-                await conn.execute(
-                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                    (MIN_RUNTIME_KEY, _running_version()),
-                )
-                if self._wiki_name:
-                    await conn.execute(
-                        "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                        ("wiki_name", self._wiki_name),
-                    )
-                await conn.commit()
+                if 0 < present:
+                    # A LEGACY plane missing some tables: the replay below modifies it, so it needs the same
+                    # lock + restorable backup as _migrate_safely — before the first DDL statement.
+                    await self._replay_schema_safely(conn)
+                    return
+                await self._replay_schema(conn)
+
+    async def _replay_schema(self, conn: aiosqlite.Connection) -> None:
+        """Run the idempotent schema DDL and seed the meta rows."""
+        await conn.executescript(WIKI_SCHEMA_SQL)
+        await conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+            ("schema_version", SCHEMA_VERSION),
+        )
+        await conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+            (MIN_RUNTIME_KEY, _running_version()),
+        )
+        if self._wiki_name:
+            await conn.execute(
+                "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                ("wiki_name", self._wiki_name),
+            )
+        await conn.commit()
+
+    async def _replay_schema_safely(self, conn: aiosqlite.Connection) -> None:
+        """Schema replay on a legacy plane: cross-process lock + backup first, restore on failure."""
+        async with self._migration_lock():
+            backup = await asyncio.to_thread(self._backup_store)
+            version_before = await self._data_version(conn)
+            try:
+                await self._replay_schema(conn)
+            except BaseException:
+                try:
+                    await conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                if await self._data_version(conn) == version_before:
+                    await asyncio.to_thread(self._restore_store, backup)
+                raise
 
     async def _maybe_migrate(self, conn: aiosqlite.Connection) -> None:
         """Run the read-first migration probe/apply at most once per store.
@@ -1522,6 +1600,7 @@ class SQLiteWikiStore(BaseWikiStore):
             # a failing backup raises WikiStoreMigrationError and removes its own partial .bak-*
             backup = await asyncio.to_thread(self._backup_store)
             self.logger.info("migrating wiki plane %s (backup: %s)", self._db_path, backup)
+            version_before = await self._data_version(conn)
             try:
                 await self._migrate(conn)
             except BaseException:
@@ -1529,9 +1608,25 @@ class SQLiteWikiStore(BaseWikiStore):
                     await conn.execute("ROLLBACK")
                 except sqlite3.Error:
                     pass
+                # Normal writers take no migration lock: restoring the full snapshot would silently discard
+                # anything another connection committed since the backup. data_version changes only for OTHER
+                # connections' commits, so a change means "do not restore" — the backup is kept for manual recovery.
+                if await self._data_version(conn) != version_before:
+                    self.logger.error(
+                        "wiki migration of %s failed and other writers committed meanwhile; NOT restoring "
+                        "(that would lose their writes) — backup kept at %s",
+                        self._db_path, backup,
+                    )
+                    raise
                 await asyncio.to_thread(self._restore_store, backup)
                 self.logger.error("wiki migration of %s failed; restored from backup %s", self._db_path, backup)
                 raise
+
+    @staticmethod
+    async def _data_version(conn: aiosqlite.Connection) -> int:
+        """``PRAGMA data_version``: changes when ANOTHER connection commits to the plane."""
+        async with conn.execute("PRAGMA data_version") as cur:
+            return (await cur.fetchone())[0]
 
     @asynccontextmanager
     async def _migration_lock(self) -> AsyncIterator[None]:
@@ -1544,9 +1639,24 @@ class SQLiteWikiStore(BaseWikiStore):
             if time.monotonic() >= deadline:
                 raise WikiStoreBusy(self._db_path, "migrate", self._policy.busy_timeout_s)
             await asyncio.sleep(0.1)
+        # A live migration may outlast STALE_MIGRATION_LOCK_S: keep the lock fresh so it is never reclaimed.
+        async def _heartbeat() -> None:
+            while True:
+                await asyncio.sleep(STALE_MIGRATION_LOCK_S / 4)
+                try:
+                    os.utime(lock_path)
+                except OSError:
+                    return
+
+        beat = asyncio.create_task(_heartbeat())
         try:
             yield
         finally:
+            beat.cancel()
+            try:
+                await beat
+            except asyncio.CancelledError:
+                pass
             _release_migration_lock(lock_path)
 
     def _backup_store(self) -> Path:
@@ -1554,8 +1664,13 @@ class SQLiteWikiStore(BaseWikiStore):
 
         Uses the SQLite backup API (WAL-consistent), never a raw file copy.
         """
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        # microsecond stamp + a collision loop: two migrations in the same second must never share a backup
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}")
+        n = 0
+        while backup.exists():
+            n += 1
+            backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}-{n}")
         src = dst = None
         try:
             src = sqlite3.connect(self._db_path)
