@@ -200,9 +200,7 @@ MACHINES: dict[InteractionProtocol, ProtocolMachine] = {
 }
 
 
-def _accepted(
-    state: ConversationState, msg: RoostMessage, obligations: tuple[Performative, ...] = ()
-) -> Transition:
+def _accepted(state: ConversationState, msg: RoostMessage, obligations: tuple[Performative, ...] = ()) -> Transition:
     """Record *msg* and return a successful transition."""
     state.last_message_id = msg.message_id
     return Transition(kind="accepted", state=state, obligations=obligations)
@@ -317,7 +315,9 @@ class ProtocolEngine:
                 cost=proposal.content["cost"] if isinstance(proposal.content, dict) else proposal.content.cost,
                 time_ms=proposal.content["time_ms"] if isinstance(proposal.content, dict) else proposal.content.time_ms,
                 confidence=(
-                    proposal.content["confidence"] if isinstance(proposal.content, dict) else proposal.content.confidence
+                    proposal.content["confidence"]
+                    if isinstance(proposal.content, dict)
+                    else proposal.content.confidence
                 ),
                 message_id=proposal.message_id,
             )
@@ -370,7 +370,9 @@ class ProtocolEngine:
         """Close *state* and emit an engine-originated typed failure to its initiator."""
         state.terminal = TerminalState.TIMED_OUT if code is FailureCode.TIMEOUT else TerminalState.FAILED
         state.state = state.terminal.value
-        sender = source.receivers[0] if source is not None and source.receivers else AgentAddress(name="protocol-engine")
+        sender = (
+            source.receivers[0] if source is not None and source.receivers else AgentAddress(name="protocol-engine")
+        )
         failure = RoostMessage(
             performative=Performative.FAILURE,
             protocol=state.protocol,
