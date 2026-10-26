@@ -204,7 +204,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -212,8 +212,9 @@
       "parallelism_notes": "no deps; creates scripts/install/smoke_install.py + .github/workflows/install-matrix.yml (new files only)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4068-install-smoke-matrix.md"
+      "completed_at": "2026-10-26T18:28:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4068-install-smoke-matrix.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4069",

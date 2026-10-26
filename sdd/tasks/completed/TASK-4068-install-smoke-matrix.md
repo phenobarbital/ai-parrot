@@ -574,10 +574,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented smoke_install.py (stdlib only; mcp_initialize incl. notifications/initialized + tools/list requiring wiki_query), install-matrix.yml (dispatch+call, 3 OS, wheel selection by platform tag), 7 unit tests (pass), S1 report. Local Linux run (--allow-build, py3.12): install_ok=true, sdist_failures=[], wikitoolkit/bookstore ok, mcp_ok=true. FINDINGS: (F1) 'parrot --help' exits non-zero on clean install — 'parrot e2e' group imports pytest eagerly (ModuleNotFoundError: pytest); (F2) navconfig needs env/<env>/.env beside the venv parent — harness scaffolds it. test_install_posix.py::test_posix_script_dry_run fails pre-existing here (system python 3.10).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Harness additionally scaffolds env/dev/.env next to the temp venv (F2); added parse_sdist_failures helper + test.
