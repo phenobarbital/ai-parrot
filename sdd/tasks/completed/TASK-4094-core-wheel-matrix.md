@@ -608,10 +608,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Four-leg build-core matrix (linux x86_64, linux aarch64 on ubuntu-24.04-arm, windows AMD64, macOS arm64 with MACOSX_DEPLOYMENT_TARGET 11.0), cp311-313 only, single cibuildwheel step, sdist once. smoke-core (wheel-artifact-pattern '{core-dist-*,dist-tools}', brace glob relies on minimatch semantics) and smoke-sdd-foreign gate deploy; install-matrix gained ubuntu-24.04-arm. PARROT_WHEEL_PATH is a wheel FILE path (exported via GITHUB_ENV); the test module already exists. Unverified: no GitHub Actions run (ARM runner availability, brace glob, macOS build, probe becoming ready); the foreign test uses uv, installed via setup-uv. Local: test_release_matrix.py 6 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: pip install run via 'python -m pip' so the test's literal 'pip install dist/' matches

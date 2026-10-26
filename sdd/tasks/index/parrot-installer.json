@@ -754,7 +754,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -765,8 +765,9 @@
       "parallelism_notes": "runs scripts/install/smoke_install.py from TASK-4068; serialized after TASK-4090 (pyproject.toml); exclusive: edits release.yml + pyproject [tool.cibuildwheel]; no edge to TASK-4091 by design: the wheel-matrix job runs TASK-4091's packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py only behind a `test -f` guard (ready=true|false), so it is a no-op until that test lands (check_task_graph possible-missing-dependency warning is expected)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4094-core-wheel-matrix.md"
+      "completed_at": "2026-10-26T20:52:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4094-core-wheel-matrix.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4095",
