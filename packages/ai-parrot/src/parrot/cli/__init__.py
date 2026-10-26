@@ -115,6 +115,8 @@ cli._lazy_commands = {
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
     "toolkits": "parrot.cli.toolkits",
+    # FEAT-633 — managed-runtime lifecycle (`parrot status` is agentd's; diagnostics live here).
+    "self": "parrot.self_.cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
