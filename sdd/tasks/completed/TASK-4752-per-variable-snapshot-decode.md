@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-751 — repl_worker snapshot survives guard-refused values
 **Spec**: `sdd/specs/repl-worker-protocol-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -275,10 +275,16 @@ See the Implementation Blueprint test blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5.5) via /sdd-fix issue:bbef2d4da62a
+**Date**: 2026-10-27
+**Notes**: Added `protocol.decode_snapshot()` (per-entry decode; `pickle.UnpicklingError` →
+placeholder + WARNING) and switched `WorkerHandle.snapshot()` to it. Tests: `TestDecodeSnapshot`
+(4 tests: placeholder + warning, `decode_value` still raises, `os.system` `__reduce__` gadget never
+runs, DataFrame/numpy/pathlib round-trip) and real-worker
+`TestNamespaceAPI::test_snapshot_survives_unpicklable_value`. Validation Commands: test_protocol +
+test_handle + test_e2e → 89 passed; ruff clean. The real-worker test was confirmed to fail with the
+original `handle.py` (UnpicklingError on altair Chart) and pass with the fix. Guard constants and
+`_RestrictedUnpickler` unchanged (diff checked).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: one extra unit test (`test_decode_value_still_raises_for_refused_entry`)
+covering AC-5 at the codec level; otherwise none.
