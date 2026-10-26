@@ -12,7 +12,10 @@ import sys
 import os
 import tempfile
 import asyncio
-from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+
+if TYPE_CHECKING:
+    from .capabilities.registry import CapabilityRegistry
 from pathlib import Path
 import hashlib
 from types import ModuleType
