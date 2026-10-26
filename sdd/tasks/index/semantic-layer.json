@@ -550,7 +550,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -560,8 +560,9 @@
       "parallelism_notes": "TASK-4479: consumes packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py (Security-gated raw SQL and guarded hand-off tools (M10b))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4710-semantic-local-pbac-bootstrap.md"
+      "completed_at": "2026-10-26T00:29:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4710-semantic-local-pbac-bootstrap.md",
+      "verification": "verified"
     }
   ],
   "spec_revision": "0.4",
