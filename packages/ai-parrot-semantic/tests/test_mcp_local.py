@@ -36,7 +36,11 @@ def _config(models_dir: Path, policy_dir: Path) -> str:
         "guard_factory": "semantic_mcp_local_guard_factory.build_guard",
         "guard_factory_kwargs": {"policy_dir": str(policy_dir)},
     }
-    return "toolkits:\n  semantic-layer:\n    class: parrot.semantic.bootstrap.LocalSemanticLayerToolkit\n    kwargs: " + json.dumps(kwargs) + "\n    env: {}\n"
+    return (
+        "toolkits:\n  semantic-layer:\n    class: parrot.semantic.bootstrap.LocalSemanticLayerToolkit\n    kwargs: "
+        + json.dumps(kwargs)
+        + "\n    env: {}\n"
+    )
 
 
 def test_yaml_and_json_example_contract(tmp_path: Path) -> None:
@@ -60,7 +64,9 @@ def test_yaml_and_json_example_contract(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     mcp_path = tmp_path / ".mcp.json"
-    mcp_path.write_text('{"parrot-semantic-layer": {"command": "parrot", "args": ["mcp-local", "semantic-layer"]}}', encoding="utf-8")
+    mcp_path.write_text(
+        '{"parrot-semantic-layer": {"command": "parrot", "args": ["mcp-local", "semantic-layer"]}}', encoding="utf-8"
+    )
 
     section = load_toolkits_config(tmp_path, config_path=config_path).toolkits["semantic-layer"]
     assert section.class_path == "parrot.semantic.bootstrap.LocalSemanticLayerToolkit"
