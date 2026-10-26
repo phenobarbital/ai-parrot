@@ -197,7 +197,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -205,8 +205,9 @@
       "parallelism_notes": "exclusive: edits root pyproject.toml and requires a uv.lock refresh (dependency manifest); the parrot.interagent mention is a docstring reference to TASK-4739's package, not an import",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4737-squawk-satellite-scaffold.md"
+      "completed_at": "2026-10-26T12:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4737-squawk-satellite-scaffold.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4738",
