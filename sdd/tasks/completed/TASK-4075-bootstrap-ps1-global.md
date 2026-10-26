@@ -653,10 +653,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented -Global/-Version/-With, Resolve-Extras (moved verbatim to $script: scope), Write-Plan, Test-Preflight (writability probe, HEAD checks), pinned uv download+sha256, write-then-rename uv/shims, user-PATH edit, doctor --runtime-only, rollback of $Created + PATH, TLS1.2 for 5.1, script-level PythonSet/VenvSet capture. Tests: 5 static passed, 5 pwsh-gated skipped (pwsh absent here), ruff clean. UNVERIFIED: the .ps1 was never parsed or run (no pwsh). The two offline post-install tests are marked xfail(strict=False): the fake uv.exe relies on pwsh honouring unix exec bits after Expand-Archive. Copied-trampoline validity (spike S1 windows leg) unconfirmed; if copied parrot.exe fails after upgrade, TASK-4080 'parrot self update' must re-copy shims.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

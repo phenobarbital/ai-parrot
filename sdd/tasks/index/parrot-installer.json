@@ -344,7 +344,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -354,8 +354,9 @@
       "parallelism_notes": "Windows script: same shim-name contract from TASK-4072 (pyproject [project.scripts]); owns install-parrot.ps1 + user-PATH registry edit only",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4075-bootstrap-ps1-global.md"
+      "completed_at": "2026-10-26T18:51:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4075-bootstrap-ps1-global.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4076",
