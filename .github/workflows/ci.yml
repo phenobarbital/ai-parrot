@@ -179,6 +179,30 @@ jobs:
       - name: POSIX installer dry run
         run: bash scripts/install/install-parrot.sh --dry-run --provider anthropic
 
+      # FEAT-633: global (managed-runtime) mode — dry run only; no network, no writes.
+      - name: POSIX installer global dry run
+        env:
+          PARROT_HOME: ${{ runner.temp }}/parrot-home
+        run: bash scripts/install/install-parrot.sh --global --dry-run --version 0.0.0 --with sdd
+
+      - name: PowerShell installer global dry run (soft)
+        env:
+          PARROT_HOME: ${{ runner.temp }}/parrot-home
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -File scripts/install/install-parrot.ps1 -Global -DryRun -Version 0.0.0 -With sdd
+          else
+            echo "pwsh not available on this runner; skipping -Global dry run (single-OS scope)."
+          fi
+
+      # FEAT-633: published-checksum gate. After ANY change to either installer, regenerate with:
+      #   cd scripts/install && sha256sum install-parrot.sh install-parrot.ps1 > SHA256SUMS
+      # (hashes are over the committed LF bytes that raw.githubusercontent.com serves;
+      # a Windows checkout with core.autocrlf=true will hash differently locally)
+      - name: Installer checksums match SHA256SUMS
+        working-directory: scripts/install
+        run: sha256sum -c SHA256SUMS
+
   test-core:
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
