@@ -708,10 +708,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Ported close_task (C1-C14) and heal_orphans (H1-H8) to parrot.sdd.scripts; .sh files are exec wrappers (mode 100755 kept); finalize_task falls back to python -m parrot.sdd.scripts.close_task when scripts/sdd/close_task.sh is absent. Tests: test_scripts_shell_port 9 passed; test_close_task_ledger 5, test_ledger_lifecycle_acceptance 5, test_finalize_task 3, test_check_task_state 8 passed; ruff clean. Unverified: foreign-repo fallback branch not exercised by a test. The ledger-lifecycle test dirties artifacts/logs/feat-566-lifecycle.log (reverted, not committed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
