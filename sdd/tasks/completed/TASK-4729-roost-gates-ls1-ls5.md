@@ -217,11 +217,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: Six gate files (L-S1..L-S5 + salary end-to-end). The coder found a production defect (GatingDispatcher woke the caller on the reply to its own request) and left the salary test as strict xfail; fixed by the orchestrator in 3b529fa1c and the xfail removed (recorded as feedback coder-feedback:e9f7fd4d2a001cf5a91ab9e4 against TASK-4722). Unspecified additions: L-S5 non-owner write test, L-S1 broadcast count assertion, handle id format `arrow:{id(table)}`. L-S2 is exercised via capability address; by-name INFORM always wakes (ledger issue filed, minor).
+Seat: opus (native) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: tests for L-S2 use a capability address rather than a by-name address
