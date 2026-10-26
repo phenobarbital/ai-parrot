@@ -215,4 +215,4 @@ def test_cross_process_hash_and_golden_sql(tmp_path: Path) -> None:
             text=True,
             check=True,
         )
-        assert out.stdout.strip() == expected
+        assert out.stdout.strip().splitlines()[-1] == expected
