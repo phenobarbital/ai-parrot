@@ -251,11 +251,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: SharedMemoryCarrier + ShmPayloadRef; 4 tests green. Residual B905 zip() without strict= at shm.py:52 (style, left for /sdd-done).
+Seat: sonnet (native) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: none

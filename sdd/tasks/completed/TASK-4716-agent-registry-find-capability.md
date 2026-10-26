@@ -294,11 +294,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: AgentRegistry wiring delivered; engine lint F821 (missing CapabilityRegistry import for annotation) fixed in 6bde2e4ac via TYPE_CHECKING import.
+Seat: gpt-5.6-sol (codex) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: none beyond the lint fix
