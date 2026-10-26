@@ -133,7 +133,10 @@ async def test_raw_sql_opt_in_and_same_governance(
         )
         # RLS is pushed down exactly as for structured queries.
         assert result.rows == [{"region": "eu", "total": 12.5}]
-        assert "'eu'" in result.compiled_sql
+        # issue:22fbd14d96a9 — the caller sees its own SQL; governed SQL only in the audit.
+        assert "'eu'" not in result.compiled_sql
+        audited = {entry.entry_id: entry for entry in toolkit._ledger.entries}[result.audit_id]
+        assert "'eu'" in audited.governed_sql
         # Hidden member order_date is not granted to analyst.
         with pytest.raises(SemanticAccessError) as hidden:
             await toolkit.run_sql("orders", "SELECT order_date FROM sales.orders")

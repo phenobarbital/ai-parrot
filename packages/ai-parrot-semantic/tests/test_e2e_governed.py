@@ -92,8 +92,13 @@ async def test_real_source_two_subjects_warm_cache(
     assert second.rows == [{"region": "us", "revenue": 25.0}]
     assert len(cached_before) == len(cached_after) == 1
     assert cached_before == cached_after
-    assert "'eu'" in first.compiled_sql and "'us'" in second.compiled_sql
-    assert all(entry.governed_sql is not None for entry in tuple(toolkit._ledger.entries)[-2:])
+    # issue:22fbd14d96a9 — callers get pre-RLS SQL; RLS literals live only in the audit.
+    assert first.compiled_sql == second.compiled_sql
+    assert "'eu'" not in first.compiled_sql and "'us'" not in second.compiled_sql
+    audited = tuple(toolkit._ledger.entries)[-2:]
+    assert all(entry.governed_sql is not None for entry in audited)
+    assert "'eu'" in audited[0].governed_sql and "'us'" in audited[1].governed_sql
+    assert all("'eu'" not in rule and "'us'" not in rule for entry in audited for rule in entry.rls_applied)
 
 
 @pytest.mark.asyncio
@@ -162,7 +167,9 @@ async def test_concurrent_context_and_required_audit_failure(
             return await toolkit.compile_query(query)
 
     first, second = await asyncio.gather(compile_for(first_context), compile_for(second_context))
-    assert "'eu'" in first["sql"] and "'us'" in second["sql"]
+    assert first["sql"] == second["sql"] and "'eu'" not in first["sql"] and "'us'" not in second["sql"]
+    governed = {entry.entry_id: entry.governed_sql for entry in toolkit._ledger.entries}
+    assert "'eu'" in governed[first["audit_id"]] and "'us'" in governed[second["audit_id"]]
     assert current_pctx() is None and current_identity() is None
 
     identity = SemanticRequestIdentity(ctx=first_context, channel="agent", agent_id="agent", session_id="session")

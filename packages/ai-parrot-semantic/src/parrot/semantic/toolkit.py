@@ -193,7 +193,7 @@ class SemanticLayerToolkit(AbstractToolkit):
         return result
 
     async def compile_query(self, query: SemanticQuery) -> dict:
-        """Return audited governed SQL without database execution."""
+        """Return audited pre-RLS compiled SQL without database execution; governed SQL stays in the audit."""
         result = await self._run_governed(query, execute=False)
         return result
 
@@ -308,7 +308,9 @@ class SemanticLayerToolkit(AbstractToolkit):
             governed = await self._pipeline.govern(compiled.sql, model=loaded, ctx=context, roles=roles)
             if not execute:
                 audit_id = await self._audit(loaded, expanded, governed, compiled_sql, "ok", None, started)
-                return {"sql": governed.sql, "audit_id": audit_id, "members": list(governed.members)}
+                # Callers see the pre-RLS compiled SQL; governed SQL (RLS literals, hidden
+                # physical columns) is recorded only in the audit entry.
+                return {"sql": compiled_sql, "audit_id": audit_id, "members": list(governed.members)}
             rows, row_count, truncated, duration_ms, columns = await self._executor.run_with_columns(
                 governed, connection=loaded.policy.connection
             )
@@ -320,7 +322,7 @@ class SemanticLayerToolkit(AbstractToolkit):
                 row_count=row_count,
                 truncated=truncated,
                 duration_ms=duration_ms,
-                compiled_sql=governed.sql,
+                compiled_sql=compiled_sql,
                 audit_id=audit_id,
                 result_id=result_id,
             )
@@ -492,7 +494,7 @@ class SemanticLayerToolkit(AbstractToolkit):
                 row_count=row_count,
                 truncated=truncated,
                 duration_ms=duration_ms,
-                compiled_sql=governed.sql,
+                compiled_sql=sql,
                 audit_id=audit_id,
                 result_id=result_id,
             )
