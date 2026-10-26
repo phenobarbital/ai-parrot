@@ -13,7 +13,6 @@ from parrot.semantic.errors import SemanticResultError
 from parrot.semantic.handoff import GovernedSinkRegistry
 from parrot.semantic.models import SemanticQuery
 
-
 _EXAMPLE_PATH = Path(__file__).resolve().parents[3] / "examples" / "semantic" / "agent_semantic_example.py"
 _SPEC = importlib.util.spec_from_file_location("semantic_agent_example", _EXAMPLE_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
