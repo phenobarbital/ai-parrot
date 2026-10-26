@@ -10,19 +10,25 @@ relationships; an adjacent `<model>.policy.yaml` supplies governance.
 
 ```yaml
 # orders.yml
-name: orders
-connection: warehouse
-tables: {orders: sales.orders}
-dimensions:
-  - {name: region, sql: orders.region}
-  - {name: ordered_at, sql: orders.order_date, kind: time_dimension}
-metrics:
-  - {name: revenue, sql: orders.amount, aggregate: sum}
-  - {name: orders, sql: orders.id, aggregate: count_distinct}
-relationships:
-  - {from_model: customers, to_model: orders,
-     primary_key: [id, tenant_id], foreign_key: [customer_id, tenant_id]}
+models:
+  - name: orders
+    table: sales.orders
+    columns: {id: INTEGER, region: VARCHAR, order_date: TIMESTAMP, amount: DECIMAL}
+    primary_key: [id]
+    dimensions:
+      - {name: region, kind: categorical, column: region}
+      - {name: ordered_at, kind: time, column: order_date, grain: day}
+    metrics:
+      - {name: revenue, agg: sum, column: amount}
+      - {name: orders, agg: count_distinct, column: id}
+    relationships: []
 ```
+
+A file may declare several models under `models:`. A relationship joins the one
+side to the many side with paired key columns, for example
+`{from_model: customers, to_model: orders, cardinality: one_to_many,
+from_columns: [id], to_columns: [customer_id]}`; every model it references must
+be declared and have its own policy side-file.
 
 Aggregates accept declared input columns and can be filtered; derived metrics
 may reference declared metrics. Joins require paired keys from the one side to
@@ -43,11 +49,12 @@ request. Only a policy with `governed: false` opts out explicitly.
 # orders.policy.yaml
 governed: true
 connection: warehouse
+limits: {default: 100, max: 1000}
 roles:
   analyst: {metrics: [revenue, orders], dimensions: [region, ordered_at], usage: []}
 rls:
   - {driver: duckdb, table: sales.orders,
-     predicate_template: "tenant_id = '{{ tenant_id }}'", subject_attribute: tenant_id}
+     predicate_template: "region IN (:subject.programs)", subject_attribute: programs}
 ```
 
 The HTTP and agent surfaces receive a host-authenticated context. The local MCP
