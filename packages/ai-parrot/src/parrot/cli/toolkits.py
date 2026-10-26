@@ -23,6 +23,18 @@ host_option = click.option(
 yes_option = click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt.")
 
 
+def _self_add_hint(name: str) -> str:
+    """Return the actionable fix for a toolkit whose distribution is not importable.
+
+    Args:
+        name: Toolkit template name.
+
+    Returns:
+        The one-line hint shared by `list`, the picker and `install`.
+    """
+    return f"run: parrot self add {name}"
+
+
 @click.group(name="toolkits")
 def toolkits() -> None:
     """Install and manage local MCP toolkit servers."""
@@ -60,7 +72,8 @@ def _resolve_names(root: Path, names: tuple[str, ...], hosts) -> list[str]:
     rows = inventory(root, hosts)
     choices = [
         questionary.Choice(
-            title=f"{row.name} — {row.summary}" + ("" if row.dist_available else " (missing distribution)"),
+            title=f"{row.name} — {row.summary}"
+            + ("" if row.dist_available else f" (missing distribution — {_self_add_hint(row.name)})"),
             value=row.name,
             checked=row.state is not ToolkitState.NOT_INSTALLED,
         )
@@ -137,6 +150,9 @@ def list_(hosts_: tuple[str, ...]) -> None:
         table.add_row(row.name, row.state.value, row.summary, hosts_cell, deps_cell, drift_cell)
 
     Console(width=200).print(table)
+    for row in rows:
+        if row.requires_dist and not row.dist_available:
+            click.secho(f"  ℹ {row.name}: missing distribution — {_self_add_hint(row.name)}", fg="yellow")
 
 
 @toolkits.command()
@@ -181,6 +197,16 @@ def install(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
         raise click.ClickException(str(exc)) from exc
     _render(report)
     click.echo("  ℹ Start a new session for the MCP servers to appear.")
+    from parrot.mcp.toolkit_install import dist_available, load_template  # lazy, patched at call time
+
+    for name in selected:
+        template = load_template(name)
+        if template.requires_dist and not dist_available(template.requires_dist):
+            click.secho(
+                f"  ℹ {name}: distribution missing — {_self_add_hint(name)} "
+                f"(or `parrot self add {name} --here` for the project venv)",
+                fg="yellow",
+            )
 
 
 @toolkits.command()

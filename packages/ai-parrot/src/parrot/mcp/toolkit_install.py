@@ -45,6 +45,9 @@ class ToolkitRow(BaseModel):
     requires_llm: bool = False
     requires_dist: tuple[str, ...] = ()
     dist_available: bool = True
+    requires_pip: tuple[str, ...] = ()
+    post_install: tuple[str, ...] = ()
+    requires_env: tuple[str, ...] = ()
     drift: list[str] = Field(default_factory=list)
     hosts: list[HostEntryState] = Field(default_factory=list)
 
@@ -129,6 +132,9 @@ def inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[Toolk
                 requires_llm=template.requires_llm,
                 requires_dist=template.requires_dist,
                 dist_available=dist_available(template.requires_dist),
+                requires_pip=template.requires_pip,
+                post_install=template.post_install,
+                requires_env=template.requires_env,
                 drift=drift,
                 hosts=row_hosts,
             )
