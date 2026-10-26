@@ -44,3 +44,18 @@ def test_sha256sums_match_scripts() -> None:
             f"{name} changed without regenerating SHA256SUMS — run: "
             "cd scripts/install && sha256sum install-parrot.sh install-parrot.ps1 > SHA256SUMS"
         )
+
+
+def test_install_matrix_fails_closed_and_avoids_expression_injection() -> None:
+    """A wheel pattern with unmatched wheels must fail (no PyPI fallback); inputs travel via env, not run:."""
+    import re
+
+    import yaml
+
+    wf = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "install-matrix.yml").read_text(encoding="utf-8"))
+    step = next(s for s in wf["jobs"]["smoke"]["steps"] if s.get("name") == "Smoke")
+    run = step["run"]
+    assert "${{" not in run, "expressions must be passed through env:, never interpolated into the script"
+    assert {"IN_SPEC", "IN_PYTHON", "IN_WHEEL_PATTERN"} <= set(step["env"])
+    assert re.search(r'\[ -z "\$CORE" \] \|\| \[ -z "\$TOOLS" \]', run) and "exit 1" in run
+    assert 'if [ -n "$IN_WHEEL_PATTERN" ]; then' in run

@@ -27,10 +27,15 @@ jobs:
         with: {pattern: "${{ inputs.wheel-artifact-pattern }}", merge-multiple: true, path: dist}
       - name: Smoke
         shell: bash
+        env:
+          IN_SPEC: ${{ inputs.spec }}
+          IN_PYTHON: ${{ inputs.python }}
+          IN_WHEEL_PATTERN: ${{ inputs.wheel-artifact-pattern }}
+          IN_OS: ${{ matrix.os }}
         run: |
-          ARGS=(--spec "${{ inputs.spec }}")
-          if [ -n "${{ inputs.wheel-artifact-pattern }}" ] && ls dist/*.whl >/dev/null 2>&1; then
-            CORE=$(uv run --no-project --python "${{ inputs.python }}" python - <<'PY'
+          ARGS=(--spec "$IN_SPEC")
+          if [ -n "$IN_WHEEL_PATTERN" ]; then
+            CORE=$(uv run --no-project --python "$IN_PYTHON" python - <<'PY'
           import glob, platform, sys
           tag = "cp%d%d" % sys.version_info[:2]
           sysname, mach = platform.system(), platform.machine().lower()
@@ -43,12 +48,15 @@ jobs:
           PY
             )
             TOOLS=$(ls dist/ai_parrot_tools-*.whl 2>/dev/null | head -1 || true)
-            if [ -n "$CORE" ] && [ -n "$TOOLS" ]; then
-              ARGS=(--wheel "$CORE" --wheel "$TOOLS")
+            # A pattern means "smoke THESE wheels": never fall back to the published PyPI release.
+            if [ -z "$CORE" ] || [ -z "$TOOLS" ]; then
+              echo "::error::wheel-artifact-pattern '$IN_WHEEL_PATTERN' set but core wheel='${CORE:-<none>}' tools wheel='${TOOLS:-<none>}' not matched for $IN_OS / Python $IN_PYTHON" >&2
+              exit 1
             fi
+            ARGS=(--wheel "$CORE" --wheel "$TOOLS")
           fi
-          uv run --no-project --python "${{ inputs.python }}" scripts/install/smoke_install.py \
-            "${ARGS[@]}" --python "${{ inputs.python }}" --json-out "smoke-${{ matrix.os }}.json"
+          uv run --no-project --python "$IN_PYTHON" scripts/install/smoke_install.py \
+            "${ARGS[@]}" --python "$IN_PYTHON" --json-out "smoke-$IN_OS.json"
       - if: always()
         uses: actions/upload-artifact@v7
         with: {name: "smoke-${{ matrix.os }}", path: "smoke-${{ matrix.os }}.json"}
