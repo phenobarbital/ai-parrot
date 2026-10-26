@@ -8,14 +8,14 @@ status: discussion | review | accepted
 source:
   kind: jira | inline | file
   jira_key: NAV-XXXX | null
-  jira_url: https://trocglobal.atlassian.net/browse/NAV-XXXX | null
+  jira_url: https://your-org.atlassian.net/browse/NAV-XXXX | null
   fetched_at: YYYY-MM-DD
   summary_oneline: <≤120 chars>
 overall_confidence: high | medium | low
-base_branch: dev
-# projects: parts of the codebase this doc concerns. Use `packages/*` dir names
-#   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
-#   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
+base_branch: <base_branch>   # default: the base_branch in sdd/config.json
+# projects: parts of the codebase this doc concerns. Use the project areas of your
+#   repository (`sdd/CONVENTIONS.md` § Project areas, or the `projects` list in
+#   `sdd/config.json`). Unknown values warn, not fail.
 projects: []
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
 tags: []

@@ -57,7 +57,7 @@ Feature mode:
 1. Resolve the feature through sdd/tasks/index/*.json, excluding _orphans.json.
    Match feature_id, numeric suffix, exact feature slug, substring slug, or spec
    filename.
-2. Read the referenced spec and parse type/base_branch with scripts.sdd.sdd_meta.
+2. Read the referenced spec and parse type/base_branch with parrot.sdd.scripts.sdd_meta.
 3. Validate branch rules:
    - feature defaults to dev and may use staging or another non-main parent
      feature branch
@@ -98,7 +98,7 @@ Per-task execution:
 9. Create a `TaskCompletionEvidence` JSON with the task id, feature slug,
    exact implementation HEAD, durable green validation evidence, semantic
    review evidence, and any correction commits. Run
-   `python -m scripts.sdd.finalize_task --evidence <path> --worktree <path>
+   `parrot sdd run finalize_task --evidence <path> --worktree <path>
    --expected-head <full HEAD SHA>`. On success, inspect its `staged_paths`,
    stage exactly those paths, and use its suggested commit message without a
    pathspec (its `removed_paths` deletion of the old active/ copy is already
@@ -110,7 +110,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.

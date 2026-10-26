@@ -18,7 +18,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          command: 'parrot sdd run worktree_environment --hook || exit 2'
           timeout: 10
 ---
 
@@ -154,7 +154,7 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, Google-style
   docstrings, `self.logger` instead of `print`) — the binding set, per
-  language, is `.claude/rules/codebase-conventions.md`.
+  language, is `sdd/CONVENTIONS.md`.
 
 ### d) Verification Checklist (MANDATORY)
 ```

@@ -86,7 +86,7 @@ Evaluate the implementation across these dimensions:
 ### 4. Run Adversarial Cross-Check
 
 Use an external CLI agent or an independent subagent as a second-opinion reviewer.
-When available, use **`codex` (OpenAI)** or a dedicated read-only subagent.
+Use the external `codex` CLI only when `reviewer` in `sdd/config.json` is `codex` and the `second-opinion` skill is installed; otherwise rely on a dedicated read-only subagent.
 
 Rules:
 - Never feed the reviewer your reasoning, draft review, justification, or
@@ -113,7 +113,7 @@ codex commands:
 codex exec review --uncommitted
 
 # If reviewing a task branch against the integration branch
-codex exec review --base dev
+codex exec review --base <base_branch>
 
 # If reviewing a specific task commit
 codex exec review --commit <sha>

@@ -7,13 +7,13 @@ description: Single source of truth for git worktrees in this repo — where the
 Worktrees isolate **features** from each other: one worktree per feature (or
 hotfix); the tasks of a feature run sequentially inside that same worktree.
 Branch *policy* (which base each flow type uses, sync-down, `/sdd-done` never
-targeting `main`) lives in `CLAUDE.md` § Git Configuration — this file is the
+targeting the hotfix base) lives in `sdd/WORKFLOW.md` § Git Configuration — this file is the
 how-to.
 
 ## 1. Where they live, how they are named
 
 - Always under `.claude/worktrees/` (git-ignored). Never `.worktrees/`, never a global directory.
-- Names come from `scripts.sdd.sdd_meta.plan_worktree`, never invented:
+- Names come from `parrot.sdd.scripts.sdd_meta.plan_worktree`, never invented:
   - feature → `feat-<FEAT-ID>-<slug>` (the doubled `feat-FEAT-` prefix is intentional — `/sdd-done` greps on it)
   - hotfix → `hotfix-<JIRA-KEY>-<slug>`
 - Base ref is **always `origin/<base_branch>`** — `dev` (or `staging` during a freeze) for features, `main` for hotfixes — never `HEAD`, so a worktree can never inherit an unpushed local commit (FEAT-466).
@@ -22,9 +22,9 @@ how-to.
 
 ```bash
 source .venv/bin/activate
-python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/dev
-python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/main
-python -m scripts.sdd.ensure_worktree --slug <slug> --brief-key <KEY> --base-branch main|dev   # /sdd-brief → hotfix-<KEY>-<slug> / fix-<KEY>-<slug>
+parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
+parrot sdd run ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
+parrot sdd run ensure_worktree --slug <slug> --brief-key <KEY> --base-branch <branch>   # /sdd-brief → hotfix-<KEY>-<slug> / fix-<KEY>-<slug>
 ```
 
 `ensure()` clears the auto-set upstream of a fresh worktree branch (FEAT-698), so the first push is an explicit `git push -u origin <branch>`.
@@ -49,7 +49,7 @@ inside `<path>`* — never in the primary checkout.
 ## 4. Work inside
 
 - Run git as `git -C <path> ...` (or `cd` in). Small commits, one task per commit, and **push early** (`git push -u origin <branch>`): other sessions may merge or `reset --hard` the shared tree, and only pushed commits are safe.
-- The shared `.venv` is editable-installed against the **main checkout**, so a bare `pytest` inside a worktree imports the wrong branch. Prefix with `PYTHONPATH=packages/ai-parrot/src` (one entry per changed package). Never `uv sync` inside a worktree — it repoints the shared venv's `.pth` and breaks `import parrot` for every session once the worktree is removed.
+- Run commands with the environment your repository documents (`sdd/CONVENTIONS.md` § Repository layout), and never reinstall a shared environment from inside a worktree.
 - Shared environments are read/execute-only for worktree agents. Use installed tools directly or `uv run --no-sync`; `uv add --no-sync` may update scoped dependency declarations without installing. Dependency installation requires a real task-local environment with an explicit interpreter target, or a controlled installation by the main-checkout operator. Agents must not switch to the main checkout to perform that installation themselves.
 - SDD in-process commands and native Claude Bash hooks use Bubblewrap filesystem protection. The checkout, Git metadata, the primary checkout's `.claude/worktrees/` (so `/sdd-done` can add the ledger-snapshot worktree and remove the feature worktree from inside it) and the primary checkout's `.parrot/ledger/` (so `wikitoolkit ledger open/claim/close` work from inside a worktree) are writable; the rest of the primary checkout and shared environments are mounted read-only, with private temporary storage — except Claude Code's scratchpad root (`/tmp/claude-<uid>`), which is bound back in so the session scratchpad persists across Bash calls. Missing Bubblewrap or denied namespaces must stop execution, never trigger an unsandboxed retry. Other CLI hosts must provide equivalent protection. Command allowlists and prompt rules alone do not guarantee this policy.
 - Run the tests your task names; do not start with a full baseline sweep.

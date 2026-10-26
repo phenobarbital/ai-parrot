@@ -7,7 +7,7 @@ Replaces `/sdd-spec --type hotfix`.
 ## Usage
 
 ```
-/sdd-brief <source> [--base-branch main|dev|staging] [--no-interview] [--split] [--research full|light]
+/sdd-brief <source> [--base-branch <branch>] [--no-interview] [--split] [--research full|light]
 ```
 
 ## Guardrails
@@ -15,7 +15,7 @@ Replaces `/sdd-spec --type hotfix`.
 - Never write or commit under the main checkout's `sdd/`; brief artifacts are
   written only after provisioning the target worktree.
 - Never manually create a worktree; provision it only through
-  `python -m scripts.sdd.ensure_worktree`.
+  `parrot sdd run ensure_worktree`.
 - Never call `reserve_ids.py`; brief task IDs are local `HOTFIX-<KEY>-<N>` IDs.
 - Never push to or merge into `main`.
 - Never run `git checkout <base>` in the main checkout; it remains on its
@@ -51,11 +51,11 @@ available, and fetched details for the brief frontmatter and body.
 
 ### 3. Resolve Base and Identity
 
-For a ledger source, select `dev`. If the user explicitly supplied
-`--base-branch main`, stop with this exact message:
+For a ledger source, select the `base_branch` from `sdd/config.json`. If the user explicitly supplied
+`--base-branch <hotfix_base>` (the `hotfix_base` in `sdd/config.json`), stop with this exact message:
 
 ```
-⚠️  Ledger-sourced briefs always base on dev; --base-branch main is refused.
+⚠️  Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused.
 ```
 
 For every other source, default to `main` unless `--base-branch` overrides
@@ -129,7 +129,7 @@ brief or task files into the main checkout.
 Provision exactly one target worktree through the shared CLI:
 
 ```bash
-python -m scripts.sdd.ensure_worktree --json --slug <slug> --brief-key <KEY> --base-branch <base>
+parrot sdd run ensure_worktree --json --slug <slug> --brief-key <KEY> --base-branch <base>
 ```
 
 Capture the returned worktree path as `<wt>`. The new worktree has no
@@ -148,10 +148,10 @@ sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-<N>-<task-slug>.md
 
 Create several task files when `--split` was requested or research found more
 than one independent chunk. Build the per-brief index with
-`scripts.sdd.brief_meta.write_brief_index`, then validate its graph:
+`parrot sdd run brief_meta write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`, then validate its graph:
 
 ```bash
-python -m scripts.sdd.check_task_graph <wt>/sdd/briefs/<slug>.index.json
+parrot sdd run check_task_graph <wt>/sdd/briefs/<slug>.index.json
 ```
 
 ### 11. Commit and Push from the Worktree

@@ -22,7 +22,7 @@ These are non-negotiable. Complex codebases use patterns (registries, mixins, AB
 
 # Repository orientation (hints, not ground truth)
 
-Use these as *search starting points*. The codebase is the only authority — verify every claim against what you read. Read CLAUDE.md and any CONTEXT.md files to discover the project's package structure, core abstractions, and naming conventions before explaining anything.
+Use these as *search starting points*. The codebase is the only authority — verify every claim against what you read. Read the project's conventions file (`sdd/CONVENTIONS.md`) and any CONTEXT.md files to discover the project's package structure, core abstractions, and naming conventions before explaining anything.
 
 Recurring patterns to recognize and surface when relevant (discover the specific ones from the codebase):
 - **Decorator-registered typed registries**: `@register_*` patterns, typed dispatchers.

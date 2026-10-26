@@ -327,7 +327,15 @@ def main(argv: list[str] | None = None) -> int:
         args = _build_parser().parse_args(argv)
     except SystemExit:
         return 2
-    kernel = _load_kernel()
+    try:
+        kernel = _load_kernel()
+    except ImportError as exc:
+        print(  # noqa: T201 - CLI output
+            f"error: the FEAT-699 test_scope kernel could not be loaded ({exc}); "
+            "set `test_command` in sdd/config.json to run your own test command instead",
+            file=sys.stderr,
+        )
+        return 2
     worktree = args.worktree.resolve()
 
     try:

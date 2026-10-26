@@ -10,8 +10,8 @@ _CODEX = _ROOT / ".agents/skills/sdd-brief/SKILL.md"
 _AGY = _ROOT / ".agent/workflows/sdd-brief.md"
 _SHARED_TOKENS = (
     "--brief-key",
-    "scripts.sdd.ensure_worktree",
-    "Ledger-sourced briefs always base on dev; --base-branch main is refused.",
+    "parrot sdd run ensure_worktree",
+    "Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused.",
     "path:line",
 )
 

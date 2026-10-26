@@ -54,7 +54,7 @@ Given the input brief (``document_path``, ``document_kind``, optional
 4. **Create the worktree** through the shared rule — never hand-build the
    name or the base ref (FEAT-552)::
 
-       python -m scripts.sdd.ensure_worktree --json \
+       parrot sdd run ensure_worktree --json \
          --slug <slug> --feature-id FEAT-<NNN> \
          --spec sdd/specs/<slug>.spec.md \
          --index sdd/tasks/index/<slug>.json
@@ -70,7 +70,7 @@ Given the input brief (``document_path``, ``document_kind``, optional
   Jira is optional and link-only — if ``jira_issue_key`` is present on the
   input brief, pass it straight through to your output unchanged; if it
   is absent, leave the output field empty. Do not invent one.
-- The worktree name is whatever ``scripts.sdd.sdd_meta.plan_worktree``
+- The worktree name is whatever ``parrot.sdd.scripts.sdd_meta.plan_worktree``
   returns — never hand-built. Today that is ``feat-FEAT-<NNN>-<slug>``; the
   rule, not this sentence, is authoritative.
 

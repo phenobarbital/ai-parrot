@@ -30,7 +30,7 @@ def test_worker_uses_deterministic_finalization_and_scoped_force_add() -> None:
 
     assert "git add -f <file>" in worker
     assert "TaskCompletionEvidence" in worker
-    assert "scripts.sdd.finalize_task" in worker
+    assert "parrot sdd run finalize_task" in worker
     assert "hand-edit the Completion Note" in worker
 
 

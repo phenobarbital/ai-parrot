@@ -82,17 +82,10 @@ Evaluate the implementation across these dimensions:
 
 ### 4. Run Adversarial Cross-Check
 
-Use an external CLI agent as an independent second-opinion reviewer. The
-reviewer is **`codex` (OpenAI)**.
-
-> **`agy` (Google Gemini / Antigravity) MUST NOT be used as a reviewer.**
-> Removed 2026-09-01 after it returned a fabricated review — an invented
-> 188-test pytest run whose test names did not exist in the branch under
-> review, then `Error: timeout waiting for response`. Hallucinated passing
-> evidence is worse than no review, because it reads like corroboration. Do
-> not re-add it and do not fall back to it: with no external reviewer
-> available, say so and rely on a Claude subagent. (Unrelated to the
-> `google_coding` dev-loop *coding* backend, which drives the same binary.)
+When `reviewer` in `sdd/config.json` is `codex` and the `second-opinion` skill is
+installed, use the external `codex` CLI as an independent second-opinion reviewer.
+Otherwise (no external reviewer available, or `reviewer` is not `codex`), say so
+and rely on a Claude subagent instead.
 
 Rules:
 - Never feed the reviewer your reasoning, draft review, justification, or
@@ -119,7 +112,7 @@ codex commands:
 codex exec review --uncommitted
 
 # If reviewing a task branch against the integration branch
-codex exec review --base dev
+codex exec review --base <base_branch>
 
 # If reviewing a specific task commit
 codex exec review --commit <sha>

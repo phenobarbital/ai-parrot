@@ -33,13 +33,13 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
 5. **Route** by `group.lane`:
    - Before changing branches, require a clean checkout; never carry unrelated changes into a fix.
      If execution cannot proceed, release successful claims in step 7.
-   - **Fast lane** (`lane == "fast"`): in the MAIN checkout (no worktree), `git fetch origin dev && git switch -c fix/<issue-short-id>-<suggested_slug> origin/dev`,
-     edit, run the affected package's tests, commit, `git push -u origin <branch>`, then `gh pr create --base dev --title … --body …`.
+   - **Fast lane** (`lane == "fast"`): in the MAIN checkout (no worktree), `git fetch origin <base_branch> && git switch -c fix/<issue-short-id>-<suggested_slug> origin/<base_branch>`,
+     edit, run the affected package's tests, commit, `git push -u origin <branch>`, then `gh pr create --base <base_branch> --title … --body …`.
      ALWAYS a PR — there is no direct-push path.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`/sdd-task <spec> --from-issue …` per issue);
-     otherwise `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label <suggested_slug>`, author
+     otherwise `parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `/sdd-task`, then
-     `python -m scripts.sdd.ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
+     `parrot sdd run ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
      For a new spec, the slug comes from `suggested_slug`; never re-derive it. For a reused parent,
      use that parent index's existing slug, feature_id, spec and base_branch when provisioning the worktree.
      Task creation alone is not resolution: implement and validate the task in that worktree before step 6.

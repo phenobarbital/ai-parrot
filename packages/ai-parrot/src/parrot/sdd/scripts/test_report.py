@@ -81,7 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     if index is None:
         return 2
     feature_id, task_ids = index
-    report_mod = _load_report()
+    try:
+        report_mod = _load_report()
+    except ImportError as exc:
+        print(  # noqa: T201 - CLI output
+            f"error: the FEAT-699 test_scope kernel could not be loaded ({exc}); "
+            "set `test_command` in sdd/config.json to run your own test command instead",
+            file=sys.stderr,
+        )
+        return 2
     task_count = len(task_ids)
 
     if args.command == "decide-rerun":

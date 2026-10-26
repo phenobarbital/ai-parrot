@@ -4,7 +4,7 @@ Worktree creation belongs to whoever writes code in the worktree
 (`/sdd-start`, `sdd-worker`) and to the dev-loop orchestrators that plan and
 dispatch in one run (`sdd-planner`, `sdd-research`, `sdd-autopilot`). Planning
 alone (`/sdd-task`) creates none. All of them go through
-`scripts.sdd.ensure_worktree`, so exactly one naming rule exists.
+`parrot sdd run ensure_worktree`, so exactly one naming rule exists.
 
 These tests keep that true. `.claude/worktrees/` is never inspected: those are
 separate checkouts of older branches and legitimately hold the old text.
@@ -45,16 +45,16 @@ def _read(rel: str) -> str:
 def test_no_command_hand_rolls_a_worktree(rel: str) -> None:
     """No SDD command or agent runs `git worktree add` itself (FEAT-552)."""
     assert "git worktree add" not in _read(rel), (
-        f"{rel} hand-rolls a worktree; call " "`python -m scripts.sdd.ensure_worktree` instead"
+        f"{rel} hand-rolls a worktree; call " "`parrot sdd run ensure_worktree` instead"
     )
 
 
 @pytest.mark.parametrize("rel", sorted(r for r, needs_cli in _CREATORS.items() if needs_cli))
 def test_every_creator_calls_ensure_worktree(rel: str) -> None:
     """Each lane that provisions a worktree goes through the shared CLI."""
-    assert "scripts.sdd.ensure_worktree" in _read(
+    assert "parrot sdd run ensure_worktree" in _read(
         rel
-    ), f"{rel} must call `python -m scripts.sdd.ensure_worktree` to provision worktrees"
+    ), f"{rel} must call `parrot sdd run ensure_worktree` to provision worktrees"
 
 
 #: Agent prompts that run /sdd-spec unattended — they must never enter intake mode (FEAT-577).
@@ -105,6 +105,14 @@ _SHIPPED_WITH_INLINE_PYTHON_BAN = (
     ".claude/commands/sdd-task.md",
     ".agent/workflows/sdd-task.md",
     ".agents/skills/sdd-task/SKILL.md",
+    ".claude/agents/sdd-worker.md",
+    ".agents/agents/sdd-worker/agent.md",
+    # rev 0.5 C22 E: the navconfig one-liners became an env-var precondition, so after rules 6 + E these
+    # twins carry no inline Python either:
+    ".claude/commands/sdd-done.md",
+    ".agent/workflows/sdd-done.md",
+    ".claude/commands/sdd-tojira.md",
+    ".agent/workflows/sdd-tojira.md",
 )
 # `python -c "` one-liners and `python - … <<` heredocs; prose mentions of `python -c` in
 # backticks without an opening quote are not invocations and are not matched.

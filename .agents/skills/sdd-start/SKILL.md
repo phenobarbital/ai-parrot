@@ -31,7 +31,7 @@ validate it, and close it in the same branch/worktree.
   to resume.
 - Code and per-spec index state live together in the worktree.
 - Touch only files listed in the task unless the user approves a scope update.
-- Use `scripts.sdd.finalize_task`; do not hand-copy active tasks to completed.
+- Use `parrot.sdd.scripts.finalize_task`; do not hand-copy active tasks to completed.
 - Commit only scoped files at each step.
 
 ## Workflow
@@ -41,7 +41,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
@@ -55,7 +55,7 @@ Codex/Antigravity without a verified adapter report unsupported_host, never call
    - every dependency in `depends_on` must be `done`
 3. Ensure the worktree before changing task state (FEAT-552):
    - resolve `feature`, `feature_id`, `spec`, `type`, and `base_branch` from the index header
-   - run `python -m scripts.sdd.ensure_worktree --slug <feature-slug> --feature-id <FEAT-ID> --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json`
+   - run `parrot sdd run ensure_worktree --slug <feature-slug> --feature-id <FEAT-ID> --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json`
    - for hotfixes pass `--jira-key <KEY>` instead of `--feature-id`
    - on a non-zero exit, STOP and report the error; never fall back to implementing on `base_branch`
    - on success, enter the returned worktree path and re-read its task/index before proceeding
@@ -68,7 +68,7 @@ Codex/Antigravity without a verified adapter report unsupported_host, never call
    - commit `sdd: start TASK-NNN - <title>`
    - (FEAT-566, best-effort) append `task.started` to the shared ledger's
      `events.jsonl` — log-only, never blocks on failure (missing ledger
-     package, unwritable shared root); same pattern as `close_task.sh`'s
+     package, unwritable shared root); same pattern as `parrot sdd run close_task`'s
      `task.closed` emission (`LedgerEvent`/`LedgerLog`, no SQLite writer
      involved, so no contention to handle)
 5. Read context:
@@ -129,13 +129,13 @@ implement the task yourself — the normal route is the default.
     - verify cached names
     - commit `feat(<feature-slug>): TASK-NNN - <title>`
 11. Close task:
-    - read `TaskCompletionEvidence` in
-      `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py`
-      and create its JSON with the task ID, feature slug, exact implementation
+    - create the `TaskCompletionEvidence` JSON (fields `feature_slug`, `task_id`,
+      `implementation_sha`, `validation_refs`, `review_evidence`, `fix_commits`,
+      `completion_facts`) with the task ID, feature slug, exact implementation
       HEAD, durable green validation references, semantic review evidence and
       any correction commits; never fabricate evidence or passing outcomes
-    - run `python -m scripts.sdd.finalize_task --evidence <path> --worktree <path> --expected-head <full HEAD SHA>`
-    - on failure, report the evidence/state problem; do not use `close_task.sh`
+    - run `parrot sdd run finalize_task --evidence <path> --worktree <path> --expected-head <full HEAD SHA>`
+    - on failure, report the evidence/state problem; do not use `parrot sdd run close_task`
       as a fallback or hand-edit the Completion Note
     - inspect returned `staged_paths` and `removed_paths`; verify cached names
       include only this task's per-spec index and moved task file
@@ -159,6 +159,6 @@ Stop and report if:
 
 - `sdd/templates/task.md`
 - `sdd/tasks/index/`
-- `scripts/sdd/finalize_task.py`
-- `scripts/sdd/ensure_worktree.py`
+- `parrot.sdd.scripts.finalize_task`
+- `parrot.sdd.scripts.ensure_worktree`
 - `sdd/WORKFLOW.md`

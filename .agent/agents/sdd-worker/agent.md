@@ -98,7 +98,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+META=$(parrot sdd run sdd_meta parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -124,11 +124,11 @@ instead of the local `$BASE_BRANCH`.
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
 during a release freeze (FEAT-187). Features MUST NOT base on `main` — if the
-spec declares `type: feature, base_branch: main`, abort with:
+spec declares `type: feature` with the `hotfix_base` as `base_branch`, abort with:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 If the working tree is dirty or `--ff-only` fails,
 abort with a clear message — do NOT stash.
@@ -169,7 +169,7 @@ it exists only inside its worktree.
 - `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
 - §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
 - `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
-- Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+- Closure: NO `parrot sdd run close_task`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
   jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
@@ -197,7 +197,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+WORKTREE_PATH=$(parrot sdd run ensure_worktree \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -209,7 +209,7 @@ For a hotfix (`type: hotfix` in the per-spec index header) pass
 `--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
 the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
 hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
-come from `scripts.sdd.sdd_meta.plan_worktree`.
+come from `parrot.sdd.scripts.sdd_meta.plan_worktree`.
 
 If the command exits non-zero, STOP and report its message. Do not implement on
 `<BASE_BRANCH>`.
@@ -286,7 +286,8 @@ If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
 - Run linting and fix issues.
-- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+- When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
+- Run the task's `## Validation Commands`, then `parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
   --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
@@ -305,7 +306,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
@@ -323,7 +324,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
+parrot sdd run close_task TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
@@ -357,7 +358,7 @@ After all tasks are done:
        <output of: git diff --stat $BASE_BRANCH...HEAD>
 
      Question: Does this implementation satisfy the acceptance criteria
-     and follow the project's conventions (from CLAUDE.md)?
+     and follow the project's conventions (from `sdd/CONVENTIONS.md`)?
    ```
 
    **Handle findings:**
@@ -448,7 +449,7 @@ git status --porcelain --untracked-files=all               # not yet committed
 ```
 
 Use repo-relative paths exactly as git prints them (e.g.
-`packages/ai-parrot/tests/flows/dev_loop/test_qa.py`). `DevelopmentNode`
+`<tests>/path/test_module.py`). `DevelopmentNode`
 reconciles your list against git and appends whatever you left out, but it
 logs the omission as a warning — a run whose `files_changed` needed
 reconciling is a run that reported its work incorrectly.

@@ -28,8 +28,8 @@ Promotion is always explicit — no ledger issue is ever auto-promoted.
   branches, edge cases and test bodies stay as `FILL IN` stubs.
 - Build the task graph by §3's **Task graph rules** — `depends_on` is the only
   ordering, `parallel: false` means *exclusive* — and run
-  `scripts/sdd/check_task_graph.py` on the index before committing (§4b).
-- **`TASK-<NNN>` numbers are reserved via `scripts/sdd/reserve_ids.py`
+  `parrot.sdd.scripts.check_task_graph` on the index before committing (§4b).
+- **`TASK-<NNN>` numbers are reserved via `parrot.sdd.scripts.reserve_ids`
   (FEAT-387), never hand-computed by scanning existing files for the
   highest number in use.** That scan-and-increment approach has no lock
   and no re-check against `origin/<base_branch>` immediately before
@@ -48,7 +48,7 @@ Promotion is always explicit — no ledger issue is ever auto-promoted.
 Read the spec's frontmatter to determine the base branch, switch to it, and pull from origin:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+META=$(parrot sdd run sdd_meta parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE=$(echo "$META" | awk '{print $2}')
 
@@ -56,9 +56,9 @@ git checkout "$BASE"
 git pull --ff-only origin "$BASE"
 ```
 
-For `type: hotfix`, `BASE` MUST be `main`. For `type: feature`, `BASE` defaults
-to `dev` and may be `staging` (during a release freeze) or any non-main branch
-(sub-features extend a parent feature branch — see `AGENTS.md`).
+For `type: hotfix`, `BASE` MUST be the `hotfix_base` in `sdd/config.json`. For `type: feature`, `BASE` defaults
+to the `base_branch` in `sdd/config.json` and may be the `staging_branch` (during a release freeze) or any non-main branch
+(sub-features extend a parent feature branch — see `sdd/WORKFLOW.md`).
 
 **A hotfix normally does not reach this command at all (FEAT-466).**
 `sdd-research.md` skips `/sdd-task` entirely for `type: hotfix` runs — a
@@ -75,14 +75,14 @@ instead — the identity the rest of the flow labels this run by.
 
 **Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 
 Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
-(FEAT-187). Use `base_branch: staging` when decomposing stabilization fixes for a
-frozen release candidate.
+(FEAT-187). Use the `staging_branch` from `sdd/config.json` as `base_branch` when decomposing
+stabilization fixes for a frozen release candidate.
 
 **Abort conditions (do NOT stash or auto-resolve):**
 - Working tree dirty: `⚠️  Cannot sync <BASE>: working tree has uncommitted changes. Stash or commit first, then re-run /sdd-task.`
@@ -250,7 +250,7 @@ blueprint code stay with you.
    compare-and-swap ledger (FEAT-387), never scan existing files and
    increment by hand:
    ```bash
-   TASK_IDS=$(python -m scripts.sdd.reserve_ids --kind task --count <N> \
+   TASK_IDS=$(parrot sdd run reserve_ids --kind task --count <N> \
      --base-branch "$BASE" --label <feature-slug>)
    ```
    Where `<N>` is the total number of tasks about to be generated for this
@@ -403,9 +403,13 @@ complete. `design_complete: true` is a declaration the task author signs.
 
 #### Cache the Validation Contract (FEAT-699, mandatory)
 
-After writing the index and before §4b, run:
+After writing the index and before §4b:
+
+When `sdd/config.json` sets `test_command`, skip this step: no `test_contract` is cached (the command runs at the merge/feature tier instead), and `/sdd-task` continues even when the spec has no `### Validation Contract` section. When `test_command` is unset the step is mandatory and `cache_test_contract` stays strict; if it cannot load the FEAT-699 `test_scope` kernel it exits non-zero with a one-line message on stderr.
+
+Otherwise run:
 ```bash
-python -m scripts.sdd.cache_test_contract --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json
+parrot sdd run cache_test_contract --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json
 ```
 It writes the spec §4 `### Validation Contract` into the header as `test_contract` (or removes it for
 `none — fallback`). Never hand-write `test_contract`. Exit 2 means the spec subsection is malformed or
@@ -423,12 +427,12 @@ Kinds, tiers and settings are validated against the runner registry (`.parrot/te
 Every generated task MUST carry a `## Validation Commands` section placed right
 after `## Acceptance Criteria`: one bullet per command, each a backticked
 `pytest` invocation whose operands are **test files or node ids** — never a
-directory, never `tests/` or `packages/<dist>/tests`, never a bare `pytest`.
+directory, never a tests root such as `<tests>/`, never a bare `pytest`.
 
 ```markdown
 ## Validation Commands
-- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
-- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
+- `pytest <tests>/path/test_module.py -q`
+- `pytest <tests>/path/test_module.py::test_case -q`
 ```
 
 This is what the sdd-coder guard rewrites a broad pytest to. New per-spec index
@@ -445,7 +449,7 @@ a JSON block with `schema_version: 1`.
   Create / Modify" table exactly.
 - **`contract_symbols`**: A list of exact symbol IDs referenced by the
   Codebase Contract (e.g.,
-  `"sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py#RosterConfig"`).
+  `"sym:<src>/<pkg>/module.py#ClassName"`).
   If there are no existing symbol references, use an empty list `[]` (do not
   omit the field — an absent list means legacy/unknown coverage).
 - Legacy tasks without this section default to unknown complexity.
@@ -458,7 +462,7 @@ Example:
   "schema_version": 1,
   "targets": [
     {
-      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
+      "path": "<src>/<pkg>/module.py",
       "action": "MODIFY"
     }
   ],
@@ -471,7 +475,7 @@ Example:
 Run the deterministic graph check on the index you just wrote:
 
 ```bash
-python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json
+parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json
 ```
 
 - **Errors** (exit 1) block the commit: `file-overlap` (two tasks declare the

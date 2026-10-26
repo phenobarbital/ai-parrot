@@ -170,7 +170,7 @@ declaratively in this repo — set via GitHub repo settings.
 ## Worktrees
 
 Everything about worktrees — location (`.claude/worktrees/`), naming,
-creation via `python -m scripts.sdd.ensure_worktree` (always from
+creation via `parrot sdd run ensure_worktree` (always from
 `origin/<base_branch>`, never `HEAD`, never `claude --worktree`), working
 inside one, finishing and cleanup — lives in **one** rule:
 `.claude/rules/worktree-management.md` (twin: `.agent/skills/worktree-management/`).
@@ -210,7 +210,7 @@ brings them to `base_branch` atomically.
 
 **Note (FEAT-387)**: `sdd/tasks/.id_ledger.json` is a git-tracked
 compare-and-swap counter for `TASK-<NNN>`/`FEAT-<NNN>` numbers, allocated
-via `scripts/sdd/reserve_ids.py` (not scanned-and-incremented by hand). Its
+via `parrot.sdd.scripts.reserve_ids` (not scanned-and-incremented by hand). Its
 reservation commit is independent — pushed to `base_branch` immediately by
 `reserve_ids.py` itself, BEFORE the calling command's own task/spec files
 are written, never bundled into the same commit. `scripts/sdd/
@@ -284,7 +284,7 @@ Commands resolve features by matching either field (exact, numeric suffix,
 or substring) against the per-spec index headers.
 
 **Migration history**: the legacy `sdd/tasks/.index.json` monolith was
-split per-spec by `scripts/sdd/migrate_index.py`. The monolith is preserved
+split per-spec by `parrot.sdd.scripts.migrate_index`. The monolith is preserved
 as a historical artifact and ignored by all FEAT-145 commands. Tasks the
 migration could not attribute to a feature live in
 `sdd/tasks/index/_orphans.json` and are surfaced (but not assigned) by

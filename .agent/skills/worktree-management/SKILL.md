@@ -8,13 +8,13 @@ description: Single source of truth for git worktrees in this repo — where the
 Worktrees isolate **features** from each other: one worktree per feature (or
 hotfix); the tasks of a feature run sequentially inside that same worktree.
 Branch *policy* (which base each flow type uses, sync-down, `/sdd-done` never
-targeting `main`) lives in `CLAUDE.md` § Git Configuration — this file is the
+targeting the hotfix base) lives in `sdd/WORKFLOW.md` § Git Configuration — this file is the
 how-to.
 
 ## 1. Where they live, how they are named
 
 - Always under `.claude/worktrees/` (git-ignored). Never `.worktrees/`, never a global directory.
-- Names come from `scripts.sdd.sdd_meta.plan_worktree`, never invented:
+- Names come from `parrot.sdd.scripts.sdd_meta.plan_worktree`, never invented:
   - feature → `feat-<FEAT-ID>-<slug>` (the doubled `feat-FEAT-` prefix is intentional — `/sdd-done` greps on it)
   - hotfix → `hotfix-<JIRA-KEY>-<slug>`
 - Base ref is **always `origin/<base_branch>`** — `dev` (or `staging` during a freeze) for features, `main` for hotfixes — never `HEAD`, so a worktree can never inherit an unpushed local commit (FEAT-466).
@@ -23,8 +23,8 @@ how-to.
 
 ```bash
 source .venv/bin/activate
-python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/dev
-python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/main
+parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
+parrot sdd run ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
 ```
 
 - Created by whoever implements: `/sdd-start`, `sdd-worker`, and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).

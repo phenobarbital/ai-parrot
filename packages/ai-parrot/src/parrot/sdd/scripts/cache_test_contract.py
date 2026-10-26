@@ -70,7 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
     except SystemExit:
         return 2
-    contract_mod = _load_contract()
+    try:
+        contract_mod = _load_contract()
+    except ImportError as exc:
+        print(f"error: the FEAT-699 test_scope kernel could not be loaded ({exc}); "
+              "set `test_command` in sdd/config.json to run your own test command instead", file=sys.stderr)
+        return 2
     try:
         spec_md = args.spec.read_text(encoding="utf-8")
         index = json.loads(args.index.read_text(encoding="utf-8"))

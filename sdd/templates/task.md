@@ -277,8 +277,8 @@ anchor unique` instead of a bare one-line anchor.
 
 > File-level pytest only — no directories, no package roots.
 
-- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
-- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
+- `pytest <tests>/path/test_module.py -q`
+- `pytest <tests>/path/test_module.py::test_case -q`
 
 ---
 
@@ -326,7 +326,7 @@ class Test<Component>:
 When you pick up this task:
 
 1. **Work in the feature worktree** — never on `base_branch`
-   (`python -m scripts.sdd.ensure_worktree --slug <feature-slug> --feature-id FEAT-<NNN>`)
+   (`parrot sdd run ensure_worktree --slug <feature-slug> --feature-id FEAT-<NNN>`)
 2. **Read the spec** at the path listed above for full context
 3. **Check dependencies** — every `Depends-on` task must be `"done"` in the
    per-spec index `sdd/tasks/index/<feature-slug>.json`
@@ -341,7 +341,7 @@ When you pick up this task:
    `# FILL IN:` marker, and never change a signature or path the blueprint fixes
 7. **Verify** all acceptance criteria are met — run the Validation Commands
 8. **Commit the code** — stage only the files this task lists (never `git add .` / `-A`)
-9. **Close the task** with `scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified`
+9. **Close the task** with `parrot sdd run close_task TASK-<NNN> <feature-slug> verified`
    — it moves this file to `sdd/tasks/completed/` and marks it `"done"` in the
    index; never move or copy the file by hand
 10. **Fill in the Completion Note** below, then commit the staged SDD state

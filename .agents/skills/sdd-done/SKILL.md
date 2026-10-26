@@ -32,10 +32,10 @@ when safe.
 - Do not modify the spec.
 - Do not mark tasks done unless there is evidence in the worktree.
 - Always show a verification report before writing closeout state.
-- Never push directly to `main` and never merge into `main` (`--merge` with base `main` is refused before any push).
-- `$sdd-done` opens the PR itself in every flow against `base_branch`, `main` included; on `gh` failure keep the worktree/branch, print the manual command and exit non-zero.
+- Never push directly to the `hotfix_base` and never merge into it (`--merge` with that base is refused before any push).
+- `$sdd-done` opens the PR itself in every flow against `base_branch`, the `hotfix_base` included; on `gh` failure keep the worktree/branch, print the manual command and exit non-zero.
 - A brief (`sdd/briefs/<slug>.index.json`, no FEAT id) uses its own lane: resolve by scanning worktrees, verify the per-brief index + Validation Commands, close in place, never check out a branch in the shared checkout; close its `ledger_issue` only after a confirmed merge.
-- Use `--sync-down` only after the hotfix PR has merged to `main`.
+- Use `--sync-down` only after the hotfix PR has merged to the `hotfix_base`.
 - Use `--sync-dev` only as a deprecated alias for `--sync-down`.
 - Merge gate checks apply only to `--merge` flag, not PR flow.
 - Ledger snapshots use throwaway worktrees and never modify active worktrees.
@@ -91,13 +91,13 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - otherwise run Ruff fixes and the configured Black formatter on those
      files, inspect the diff, commit only those paths, then run full `ruff check`
    - keep fixes behavior-neutral; when behavior changes, run the feature-tier
-     selector from `scripts.sdd.select_tests` with this feature's task files
-     before committing; refresh checkpoint/review evidence after any change
+     selector from `parrot.sdd.scripts.select_tests` with this feature's task files
+     (or, when `test_command` in `sdd/config.json` is set, that command from the repo root) before committing; refresh checkpoint/review evidence after any change
    - report unfixable findings under Lint residual; residual `E9`, `F63`, `F7`
      or `F82` errors block normal closeout and enter the issues/confirmation path
 4.6. Verify E2E evidence (FEAT-581/FEAT-703), before any stamp/push/
    merge-blocker/PR/merge/cleanup step below — the gate is code, not prose:
-   - run `python -m scripts.sdd.check_e2e_closeout --spec <spec-path>
+   - run `parrot sdd run check_e2e_closeout --spec <spec-path>
      --feat-id <FEAT-ID> --worktree <worktree>`; it reads the spec's
      `e2e.policy`, resolves the worktree-scoped plan at
      `sdd/state/<FEAT-ID>/e2e-plan.md`, and runs the same read-only validator
@@ -114,7 +114,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - the decision table itself (policy resolution, where a missing `e2e` key
      defaults to `optional` and a malformed value is never coerced; missing
      plans; validator errors; an uninstalled `ai-parrot-server`) lives in
-     `scripts/sdd/check_e2e_closeout.py`, not here — the exit code is the
+     `parrot.sdd.scripts.check_e2e_closeout`, not here — the exit code is the
      contract, and the gate takes no `--force` argument at all
 5. Classify:
    - `VERIFIED`: commit found and files exist
@@ -127,11 +127,11 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - task count by status
    - task-by-task evidence
    - E2E policy/status/gate_satisfied recorded in step 4.6
-   - Test report (FEAT-695), never blocking: run
-     `python -m scripts.sdd.test_report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
+   - Test report (FEAT-695), never blocking. When `test_command` in `sdd/config.json` is set (non-blank), skip `select_tests` and `test_report` and run that command once from the repository root instead: record the command, its exit code and the tail of its output, and treat a non-zero exit as a merge blocker. When it is null, the FEAT-699 steps below run unchanged. If the run executed zero tests (no `pytest` invocation, or 0 collected), report "⚠️ not run — no tests selected", never ✅ — even when `test_report render` prints its ✅ gate line. Otherwise run
+     `parrot sdd run test_report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
      when it says `rerun`, run in the background
-     `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
-     then `python -m scripts.sdd.test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
+     `timeout -k 10 1800 parrot sdd run select_tests --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
+     then `parrot sdd run test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
      (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: done`. The feature tier always re-runs fresh at the final HEAD, driven by the index's `test_contract`; the table has New red / Baseline red / Unknown columns and a `cached` line, and the PR is blocked only by new reds or unknowns; baseline reds are reported, not blocking; rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners
    - lint residuals and any missing review evidence
 7. Respect flags:
@@ -144,7 +144,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - verified is not closed: for each task being closed whose file is still in
      `sdd/tasks/active/` or whose index status is not `done`/`done-with-issues`
      (lanes such as `/sdd-fix` commit code without closing), run
-     `scripts/sdd/close_task.sh <TASK-ID> <feature-slug> <verification>` inside
+     `parrot sdd run close_task <TASK-ID> <feature-slug> <verification>` inside
      the worktree — never on `base_branch` (FEAT-414), then set its status to
      `done-with-issues` when verification is `partial`/`forced`; leave tasks
      the lane already closed untouched, and skip (with a warning) any id not in
@@ -152,14 +152,14 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - set each task `verification` to `verified`, `partial`, or `forced` in
      `sdd/tasks/index/<feature>.json` inside the worktree
    - set feature `completed_at` only when all tasks are done
-   - run `scripts/sdd/heal_orphans.sh <feature-slug>` inside the worktree
+   - run `parrot sdd run heal_orphans <feature-slug>` inside the worktree
      (PR flow and `--merge` alike)
    - stage only the index and this feature's task files, verify cached names
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
 8.1. Close resolved ledger issues (feature flows only, after step 8, before step 11's snapshot):
    - the `$sdd-fix` SDD lane hands issue closure to this step; without it fixed
      issues stay `claimed`/`open` after merge
-   - run `python -m scripts.sdd.close_resolved_issues --worktree <worktree>
+   - run `parrot sdd run close_resolved_issues --worktree <worktree>
      --index sdd/tasks/index/<feature>.json --base origin/<BASE_BRANCH>
      --feature-id FEAT-NNN` inside the worktree (`--dry-run` to preview);
      strip any banner before the JSON report
@@ -202,19 +202,19 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - Skip the snapshot entirely for hotfixes
 
 12. Integrate:
-    - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
-    - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
+    - If `base_branch` is the `hotfix_base` (from `sdd/config.json`) and `--merge` is set, refuse before any push; merging a hotfix-base PR is the human act.
+    - Without `--merge` (every flow, the `hotfix_base` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
       rendered `## Tests` section (`$(cat "$TEST_REPORT_MD")`) after `<N>/<total> tasks verified.`.
     - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
-      `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
+      `parrot sdd run heal_orphans <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
 13. Hotfix sync-down:
     - only with `--sync-down` or deprecated `--sync-dev`
-    - verify feature branch is ancestor of `origin/main`
-    - merge into `staging`, abort cleanly on conflict
-    - merge into `dev`, abort cleanly on conflict
-    - leave user on `main`
+    - verify feature branch is ancestor of `origin/<hotfix_base>`
+    - merge into the `staging_branch`, abort cleanly on conflict
+    - merge into the `base_branch` (integration), abort cleanly on conflict
+    - leave user on the `hotfix_base`
 14. Resolve Jira if requested:
     - find Jira key in spec or proposal metadata
     - prefer Jira MCP tools if available
@@ -249,8 +249,8 @@ Jira: <key> -> Done, when requested and successful
 - `sdd/tasks/index/<feature>.json`
 - `sdd/tasks/active/`
 - `sdd/tasks/completed/`
-- `scripts/sdd/sdd_meta.py`
-- `scripts/sdd/heal_orphans.sh`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot sdd run heal_orphans`
 - `sdd/WORKFLOW.md`
 - `sdd/state/<FEAT-ID>/e2e-plan.md` (E2E plan, FEAT-581); validator:
   `parrot e2e verify --plan <path>` (`ai-parrot-server`, optional install)

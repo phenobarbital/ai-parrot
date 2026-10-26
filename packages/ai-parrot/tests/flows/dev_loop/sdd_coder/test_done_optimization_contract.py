@@ -106,7 +106,7 @@ def test_done_variants_keep_release_gates(tmp_path: Path) -> None:
     # intact -- the boundary block is a preface, never a rewrite of these steps.
     done_command = (repo_root / ".claude/commands/sdd-done.md").read_text(encoding="utf-8")
     assert "Stamp Verification" in done_command or "stamp verification" in done_command.lower()
-    assert "NEVER pushes to `main`" in done_command
+    assert "NEVER pushes to the `hotfix_base`" in done_command
     assert "wikitoolkit ledger blockers" in done_command
 
     done_workflow = (repo_root / ".agent/workflows/sdd-done.md").read_text(encoding="utf-8")

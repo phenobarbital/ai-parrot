@@ -15,13 +15,13 @@ def _text() -> str:
 def test_provisions_through_ensure_worktree_brief_key() -> None:
     """The brief lane provisions through the shared brief-key CLI."""
     text = _text()
-    assert "python -m scripts.sdd.ensure_worktree" in text
+    assert "parrot sdd run ensure_worktree" in text
     assert "--brief-key <KEY>" in text
 
 
 def test_ledger_main_refusal_text_present() -> None:
     """Ledger briefs must retain their non-main base refusal."""
-    assert "⚠️  Ledger-sourced briefs always base on dev; --base-branch main is refused." in _text()
+    assert "⚠️  Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused." in _text()
 
 
 def test_research_floor_stated() -> None:

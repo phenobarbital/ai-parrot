@@ -36,7 +36,7 @@ keep only tasks whose index's `spec` is in the taxonomy list (AND across flags,
 OR within a repeated flag):
 
 ```bash
-SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
+SPECS=$(parrot sdd run doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
 TASKS=$(jq -s --arg specs "$SPECS" '[.[] | select(.feature != "_orphans") | select(.spec as $s | ($specs | split("\n")) | index($s)) | .tasks[]]' sdd/tasks/index/*.json)
 ```
 
@@ -49,7 +49,7 @@ Map each active worktree to its feature ID by matching the worktree name pattern
 
 Additionally, call the worktree status library for richer data:
 ```bash
-WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[]")
+WT_REPORTS=$(parrot sdd run worktree_status --json 2>/dev/null || echo "[]")
 ```
 Build a lookup from `feature_slug` → `WorktreeReport`. This provides task progress
 counts and `ready_for_done` flags that the bare `git worktree list` cannot give.
@@ -152,5 +152,5 @@ do not print an empty header.
 ## Reference
 - Per-spec index files: `sdd/tasks/index/*.json` (excluding `_orphans.json`)
 - Active worktrees: `git worktree list`
-- Worktree policy: `CLAUDE.md` (section "Worktree Policy")
+- Worktree policy: `sdd/WORKFLOW.md` (section "Git Configuration")
 - SDD methodology: `sdd/WORKFLOW.md`

@@ -1,8 +1,8 @@
-# AI-Parrot SDD Workflow
+# SDD Workflow
 
 ## Overview
 
-This document defines the **Spec-Driven Development (SDD)** methodology for AI-Parrot, unified across Claude Code, Codex, and Google Gemini via Antigravity CLI (`agy`) with multi-agent task distribution.
+This document defines the **Spec-Driven Development (SDD)** methodology for this repository, unified across Claude Code, Codex, and Google Gemini via the Antigravity CLI with multi-agent task distribution.
 
 The key idea: specifications are the Single Source of Truth (SSOT). Agents across all supported platforms consume spec documents and produce **Task Artifacts** — discrete, self-contained files in `sdd/tasks/active/` that can be independently picked up and executed by agents in parallel.
 
@@ -33,7 +33,7 @@ Start here when the idea is not yet well-defined:
 ### Phase 1 — Feature Specification
 `/sdd-spec` writes `sdd/specs/<feature>.spec.md` from a brainstorm/proposal, a
 direct request, or an intake interview (FEAT-577), and reserves the
-`FEAT-<NNN>` via `scripts/sdd/reserve_ids.py` (not for hotfixes).
+`FEAT-<NNN>` via `parrot.sdd.scripts.reserve_ids` (not for hotfixes).
 
 ### Phase 2 — Task Generation (Planner)
 `/sdd-task sdd/specs/<feature>.spec.md` decomposes the spec into Task Artifacts
@@ -49,9 +49,9 @@ Tasks are designed to be:
 
 ### Phase 3 — Task Execution (Executors)
 `/sdd-start TASK-<NNN>` (one task) or the `sdd-worker` agent (a whole feature)
-creates/reuses the feature worktree via `python -m scripts.sdd.ensure_worktree`,
+creates/reuses the feature worktree via `parrot sdd run ensure_worktree`,
 marks the task `in-progress` in the per-spec index, implements it, and closes it
-with `scripts/sdd/close_task.sh`, which moves the file to
+with `parrot sdd run close_task`, which moves the file to
 `sdd/tasks/completed/` and stamps the index. Code and SDD state are committed
 together on the feature branch. The manual (no-command) procedure is in
 `docs/sdd/WORKFLOW.md`.
@@ -79,21 +79,19 @@ Index `status` values: `pending` → `in-progress` → `done` | `done-with-issue
 
 ## Git Configuration (FEAT-187)
 
-The Git Parrot Flow uses three long-lived branches:
+Branch names are configuration, not convention: they live in `sdd/config.json`
+and every SDD command reads them from there.
 
-- **`main`** — tagged releases only. Hotfixes land here via PR;
-  no feature work ever bases on `main`.
-- **`staging`** — release candidate branch. Cut from `dev` when the
-  team decides to freeze a release. Receives `main → staging` syncs
-  automatically (via `.github/workflows/sync-down.yml`); the
-  `dev → staging` direction is a manual cut at freeze time.
-- **`dev`** — integration branch for all feature work. Default base
-  for `type: feature` flows.
+| Key | Role |
+|---|---|
+| `base_branch` | Integration branch for all feature work — the default base of `type: feature` flows. |
+| `staging_branch` | Release candidate branch, cut from `base_branch` when the team freezes a release. |
+| `hotfix_base` | Production branch (tagged releases only). Hotfixes land here via PR; no feature work ever bases on it. |
 
-**Sync-down automation** (FEAT-187): `.github/workflows/sync-down.yml`
-listens for pushes to `main` and tries to fast-forward both `staging` and
-`dev`. When fast-forward is not possible, it opens a sync PR against the
-lagging branch. `/sdd-done --sync-down` is the manual fallback.
+**Sync-down automation** (optional, FEAT-187): if your repository runs a workflow
+that fast-forwards `staging_branch` and `base_branch` after every push to
+`hotfix_base`, a merged hotfix propagates by itself (opening a sync PR when a
+fast-forward is not possible). `/sdd-done --sync-down` is the manual fallback.
 
 ---
 
@@ -104,22 +102,23 @@ at the top of the document:
 
 ```yaml
 ---
-type: feature        # one of: feature | hotfix
-base_branch: dev     # for feature: dev or staging; for hotfix: must be "main"
+type: feature          # one of: feature | hotfix
+base_branch: <branch>  # feature: base_branch or staging_branch; hotfix: hotfix_base (all from sdd/config.json)
 ---
 ```
 
-| Type      | base_branch         | When to use                                                  |
-|-----------|---------------------|--------------------------------------------------------------|
-| `feature` | `dev` (default)     | Most work. Lands on `dev` via `/sdd-done`.                   |
-| `feature` | `staging`           | Stabilization fix during a release freeze. Lands on `staging`. |
-| `feature` | `<other-branch>`    | Sub-features extending another feature branch.               |
-| `hotfix`  | `main` (required)   | Production hotfixes, produced by `/sdd-brief`. `/sdd-done` opens the `main` PR; merging it is manual. |
+| Type      | base_branch               | When to use                                                  |
+|-----------|---------------------------|--------------------------------------------------------------|
+| `feature` | `base_branch` (default)   | Most work. Lands on the integration branch via `/sdd-done`.  |
+| `feature` | `staging_branch`          | Stabilization fix during a release freeze. Lands on staging. |
+| `feature` | `<other-branch>`          | Sub-features extending another feature branch.               |
+| `hotfix`  | `hotfix_base` (required)  | Production hotfixes, produced by `/sdd-brief`. `/sdd-done` opens the PR; merging it is manual. |
 
-Features MUST NOT base on `main`. `/sdd-done` enforces: it NEVER merges into
-`main` (`--merge` is refused); it opens the PR and merging is the human act; afterwards,
-`.github/workflows/sync-down.yml` propagates the change back to `staging` and
-`dev` automatically. If the Action fails, run `/sdd-done --sync-down` locally.
+Features MUST NOT base on the `hotfix_base`. `/sdd-done` enforces: it NEVER merges
+into the `hotfix_base` (`--merge` is refused); it opens the PR and merging is the
+human act; afterwards, any sync-down automation your repository runs propagates the
+change back to `staging_branch` and `base_branch`. If it fails (or you have none),
+run `/sdd-done --sync-down` locally.
 
 ---
 
@@ -132,9 +131,7 @@ projects: [ai-parrot, ai-parrot-server]   # parts of the codebase the doc concer
 tags: [memory, compaction]                # free-form kebab-case keywords
 ```
 
-- **projects** — `packages/*` distribution names plus the areas `sdd-tooling`,
-  `dev-loop`, `admin-ui`, `docs`, `ci` (`KNOWN_PROJECTS`). Aliases normalize:
-  `parrot-core` → `ai-parrot`, `formdesigner` → `parrot-formdesigner`, …
+- **projects** — The project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set.
   Unknown values **warn but are kept**.
 - **tags** — lowercased, spaces/underscores → `-`, deduplicated.
 - Missing keys read as empty lists; the per-spec task index does not cache them.
@@ -145,7 +142,7 @@ tags: [memory, compaction]                # free-form kebab-case keywords
 List documents by taxonomy:
 
 ```bash
-python -m scripts.sdd.doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+parrot sdd run doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
   [--project P ...] [--tag T ...] [--paths-only | --json | --summary]
 ```
 
@@ -167,7 +164,7 @@ python -m scripts.sdd.doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|a
 Infer missing `projects` frontmatter for existing docs (dry-run by default):
 
 ```bash
-python -m scripts.sdd.backfill_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+parrot sdd run backfill_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
   [--limit N] [--apply]
 ```
 
@@ -181,60 +178,58 @@ python -m scripts.sdd.backfill_taxonomy [--root .] [--kind spec|brainstorm|propo
 
 ## Release Cut
 
-When the team decides to freeze a release, a maintainer cuts `staging`
-from `dev`. This is a manual, infrequent operation today (see open
-question in `sdd/specs/git-parrot-flow.spec.md` §8 about a future
-`/sdd-release-cut` command).
+When the team decides to freeze a release, a maintainer cuts `staging_branch`
+from `base_branch`. This is a manual, infrequent operation.
 
 ### Cutting the branch
 
 ```bash
-git checkout dev
-git pull --ff-only origin dev
+# Branch names come from sdd/config.json (base_branch, staging_branch).
+git checkout "$BASE_BRANCH"
+git pull --ff-only origin "$BASE_BRANCH"
 
 # First freeze (creates the branch):
-git checkout -B staging origin/dev
-git push --set-upstream origin staging
+git checkout -B "$STAGING_BRANCH" "origin/$BASE_BRANCH"
+git push --set-upstream origin "$STAGING_BRANCH"
 
 # Subsequent freezes (staging already exists):
-git checkout staging
-git merge --ff-only dev
-git push origin staging
+git checkout "$STAGING_BRANCH"
+git merge --ff-only "$BASE_BRANCH"
+git push origin "$STAGING_BRANCH"
 ```
 
 ### During the freeze
 
-- New feature work continues on `dev`. It is destined for the NEXT
+- New feature work continues on `base_branch`. It is destined for the NEXT
   release, not this one.
-- Hotfixes land on `main` as usual. The sync-down Action propagates
-  them to `staging` and `dev` automatically.
+- Hotfixes land on `hotfix_base` as usual; sync-down (automation or
+  `/sdd-done --sync-down`) propagates them to `staging_branch` and `base_branch`.
 - Stabilization fixes that target THIS release should land on
-  `staging` directly: open a brainstorm/spec with
-  `type: feature, base_branch: staging`.
+  `staging_branch` directly: open a brainstorm/spec with
+  `type: feature` and the `staging_branch` as `base_branch`.
 
 ### Releasing
 
-1. Open PR `staging → main`.
+1. Open PR `staging_branch → hotfix_base`.
 2. Review, run full CI, ensure all stabilization fixes are in.
 3. Merge the PR.
 4. Tag the merge commit: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-5. The Action propagates the merge commit back to `dev` (and to
-   `staging` if any post-merge fixes were on `main`).
-6. `.github/workflows/release.yml` fires on the tag event and
-   publishes the release artifacts.
+5. Propagate the merge commit back to `base_branch` (sync-down automation or
+   `/sdd-done --sync-down`).
+6. Publish the release artifacts with whatever your repository uses for tags.
 
 ### Recommended Branch Protection
 
-`main` (and `staging` once in active use) should require PRs, passing CI
-status checks, and signed commits. Configure via GitHub repo settings —
-not declaratively in this repo (open question in spec §8).
+`hotfix_base` (and `staging_branch` once in active use) should require PRs,
+passing CI status checks, and signed commits. Configure via your Git host's
+repository settings.
 
 ---
 
 ## Per-Spec Index Schema (`sdd/tasks/index/<feature-slug>.json`, FEAT-145)
 
 > **Migration history**: the legacy monolithic `sdd/tasks/.index.json` was
-> split into per-spec files by `scripts/sdd/migrate_index.py`. The original
+> split into per-spec files by `parrot.sdd.scripts.migrate_index`. The original
 > monolith is preserved as a historical artifact. New tooling reads only
 > per-spec indexes.
 
@@ -297,14 +292,14 @@ undetected until `/sdd-done`'s closeout tooling stumbled on them.
   reads this file, computes a reservation, and races to commit+push an
   update — the push itself is the compare-and-swap (a non-fast-forward
   rejection means someone else already advanced the counter).
-- **`scripts/sdd/id_ledger.py`** — the `IdLedger` Pydantic model plus
+- **`parrot.sdd.scripts.id_ledger`** — the `IdLedger` Pydantic model plus
   `load_ledger`/`save_ledger` and the one-time `bootstrap_ledger()` used to
   seed the ledger strictly ahead of every ID already in use.
-- **`scripts/sdd/reserve_ids.py`** — the allocator `/sdd-task` and
+- **`parrot.sdd.scripts.reserve_ids`** — the allocator `/sdd-task` and
   `/sdd-spec` call instead of hand-computing a number:
   ```bash
-  python -m scripts.sdd.reserve_ids --kind task --count 8 \
-    --base-branch dev --label <feature-slug>
+  parrot sdd run reserve_ids --kind task --count 8 \
+    --base-branch <base_branch> --label <feature-slug>
   ```
   Reads the ledger **as of `origin/<base_branch>`**, builds a *ledger-only*
   commit on that tip, and pushes it; on a rejected (non-fast-forward) push
@@ -324,13 +319,12 @@ undetected until `/sdd-done`'s closeout tooling stumbled on them.
   local branch is fast-forwarded onto the reservation as a convenience; if
   it carries unpushed commits the fast-forward is skipped and a warning
   tells you to reconcile with `git pull --no-rebase`.
-- **`scripts/sdd/check_id_collisions.py`** — an independent, read-only
+- **`parrot.sdd.scripts.check_id_collisions`** — an independent, read-only
   defense-in-depth backstop (no dependency on the ledger/allocator): scans
   `sdd/tasks/index/*.json`, `sdd/tasks/active/*.md`, and
   `sdd/tasks/completed/*.md` for any `TASK-<NNN>` number claimed by more
-  than one distinct feature. Wired into CI (`.github/workflows/ci.yml`,
-  `lint-and-registry` job) against a one-time baseline exception file
-  (`scripts/sdd/.collision_baseline.json`) so historical, pre-ledger
+  than one distinct feature. If your repository runs it in CI, pair it with a
+  one-time baseline exception file so historical, pre-ledger
   collisions don't retroactively fail the build — only a genuinely NEW
   collision does. `FEAT-<NNN>` reuse across specs (an accepted,
   intentional pattern — e.g. FEAT-380 split across three specs) is
@@ -373,7 +367,7 @@ or `/sdd-proposal` to explore options first.
 Intake runs are staged under `sdd/state/.intake/` (which is git-ignored). Staged runs are pruned
 after 10 days by a daily git hook. Install this hook once with:
 ```bash
-python -m scripts.sdd.install_hooks
+parrot sdd run install_hooks
 ```
 To uninstall, run with `--uninstall`. The hook refuses to install if `core.hooksPath` is set to a custom path.
 Note that `/sdd-status` remains read-only during this process.
@@ -428,7 +422,7 @@ The SDD workflow is unified across all three developer platforms:
 1. **Never modify files outside the task scope** — respect boundaries
 2. **Follow existing patterns** — reference code mentioned in the task
 3. **Write tests first** — TDD approach per task
-4. **Update the index** — close tasks with `scripts/sdd/close_task.sh` (per-spec index), never the legacy monolith
+4. **Update the index** — close tasks with `parrot sdd run close_task` (per-spec index), never the legacy monolith
 5. **Small commits** — one task = one logical commit
 6. **Ask via the spec** — if unclear, note the ambiguity in the completion note
    and let the Planner agent refine the spec for the next iteration

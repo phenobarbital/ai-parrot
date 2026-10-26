@@ -207,11 +207,11 @@ def test_worker_prompt_never_invokes_compact_via_bash():
 
 def test_worker_prompt_uses_finalize_task_not_manual_jq_close_in_orchestrator_loop():
     """R4: the Orchestrator Loop's own merged-task close must route through the deterministic
-    `scripts.sdd.finalize_task` CLI instead of delegating to the Fallback loop's manual
+    `parrot sdd run finalize_task` CLI instead of delegating to the Fallback loop's manual
     Edit/Write/jq/mv dance -- the two used to describe different, contradictory closing
     mechanics for the same `merged` outcome."""
     loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
-    assert "python -m scripts.sdd.finalize_task" in loop
+    assert "parrot sdd run finalize_task" in loop
     assert "manual Edit/Write/jq/mv dance" in loop
     assert "step (g) of the Fallback loop for this task" not in loop
 

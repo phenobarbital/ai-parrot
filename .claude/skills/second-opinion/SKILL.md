@@ -5,15 +5,14 @@ description: Get an adversarial second opinion from the external `codex` CLI —
 
 # Second opinion with `codex`
 
-The rules for using an external reviewer live in `CLAUDE.md` § Adversarial
-Second Opinion and always apply. In short: give the reviewer only the diff,
+Use this skill only when `reviewer` in `sdd/config.json` is `codex`; the reviewer rules
+in `sdd/WORKFLOW.md` apply. In short: give the reviewer only the diff,
 the requirement and the question (never your reasoning or preferred
 conclusion); triage every substantive finding as `CONFIRM` / `REJECT` (with
 reason) / `ESCALATE`; run each call as a background session; spot-check any
 evidence it claims (test runs, files, symbols) before believing it.
 
-**`agy` MUST NOT be used as a reviewer** — not even as a fallback when
-`codex` is missing. With no external reviewer, say so and use a Claude
+With no external reviewer (or when `reviewer` is not `codex`), say so and use a Claude
 subagent instead.
 
 ## Detection
@@ -28,7 +27,7 @@ else echo "No external reviewer CLI found"; fi
 ```bash
 # Reviews
 codex exec review --uncommitted
-codex exec review --base dev
+codex exec review --base <base_branch>
 codex exec review --commit <sha>
 
 # Opinions, brainstorming, and cross-checks

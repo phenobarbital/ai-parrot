@@ -60,7 +60,7 @@ briefs base on `dev`; the rest default to `main`.
    `done` in the index. Otherwise stop.
 2. **Enter the feature worktree** (idempotent; never `git worktree add` by hand):
    ```bash
-   python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN> \
+   parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN> \
      --spec sdd/specs/<slug>.spec.md --index sdd/tasks/index/<slug>.json
    ```
    All remaining steps happen **inside** the worktree, never on `base_branch`.
@@ -78,14 +78,14 @@ briefs base on `dev`; the rest default to `main`.
 7. **Validate**: `ruff check --fix <files>`; run the task's
    `## Validation Commands` with `PYTHONPATH=packages/<dist>/src`; optionally
    the merge-tier selector
-   `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --task-file <task.md> --run`.
+   `parrot sdd run select_tests --tier merge --base origin/<base_branch> --task-file <task.md> --run`.
    Never run a full-suite `pytest` by hand.
 8. **Commit code** — stage only task files (never `git add .` / `-A`):
    `feat(<slug>): TASK-<NNN> — <title>`.
 9. **Close the task** with the script (never a hand-rolled `mv`/copy — it
    leaves an orphan in `active/`):
    ```bash
-   scripts/sdd/close_task.sh TASK-<NNN> <slug> verified   # or partial | forced
+   parrot sdd run close_task TASK-<NNN> <slug> verified   # or partial | forced
    ```
    Fill in the Completion Note of the moved file, then commit the staged SDD
    state: `sdd: complete TASK-<NNN> — <title>`. Push early.
@@ -97,7 +97,7 @@ If a task cannot be completed, set it `done-with-issues` and explain why in
 the Completion Note. If the spec is ambiguous, stop and write it down there.
 
 **Never allocate IDs by scanning files.** Reserve them:
-`python -m scripts.sdd.reserve_ids --kind task|feature --count N --base-branch dev --label <slug>`.
+`parrot sdd run reserve_ids --kind task|feature --count N --base-branch dev --label <slug>`.
 
 ---
 

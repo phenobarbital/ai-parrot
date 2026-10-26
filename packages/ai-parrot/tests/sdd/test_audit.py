@@ -83,9 +83,10 @@ def test_import_is_stdlib_only() -> None:
 
 
 def test_real_assets_reference_map() -> None:
+    """TASK-4089 rewrote every ``scripts/sdd`` reference to ``parrot sdd run``: the real asset has none left."""
     findings = scan_paths([REPO_ROOT / ".claude/commands/sdd-spec.md"])
     names = {m.group("name") for f in findings if f.kind == "repo-script" for m in audit.REPO_SCRIPT_RE.finditer(f.snippet)}
-    assert {"reserve_ids", "sdd_meta"} <= names
+    assert names == set()
 
 
 def test_default_globs_cover_codex_and_google_twins() -> None:  # rev 0.5 C24

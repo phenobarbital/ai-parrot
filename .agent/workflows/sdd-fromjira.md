@@ -14,9 +14,9 @@ This command is the Jira-seeded entry point to the SDD pipeline:
 
 ## Usage
 ```
-/sdd-fromjira NAV-8036
-/sdd-fromjira NAV-8036 --complexity=fix       # minimal Q&A, straight to brainstorm
-/sdd-fromjira NAV-8036 --skip-qa              # use Jira description as-is (rare)
+/sdd-fromjira PROJ-123
+/sdd-fromjira PROJ-123 --complexity=fix       # minimal Q&A, straight to brainstorm
+/sdd-fromjira PROJ-123 --skip-qa              # use Jira description as-is (rare)
 ```
 
 ## Guardrails
@@ -41,18 +41,18 @@ Use **mcp-atlassian** if available, falling back to **curl** if not.
 
 ### MCP path (preferred)
 ```
-jira_get_issue(issue_key="NAV-8036")
+jira_get_issue(issue_key="PROJ-123")
 ```
 
 ### curl fallback
 ```bash
-# Requires env vars loaded via navconfig (env/.env):
-#   JIRA_INSTANCE  — e.g. https://trocglobal.atlassian.net/
+# Requires these environment variables to be exported:
+#   JIRA_INSTANCE  — e.g. https://your-org.atlassian.net/
 #   JIRA_USERNAME  — email for Jira Cloud
 #   JIRA_API_TOKEN — API token (Personal Access Token)
 #
 # Load them:
-#   eval "$(python -c "from navconfig import config; import os; [print(f'export {k}={v}') for k,v in os.environ.items() if k.startswith('JIRA_')]")"
+#   # Precondition: JIRA_INSTANCE, JIRA_USERNAME and JIRA_API_TOKEN are exported in the environment (see sdd/CONVENTIONS.md).
 
 JIRA_INSTANCE="${JIRA_INSTANCE%/}"
 curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
@@ -129,7 +129,7 @@ The `--skip-qa` flag skips Q&A entirely (use only when Jira description is exhau
 Before asking questions, present the extracted context:
 
 ```
-📋 Jira Ticket: NAV-8036
+📋 Jira Ticket: PROJ-123
 
    Summary: Add OAuth 2.0 support for JiraToolkit
    Type: Story | Priority: High
@@ -268,10 +268,10 @@ Evaluate the feature's decomposition potential for parallel development:
    # if the Jira issue is tagged as a hotfix (Type=Bug + Priority=Highest,
    # or component matches a hotfix label your team uses).
    type: feature
-   base_branch: dev
+   base_branch: <base_branch>   # default: the base_branch in sdd/config.json
    projects: [ai-parrot-tools]      # FEAT-576 — parts of the codebase (see /sdd-brainstorm §10 mapping)
    tags: [jira, oauth]              # FEAT-576 — 2–6 kebab-case keywords
-   jira: NAV-8036
+   jira: PROJ-123
    jira_summary: "Add OAuth 2.0 support for JiraToolkit"
    jira_type: Story
    jira_priority: High
@@ -280,7 +280,7 @@ Evaluate the feature's decomposition potential for parallel development:
    status: exploration
    ---
    ```
-   Validation rule: `type: hotfix` REQUIRES `base_branch: main`. The user
+   Validation rule: `type: hotfix` REQUIRES `base_branch` to be the `hotfix_base` in `sdd/config.json`. The user
    can adjust the values before running `/sdd-spec`.
    Fill projects/tags per /sdd-brainstorm §10 (FEAT-576) — Jira components are NOT projects.
 4. Set `Status: exploration`.
@@ -349,5 +349,5 @@ When `/sdd-spec` is invoked with a feature name matching a `<issue-key>-*.brains
 - Brainstorm template: `sdd/templates/brainstorm.md`
 - Spec template: `sdd/templates/spec.md`
 - SDD methodology: `sdd/WORKFLOW.md`
-- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`
+- Worktree policy: `sdd/WORKFLOW.md` (section "Git Configuration")
 - MCP Jira tool: `mcp_mcp-atlassian_jira_get_issue` (if available)

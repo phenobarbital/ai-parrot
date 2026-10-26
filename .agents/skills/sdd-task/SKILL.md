@@ -42,7 +42,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 
 ## Workflow
 
-1. Read spec frontmatter with `scripts.sdd.sdd_meta.parse()`:
+1. Read spec frontmatter with `parrot.sdd.scripts.sdd_meta.parse()`:
    - `type`
    - `base_branch`
 2. Validate:
@@ -106,8 +106,10 @@ Use one backticked pytest command per bullet, targeting test files or node IDs;
 never bare pytest or directory-wide test operands. Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
 
+When `sdd/config.json` sets `test_command`, skip caching (and continue past a missing Validation Contract section); `cache_test_contract` itself stays strict and, when the `test_scope` kernel cannot be loaded, exits non-zero with a one-line stderr message.
+
 Each task lists its OWN test files only; the spec-wide contract is cached once with
-`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
+`parrot sdd run cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
 and the FEAT-709 `runners:` forms and always writes schema 2 (schema 1 is lifted on read to one pytest runner);
 runner kinds, tiers and settings are checked against `.parrot/test_runners.toml`, and `check_task_graph.py` flags
 unknown runners, forbidden tiers, invalid settings/extensions and unrecognised validation commands.
@@ -141,7 +143,7 @@ a JSON block with `schema_version: 1`.
   Create / Modify" table exactly.
 - **`contract_symbols`**: A list of exact symbol IDs referenced by the
   Codebase Contract (e.g.,
-  `"sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py#RosterConfig"`).
+  `"sym:<src>/<pkg>/module.py#ClassName"`).
   If there are no existing symbol references, use an empty list `[]` (do not
   omit the field — an absent list means legacy/unknown coverage).
 - Legacy tasks without this section default to unknown complexity.
@@ -154,7 +156,7 @@ Example:
   "schema_version": 1,
   "targets": [
     {
-      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
+      "path": "<src>/<pkg>/module.py",
       "action": "MODIFY"
     }
   ],
@@ -164,7 +166,7 @@ Example:
 
 7. Reserve task IDs:
    - For `type: feature`, run:
-     `python -m scripts.sdd.reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd run reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
    - Use returned IDs verbatim.
    - Stop if reservation fails.
    - For `type: hotfix`, do not reserve `TASK-NNN`; use local IDs
@@ -196,7 +198,7 @@ Example:
      priority, effort, dependencies, parallel fields, assignment timestamps,
      and file path
 10. Validate the task graph before committing:
-    - run `python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json`
+    - run `parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json`
     - errors block the commit: fix file overlaps without dependency paths,
       unknown dependencies, cycles, and validation-contract errors, then rerun
     - resolve every warning: justify/remove edges, check possible missing
@@ -236,6 +238,6 @@ Next:
 
 - `sdd/templates/task.md`
 - `sdd/WORKFLOW.md`
-- `scripts/sdd/sdd_meta.py`
-- `scripts/sdd/reserve_ids.py`
-- `scripts/sdd/check_task_graph.py`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot.sdd.scripts.reserve_ids`
+- `parrot.sdd.scripts.check_task_graph`

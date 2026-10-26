@@ -143,7 +143,7 @@ def test_prompt_handles_slug_collision_as_open_question(body: str):
 
 def test_prompt_carries_feat145_frontmatter(body: str):
     assert "type: feature" in body
-    assert "base_branch: dev" in body
+    assert "base_branch:" in body
     assert "FEAT-145" in body
 
 
@@ -239,7 +239,7 @@ def test_existing_instructions_unchanged(body: str):
     commit, JSON-only output) still holds verbatim."""
     assert 'mode="brainstorm"' in body or 'mode = "brainstorm"' in body
     assert "RESUME/EXTEND IT IN PLACE" in body
-    assert "type: feature" in body and "base_branch: dev" in body
+    assert "type: feature" in body and "base_branch:" in body
     assert "git add sdd/proposals/" in body
     assert "no markdown fences" in body.lower()
 
