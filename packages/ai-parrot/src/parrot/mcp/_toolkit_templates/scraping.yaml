@@ -1,6 +1,8 @@
 # parrot:summary: Structured web scraping and crawling with plan caching.
 # parrot:requires_llm: false
 # parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools[scraping]
+# parrot:post_install: python -m playwright install chromium
   scraping:
     class: parrot_tools.scraping.toolkit.WebScrapingToolkit
     kwargs:

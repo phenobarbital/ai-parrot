@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import tempfile
 from importlib.resources import files
 from pathlib import Path
@@ -32,6 +33,9 @@ class ToolkitTemplate(BaseModel):
     requires_llm: bool = False
     summary: str = ""
     requires_dist: tuple[str, ...] = ()
+    requires_pip: tuple[str, ...] = ()  # PEP 508 requirement strings for `parrot self add` (never import-probed)
+    post_install: tuple[str, ...] = ()  # argv run after install; leading "python" = target venv interpreter
+    requires_env: tuple[str, ...] = ()  # env var names `parrot self doctor` checks
 
 
 class SeedResult(BaseModel):
@@ -79,6 +83,9 @@ def load_template(name: str) -> ToolkitTemplate:
     summary = ""
     requires_llm = False
     requires_dist: tuple[str, ...] = ()
+    requires_pip: list[str] = []
+    post_install: tuple[str, ...] = ()
+    requires_env: tuple[str, ...] = ()
     body_start = 0
 
     for i, line in enumerate(lines):
@@ -96,13 +103,33 @@ def load_template(name: str) -> ToolkitTemplate:
         elif meta_content.startswith("requires_dist:"):
             raw = meta_content[len("requires_dist:") :].strip()
             requires_dist = tuple(part.strip() for part in raw.split(",") if part.strip())
+        elif meta_content.startswith("requires_pip:"):
+            requirement = meta_content[len("requires_pip:") :].strip()
+            if requirement:
+                requires_pip.append(requirement)  # repeatable, one PEP 508 string per line — no comma split
+        elif meta_content.startswith("post_install:"):
+            raw = meta_content[len("post_install:") :].strip()
+            try:
+                post_install = tuple(shlex.split(raw))
+            except ValueError as exc:  # unbalanced quotes — stay lenient (spec §7)
+                logger.warning("template %s: ignoring unparsable post_install %r: %s", name, raw, exc)
+        elif meta_content.startswith("requires_env:"):
+            raw = meta_content[len("requires_env:") :].strip()
+            requires_env = tuple(part.strip() for part in raw.split(",") if part.strip())
 
     # Extract body (remaining lines)
     body_lines = lines[body_start:]
     body = "\n".join(body_lines)
 
     return ToolkitTemplate(
-        name=name, body=body, requires_llm=requires_llm, summary=summary, requires_dist=requires_dist
+        name=name,
+        body=body,
+        requires_llm=requires_llm,
+        summary=summary,
+        requires_dist=requires_dist,
+        requires_pip=tuple(requires_pip),
+        post_install=post_install,
+        requires_env=requires_env,
     )
 
 

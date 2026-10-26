@@ -1,6 +1,8 @@
 # parrot:summary: Deterministic site automation with recorded actions and profiles.
 # parrot:requires_llm: false
 # parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools[scraping]
+# parrot:post_install: python -m playwright install chromium
   browsing:
     class: parrot_tools.browsing.toolkit.WebBrowsingToolkit
     kwargs:

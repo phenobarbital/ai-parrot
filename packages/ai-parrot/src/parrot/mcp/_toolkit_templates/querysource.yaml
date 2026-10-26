@@ -1,6 +1,8 @@
 # parrot:summary: Tenant-scoped QuerySource query-slugs and MultiQuery pipelines.
 # parrot:requires_llm: false
 # parrot:requires_dist: parrot_tools,querysource
+# parrot:requires_pip: ai-parrot-tools[db]
+# parrot:requires_env: PG_USER,PG_PWD
   querysource:
     class: parrot_tools.querysource.toolkit.QuerysourceToolkit
     # CREDENTIALS ARE NEVER WRITTEN HERE. The DSN resolves from the environment
