@@ -786,16 +786,17 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-26T18:48:04+00:00",
       "effort": "S",
       "depends_on": [],
       "parallelism_notes": "touches knowledge/wiki/ledger/sdd_meta.py and flows/dev_loop/nodes/{base,research,feature_handoff}.py; no overlap with M6 moves (TASK-4085 only re-exports sdd_meta); mentions parrot.sdd / parrot.sdd.scripts only in prose (TASK-4085 re-exports this module) and neither imports nor creates them, so no edge to TASK-4070 or TASK-4085 (check_task_graph possible-missing-dependency warnings are false positives; both ids spelled in full so the checker's notes rule matches)",
-      "file": "sdd/tasks/active/TASK-4298-branch-policy-single-source.md"
+      "file": "sdd/tasks/completed/TASK-4298-branch-policy-single-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4299",

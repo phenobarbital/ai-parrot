@@ -320,4 +320,8 @@ must find nothing.
 
 ## Completion Note
 
-_(filled in by close_task.sh / the implementing agent)_
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Constants DEFAULT_FEATURE_BASE/DEFAULT_HOTFIX_BASE + read_declared_base_branch added; the three local copies removed; shim re-exports; new tests pass (75 sdd_scripts targeted + 32 dev_loop targeted). Wider runs show unrelated env failures (tests/sdd_scripts/test_select_tests.py x5; dev_loop sdd_coder/*, test_pr_enrichment, test_repo_wiring_live: subprocess/uvloop/git env) — none touch branch policy. Pre-existing ruff ASYNC240/230 in research.py untouched. Behaviour tweak: read_declared_base_branch strips whitespace (blueprint).
+
+**Deviations from spec**: none
