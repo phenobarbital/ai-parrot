@@ -733,7 +733,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -743,8 +743,9 @@
       "parallelism_notes": "same file as TASK-4092 (knowledge/wiki/store.py); wraps _migrate alongside the gate stamp",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4093-store-migration-safety.md"
+      "completed_at": "2026-10-26T20:51:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4093-store-migration-safety.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4094",
