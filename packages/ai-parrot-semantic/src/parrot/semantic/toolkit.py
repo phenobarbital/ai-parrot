@@ -57,7 +57,9 @@ class SemanticLayerToolkit(AbstractToolkit):
         kwargs.pop("allow_raw_sql", None)
         kwargs.pop("dataset_manager_factory", None)
         if static_subject is not None:
-            raise SemanticPolicyError("static_subject_forbidden", "Static identity requires the local bootstrap toolkit")
+            raise SemanticPolicyError(
+                "static_subject_forbidden", "Static identity requires the local bootstrap toolkit"
+            )
 
         super().__init__(**kwargs)
         self._dialect = dialect
@@ -115,7 +117,11 @@ class SemanticLayerToolkit(AbstractToolkit):
     async def list_metrics(self, model: str) -> list[dict]:
         """Describe allowed metrics of an authorized model."""
         loaded, roles = await self._authorized_model(model)
-        return [member.model_dump() for member in self._catalog.visible_members(loaded.name, roles, authorized=True) if member.kind == "metric"]
+        return [
+            member.model_dump()
+            for member in self._catalog.visible_members(loaded.name, roles, authorized=True)
+            if member.kind == "metric"
+        ]
 
     async def get_dimensions(self, model: str, metrics: list[str] | None = None) -> list[dict]:
         """Describe allowed dimensions compatible with requested metrics."""
@@ -267,15 +273,31 @@ class SemanticLayerToolkit(AbstractToolkit):
         if context is None:
             raise SemanticAccessError("context_required", "A trusted semantic context is required")
         entry = SemanticAuditEntry(
-            entry_id=str(uuid4()), created_at=datetime.now(timezone.utc), user_id=context.user_id,
-            tenant_id=context.tenant_id, channel="agent", agent_id=current_identity().agent_id if current_identity() else None,
-            subject_digest=governed.subject_digest if governed else "unavailable", roles=sorted(context.roles),
-            static_subject=False, model=loaded.name, model_digest=loaded.model_digest, policy_digest=loaded.policy_digest,
-            tool="query_metrics", structured_query=query.model_dump(mode="json"), raw_sql=False,
-            compiled_sql=compiled_sql, governed_sql=governed.sql if governed else None, dialect=self._dialect,
-            driver=loaded.schema.driver, rls_applied=list(governed.rls_applied) if governed else [],
+            entry_id=str(uuid4()),
+            created_at=datetime.now(timezone.utc),
+            user_id=context.user_id,
+            tenant_id=context.tenant_id,
+            channel="agent",
+            agent_id=current_identity().agent_id if current_identity() else None,
+            subject_digest=governed.subject_digest if governed else "unavailable",
+            roles=sorted(context.roles),
+            static_subject=False,
+            model=loaded.name,
+            model_digest=loaded.model_digest,
+            policy_digest=loaded.policy_digest,
+            tool="query_metrics",
+            structured_query=query.model_dump(mode="json"),
+            raw_sql=False,
+            compiled_sql=compiled_sql,
+            governed_sql=governed.sql if governed else None,
+            dialect=self._dialect,
+            driver=loaded.schema.driver,
+            rls_applied=list(governed.rls_applied) if governed else [],
             masked_columns=list(governed.masked_columns) if governed else [],
-            pbac="allow" if governed else "deny", outcome=outcome, error_code=error_code, row_count=row_count,
+            pbac="allow" if governed else "deny",
+            outcome=outcome,
+            error_code=error_code,
+            row_count=row_count,
             duration_ms=int((perf_counter() - started) * 1000),
         )
         return (await self._ledger.append(entry, required=self._audit_required)).entry_id
@@ -289,10 +311,22 @@ class SemanticLayerToolkit(AbstractToolkit):
             return None
         identity = require_identity()
         handle = ResultHandle(
-            result_id="pending", agent_id=identity.agent_id, user_id=identity.ctx.user_id,
-            tenant_id=identity.ctx.tenant_id, session_id=identity.session_id, subject_digest=governed.subject_digest,
-            model=loaded.name, model_digest=loaded.model_digest, policy_digest=loaded.policy_digest,
-            expires_at=datetime.now(timezone.utc), members=governed.members, physical_columns=governed.physical_columns,
-            physical_tables=governed.tables, columns=columns, rows=rows, audit_id=audit_id, governed_sql=governed.sql,
+            result_id="pending",
+            agent_id=identity.agent_id,
+            user_id=identity.ctx.user_id,
+            tenant_id=identity.ctx.tenant_id,
+            session_id=identity.session_id,
+            subject_digest=governed.subject_digest,
+            model=loaded.name,
+            model_digest=loaded.model_digest,
+            policy_digest=loaded.policy_digest,
+            expires_at=datetime.now(timezone.utc),
+            members=governed.members,
+            physical_columns=governed.physical_columns,
+            physical_tables=governed.tables,
+            columns=columns,
+            rows=rows,
+            audit_id=audit_id,
+            governed_sql=governed.sql,
         )
         return self._handles.put(handle)
