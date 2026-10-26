@@ -689,10 +689,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented --global/--version/--with in install-parrot.sh: print_plan, preflight gate (platform incl. macOS-arm64-only, tools, writable ancestor, MIN_FREE_KB, GitHub/PyPI HEAD skipped in dry-run), pinned uv 0.11.28 download+sha256+install of uv/uvx write-then-rename, managed venv, ai-parrot + ai-parrot-tools install, shims, PATH marker block, post-install 'self doctor --runtime-only' (PARROT_VENV pinned), rollback of only-created paths incl. PATH block only if this run added it. resolve_extras moved verbatim into a function; project-mode dry-run output verified identical to the pre-change script. FILL-INs resolved: --with failures warn on stderr, trap cleared before components, exit non-zero at end without rolling back base runtime. Tests: 12/13 pass in test_install_posix.py; test_posix_script_dry_run fails pre-existing (system python3 is 3.10, guard refuses; unrelated). Added VENV_SET and PATH_BLOCK_RC globals beyond the blueprint. --install-cli is silently ignored in global mode (unspecified). Real uv tarball layout (uv-<target>/uv) unverified against a live download; installer tolerates a flat layout too.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Gate target order: preflight runs before uv_target is required (target computed tolerant) so unsupported platforms hit the gate; added VENV_SET/PATH_BLOCK_RC variables.

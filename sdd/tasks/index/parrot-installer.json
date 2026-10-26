@@ -323,7 +323,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -333,8 +333,9 @@
       "parallelism_notes": "POSIX script: installs the launcher shims whose [project.scripts] names TASK-4072 fixes in pyproject.toml; owns install-parrot.sh only",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4074-bootstrap-sh-global.md"
+      "completed_at": "2026-10-26T18:50:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4074-bootstrap-sh-global.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4075",
