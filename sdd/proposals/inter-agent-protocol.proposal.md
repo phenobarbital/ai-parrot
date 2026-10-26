@@ -1,10 +1,10 @@
 ---
 id: FEAT-746
-title: Typed binary inter-agent protocol for parrot-to-parrot cross-network calls (contract catalog, handles, policy gate, gRPC + bus)
+title: Squawk — typed binary inter-agent protocol for parrot-to-parrot cross-network calls (contract catalog, handles, policy gate, Cap'n Proto RPC + bus)
 slug: inter-agent-protocol
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -14,16 +14,17 @@ source:
 overall_confidence: medium
 base_branch: dev
 projects: [ai-parrot, ai-parrot-server]
-tags: [inter-agent, protocol, grpc, handles, policy-gate, a2a]
+tags: [inter-agent, protocol, capnproto, handles, policy-gate, a2a]
 research_state: sdd/state/FEAT-746/
 created: 2026-10-26
 updated: 2026-10-26
 ---
 
-# FEAT-746 — Typed binary inter-agent protocol for parrot-to-parrot cross-network calls
+# FEAT-746 — Squawk: typed binary inter-agent protocol for parrot-to-parrot cross-network calls
 
 > **Mode**: enrichment
 > **Confidence**: medium
+> **Status**: review — all 5 research unknowns and the 8 brainstorm carry-overs were resolved with the user on 2026-10-26 (§5)
 > **Source**: `file: artifacts/interagent/Brainstorm Inter-Agent Binary Protocol.md` (2026-10-25)
 > **Audit**: [`sdd/state/FEAT-746/`](../state/FEAT-746/)
 > **Sister document**: `artifacts/interagent/Brainstorm Local Inter-Agent Protocol.md` declares itself a dependent of this spec (same envelope, handles, blob store, catalog, policy gate) and has its own FEAT-ID reserved in parallel; see U4.
@@ -175,27 +176,31 @@ The brainstorm asks for a typed, binary, contract-driven RPC between two ai-parr
 ### What's New
 
 - **Contract model and catalog** — `Capability` (cap_id, category, typed input/output, `returns: inline|artifact`, `backing: deterministic|llm_backed`, policy annotations), per-category hashing, handshake deltas, `STALE_CONTRACT` refusal. No counterpart exists; FEAT-070's `CapabilityEntry` is an intent index. *Evidence*: F005
-- **Wire envelope and transport** — a `.proto` for Call / Result / Progress / typed errors, Arrow IPC batches for frames, gRPC server (serving dispatcher) and client, trace_id and identity in channel metadata. Greenfield inside this repo; conventions lifted from navigator-eventbus's `parrot.events.v1`. *Evidence*: F011, F021, F024
+- **Wire envelope and transport** — a Cap'n Proto schema for Contract / Call / Result / Progress / typed errors (full v0 envelope including cancellation propagation and `PARTIAL` partial artifacts, per Q12), Arrow IPC batches for frames, a Cap'n Proto RPC server (serving dispatcher) and client, trace_id and identity in call metadata (Q6: Cap'n Proto chosen over the gRPC default). Greenfield inside this repo; the version-field and auth-in-metadata conventions of navigator-eventbus's `parrot.events.v1` still apply, its grpc.aio code does not. *Evidence*: F011, F021, F024
 - **RemoteToolkit (AbstractToolkit)** with always-mounted catalog tools (`list` / `mount` / `unmount` / `search` / `find`) that register and unregister capability tool definitions in ToolManager by category, reusing `_categories`, `search_tools` and `get_tool_schemas`. *Evidence*: F003, F011
 - **Handle + descriptor + provenance model**, a media-type descriptor registry (arrow, parquet, mermaid, structurizr, svg, png, pdf, generic) and a content-addressed (sha256) blob store with ACL, TTL and dedup-by-digest, built on `ArtifactBlobStore`/`BlobRef` semantics with new keying and policy. *Evidence*: F010
 - **Capability policy gate** keyed by contract annotations (data class → `ScrubPolicy`, aggregation minimum, row cap, per-caller rate limit, token budget), composed ahead of `PBACToolCallGuardrail` / `PBACPermissionResolver`. *Evidence*: F007, F023
 - **Served ledger** — a new signed entry type (caller, capability, args digest, policy applied, data classes, result digest, cost, backing) over `AbstractKMSSigner` with a fail-closed durable sink. *Evidence*: F006, F026
-- **Local affordance tools** over handles (`df.query` / `df.sample` / `df.join` / `chart.from_df`) with toolkit-enforced materialization caps; engine per U3.
-- **Cross-hop trace propagation** (caller-generated trace_id in gRPC metadata and bus headers) and a per-capability usage/cost event for deterministic calls on both sides. *Evidence*: F009, F025
-- **Remote-agent discovery entry** with kind (`a2a` | native) and endpoint — placement per U2.
+- **Local affordance tools** over handles (`df.query` / `df.sample` / `df.join` / `chart.from_df`) with toolkit-enforced materialization caps; pandas + Arrow IPC in v0, Polars as an optional engine later (U3).
+- **Bus carrier in v0** (U4): the same envelope published on navigator-eventbus with `reply_to`, correlation and dedup by `idempotency_key`; needs a bytes-safe serializer and a request/reply convention in navigator-eventbus — spike S6 is a v0 gate. *Evidence*: F008, F024
+- **Cross-hop trace propagation** (caller-generated trace_id in RPC metadata and bus headers) and a per-capability usage/cost event for deterministic calls on both sides. *Evidence*: F009, F025
+- **Remote-agent discovery in AgentRegistry/BotConfig** (U2): `kind: local | a2a | squawk` + endpoint on `BotMetadata`/`BotConfig` so one registry answers "who serves X"; `A2AMeshDiscovery` stays as the A2A-specific health/mesh layer. *Evidence*: F004, F016
+- **Promotion loop, agent-proposed / human-approved** (Q10): the served ledger aggregates LLM-backed calls per capability and args shape; a serving-side agent drafts the deterministic capability (typed I/O + tool binding) and a human approves it into the contract.
+- **Mount policy** (Q11): the planner pre-mounts categories from intent with no LLM turn, and the catalog tools stay available so the model can mount/unmount mid-conversation; S4 verifies prompt-cache behaviour.
 - **Adapters at the edge** — A2A (contract → agent card; artifacts degrade to A2A artifacts) and MCP (mounted category → `AgentMCPMount`-style server; artifacts → resources). Later milestone. *Evidence*: F001, F011
-- **Attenuated capability tokens** with navigator-auth — spike S5; nothing exists in parrot or its history. *Evidence*: F007, F017
+- **Biscuit capability tokens** issued and attenuated by navigator-auth (Q7) — spike S5; nothing exists in parrot or its history. *Evidence*: F007, F017
+- **New satellite distribution** (U5) owning both the client and server halves of the protocol (Cap'n Proto schema and RPC, dispatcher, blob-store backends); core receives only the shared handle contract once FEAT-704 lands it (U1) plus the ToolManager/WorkingMemory/AgentRegistry seams. *Evidence*: F002, F012
 
 ### What Changes
 
 - **`packages/ai-parrot/src/parrot/tools/manager.py`::`ToolManager`** — category-level mount/unmount of tool definitions (lazy loading of a mounted category into the client-facing schema set); remote entries gain a protocol kind if U2 chooses this path. *Evidence*: F003, F022
 - **`packages/ai-parrot/src/parrot/tools/working_memory/tool.py`::`WorkingMemoryToolkit`, `WorkingMemoryCatalog`** — entries carry provenance, media_type and affordances; RemoteToolkit uses the Python-only `store` path. *Evidence*: F010, F015
 - **`packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py`::`ArtifactBlobStore`, `BlobRef`** — extended with a content-addressed key + ACL/TTL, or used as the primitive under a new blob-store facade. *Evidence*: F010
-- **`packages/ai-parrot/src/parrot/registry/registry.py`::`AgentRegistry`, `BotConfig`** — only if U2 selects it: remote-agent kind + endpoint. *Evidence*: F004, F016
-- **`packages/ai-parrot/src/parrot/a2a/mesh.py`::`A2AMeshDiscovery`, `A2AEndpoint`** — only if U2 selects it: protocol kind on endpoints. *Evidence*: F001, F004
+- **`packages/ai-parrot/src/parrot/registry/registry.py`::`AgentRegistry`, `BotConfig`** — remote-agent kind (`local | a2a | squawk`) + endpoint (U2). *Evidence*: F004, F016
+- **`packages/ai-parrot/src/parrot/a2a/mesh.py`::`A2AMeshDiscovery`, `A2AEndpoint`** — untouched by U2; may gain a read-through from AgentRegistry later. *Evidence*: F001, F004
 - **`packages/ai-parrot/src/parrot/observability/recorders/models.py`::`UsageRecord`** — a per-capability record for deterministic calls (tokens may be 0; ms, rows, backing, cap_id). *Evidence*: F009
-- **`packages/ai-parrot/pyproject.toml`** — grpcio + grpcio-tools (today only via `navigator-eventbus[grpc]`); polars only if U3 adopts it. *Evidence*: F002
-- **`packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py`** + `mcp.proto` — delete or replace the dead stub so one gRPC implementation exists. *Evidence*: F011
+- **`packages/ai-parrot/pyproject.toml`** — no grpcio and no polars added to core (U3, U5); the satellite declares `pycapnp`, `pyarrow` and its blob backends. *Evidence*: F002
+- **`packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py`** + `mcp.proto` — delete the dead stub in this feature (U5). *Evidence*: F011
 
 ### What's Untouched (Non-Goals)
 
@@ -220,11 +225,12 @@ The brainstorm asks for a typed, binary, contract-driven RPC between two ai-parr
 
 ### Integration Risks
 
-- **Contract duplication with FEAT-704**: two handle/provenance/ledger definitions if the shared contract is not placed first. *Mitigation*: resolve U1 before `/sdd-spec`; make the shared models the first milestone here or in FEAT-704. *Evidence*: F020, F026
-- **Two frame engines** (pandas in WorkingMemory/transport vs Polars in affordance tools). *Mitigation*: resolve U3; keep Arrow IPC as the only wire format so the engine choice stays local. *Evidence*: F002, F010
-- **Bus carrier depends on navigator-eventbus** (binary payload serializer, reply_to) and grpcio versions must stay in lockstep with its `[grpc]` extra. *Mitigation*: S6 as a cross-repo spike; declare grpc deps through one extra. *Evidence*: F002, F024
-- **Large-artifact streaming cannot use `FileManagerInterface`** (no byte-range/streaming). *Mitigation*: stream Arrow batches over gRPC into the blob-store writer; S2 covers it. *Evidence*: F010
-- **Heavy dependencies in core** (grpcio, grpcio-tools, protobuf runtime, optional polars). *Mitigation*: resolve U5; server/transport half outside core behind an extra. *Evidence*: F002, F012
+- **Schedule dependency on FEAT-704** (U1: FEAT-704 lands its `ResultHandle` / `SemanticAuditLedger` first, inside the semantic satellite; FEAT-746 consumes and generalizes them). FEAT-704 has 0/26 tasks done and its built branch is salvage-only, so FEAT-746's handle milestone cannot start until FEAT-704 M8/M9b merge. *Mitigation*: the spec declares an explicit dependency on FEAT-704 TASK-4474/TASK-4476 and orders transport, catalog and gate milestones first; the shared models must be importable from core (or a neutral package), not only from `ai-parrot-semantic`. *Evidence*: F020, F026
+- **Cap'n Proto RPC in Python** (Q6): the brainstorm itself notes weaker Python support; `pycapnp` is the only maintained binding, its asyncio RPC layer is younger than grpc.aio, and no precedent exists in this repo or in navigator-eventbus (whose server is grpc.aio). *Mitigation*: spike S2 is re-scoped to "Arrow IPC batches over Cap'n Proto RPC with cancellation and partials" and becomes a hard v0 gate; keep the schema transport-neutral so a gRPC fallback is a transport swap, not a redesign. *Evidence*: F011, F021
+- **Bus carrier in v0 depends on navigator-eventbus** (U4): bytes-safe payload serializer and a `reply_to` request/reply convention do not exist there yet. *Mitigation*: S6 becomes a v0 gate with a navigator-eventbus change request; gRPC ingress versions are no longer a concern because the native transport is Cap'n Proto. *Evidence*: F008, F024
+- **Large-artifact streaming cannot use `FileManagerInterface`** (no byte-range/streaming). *Mitigation*: stream Arrow batches over the RPC into the blob-store writer; S2 covers it. *Evidence*: F010
+- **Per-deployment blob backend** (Q8): local-disk and object-storage implementations behind one blob-store interface double the storage test matrix. *Mitigation*: content-hash key, ACL and TTL live in the interface; backends only move bytes. *Evidence*: F010
+- **New satellite distribution** (U5): one more package to version and release (see the 0.29.0 satellite bootstrap pattern); import-path discipline (PEP 420 namespace) must keep the handle contract in core. *Evidence*: F002, F012
 - **Resource-only PBAC matcher** cannot express per-caller limits or k-anonymity. *Mitigation*: caller-keyed limits live inside the capability gate, not in navigator-auth policies. *Evidence*: F023
 - **Name collisions** (`Artifact` ×3, `ArtifactStore` ×2, `Capability`). *Mitigation*: fix nouns in the spec. *Evidence*: F005, F010
 - **Dead gRPC stub drift** next to a second implementation. *Mitigation*: delete or replace in the same feature. *Evidence*: F011
@@ -262,43 +268,48 @@ Distribution: **14** high, **5** medium, **1** low. Overall **medium** — bound
 
 ## 5. Open Questions
 
-### Resolved (during proposal phase)
+### Resolved (during proposal phase, 2026-10-26)
 
-*None yet — the five unknowns below were not put to the user in this run (autonomous resume from `research_complete`); answers will be promoted here and the status moved to `review`.*
+Research unknowns (asked because the codebase could not answer them):
+
+- [x] **U1 — Where does the shared handle / provenance / signed-ledger contract live?** — *Resolved*: **FEAT-704 lands first.** FEAT-704 ships its `ResultHandle` / `SemanticAuditLedger` definitions; FEAT-746 depends on and generalizes them. The spec must declare the dependency on TASK-4474 / TASK-4476 and sequence the handle milestone after them (see §3 risks).
+  *Resolves claims*: C6, C13, C15
+- [x] **U2 — Discovery (D10 was wrong as written).** — *Resolved*: **extend `AgentRegistry` / `BotConfig`** with `kind: local | a2a | squawk` + endpoint so one registry answers "who serves X"; `A2AMeshDiscovery` stays as the A2A-specific layer.
+  *Resolves claims*: C4
+- [x] **U3 — Frame engine for the local affordance tools.** — *Resolved*: **pandas + Arrow IPC for v0**, no new dependency; Polars as an optional engine later (D6 amended).
+  *Resolves claims*: C5, C12
+- [x] **U4 — v0 scope and ordering.** — *Resolved*: **both carriers in v0** (point-to-point RPC and the event-bus envelope) because the sister Local spec (FEAT-747) needs the bus from day one; S6 becomes a v0 gate. FEAT-746 remains the parent FEAT-747 depends on.
+  *Resolves claims*: C9, C20
+- [x] **U5 — Package placement and the dead gRPC stub.** — *Resolved*: **new satellite distribution** owning both client and server halves; core receives only the shared handle contract (via U1) and the ToolManager / WorkingMemory / AgentRegistry seams; delete `grpc_session.py` + `mcp.proto` in this feature.
+  *Resolves claims*: C2, C14
+
+Brainstorm carry-overs (decided at the user's request rather than deferred to the spec):
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q6 | Native transport | **Cap'n Proto RPC** (capabilities as first-class objects, promise pipelining), Arrow IPC for frames. Python support is the acknowledged risk; S2 is re-scoped to Cap'n Proto and is a hard v0 gate; schema stays transport-neutral so gRPC remains a fallback swap. |
+| Q7 | Capability-token format | **Biscuit**, issued and attenuated by navigator-auth; S5 proves issue → attenuate → refuse on `hr.people.*`. |
+| Q8 | Blob-store location per network | **Backend chosen per deployment**: one blob-store interface (content-hash key, ACL, TTL, dedup-by-digest) with local-disk and object-storage (`FileManagerInterface`) implementations. |
+| Q9 | Descriptor persistence in the consuming WorkingMemory | **Session-only by default, durable when `task_memory` is configured** (FEAT-538 substrate); handle ACL + blob TTL bound the lifetime. |
+| Q10 | Promotion-loop ownership | **Agent-proposed, human-approved**: a serving-side agent drafts deterministic capabilities from served-ledger patterns; a human approves them into the contract. |
+| Q11 | `catalog.mount` driver | **Both**: the planner pre-mounts from intent (no LLM turn); the model may mount/unmount mid-conversation; S4 verifies prompt-cache behaviour. |
+| Q12 | Minimum schema for v0 | **All five messages plus cancellation propagation and `PARTIAL` partial artifacts** (full brainstorm envelope); S2 is a hard v0 gate. |
+| Q13 | Protocol name | **Squawk** (parrot-to-parrot call). |
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **U1 — Where does the shared handle / provenance / signed-ledger contract live?** Defined in core by FEAT-746 with FEAT-704 (0/26 tasks) refactored to consume it, or FEAT-746 consumes FEAT-704's planned `ResultHandle`/`SemanticAuditLedger`? — *Owner*: tbd
-  *Blocks claims*: C6, C13, C15
-  *Plausible answers*: a) FEAT-746 owns the contract in core; FEAT-704 amended to import it · b) FEAT-704 lands its models first (semantic satellite) and FEAT-746 depends on and generalizes them · c) both keep their own for now; converge via a later refactor feature
-
-- [ ] **U2 — Discovery (D10 is wrong as written).** Extend `AgentRegistry`/`BotConfig` with a remote-agent kind + endpoint, or build endpoint resolution on `A2AMeshDiscovery` / `RegisteredAgent`? — *Owner*: tbd
-  *Blocks claims*: C4
-  *Plausible answers*: a) extend AgentRegistry/BotConfig (`kind: local | a2a | native`, endpoint) so one registry answers "who serves X" · b) extend A2AMeshDiscovery/A2AEndpoint with a protocol kind; AgentRegistry stays local · c) new contract-aware discovery component with adapters to both
-
-- [ ] **U3 — Frame engine for the local affordance tools.** D6 says Polars; the repo is pandas + pyarrow, Polars absent. — *Owner*: tbd
-  *Blocks claims*: C5, C12
-  *Plausible answers*: a) Polars for the new `df.*` tools only; Arrow IPC bridges to the pandas summariser · b) pandas + Arrow IPC for v0, Polars as an optional engine later · c) Polars everywhere incl. migrating the WorkingMemory summariser
-
-- [ ] **U4 — v0 scope and ordering.** Is FEAT-746 the parent that lands before the sister Local spec, and does v0 include the bus carrier (S6, partly in navigator-eventbus) or gRPC point-to-point only? — *Owner*: tbd
-  *Blocks claims*: C9, C20
-  *Plausible answers*: a) gRPC only in v0; bus carrier is v1 after S6; Local spec depends on v0 · b) both carriers in v0 because the Local spec needs the bus from day one · c) bus first, gRPC second
-
-- [ ] **U5 — Package placement** for the heavy halves (gRPC server, protobuf stubs, blob backend, optional Polars), and whether to delete the dead `grpc_session.py`/`mcp.proto` stub here. — *Owner*: tbd
-  *Blocks claims*: C2, C14
-  *Plausible answers*: a) contract models + RemoteToolkit client in core; server/transport in ai-parrot-server behind a `[grpc]` extra; delete the stub · b) new satellite distribution for both halves; core only gets the handle contract; delete the stub · c) everything in core behind extras; stub left for a separate cleanup
-
-Carried over from the brainstorm, not blocking the spec (recorded for §8 of the spec): native transport choice (gRPC vs Cap'n Proto vs Arrow Flight — default gRPC + Arrow IPC, Flight only if S2 shows a win), capability-token format (S5), blob-store location per network, descriptor persistence across sessions, promotion-loop ownership, LLM-driven vs orchestrator-driven `catalog.mount`, minimum `.proto` for v0, and the protocol's name (Perch / Squawk / Tether / Beak / Roost / CAP).
+- [ ] **Shared-contract import path under U1**: FEAT-704 plans its models inside `ai-parrot-semantic`; the spec must decide whether they move to core or to a neutral package so the Squawk satellite can import them without depending on the whole semantic layer. — *Owner*: `/sdd-spec FEAT-746`, with FEAT-704's owner.
+- [ ] **navigator-eventbus change request for U4/S6**: bytes-safe payload serializer and a `reply_to` request/reply convention — outside this repo. — *Owner*: tbd.
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-746`** — *Rationale*: the source already is the brainstorm (D1–D14 decided; alternatives considered and rejected in-document), so `/sdd-brainstorm` would be the wrong lane; localization is high-confidence (C1–C8, C12–C16) and the remaining forks are scope and placement decisions (U1–U5) that the spec's §8 can carry, with S1–S6 as gated Lane-0 tasks (the FEAT-571 pattern). Overall confidence stays medium only because the research run was truncated and the bus/auth halves live outside this repo. Answer U1, U2 and U5 before running the spec; U3 and U4 can be §8 open questions.
+**`/sdd-spec FEAT-746`** — *Rationale*: the source already is the brainstorm (D1–D14 decided; alternatives considered and rejected in-document), so `/sdd-brainstorm` would be the wrong lane; localization is high-confidence (C1–C8, C12–C16) and every scope fork is now decided (§5: U1–U5, Q6–Q13). Overall confidence stays medium only because the research run was truncated and the bus/auth halves live outside this repo. The spec should: declare the FEAT-704 dependency (U1) and order transport → catalog → gate → handles accordingly; scaffold the new satellite (U5); carry S1–S6 as gated Lane-0 tasks (the FEAT-571 pattern) with S2 (Cap'n Proto + Arrow IPC + cancellation/partials) and S6 (bus carrier) as hard v0 gates.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-746`** — if the D10/D6 corrections and the FEAT-704 overlap reopen the architecture (e.g. "consume FEAT-704 first" changes the milestone order enough to want options on the table again).
+- **`/sdd-brainstorm FEAT-746`** — only if spike S2 fails on Cap'n Proto and the transport decision (Q6) has to be reopened with options on the table.
 - **Manual review** — read `sdd/state/FEAT-746/findings/F021`, `F024`, `F026` first if you want to challenge the navigator-eventbus and FEAT-704 dependencies before speccing; the research was truncated (files_read cap, wall time exceeded).
 - **`/sdd-task`** — not applicable (not a localized fix; research truncated).
 

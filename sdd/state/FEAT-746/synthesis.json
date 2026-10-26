@@ -2,478 +2,1007 @@
   "schema_version": "1.0",
   "feat_id": "FEAT-746",
   "mode": "enrichment",
-  "summary_oneline": "Typed binary inter-agent protocol (contract catalog, handles, policy gate, gRPC + bus) for parrot-to-parrot cross-network calls — most building blocks exist in core but none of the brainstorm's eight 'does not exist' items do, and two of its fourteen decisions (D10 AgentRegistry, D6 Polars) rest on wrong premises.",
-
+  "summary_oneline": "Typed binary inter-agent protocol (contract catalog, handles, policy gate, gRPC + bus) for parrot-to-parrot cross-network calls \u2014 most building blocks exist in core but none of the brainstorm's eight 'does not exist' items do, and two of its fourteen decisions (D10 AgentRegistry, D6 Polars) rest on wrong premises.",
   "localization": [
     {
       "path": "packages/ai-parrot/src/parrot/a2a/client.py",
       "symbol": "A2AClient, A2ARemoteAgentTool, A2ARemoteSkillTool",
       "lines": "40-60, 213-310, 543-625, 695-707",
       "role": "only cross-network agent-to-agent client today: JSON over aiohttp, free-text in, remote artifact text returned straight into the caller's context; the two tool wrappers are the closest analogue of the proposed RemoteToolkit",
-      "evidence": ["F001"]
+      "evidence": [
+        "F001"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
       "symbol": "A2AServer, _build_skills_from_tools, _try_invoke_with_gate, _extract_identity",
       "lines": "85-100, 961-985, 1249-1302",
       "role": "serving side today: exposes the agent's tools as A2A skills, runs named tools through a credential-broker gate with AuditLedger entries; constructor already accepts broker/audit_ledger/identity_mapper",
-      "evidence": ["F001", "F013"]
+      "evidence": [
+        "F001",
+        "F013"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
       "symbol": "A2AMeshDiscovery, A2AEndpoint",
       "lines": "73-136",
-      "role": "existing remote-agent registry (YAML config with env substitution, health checks, get_by_skill/get_by_tag) — the real discovery path, not AgentRegistry",
-      "evidence": ["F001", "F004"]
+      "role": "existing remote-agent registry (YAML config with env substitution, health checks, get_by_skill/get_by_tag) \u2014 the real discovery path, not AgentRegistry",
+      "evidence": [
+        "F001",
+        "F004"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/a2a/router.py",
       "symbol": "A2AProxyRouter",
       "lines": "",
-      "role": "existing deterministic, no-LLM gateway that routes to remote A2A agents by skill/tag/regex and can mount itself as an A2A server — precedent for a serving-side dispatcher below any LLM",
-      "evidence": ["F001"]
+      "role": "existing deterministic, no-LLM gateway that routes to remote A2A agents by skill/tag/regex and can mount itself as an A2A server \u2014 precedent for a serving-side dispatcher below any LLM",
+      "evidence": [
+        "F001"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/a2a/security.py",
       "symbol": "A2ASecurityMiddleware, SecureA2AClient, MTLSAuthenticator, JWTAuthenticator",
       "lines": "1409, 1682",
-      "role": "existing JWT/mTLS authenticators and security middleware for the A2A surface — the only in-repo precedent for 'the certificate identifies the calling agent'",
-      "evidence": ["F001"]
+      "role": "existing JWT/mTLS authenticators and security middleware for the A2A surface \u2014 the only in-repo precedent for 'the certificate identifies the calling agent'",
+      "evidence": [
+        "F001"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/manager.py",
       "symbol": "ToolManager (register_tool, unregister_tool, list_categories, get_tools_by_category, search_tools, get_tool_schemas, execute_tool, register_a2a_agent, share_dataframe)",
       "lines": "289, 723-794, 853-860, 1313, 1404-1458, 1787-1800, 2302-2338, 2895-2937",
-      "role": "flat register/unregister by name; `_categories` is only a dict index; per-provider schema compile via ToolSchemaAdapter/ToolFormat; guard chain on execute; holds RegisteredAgent entries for A2A — the seam where catalog mount/unmount (D8) must be added",
-      "evidence": ["F003", "F022"]
+      "role": "flat register/unregister by name; `_categories` is only a dict index; per-provider schema compile via ToolSchemaAdapter/ToolFormat; guard chain on execute; holds RegisteredAgent entries for A2A \u2014 the seam where catalog mount/unmount (D8) must be added",
+      "evidence": [
+        "F003",
+        "F022"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/mcp_mixin.py",
       "symbol": "MCPToolManagerMixin",
       "lines": "31",
-      "role": "mixin that gives ToolManager its MCP-server attach methods — natural pattern for a RemoteToolkit attach",
-      "evidence": ["F003", "F011"]
+      "role": "mixin that gives ToolManager its MCP-server attach methods \u2014 natural pattern for a RemoteToolkit attach",
+      "evidence": [
+        "F003",
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
       "symbol": "MCPClient, MCPToolProxy, _TRANSPORT_SESSIONS, MCPEnabledMixin",
       "lines": "92, 363-422, 481-509, 1356",
       "role": "the existing 'remote tools become local AbstractTools' pattern; results are flattened to text into context; transport map has no grpc entry",
-      "evidence": ["F011"]
+      "evidence": [
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/mcp/agent_mount.py",
       "symbol": "AgentMCPMount, _AgentBoundMCPServer._guard",
       "lines": "1-16, 124-184, 265-298",
-      "role": "per-agent Streamable-HTTP MCP endpoints gated by PBAC on resource mcp:agent:{name}:tool:{tool} — near 1:1 base for the MCP adapter (D14)",
-      "evidence": ["F011"]
+      "role": "per-agent Streamable-HTTP MCP endpoints gated by PBAC on resource mcp:agent:{name}:tool:{tool} \u2014 near 1:1 base for the MCP adapter (D14)",
+      "evidence": [
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/mcp/result_policy.py",
       "symbol": "_approx_tokens, resolve_cap, apply_size_policy, run_with_deadline",
       "lines": "1-20, 53-134",
-      "role": "server-side result cap by char heuristic + per-call deadline — precedent for materialization caps enforced by the adapter, not the prompt",
-      "evidence": ["F011"]
+      "role": "server-side result cap by char heuristic + per-call deadline \u2014 precedent for materialization caps enforced by the adapter, not the prompt",
+      "evidence": [
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py",
       "symbol": "GrpcMCPSession, GrpcMCPConfig",
       "lines": "1-32, 83-150",
-      "role": "abandoned client-only gRPC stub (protobuf import commented out, tunnels JSON-RPC; mcp.proto beside it, no generated module) — must be acknowledged, deleted or replaced",
-      "evidence": ["F011"]
+      "role": "abandoned client-only gRPC stub (protobuf import commented out, tunnels JSON-RPC; mcp.proto beside it, no generated module) \u2014 must be acknowledged, deleted or replaced",
+      "evidence": [
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot-server/src/parrot/mcp/config.py",
       "symbol": "MCPServerConfig (transport, grpc_host, grpc_use_protobuf, quic_serialization)",
       "lines": "139, 203-216",
-      "role": "transport config already reserves grpc_* fields and uses msgpack for QUIC — binary serialization has precedent in the MCP config",
-      "evidence": ["F011"]
+      "role": "transport config already reserves grpc_* fields and uses msgpack for QUIC \u2014 binary serialization has precedent in the MCP config",
+      "evidence": [
+        "F011"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/registry/registry.py",
       "symbol": "AgentRegistry, BotMetadata, BotConfig, register_bot_decorator",
       "lines": "50-72, 258, 526-540, 586-624, 1324",
-      "role": "registers LOCAL bots only; zero hits for remote/a2a/endpoint; the only outward field is BotConfig.mcp_servers — D10 is a design change here, not a reuse",
-      "evidence": ["F004", "F016"]
+      "role": "registers LOCAL bots only; zero hits for remote/a2a/endpoint; the only outward field is BotConfig.mcp_servers \u2014 D10 is a design change here, not a reuse",
+      "evidence": [
+        "F004",
+        "F016"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
       "symbol": "CapabilityEntry, ResourceType, RoutingDecision",
       "lines": "1-5, 25-35, 48-69, 91-106",
-      "role": "FEAT-070 intent-router index (name, description, embedding) — a different, poorer 'capability' object; name collision to reconcile",
-      "evidence": ["F005"]
+      "role": "FEAT-070 intent-router index (name, description, embedding) \u2014 a different, poorer 'capability' object; name collision to reconcile",
+      "evidence": [
+        "F005"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
       "symbol": "WorkingMemoryToolkit (store, store_result, list_tool_dataframes, exclude_tools)",
       "lines": "47-75, 89, 217, 357-425, 917-936",
-      "role": "already enforces 'the agent never sees raw DataFrames' with compact summaries + bounded previews; pandas-only; programmatic `store` is Python-only — the landing zone for remote handles (D5, D7)",
-      "evidence": ["F010", "F015", "F022"]
+      "role": "already enforces 'the agent never sees raw DataFrames' with compact summaries + bounded previews; pandas-only; programmatic `store` is Python-only \u2014 the landing zone for remote handles (D5, D7)",
+      "evidence": [
+        "F010",
+        "F015",
+        "F022"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
       "symbol": "ArtifactBlobStore, BlobRef, BlobFormat, DurableBlobSweeper",
       "lines": "1-9, 132-148, 185-215, 382-471, 647-992, 1073",
-      "role": "immutable, checksummed (ck_) + fingerprinted (fp_) Parquet/JSON/text blobs over navigator FileManagerInterface, publish-then-reference, bounded page reads, no byte-range API — nearest base for the blob store (D3, D4)",
-      "evidence": ["F010", "F015"]
+      "role": "immutable, checksummed (ck_) + fingerprinted (fp_) Parquet/JSON/text blobs over navigator FileManagerInterface, publish-then-reference, bounded page reads, no byte-range API \u2014 nearest base for the blob store (D3, D4)",
+      "evidence": [
+        "F010",
+        "F015"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/interfaces/artifact_store.py",
       "symbol": "ArtifactStore (Protocol), PayloadRefusal",
       "lines": "",
-      "role": "scoped (chatbot/user/session), versioned, byte-bounded artifact contract with load_payload(max_bytes, offset, limit) refusals — the ownership + bounded-read semantics a handle needs",
-      "evidence": ["F010"]
+      "role": "scoped (chatbot/user/session), versioned, byte-bounded artifact contract with load_payload(max_bytes, offset, limit) refusals \u2014 the ownership + bounded-read semantics a handle needs",
+      "evidence": [
+        "F010"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
       "symbol": "encode_dataframe, EncodedDataFrame, StrictTransportError, DEFAULT_STRICT_MAX_BYTES",
       "lines": "1-7, 36, 46-56, 74-167",
-      "role": "Arrow IPC stream encoding with strict no-pickle mode — in-repo precedent for D6's Arrow IPC choice, but host↔worker over shared memory, not network, and pandas-based",
-      "evidence": ["F010"]
+      "role": "Arrow IPC stream encoding with strict no-pickle mode \u2014 in-repo precedent for D6's Arrow IPC choice, but host\u2194worker over shared memory, not network, and pandas-based",
+      "evidence": [
+        "F010"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/storage/artifacts.py",
       "symbol": "ArtifactStore, Artifact, ArtifactType",
       "lines": "54-70, 73-204, 274-337",
-      "role": "a second, unrelated 'ArtifactStore' (chat artifacts with S3 overflow, HMAC-signed URLs, tenant-partitioned export store) — name collision #2; not a blob-store base",
-      "evidence": ["F010", "F019"]
+      "role": "a second, unrelated 'ArtifactStore' (chat artifacts with S3 overflow, HMAC-signed URLs, tenant-partitioned export store) \u2014 name collision #2; not a blob-store base",
+      "evidence": [
+        "F010",
+        "F019"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
       "symbol": "AuditLedger, AuditLedgerEntry, AbstractKMSSigner, LocalHMACSigner, AzureKeyVaultSigner",
       "lines": "1-18, 80-105, 135-199, 296-346, 407-444",
-      "role": "signed append-only ledger exists, but credential-invocation shaped (user_id, channel, tool, provider, key_fingerprint), in-memory by default, storage failures swallowed — the served ledger must define its own entry model and reuse only the signers",
-      "evidence": ["F006"]
+      "role": "signed append-only ledger exists, but credential-invocation shaped (user_id, channel, tool, provider, key_fingerprint), in-memory by default, storage failures swallowed \u2014 the served ledger must define its own entry model and reuse only the signers",
+      "evidence": [
+        "F006"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
       "symbol": "PBACToolCallGuardrail, PolicyDenialReport",
       "lines": "",
       "role": "runs FIRST in ToolManager.execute_tool(), evaluates navigator-auth PolicyEvaluator on resource TOOL / action tool:execute, fail-closed, sanitized denials; matches on resource only, not subject",
-      "evidence": ["F022", "F023"]
+      "evidence": [
+        "F022",
+        "F023"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
       "symbol": "PBACPermissionResolver, AbstractPermissionResolver",
       "lines": "25-65, 247-262, 289-300, 341",
-      "role": "Layer-2 PBAC re-check keyed by tool name, bridged into AbstractTool.execute via gates.pre_execute_refusal — the enforcement location D11 wants already exists; capability annotations do not",
-      "evidence": ["F007", "F023"]
+      "role": "Layer-2 PBAC re-check keyed by tool name, bridged into AbstractTool.execute via gates.pre_execute_refusal \u2014 the enforcement location D11 wants already exists; capability annotations do not",
+      "evidence": [
+        "F007",
+        "F023"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
       "symbol": "AbstractTool.execute",
       "lines": "916-954",
-      "role": "pops `_resolver` and calls gates.pre_execute_refusal before running — deterministic refusal below the LLM",
-      "evidence": ["F007"]
+      "role": "pops `_resolver` and calls gates.pre_execute_refusal before running \u2014 deterministic refusal below the LLM",
+      "evidence": [
+        "F007"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/auth/permission.py",
       "symbol": "PermissionContext, UserSession",
       "lines": "21, 81",
-      "role": "carries session (user_id, tenant_id, roles), channel and trace_context per request — the in-process carrier a remote call must populate from channel metadata",
-      "evidence": ["F023"]
+      "role": "carries session (user_id, tenant_id, roles), channel and trace_context per request \u2014 the in-process carrier a remote call must populate from channel metadata",
+      "evidence": [
+        "F023"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/auth/token_exchange.py",
       "symbol": "TokenExchangeClient, ExchangeResult",
       "lines": "1-63",
       "role": "navigator-auth integration is session/OAuth2 token exchange; zero hits for biscuit/macaroon/attenuation anywhere",
-      "evidence": ["F007", "F017"]
+      "evidence": [
+        "F007",
+        "F017"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/security/redaction.py",
       "symbol": "ScrubPolicy",
       "lines": "128",
       "role": "existing redaction primitive the policy gate can apply by data class",
-      "evidence": ["F007"]
+      "evidence": [
+        "F007"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
       "symbol": "UsageRecord",
       "lines": "22-85",
-      "role": "per-LLM-call tokens/cost_usd/duration_ms/trace_id/run_id record — template for the per-capability cost record on both sides (D12)",
-      "evidence": ["F009"]
+      "role": "per-LLM-call tokens/cost_usd/duration_ms/trace_id/run_id record \u2014 template for the per-capability cost record on both sides (D12)",
+      "evidence": [
+        "F009"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/observability/context.py",
       "symbol": "agent_identity, invocation_context, usage_attribution",
       "lines": "1-15, 86-162",
       "role": "ContextVar attribution (agent, user, run, seat) that nested in-process calls inherit; nothing propagates across a network hop",
-      "evidence": ["F009", "F025"]
+      "evidence": [
+        "F009",
+        "F025"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
       "symbol": "setup_event_fanout",
       "lines": "24",
-      "role": "FEAT-710 publish-only EventBus(transport='streams') fan-out of usage events — the only producer-side bus usage in parrot today",
-      "evidence": ["F008", "F018", "F024"]
+      "role": "FEAT-710 publish-only EventBus(transport='streams') fan-out of usage events \u2014 the only producer-side bus usage in parrot today",
+      "evidence": [
+        "F008",
+        "F018",
+        "F024"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/observability/cost/__init__.py",
       "symbol": "ensure_shared_cost_calculator, CostCalculator",
       "lines": "57",
       "role": "process-wide shared cost calculator (FEAT-710) the received-side ledger can reuse",
-      "evidence": ["F018", "F025"]
+      "evidence": [
+        "F018",
+        "F025"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
       "symbol": "TraceContext, LifecycleEvent, EventRegistry",
       "lines": "18-24, 54-56",
       "role": "parrot's only navigator-eventbus surface is the in-process lifecycle registry; no publish/subscribe RPC pattern",
-      "evidence": ["F008", "F024"]
+      "evidence": [
+        "F008",
+        "F024"
+      ]
     },
     {
       "path": "packages/ai-parrot/src/parrot/clients/base.py",
       "symbol": "AbstractClient._apply_cache_hints",
       "lines": "565-590",
-      "role": "provider-native prompt-cache hints (Anthropic cache_control, Google CachedContent) — where spike S4 (mount without breaking the cached prefix) lands",
-      "evidence": ["F003"]
+      "role": "provider-native prompt-cache hints (Anthropic cache_control, Google CachedContent) \u2014 where spike S4 (mount without breaking the cached prefix) lands",
+      "evidence": [
+        "F003"
+      ]
     },
     {
       "path": "packages/ai-parrot/pyproject.toml",
       "symbol": "pyarrow, grpc (extra)",
       "lines": "174-180, 707-712",
       "role": "pyarrow is a hard dependency; grpcio/grpcio-tools reach parrot only through the navigator-eventbus[grpc] extra; protobuf is pinned at the root (199-203); polars is absent from every pyproject",
-      "evidence": ["F002"]
+      "evidence": [
+        "F002"
+      ]
     },
     {
       "path": "docs/events/eventbus-v2.md",
       "symbol": "EventEnvelope, RedisStreamsBackend, GrpcIngress",
       "lines": "",
-      "role": "navigator-eventbus contract: frozen envelope with correlation_id + trace_context, Streams at-least-once with dedup and DLQ, gRPC ingress on proto package parrot.events.v1 — the bus carrier primitives exist outside this repo; no reply_to convention",
-      "evidence": ["F021", "F024"]
+      "role": "navigator-eventbus contract: frozen envelope with correlation_id + trace_context, Streams at-least-once with dedup and DLQ, gRPC ingress on proto package parrot.events.v1 \u2014 the bus carrier primitives exist outside this repo; no reply_to convention",
+      "evidence": [
+        "F021",
+        "F024"
+      ]
     },
     {
       "path": "sdd/specs/semantic-layer.spec.md",
       "symbol": "ResultHandle, ResultHandleStore.claim, SemanticAuditEntry, SemanticAuditLedger, GovernedDatasetSink, GovernancePipeline",
       "lines": "541-590, 605-633, 634-671, 679-687",
-      "role": "FEAT-704 (0/26 tasks done) already specifies owner-bound handles whose claim re-verifies identity + digests, a signed ledger reusing core signers, and a guarded hand-off sink — the same semantics the protocol's handle ACL and served ledger need",
-      "evidence": ["F020", "F026"]
+      "role": "FEAT-704 (0/26 tasks done) already specifies owner-bound handles whose claim re-verifies identity + digests, a signed ledger reusing core signers, and a guarded hand-off sink \u2014 the same semantics the protocol's handle ACL and served ledger need",
+      "evidence": [
+        "F020",
+        "F026"
+      ]
     }
   ],
-
   "constraints": [
     {
       "statement": "Every existing remote-tool path (A2ARemoteAgentTool._execute, A2AClient.invoke_skill, MCPToolProxy._extract_result_text) returns the remote payload as text/JSON straight into the caller's context.",
-      "evidence": ["F001", "F011"],
+      "evidence": [
+        "F001",
+        "F011"
+      ],
       "implication": "The handle path cannot wrap these; the RemoteToolkit needs its own result route that stores handle+descriptor+provenance into WorkingMemory before anything reaches the LLM."
     },
     {
       "statement": "A2AServer._build_skills_from_tools exposes the agent's tools themselves as skills, and its gate is credential-shaped (CredentialBroker per user), not capability-shaped.",
-      "evidence": ["F001", "F013"],
+      "evidence": [
+        "F001",
+        "F013"
+      ],
       "implication": "The serving side must invert the A2A model: a contract catalog of capabilities is the exposed surface, and the gate keys on capability annotations; A2AServer is a pattern, not a base class."
     },
     {
-      "statement": "AgentRegistry registers local bots only (BotMetadata/BotConfig, no kind/protocol/endpoint); remote agents live in ToolManager.register_a2a_agent → RegisteredAgent and in A2AMeshDiscovery/A2AEndpoint.",
-      "evidence": ["F003", "F004", "F016"],
-      "implication": "Brainstorm decision D10 rests on a false premise; discovery must either extend AgentRegistry/BotConfig with a remote kind or build on A2AMeshDiscovery — a scope decision, not a reuse."
+      "statement": "AgentRegistry registers local bots only (BotMetadata/BotConfig, no kind/protocol/endpoint); remote agents live in ToolManager.register_a2a_agent \u2192 RegisteredAgent and in A2AMeshDiscovery/A2AEndpoint.",
+      "evidence": [
+        "F003",
+        "F004",
+        "F016"
+      ],
+      "implication": "Brainstorm decision D10 rests on a false premise; discovery must either extend AgentRegistry/BotConfig with a remote kind or build on A2AMeshDiscovery \u2014 a scope decision, not a reuse."
     },
     {
       "statement": "AuditLedger's entry schema is fixed (user_id, channel, tool, provider, key_fingerprint); the established pattern (FEAT-704 TASK-4474) is 'own entry model + core AbstractKMSSigner + async storage callable', and in-memory AuditLedger swallows storage failures.",
-      "evidence": ["F006", "F026"],
+      "evidence": [
+        "F006",
+        "F026"
+      ],
       "implication": "The served ledger is a new entry type with a fail-closed durable sink, reusing only the signer contract; 'already defined for ai-parrot' holds for the mechanism, not the schema."
     },
     {
       "statement": "PBAC is already enforced below the LLM at tool execution (PBACToolCallGuardrail first in execute_tool, PBACPermissionResolver Layer-2 inside AbstractTool.execute), keyed by tool name and matching on resource only.",
-      "evidence": ["F007", "F022", "F023"],
+      "evidence": [
+        "F007",
+        "F022",
+        "F023"
+      ],
       "implication": "The capability policy gate composes in front of this chain rather than replacing it; per-caller rate limits and k-anonymity need subject-aware logic the current matcher does not provide."
     },
     {
       "statement": "No gRPC server or protobuf envelope exists in ai-parrot: grpc_session.py is a dead client stub, grpcio reaches parrot only via navigator-eventbus[grpc], and the one protobuf+grpc.aio server ever built (parrot.events.v1) was extracted to navigator-eventbus in FEAT-312.",
-      "evidence": ["F002", "F011", "F021", "F024"],
+      "evidence": [
+        "F002",
+        "F011",
+        "F021",
+        "F024"
+      ],
       "implication": "The transport is greenfield inside this repo; the generated-stub, auth-in-metadata and 'open dicts as JSON strings' conventions should be lifted from navigator-eventbus, and the dead stub deleted or replaced in the same feature."
     },
     {
       "statement": "navigator-eventbus v2 already provides correlation_id/trace_context on EventEnvelope, Redis Streams at-least-once with event_id dedup and a DLQ, but the wire is JSON and no reply_to/request-reply convention exists; parrot is publish-only today.",
-      "evidence": ["F008", "F024"],
-      "implication": "The bus carrier (S6) needs a bytes-safe serializer and a reply_to convention defined in or negotiated with navigator-eventbus — partly outside this repo."
+      "evidence": [
+        "F008",
+        "F024"
+      ],
+      "implication": "The bus carrier (S6) needs a bytes-safe serializer and a reply_to convention defined in or negotiated with navigator-eventbus \u2014 partly outside this repo."
     },
     {
       "statement": "pandas is the frame type everywhere (WorkingMemory summariser, Arrow transport, share_dataframe); pyarrow is pinned; Polars is absent from every pyproject.",
-      "evidence": ["F002", "F003", "F010"],
+      "evidence": [
+        "F002",
+        "F003",
+        "F010"
+      ],
       "implication": "D6 (Polars) introduces a new dependency and a second frame type; Arrow IPC on the wire is compatible with either, so Polars can be confined to the local affordance tools or deferred."
     },
     {
       "statement": "ArtifactBlobStore is immutable, checksummed and publish-then-reference, but keyed by (scope, artifact_id, version), not content hash; has no media-type registry, TTL, ACL or affordances; and the FileManagerInterface beneath it has no streaming or byte-range read.",
-      "evidence": ["F010", "F015", "F019"],
+      "evidence": [
+        "F010",
+        "F015",
+        "F019"
+      ],
       "implication": "Content addressing, handle ACLs and dedup-by-digest are new; streaming large artifacts (S2) cannot rely on the file-manager interface and needs its own batch path."
     },
     {
       "statement": "Observability records per-LLM-call UsageRecord/cost with ContextVar attribution and fans out to the bus (FEAT-710), but nothing injects or extracts a trace across a network hop and deterministic tool calls emit no usage event.",
-      "evidence": ["F009", "F018", "F025"],
+      "evidence": [
+        "F009",
+        "F018",
+        "F025"
+      ],
       "implication": "The three-level telemetry (D13) needs a trace carrier in gRPC metadata/bus headers and a per-capability usage event for the served side; the received side can reuse UsageRecord/CostCalculator."
     },
     {
       "statement": "Three 'Artifact' types (storage.models.Artifact, interfaces.artifact_store.ArtifactStore/task-memory, a2a.models.Artifact) and a 'Capability' (registry/capabilities) already exist with different meanings.",
-      "evidence": ["F005", "F010"],
+      "evidence": [
+        "F005",
+        "F010"
+      ],
       "implication": "The spec must pick non-colliding names for the handle and the contract capability (or explicitly reconcile with FEAT-070's CapabilityEntry)."
     },
     {
       "statement": "ToolSchemaAdapter already compiles tool schemas per provider (OPENAI/ANTHROPIC/GOOGLE/GROQ/VERTEX/BEDROCK) and AbstractClient._apply_cache_hints owns prompt-cache hints.",
-      "evidence": ["F003"],
+      "evidence": [
+        "F003"
+      ],
       "implication": "Spike S3 is a mapping from contract capability to the existing ToolFormat pipeline; S4 is an experiment at the cache-hint hook, not new client plumbing."
     },
     {
       "statement": "FEAT-704 semantic layer specifies owner-bound ResultHandle/claim, SemanticAuditLedger and GovernedDatasetSink with the same ACL/provenance semantics, but 0/26 tasks are done and the definitions are planned inside the semantic satellite.",
-      "evidence": ["F020", "F026"],
-      "implication": "Design overlap without code overlap: the shared handle/provenance/ledger contract should be owned in core so both features consume it, or FEAT-746 becomes a consumer of FEAT-704's — a decision the user must make."
+      "evidence": [
+        "F020",
+        "F026"
+      ],
+      "implication": "Design overlap without code overlap: the shared handle/provenance/ledger contract should be owned in core so both features consume it, or FEAT-746 becomes a consumer of FEAT-704's \u2014 a decision the user must make."
     },
     {
       "statement": "MCP result_policy enforces size caps by a char-count heuristic (no tokenizer) and AgentMCPMount mounts agents as PBAC-guarded MCP endpoints mirroring A2AServer.setup().",
-      "evidence": ["F011"],
+      "evidence": [
+        "F011"
+      ],
       "implication": "The MCP adapter half of D14 maps nearly 1:1 onto AgentMCPMount; materialization caps have a precedent but spike S1 must measure real tokens."
     }
   ],
-
   "investigation": null,
-
   "enrichment": {
     "scope_confidence": "medium",
     "new": [
-      "Contract model: `Capability` (cap_id, category, typed input/output, returns inline|artifact, backing deterministic|llm_backed, policy annotations) and a categorized, per-category-hashed catalog with handshake deltas and STALE_CONTRACT refusal — no counterpart exists (F005 is an intent index).",
-      "Wire envelope: a `.proto` for Call / Result / Progress / typed errors, Arrow IPC batches for frames, and a gRPC server (serving dispatcher) + client (core), with trace_id/identity in channel metadata — greenfield in this repo (F011, F021); conventions lifted from navigator-eventbus's parrot.events.v1.",
+      "Contract model: `Capability` (cap_id, category, typed input/output, returns inline|artifact, backing deterministic|llm_backed, policy annotations) and a categorized, per-category-hashed catalog with handshake deltas and STALE_CONTRACT refusal \u2014 no counterpart exists (F005 is an intent index).",
+      "Wire envelope: a `.proto` for Call / Result / Progress / typed errors, Arrow IPC batches for frames, and a gRPC server (serving dispatcher) + client (core), with trace_id/identity in channel metadata \u2014 greenfield in this repo (F011, F021); conventions lifted from navigator-eventbus's parrot.events.v1.",
       "RemoteToolkit (AbstractToolkit) with always-mounted catalog tools (list / mount / unmount / search / find) that register and unregister capability tool definitions in ToolManager by category, reusing `_categories`, `search_tools` and `get_tool_schemas` (F003).",
-      "Handle + descriptor + provenance model, a media-type descriptor registry (arrow, parquet, mermaid, structurizr, svg, png, pdf, generic), and a content-addressed (sha256) blob store with ACL, TTL and dedup-by-digest — building on ArtifactBlobStore/BlobRef semantics (F010) but new keying and policy.",
+      "Handle + descriptor + provenance model, a media-type descriptor registry (arrow, parquet, mermaid, structurizr, svg, png, pdf, generic), and a content-addressed (sha256) blob store with ACL, TTL and dedup-by-digest \u2014 building on ArtifactBlobStore/BlobRef semantics (F010) but new keying and policy.",
       "Capability policy gate keyed by contract annotations (data class, redaction via ScrubPolicy, aggregation minimum, row cap, per-caller rate limit, token budget), composed ahead of the existing PBACToolCallGuardrail/PBACPermissionResolver chain (F007, F023).",
       "Served ledger: a new signed entry type (caller, capability, args digest, policy applied, data classes, result digest, cost, backing) reusing AbstractKMSSigner and the async storage callable with a fail-closed durable sink (F006, F026).",
       "Local affordance tools over handles (df.query / df.sample / df.join / chart.from_df) with toolkit-enforced materialization caps; frame engine per U3.",
       "Cross-hop trace propagation (caller-generated trace_id in gRPC metadata and bus headers) and a per-capability cost/usage event for deterministic calls on both sides (F009, F025).",
-      "Discovery entry for remote agents with kind (a2a | this protocol) and endpoint — placement per U2 (AgentRegistry/BotConfig vs A2AMeshDiscovery).",
-      "Adapters at the edge: A2A (contract → agent card, artifacts degrade to A2A artifacts) and MCP (mounted category → AgentMCPMount-style server, artifacts → resources) — later milestone (F001, F011).",
-      "Capability-token (attenuated delegation) integration with navigator-auth — spike S5; nothing in parrot or its history (F007, F017)."
+      "Discovery entry for remote agents with kind (a2a | this protocol) and endpoint \u2014 placement per U2 (AgentRegistry/BotConfig vs A2AMeshDiscovery).",
+      "Adapters at the edge: A2A (contract \u2192 agent card, artifacts degrade to A2A artifacts) and MCP (mounted category \u2192 AgentMCPMount-style server, artifacts \u2192 resources) \u2014 later milestone (F001, F011).",
+      "Capability-token (attenuated delegation) integration with navigator-auth \u2014 spike S5; nothing in parrot or its history (F007, F017)."
     ],
     "modified": [
-      {"path": "packages/ai-parrot/src/parrot/tools/manager.py", "symbol": "ToolManager", "change": "category-level mount/unmount of tool definitions (lazy loading of a mounted category into the client-facing schema set); remote-agent entries gain a protocol kind if U2 chooses ToolManager/AgentRegistry", "evidence": ["F003", "F022"]},
-      {"path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py", "symbol": "WorkingMemoryToolkit, WorkingMemoryCatalog", "change": "entries carry provenance, media_type and affordances for remote handles; RemoteToolkit calls the Python-only `store` path programmatically", "evidence": ["F010", "F015"]},
-      {"path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py", "symbol": "ArtifactBlobStore / BlobRef", "change": "either extended with a content-addressed key + ACL/TTL or used as the storage primitive under a new blob-store facade", "evidence": ["F010"]},
-      {"path": "packages/ai-parrot/src/parrot/registry/registry.py", "symbol": "AgentRegistry / BotConfig", "change": "only if U2 selects it: a remote-agent kind + endpoint field (today none exists)", "evidence": ["F004", "F016"]},
-      {"path": "packages/ai-parrot/src/parrot/a2a/mesh.py", "symbol": "A2AMeshDiscovery / A2AEndpoint", "change": "only if U2 selects it: a protocol kind on endpoints so the RemoteToolkit resolves native vs a2a peers", "evidence": ["F001", "F004"]},
-      {"path": "packages/ai-parrot/src/parrot/observability/recorders/models.py", "symbol": "UsageRecord", "change": "per-capability record for deterministic calls (tokens may be 0; ms, rows, backing, cap_id)", "evidence": ["F009"]},
-      {"path": "packages/ai-parrot/pyproject.toml", "symbol": "pyarrow, grpc (extra)", "change": "grpcio + grpcio-tools (today only via navigator-eventbus[grpc]); polars only if U3 adopts it", "evidence": ["F002"]},
-      {"path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py", "symbol": "GrpcMCPSession + mcp.proto", "change": "delete or replace the dead stub so one gRPC implementation exists in the repo", "evidence": ["F011"]}
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+        "symbol": "ToolManager",
+        "change": "category-level mount/unmount of tool definitions (lazy loading of a mounted category into the client-facing schema set); remote-agent entries gain a protocol kind if U2 chooses ToolManager/AgentRegistry",
+        "evidence": [
+          "F003",
+          "F022"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+        "symbol": "WorkingMemoryToolkit, WorkingMemoryCatalog",
+        "change": "entries carry provenance, media_type and affordances for remote handles; RemoteToolkit calls the Python-only `store` path programmatically",
+        "evidence": [
+          "F010",
+          "F015"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+        "symbol": "ArtifactBlobStore / BlobRef",
+        "change": "either extended with a content-addressed key + ACL/TTL or used as the storage primitive under a new blob-store facade",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+        "symbol": "AgentRegistry / BotConfig",
+        "change": "only if U2 selects it: a remote-agent kind + endpoint field (today none exists)",
+        "evidence": [
+          "F004",
+          "F016"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+        "symbol": "A2AMeshDiscovery / A2AEndpoint",
+        "change": "only if U2 selects it: a protocol kind on endpoints so the RemoteToolkit resolves native vs a2a peers",
+        "evidence": [
+          "F001",
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
+        "symbol": "UsageRecord",
+        "change": "per-capability record for deterministic calls (tokens may be 0; ms, rows, backing, cap_id)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/pyproject.toml",
+        "symbol": "pyarrow, grpc (extra)",
+        "change": "grpcio + grpcio-tools (today only via navigator-eventbus[grpc]); polars only if U3 adopts it",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py",
+        "symbol": "GrpcMCPSession + mcp.proto",
+        "change": "delete or replace the dead stub so one gRPC implementation exists in the repo",
+        "evidence": [
+          "F011"
+        ]
+      }
     ],
     "untouched": [
-      "A2A JSON-RPC/REST surface and AgentCard discovery (FEAT-272) — stays as the inbound `kind=a2a` path and adapter target, not modified.",
-      "MCP transports (stdio/http/streamable-http/sse/unix/websocket/quic) and MCPClient/MCPToolProxy — untouched; the MCP adapter is additive.",
+      "A2A JSON-RPC/REST surface and AgentCard discovery (FEAT-272) \u2014 stays as the inbound `kind=a2a` path and adapter target, not modified.",
+      "MCP transports (stdio/http/streamable-http/sse/unix/websocket/quic) and MCPClient/MCPToolProxy \u2014 untouched; the MCP adapter is additive.",
       "parrot/clients/base.py beyond consuming the existing _apply_cache_hints hook in spike S4.",
-      "Existing AuditLedger/AuditLedgerEntry schema and the CredentialBroker gate — reused via the signer contract only.",
-      "FEAT-704 semantic-layer tasks and the ai-parrot-semantic satellite — not implemented here; only the shared contract decision (U1) touches them.",
-      "navigator-eventbus and navigator-auth internals — outside this repo; the proposal records what it needs from them (reply_to convention, bytes-safe serializer, attenuated tokens).",
-      "Conversation ArtifactStore (parrot/storage/artifacts.py) and the A2UI structured-artifact contract — unrelated artifact concepts, left alone.",
-      "Free-form agent conversation, agent dialects, KV-cache exchange — brainstorm non-goals, out of scope."
+      "Existing AuditLedger/AuditLedgerEntry schema and the CredentialBroker gate \u2014 reused via the signer contract only.",
+      "FEAT-704 semantic-layer tasks and the ai-parrot-semantic satellite \u2014 not implemented here; only the shared contract decision (U1) touches them.",
+      "navigator-eventbus and navigator-auth internals \u2014 outside this repo; the proposal records what it needs from them (reply_to convention, bytes-safe serializer, attenuated tokens).",
+      "Conversation ArtifactStore (parrot/storage/artifacts.py) and the A2UI structured-artifact contract \u2014 unrelated artifact concepts, left alone.",
+      "Free-form agent conversation, agent dialects, KV-cache exchange \u2014 brainstorm non-goals, out of scope."
     ],
     "patterns_to_follow": [
-      {"pattern": "Remote tools become local AbstractTools via a proxy class registered in ToolManager (MCPToolProxy, A2ARemoteSkillTool) — the RemoteToolkit's capability tools follow the same shape with a different result route.", "evidence": ["F001", "F011"]},
-      {"pattern": "Own entry model + core signers + async storage callable, fail-closed when required (FEAT-704 SemanticAuditLedger over AbstractKMSSigner).", "evidence": ["F006", "F026"]},
-      {"pattern": "Guardrail-first enforcement in ToolManager.execute_tool with sanitized denial reports (PBACToolCallGuardrail) — the capability gate reports POLICY_DENIED the same way.", "evidence": ["F022", "F023"]},
-      {"pattern": "Publish-then-reference, checksum + fingerprint, bounded page reads, strict no-pickle Arrow IPC (ArtifactBlobStore, repl_worker/transport.py).", "evidence": ["F010"]},
-      {"pattern": "Per-agent mount with PBAC canonical resource names (AgentMCPMount mirroring A2AServer.setup()) for the MCP adapter.", "evidence": ["F011"]},
-      {"pattern": "Protobuf service with explicit version field, auth in RPC metadata, open dicts as JSON strings (navigator-eventbus parrot.events.v1, formerly TASK-1791).", "evidence": ["F021", "F024"]},
-      {"pattern": "'Mirror the invariant subset of a draft external spec; quarantine wire compatibility behind an adapter' (FEAT-322 agent-host-protocol) for the A2A/MCP adapters.", "evidence": ["F027"]}
+      {
+        "pattern": "Remote tools become local AbstractTools via a proxy class registered in ToolManager (MCPToolProxy, A2ARemoteSkillTool) \u2014 the RemoteToolkit's capability tools follow the same shape with a different result route.",
+        "evidence": [
+          "F001",
+          "F011"
+        ]
+      },
+      {
+        "pattern": "Own entry model + core signers + async storage callable, fail-closed when required (FEAT-704 SemanticAuditLedger over AbstractKMSSigner).",
+        "evidence": [
+          "F006",
+          "F026"
+        ]
+      },
+      {
+        "pattern": "Guardrail-first enforcement in ToolManager.execute_tool with sanitized denial reports (PBACToolCallGuardrail) \u2014 the capability gate reports POLICY_DENIED the same way.",
+        "evidence": [
+          "F022",
+          "F023"
+        ]
+      },
+      {
+        "pattern": "Publish-then-reference, checksum + fingerprint, bounded page reads, strict no-pickle Arrow IPC (ArtifactBlobStore, repl_worker/transport.py).",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "pattern": "Per-agent mount with PBAC canonical resource names (AgentMCPMount mirroring A2AServer.setup()) for the MCP adapter.",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "pattern": "Protobuf service with explicit version field, auth in RPC metadata, open dicts as JSON strings (navigator-eventbus parrot.events.v1, formerly TASK-1791).",
+        "evidence": [
+          "F021",
+          "F024"
+        ]
+      },
+      {
+        "pattern": "'Mirror the invariant subset of a draft external spec; quarantine wire compatibility behind an adapter' (FEAT-322 agent-host-protocol) for the A2A/MCP adapters.",
+        "evidence": [
+          "F027"
+        ]
+      }
     ],
     "integration_risks": [
-      {"risk": "Contract duplication with FEAT-704: two handle/provenance/ledger definitions if the shared contract is not placed in core first.", "mitigation": "Resolve U1 before /sdd-spec; make the shared models a first milestone either here or in FEAT-704.", "evidence": ["F020", "F026"]},
-      {"risk": "Two frame engines (pandas in WorkingMemory/transport vs Polars in affordance tools) double the summariser/preview code paths.", "mitigation": "Resolve U3; keep Arrow IPC as the only wire format so the engine choice stays local.", "evidence": ["F002", "F010"]},
-      {"risk": "Bus carrier depends on navigator-eventbus capabilities (binary payload serializer, reply_to) that may not exist; grpcio versions must stay in lockstep with its [grpc] extra.", "mitigation": "Treat S6 as a cross-repo spike; declare grpc deps through one extra.", "evidence": ["F002", "F024"]},
-      {"risk": "Large-artifact streaming cannot use FileManagerInterface (no byte-range/streaming); whole-object transfer defeats 'bytes cross once' for big frames.", "mitigation": "Stream Arrow batches over gRPC directly into the blob store writer; S2 pass criterion covers this.", "evidence": ["F010"]},
-      {"risk": "Heavy new dependencies (grpcio, grpcio-tools, protobuf runtime, optional polars) in the core package.", "mitigation": "Resolve U5: server/transport half in ai-parrot-server or a new satellite with an extra; only the contract models and RemoteToolkit client in core.", "evidence": ["F002", "F012"]},
-      {"risk": "Per-caller rate limits and k-anonymity expressed as PBAC policies hit the resource-only matcher limitation.", "mitigation": "Implement caller-keyed limits inside the capability gate, not as navigator-auth policies.", "evidence": ["F023"]},
-      {"risk": "Name collisions: 'Artifact' (three existing), 'Capability' (FEAT-070), 'ArtifactStore' (two).", "mitigation": "Fix names in the spec (e.g. handle/descriptor nouns distinct from Artifact; contract capability distinct from CapabilityEntry).", "evidence": ["F005", "F010"]},
-      {"risk": "Dead grpc_session.py stub and mcp.proto drift alongside a second gRPC implementation.", "mitigation": "Delete or replace the stub in the same feature.", "evidence": ["F011"]}
+      {
+        "risk": "Contract duplication with FEAT-704: two handle/provenance/ledger definitions if the shared contract is not placed in core first.",
+        "mitigation": "Resolve U1 before /sdd-spec; make the shared models a first milestone either here or in FEAT-704.",
+        "evidence": [
+          "F020",
+          "F026"
+        ]
+      },
+      {
+        "risk": "Two frame engines (pandas in WorkingMemory/transport vs Polars in affordance tools) double the summariser/preview code paths.",
+        "mitigation": "Resolve U3; keep Arrow IPC as the only wire format so the engine choice stays local.",
+        "evidence": [
+          "F002",
+          "F010"
+        ]
+      },
+      {
+        "risk": "Bus carrier depends on navigator-eventbus capabilities (binary payload serializer, reply_to) that may not exist; grpcio versions must stay in lockstep with its [grpc] extra.",
+        "mitigation": "Treat S6 as a cross-repo spike; declare grpc deps through one extra.",
+        "evidence": [
+          "F002",
+          "F024"
+        ]
+      },
+      {
+        "risk": "Large-artifact streaming cannot use FileManagerInterface (no byte-range/streaming); whole-object transfer defeats 'bytes cross once' for big frames.",
+        "mitigation": "Stream Arrow batches over gRPC directly into the blob store writer; S2 pass criterion covers this.",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "risk": "Heavy new dependencies (grpcio, grpcio-tools, protobuf runtime, optional polars) in the core package.",
+        "mitigation": "Resolve U5: server/transport half in ai-parrot-server or a new satellite with an extra; only the contract models and RemoteToolkit client in core.",
+        "evidence": [
+          "F002",
+          "F012"
+        ]
+      },
+      {
+        "risk": "Per-caller rate limits and k-anonymity expressed as PBAC policies hit the resource-only matcher limitation.",
+        "mitigation": "Implement caller-keyed limits inside the capability gate, not as navigator-auth policies.",
+        "evidence": [
+          "F023"
+        ]
+      },
+      {
+        "risk": "Name collisions: 'Artifact' (three existing), 'Capability' (FEAT-070), 'ArtifactStore' (two).",
+        "mitigation": "Fix names in the spec (e.g. handle/descriptor nouns distinct from Artifact; contract capability distinct from CapabilityEntry).",
+        "evidence": [
+          "F005",
+          "F010"
+        ]
+      },
+      {
+        "risk": "Dead grpc_session.py stub and mcp.proto drift alongside a second gRPC implementation.",
+        "mitigation": "Delete or replace the stub in the same feature.",
+        "evidence": [
+          "F011"
+        ]
+      }
     ]
   },
-
   "confidence_map": [
-    {"id": "C1", "statement": "A2A (JSON over aiohttp, free text in, artifact text out) is the only cross-network agent-to-agent path today and puts the raw remote payload into the caller's context.", "evidence": ["F001", "F013"], "confidence": "high", "reasoning": "client.py and server.py read directly; _execute returns artifacts[0].parts[0].text; FEAT-272 index confirms scope."},
-    {"id": "C2", "statement": "No gRPC server, generated protobuf module or typed envelope exists in ai-parrot; grpc_session.py is a dead client stub and grpcio is reachable only through navigator-eventbus[grpc].", "evidence": ["F002", "F011", "F021"], "confidence": "high", "reasoning": "grpc_session.py read (import commented out), no *_pb2 under packages/*/src, pyproject greps and extraction history (FEAT-312) agree; extra re-verified at core pyproject:712."},
-    {"id": "C3", "statement": "ToolManager has flat register/unregister by name and a dict category index, but no mount/unmount lifecycle for tool definitions.", "evidence": ["F003", "F022"], "confidence": "high", "reasoning": "manager.py read at the cited lines; wiki corroborates; only exclude_tools exists as a static hiding mechanism."},
-    {"id": "C4", "statement": "AgentRegistry does not register remote agents or a protocol kind; remote registries are RegisteredAgent (ToolManager) and A2AMeshDiscovery — brainstorm D10 is wrong as stated.", "evidence": ["F003", "F004", "F016"], "confidence": "high", "reasoning": "registry.py scanned for remote|a2a|endpoint with 0 hits; history has no remote-kind commit; mesh.py and register_a2a_agent read."},
-    {"id": "C5", "statement": "WorkingMemoryToolkit already keeps raw frames out of context (compact summaries + bounded previews) and has a durable task-memory substrate with immutable blobs, but is pandas-only and has no provenance/affordance fields.", "evidence": ["F010", "F015"], "confidence": "high", "reasoning": "tool.py, internals.py, models.py, blob.py read; Sep 2026 history confirms the blob layer (TASK-2996)."},
-    {"id": "C6", "statement": "A signed append-only AuditLedger exists, but its entry schema is credential-shaped and the established pattern is to define a new entry model reusing the signers.", "evidence": ["F006", "F026"], "confidence": "high", "reasoning": "audit_ledger.py read; TASK-4474 explicitly declines to reuse AuditLedger for the same reason."},
-    {"id": "C7", "statement": "PBAC is enforced below the LLM at tool execution (guardrail first in execute_tool, Layer-2 resolver in AbstractTool.execute), keyed by tool name with resource-only matching; no capability-annotation gate exists.", "evidence": ["F007", "F022", "F023"], "confidence": "high", "reasoning": "resolver.py and abstract.py read; pbac.py wiki page is a full outline with the guard-chain position and the matcher limitation."},
-    {"id": "C8", "statement": "No attenuated capability tokens (Biscuit/macaroon) exist in parrot or its history; auth is OAuth2/JWT/mTLS via navigator-auth and the A2A security module.", "evidence": ["F007", "F017", "F023"], "confidence": "high", "reasoning": "repo-wide grep for biscuit|macaroon returned nothing; 120 days of auth history show only OAuth/bearer/approval tokens."},
-    {"id": "C9", "statement": "navigator-eventbus v2 provides correlation_id/trace_context, Streams at-least-once with dedup and a DLQ, but no reply_to/request-reply convention, and parrot is publish-only (usage fan-out).", "evidence": ["F008", "F024", "F018"], "confidence": "medium", "reasoning": "Bus contract comes from docs/events/eventbus-v2.md via wiki and fanout.py; the direct read of a bus publish module was skipped on budget and the bus code lives outside this repo."},
-    {"id": "C10", "statement": "A protobuf + grpc.aio server pattern (parrot.events.v1, auth in metadata, open dicts as JSON strings) exists in navigator-eventbus and is reusable as a convention.", "evidence": ["F021", "F024"], "confidence": "medium", "reasoning": "Inferred from TASK-1791/1804 completion notes and the eventbus-v2 doc; the current navigator-eventbus source was not read."},
-    {"id": "C11", "statement": "Per-LLM-call usage/cost/trace_id recording with ContextVar attribution exists, but nothing propagates a trace across a network hop and deterministic tool calls emit no usage event.", "evidence": ["F009", "F018", "F025"], "confidence": "medium", "reasoning": "Presence is direct (models.py, context.py read; FEAT-710 index); absence of cross-hop propagation is inferred from the A2A client's headers and the lack of any traceparent handling in the pages read."},
-    {"id": "C12", "statement": "pyarrow is a hard dependency with an existing strict Arrow-IPC transport; Polars is absent everywhere, so D6 adds a dependency and a second frame engine.", "evidence": ["F002", "F010"], "confidence": "high", "reasoning": "pyproject greps (re-verified 2026-10-26) and transport.py read."},
-    {"id": "C13", "statement": "ArtifactBlobStore/BlobRef provide immutable, checksummed, publish-then-reference blobs but are not content-addressed and lack media-type registry, TTL, ACL and affordances; the underlying file manager has no byte-range read.", "evidence": ["F010", "F015"], "confidence": "high", "reasoning": "blob.py docstrings and BlobRef fields read directly."},
-    {"id": "C14", "statement": "MCPToolProxy/MCPClient and AgentMCPMount (+ result_policy caps) are the closest precedents for the RemoteToolkit and the MCP adapter respectively.", "evidence": ["F011"], "confidence": "high", "reasoning": "integration.py, agent_mount.py and result_policy.py read at the cited lines."},
-    {"id": "C15", "statement": "FEAT-704 specifies owner-bound ResultHandle/claim, SemanticAuditLedger and GovernedDatasetSink with matching ACL/provenance semantics, and none of its 26 tasks has started.", "evidence": ["F020", "F026"], "confidence": "high", "reasoning": "Spec sections read at cited lines; per-spec index shows 0 done; the 'salvage-only branch' status comes from session memory, not a finding, and is excluded from this claim."},
-    {"id": "C16", "statement": "ToolSchemaAdapter already compiles tool schemas for OpenAI/Anthropic/Google/Groq/Vertex/Bedrock and AbstractClient._apply_cache_hints owns provider cache hints, so spikes S3/S4 have existing landing points.", "evidence": ["F003"], "confidence": "high", "reasoning": "manager.py ToolFormat enum and clients/base.py hook read directly."},
-    {"id": "C17", "statement": "The A2A security module's MTLSAuthenticator/JWTAuthenticator are the only in-repo precedent for identifying a calling agent by certificate.", "evidence": ["F001"], "confidence": "medium", "reasoning": "Names seen in a2a/__init__.py lazy exports and security.py line citations; security.py itself was not read."},
-    {"id": "C18", "statement": "Three unrelated 'Artifact' types and a FEAT-070 'Capability' already exist, so the protocol's handle and capability nouns collide with existing names.", "evidence": ["F005", "F010"], "confidence": "high", "reasoning": "storage/models.py, interfaces/artifact_store.py, a2a/models.py and registry/capabilities/models.py all cited."},
-    {"id": "C19", "statement": "No part of the brainstorm's 'Does NOT exist yet' list exists today; the list is accurate, with two nuances (abandoned gRPC stub; task-memory blobs/descriptors partially cover the blob-store item).", "evidence": ["F003", "F004", "F006", "F007", "F010", "F011", "F021", "F024"], "confidence": "medium", "reasoning": "Each VERIFY line was checked by at least one finding; this is an aggregate absence claim across a research run that was truncated (files_read cap hit, wall time exceeded)."},
-    {"id": "C20", "statement": "The sister 'Local Inter-Agent Protocol' brainstorm (same date) declares itself a dependent of this spec and reuses its envelope, handles, blob store, catalog and policy gate.", "evidence": [], "confidence": "low", "reasoning": "Observed in artifacts/interagent/ during source resolution, not by a research finding; a separate FEAT-ID was reserved for it in parallel (ledger commit 'local-inter-agent'). Recorded because it bounds this spec's scope (U4)."}
+    {
+      "id": "C1",
+      "statement": "A2A (JSON over aiohttp, free text in, artifact text out) is the only cross-network agent-to-agent path today and puts the raw remote payload into the caller's context.",
+      "evidence": [
+        "F001",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "client.py and server.py read directly; _execute returns artifacts[0].parts[0].text; FEAT-272 index confirms scope."
+    },
+    {
+      "id": "C2",
+      "statement": "No gRPC server, generated protobuf module or typed envelope exists in ai-parrot; grpc_session.py is a dead client stub and grpcio is reachable only through navigator-eventbus[grpc].",
+      "evidence": [
+        "F002",
+        "F011",
+        "F021"
+      ],
+      "confidence": "high",
+      "reasoning": "grpc_session.py read (import commented out), no *_pb2 under packages/*/src, pyproject greps and extraction history (FEAT-312) agree; extra re-verified at core pyproject:712."
+    },
+    {
+      "id": "C3",
+      "statement": "ToolManager has flat register/unregister by name and a dict category index, but no mount/unmount lifecycle for tool definitions.",
+      "evidence": [
+        "F003",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "manager.py read at the cited lines; wiki corroborates; only exclude_tools exists as a static hiding mechanism."
+    },
+    {
+      "id": "C4",
+      "statement": "AgentRegistry does not register remote agents or a protocol kind; remote registries are RegisteredAgent (ToolManager) and A2AMeshDiscovery \u2014 brainstorm D10 is wrong as stated.",
+      "evidence": [
+        "F003",
+        "F004",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "registry.py scanned for remote|a2a|endpoint with 0 hits; history has no remote-kind commit; mesh.py and register_a2a_agent read."
+    },
+    {
+      "id": "C5",
+      "statement": "WorkingMemoryToolkit already keeps raw frames out of context (compact summaries + bounded previews) and has a durable task-memory substrate with immutable blobs, but is pandas-only and has no provenance/affordance fields.",
+      "evidence": [
+        "F010",
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "tool.py, internals.py, models.py, blob.py read; Sep 2026 history confirms the blob layer (TASK-2996)."
+    },
+    {
+      "id": "C6",
+      "statement": "A signed append-only AuditLedger exists, but its entry schema is credential-shaped and the established pattern is to define a new entry model reusing the signers.",
+      "evidence": [
+        "F006",
+        "F026"
+      ],
+      "confidence": "high",
+      "reasoning": "audit_ledger.py read; TASK-4474 explicitly declines to reuse AuditLedger for the same reason."
+    },
+    {
+      "id": "C7",
+      "statement": "PBAC is enforced below the LLM at tool execution (guardrail first in execute_tool, Layer-2 resolver in AbstractTool.execute), keyed by tool name with resource-only matching; no capability-annotation gate exists.",
+      "evidence": [
+        "F007",
+        "F022",
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "resolver.py and abstract.py read; pbac.py wiki page is a full outline with the guard-chain position and the matcher limitation."
+    },
+    {
+      "id": "C8",
+      "statement": "No attenuated capability tokens (Biscuit/macaroon) exist in parrot or its history; auth is OAuth2/JWT/mTLS via navigator-auth and the A2A security module.",
+      "evidence": [
+        "F007",
+        "F017",
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "repo-wide grep for biscuit|macaroon returned nothing; 120 days of auth history show only OAuth/bearer/approval tokens."
+    },
+    {
+      "id": "C9",
+      "statement": "navigator-eventbus v2 provides correlation_id/trace_context, Streams at-least-once with dedup and a DLQ, but no reply_to/request-reply convention, and parrot is publish-only (usage fan-out).",
+      "evidence": [
+        "F008",
+        "F024",
+        "F018"
+      ],
+      "confidence": "medium",
+      "reasoning": "Bus contract comes from docs/events/eventbus-v2.md via wiki and fanout.py; the direct read of a bus publish module was skipped on budget and the bus code lives outside this repo."
+    },
+    {
+      "id": "C10",
+      "statement": "A protobuf + grpc.aio server pattern (parrot.events.v1, auth in metadata, open dicts as JSON strings) exists in navigator-eventbus and is reusable as a convention.",
+      "evidence": [
+        "F021",
+        "F024"
+      ],
+      "confidence": "medium",
+      "reasoning": "Inferred from TASK-1791/1804 completion notes and the eventbus-v2 doc; the current navigator-eventbus source was not read."
+    },
+    {
+      "id": "C11",
+      "statement": "Per-LLM-call usage/cost/trace_id recording with ContextVar attribution exists, but nothing propagates a trace across a network hop and deterministic tool calls emit no usage event.",
+      "evidence": [
+        "F009",
+        "F018",
+        "F025"
+      ],
+      "confidence": "medium",
+      "reasoning": "Presence is direct (models.py, context.py read; FEAT-710 index); absence of cross-hop propagation is inferred from the A2A client's headers and the lack of any traceparent handling in the pages read."
+    },
+    {
+      "id": "C12",
+      "statement": "pyarrow is a hard dependency with an existing strict Arrow-IPC transport; Polars is absent everywhere, so D6 adds a dependency and a second frame engine.",
+      "evidence": [
+        "F002",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "pyproject greps (re-verified 2026-10-26) and transport.py read."
+    },
+    {
+      "id": "C13",
+      "statement": "ArtifactBlobStore/BlobRef provide immutable, checksummed, publish-then-reference blobs but are not content-addressed and lack media-type registry, TTL, ACL and affordances; the underlying file manager has no byte-range read.",
+      "evidence": [
+        "F010",
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "blob.py docstrings and BlobRef fields read directly."
+    },
+    {
+      "id": "C14",
+      "statement": "MCPToolProxy/MCPClient and AgentMCPMount (+ result_policy caps) are the closest precedents for the RemoteToolkit and the MCP adapter respectively.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "integration.py, agent_mount.py and result_policy.py read at the cited lines."
+    },
+    {
+      "id": "C15",
+      "statement": "FEAT-704 specifies owner-bound ResultHandle/claim, SemanticAuditLedger and GovernedDatasetSink with matching ACL/provenance semantics, and none of its 26 tasks has started.",
+      "evidence": [
+        "F020",
+        "F026"
+      ],
+      "confidence": "high",
+      "reasoning": "Spec sections read at cited lines; per-spec index shows 0 done; the 'salvage-only branch' status comes from session memory, not a finding, and is excluded from this claim."
+    },
+    {
+      "id": "C16",
+      "statement": "ToolSchemaAdapter already compiles tool schemas for OpenAI/Anthropic/Google/Groq/Vertex/Bedrock and AbstractClient._apply_cache_hints owns provider cache hints, so spikes S3/S4 have existing landing points.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "manager.py ToolFormat enum and clients/base.py hook read directly."
+    },
+    {
+      "id": "C17",
+      "statement": "The A2A security module's MTLSAuthenticator/JWTAuthenticator are the only in-repo precedent for identifying a calling agent by certificate.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "medium",
+      "reasoning": "Names seen in a2a/__init__.py lazy exports and security.py line citations; security.py itself was not read."
+    },
+    {
+      "id": "C18",
+      "statement": "Three unrelated 'Artifact' types and a FEAT-070 'Capability' already exist, so the protocol's handle and capability nouns collide with existing names.",
+      "evidence": [
+        "F005",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "storage/models.py, interfaces/artifact_store.py, a2a/models.py and registry/capabilities/models.py all cited."
+    },
+    {
+      "id": "C19",
+      "statement": "No part of the brainstorm's 'Does NOT exist yet' list exists today; the list is accurate, with two nuances (abandoned gRPC stub; task-memory blobs/descriptors partially cover the blob-store item).",
+      "evidence": [
+        "F003",
+        "F004",
+        "F006",
+        "F007",
+        "F010",
+        "F011",
+        "F021",
+        "F024"
+      ],
+      "confidence": "medium",
+      "reasoning": "Each VERIFY line was checked by at least one finding; this is an aggregate absence claim across a research run that was truncated (files_read cap hit, wall time exceeded)."
+    },
+    {
+      "id": "C20",
+      "statement": "The sister 'Local Inter-Agent Protocol' brainstorm (same date) declares itself a dependent of this spec and reuses its envelope, handles, blob store, catalog and policy gate.",
+      "evidence": [],
+      "confidence": "low",
+      "reasoning": "Observed in artifacts/interagent/ during source resolution, not by a research finding; a separate FEAT-ID was reserved for it in parallel (ledger commit 'local-inter-agent'). Recorded because it bounds this spec's scope (U4)."
+    }
   ],
-
   "unknowns": [
     {
       "id": "U1",
       "question": "Where does the shared handle / provenance / signed-ledger contract live: defined in core by FEAT-746 with FEAT-704 (semantic layer, 0/26 tasks) refactored to consume it, or does FEAT-746 consume FEAT-704's planned ResultHandle/SemanticAuditLedger definitions?",
-      "blocks_claims": ["C6", "C13", "C15"],
+      "blocks_claims": [
+        "C6",
+        "C13",
+        "C15"
+      ],
       "plausible_answers": [
         "a) FEAT-746 owns the contract in core (new handle/provenance/ledger-entry models); FEAT-704 is amended to import them",
         "b) FEAT-704 lands its models first (inside the semantic satellite) and FEAT-746 depends on and generalizes them",
         "c) Both keep their own models for now; converge later via a dedicated refactor feature"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "b) FEAT-704 lands its ResultHandle/SemanticAuditLedger first; FEAT-746 depends on and generalizes them",
+      "answered_at": "2026-10-25T23:43:20Z"
     },
     {
       "id": "U2",
-      "question": "Discovery (D10 is wrong as written — AgentRegistry has no remote entries): extend AgentRegistry/BotConfig with a remote-agent kind + endpoint, or build the RemoteToolkit's endpoint resolution on the existing A2AMeshDiscovery / RegisteredAgent path?",
-      "blocks_claims": ["C4"],
+      "question": "Discovery (D10 is wrong as written \u2014 AgentRegistry has no remote entries): extend AgentRegistry/BotConfig with a remote-agent kind + endpoint, or build the RemoteToolkit's endpoint resolution on the existing A2AMeshDiscovery / RegisteredAgent path?",
+      "blocks_claims": [
+        "C4"
+      ],
       "plausible_answers": [
         "a) Extend AgentRegistry/BotConfig (kind: local | a2a | native; endpoint) so one registry answers 'who can serve X'",
         "b) Extend A2AMeshDiscovery/A2AEndpoint with a protocol kind; AgentRegistry stays local-only",
         "c) New discovery component owned by the protocol (contract-aware), with adapters to both"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "a) extend AgentRegistry/BotConfig with kind: local | a2a | squawk + endpoint",
+      "answered_at": "2026-10-25T23:43:20Z"
     },
     {
       "id": "U3",
       "question": "Frame engine for the local affordance tools (D6 says Polars; the repo is pandas + pyarrow everywhere, Polars absent): adopt Polars as a new dependency for df.* tools only, or keep pandas + Arrow IPC for v0 and revisit?",
-      "blocks_claims": ["C12", "C5"],
+      "blocks_claims": [
+        "C12",
+        "C5"
+      ],
       "plausible_answers": [
         "a) Polars for the new df.* affordance tools; Arrow IPC bridges to the pandas WorkingMemory summariser",
         "b) pandas + Arrow IPC for v0 (no new dependency); Polars as an optional engine later",
         "c) Polars everywhere, including migrating the WorkingMemory summariser (bigger scope)"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "b) pandas + Arrow IPC for v0; Polars as an optional engine later",
+      "answered_at": "2026-10-25T23:43:20Z"
     },
     {
       "id": "U4",
       "question": "v0 scope and ordering: is FEAT-746 the parent that must land before the sister 'Local Inter-Agent Protocol' spec, and does v0 include the event-bus carrier (S6, partly in navigator-eventbus) or gRPC point-to-point only?",
-      "blocks_claims": ["C9", "C20"],
+      "blocks_claims": [
+        "C9",
+        "C20"
+      ],
       "plausible_answers": [
         "a) gRPC point-to-point only in v0; the bus carrier is a v1 milestone after S6; local spec depends on v0",
         "b) Both carriers in v0 because the local spec needs the bus from day one",
         "c) Bus carrier first (local collaboration is the nearer need), gRPC cross-network second"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "b) both carriers in v0 (RPC + bus) because the sister Local spec needs the bus from day one; S6 is a v0 gate",
+      "answered_at": "2026-10-25T23:43:20Z"
     },
     {
       "id": "U5",
       "question": "Package placement for the heavy halves (gRPC server, protobuf stubs, blob store backend, optional Polars): ai-parrot-server, a new satellite distribution (e.g. ai-parrot-<protocol-name>), or core behind an extra? Also: delete the dead grpc_session.py/mcp.proto stub in this feature?",
-      "blocks_claims": ["C2", "C14"],
+      "blocks_claims": [
+        "C2",
+        "C14"
+      ],
       "plausible_answers": [
         "a) Contract models + RemoteToolkit client in core; server/dispatcher/transport in ai-parrot-server behind a [grpc] extra; delete the stub",
         "b) New satellite distribution owning both client and server halves; core only gets the handle contract; delete the stub",
         "c) Everything in core behind extras (simplest imports, heaviest core); stub left for a separate cleanup"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "b) new satellite distribution for both halves; core only gets the handle contract; delete grpc_session.py/mcp.proto",
+      "answered_at": "2026-10-25T23:43:20Z"
     }
   ],
-
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "The source already is the brainstorm (D1-D14 decided; alternatives considered and rejected in-document), so re-brainstorming is the wrong lane; localization is high-confidence and the remaining forks (U1-U5) are scope/placement decisions the spec's §8 can carry, with S1-S6 as gated Lane-0 tasks. Overall confidence stays medium only because the research run was truncated and the bus/auth halves live outside this repo."
+    "rationale": "The source already is the brainstorm (D1-D14 decided; alternatives considered and rejected in-document), so re-brainstorming is the wrong lane; localization is high-confidence and the remaining forks (U1-U5) are scope/placement decisions the spec's \u00a78 can carry, with S1-S6 as gated Lane-0 tasks. Overall confidence stays medium only because the research run was truncated and the bus/auth halves live outside this repo."
   },
-
   "overall_confidence": "medium",
-
   "meta": {
-    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009", "F010", "F011", "F012", "F013", "F015", "F016", "F017", "F018", "F019", "F020", "F021", "F022", "F023", "F024", "F025", "F026", "F027"],
-    "findings_unused": ["F014"],
-    "notes": "F014 (MCP history: sdd-coder/local-MCP tooling) was read but adds no constraint beyond 'transport layer is stable'. Mode resolved to enrichment (plan mode_hint + additive source). Rule-8 deviation: the next command is sdd-spec at medium confidence because the brainstorm phase has already happened in the source document itself; the user can still choose /sdd-brainstorm at the review gate. Follow-up queries worth running at /sdd-spec time (no user input needed): read navigator-eventbus's EventEnvelope serializer and GrpcIngress for binary payload support; read parrot/auth/grants.py + GrantGuard as the closest scoped-delegation precedent; read mcp.proto to record the drafted message shapes; measure CatalogEntry.compact_summary() token size as the S1 baseline."
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027"
+    ],
+    "findings_unused": [
+      "F014"
+    ],
+    "notes": "F014 (MCP history: sdd-coder/local-MCP tooling) was read but adds no constraint beyond 'transport layer is stable'. Mode resolved to enrichment (plan mode_hint + additive source). Rule-8 deviation: the next command is sdd-spec at medium confidence because the brainstorm phase has already happened in the source document itself; the user can still choose /sdd-brainstorm at the review gate. Follow-up queries worth running at /sdd-spec time (no user input needed): read navigator-eventbus's EventEnvelope serializer and GrpcIngress for binary payload support; read parrot/auth/grants.py + GrantGuard as the closest scoped-delegation precedent; read mcp.proto to record the drafted message shapes; measure CatalogEntry.compact_summary() token size as the S1 baseline. 2026-10-26: all 5 unknowns answered by the user via /sdd-proposal Phase 5; 8 brainstorm carry-overs decided at the user's request (see carried_over_decisions). Q6 (Cap'n Proto) overrides the brainstorm's gRPC default; recorded as an integration risk in the proposal."
+  },
+  "carried_over_decisions": {
+    "Q6_transport": "Cap'n Proto RPC + Arrow IPC for frames (gRPC remains a fallback swap; S2 re-scoped, hard v0 gate)",
+    "Q7_token": "Biscuit, issued and attenuated by navigator-auth (S5)",
+    "Q8_blob_store": "backend chosen per deployment behind one blob-store interface (local disk + object storage)",
+    "Q9_descriptor_persistence": "session-only by default; durable when task_memory is configured",
+    "Q10_promotion": "agent-proposed, human-approved",
+    "Q11_mount": "both: planner pre-mounts, LLM may mount/unmount mid-conversation (S4)",
+    "Q12_v0_schema": "contract, call, result, progress, error + cancellation + PARTIAL partials (S2 hard gate)",
+    "Q13_name": "Squawk"
   }
 }

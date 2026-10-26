@@ -3,7 +3,7 @@
   "feat_id": "FEAT-746",
   "feature_slug": "inter-agent-protocol",
   "started_at": "2026-10-25T22:35:49Z",
-  "updated_at": "2026-10-25T23:10:16Z",
+  "updated_at": "2026-10-25T23:43:20Z",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -108,13 +108,13 @@
       "lint_iterations": 1
     },
     "qa": {
-      "status": "skipped",
-      "started_at": null,
-      "completed_at": null,
+      "status": "completed",
+      "started_at": "2026-10-25T23:43:20Z",
+      "completed_at": "2026-10-25T23:43:20Z",
       "duration_seconds": 0,
-      "questions_total": 5,
-      "questions_answered": 0,
-      "skipped_reason": "autonomous resume from research_complete; the 5 unknowns are rendered unresolved in the proposal (status: discussion) for the user to answer"
+      "questions_total": 13,
+      "questions_answered": 13,
+      "skipped_reason": null
     },
     "output": {
       "status": "completed",
@@ -156,8 +156,8 @@
     }
   ],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "answer U1-U5 in the proposal \u00a75, promote to Resolved, set status: review; then /sdd-spec FEAT-746"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-746 (status: review; all questions resolved)"
   },
   "detected_mode": "enrichment"
 }

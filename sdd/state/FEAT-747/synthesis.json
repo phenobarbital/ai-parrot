@@ -914,7 +914,7 @@
       "digest_owner": "last agent that closed a Request",
       "inform_wakes": "wake if addressed directly; broadcast informs stored, handler-driven wake",
       "bid_scoring": "fixed weights from contract annotations, pluggable override per channel, LLM only if undecidable",
-      "name": "two names, shared envelope (FEAT-747 names the performative layer, references FEAT-746's envelope)"
+      "name": "two names, shared envelope: FEAT-746 protocol = Squawk, FEAT-747 sub-protocol = Roost (rides the Squawk envelope)"
     }
   }
 }
