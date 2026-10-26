@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     # Forward reference only — avoids a runtime circular import between
     # parrot.registry.capabilities.models and parrot.registry.routing.
-    from parrot.registry.routing.models import StoreScore as _StoreScore
+    pass
 
 
 class ResourceType(str, Enum):
@@ -30,6 +30,7 @@ class ResourceType(str, Enum):
     GRAPH_NODE = "graph_node"
     PAGEINDEX = "pageindex"
     VECTOR_COLLECTION = "vector_collection"
+    AGENT = "agent"  # FEAT-747: a registered agent's advertised capability (Roost directory)
 
 
 class RoutingType(str, Enum):

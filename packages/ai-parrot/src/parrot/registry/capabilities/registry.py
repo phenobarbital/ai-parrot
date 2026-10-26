@@ -6,9 +6,10 @@ for a given user query.
 """
 from __future__ import annotations
 
+import fnmatch
 import logging
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 import yaml
@@ -40,6 +41,9 @@ class CapabilityRegistry:
         self._index_dirty: bool = True
         self._embedding_fn: Optional[Callable] = None
         self._not_for_penalty: float = not_for_penalty
+        # FEAT-747: synchronous exact-match index for AGENT entries (key → entry names)
+        self._exact_index: dict[str, set[str]] = {}
+        self._by_name: dict[str, CapabilityEntry] = {}
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -179,6 +183,111 @@ class CapabilityRegistry:
         self.logger.debug("Built capability index for %d entries", len(self._entries))
 
     # ── Search ─────────────────────────────────────────────────────────────────
+
+    def register_agent_capability(
+        self,
+        agent_name: str,
+        cap_id: str,
+        *,
+        keywords: Sequence[str] = (),
+        category: Optional[str] = None,
+        locality: int = 3,
+        cost: float = 1.0,
+        backing: str = "llm_backed",
+        kind: str = "local",
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Register one AGENT entry (``name=f"{agent_name}::{cap_id}"``) and index it exactly.
+
+        Args:
+            agent_name: Owning agent name.
+            cap_id: Dotted capability id (e.g. ``hr.people.salary``).
+            keywords: Extra exact-match keywords.
+            category: Optional category, indexed as a key.
+            locality: Locality rank (lower is closer).
+            cost: Relative invocation cost.
+            backing: How the capability is backed (``llm_backed`` ...).
+            kind: Agent kind (``local`` ...).
+            metadata: Extra metadata merged under the standard keys.
+        """
+        name = f"{agent_name}::{cap_id}"
+        if name in self._by_name:
+            self._drop_entry(name)
+        kws = list(keywords)
+        meta: dict[str, Any] = dict(metadata or {})
+        meta.update(
+            agent_name=agent_name, cap_id=cap_id, category=category, keywords=kws,
+            locality=locality, cost=cost, backing=backing, kind=kind,
+        )
+        entry = CapabilityEntry(
+            name=name,
+            description=" ".join([cap_id, *kws]),
+            resource_type=ResourceType.AGENT,
+            metadata=meta,
+        )
+        self.register(entry)
+        self._by_name[name] = entry
+        keys: set[str] = {cap_id.lower()}
+        parts = cap_id.lower().split(".")
+        keys.update(".".join(parts[:i]) for i in range(1, len(parts)))
+        if category:
+            keys.add(category.lower())
+        keys.update(k.lower() for k in kws)
+        for key in keys:
+            self._exact_index.setdefault(key, set()).add(name)
+
+    def _drop_entry(self, name: str) -> None:
+        """Remove one AGENT entry by name from the entry list and both indexes."""
+        self._by_name.pop(name, None)
+        self._entries = [e for e in self._entries if not (e.name == name and e.resource_type == ResourceType.AGENT)]
+        for key in list(self._exact_index):
+            names = self._exact_index[key]
+            names.discard(name)
+            if not names:
+                del self._exact_index[key]
+        self._index_dirty = True
+
+    def unregister_agent(self, agent_name: str) -> int:
+        """Drop every AGENT entry of *agent_name*; return the count removed."""
+        names = [n for n, e in self._by_name.items() if e.metadata.get("agent_name") == agent_name]
+        for name in names:
+            self._drop_entry(name)
+        return len(names)
+
+    def find_exact(
+        self,
+        query: str,
+        *,
+        resource_types: Optional[list[ResourceType]] = None,
+        limit: int = 10,
+    ) -> list[CapabilityEntry]:
+        """Embedding-free lookup: exact cap_id, glob (``hr.people.*``), category or keyword (case-insensitive).
+
+        Args:
+            query: Cap id, glob, category or keyword.
+            resource_types: Optional filter on entry resource type.
+            limit: Maximum entries returned.
+
+        Returns:
+            Matching entries in stable (name-sorted) order.
+        """
+        q = query.strip().lower()
+        if not q:
+            return []
+        if "*" in q or "?" in q:
+            prefix = q[:-2] if q.endswith(".*") else q.split("*")[0].split("?")[0].rstrip(".")
+            candidates = self._exact_index.get(prefix, set()) if prefix else set(self._by_name)
+            names = {
+                n for n in candidates
+                if fnmatch.fnmatchcase(str(self._by_name[n].metadata["cap_id"]).lower(), q)
+                or q.endswith(".*") and str(self._by_name[n].metadata["cap_id"]).lower().startswith(prefix + ".")
+            }
+        else:
+            names = set(self._exact_index.get(q, ()))
+        out = [self._by_name[n] for n in sorted(names)]
+        if resource_types:
+            out = [e for e in out if e.resource_type in resource_types]
+        return out[:limit]
 
     async def search(
         self,
