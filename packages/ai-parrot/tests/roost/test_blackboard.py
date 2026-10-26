@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from parrot.bots.flows.core.checkpoint.serializer import FlowStateSerializer
 from parrot.bots.flows.core.context import FlowContext
 from parrot.roost.blackboard import (
     InMemoryBlackboard,
@@ -103,9 +104,9 @@ async def test_render_prefix_stable(bb):
 async def test_flow_context_blackboard_default_and_snapshot():
     ctx = FlowContext(initial_task="t")
     assert ctx.blackboard is None
-    before = ctx.to_snapshot()
+    before = ctx.to_snapshot(serializer=FlowStateSerializer())
     ctx.blackboard = InMemoryBlackboard(scope="c", policy=WriterPolicy())
-    after = ctx.to_snapshot()
+    after = ctx.to_snapshot(serializer=FlowStateSerializer())
     assert "blackboard" not in type(after).model_fields
     assert set(before.model_dump()) == set(after.model_dump())
     assert "blackboard" not in str(after.model_dump())
