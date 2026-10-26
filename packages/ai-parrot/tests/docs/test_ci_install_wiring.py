@@ -59,3 +59,15 @@ def test_install_matrix_fails_closed_and_avoids_expression_injection() -> None:
     assert {"IN_SPEC", "IN_PYTHON", "IN_WHEEL_PATTERN"} <= set(step["env"])
     assert re.search(r'\[ -z "\$CORE" \] \|\| \[ -z "\$TOOLS" \]', run) and "exit 1" in run
     assert 'if [ -n "$IN_WHEEL_PATTERN" ]; then' in run
+
+
+def test_installer_scripts_are_pinned_to_lf() -> None:
+    """A Windows autocrlf checkout must not turn the hashed/executed installers into CRLF."""
+    import subprocess
+
+    for name in ("install-parrot.sh", "install-parrot.ps1", "SHA256SUMS"):
+        out = subprocess.run(
+            ["git", "check-attr", "eol", f"scripts/install/{name}"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        ).stdout
+        assert out.strip().endswith("eol: lf"), out
