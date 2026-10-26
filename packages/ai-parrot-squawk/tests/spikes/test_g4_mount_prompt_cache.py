@@ -1,4 +1,5 @@
 """G4 smoke — one provider, three turns complete (opt-in, real LLM)."""
+
 from __future__ import annotations
 
 import asyncio

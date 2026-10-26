@@ -1,4 +1,5 @@
 """G4 — does mounting tools mid-conversation break the cached prefix? (FEAT-746)."""
+
 from __future__ import annotations
 
 import asyncio
