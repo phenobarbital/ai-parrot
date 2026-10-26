@@ -59,6 +59,7 @@ class DuckDBSource(AbstractDatabaseSource):
             credentials: Credentials dict. Supports:
                 - ``database``: file path for persistent DB (default ``":memory:"``)
                 - ``dsn``: full connection string
+                - ``read_only``: open a file database read-only (used by ``query``)
 
         Returns:
             DB instance configured for DuckDB.
@@ -73,12 +74,47 @@ class DuckDBSource(AbstractDatabaseSource):
         return str(credentials.get("database", credentials.get("dsn", ":memory:")))
 
     @staticmethod
+    def _read_only(credentials: dict[str, Any]) -> bool:
+        """Return whether the ``read_only`` credential requests a read-only file connection.
+
+        In-memory databases cannot be opened read-only, so the flag only applies
+        to file databases. String values (from environment overlays) are parsed.
+        """
+        value = credentials.get("read_only", False)
+        if isinstance(value, str):
+            value = value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value) and DuckDBSource._database(credentials) != ":memory:"
+
+    @staticmethod
+    def _unique_columns(columns: list[str]) -> list[str]:
+        """Disambiguate duplicate result column names instead of collapsing them.
+
+        The first occurrence keeps its name; later ones get ``_1``, ``_2`` ...
+        suffixes that never collide with another column of the result.
+        """
+        taken = set(columns)
+        seen: set[str] = set()
+        unique: list[str] = []
+        for column in columns:
+            name = column
+            if name in seen:
+                index = 1
+                while f"{column}_{index}" in taken:
+                    index += 1
+                name = f"{column}_{index}"
+                taken.add(name)
+            seen.add(name)
+            unique.append(name)
+        return unique
+
+    @staticmethod
     def _execute_sync(
         database: str,
         sql: str,
         params: Any,
         *,
         one: bool,
+        read_only: bool = False,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         """Execute a query on a short-lived synchronous DuckDB connection.
 
@@ -87,6 +123,8 @@ class DuckDBSource(AbstractDatabaseSource):
             sql: SQL statement to execute.
             params: Named or positional query parameters.
             one: Whether to fetch at most one row.
+            read_only: Open the file database read-only (a second barrier for
+                governed SQL behind the positive guard).
 
         Returns:
             A pair containing dictionary rows and cursor column names.
@@ -103,10 +141,10 @@ class DuckDBSource(AbstractDatabaseSource):
                 "DuckDB support requires the optional 'duckdb' package; install the 'duckdb' extra."
             ) from exc
 
-        connection = duckdb.connect(database=database)
+        connection = duckdb.connect(database=database, read_only=read_only)
         try:
             cursor = connection.execute(sql, params) if params is not None else connection.execute(sql)
-            columns = [column[0] for column in (cursor.description or [])]
+            columns = DuckDBSource._unique_columns([column[0] for column in (cursor.description or [])])
             if one:
                 row = cursor.fetchone()
                 raw_rows = [] if row is None else [row]
@@ -132,6 +170,7 @@ class DuckDBSource(AbstractDatabaseSource):
             sql,
             params,
             one=one,
+            read_only=self._read_only(credentials),
         )
 
     async def get_metadata(

@@ -151,3 +151,24 @@ async def test_event_loop_responsiveness_and_lazy_import(
 
     assert heartbeat_elapsed < 0.15
     assert result.rows == [{"count": 3}]
+
+
+@pytest.mark.asyncio
+async def test_read_only_credential_and_duplicate_columns(tmp_path: Path) -> None:
+    """Read-only file connections refuse writes; duplicate names are disambiguated (issue:d126cab02311)."""
+    credentials = await asyncio.to_thread(_create_warehouse, tmp_path / "warehouse.duckdb")
+    source = DuckDBSource()
+
+    read_only = {**credentials, "read_only": "true"}
+    assert (await source.query(read_only, "SELECT COUNT(*) AS n FROM orders")).rows == [{"n": 3}]
+    with pytest.raises(duckdb.Error):
+        await source.query(read_only, "INSERT INTO orders VALUES (4, 'EU', 1.0)")
+    # In-memory databases cannot be read-only; the flag is ignored there.
+    assert DuckDBSource._read_only({"read_only": True}) is False
+    assert DuckDBSource._read_only({**credentials, "read_only": "false"}) is False
+
+    result = await source.query(
+        credentials, "SELECT a.id, b.id, a.region AS id_1 FROM orders a JOIN orders b ON a.id = b.id WHERE a.id = 1"
+    )
+    assert result.columns == ["id", "id_2", "id_1"]
+    assert result.rows == [{"id": 1, "id_2": 1, "id_1": "EU"}]

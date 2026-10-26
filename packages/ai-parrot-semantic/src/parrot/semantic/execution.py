@@ -43,6 +43,9 @@ class ConnectionResolver:
                 creds[key[len(prefix) :].lower()] = value
         if not creds:
             raise SemanticExecutionError("no_credentials", "no credentials configured for connection")
+        if driver == "duckdb":
+            # Governed SQL never writes: open DuckDB files read-only unless the host overrides it.
+            creds.setdefault("read_only", True)
         return creds
 
 

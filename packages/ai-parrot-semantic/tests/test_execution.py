@@ -81,3 +81,13 @@ async def test_queryresult_unwrap_and_execution_failure(monkeypatch: pytest.Monk
     with pytest.raises(SemanticExecutionError) as ei:
         await Executor(_Toolkit(None), resolver).run(_governed(), connection="c")
     assert ei.value.code == "no_source"
+
+
+def test_duckdb_connections_default_to_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Governed DuckDB credentials open read-only unless the host overrides it (issue:d126cab02311)."""
+    monkeypatch.setattr(execution, "get_default_credentials", lambda d: {})
+    env = {"PARROT_SEMANTIC_CONN_WH_DATABASE": "/data/wh.duckdb"}
+    assert ConnectionResolver(env).resolve("wh", "duckdb") == {"database": "/data/wh.duckdb", "read_only": True}
+    env["PARROT_SEMANTIC_CONN_WH_READ_ONLY"] = "false"
+    assert ConnectionResolver(env).resolve("wh", "duckdb")["read_only"] == "false"
+    assert "read_only" not in ConnectionResolver({"PARROT_SEMANTIC_CONN_WH_HOST": "h"}).resolve("wh", "pg")
