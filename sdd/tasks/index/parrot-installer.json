@@ -881,19 +881,20 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-26T19:30:54+00:00",
       "effort": "M",
       "depends_on": [
         "TASK-4072",
         "TASK-4085"
       ],
       "parallelism_notes": "edits parrot/launcher.py after TASK-4072 and imports parrot.sdd.scripts.worktree_environment moved by TASK-4085; also edits dispatchers/claude.py:625 and test_worktree_environment.py; split out of TASK-4072 by the 2026-10-19 readiness review",
-      "file": "sdd/tasks/active/TASK-4509-launcher-sdd-hook-fast-path.md"
+      "file": "sdd/tasks/completed/TASK-4509-launcher-sdd-hook-fast-path.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-10-20T00:00:00+00:00",

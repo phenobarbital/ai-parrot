@@ -247,10 +247,8 @@ post-re-exec survival, and the dispatcher hook form.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Added SDD_HOOK_ARGV fast path in main_parrot.load(); dispatcher hook now emits '<python> -m parrot.sdd.scripts.worktree_environment --hook || exit 2' (removed now-unused worktree_environment and Path imports); tests (5 new + updated dispatcher test) pass; S4 row appended: median +2.6 ms vs module, within the 5 ms budget. Pre-existing ruff B023 in claude.py (usage loop var) untouched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
