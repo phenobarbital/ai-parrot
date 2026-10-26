@@ -41,7 +41,6 @@ from ..conf import STATIC_DIR
 from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
-from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
 from ..bots.prompts.domain_layers import (
     DATA_INSTRUCTIONS_LAYER,
     DATAFRAME_CONTEXT_LAYER,
@@ -813,10 +812,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             total = len(result) if isinstance(result, str) else sum(len(s.text) for s in result)
             sorted_layers = sorted(
                 self._prompt_builder._layers.values(),
-                key=lambda l: l.priority,
+                key=lambda layer: layer.priority,
             )
             breakdown = ", ".join(
-                f"{l.name}={len(r)}" for l in sorted_layers if (r := (l.render(kwargs) or "").strip())
+                f"{layer.name}={len(r)}" for layer in sorted_layers if (r := (layer.render(kwargs) or "").strip())
             )
             self.logger.debug("System prompt: %d chars | %s", total, breakdown)
         return result
@@ -1181,7 +1180,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             fields = getattr(output_type, "model_fields", None)
             if not fields:
                 return None
-            skeleton = {name: None for name in fields}
+            skeleton = dict.fromkeys(fields)
 
         try:
             skeleton_str = json.dumps(skeleton, indent=2, default=str)
