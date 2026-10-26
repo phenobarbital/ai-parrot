@@ -276,4 +276,15 @@ Use `$sdd-start TASK-4702` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+
+- Task: TASK-4702
+- Feature: semantic-layer
+- Implementation SHA: 67a6c41b92a720a35d1d6fa78d5dfd8aa6123f5c
+- Closed at (UTC): 2026-10-26T22:49:02+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 188.4s · Tokens: n/a |
