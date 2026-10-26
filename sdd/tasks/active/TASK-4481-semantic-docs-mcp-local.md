@@ -7,11 +7,15 @@
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4710
 **Assigned-to**: unassigned
-**Spec revision**: 0.4
+**Spec revision**: 0.4 (task amended 2026-10-26: operator config files dropped)
 
 ## Context
 
 Spec rev 0.4, §3 M11; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
+
+## Amendment (2026-10-26)
+
+`.parrot/mcp-toolkits.yaml` and `.mcp.json` are both git-ignored, operator-local files (`.gitignore:418` `.parrot/`, `.gitignore:399` `.mcp.json`) and do not exist in a worktree, so they cannot be MODIFY targets (engine: `complexity_contract_invalid`). By user decision they are **removed from this task**. Instead, `docs/tools/semantic-layer.md` carries the exact copyable `semantic-layer:` YAML section and `parrot-semantic-layer` MCP JSON entry (blocks below), and `test_mcp_local.py` writes those same blocks into `tmp_path` and loads/starts them from there. Scope items that say "add ... at verified anchors" now mean "document copyable blocks"; operators paste them into their own local configs.
 
 ## Scope
 
@@ -27,8 +31,6 @@ Spec rev 0.4, §3 M11; replaces the prior task text for this same reserved ident
 | File | Action | Description |
 |---|---|---|
 | `docs/tools/semantic-layer.md` | CREATE | Scoped deliverable per blueprint |
-| `.parrot/mcp-toolkits.yaml` | MODIFY | Scoped deliverable per blueprint |
-| `.mcp.json` | MODIFY | Scoped deliverable per blueprint |
 | `packages/ai-parrot-semantic/tests/test_mcp_local.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
@@ -85,14 +87,6 @@ def create_toolkit_mcp_server(name: str, root: Path=Path.cwd(), **overrides: Any
       "action": "CREATE"
     },
     {
-      "path": ".parrot/mcp-toolkits.yaml",
-      "action": "MODIFY"
-    },
-    {
-      "path": ".mcp.json",
-      "action": "MODIFY"
-    },
-    {
       "path": "packages/ai-parrot-semantic/tests/test_mcp_local.py",
       "action": "CREATE"
     }
@@ -145,9 +139,7 @@ temporary-config startup command, explicit allow/deny validation. -->
 
 **Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
-### `.parrot/mcp-toolkits.yaml` (MODIFY)
-
-Anchor `  database-query:` — occurrences: **1**, freshly verified at `.parrot/mcp-toolkits.yaml:110`.
+### Copyable `mcp-toolkits.yaml` section (documented in `docs/tools/semantic-layer.md`, NOT a file target)
 
 ```yaml
 # BEFORE verified database-query sibling under toolkits: (count below).
@@ -167,9 +159,7 @@ Anchor `  database-query:` — occurrences: **1**, freshly verified at `.parrot/
 
 **Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
-### `.mcp.json` (MODIFY)
-
-Anchor `    "parrot-database-query": {` — occurrences: **1**, freshly verified at `.mcp.json:64`.
+### Copyable `.mcp.json` entry (documented in `docs/tools/semantic-layer.md`, NOT a file target)
 
 ```json
 {
@@ -219,14 +209,12 @@ def test_explicit_allow_and_deny_calls(tmp_path: Path) -> None:
 ### FILL IN checklist
 
 - [ ] `docs/tools/semantic-layer.md` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
-- [ ] `.parrot/mcp-toolkits.yaml` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
-- [ ] `.mcp.json` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 - [ ] `packages/ai-parrot-semantic/tests/test_mcp_local.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
 - [ ] Document clean-room model schema, aggregate/join examples, all tool signatures, policy schema, default governance, exact provenance, audit-required resolution and Postgres sink.
-- [ ] Add semantic-layer YAML class LocalSemanticLayerToolkit with required host guard_factory/agent_id/static_subject; add matching MCP entry at verified anchors. Preserve all unrelated operator settings/secrets; never commit private values.
+- [ ] Document a copyable semantic-layer YAML section (class LocalSemanticLayerToolkit with required host guard_factory/agent_id/static_subject) and the matching `parrot-semantic-layer` MCP JSON entry in `docs/tools/semantic-layer.md`, with placeholder values only. The git-ignored operator files `.parrot/mcp-toolkits.yaml` and `.mcp.json` are NOT modified (amendment 2026-10-26).
 - [ ] Configs are operator-local if ignored: document identical copyable examples and test temporary files; do not force-add private config wholesale. The future implementation may edit local config only with safe placeholder values.
 - [ ] Test actual server factory with governed fixture and explicit evaluator, not merely config parsing/listing. Document fail-closed startup, absent sink default, conformance requirements and no bare-manager hand-off.
 - [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
