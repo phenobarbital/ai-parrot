@@ -563,10 +563,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Moved finalize_task, check_task_state, check_task_graph, worktree_status, review_checkpoint via git mv into parrot/sdd/scripts; _KERNEL_DIR now package-relative; worktree_status imports parrot.sdd.scripts.sdd_meta (the old comment line was dropped); five alias shims written; test file added. review_checkpoint moved byte-identical (100% rename, C12). Tests: new suite 12 passed; test_check_task_state 8, test_check_task_graph 24, brief_scaffold 1, worktree_status 56, test_finalize_task 3, test_review_checkpoint 3 all pass; test_optimization_workflow_contracts passes (3) when .venv/bin is on PATH (without it ruff is not found and test_mixed_delivery_checkpoint_fresh_review fails — environmental). Running all files in one pytest invocation hits a conftest ImportPathMismatch, so they were run per-file. ruff clean on my files (10 pre-existing errors in scripts/sdd/insight.py, token_audit.py, calibrate_rlimit_as.py). OPEN FOLLOW-UPS: finalize_task.py:394 still looks up scripts/sdd/close_task.sh, so it fails in a foreign repo; needs parrot.sdd.scripts.close_task from TASK-4087. finalize_task has pre-existing heavy parrot.flows.dev_loop imports (~2.4s, navconfig chdir).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

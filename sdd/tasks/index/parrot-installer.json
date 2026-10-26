@@ -575,7 +575,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -585,8 +585,9 @@
       "parallelism_notes": "places modules in parrot/sdd/scripts/ package created by TASK-4085 (parrot/sdd/scripts/__init__.py, sdd_meta re-export)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4086-sdd-scripts-task-state.md"
+      "completed_at": "2026-10-26T19:14:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4086-sdd-scripts-task-state.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4087",
