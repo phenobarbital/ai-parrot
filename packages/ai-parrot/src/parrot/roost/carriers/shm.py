@@ -1,4 +1,5 @@
 """Same-host carrier: frames as Arrow IPC in shared memory (FEAT-747 M8)."""
+
 from __future__ import annotations
 
 import asyncio

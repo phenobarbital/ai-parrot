@@ -1,4 +1,5 @@
 """Tests for the same-host shared-memory carrier (FEAT-747 M8)."""
+
 import asyncio
 from multiprocessing import shared_memory
 
@@ -55,6 +56,7 @@ async def test_close_unlinks_leftovers():
 
     async def capture(m):
         sent_ref["ref"] = m.content  # swallow: never delivered, so never ACKed
+
     shm._signal.send = capture  # type: ignore[method-assign]
     await shm.send(msg)
     name = sent_ref["ref"].shm_name
