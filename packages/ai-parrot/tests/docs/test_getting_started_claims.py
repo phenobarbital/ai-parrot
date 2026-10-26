@@ -14,6 +14,7 @@ import uuid as _uuid
 from pathlib import Path
 from typing import Literal
 
+import click
 from pydantic import BaseModel
 
 # repo root = five parents up from this file (packages/ai-parrot/tests/docs/<file>)
@@ -31,7 +32,7 @@ ANCHOR_RE = re.compile(r"<!--\s*verify:\s*(?P<kind>[\w-]+)=(?P<value>.+?)\s*-->"
 class DocClaim(BaseModel):
     """One `<!-- verify: kind=value -->` anchor extracted from the guide."""
 
-    kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep"]
+    kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep", "cli-verb", "flag"]
     value: str
     line: int  # 1-based line in the source document
     source: Path
@@ -193,6 +194,96 @@ def test_named_dep_floors_match() -> None:
             f"{c.source}:{c.line} dep floor '{requirement}' not declared by "
             f"packages/{dist}/pyproject.toml dependencies={declared}"
         )
+
+
+GLOBAL_RUNTIME = REPO_ROOT / "docs" / "install" / "global-runtime.md"
+CLI_DOCS = (GUIDE, GLOBAL_RUNTIME)  # C13: both documents are verified by the same harness
+INSTALL_ONE_LINER_RE = re.compile(r"\|\s*(bash|sh|iex)\b|\[scriptblock\]::Create")  # a piped install command inside a fence
+EXPLANATION_LABELS = ("Downloads:", "Writes:", "Verified by:", "Without piping:")
+
+
+def _cli_claims(kind: str) -> list[DocClaim]:
+    """`cli-verb` / `flag` claims across every CLI-bearing document that exists."""
+    return [c for doc in CLI_DOCS if doc.is_file() for c in extract_claims(doc) if c.kind == kind]
+
+
+def _resolve_verb(path: str) -> click.Command | None:
+    """Walk `parrot <group> [<sub> ...]` through the REAL lazy CLI (`LazyGroup.get_command` imports on demand)."""
+    from parrot.cli import cli  # imported lazily: needs navconfig's env/ scaffold (CI install-guide job)
+
+    cmd: click.Command = cli
+    ctx = click.Context(cli)
+    for part in path.split():
+        if not isinstance(cmd, click.Group):
+            return None
+        nxt = cmd.get_command(ctx, part)
+        if nxt is None:
+            return None
+        ctx = click.Context(nxt, parent=ctx)
+        cmd = nxt
+    return cmd
+
+
+def test_extract_claims_parses_cli_kinds(tmp_path: Path) -> None:
+    """The two rev-0.2 kinds parse with the `group sub` / `group sub:--flag` value shapes."""
+    doc = tmp_path / "d.md"
+    doc.write_text(
+        "<!-- verify: cli-verb=sdd install -->\n<!-- verify: flag=sdd install:--dry-run -->\n", encoding="utf-8"
+    )
+    kinds = {c.kind: c.value for c in extract_claims(doc)}
+    assert kinds == {"cli-verb": "sdd install", "flag": "sdd install:--dry-run"}
+
+
+def test_cited_cli_verbs_exist() -> None:
+    """Every `cli-verb` claim resolves to a registered click command (C13)."""
+    claims = _cli_claims("cli-verb")
+    assert claims, "no cli-verb claims found - the guide must anchor its parrot commands"
+    for c in claims:
+        assert _resolve_verb(c.value) is not None, f"{c.source}:{c.line} unknown command 'parrot {c.value}'"
+
+
+def test_cited_flags_exist() -> None:
+    """Every `flag` claim (`<verb>:<--flag>`) is an option of that command (C13)."""
+    claims = _cli_claims("flag")
+    assert claims, "no flag claims found - the guide must anchor the flags it cites"
+    for c in claims:
+        verb, _, flag = c.value.partition(":")
+        cmd = _resolve_verb(verb)
+        assert cmd is not None, f"{c.source}:{c.line} unknown command 'parrot {verb}'"
+        opts = {o for p in cmd.params for o in (*p.opts, *p.secondary_opts)}
+        assert flag in opts, f"{c.source}:{c.line} 'parrot {verb}' has no option {flag}"
+
+
+def test_install_commands_are_explained() -> None:
+    """C14a / FEAT-586 AC8: each piped install one-liner is followed by Downloads/Writes/Verified by/Without piping."""
+    lines = GUIDE.read_text(encoding="utf-8").splitlines()
+    found = 0
+    in_fence = False
+    for i, text in enumerate(lines, start=1):
+        if text.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence or not INSTALL_ONE_LINER_RE.search(text):
+            continue
+        found += 1
+        # skip to the closing fence of the block, then the explanation paragraph that follows it
+        j = i  # 0-based index of the line after the one-liner
+        while j < len(lines) and not lines[j].lstrip().startswith("```"):
+            j += 1
+        j += 1
+        paragraph: list[str] = []
+        while j < len(lines):
+            line = lines[j]
+            if line.startswith("#") or line.lstrip().startswith("```"):
+                break
+            if not line.strip() and paragraph and not paragraph[-1].strip():
+                break
+            paragraph.append(line)
+            j += 1
+        block = "\n".join(paragraph)
+        for label in EXPLANATION_LABELS:
+            assert label in block, f"{GUIDE}:{i} install command lacks '{label}'"
+    assert found >= 2, "the guide must document the POSIX and PowerShell one-liners"
 
 
 def _make_stub_client_class():

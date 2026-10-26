@@ -127,6 +127,68 @@ uv pip install --python .venv/bin/python ai-parrot
 **A bare install alone is not enough to talk to an LLM** — see the next
 section.
 
+### Global install (managed runtime, no project venv)
+
+<!-- verify: cli-verb=self doctor -->
+<!-- verify: flag=self doctor:--runtime-only -->
+Instead of a per-project venv you can install AI-Parrot once per machine. One command puts `parrot`,
+`wikitoolkit` and `bookstore` on your PATH, backed by a managed runtime under `~/.parrot` (or
+`$PARROT_HOME`): a pinned `uv`, a uv-managed Python 3.12 and a venv holding `ai-parrot` together with
+`ai-parrot-tools` at the same version (`wikitoolkit mcp` needs it). It needs no system Python.
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh | bash -s -- --global --with sdd
+```
+
+**Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` archive plus its `.sha256` file
+(`https://github.com/astral-sh/uv/releases/download/0.11.28/uv-<target>.tar.gz`), then `ai-parrot` and
+`ai-parrot-tools` from PyPI. A uv already on your PATH is never used or modified.
+**Writes:** `~/.parrot/bin`, `~/.parrot/venv` and `~/.parrot/python`, plus a `# >>> parrot >>>` PATH block
+in your shell profile. Existing `~/.parrot` data (wikis, library, skills, brains, `parrot.db`) is never touched.
+**Verified by:** the uv archive checksum, then `parrot self doctor --runtime-only`; a failure removes only
+what the run created. Before writing anything the script checks the platform, `curl`/`wget`, `sha256sum`,
+`git`, 2 GiB of free space under `PARROT_HOME` and that GitHub and PyPI are reachable, and prints a plan first.
+**Without piping:** download `install-parrot.sh` and `SHA256SUMS` from
+`https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/`, run
+`sha256sum -c --ignore-missing SHA256SUMS` (macOS: `shasum -a 256 -c --ignore-missing SHA256SUMS`), read the
+script, then run `bash install-parrot.sh --global --with sdd`. Add `--dry-run` to print the plan only.
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.ps1))) -Global -With sdd"
+```
+
+**Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` zip plus its `.sha256` file, then
+`ai-parrot` and `ai-parrot-tools` from PyPI.
+**Writes:** `~\.parrot\bin`, `~\.parrot\venv` and `~\.parrot\python`, and adds `~\.parrot\bin` to your
+USER PATH (never the Machine PATH); reopen the terminal afterwards.
+**Verified by:** the uv checksum (`Get-FileHash`), then `parrot self doctor --runtime-only`; a failure
+removes only what the run created.
+**Without piping:** `Invoke-WebRequest` both `install-parrot.ps1` and `SHA256SUMS` from the same folder,
+compare `(Get-FileHash install-parrot.ps1).Hash` with its line in `SHA256SUMS`, read the script, then run
+`powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global -With sdd`.
+
+Reference detail (gate, plan text, launcher order, `--portable`, version skew) is in
+[docs/install/global-runtime.md](install/global-runtime.md).
+
+### Manage the runtime: `parrot self`
+
+<!-- verify: cli-verb=self add -->
+<!-- verify: flag=self add:--here -->
+<!-- verify: cli-verb=self env -->
+<!-- verify: cli-verb=self update -->
+<!-- verify: cli-verb=self uninstall -->
+<!-- verify: flag=self uninstall:--yes -->
+- `parrot self add <component>` installs a component's packages into the managed venv; `--here` installs
+  into the current project venv instead, and is the only way a dependency enters a project venv.
+- `parrot self env` prints the venv the launcher resolves, the rule that picked it and the versions.
+- `parrot self doctor` diagnoses the runtime, host configs and toolkit requirements.
+- `parrot self update` upgrades `ai-parrot` in the managed venv (`--version` pins one).
+- `parrot self uninstall` removes only `bin/`, `venv/` and `python/` (`--yes` skips the prompt).
+
 ---
 
 ## 3. Install a provider (REQUIRED)
@@ -285,6 +347,43 @@ wikitoolkit query "where is the ingest pipeline implemented?"
 
 - Runs a token-budgeted, ranked lexical search over that local index and
   prints matching page stubs — again, fully offline once `build` has run.
+
+### Use the SDD flow in your repo
+
+<!-- verify: cli-verb=sdd install -->
+<!-- verify: flag=sdd install:--host -->
+<!-- verify: flag=sdd install:--dry-run -->
+<!-- verify: flag=sdd install:--force -->
+<!-- verify: cli-verb=sdd status -->
+<!-- verify: cli-verb=sdd run -->
+<!-- verify: cli-verb=self doctor -->
+<!-- verify: flag=self doctor:--sdd -->
+With the global runtime installed, any git repository (Python or not) can adopt the Spec-Driven Development
+flow:
+
+```bash
+parrot sdd install --host claude --dry-run   # preview: write / skip / upgrade per file; changes nothing
+parrot sdd install --host claude             # deploy commands, skills, helpers and seeds
+parrot self doctor --sdd                     # origin, base branch, ledger, worktrees ignore, gh, jq, host CLIs
+parrot sdd status                            # missing | current | outdated | edited | foreign
+```
+
+- The install writes the host's `/sdd-*` commands, the seeds `sdd/config.json`, `sdd/CONVENTIONS.md` and
+  `sdd/tasks/.id_ledger.json`, a `.claude/worktrees/` ignore block, a marked `.gitattributes` block
+  (`merge=union` for the ledger log) and the four `parrot-ledger` git hooks. What it wrote is recorded in
+  `sdd/.sdd-installed.json`; commit it. `/sdd-insight` is not installed.
+- Edit `sdd/config.json`: `base_branch`, `hotfix_base`, `issue_tracker`, `test_command`, ... When
+  `test_command` is set, the shipped test steps run it once from the repo root instead of the selection/report
+  steps (`cache_test_contract` in `/sdd-task`, `select_tests` / `test_report` in `/sdd-done`), and a run with no
+  tests shows "not run". When it is null the ai-parrot selection path applies, and `parrot sdd install` warns.
+- Fill in the `sdd/CONVENTIONS.md` seed (`## Repository layout`, `## Project areas`); it is created once and
+  never overwritten.
+- Then open your assistant and run your first `/sdd-spec` ... command. Helpers run as
+  `parrot sdd run <name>` (for example `parrot sdd run reserve_ids --help`).
+- Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
+  (`--force` overwrites edited files; foreign files are never touched).
+
+More: [docs/install/global-runtime.md](install/global-runtime.md).
 
 ---
 
