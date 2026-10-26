@@ -853,10 +853,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Moved id_ledger, reserve_ids, check_id_collisions, ensure_worktree, brief_meta, worktree_environment into parrot.sdd.scripts (git mv, rename commit a7b9b3e7f); added __init__ and sdd_meta re-export; 5 alias shims in scripts/sdd plus runpy/alias shim at old worktree_environment path; _load_guard_bash now uses package-relative _KERNEL_PARENT; adapted test_standalone_loader_resolves_kernel_by_path; new tests/sdd/test_scripts_ledger_worktree.py (24 passed). All validation suites pass (id_ledger 5, reserve_ids 30, check_id_collisions 10, ensure_worktree 18, sdd_meta 8, worktree_plan 9, brief_meta 14, brief_scaffold 1, brief_template 3, worktree_environment 57, test_guard 14). ruff clean on touched files. Note: a first shim deadlock (PreToolUse hook ran the moved path) was resolved by the coordinator restoring the old-path shim.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
