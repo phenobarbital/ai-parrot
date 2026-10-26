@@ -745,10 +745,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented per blueprint: script_path in resolve_binary, PORTABLE_TOOLKIT_CONFIG, portable= on toolkit/mcp/rules/bookstore emitters, tri-state --portable/--no-portable, _current_portable_mode + sticky reconcile_toolkit_tables, PARROT_PROJECT root (+ relative --config) in mcp-local. FILL IN (S3 project pin): nothing added (no evidence of variable expansion). Tests: new 9 + codex suites all pass (17 + 37), ruff clean. Test groups must run separately (packages/ai-parrot/tests vs tests/ conftest clash, pre-existing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: _current_portable_mode: a bare 'wikitoolkit' command is ambiguous (baked fallback when no venv binary resolves, as in test_codex_toolkit_reconcile), so when managed parrot-* tables exist they decide; otherwise the bare command means portable.

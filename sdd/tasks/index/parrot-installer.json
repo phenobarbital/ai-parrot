@@ -512,7 +512,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -522,8 +522,9 @@
       "parallelism_notes": "imports script_path from TASK-4071 (parrot/launcher.py) for codex/* emitters; also sole owner of mcp/local_cli.py (PARROT_PROJECT root)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4083-codex-portable.md"
+      "completed_at": "2026-10-26T19:04:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4083-codex-portable.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4084",
