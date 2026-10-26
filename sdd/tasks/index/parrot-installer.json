@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-26T20:55:55+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -776,7 +776,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -795,8 +795,9 @@
       "parallelism_notes": "documents behavior delivered by TASK-4076 (bootstrap/checksums), TASK-4080 (self), TASK-4082/4083/4084 (--portable), TASK-4091 (sdd install)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4095-docs-and-supersede.md"
+      "completed_at": "2026-10-26T20:55:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4095-docs-and-supersede.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4298",

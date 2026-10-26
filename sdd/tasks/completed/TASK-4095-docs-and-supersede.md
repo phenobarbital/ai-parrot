@@ -707,10 +707,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Extended getting-started.md (global install POSIX+PowerShell with Downloads/Writes/Verified by/Without piping, parrot self, SDD section); harness gained cli-verb/flag kinds + test_install_commands_are_explained; created docs/install/global-runtime.md; INSTALL.md and docs/INSTALL.md are pointers (Python 3.11-3.13). 14 harness tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: PowerShell one-liner uses a child-process scriptblock form (irm|iex cannot pass -Global; exit would close the session), so INSTALL_ONE_LINER_RE also matches [scriptblock]::Create; the explanation test only inspects lines inside code fences (prose mentioned 'curl | bash'). INSTALL.md kept system-dependency sections, removed uv/venv/install sections.
