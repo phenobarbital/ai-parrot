@@ -1,4 +1,5 @@
 """In-process carrier: one asyncio.Queue per address, payloads by reference (FEAT-747 M7, resolved U5)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -31,9 +32,9 @@ class InProcessCarrier(Carrier):
         if msg.capability_filter:
             pattern = msg.capability_filter
             targets = [
-                sub for sub in self._subs.values()
-                if sub[0].name != msg.sender.name
-                and any(fnmatch.fnmatchcase(cap, pattern) for cap in sub[2])
+                sub
+                for sub in self._subs.values()
+                if sub[0].name != msg.sender.name and any(fnmatch.fnmatchcase(cap, pattern) for cap in sub[2])
             ]
             if not targets:
                 raise Undeliverable(f"no subscriber matches capability filter {pattern!r}")

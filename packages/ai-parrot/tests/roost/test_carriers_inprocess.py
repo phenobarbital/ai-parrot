@@ -1,4 +1,5 @@
 """Tests for the in-process Roost carrier (FEAT-747 TASK-4720)."""
+
 import asyncio
 
 import pytest
@@ -12,9 +13,13 @@ from parrot.roost.performatives import InteractionProtocol as IP, Performative a
 
 def _msg(receivers, content=None, cap=None):
     return RoostMessage(
-        performative=P.INFORM, protocol=IP.INFORM, conversation_id="c",
-        sender=AgentAddress(name="a"), receivers=[AgentAddress(name=n) for n in receivers],
-        content=content, capability_filter=cap,
+        performative=P.INFORM,
+        protocol=IP.INFORM,
+        conversation_id="c",
+        sender=AgentAddress(name="a"),
+        receivers=[AgentAddress(name=n) for n in receivers],
+        content=content,
+        capability_filter=cap,
     )
 
 

@@ -1,4 +1,5 @@
 """Carrier contract (FEAT-747 M7). The protocol is identical on every carrier; only payload passing differs."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
