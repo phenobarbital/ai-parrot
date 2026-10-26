@@ -94,3 +94,12 @@ def test_tool_optimization_templates_declare_ai_parrot_tools(name: str) -> None:
 def test_every_shipped_template_still_loads() -> None:
     for name in available_templates():
         assert isinstance(load_template(name), ToolkitTemplate)
+
+
+@pytest.mark.parametrize("name", ["../_toolkit_templates/lsp", "sub/../lsp", "..", "/etc/passwd", "a/b", "lsp/../lsp", "", "nope"])
+def test_load_template_rejects_non_catalogue_names(name: str) -> None:
+    """Only bare packaged-catalogue names resolve; traversal / absolute / unknown raise KeyError."""
+    from parrot.mcp.toolkit_seed import load_template
+
+    with pytest.raises(KeyError):
+        load_template(name)

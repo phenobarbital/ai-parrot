@@ -70,6 +70,10 @@ def load_template(name: str) -> ToolkitTemplate:
     Raises:
         KeyError: no template named `name` ships with this wheel.
     """
+    # Executable metadata (requirements, post_install) comes ONLY from the packaged catalogue: reject anything that
+    # is not a bare catalogue name before a resource path is built (no separators, "..", absolute paths).
+    if name not in available_templates():
+        raise KeyError(f"No template named {name!r} in the packaged catalogue")
     template_dir = files(TEMPLATE_PACKAGE) / TEMPLATE_DIR
     template_path = template_dir / f"{name}.yaml"
 
