@@ -14,7 +14,7 @@ depends_on: [FEAT-746]
 **Feature ID**: FEAT-747
 **Date**: 2026-10-26
 **Author**: Jesus Lara / AI-Parrot Team
-**Status**: draft
+**Status**: review
 **Target version**: 1.3.0
 **Proposal**: `sdd/proposals/local-inter-agent.proposal.md` (status `review`, 9/9 questions resolved 2026-10-26)
 **Source brainstorm**: `sdd/state/FEAT-747/source.md`
@@ -81,7 +81,9 @@ The **capability directory** is the FEAT-070 `CapabilityRegistry`, extended (res
 
 The LLM never emits a performative. It calls a tool; **`RoostToolkit`** maps the origin tool to the act (`report` → `inform`, mounted capability tool → `request`, `ask_agent`/`AgentTool` → `query`, `call_for_proposals` → `cfp`, `watch` → `subscribe`, generic `send` with a four-value enum). Resolved decisions folded in (proposal §5): all twelve acts and five protocols ship in v0; a directly addressed `inform` wakes the receiver, a broadcast or capability-filtered `inform` is stored and wakes only when a registered handler asks for a decision; `digest` is owned by the coordinator if one exists, else by the last agent that closed a Request; Contract Net scores `propose(cost, time, confidence)` with fixed weights and a per-channel pluggable `BidScorer` override, waking the requester's LLM only when the rule cannot decide; the in-process carrier keeps the full envelope and passes payloads by reference (zero serialization, uniform audit and gating); the Matrix carrier **subsumes** FEAT-463 (`ask_agent` = Request over the engine, human `body` mandatory, `m.parrot.*` namespace extended, FEAT-195's rejection reinterpreted: Matrix is one carrier among four).
 
-**Envelope coupling.** The FEAT-746 spec does not exist yet, so Roost binds to the envelope through a structural `EnvelopeLike` `Protocol` naming only the fields it reads (`envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`). The concrete class is Squawk's; the seam lets M1–M8 and M10 build and test before FEAT-746 merges, while M3 (`kind`), M9 (bus serializer) and M11 (`catalog.mount`) remain hard-gated on it (see Worktree Strategy).
+**Envelope coupling (resolved Q1/Q2).** The Squawk envelope model, its Cap'n Proto codec and the catalog tools live **only in the FEAT-746 satellite** (`ai-parrot-squawk`, import path provisionally `parrot.squawk`, fixed by the FEAT-746 spec). Roost never imports the satellite at module level: `parrot/roost/squawk_bridge.py` probes it lazily (`squawk_available()`), and every other module binds to the envelope through the structural `EnvelopeLike` `Protocol` naming only the fields Roost reads (`envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`, `auth_token`). With the satellite present the endpoint wraps messages in the Squawk envelope and encodes them with its `CapnpEnvelopeCodec`; without it Roost **degrades, not fails**: messages ride Roost's own minimal `LocalEnvelope`, the bus carrier uses Roost's `JsonEnvelopeCodec` (both satisfy the same sync `EnvelopeCodec` protocol declared in `parrot/roost/codec.py`), and `find_and_mount` returns an empty list with a warning (no `catalog.mount`). Only that mount step and M3's read of FEAT-746's `kind` field depend on the satellite; everything else builds and tests now (see Worktree Strategy).
+
+**Authority on the wire (resolved Q3).** In-process and same-host carriers pass the caller's `PermissionContext` by reference. On the bus and Matrix carriers the message carries **both** the serialized `PermissionContext` and, when FEAT-746 has issued one, the Biscuit token (`RoostMessage.auth_token`); the serving endpoint prefers the token and falls back to the context. Contract Net attenuation (AC-14) is a scope intersection in v0 and upgrades to token attenuation when Biscuit lands.
 
 ### Component Diagram
 
@@ -124,7 +126,7 @@ The LLM never emits a performative. It calls a tool; **`RoostToolkit`** maps the
 | `AgentTool` (`parrot/tools/agent.py`) | extends | when the caller has a `RoostEndpoint` and the target is Roost-enabled, `_execute` issues a `query` instead of a bare text question |
 | `AgentSwarmToolkit.ask_agent` (`matrix/crew/swarm_toolkit.py`) | extends | routed through the engine as a Request; `ctx.current_hops` seeds `ConversationBudget.hops`; the FEAT-463 status enum (`hop_limit`, `unknown_agent`, …) is preserved |
 | `ParrotEventType` / `MatrixClientWrapper` (`matrix/events.py`, `matrix/client.py`) | extends / uses | `m.parrot.roost` message event, `m.parrot.blackboard` state event (one `state_key` per key); `send_event` / `set_room_state` / `get_room_state_event` / `on_custom_event` |
-| FEAT-746 Squawk (envelope, serializer, catalog tools, capability gate) | depends on | names pinned in §6 "Does NOT Exist (provided by FEAT-746)"; see §8 Q1/Q2 |
+| FEAT-746 Squawk satellite (envelope, Cap'n Proto codec, catalog tools, capability gate, Biscuit) | optional runtime dependency | probed lazily by `parrot/roost/squawk_bridge.py` only (resolved Q1); names pinned in §6 "Does NOT Exist (provided by the FEAT-746 satellite)"; Roost degrades without it |
 
 ### Data Models
 
@@ -174,7 +176,8 @@ class RoostMessage(BaseModel):
     body: Optional[str] = None                                      # human rendering; MANDATORY on the Matrix carrier
     envelope: Any = None                                            # EnvelopeLike (Squawk envelope, FEAT-746)
     failure: Optional[FailureInfo] = None
-    permission_context: Any = None                                  # parrot.auth.permission.PermissionContext of the caller
+    permission_context: Any = None                                  # parrot.auth.permission.PermissionContext of the caller (by reference in-process; serialized on bus/Matrix)
+    auth_token: Optional[str] = None                                # FEAT-746 Biscuit token when issued; authoritative over permission_context on the serving side (Q3)
     created_at: datetime
 
 class EnvelopeLike(Protocol):           # structural seam over the Squawk envelope (see §2 Overview)
@@ -185,6 +188,27 @@ class EnvelopeLike(Protocol):           # structural seam over the Squawk envelo
     token_budget: Optional[int]
     caller: str
     idempotency_key: Optional[str]
+    auth_token: Optional[str]
+
+class LocalEnvelope(BaseModel):        # Roost's minimal EnvelopeLike, used when the Squawk satellite is absent (Q1)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    envelope_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    correlation_id: str
+    trace: Optional[TraceContext] = None
+    budget_ms: Optional[int] = None
+    token_budget: Optional[int] = None
+    caller: str
+    idempotency_key: Optional[str] = None
+    auth_token: Optional[str] = None
+```
+
+```python
+# parrot/roost/codec.py  (Q2)
+class EnvelopeCodec(Protocol):
+    """Sync, bytes-safe codec over an EnvelopeLike + the Roost fields. Implemented by Roost's JsonEnvelopeCodec and the satellite's CapnpEnvelopeCodec."""
+    content_type: str                                   # "application/json" | "application/x-capnp"
+    def encode(self, msg: RoostMessage) -> bytes: ...
+    def decode(self, data: bytes) -> RoostMessage: ...
 ```
 
 ```python
@@ -348,9 +372,9 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
 | M6: Blackboard | yes | CAS on `expected_version`, `WriterPolicy` table, subscribe ⇒ `inform` fixed | — |
 | M7: Carrier base + in-process | yes | `Carrier` ABC, per-address `asyncio.Queue`, by-reference contract | — |
 | M8: Same-host shm carrier | yes | reuse `encode_dataframe` / `decode_dataframe_from_shm` / `unlink_shm`; ownership rule fixed | — |
-| M9: Event-bus carrier | **no** | — | needs FEAT-746's bytes-safe envelope serializer name and import path (§8 Q2) |
+| M9: Event-bus carrier + codec | yes | `EnvelopeCodec` protocol (sync `encode`/`decode`, `content_type`) and `JsonEnvelopeCodec` fixed (Q2); topic layout, metadata keys and dedup fixed | — |
 | M10: Roost audit ledger | yes | entry schema fixed; `AbstractKMSSigner` reuse; canonical bytes = sorted-key JSON of the entry minus `signature` | — |
-| M11: Endpoint, toolkit, origin-tool map, `AgentTool` | **no** | — | `mount_capabilities` depends on FEAT-746 catalog tool names (§8 Q1); the rest is mechanical once Q1 closes |
+| M11: Endpoint, toolkit, origin-tool map, `squawk_bridge`, `AgentTool` | yes | lazy satellite probe + degrade-to-empty contract fixed (Q1); token-over-context rule fixed (Q3); the satellite's real import path is read from one constant in `squawk_bridge.py` | — |
 | M12: Matrix carrier, room-state blackboard, `ask_agent` subsumption | yes | event types, content models and `ask_agent` routing fixed (§3 M12) | — |
 | M13: Spike gates L-S1…L-S6 + docs | yes | pass criteria fixed by the brainstorm table; L-S6 opt-in env var fixed (`PARROT_TEST_MATRIX=1`) | — |
 
@@ -377,6 +401,7 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
 
   # parrot/roost/messages.py  (new)
   class EnvelopeLike(Protocol): ...             # §2 Data Models
+  class LocalEnvelope(BaseModel): ...           # §2 Data Models — Roost's own envelope when the Squawk satellite is absent (Q1)
   class AgentAddress(BaseModel): ...
   class FailureInfo(BaseModel): ...
   class RoostMessage(BaseModel):
@@ -655,27 +680,39 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
           """Unlink every segment still owned by this sender."""
   ```
 
-### Module 9: Event-bus carrier
-- **Path**: `parrot/roost/carriers/bus.py` (new)
-- **Responsibility**: the default same-network carrier on a **dedicated** `navigator_eventbus.EventBus` instance (FEAT-710 idiom: Streams transport, outbox, `event_id` dedup; config keys `PARROT_ROOST_BUS_URL` / `PARROT_ROOST_BUS_PREFIX`, never the telemetry instance). Topic layout `roost.<agent_name>` for addressed traffic, `roost.cap.<category>` for capability-filtered broadcasts, `roost.dlq` dead-letter. Mapping `RoostMessage` → `Event(event_type, payload=<FEAT-746 serialized envelope>, correlation_id=envelope.correlation_id, metadata={"reply_to": "roost.<sender>", "idempotency_key": ..., "trace": ..., "performative": ..., "conversation_id": ...})`. Idempotent receive by `idempotency_key` (LRU set). Content on this carrier is a handle or a serialized typed object, never JSON text in `body`.
-- **Depends on**: M7; FEAT-746 bytes-safe envelope serializer (§8 Q2 — hard gate).
+### Module 9: Event-bus carrier + envelope codec
+- **Path**: `parrot/roost/codec.py`, `parrot/roost/carriers/bus.py` (new)
+- **Responsibility**: the sync `EnvelopeCodec` protocol and Roost's `JsonEnvelopeCodec` (Q2: encodes the `EnvelopeLike` fields plus the Roost fields; `content` is encoded only when it is a Pydantic model, a JSON-able value or a handle id — frames and arbitrary objects must already have been turned into a handle or `content_ref`, otherwise `encode` raises `UnencodableContent`); the satellite's `CapnpEnvelopeCodec` implements the same protocol and is selected by `squawk_bridge.load_codec()` when available. The carrier itself is the default same-network carrier on a **dedicated** `navigator_eventbus.EventBus` instance (FEAT-710 idiom: Streams transport, outbox, `event_id` dedup; config keys `PARROT_ROOST_BUS_URL` / `PARROT_ROOST_BUS_PREFIX`, never the telemetry instance). Topic layout `roost.<agent_name>` for addressed traffic, `roost.cap.<category>` for capability-filtered broadcasts, `roost.dlq` dead-letter. Mapping `RoostMessage` → `Event(event_type, payload={"codec": codec.content_type, "data": <bytes as base64 str>}, correlation_id=envelope.correlation_id, metadata={"reply_to": "roost.<sender>", "idempotency_key": ..., "trace": ..., "performative": ..., "conversation_id": ..., "auth_token": ...})`. Idempotent receive by `idempotency_key` (LRU set). Content on this carrier is a handle or a serialized typed object, never JSON text in `body`. Serialized `permission_context` and `auth_token` both travel (Q3).
+- **Depends on**: M7. No FEAT-746 gate (Q1/Q2): the JSON codec and `LocalEnvelope` make the carrier self-sufficient.
 - **Interface Skeleton**:
   ```python
+  # parrot/roost/codec.py  (new)
+  class UnencodableContent(ValueError): ...
+  class EnvelopeCodec(Protocol): ...            # §2 Data Models
+  class JsonEnvelopeCodec:
+      """Roost's fallback codec (content_type "application/json"); round-trips LocalEnvelope and any EnvelopeLike by its fields."""
+      content_type = "application/json"
+      def encode(self, msg: RoostMessage) -> bytes: ...
+      def decode(self, data: bytes) -> RoostMessage:
+          """Rebuilds a LocalEnvelope; the satellite codec rebuilds the Squawk envelope."""
+
   # parrot/roost/carriers/bus.py  (new)
   class EventBusCarrier(Carrier):
       kind = CarrierKind.NETWORK
       def __init__(self, bus: "EventBus", *, topic_prefix: str = "roost", dlq_topic: str = "roost.dlq",
-                   serializer: "EnvelopeSerializer", dedup_size: int = 10_000) -> None:
-          """*bus* must be a dedicated instance (validated like fanout._validate_bus: Streams transport)."""
+                   codec: Optional[EnvelopeCodec] = None, dedup_size: int = 10_000) -> None:
+          """*bus* must be a dedicated instance (validated like fanout._validate_bus: Streams transport).
+          *codec* defaults to squawk_bridge.load_codec() → JsonEnvelopeCodec when the satellite is absent."""
       async def send(self, msg: RoostMessage) -> None: ...
       async def subscribe(self, address, inbound, *, capabilities=()) -> str:
           """bus.subscribe(f"{prefix}.{address.name}") plus one pattern per capability category."""
       async def unsubscribe(self, subscription_id: str) -> bool: ...
       async def close(self) -> None: ...
       @staticmethod
-      def to_event(msg: RoostMessage, *, serializer: "EnvelopeSerializer", prefix: str) -> "Event": ...
+      def to_event(msg: RoostMessage, *, codec: EnvelopeCodec, prefix: str) -> "Event": ...
       @staticmethod
-      def from_event(event: "Event", *, serializer: "EnvelopeSerializer") -> RoostMessage: ...
+      def from_event(event: "Event", *, codecs: Mapping[str, EnvelopeCodec]) -> RoostMessage:
+          """Selects the codec by payload["codec"]; unknown content_type ⇒ routed to the DLQ, never raised into the handler."""
   def build_roost_bus() -> "EventBus":
       """Dedicated publish+subscribe Streams bus from PARROT_ROOST_BUS_* (navconfig with env fallback), outbox enabled."""
   ```
@@ -697,12 +734,27 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
       def entries(self, *, conversation_id: Optional[str] = None, trace_id: Optional[str] = None) -> list[RoostAuditEntry]: ...
   ```
 
-### Module 11: Endpoint, toolkit, origin-tool mapping and `AgentTool` integration
-- **Path**: `parrot/roost/endpoint.py`, `parrot/roost/toolkit.py` (new); modifies `parrot/tools/agent.py:157`
-- **Responsibility**: `RoostEndpoint` composes engine, dispatcher, carriers, blackboard, ledger and the agent's `ToolManager`: inbound loop (`carrier.subscribe` → `dispatcher.dispatch` → execute decision: `execute_tool(permission_context=msg.permission_context)` for `RUN_TOOL`, `store_result(..., data_type="auto")` for `STORE`, `bot.wake(msg)` callback for `WAKE_LLM`, fixed-price `propose` for `BID_FROM_CONTRACT`), outbound helpers (`send`, `inform`, `request`, `query`, `cfp`, `subscribe`, `cancel`), harness-side `find_and_mount(query)` = `find_capability` (grant-filtered) → FEAT-746 `catalog.mount` (planner pre-mount, no LLM turn) and the LLM-visible `RoostToolkit` (`send` with enum `inform|request|query|subscribe`, `report`, `call_for_proposals`, `watch`, `find_agents`). `AgentTool._execute` issues a `query` through the caller's endpoint when `self.agent` is Roost-enabled (the native answer is stored to WorkingMemory and a short pointer string is returned, keeping the `-> str` contract); otherwise unchanged.
-- **Depends on**: M2, M3, M4, M5, M6, M7, M10; FEAT-746 catalog tools (§8 Q1 — hard gate for `find_and_mount`).
+### Module 11: Endpoint, toolkit, origin-tool mapping, Squawk bridge and `AgentTool` integration
+- **Path**: `parrot/roost/squawk_bridge.py`, `parrot/roost/endpoint.py`, `parrot/roost/toolkit.py` (new); modifies `parrot/tools/agent.py:157`
+- **Responsibility**: `squawk_bridge` is the **only** place that names the satellite (one `SQUAWK_MODULE` constant, provisionally `"parrot.squawk"`): `squawk_available()`, `load_codec()` (satellite `CapnpEnvelopeCodec` else `JsonEnvelopeCodec`), `new_envelope(...)` (satellite envelope else `LocalEnvelope`), `mount_capabilities(tool_manager, matches)` (satellite `catalog.mount` else `[]` + one warning per process — Q1: degrade, never fail). `RoostEndpoint` composes engine, dispatcher, carriers, blackboard, ledger and the agent's `ToolManager`: inbound loop (`carrier.subscribe` → `dispatcher.dispatch` → execute decision: `execute_tool(permission_context=resolve_authority(msg))` for `RUN_TOOL` where `resolve_authority` prefers `msg.auth_token` (Q3) and falls back to `msg.permission_context`, `store_result(..., data_type="auto")` for `STORE`, `bot.wake(msg)` callback for `WAKE_LLM`, fixed-price `propose` for `BID_FROM_CONTRACT`), outbound helpers (`send`, `inform`, `request`, `query`, `cfp`, `subscribe`, `cancel`), harness-side `find_and_mount(query)` = `find_capability` (grant-filtered) → `squawk_bridge.mount_capabilities` (planner pre-mount, no LLM turn) and the LLM-visible `RoostToolkit` (`send` with enum `inform|request|query|subscribe`, `report`, `call_for_proposals`, `watch`, `find_agents`). `AgentTool._execute` issues a `query` through the caller's endpoint when `self.agent` is Roost-enabled (the native answer is stored to WorkingMemory and a short pointer string is returned, keeping the `-> str` contract); otherwise unchanged.
+- **Depends on**: M2, M3, M4, M5, M6, M7, M9 (codec), M10. The satellite is an optional runtime dependency probed lazily; it gates only the real mount (Q1).
 - **Interface Skeleton**:
   ```python
+  # parrot/roost/squawk_bridge.py  (new)
+  SQUAWK_MODULE: Final[str] = "parrot.squawk"       # provisional; the FEAT-746 spec fixes it — change here only
+  class SquawkUnavailable(RuntimeError): ...
+  def squawk_available() -> bool:
+      """importlib.util.find_spec(SQUAWK_MODULE) is not None; cached per process."""
+  def load_codec() -> EnvelopeCodec:
+      """Satellite CapnpEnvelopeCodec when available, else JsonEnvelopeCodec (Q2)."""
+  def new_envelope(*, correlation_id: str, caller: str, trace: Optional[TraceContext] = None, budget_ms: Optional[int] = None,
+                   token_budget: Optional[int] = None, idempotency_key: Optional[str] = None, auth_token: Optional[str] = None) -> Any:
+      """Satellite envelope when available, else LocalEnvelope; both satisfy EnvelopeLike."""
+  async def mount_capabilities(tool_manager: "ToolManager", matches: Sequence[CapabilityMatch]) -> list[str]:
+      """Satellite catalog.mount per match → mounted tool names; without the satellite returns [] after one process-level warning (Q1)."""
+  def resolve_authority(msg: RoostMessage) -> Any:
+      """Q3: the PermissionContext derived from msg.auth_token when the satellite can verify it, else msg.permission_context; None ⇒ fail-closed in execute_tool."""
+
   # parrot/roost/endpoint.py  (new)
   WakeCallback = Callable[[RoostMessage, Dispatch], Awaitable[Optional[RoostMessage]]]
   class RoostEndpoint:
@@ -727,7 +779,8 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
       async def cancel(self, conversation_id: str, *, reason: str = "") -> None: ...
       def register_handler(self, content_type: str, handler: Handler, *, needs_decision: bool = False) -> None: ...
       async def find_and_mount(self, query: str, *, limit: int = 5) -> list[str]:
-          """Harness-side: registry.find_capability(query, caller=self.agent_name) → FEAT-746 catalog.mount → mounted tool names."""
+          """Harness-side: registry.find_capability(query, caller=self.agent_name) → squawk_bridge.mount_capabilities → mounted tool names
+          ([] with a warning when the Squawk satellite is absent — Q1)."""
       @property
       def metrics(self) -> dict[str, int]:
           """{'messages_in', 'messages_out', 'wakes', 'not_understood', 'stored'} for the L-S1/L-S2 gates."""
@@ -852,6 +905,11 @@ sub_id = await endpoint.subscribe(blackboard_key=BlackboardKey.DIGEST)
 | `test_shm_roundtrip_and_unlink_after_ack` | M8 | frame decoded, segment unlinked once ACKed |
 | `test_bus_event_mapping_reply_to_idempotency` | M9 | `correlation_id`, `metadata.reply_to`, dedup on replay |
 | `test_bus_requires_dedicated_instance` | M9 | telemetry bus rejected |
+| `test_json_codec_roundtrip` / `_rejects_unencodable_content` | M9 | `LocalEnvelope` + Roost fields round-trip; a frame without a handle raises `UnencodableContent` |
+| `test_bus_unknown_codec_goes_to_dlq` | M9 | payload with an unregistered `codec` lands on `roost.dlq` |
+| `test_bridge_degrades_without_squawk` | M11 | `squawk_available()` False ⇒ `JsonEnvelopeCodec`, `LocalEnvelope`, `mount_capabilities` returns `[]` with one warning |
+| `test_bridge_selects_satellite_when_present` | M11 | a stub module at `SQUAWK_MODULE` is picked up for codec, envelope and mount |
+| `test_resolve_authority_token_over_context` | M11 | token present ⇒ token-derived context; absent ⇒ `permission_context`; both absent ⇒ `None` (fail-closed) |
 | `test_audit_entry_signed_and_verified` / `_joined_by_trace_id` | M10 | signer reuse; `entries(trace_id=...)` |
 | `test_endpoint_request_roundtrip_native_result` | M11 | result is the object, not JSON text |
 | `test_toolkit_origin_tool_map` | M11 | `report`→inform, `call_for_proposals`→cfp, `watch`→subscribe; grant never in schemas |
@@ -951,6 +1009,9 @@ def stub_wake() -> WakeCallback:
 - [ ] AC-30 No new runtime dependency: pandas, pyarrow and navigator-eventbus are already declared (`packages/ai-parrot/pyproject.toml:170,180,187`); no Polars.
 - [ ] AC-31 `docs/roost/` documents performatives, protocols, gating, directory, blackboard, carriers and the FEAT-746 boundary.
 - [ ] AC-32 No breaking change to any existing public API (registry, capabilities, FlowContext, AgentTool, Matrix events, swarm toolkit).
+- [ ] AC-33 (Q1) No Roost module imports the Squawk satellite at module level; `squawk_bridge.py` is the only file that names it; with the satellite absent every Roost test passes, messages ride `LocalEnvelope`, and `find_and_mount` returns `[]` with exactly one warning per process.
+- [ ] AC-34 (Q2) `EnvelopeCodec` is sync with `encode(msg) -> bytes` / `decode(bytes) -> RoostMessage` / `content_type`; `JsonEnvelopeCodec` ships in core; the bus carrier accepts any codec and routes unknown `content_type`s to the DLQ.
+- [ ] AC-35 (Q3) On the bus and Matrix carriers both the serialized `PermissionContext` and `auth_token` travel; the serving endpoint uses the token when present and the context otherwise; neither present ⇒ `execute_tool` receives `None` and PBAC fails closed.
 
 ---
 
@@ -1161,11 +1222,12 @@ Verified absent at `729d51f57` (`grep -rl` over `packages/*/src`, 0 hits unless 
 - ~~Polars~~ — not a dependency and not to be added (FEAT-746 U3).
 - ~~`parrot/vectorstores/`~~, ~~`parrot/bots/orchestration/`~~ — long gone.
 
-**Provided by FEAT-746 — do NOT exist yet, do NOT invent them; names are provisional until `/sdd-spec FEAT-746` fixes them (§8 Q1, Q2):**
-- the Squawk envelope model (`EnvelopeLike` fields: `envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`) and its bytes-safe serializer (`EnvelopeSerializer` in M9's skeleton is a placeholder name);
-- the catalog tools `list` / `mount` / `unmount` / `search` / `find` (`RemoteToolkit`) used by `RoostEndpoint.find_and_mount`;
+**Provided by the FEAT-746 satellite (`ai-parrot-squawk`, provisional import path `parrot.squawk`) — do NOT exist yet, do NOT invent them, and NEVER import them outside `parrot/roost/squawk_bridge.py` (resolved Q1):**
+- the Squawk envelope model (satisfies `EnvelopeLike`: `envelope_id`, `correlation_id`, `trace`, `budget_ms`, `token_budget`, `caller`, `idempotency_key`, `auth_token`) and its `CapnpEnvelopeCodec` implementing Roost's `EnvelopeCodec` protocol (resolved Q2 — Roost's own `JsonEnvelopeCodec` and `LocalEnvelope` exist in core instead);
+- the catalog tools `list` / `mount` / `unmount` / `search` / `find` (`RemoteToolkit`) used through `squawk_bridge.mount_capabilities`;
 - `ResultHandle` / descriptor registry / blob store (FEAT-704 → FEAT-746), referenced by `artifacts` values and `content_ref`;
 - the capability policy gate composed ahead of `PBACToolCallGuardrail`;
+- Biscuit token issue/verify (FEAT-746 Q7) behind `squawk_bridge.resolve_authority` (resolved Q3);
 - `BotMetadata.kind: local | a2a | squawk` + `endpoint` (U2) — `find_capability` reads `kind` via `getattr(..., "kind", "local")` until it lands.
 
 ### Edit Sites (Blueprint Anchors)
@@ -1202,8 +1264,10 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 | `packages/ai-parrot/src/parrot/roost/carriers/base.py` | CREATE (M7) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/carriers/inprocess.py` | CREATE (M7) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/carriers/shm.py` | CREATE (M8) | — | — | — |
+| `packages/ai-parrot/src/parrot/roost/codec.py` | CREATE (M9) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/carriers/bus.py` | CREATE (M9) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/audit.py` | CREATE (M10) | — | — | — |
+| `packages/ai-parrot/src/parrot/roost/squawk_bridge.py` | CREATE (M11) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/endpoint.py` | CREATE (M11) | — | — | — |
 | `packages/ai-parrot/src/parrot/roost/toolkit.py` | CREATE (M11) | — | — | — |
 | `packages/ai-parrot-integrations/src/parrot/integrations/matrix/roost/__init__.py` | CREATE (M12) | — | — | — |
@@ -1233,7 +1297,9 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 - Protocol machines are **pure** (no I/O, clock injected) so every transition is unit-testable without asyncio.
 
 ### Known Risks / Gotchas
-- **FEAT-746 is unspecified** (C16). M3's `kind`, M9's serializer and M11's `find_and_mount` cannot close until `/sdd-spec FEAT-746` fixes names and import paths. Mitigation: `EnvelopeLike` structural seam; those three steps are tagged as cross-feature gated in the Worktree Strategy; tests use a `SimpleNamespace` envelope.
+- **FEAT-746 is unspecified** (C16) and, per Q1, owns the envelope and catalog tools exclusively. Mitigation: `EnvelopeLike` seam + `LocalEnvelope` + `JsonEnvelopeCodec` in core, and a single `squawk_bridge.py` that probes the satellite lazily and degrades (no mount) when absent. Only the real `catalog.mount` and M3's `kind` read wait for FEAT-746; the provisional module name `parrot.squawk` lives in one constant so the rename is a one-line change.
+- **Degraded mode must be loud but not fatal**: `mount_capabilities` without the satellite logs one warning per process and returns `[]`; the planner then sees no mounted tools and the LLM falls back to `RoostToolkit.send(request, ...)` by name. Tests assert the single warning.
+- **Codec mismatch on the bus**: a message encoded by the satellite codec received by a process without it cannot be decoded; `from_event` routes it to `roost.dlq` with the `content_type`, never raises into the handler. Deployments must run all Roost peers of one bus either with or without the satellite.
 - **Fifth-directory drift**: `AgentRegistry`, ToolManager A2A cards, `A2AMeshDiscovery`, `MatrixCrewRegistry` already overlap. `find_capability` must front local entries now and FEAT-746's `kind=a2a|squawk` entries once they exist; the Matrix roster (`roster` key) is derived from the directory, never a separate source of truth.
 - **Two `ResourceType` enums** (FEAT-070 vs navigator-auth PBAC). Import the FEAT-070 one explicitly from `parrot.registry.capabilities.models`; never pass a Roost value to `PolicyEvaluator.check_access`.
 - **`register(**kwargs)` swallows unknown kwargs into `startup_config`** (registry.py ~565). `roost` must be a named parameter on `register()` and `register_bot_decorator()`, and YAML agents must carry it on `BotConfig.roost`; add a test that a stray `roost` never ends up in `startup_config`.
@@ -1282,11 +1348,15 @@ Verified against: `729d51f57` (dev, 2026-10-26). `/sdd-task` MUST re-run `grep -
 - [x] **Roost bus configuration keys** — *Decided*: `PARROT_ROOST_BUS_URL`, `PARROT_ROOST_BUS_PREFIX` (navconfig with env fallback, same resolution as `fanout._config_value`), a dedicated instance distinct from FEAT-710's.
 - [x] **cfp origin tool name** — *Decided*: `call_for_proposals` (never `delegate`, FEAT-590).
 
-### Unresolved (must close before the gated tasks start)
+### Resolved in status review (2026-10-26, Jesus Lara)
 
-- [ ] **Q1 — Squawk envelope and catalog-tool import paths.** Which module exports the envelope model and the `mount`/`unmount` catalog tools, and will it be importable from core without the whole Squawk satellite (mirrors FEAT-746's own open question on the FEAT-704 shared-contract path)? Gates M3 (`kind`), M11 `find_and_mount`. — *Owner: `/sdd-spec FEAT-746` (Jesus Lara)*
-- [ ] **Q2 — Bytes-safe envelope serializer for the bus.** Name, signature and whether it is sync or async; Roost's `EventBusCarrier` needs it for `Event.payload`. Gates M9. — *Owner: `/sdd-spec FEAT-746`*
-- [ ] **Q3 — `permission_context` on the wire.** For the bus and Matrix carriers the caller's `PermissionContext` must be serialized; does FEAT-746's Biscuit token (Q7) replace it, or do both travel in v0? In-process and shm carriers pass the object by reference and are unaffected. — *Owner: Jesus Lara, decide with the FEAT-746 spec; default if unanswered: both travel, token authoritative when present*
+- [x] **Q1 — Squawk envelope and catalog-tool import paths.** — *Resolved*: **the satellite owns everything.** Envelope model, Cap'n Proto codec and catalog tools live only in `ai-parrot-squawk` (provisional import path `parrot.squawk`, fixed by the FEAT-746 spec). Core imports them lazily through `parrot/roost/squawk_bridge.py` — the only file allowed to name the satellite — and Roost degrades when it is absent: messages ride Roost's `LocalEnvelope`, `find_and_mount` returns `[]` with one warning (no `catalog.mount`). → §2 Overview, M11, AC-33, Worktree Strategy.
+- [x] **Q2 — Bytes-safe envelope serializer for the bus.** — *Resolved*: **sync codec protocol + JSON fallback.** `EnvelopeCodec` (`content_type`, `encode(msg) -> bytes`, `decode(bytes) -> RoostMessage`) is declared in Roost (`parrot/roost/codec.py`) because, under Q1, core cannot host Squawk models; `JsonEnvelopeCodec` ships in core for dev/tests and satellite-less deployments, the satellite's `CapnpEnvelopeCodec` implements the same protocol and is picked by `squawk_bridge.load_codec()`. M9 is no longer gated on FEAT-746. → M9, AC-34.
+- [x] **Q3 — `permission_context` on the wire.** — *Resolved*: **both travel; the token is authoritative.** On the bus and Matrix carriers the message carries the serialized `PermissionContext` and `auth_token` (Biscuit, when FEAT-746 has issued one); `squawk_bridge.resolve_authority` prefers the token and falls back to the context; neither ⇒ fail-closed. In-process and same-host carriers pass the context by reference. Contract Net attenuation stays a scope intersection in v0 and upgrades to token attenuation when Biscuit lands. → §2 Overview, M1 `auth_token`, M11, AC-35.
+
+### Unresolved
+
+None. Every question is closed; the spec inherits them as fixed decisions. The FEAT-746 spec may still rename the satellite module — that is a one-constant change in `squawk_bridge.py`, not a reopened question.
 
 ---
 
@@ -1314,18 +1384,18 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M5 → M1, M2, M3, M4
   - M6 → M1 (`RoostMessage` for the subscribe ⇒ inform bridge)
   - M7 → M1 (`CarrierKind`, `RoostMessage`, `AgentAddress`)
-  - M8 → M7 ; M9 → M7 (+ FEAT-746 serializer) ; M10 → M1
-  - M11 → M2, M3, M4, M5, M6, M7, M10 (+ FEAT-746 catalog tools)
+  - M8 → M7 ; M9 → M7 (codec + carrier, no FEAT-746 edge after Q2) ; M10 → M1
+  - M11 → M2, M3, M4, M5, M6, M7, M9, M10 (the satellite is probed lazily — no build-time edge, Q1)
   - M12 → M6, M7, M11
   - M13 → M1–M12
   - Expected to run concurrently once M1 lands: M2, M3, M6, M7, M10 (then M4, M8, M9 behind their single edge).
 - **Shared files** (tasks get serialized): `packages/ai-parrot/src/parrot/roost/__init__.py` (M1 creates, M2–M11 append exports — prefer one export block per module, appended in task order); `packages/ai-parrot/src/parrot/registry/registry.py` (M3 only, four edit sites in one task); `packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py` and `crew/swarm_toolkit.py` (M12 only).
 - **Exclusive resources**: none — no compiled extension, no lockfile change (no new dependency), no migration.
 - **Cross-feature dependencies**:
-  - **FEAT-746 (Squawk) must merge before** M9, M11's `find_and_mount`, and M3's reading of `BotMetadata.kind` (soft: `getattr` fallback). Everything else builds against the `EnvelopeLike` seam with a `SimpleNamespace` test envelope.
+  - **FEAT-746 (Squawk)** is an optional runtime dependency, never a build-time one (Q1/Q2): every module builds and tests without the satellite (`LocalEnvelope`, `JsonEnvelopeCodec`, degraded mount). What waits for FEAT-746 is only *behaviour*: the real `catalog.mount` in `find_and_mount`, Cap'n Proto encoding on the bus, Biscuit verification in `resolve_authority`, and M3's read of `BotMetadata.kind` (soft `getattr`). No task of this feature is blocked on FEAT-746 merging; `test_bridge_selects_satellite_when_present` uses a stub module.
   - **FEAT-704** (handles) transitively through FEAT-746; only `artifacts` values and `content_ref` reference handle ids.
   - FEAT-463 (`matrix-agents-swarm`) and FEAT-710 (`parrot-telemetry-event-fanout`) are merged on `dev` (verified: `swarm_toolkit.py`, `fanout.py` present).
-- **Suggested lanes for `/sdd-task`**: Lane A (core protocol, no FEAT-746 dependency): M1 → {M2, M6, M7, M10} → {M4, M5, M8} → M11 minus `find_and_mount`; Lane B (directory): M3; Lane C (gated on FEAT-746): M9, M11 `find_and_mount`, M3 `kind` read; Lane D: M12 → M13.
+- **Suggested lanes for `/sdd-task`**: Lane A (core protocol): M1 → {M2, M6, M7, M10} → {M4, M5, M8, M9} → M11; Lane B (directory): M3; Lane C: M12 → M13. No lane is gated on another feature.
 
 ---
 
@@ -1334,3 +1404,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-26 | Jesus Lara / Claude Fable 5.1 | Initial draft from `local-inter-agent.proposal.md` (9/9 questions carried forward); FEAT-747 reused as reserved by `/sdd-proposal` (ledger `updated_by: local-inter-agent`, `next_feature_id: 748`); design-research seat skipped (proposal status `review`) |
+| 0.2 | 2026-10-26 | Jesus Lara / Claude Fable 5.1 | Status review: Q1 satellite owns envelope + catalog (lazy `squawk_bridge`, `LocalEnvelope`, degraded mount), Q2 sync `EnvelopeCodec` + `JsonEnvelopeCodec` in core, Q3 both context and token travel, token authoritative. M9/M11 now delegation-eligible; no task gated on FEAT-746; AC-33…35 added |
