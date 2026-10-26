@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from parrot.auth import RlsRegistry
+from parrot.auth import RlsRegistry, RlsRule
 from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -79,9 +79,8 @@ class SemanticLayerToolkit(AbstractToolkit):
             raise SemanticPolicyError("guard_required", "Governed semantic models require a data-plane guard")
 
         self._rls_registry = rls_registry or RlsRegistry()
-        for model in self._models.values():
-            for rule in model.policy.rls:
-                self._rls_registry.register(rule)
+        self._owned_rls: dict[tuple[str, str], RlsRule] = {}
+        self._sync_rls(self._models)
         self._pbac = PbacGate(dataplane_guard)
         self._pipeline = GovernancePipeline(
             pbac=self._pbac,
@@ -209,13 +208,67 @@ class SemanticLayerToolkit(AbstractToolkit):
         previous = self._models
         if not self._loader.reload_if_changed():
             return
-        self._models = self._loader.load()
+        models = self._loader.load()
+        # Validate RLS ownership before swapping the snapshot so a conflicting
+        # policy file leaves the previous models and rules in force.
+        self._sync_rls(models)
+        self._models = models
         for model in previous.values():
             self._cache.invalidate_model(model.model_digest)
-        for model in self._models.values():
-            for rule in model.policy.rls:
-                self._rls_registry.register(rule)
         self._catalog = RoleCatalog(self._models)
+
+    def _sync_rls(self, models: dict[str, LoadedModel]) -> None:
+        """Register policy-file RLS rules without overriding rules this toolkit does not own.
+
+        The shared :class:`RlsRegistry` is keyed by ``(driver, table)`` with
+        last-write-wins semantics, so a policy file could silently replace a
+        host-registered rule.  Every key is therefore checked first: a key
+        already held by a different rule that this toolkit did not register
+        fails loudly, as do two models declaring different rules for one key.
+        Nothing is registered unless the whole set is conflict-free.
+
+        ``RlsRegistry`` exposes no unregister API, so a rule removed from a
+        policy file on reload stays registered (fail-safe: it only narrows
+        rows) and stays owned by this toolkit; a warning names it.
+
+        Args:
+            models: Complete model snapshot whose policy rules to register.
+
+        Raises:
+            SemanticPolicyError: ``rls_conflict`` when a rule would override a
+                foreign rule or two models disagree on the same key.
+        """
+        desired: dict[tuple[str, str], RlsRule] = {}
+        for model in models.values():
+            for rule in model.policy.rls:
+                key = (rule.driver, rule.table)
+                if key in desired and desired[key] != rule:
+                    raise SemanticPolicyError(
+                        "rls_conflict", f"Conflicting RLS rules for {rule.driver}:{rule.table} across semantic models"
+                    )
+                desired[key] = rule
+        for key, rule in desired.items():
+            if key in self._owned_rls:
+                continue
+            existing = self._rls_registry.lookup(key[0], {key[1]})
+            if existing and existing[0] != rule:
+                raise SemanticPolicyError(
+                    "rls_conflict",
+                    f"RLS rule for {key[0]}:{key[1]} is already registered by the host; refusing to override it",
+                )
+        for key, rule in desired.items():
+            owned = key in self._owned_rls
+            if not owned and self._rls_registry.lookup(key[0], {key[1]}):
+                continue  # identical rule already registered by its owner; do not claim it
+            self._rls_registry.register(rule)
+            self._owned_rls[key] = rule
+        for key in sorted(set(self._owned_rls) - set(desired)):
+            self.logger.warning(
+                "RLS rule for %s:%s was removed from its policy file but RlsRegistry has no unregister API; "
+                "it stays in force until restart",
+                key[0],
+                key[1],
+            )
 
     def _context(self) -> Any:
         """Return the current trusted context or fail closed."""
