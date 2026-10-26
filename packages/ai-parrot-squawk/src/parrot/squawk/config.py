@@ -1,4 +1,5 @@
 """Deployment settings for Squawk, read through ``parrot.conf.config`` (env / navconfig)."""
+
 from __future__ import annotations
 
 from pathlib import Path

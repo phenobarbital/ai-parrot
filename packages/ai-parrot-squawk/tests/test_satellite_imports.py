@@ -1,4 +1,5 @@
 """AC18 / AC17 — the satellite imports with core and never imports polars or grpc."""
+
 from __future__ import annotations
 
 import pathlib
