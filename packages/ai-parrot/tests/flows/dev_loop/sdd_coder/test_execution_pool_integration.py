@@ -1220,7 +1220,7 @@ def test_mcp_and_prompt_twins() -> None:
 
     - Every `coder_*` tool the toolkit actually registers must be allow-listed
       (as `mcp__parrot-sdd-coder__coder_<name>`) in BOTH `.claude/agents/sdd-worker.md`
-      and its packaged twin `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`.
+      and its packaged twin `packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md`.
     - Both twins must allow-list the exact same tool set as each other (no drift
       between the canonical prompt and the packaged copy shipped with the wheel).
     """
@@ -1242,9 +1242,10 @@ def test_mcp_and_prompt_twins() -> None:
         / "ai-parrot"
         / "src"
         / "parrot"
-        / "flows"
-        / "dev_loop"
-        / "_subagent_data"
+        / "sdd"
+        / "_assets"
+        / "claude"
+        / "agents"
         / "sdd-worker.md"
     )
     assert canonical_prompt.is_file(), canonical_prompt

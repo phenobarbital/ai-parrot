@@ -1,0 +1,670 @@
+# /sdd-spec — Scaffold a Feature Specification
+
+Scaffold a new Feature Specification using the SDD methodology.
+
+
+## Usage
+```
+/sdd-spec [<feature-slug>] [--type feature] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
+```
+
+`--type` / `--base-branch` are explicit overrides for the flow resolved in
+§2d — they win over any brainstorm/proposal frontmatter and over the
+`WorkKind` mapping (FEAT-466). Omit both to let §2d resolve the flow from
+the exploration doc (or default to `feature`/`dev` when none exists).
+
+With no brainstorm/proposal and no notes (or with `--interview`), run intake
+mode by following `sdd/templates/intake.procedure.md`; never in a non-interactive run.
+These intake flags are ignored (with a notice) on the carry-forward path.
+
+## Guardrails
+- Always use the official template at `sdd/templates/spec.md`.
+- Do NOT write implementation bodies in the spec — but every §3 module MUST
+  carry an **Interface Skeleton** (signatures, docstrings, `verified:` anchors;
+  see §4 item 6). Bodies belong to task Implementation Blueprints (`/sdd-task`).
+- **Feature IDs are unique by construction**: new `FEAT-<NNN>` numbers are
+  reserved via `parrot.sdd.scripts.reserve_ids` (FEAT-387) — a git-native
+  compare-and-swap ledger, not a manual "check existing specs" scan — so
+  two `/sdd-spec` runs racing each other cannot silently collide on the
+  same number. See §5 below. The one documented exception is intentional
+  `FEAT-<NNN>` reuse across a deliberate multi-spec split of one
+  initiative (e.g. FEAT-380 across `sandbox-hardening`,
+  `shelltool-hardening`, `tool-result-compression`) — declared explicitly
+  via a `reuse_feature_id` frontmatter field, never a silent fallback.
+- If a `.brainstorm.md` exists for this feature in `sdd/proposals/`, use it as input.
+- **NEVER re-ask a question that the brainstorm already answered.** Resolved
+  answers must be carried forward verbatim, not re-opened. See §2 for the
+  resolved-question convention and §3 for what you MAY ask.
+- **Always commit the spec file to the current branch** so worktrees can see it.
+
+## Steps
+
+### 1. Parse Input
+- **feature-name**: slug-friendly kebab-case. Optional in intake mode.
+- **free-form notes**: anything after `--`, used as Problem Statement seed.
+
+When no exploration doc exists AND no `--` notes were given, intake mode starts
+automatically. If the user cannot be asked questions, behave as `--no-interview`
+even without the flag. Cannot ask ⇒ `--no-interview`.
+
+### 1.5 Intake Mode (interactive only — FEAT-577)
+
+Runs only when §1's trigger rule selects it. Follow
+`sdd/templates/intake.procedure.md` §0–§8 end to end. It stages everything
+under `sdd/state/.intake/<slug>-<RUN_ID>/` (git-ignored; pruned after 10 days
+by a daily git hook), validated by `sdd/templates/intake.schema.json`, and returns
+one of two outcomes:
+
+- **handed off** (`phase: handed_off`) — the user chose `/sdd-brainstorm`; stop
+  here: no spec, no FEAT-ID.
+- **ready** (`phase: rounds_complete`) — continue at §2d with `doc_path=None`
+  and the Round 0 flow as `--type`/`--base-branch` overrides; §3b uses the
+  intake brief sources; §3 is skipped; §4 is seeded by the synthesis; §5
+  reserves the FEAT-ID unchanged; §6 promotes the staging dir.
+
+### 2. Check for Prior Exploration (and carry it forward)
+
+Look for prior exploration documents in `sdd/proposals/`:
+- `<feature-name>.brainstorm.md` → structured options analysis with a Recommended Option.
+- `<feature-name>.proposal.md` → discussion output.
+
+If neither exists, proceed to §1.5 when intake mode is active, otherwise §3.
+
+**If a brainstorm exists, you MUST treat it as the authoritative input.**
+Do the following in order before writing anything or asking the user anything:
+
+#### 2a. Map the brainstorm into the spec
+
+Carry each brainstorm section into the spec per this mapping. This is not
+optional — every non-empty brainstorm section below has a target in the spec:
+
+| Brainstorm section | Spec target |
+|---|---|
+| Problem Statement | §1 Motivation — Problem Statement (verbatim, condensed only if needed) |
+| Constraints & Requirements | §1 Goals + §5 Acceptance Criteria (every hard constraint becomes a checkable criterion) |
+| Recommendation + Recommended Option body | §2 Architectural Design — Overview |
+| Feature Description → User-Facing Behavior | §2 Overview |
+| Feature Description → Internal Behavior | §2 Component Diagram + Integration Points |
+| Feature Description → Edge Cases & Error Handling | §7 Known Risks / Gotchas |
+| Capabilities (New + Modified) | §3 Module Breakdown (one module per capability as a starting point) |
+| Impact & Integration table | §2 Integration Points |
+| Code Context (entire section) | §6 Codebase Contract (re-verify every reference — code may have shifted) |
+| Libraries / Tools table | §7 External Dependencies |
+| Parallelism Assessment | Worktree Strategy section |
+| Frontmatter `projects` / `tags` (FEAT-576) | Spec frontmatter `projects` / `tags` — verbatim; extend `projects` only with a distribution §4 research shows the feature touches |
+| Open Questions (see 2b) | §8 Open Questions (with resolved/unresolved state preserved) |
+
+Rejected options from the brainstorm are NOT carried into the spec body.
+They may be referenced in one line inside §1 Non-Goals if the rejection
+excludes something a reader might expect (e.g. *"Runtime fallback-on-failure
+was rejected in brainstorm — see proposals/<name>.brainstorm.md Option A."*).
+
+#### 2b. Parse the Open Questions section — resolved vs. unresolved
+
+The brainstorm's Open Questions use this convention:
+
+```
+- [ ] Unresolved question — *Owner: name*
+- [x] Resolved question — *Owner: name*: <answer text>
+```
+
+- A **`[x]`** checkbox means the user has already answered the question.
+  The answer is the text after the final `:` on the same line (or the
+  indented lines immediately below, if any).
+- A **`[ ]`** checkbox means the question is still open.
+
+**Rules for resolved (`[x]`) questions — this is the heart of the fix:**
+
+1. **Do NOT re-ask the user.** Never include a resolved brainstorm question
+   in the clarifying-question batch in §3.
+2. **Route the answer into the spec body where the decision actually
+   applies** — not just into §8. For example:
+   - "Default backend when unset → sqlite" → state this in §2 Overview and
+     add an acceptance criterion in §5. Do not leave it as an open question.
+   - "Binary overflow path declared in `project/conf.py`" → add the config
+     key to §6 Configuration References and mention the path in §7
+     Patterns to Follow. Do not describe the design as "mingled" or any
+     alternative that contradicts the resolved answer.
+   - "No TTL in SQL backends" → reflect this in the schema DDL (no
+     `expires_at` predicate) and in §7 Known Risks.
+3. **Also echo the resolution in §8** as a resolved item so readers can
+   audit the decision trail:
+   ```
+   - [x] <Question restated> — *Resolved in brainstorm*: <answer verbatim>
+   ```
+   This keeps §8 honest about what was decided and by whom.
+4. **If a resolved answer conflicts with your own instinct for the spec**,
+   the brainstorm wins. Do not silently override it. If you believe the
+   answer is wrong, surface the conflict to the user as a *new* question
+   in §3 — do not rewrite the answer.
+
+**Rules for unresolved (`[ ]`) questions:**
+
+- Carry them forward into §8 of the spec as `[ ]` items.
+- They are fair game for §3 clarifying questions, but only if they
+  genuinely block the spec (ones that can be decided during
+  implementation should stay as `[ ]` in §8 and not be asked now).
+
+#### 2c. Show the user the carry-forward summary before asking anything
+
+Before the clarifying-question round in §3, print:
+
+```
+Loaded brainstorm: sdd/proposals/<feature-name>.brainstorm.md
+  Recommended Option: <X — name>
+  Resolved questions carried forward (N): <one-line list>
+  Unresolved questions remaining (M): <one-line list>
+  Clarifying questions I still need to ask (K): <one-line list or "none">
+```
+
+If K is zero, proceed directly to §3b without asking anything.
+
+#### 2d. Sync the Base Branch (FEAT-145, resolver added FEAT-466)
+
+Resolve `(TYPE, BASE_BRANCH)` deterministically via
+`parrot.sdd.scripts.sdd_meta.resolve_flow()` — explicit `--type`/`--base-branch`
+flags win over the brainstorm/proposal frontmatter, which wins over the
+default (`feature`/`dev`). Unlike a bare `parse()` call, `resolve_flow()`
+does NOT raise `FileNotFoundError` when no exploration doc exists — that is
+exactly the dev-loop bug path's normal situation (no brainstorm, no
+proposal), and it is why this step no longer calls `parse()` directly:
+
+```bash
+# Include each flag only when it applies: --doc when an exploration doc exists,
+# --type / --base only when the user passed --type / --base-branch.
+META=$(parrot sdd run sdd_meta resolve-flow \
+    --doc "<brainstorm-or-proposal-path>" \
+    --type "<--type value>" \
+    --base "<--base-branch value>")
+# META is JSON: {"type": "...", "base_branch": "..."}
+TYPE=$(echo "$META" | sed -n 's/.*"type": *"\([^"]*\)".*/\1/p')
+BASE_BRANCH=$(echo "$META" | sed -n 's/.*"base_branch": *"\([^"]*\)".*/\1/p')
+```
+
+**Hotfixes are not specs (FEAT-698):** if `--type hotfix` was passed, or the exploration
+doc's frontmatter says `type: hotfix`, abort before resolving the flow:
+```
+⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).
+```
+
+**Validation (feature/not-main):** `FlowMeta` does NOT reject
+`type='feature', base_branch='main'` at the schema layer (that refusal is
+intentionally a command-layer guard, FEAT-187) — so this check stays a
+manual bash condition after the resolver returns successfully. If
+`TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
+```
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, use /sdd-brief <source> (FEAT-698).
+```
+
+Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
+(FEAT-187). Use the `staging_branch` from `sdd/config.json` as `base_branch` when applying
+stabilization fixes to a frozen release candidate.
+
+**Sync:** before scaffolding, switch to the base branch and pull:
+```bash
+git checkout "$BASE_BRANCH"
+git pull --ff-only origin "$BASE_BRANCH"
+```
+
+If the working tree is dirty, abort with:
+```
+⚠️  Cannot sync <BASE_BRANCH>: working tree has uncommitted changes.
+   Stash or commit first, then re-run /sdd-spec.
+```
+
+If `--ff-only` fails, abort with:
+```
+⚠️  Cannot fast-forward <BASE_BRANCH>. Reconcile manually
+   (git pull --rebase or merge), then re-run /sdd-spec.
+```
+
+Carry `TYPE` and `BASE_BRANCH` forward into the spec's frontmatter at §5.
+
+### 3b. Collaborative Design Research (codex seat — optional, NEVER blocking)
+
+An independent design opinion over the **accepted exploration document**, taken
+*before* you draft §2/§6 so it cannot become a ratification of your own design
+(FEAT-545). This step is optional: every failure below is recorded as a skip
+reason for spec §9 and the command continues. **This step must never abort
+`/sdd-spec`** — `sdd-planner` runs this command unattended.
+
+**Preconditions (any false ⇒ skip):**
+- §2 found `<exploration-doc>` and its status is `accepted` (brainstorm
+  `**Status**: accepted`, or proposal frontmatter `status: accepted`).
+- `command -v codex` succeeds.
+- **or** §1.5 ran and `intake.json.phase` is `rounds_complete`
+
+**Rules (identical to the Adversarial Cross-Check in `.claude/agents/code-reviewer.md`):**
+- **Never feed the reviewer your reasoning, draft, or preferred conclusion.**
+  The brief carries ONLY the exploration document and verified code anchors.
+- **Run it in the background** — a call takes 30 s to 10 min. Do not call it
+  per edit.
+- **Treat the output as advisory.** Every suggestion gets a disposition:
+  `CONFIRM` (fold into §2/§3/§7), `REJECT` (record why), `ESCALATE` (becomes
+  a `[ ]` item in §8).
+- **Never silently concede and never silently drop** a suggestion.
+- **Verify the reviewer's evidence.** Every `affected_paths` entry is checked
+  for repository containment, then with `test -e`; a path resolving outside
+  the repo ⇒ `REJECT` "path outside repository"; an unverifiable path ⇒
+  `REJECT` "path not found".
+
+> Only the `codex` reviewer is used for this seat. With no `codex` (or when `reviewer`
+> in `sdd/config.json` is not `codex`), skip; do not substitute another external CLI.
+
+#### 3b.1 Detect and probe
+```bash
+REPO_ROOT="$(pwd)"                                   # /sdd-spec always runs from the repo root (§2d)
+MODEL="${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+DR="sdd/state/.design_research/<feature-name>-${RUN_ID}"   # id-independent, run-scoped staging: FEAT-ID is reserved only in §5
+mkdir -p "$DR"; SKIP_REASON=""
+if ! command -v codex >/dev/null 2>&1; then SKIP_REASON="codex CLI not installed"; fi
+if [ -z "$SKIP_REASON" ]; then
+  # stdin MUST be redirected: without a TTY `codex exec` prints "Reading additional
+  # input from stdin..." and blocks until the timeout (rc=124) even though the
+  # prompt is passed as an argument (observed 2026-09-10, codex-cli 0.153/0.154).
+  timeout 120 codex exec --ephemeral --sandbox read-only -m "$MODEL" \
+    -c model_reasoning_effort=high --ignore-user-config \
+    -o "$DR/probe.txt" "Reply with exactly the single word OK." < /dev/null >/dev/null 2>&1 \
+    || SKIP_REASON="model probe failed for $MODEL (rc=$?)"
+fi
+if [ -z "$SKIP_REASON" ]; then
+  PROBE_TEXT="$(cat "$DR/probe.txt" 2>/dev/null | tr -d '[:space:]')"
+  [ "$PROBE_TEXT" = "OK" ] || SKIP_REASON="model probe returned unexpected output for $MODEL"
+fi
+if command -v codex >/dev/null 2>&1; then
+  CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
+  parrot sdd run spec_tools init-run "$DR" --model "$MODEL" --codex-version "$CODEX_VERSION" --probe-file "$DR/probe.txt"
+fi
+```
+
+#### 3b.2 Render the neutral brief (skipped when `SKIP_REASON` is already set)
+Write each extracted value below to its own file under `$DR` — `problem_statement.txt`,
+`constraints_and_goals.txt`, `recommended_option_or_scope.txt`, `code_context_paths.txt`,
+`open_questions.txt`, `question.txt` (plain UTF-8 text, no code fences) — **before** running
+the renderer, sourced from:
+- `problem_statement.txt` ← brainstorm "## Problem Statement" | proposal "## 1. Synthesis Summary" + §0 Origin quote
+- `constraints_and_goals.txt` ← brainstorm "## Constraints & Requirements" | proposal "### 2.2 Constraints Discovered"
+- `recommended_option_or_scope.txt` ← brainstorm "## Recommendation" + Recommended Option body | proposal "## 3. Probable Scope" (or "## 3. Hypothesis")
+- `code_context_paths.txt` ← the **paths only** (one per line) from brainstorm "## Code Context" | proposal "### 2.1 Localization"
+- `open_questions.txt` ← the `[ ]` items of the exploration doc (or "none")
+- `question.txt` ← "Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?"
+
+In intake mode, sources come from `synthesis.json` (FEAT-577):
+- `problem_statement.txt` ← synthesis `"problem_statement"`
+- `constraints_and_goals.txt` ← synthesis `"constraints"` + `"goals"`
+- `recommended_option_or_scope.txt` ← synthesis `"scope"` + `"approach"`
+- `code_context_paths.txt` ← synthesis `"code_context_paths"` (one per line)
+- `open_questions.txt` ← synthesis `"open_questions"` (or "none")
+- `question.txt` ← same as above
+
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  parrot sdd run spec_tools render-brief "$DR" || SKIP_REASON="brief rendering failed"
+fi
+```
+FORBIDDEN in the brief: anything you have written for this spec, your
+reasoning, this command's text, or a preferred answer. If in doubt, leave it out.
+Note: the template's own header comment intentionally spells placeholder names WITHOUT
+`{{ }}` braces, precisely so this whole-document `str.replace()` cannot also rewrite the
+comment (verified by TASK-3099's dry run, which caught this exact corruption before the fix).
+
+#### 3b.3 Run codex (capped, synchronous — NOT a background job)
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+  timeout 600 codex exec --ephemeral --sandbox read-only --cd "$REPO_ROOT" \
+    -m "$MODEL" -c model_reasoning_effort=high --ignore-user-config \
+    --output-schema sdd/templates/design_research.schema.json \
+    -o "$DR/suggestions.json" - < "$DR/brief.md" > "$DR/codex.log" 2>&1
+  rc=$?
+  [ "$rc" -eq 124 ] && SKIP_REASON="codex timed out after 600s"
+  [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
+  ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+  if [ -f "$DR/run.json" ]; then
+    parrot sdd run spec_tools stamp-run "$DR" --started-at "$STARTED_AT" --ended-at "$ENDED_AT" --exit-code "$rc"
+  fi
+fi
+```
+This call blocks for up to 600s (`timeout 600`, foreground). There is no background/job-control
+mechanism here — if you want to do other useful work (e.g. start §4 codebase research) while
+waiting, run this step as a separate shell invocation and poll/join it yourself; do not assume
+concurrency is provided for you.
+
+#### 3b.4 Validate and triage
+```bash
+if [ -z "$SKIP_REASON" ]; then
+  parrot sdd run spec_tools validate-suggestions "$DR" || SKIP_REASON="suggestions.json failed schema validation"
+fi
+```
+For each suggestion (when not skipped), for every `affected_paths` entry:
+1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
+   stays inside it —
+   ```bash
+   parrot sdd run spec_tools check-path "<path>" --root "$REPO_ROOT" \
+     || REASON="REJECT — path outside repository: <path>"
+   ```
+   A path that fails containment is `REJECT — path outside repository: <path>` and is
+   NOT passed to `test -e` at all.
+2. **Existence check** (only for paths that passed containment): `test -e <path>` —
+   unverifiable ⇒ `REJECT — path not found: <path>`.
+3. Read the cited spots for paths that pass both checks; decide **CONFIRM / REJECT /
+   ESCALATE** with a one-sentence reason; write `$DR/triage.md` using the §9 table
+   shape from `sdd/templates/spec.md`.
+
+#### 3b.5 Fold and record
+- `CONFIRM` → apply while drafting §2 Overview / §3 modules / §7 notes; the
+  §9 row's "Landed in" names the section.
+- `ESCALATE` → add a `[ ]` question to §8 (owner: the user); "Landed in" = `§8 Q<N>`.
+- `REJECT` → row only.
+- Fill spec **§9 Design Research Cross-Check** from `$DR/triage.md`, with
+  `Model: <MODEL>` and `Status: completed` — or, when skipped, a single
+  line `Status: skipped (<SKIP_REASON>)` and an empty table.
+- §6 moves `$DR` to `sdd/state/<FEAT-ID>/design_research/` and commits it
+  with the spec.
+
+### 3. Ask Clarifying Questions (only what is genuinely missing)
+
+Skipped in intake mode — §1.5's adaptive rounds replace it.
+
+After §2c, you may ask the user **only** for gaps the brainstorm/proposal did
+not cover. Typical legitimate gaps:
+
+- Spec-level fields that don't exist in a brainstorm (Target version, Author
+  attribution if unclear, Status lifecycle preference).
+- New `[ ]` open questions that genuinely block the design (not ones that
+  can be deferred to implementation).
+- Ambiguities discovered during codebase research in §4 (e.g., two plausible
+  integration points — which one to use).
+
+**Forbidden in this step:**
+- Re-asking anything that already appeared in the brainstorm's Open Questions
+  as `[x]` resolved.
+- Re-asking Problem Statement / Constraints / Recommended Option — the
+  brainstorm is authoritative on those.
+- Asking the user to restate the feature goals in their own words when the
+  brainstorm already states them.
+
+Ask in a single batch so the user answers once and you proceed. If there is
+nothing to ask, skip this step silently.
+
+### 4. Research the Codebase & Build Codebase Contract
+Before writing the spec:
+- Read existing specs in `sdd/specs/` directory.
+- Identify related existing components (AbstractClient, AgentCrew, BaseLoader, etc.).
+- Note what can be reused vs. what must be created.
+
+**CRITICAL — Codebase Contract Construction:**
+This step prevents AI hallucinations during implementation. You MUST:
+
+1. **If a brainstorm exists**: carry forward its entire `## Code Context` section
+   into the spec's `## 6. Codebase Contract` section. Re-verify each reference
+   is still accurate (code may have changed since brainstorm).
+2. **For every class/module referenced in the spec**: `read` the actual source file
+   and record exact class signatures, method signatures (with parameter types and
+   return types), and key attributes — with file paths and line numbers.
+3. **Verify all imports**: confirm that all referenced imports resolve by
+   checking `__init__.py` exports and module structure. Do not assume.
+4. **Record what does NOT exist**: if you searched for a plausible module, class,
+   or method and it does not exist, add it to the "Does NOT Exist" subsection.
+   This is the most effective anti-hallucination measure — it explicitly tells
+   implementing agents what NOT to reference.
+5. **Include user-provided code**: if the user or brainstorm provided code snippets,
+   preserve them as verified references in the contract.
+6. **Interface Skeletons (FEAT-545)**: for every §3 module write the public
+   signatures and docstrings of what the module adds or changes — no bodies —
+   each line that touches existing code carrying `# verified: path:NN`. These
+   skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
+   so a name fixed here is not renegotiable later.
+7. **Edit Sites (§6, Blueprint Anchors)**: for every file the §3 modules will
+   MODIFY, record the verbatim anchor line the change attaches to, its
+   `path:NN`, and its occurrence count (`grep -c '<anchor>' <path>`); for every
+   file they CREATE, record just the path. Record the base commit the table was
+   verified against. `/sdd-task` builds one Implementation Blueprint block per
+   row, so verifying the anchor once here replaces re-deriving it in each of the
+   feature's 15–30 tasks. Two rules keep the table from becoming a liability:
+   an occurrence count `> 1` means the anchor is ambiguous and must carry 2–3
+   lines of surrounding context, and the table lists only files the modules
+   actually touch — it is re-read on every downstream turn, so prose and
+   speculative rows are pure cost.
+
+#### Identify delegation-eligible modules
+
+While writing §3 Module Breakdown, fill the "Delegation-eligible modules"
+sub-table: for each module state whether its design is complete enough that
+implementing it is mechanical, and record the decided patterns and exact
+contracts (signatures, error codes, file layout). Architecture decisions
+stay with the thinking model — eligibility never delegates a design choice.
+
+### 5. Scaffold the Spec
+1. Read the template at `sdd/templates/spec.md`. The template already contains
+   a YAML frontmatter block at the top (FEAT-145).
+2. Create `sdd/specs/<feature-name>.spec.md` filled in with:
+   - **Frontmatter** at the very top: set `type` and `base_branch` to the
+     values resolved in §2d. Do NOT strip the frontmatter. The block must
+     match this shape exactly:
+     ```yaml
+     ---
+     type: feature
+     base_branch: <base_branch>     # the base_branch in sdd/config.json (staging_branch during a release freeze)
+     projects: [ai-parrot]  # FEAT-576 — parts of the codebase; carried from the brainstorm/proposal
+     tags: [memory]         # FEAT-576 — 2–6 kebab-case keywords; carried from the brainstorm/proposal
+     # reuse_feature_id: FEAT-<NNN>   # OPTIONAL — only for an intentional
+     #   multi-spec split of one initiative (see Guardrails); when present,
+     #   skip the reserve_ids.py call below and use this ID verbatim.
+     ---
+     ```
+   - **projects / tags** (FEAT-576): copy from the exploration doc; with no
+     exploration doc, derive projects from §4 research (mapping in
+     `/sdd-brainstorm` §10) and propose 2–6 tags. Vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set (unknown values warn).
+   - **Feature ID.** **First check whether this slug already owns
+     an ID**. A slug has ONE feature ID for its lifetime: re-running
+     `/sdd-spec` over an existing spec must REUSE that number, never
+     reserve a second one. A second reservation forks the feature's
+     identity — the spec and the task index move to the new number while
+     the task files, the branch and the worktree keep the old one, and
+     `DevelopmentNode._find_feature_slug` (which matches strictly on the
+     index header's `feature_id` **inside the worktree**) then finds no
+     index at all and silently degrades a whole multi-agent pool to a
+     single agent. This is not hypothetical: it happened on 2026-09-01 to
+     `formfield-content-type` (FEAT-488 → FEAT-489), and cost a full run.
+
+     ```bash
+     EXISTING=$(parrot sdd run spec_tools existing-feature-id "<feature-name>")
+     ```
+
+     If `$EXISTING` is non-empty, **use it verbatim as this spec's Feature
+     ID and skip the reservation entirely** — say so in the §7 output
+     ("reusing FEAT-<NNN>, already owned by this slug"). Only when it is
+     empty do you reserve:
+     ```bash
+     FEAT_ID=$(parrot sdd run reserve_ids --kind feature --count 1 \
+       --base-branch "$BASE_BRANCH" --label <feature-name>)
+     ```
+     `reserve_ids.py` enforces the same rule itself and exits non-zero
+     naming the owned ID, so forgetting this check is a hard failure, not
+     a silently burned number.
+     On success this prints exactly one `FEAT-<NNN>` line; use it verbatim
+     as this spec's Feature ID. `reserve_ids.py` pushes its own ledger-only
+     commit to `origin/$BASE_BRANCH` as part of this call (retrying
+     internally on a non-fast-forward rejection) and refuses to run if
+     tracked files have uncommitted changes besides the ledger file. It
+     builds that commit on `origin/$BASE_BRANCH` with git plumbing, so it
+     never publishes or discards local-only commits on your branch. If the command exits non-zero, **STOP** and report the error —
+     do NOT fall back to hand-computing a number.
+
+     **Escape hatch — intentional FEAT-ID reuse**: if this spec is a
+     deliberate split of an existing initiative across multiple specs (the
+     FEAT-380-style pattern — `sandbox-hardening.spec.md`,
+     `shelltool-hardening.spec.md`, and `tool-result-compression.spec.md`
+     all intentionally share `FEAT-380`), do NOT call `reserve_ids.py`.
+     Instead, set `reuse_feature_id: FEAT-<NNN>` in the frontmatter above,
+     state the reused ID explicitly, and skip the reservation call
+     entirely — this documents the intentional reuse for auditability
+     rather than silently reusing a stale number.
+   - Today's date.
+   - Answers from user (or prior exploration documents).
+   - Architectural patterns from your codebase research.
+3. When populating §8 Open Questions, apply the resolved/unresolved
+   partition from §2b. Resolved items use `[x]` and the carried-forward
+   answer; unresolved items use `[ ]`.
+4. Before finishing, sanity-check the spec against the brainstorm:
+   for every `[x]` resolved question in the brainstorm, search the spec
+   body for a passage that reflects the resolution. If you cannot find
+   one, you have failed to carry the decision forward — fix the spec
+   before committing.
+5. Confirm the spec frontmatter carries the exploration doc's `projects` and
+   `tags` (FEAT-576) — `parrot sdd run sdd_meta taxonomy "<spec>"` (JSON `{"projects": [...], "tags": [...]}`)
+   must list at least the carried values.
+
+**Worktree hint (new section in spec):**
+Include a `## Worktree Strategy` section in the spec with:
+- Isolation: always ONE feature worktree per spec; the `sdd-coder` engine gives
+  each task its own sub-worktree inside it. Do not write "tasks run
+  sequentially" — that is not an isolation choice, and `/sdd-task` must not
+  turn it into a dependency chain.
+- Module dependency graph: which modules need which (M2 → M1 because M2 imports
+  M1's `<symbol>`), with the evidence. Modules without an edge between them
+  are expected to run concurrently.
+- Shared files: files more than one module modifies (their tasks get serialized).
+- Exclusive resources: steps that mutate shared state outside a module's own
+  files (extension rebuild, lockfile, migration) — their tasks become
+  `parallel: false`.
+- Cross-feature dependencies: list any specs that must be merged first.
+
+**Validation Contract hint (FEAT-699 — mandatory subsection, may be `none — fallback`):**
+Fill §4 `### Validation Contract` with the integration tests that prove THIS feature works: start from the
+§3 modules' existing test files and the §4 Integration Tests table, prefer files over node ids, never a
+directory, never a `real_llm` test. It replaces heuristic test breadth in every tier, so under-declaring
+narrows local coverage (a full-suite run is the backstop). Write `none — fallback` only when no
+existing test exercises the feature yet; the selector then uses its bounded fallback. Repos with `test_command` set in `sdd/config.json`: write `none — fallback`.
+
+**Runners, tiers and lift-on-read (FEAT-709):** the contract may also use the multi-runner `runners:` form
+(`- kind: pytest|vitest|cargo|parrot-e2e` blocks, see `sdd/templates/spec.md`) when the feature has
+non-pytest tests. Kinds, eligible tiers and settings come from the runner registry (built-ins merged with
+`.parrot/test_runners.toml`); `parrot-e2e` is merge/feature tier only, never task. The flat
+`tests:`/`markers:` form stays valid and is lifted on read to one pytest runner; `/sdd-task` always caches
+schema 2.
+
+**E2E plan hint (new section in spec, FEAT-581 — optional):**
+Only add this when the feature exercises the deterministic E2E gate
+(`parrot e2e run` / `parrot e2e verify`); otherwise omit both the
+frontmatter `e2e` key and the `### E2E Scenarios` subsection entirely — an
+absent `e2e` key defaults the later-generated plan's policy to `optional`
+(`parrot.e2e.plan.load_plan`). When it does apply:
+- Frontmatter `e2e: {policy, scenario_ids}` — `policy` MUST be exactly
+  `required`, `optional` or `none`; never write, coerce, or silently repair
+  an invalid value — `load_plan` fails plan loading closed on it instead.
+- Add `### E2E Scenarios` under §4 Test Specification: declare stable
+  `ScenarioSpec.id` values per scenario, its tier (`deterministic`, `live`
+  or `exploratory`) and whether it is `required`. A `required` policy
+  demands at least one required, codified (non-exploratory, node-bearing)
+  scenario — an empty or all-exploratory scenario list under `required` is
+  a spec defect, not something the plan loader defaults around.
+- Keep live and exploratory scenarios in separate rows from deterministic
+  ones and never describe them as "deterministic" — live scenarios need
+  explicit `PARROT_TEST_REAL_LLM=1` opt-in and a request budget;
+  exploratory scenarios carry no node IDs and can never be `required`.
+- The complete `e2e-plan.md` frontmatter (`schema_version`, `feature_id`,
+  `spec_path`, `policy`, `targets`, `scenarios`, `budget`, `run_timeout_s`)
+  is generated later, during task decomposition, once pytest node IDs are
+  frozen — the spec declares policy/scenario intent only, never fabricated
+  node IDs.
+
+### 6. Commit the Spec
+
+> **CRITICAL — Worktrees branch from the current state of the repo.**
+> If the spec is not committed, any worktree created later will NOT see it,
+> and the `sdd-worker` agent will fail with "no spec found".
+
+> **CRITICAL — Only commit the spec file. NEVER commit unrelated changes.**
+> Other files may be modified or unstaged in the working directory — do NOT
+> touch them. Follow the exact sequence below.
+
+```bash
+# 1. Unstage everything first to ensure a clean staging area
+git reset HEAD
+
+# 2. Stage ONLY the spec file (+ the design-research transcript when §3b ran) — NEVER "git add ." / "-A"
+git add sdd/specs/<feature-name>.spec.md
+if [ -d "$DR" ]; then
+  STAGE_TMP="sdd/state/.design_research/.promote-<FEAT-ID>-${RUN_ID}"
+  PROMOTED="sdd/state/<FEAT-ID>/design_research"
+  if [ -e "$PROMOTED" ]; then
+    echo "⚠️  $PROMOTED already exists — leaving $DR in place for manual review (run-id ${RUN_ID}); not overwriting existing design research."
+  else
+    mkdir -p "sdd/state/<FEAT-ID>" "$STAGE_TMP" && cp -a "$DR"/. "$STAGE_TMP"/ \
+      && mv "$STAGE_TMP" "$PROMOTED" \
+      && rm -rf "$DR" \
+      && git add "$PROMOTED/" \
+      || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
+  fi
+fi
+
+# Intake mode promotion (FEAT-577)
+if [ -d "$STAGE" ]; then
+  # Set feat_id and phase: committed in intake.json BEFORE staging
+  parrot sdd run spec_tools commit-intake "$STAGE/intake.json" --feat-id "$FEAT_ID"
+  
+  INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
+  if [ -e "$INTAKE_PROMOTED" ]; then
+    echo "⚠️  $INTAKE_PROMOTED already exists — leaving intake staging in place for manual review (run-id ${RUN_ID}); not overwriting existing intake data."
+  else
+    mkdir -p "sdd/state/$FEAT_ID" && cp -a "$STAGE"/. "$INTAKE_PROMOTED"/ \
+      && rm -rf "$STAGE" \
+      && git add "$INTAKE_PROMOTED/" \
+      || { echo "⚠️  Promotion of $STAGE failed — left in place for inspection (run-id ${RUN_ID})." ; }
+  fi
+fi
+
+# 3. Verify ONLY those paths are staged
+git diff --cached --name-only
+# Expected: sdd/specs/<feature-name>.spec.md [+ sdd/state/<FEAT-ID>/design_research/*] [+ sdd/state/<FEAT-ID>/intake/*]
+# If ANY other files appear, run "git reset HEAD" and start over
+
+# 4. Commit
+git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
+```
+
+### 7. Output
+
+```
+✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
+
+   Feature ID: FEAT-<ID>
+   Module graph: <M> modules, <E> dependency edges, exclusive: <modules or "none">
+   Design research: <N> suggestions — <C> confirmed / <R> rejected / <E> escalated   (model <MODEL>)
+   # or:  Design research: skipped (<SKIP_REASON>)
+   Intake: research <depth> (confidence <c> | degraded | skipped), rounds <n>, open questions <m>, Jira <KEY | created KEY | none>
+   (intake mode only; after the output, run `/sdd-tojira` when Jira = create)
+
+   To create a worktree for this feature after task decomposition:
+     git worktree add -b feat-<FEAT-ID>-<feature-name> \
+       .claude/worktrees/feat-<FEAT-ID>-<feature-name> HEAD
+
+Next:
+  1. Review the spec — check Acceptance Criteria and Architectural Design.
+  2. Mark status: approved when ready.
+  3. Run /sdd-task sdd/specs/<feature-name>.spec.md
+```
+
+## Reference
+- Template: `sdd/templates/spec.md`
+- Existing specs: `sdd/specs/`
+- SDD methodology: `sdd/WORKFLOW.md`
+- Worktree policy: `sdd/WORKFLOW.md` (section "Git Configuration")
+- Design-research brief: `sdd/templates/design_research.prompt.md` (FEAT-545)
+- Design-research schema: `sdd/templates/design_research.schema.json` (FEAT-545)
+- Intake procedure: `sdd/templates/intake.procedure.md` (FEAT-577)
+- Intake schema: `sdd/templates/intake.schema.json` (FEAT-577)
+
+## Anti-Hallucination Policy
+
+The `## 6. Codebase Contract` section in the spec is **mandatory** for any spec
+that references existing codebase components. A spec without a codebase contract
+will produce tasks that hallucinate imports and attributes.
+
+**Quality bar**: Every entry in the contract must include a file path and line number.
+Entries without verification evidence must be marked as `(unverified — check before use)`.

@@ -1,0 +1,889 @@
+---
+description: Verify that a feature's tasks were implemented, check for merge blockers, snapshot ledger issues, push the branch, optionally resolve the linked Jira ticket, and clean up the worktree.
+---
+
+# /sdd-done — Verify, Check Blockers, Snapshot, Push, and Cleanup a Feature
+
+Verify that a feature's tasks were implemented in its worktree, check for merge
+blockers scoped to the current feature, snapshot ledger issues on base branch,
+ensure the branch is pushed, and clean up the worktree. Optionally transitions
+the linked Jira ticket to "Done" / "Resolved".
+
+**This command runs on the spec's `base_branch`** — read from the spec's
+YAML frontmatter (FEAT-145). For `type: feature` that is the `base_branch` (default)
+or the `staging_branch` (during a release freeze); for `type: hotfix` that is the `hotfix_base` — all from `sdd/config.json`.
+NOT inside a worktree. It looks INTO the worktree to verify work, but
+modifies state only on `base_branch`.
+
+## Usage
+```
+/sdd-done FEAT-014
+/sdd-done videoreel-visual-changes
+/sdd-done FEAT-014 --dry-run           # show what would change, don't change anything
+/sdd-done FEAT-014 --merge             # direct merge into base_branch (checks blockers)
+/sdd-done FEAT-014 --force             # mark done even if some checks fail, bypass blockers
+/sdd-done FEAT-014 --resolve-jira      # also transition the Jira ticket to Done
+/sdd-done FEAT-014 --sync-down         # for hotfixes: after the user merges the PR
+                                       # to the hotfix base, propagate the change to staging + integration
+                                       # (mostly redundant with a sync-down automation, if you run one)
+/sdd-done FEAT-014 --sync-dev          # deprecated alias for --sync-down
+```
+
+## Guardrails
+- **Must run on the spec's `base_branch`** (read from spec frontmatter — the configured `base_branch` for features, the `hotfix_base` for hotfixes), not inside a worktree.
+- Do NOT mark tasks as done unless evidence exists in the worktree (commits, files).
+- Do NOT modify the spec — only task statuses and task files.
+- If a task has no evidence of implementation, flag it explicitly.
+- Always show a verification report before making changes.
+- **Required E2E evidence (FEAT-581) is checked in Step 4.6, before any
+  stamp/push/PR/merge/cleanup.** Missing, stale, tampered, blocked or failed
+  required evidence aborts the whole command. `--force` bypasses per-task
+  partial/missing evidence (Step 6) and ledger merge blockers (Step 9) —
+  it never bypasses a required E2E gate (spec AC9).
+
+> **CRITICAL — `/sdd-done` NEVER pushes to the `hotfix_base` and NEVER opens a PR against it by itself (FEAT-145).**
+> Hotfixes go to the `hotfix_base` (in `sdd/config.json`) ONLY via a manually-opened PR. This rule is non-negotiable
+> and applies to every flag combination — including `--merge`, `--force`, and `--resolve-jira`.
+> For hotfixes, this command pushes the hotfix branch and prints a `gh pr create
+> --base <hotfix_base>` snippet. After the user merges the PR, any sync-down automation your repo runs
+> propagates the change to the staging and integration branches. If it fails, you have none, or you are
+> offline, re-run with `--sync-down` to propagate the change back to both branches manually.
+> (`--sync-dev` is a deprecated alias for `--sync-down`.)
+>
+> **Default behavior for features**: `/sdd-done` opens a PR against `BASE_BRANCH`
+> (the `base_branch` or `staging_branch` from `sdd/config.json`). Pass `--merge` to merge directly instead.
+
+## Steps
+
+## Durable review boundary (FEAT-584)
+Before feature review, settle owned attempts and supervised validations and close execution.
+Unknown activity is a blocker, never evidence of an idle worktree. Persist the checkpoint,
+record actual supported compaction outcome once per checkpoint/context, revalidate and start
+a fresh reviewer. Unsupported contexts continue from checkpoint with an explicit reason.
+Keep review criteria, adversarial checks, full lint, integration validation and ledger gates.
+Changes after checkpoint require new hashes/evidence and invalidate old review coverage.
+For sdd-done, preserve existing verification stamping, approval and push/merge policy;
+do not run task closure again on base_branch and do not clean worktrees with unknown activity.
+
+### 1. Verify We're on the Base Branch (FEAT-145)
+
+Read the spec's frontmatter to discover `BASE_BRANCH`:
+
+```bash
+META=$(parrot sdd run sdd_meta parse "<spec-path>")
+TYPE=$(echo "$META" | awk '{print $1}')
+BASE_BRANCH=$(echo "$META" | awk '{print $2}')
+# Branch names come from sdd/config.json: hotfix_base, staging_branch, base_branch
+HOTFIX_BASE=<hotfix_base>; STAGING_BRANCH=<staging_branch>; INTEGRATION_BRANCH=<base_branch>
+CURRENT_BRANCH=$(git branch --show-current)
+```
+
+If `CURRENT_BRANCH != BASE_BRANCH`, abort:
+```
+⚠️  /sdd-done must run on the spec's base_branch (got <CURRENT_BRANCH>, expected <BASE_BRANCH>).
+   Switch: git checkout <BASE_BRANCH>
+```
+
+If currently inside a worktree (path contains `.claude/worktrees/`), abort:
+```
+⚠️  /sdd-done must run from the main repo, not inside a worktree.
+   cd back to the main repo and re-run.
+```
+
+### 2. Resolve the Feature
+1. Glob `sdd/tasks/index/*.json` (excluding `_orphans.json`) and find the
+   per-spec index whose header matches the user's input. Match against:
+   - `feature_id` — exact match (e.g., `"FEAT-014"`)
+   - `feature` — exact match (e.g., `"videoreel-visual-changes"`)
+   - `feature_id` — numeric suffix (e.g., `"014"` → `"FEAT-014"`)
+   - `feature` — substring match (e.g., `"videoreel"` → `"videoreel-visual-changes"`)
+   If no match, list available features (one per per-spec index file) and ask the user to clarify.
+2. Read the spec file referenced by the per-spec index header.
+3. The list of tasks for this feature is the `tasks[]` array in the matched per-spec index file.
+
+### 3. Locate the Worktree
+Find the feature's worktree:
+```bash
+git worktree list | grep "feat-<FEAT-ID>"
+```
+Extract the worktree path. If no worktree found:
+```
+⚠️  No worktree found for FEAT-<ID>.
+   Looking for branch feat-<FEAT-ID>-<slug> in remote...
+```
+Fall back to checking remote branches.
+
+### 4. Gather Evidence from the Worktree
+For each task in the feature, check the WORKTREE for implementation evidence:
+
+**a) Git history check (in the worktree):**
+```bash
+git -C <worktree-path> log --oneline --grep="TASK-<NNN>"
+git -C <worktree-path> log --oneline --grep="<task-slug>"
+```
+
+**b) File existence check (in the worktree):**
+Read the task file and extract the "Files to create/modify" section.
+```bash
+test -f <worktree-path>/<filepath>
+```
+
+**Note:** Per-task test runs are recorded (FEAT-695) and aggregated in §4.7 — this step does not run tests.
+
+### 4.5. Full Lint Pass (once per feature)
+
+Per-task lint is engine-owned and only auto-fixes (`sdd-coder` engine, merge
+boundary). This step is the ONE place the repo's full ruff rule set is enforced
+for the feature — never per task. With `--dry-run`, run only the final
+`ruff check` and report; do not fix or commit.
+
+```bash
+WT="<worktree-path>"
+git -C "$WT" fetch origin <base_branch>
+mapfile -t PY < <(git -C "$WT" diff --name-only --diff-filter=ACMR "origin/<base_branch>...HEAD" -- '*.py')
+if [ ${#PY[@]} -gt 0 ]; then
+  (cd "$WT" && ruff check --fix --exit-zero --quiet "${PY[@]}")
+  if grep -q '^\[tool\.black\]' "$WT/pyproject.toml"; then (cd "$WT" && black -q "${PY[@]}"); fi
+  git -C "$WT" add -- "${PY[@]}"
+  git -C "$WT" diff --cached --quiet || git -C "$WT" commit -m "style(<slug>): FEAT-<ID> — full lint pass"
+  (cd "$WT" && ruff check --output-format concise "${PY[@]}")
+fi
+```
+
+Then fix what `ruff check` still reports, in those files only (pre-existing
+violations in a touched file included — that is deliberate code improvement):
+- Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
+  `except Exception`), run `TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
+  parrot sdd run select_tests --tier feature --base origin/<base_branch> --worktree "$WT" \
+  --index "sdd/tasks/index/<feature-slug>.json"
+  $(printf -- '--task-file %s ' $TASK_FILES) --run` before committing (when `test_command` is set, run it from the repo root instead — see Step 4.7).
+- Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
+- A finding you cannot fix safely goes under **Lint residual** in the report.
+  Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
+  blockers: they turn Step 6 into the "issues" branch. Other residue does not.
+
+### 4.6. Verify E2E Evidence (FEAT-581)
+
+Before any closeout mutation — Step 5's report is descriptive, but Step 7's
+index stamp, Step 8's push, Step 9's merge-blocker check, Step 9.2's PR/merge
+and Step 11's cleanup are not — the E2E evidence gate runs as **code**, not as
+instructions (FEAT-703). It is **read-only**: it never runs pytest, a target,
+or the ordinary task test suite; it only checks evidence a prior run already
+produced (the dev-loop QA E2E stage, TASK-3542, or a manual `parrot e2e run`).
+It also never reads an `e2e-exploration.json` report — exploratory-tier
+scenarios can never satisfy or count toward this gate (spec §2/M8: exploration
+cannot supply gate `passed`).
+
+```bash
+GATE_JSON=$(parrot sdd run check_e2e_closeout \
+    --spec "<spec-path>" --feat-id "$FEAT_ID" --worktree "$WORKTREE_PATH")
+GATE_EXIT=$?
+```
+
+The gate reads the spec's `e2e.policy`, resolves the worktree-scoped plan at
+`sdd/state/<FEAT-ID>/e2e-plan.md`, and runs the same read-only validator the
+Codex twin (`.agents/skills/sdd-done/SKILL.md`) consumes. Its stdout is one
+JSON object: `policy`, `status`, `gate_satisfied`, `reason_codes`, `allowed`.
+
+- **`GATE_EXIT` is 0** — record the `E2E: <policy> — <status>` line from
+  `GATE_JSON` and continue. This covers `none` (exempt — no execution expected
+  or fabricated), `optional` (**advisory only**: a failed, blocked or missing
+  optional result never blocks closeout, but it is reported honestly in Step 5
+  and Step 12, never silently upgraded to a pass), and `required` satisfied.
+- **`GATE_EXIT` is non-zero** — **abort the entire command now**, before
+  Step 5's report is even built:
+  ```
+  ⚠️  Required E2E evidence is <status> for FEAT-<ID> (reason: <reason_codes>).
+     /sdd-done cannot stamp, push, open a PR, merge or clean up this feature
+     until `parrot e2e verify --plan sdd/state/<FEAT-ID>/e2e-plan.md` reports
+     PASS with gate_satisfied: true.
+     This is NOT bypassed by --force: --force only overrides per-task
+     partial/missing evidence (Step 6) and ledger merge blockers (Step 9),
+     never a required E2E gate (spec AC9).
+  ```
+  Exit nonzero. `--dry-run` still shows this refusal and stops the same way
+  it stops after Step 5 — it never proceeds to a mutating step.
+
+The decision table itself — policy resolution (a missing `e2e` key defaults to
+`optional`; a present but malformed value is never coerced to a safe default),
+missing plans, validator errors, and an uninstalled `ai-parrot-server` — lives
+in `parrot.sdd.scripts.check_e2e_closeout`. Do not restate or
+re-derive it here: **the exit code is the contract**, and the gate takes no
+`--force` argument, so there is nothing for a generic force to bypass.
+
+Carry `GATE_JSON` into Step 5's report and Step 12's output as an `E2E:` line.
+
+### 4.7. Test Report (FEAT-695)
+
+When `test_command` in `sdd/config.json` is set (non-blank), skip `select_tests` and `test_report` and run that command once from the repository root instead: record the command, its exit code and the tail of its output, and treat a non-zero exit as a merge blocker. When it is null, the FEAT-699 steps below run unchanged. If the run executed zero tests (no `pytest` invocation, or 0 collected), report "⚠️ not run — no tests selected", never ✅ — even when `test_report render` prints its ✅ gate line.
+
+Aggregate the per-task test results recorded during implementation into a `## Tests` section for the PR body.
+This step never blocks closeout and never changes an exit code (a missing or corrupt record is reported, not fatal).
+
+```bash
+IDX="sdd/tasks/index/<feature-slug>.json"
+TEST_REPORT_MD="${SDD_TEST_REPORT_DIR:-/tmp/claude-$(id -u)/sdd-tests}/FEAT-<ID>/pr-tests.md"
+mkdir -p "$(dirname "$TEST_REPORT_MD")"
+
+# FEAT-699: the feature tier always re-runs FRESH at the final HEAD (contract-driven, cheap); decide-rerun
+# prints `rerun` for any non-empty index. Gate = new reds (+ unknowns) vs origin/<base_branch>.
+DECISION=$(parrot sdd run test_report decide-rerun --index "$IDX")
+```
+
+If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in the background
+(`run_in_background: true`), with every task file of the index and without writing to the ledger:
+
+```bash
+timeout -k 10 1800 parrot sdd run select_tests --tier feature --base origin/<base_branch> \
+  --worktree "$WT" --index "$IDX" $(printf -- '--task-file %s ' <every task file of the index>) \
+  --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
+```
+
+The feature tier is driven by the index's `test_contract` and always runs fresh (`--fresh` is the feature-tier
+default). The rendered table has **New red**, **Baseline red** and **Unknown** columns, a `cached` line for
+unchanged green targets, and a gate line: the PR is blocked only by new reds or unknowns; baseline reds are
+reported, not blocking. Rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners.
+
+Then render the section (always, even when the re-run was skipped or failed):
+
+```bash
+parrot sdd run test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
+```
+
+### 5. Build Verification Report
+Classify each task:
+
+- **✅ VERIFIED** — commit found AND files exist.
+- **⚠️ PARTIAL** — commit found but some files missing.
+- **❌ NO EVIDENCE** — no matching commits, files don't exist.
+
+Present the report:
+```
+📋 Verification Report: FEAT-<ID> — <title>
+
+Worktree: .claude/worktrees/feat-<ID>-<slug>
+Branch: feat-<ID>-<slug>
+Commits found: <N>
+Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
+Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
+E2E: <policy> — <status> (gate_satisfied: <bool>)
+Tests: <passed>/<tests> (<failed> failed) — re-run: done
+
+  ✅ TASK-096 — Scene Editor Refactor
+     Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
+     Files: src/lib/components/SceneEditor.svelte ✅
+
+  ⚠️ TASK-097 — Visual Transitions
+     Commits: feat(videoreel): TASK-097 — Visual Transitions (def5678)
+     Files: src/lib/components/Transitions.svelte ✅ | src/lib/utils/transitions.ts ❌
+
+  ❌ TASK-098 — Export Pipeline
+     Commits: none found
+     Files: src/lib/utils/export.ts ❌
+```
+
+### 6. Confirm
+If all tasks are ✅ VERIFIED:
+```
+All tasks verified. Proceed with closing? (Y/n)
+```
+
+If any tasks are ⚠️ PARTIAL or ❌ NO EVIDENCE:
+```
+<N> task(s) have issues. Options:
+  1. Close verified tasks only (mark others as "pending")
+  2. Close all with --force (mark partial as "done-with-issues")
+  3. Abort — fix issues first
+```
+
+If `--dry-run`, show the report and STOP.
+If `--force`, close all tasks regardless.
+
+### 7. Close & Stamp Verification (on feature branch)
+
+Close every task being closed ON THE FEATURE BRANCH, then stamp verification
+metadata in the worktree's per-spec index. Normally the implementing lane
+(`sdd-worker` / `sdd-start`) already moved the file `active/` → `completed/`
+and set `status: "done"`, so this step only adds the `verification` field and
+the feature-level `completed_at`.
+
+> **Verified is not closed.** Some lanes commit code but never close the task
+> (the `/sdd-fix` SDD lane, a worker that died before `finalize_task`, code
+> written by hand). Such a task shows up here as ✅ VERIFIED while its file is
+> still in `active/` and its index entry is still `pending`/`in-progress`;
+> stamping only `verification` would merge it into `base_branch` stalled in
+> `active/` forever. So a task that is not closed yet is closed here with
+> `parrot sdd run close_task` — **inside the worktree, on the feature branch**.
+> Never run it on `base_branch`: that creates duplicate state that conflicts on
+> merge (FEAT-414). A task the lane already closed is left untouched, so its
+> original `completed_at` is preserved.
+
+```bash
+WORKTREE_PATH=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+INDEX="sdd/tasks/index/${FEATURE_SLUG}.json"
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+
+# Close (if the lane did not) and stamp verification on each task being closed.
+# Use "verified" for ✅ VERIFIED tasks, "partial" for ⚠️ PARTIAL, "forced" for --force.
+for TASK_ID in "${TASK_IDS[@]}"; do
+  STATUS=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .status' "$WORKTREE_PATH/$INDEX")
+  if [[ -z "$STATUS" ]]; then
+    echo "⚠️  $TASK_ID is not in $INDEX — skipping (check TASK_IDS)." >&2
+    continue
+  fi
+  if compgen -G "$WORKTREE_PATH/sdd/tasks/active/${TASK_ID}-*.md" >/dev/null \
+     || [[ "$STATUS" != "done" && "$STATUS" != "done-with-issues" ]]; then
+    # git mv active → completed, index status/completed_at/file, hard-verified.
+    (cd "$WORKTREE_PATH" && parrot sdd run close_task "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
+    # parrot sdd run close_task always writes status "done"; keep Step 6's distinction.
+    if [[ "$VERIFICATION" != "verified" ]]; then
+      jq --arg id "$TASK_ID" '(.tasks[] | select(.id == $id) | .status) = "done-with-issues"' \
+        "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+    fi
+  fi
+  jq --arg id "$TASK_ID" --arg ver "$VERIFICATION" '
+    (.tasks[] | select(.id == $id) | .verification) = $ver
+  ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+done
+
+# Reap any active/ copy of a task that is already done with a completed/ twin
+# (e.g. brought back by a base-branch merge). Runs for BOTH the PR flow and
+# --merge: the PR flow previously had no sweep at all.
+(cd "$WORKTREE_PATH" && parrot sdd run heal_orphans "$FEATURE_SLUG")
+
+# Stamp feature-level completed_at if all tasks are done.
+jq --arg now "$NOW" '
+  if all(.tasks[]; .status == "done") then .completed_at = $now else . end
+' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+
+# Commit on the feature branch (inside the worktree) — never on base_branch.
+git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/
+git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the index + this feature's task files
+git -C "$WORKTREE_PATH" commit -m "sdd: close tasks for FEAT-<ID> — <slug>"
+```
+
+### 7.1. Close Resolved Ledger Issues
+
+The `/sdd-fix` SDD lane hands an issue's closure to this command: it files the
+spec and tasks, but the fix lands later (often via `sdd-worker`), so its own
+close step never runs. Without this step those issues stay `claimed` (hidden
+from `ledger plan-fix`) or `open` (re-offered as if still broken) after the fix
+merges.
+
+An issue is linked to the feature by a task's `**Discovered-from**: \`issue:<id>\``
+line, or by `issue:<id>` in the spec's frontmatter (spec *body* mentions are
+context, never linked). The script closes a linked `open`/`claimed` issue only
+with `/sdd-fix`'s two keys, fail-closed: every linked task is `done` +
+`verification: verified` (Step 7), AND one of the issue's files is in
+`git diff --name-only origin/$BASE_BRANCH...HEAD`. It writes
+`ledger close --resolved-by task:TASK-<NNN> --actor agent:sdd-done`; anything
+failing a key is reported and left untouched. Run it after Step 7 and before
+Step 9.1, so the snapshot exports the closures. Skip for hotfixes and
+`--dry-run` (pass `--dry-run` to the script to preview).
+
+```bash
+if [[ "$TYPE" != "hotfix" ]]; then
+    git -C "$WORKTREE_PATH" fetch -q origin "$BASE_BRANCH"
+    (cd "$WORKTREE_PATH" && parrot sdd run close_resolved_issues \
+        --worktree "$WORKTREE_PATH" --index "$INDEX" --base "origin/$BASE_BRANCH" \
+        --feature-id "$FEAT_ID") | sed -n '/^{/,$p'
+fi
+```
+
+The JSON report lists each linked issue with `outcome`: `closed` /
+`skipped` (with the failing key in `detail`) / `read-only` (report
+`(NOT closed: shared ledger is read-only)`) / `error`. Never fails
+`/sdd-done`; carry every non-`closed` row into the Step 12 output.
+
+### 8. Push the Feature Branch
+If the worktree branch hasn't been pushed yet:
+```bash
+git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
+```
+
+### 9. Check Merge Blockers (FEAT-566)
+
+Before integrating the feature branch, check for critical unacknowledged issues
+(blockers) that were discovered by this feature. Issues from other features do
+not block this feature's merge.
+
+```bash
+if [[ "$MERGE_FLAG" == "--merge" ]]; then
+    # `ledger blockers <FEAT-ID>` prints plain text lines (one per blocker) and
+    # exits 1 when any exist, exit 0 otherwise — it never emits JSON, so the
+    # gate below checks the EXIT CODE, not the (human-readable) output shape.
+    BLOCKERS_OUTPUT=$(wikitoolkit ledger blockers "$FEAT_ID" 2>&1)
+    BLOCKERS_EXIT=$?
+    if [[ $BLOCKERS_EXIT -ne 0 ]]; then
+        echo "⚠️  Merge blocked by critical unacknowledged issues:"
+        echo "$BLOCKERS_OUTPUT"
+        echo ""
+        echo "Resolve these issues or acknowledge them as accepted risks before merging."
+        echo "To acknowledge an issue: wikitoolkit ledger acknowledge <ISSUE-ID> --reason \"...\" --actor human:<name>"
+        if [[ "$FORCE_FLAG" != "--force" ]]; then
+            echo ""
+            echo "Use --force to bypass blocker checks (not recommended)."
+            exit 1
+        else
+            echo ""
+            echo "⚠️  Proceeding with --force despite blockers."
+        fi
+    fi
+fi
+```
+
+### 9.1. Snapshot Ledger Issues (FEAT-566)
+
+For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl`, export the
+shared `sdd/ledger/events.jsonl`, and rotate old terminal events from a throwaway
+worktree at `origin/<BASE_BRANCH>`; commit/push the resulting ledger snapshot directly to
+`base_branch` when it changed — never from an active worktree, never on the
+feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
+
+The export **reconciles** against the committed snapshot (FEAT-671): rows for
+issues this checkout's ledger has never seen are carried forward unchanged and
+local state wins for issues it knows, so a run from a machine whose event log
+is behind never drops other people's issues. `wikitoolkit ledger export
+--no-reconcile` is the explicit, destructive opt-out — `/sdd-done` never uses it.
+
+```bash
+if [[ "$TYPE" != "hotfix" ]]; then
+    git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
+
+    TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
+    git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
+    # No --force: the throwaway checkout only ever touches sdd/ledger, so
+    # restoring and cleaning that directory leaves it clean and a plain remove succeeds
+    # (a detached, unpushed snapshot commit does not block `worktree remove`).
+    cleanup_snapshot_worktree() {
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
+        git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
+    }
+    trap cleanup_snapshot_worktree EXIT
+
+    ATTEMPT=1
+    MAX_ATTEMPTS=3
+    while (( ATTEMPT <= MAX_ATTEMPTS )); do
+        EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
+        LOG_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export-log 2>&1)
+        ROTATE_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger rotate-log --older-than-days 30 2>&1)
+        if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* && "$ROTATE_OUTPUT" != *"Rotated"* ]]; then
+            echo "📝 Ledger snapshot unchanged — nothing to commit."
+            break
+        fi
+
+        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl
+        [ -d "$TEMP_WORKTREE/sdd/ledger/archive" ] && git -C "$TEMP_WORKTREE" add sdd/ledger/archive
+        git -C "$TEMP_WORKTREE" commit -q -m "sdd: ledger snapshot for $FEAT_ID"
+        if git -C "$TEMP_WORKTREE" push origin "HEAD:$BASE_BRANCH" >/dev/null 2>&1; then
+            echo "📝 Ledger snapshot updated with changed issues."
+            break
+        fi
+
+        # Rejected push: re-sync the throwaway worktree only, re-export, retry.
+        git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
+        ATTEMPT=$((ATTEMPT + 1))
+        if (( ATTEMPT > MAX_ATTEMPTS )); then
+            echo "⚠️  Ledger snapshot push failed after $MAX_ATTEMPTS attempts — continuing without failing /sdd-done."
+        fi
+    done
+
+    cleanup_snapshot_worktree
+    trap - EXIT
+fi
+```
+
+### 9.2. Integrate Feature Branch (FEAT-145, flow-aware)
+
+> **CRITICAL**: This is the step that brings the implementation code into the
+> base branch. The default is to open a PR; pass `--merge` to merge directly.
+
+**Hard refusal — `BASE_BRANCH == $HOTFIX_BASE`:**
+
+Hotfixes ALWAYS go through a PR, regardless of flags (including `--merge`):
+
+```bash
+if [[ "$BASE_BRANCH" == "$HOTFIX_BASE" ]]; then
+    cat <<EOF
+⚠️ Hotfix merging into '$HOTFIX_BASE' MUST go through a PR. /sdd-done refuses to merge
+   into it directly, regardless of flags.
+
+   Open the PR manually:
+
+     gh pr create --base "$HOTFIX_BASE" --head feat-<FEAT-ID>-<slug> \\
+       --title "<hotfix title>" \\
+       --body-file "$TEST_REPORT_MD"
+
+   After the PR merges, any sync-down automation your repo runs propagates the change to
+   staging and integration. If it fails, you have none, or you are offline, re-run with
+   --sync-down to propagate the change manually:
+
+     /sdd-done <FEAT-ID> --sync-down
+
+EOF
+    exit 0   # NOT an error — the hotfix workflow continues outside this command
+fi
+```
+
+**Feature flow (`BASE_BRANCH != $HOTFIX_BASE`) — default: open a PR:**
+
+Unless `--merge` is passed, push the feature branch and open a PR against
+`BASE_BRANCH`:
+
+```bash
+# Push the feature branch (already done in Step 8, but ensure it's up to date)
+git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
+
+# Open a PR against the base branch
+gh pr create \
+  --base "$BASE_BRANCH" \
+  --head "feat-<FEAT-ID>-<slug>" \
+  --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
+  --body "$(cat <<EOF
+## Summary
+
+<Verification report from Step 5 — list of tasks implemented>
+
+## Tasks
+
+<N>/<total> tasks verified.
+
+$(cat "$TEST_REPORT_MD")
+
+---
+_Closed by /sdd-done_
+EOF
+)"
+```
+
+If `gh` is not installed or not authenticated, print the manual command:
+```
+ℹ️  Could not create PR automatically. Run manually:
+
+    gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
+      --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
+      --body-file "$TEST_REPORT_MD"
+```
+
+**Feature flow with `--merge` — direct merge (old behavior):**
+
+When `--merge` is explicitly passed, perform a direct merge instead of a PR:
+
+```bash
+# We're already on $BASE_BRANCH (verified in Step 1)
+git merge --no-edit feat-<FEAT-ID>-<slug>
+```
+
+If the merge has conflicts (e.g. code-level changes to the same files):
+```
+⚠️  Merge conflict when merging feat-<FEAT-ID>-<slug> into <BASE_BRANCH>.
+   Resolve conflicts, then continue with: git merge --continue
+   Or abort: git merge --abort
+```
+If the user aborts, STOP and do NOT proceed to cleanup.
+
+**Self-heal — reap stalled `active/` orphans (runs after every `--merge`):**
+
+> Only applies when `--merge` is used. In the PR flow the sweep already ran on
+> the feature branch in Step 7, and CI's `parrot.sdd.scripts.check_task_state`
+> fails the PR if a twin or a closed-but-active task file still reaches it.
+
+```bash
+parrot sdd run heal_orphans <feature-slug>
+# If it reaped anything, commit the cleanup before pushing:
+if ! git diff --cached --quiet -- sdd/tasks/active sdd/tasks/completed; then
+  git commit -m "sdd: reap stalled active task orphans for FEAT-<ID> — <title>"
+fi
+```
+
+After a successful merge and self-heal, push `<BASE_BRANCH>`:
+```bash
+git push origin "$BASE_BRANCH"
+```
+
+### 9.5. Hotfix → Sync-down (FEAT-187, only with `--sync-down`)
+
+This sub-step runs ONLY when the user passes `--sync-down` (or the deprecated
+`--sync-dev` alias) AND `TYPE == "hotfix"`. It propagates a hotfix that has just
+been merged into the `hotfix_base` (via the manual PR from §9) back into `$STAGING_BRANCH` and `$INTEGRATION_BRANCH`
+so both stay in sync.
+
+If `--sync-dev` is used instead of `--sync-down`, first emit:
+```
+ℹ️  --sync-dev is deprecated; use --sync-down. Continuing with sync-down behaviour.
+```
+
+If your repository runs a sync-down automation, it does this after every push to
+the `hotfix_base`. Run this command only when that automation has failed, you have
+none, or the user is operating offline.
+
+**Branch names (from `sdd/config.json`):** `HOTFIX_BASE` = `hotfix_base`, `STAGING_BRANCH` = `staging_branch`,
+`INTEGRATION_BRANCH` = `base_branch`; the commands below use these shell variables.
+
+**Pre-flight (run once):** verify the hotfix landed on `origin/<hotfix_base>`:
+```bash
+git fetch origin
+if ! git merge-base --is-ancestor "feat-<FEAT-ID>-<slug>" origin/$HOTFIX_BASE; then
+    echo "⚠️  feat-<FEAT-ID>-<slug> is not yet an ancestor of origin/$HOTFIX_BASE."
+    echo "   Open the PR and merge it first, then re-run with --sync-down."
+    exit 1
+fi
+```
+
+**Sync to `staging`** — optimistic auto-merge with safe abort on conflict:
+```bash
+git checkout "$STAGING_BRANCH"
+git pull --ff-only origin "$STAGING_BRANCH"
+
+if git merge --no-edit feat-<FEAT-ID>-<slug>; then
+    git push origin "$STAGING_BRANCH"
+    echo "✅ staging synced with hotfix feat-<FEAT-ID>-<slug>."
+    STAGING_OK=true
+else
+    git merge --abort
+    STAGING_OK=false
+    cat <<EOF
+⚠️  Conflict syncing hotfix into staging. The merge has been aborted (no changes left).
+
+    Resolve manually:
+      git checkout "$STAGING_BRANCH"
+      git merge feat-<FEAT-ID>-<slug>
+      # ...resolve conflicts in your editor...
+      git commit
+      git push origin "$STAGING_BRANCH"
+
+EOF
+fi
+```
+
+**Sync to `dev`** — optimistic auto-merge with safe abort on conflict
+(independent of `staging` outcome — always attempt):
+```bash
+git checkout "$INTEGRATION_BRANCH"
+git pull --ff-only origin "$INTEGRATION_BRANCH"
+
+if git merge --no-edit feat-<FEAT-ID>-<slug>; then
+    git push origin "$INTEGRATION_BRANCH"
+    echo "✅ dev synced with hotfix feat-<FEAT-ID>-<slug>."
+    DEV_OK=true
+else
+    git merge --abort
+    DEV_OK=false
+    cat <<EOF
+⚠️  Conflict syncing hotfix into dev. The merge has been aborted (no changes left).
+
+    Resolve manually:
+      git checkout "$INTEGRATION_BRANCH"
+      git merge feat-<FEAT-ID>-<slug>
+      # ...resolve conflicts in your editor...
+      git commit
+      git push origin "$INTEGRATION_BRANCH"
+
+EOF
+fi
+```
+
+**Return to base:** leave the user on `$HOTFIX_BASE` (the hotfix's base branch):
+```bash
+git checkout "$HOTFIX_BASE"
+```
+
+**Summary and exit code:**
+```bash
+if $STAGING_OK && $DEV_OK; then
+    echo "✅ Sync-down complete: $STAGING_BRANCH and $INTEGRATION_BRANCH are in sync with $HOTFIX_BASE."
+    exit 0
+else
+    echo "⚠️  Sync-down partially failed. See above for failed targets."
+    exit 1
+fi
+```
+
+### 10. Transition Jira Ticket (if --resolve-jira)
+
+If `--resolve-jira` is passed AND the spec has a Jira key (set by `/sdd-tojira`):
+
+**a) Extract the Jira key from the spec:**
+```bash
+# Look for "**Jira**: [PROJ-123](...)" or a "jira:" metadata field in the spec
+JIRA_KEY=$(grep -oP '(?<=\*\*Jira\*\*: \[)[A-Z]+-\d+' sdd/specs/<feature>.spec.md)
+# Or from the brainstorm "## Jira Source" table
+if [[ -z "$JIRA_KEY" ]]; then
+    JIRA_KEY=$(grep -oP '(?<=\| Key \| )[A-Z]+-\d+' sdd/proposals/<key>-*.brainstorm.md)
+fi
+```
+
+If no Jira key is found, skip this step with a note:
+```
+ℹ️  No Jira key found in spec — skipping Jira transition.
+   To link a spec to Jira: /sdd-tojira <spec-path>
+```
+
+**b) Load Jira credentials:**
+```bash
+# Precondition: JIRA_INSTANCE, JIRA_USERNAME and JIRA_API_TOKEN are exported in the environment (see sdd/CONVENTIONS.md).
+JIRA_INSTANCE="${JIRA_INSTANCE%/}"
+```
+
+If `JIRA_INSTANCE` or `JIRA_API_TOKEN` are not set, warn and skip.
+
+**c) Get available transitions for the ticket:**
+
+Jira transitions are workflow-dependent — you cannot set a status directly.
+First, fetch the available transitions:
+
+**MCP path:**
+```
+jira_transition_issue(issue_key="<JIRA_KEY>")  # list available transitions
+```
+
+**curl fallback:**
+```bash
+TRANSITIONS=$(curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
+  "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY/transitions")
+echo "$TRANSITIONS" | jq '.transitions[] | {id, name}'
+```
+
+**d) Find and execute the "Done" / "Resolved" transition:**
+
+Look for a transition whose name matches (case-insensitive):
+`Done`, `Resolved`, `Close`, `Ready for UAT`, `Complete`.
+
+```bash
+# Find the transition ID
+TRANSITION_ID=$(echo "$TRANSITIONS" | jq -r '
+  .transitions[] |
+  select(.name | test("(?i)done|resolved|close|complete|ready for uat")) |
+  .id' | head -1)
+```
+
+If found, execute it:
+
+**MCP path:**
+```
+jira_transition_issue(issue_key="<JIRA_KEY>", transition_id="<TRANSITION_ID>")
+```
+
+**curl fallback:**
+```bash
+curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY/transitions" \
+  -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}"
+```
+
+If multiple matching transitions exist, prefer in this order:
+1. "Done"
+2. "Resolved"
+3. "Ready for UAT"
+4. "Complete"
+5. "Close"
+
+If no matching transition is found:
+```
+⚠️  No "Done" or "Resolved" transition available for <JIRA_KEY>.
+   Current status: <current_status>
+   Available transitions: <list>
+   You may need to transition it manually in Jira.
+```
+
+**e) Optionally resolve subtasks too:**
+
+If the ticket has subtasks (created by `--with-subtasks` in `/sdd-tojira`),
+transition each one that is still open:
+```bash
+SUBTASKS=$(curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
+  "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY?fields=subtasks" \
+  | jq -r '.fields.subtasks[].key')
+
+for SUBTASK in $SUBTASKS; do
+    # Get transitions for this subtask, find "Done", execute
+    # Same logic as above
+done
+```
+
+### 11. Cleanup the Worktree
+```bash
+git worktree remove .claude/worktrees/feat-<FEAT-ID>-<slug>
+```
+If there are uncommitted changes in the worktree, warn:
+```
+⚠️  Worktree has uncommitted changes. Force remove? (y/N)
+```
+
+If the worktree was already removed, prune stale metadata:
+```bash
+git worktree prune
+```
+
+Optionally delete the local feature branch (it's been merged):
+```bash
+git branch -d feat-<FEAT-ID>-<slug>
+```
+
+### 12. Output
+
+**Default (PR flow):**
+```
+✅ FEAT-<ID> — <title>: <N>/<total> tasks closed.
+
+Closed:
+  ✅ TASK-096 — Scene Editor Refactor (verified)
+  ✅ TASK-097 — Visual Transitions (verified)
+
+Index updated and committed.
+Branch pushed: feat-<ID>-<slug>
+PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
+E2E: <policy> — <status>
+Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Local branch deleted: feat-<ID>-<slug>
+```
+
+**With `--merge`:**
+```
+✅ FEAT-<ID> — <title>: <N>/<total> tasks closed.
+
+Closed:
+  ✅ TASK-096 — Scene Editor Refactor (verified)
+  ✅ TASK-097 — Visual Transitions (verified)
+
+Index updated and committed.
+Branch pushed: feat-<ID>-<slug>
+Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
+E2E: <policy> — <status>
+Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Local branch deleted: feat-<ID>-<slug>
+```
+
+Ledger issues (Step 7.1), when the feature links any:
+```
+Ledger: closed issue:569e81756247 (task:TASK-3580)
+        skipped issue:0306504b9917 — linked task(s) not verified: TASK-3601
+```
+
+If `--resolve-jira` was used and succeeded:
+```
+Jira: PROJ-123 → Done ✅
+  Subtasks transitioned: 4/4
+```
+
+If ALL tasks were closed:
+```
+✅ FEAT-<ID> — <title>: all <N> tasks closed.
+
+Branch pushed. PR opened → <BASE_BRANCH>.
+{if --merge} Merged into <BASE_BRANCH> directly. {end if}
+Worktree cleaned up. Feature branch deleted.
+{if --resolve-jira} Jira PROJ-123 → Done ✅ {end if}
+```
+
+## Reference
+- Per-spec index files: `sdd/tasks/index/<feature>.json` (on `<base_branch>`)
+- Active tasks: `sdd/tasks/active/` (on `<base_branch>`)
+- Completed tasks: `sdd/tasks/completed/` (on `<base_branch>`)
+- Frontmatter parser: `parrot.sdd.scripts.sdd_meta`
+- SDD methodology: `sdd/WORKFLOW.md`

@@ -129,7 +129,7 @@ def test_done_twins_carry_test_report_step(rel_path: str) -> None:
     "rel_path",
     (
         ".claude/agents/sdd-worker.md",
-        "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md",
+        "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md",
     ),
 )
 def test_sdd_worker_twins_pass_report_task(rel_path: str) -> None:

@@ -1,0 +1,610 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "source": "agent/workflows/sdd-brainstorm.md",
+      "target": ".agent/workflows/sdd-brainstorm.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-brief.md",
+      "target": ".agent/workflows/sdd-brief.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-codereview.md",
+      "target": ".agent/workflows/sdd-codereview.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-done.md",
+      "target": ".agent/workflows/sdd-done.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-explain.md",
+      "target": ".agent/workflows/sdd-explain.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-fix.md",
+      "target": ".agent/workflows/sdd-fix.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-fromjira.md",
+      "target": ".agent/workflows/sdd-fromjira.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-next.md",
+      "target": ".agent/workflows/sdd-next.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-proposal.md",
+      "target": ".agent/workflows/sdd-proposal.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-spec.md",
+      "target": ".agent/workflows/sdd-spec.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-start.md",
+      "target": ".agent/workflows/sdd-start.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-status.md",
+      "target": ".agent/workflows/sdd-status.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-task.md",
+      "target": ".agent/workflows/sdd-task.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agent/workflows/sdd-tojira.md",
+      "target": ".agent/workflows/sdd-tojira.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-autopilot/agent.md",
+      "target": ".agents/agents/sdd-autopilot/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-contract-probe/agent.md",
+      "target": ".agents/agents/sdd-contract-probe/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-feedback/agent.md",
+      "target": ".agents/agents/sdd-feedback/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-ideation/agent.md",
+      "target": ".agents/agents/sdd-ideation/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-planner/agent.md",
+      "target": ".agents/agents/sdd-planner/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-qa/agent.md",
+      "target": ".agents/agents/sdd-qa/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-research/agent.md",
+      "target": ".agents/agents/sdd-research/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-secondopinion/agent.md",
+      "target": ".agents/agents/sdd-secondopinion/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-worker/agent.md",
+      "target": ".agents/agents/sdd-worker/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-brainstorm/SKILL.md",
+      "target": ".agents/skills/sdd-brainstorm/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-brief/SKILL.md",
+      "target": ".agents/skills/sdd-brief/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-codereview/SKILL.md",
+      "target": ".agents/skills/sdd-codereview/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-done/SKILL.md",
+      "target": ".agents/skills/sdd-done/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-explain/SKILL.md",
+      "target": ".agents/skills/sdd-explain/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-fix/SKILL.md",
+      "target": ".agents/skills/sdd-fix/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-fromjira/SKILL.md",
+      "target": ".agents/skills/sdd-fromjira/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-next/SKILL.md",
+      "target": ".agents/skills/sdd-next/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-proposal/SKILL.md",
+      "target": ".agents/skills/sdd-proposal/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-spec/SKILL.md",
+      "target": ".agents/skills/sdd-spec/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-start/SKILL.md",
+      "target": ".agents/skills/sdd-start/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-status/SKILL.md",
+      "target": ".agents/skills/sdd-status/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-task/SKILL.md",
+      "target": ".agents/skills/sdd-task/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/sdd-tojira/SKILL.md",
+      "target": ".agents/skills/sdd-tojira/SKILL.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-autopilot.md",
+      "target": ".claude/agents/sdd-autopilot.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-coder.md",
+      "target": ".claude/agents/sdd-coder.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-contract-probe.md",
+      "target": ".claude/agents/sdd-contract-probe.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-feedback.md",
+      "target": ".claude/agents/sdd-feedback.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-ideation.md",
+      "target": ".claude/agents/sdd-ideation.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-planner.md",
+      "target": ".claude/agents/sdd-planner.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-qa.md",
+      "target": ".claude/agents/sdd-qa.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-research.md",
+      "target": ".claude/agents/sdd-research.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-secondopinion.md",
+      "target": ".claude/agents/sdd-secondopinion.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/agents/sdd-worker.md",
+      "target": ".claude/agents/sdd-worker.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-brainstorm.md",
+      "target": ".claude/commands/sdd-brainstorm.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-brief.md",
+      "target": ".claude/commands/sdd-brief.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-codereview.md",
+      "target": ".claude/commands/sdd-codereview.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-done.md",
+      "target": ".claude/commands/sdd-done.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-explain.md",
+      "target": ".claude/commands/sdd-explain.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-fix.md",
+      "target": ".claude/commands/sdd-fix.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-fromjira.md",
+      "target": ".claude/commands/sdd-fromjira.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-next.md",
+      "target": ".claude/commands/sdd-next.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-proposal.md",
+      "target": ".claude/commands/sdd-proposal.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-spec.md",
+      "target": ".claude/commands/sdd-spec.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-start.md",
+      "target": ".claude/commands/sdd-start.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-status.md",
+      "target": ".claude/commands/sdd-status.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-task.md",
+      "target": ".claude/commands/sdd-task.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/sdd-tojira.md",
+      "target": ".claude/commands/sdd-tojira.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/hooks/sdd-worker-format.sh",
+      "target": ".claude/hooks/sdd-worker-format.sh",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/rules/worktree-management.md",
+      "target": ".claude/rules/worktree-management.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "claude/skills/second-opinion/SKILL.md",
+      "target": ".claude/skills/second-opinion/SKILL.md",
+      "hosts": [
+        "claude"
+      ]
+    },
+    {
+      "source": "codex/agents/sdd-worker.toml",
+      "target": ".codex/agents/sdd-worker.toml",
+      "hosts": [
+        "codex"
+      ]
+    },
+    {
+      "source": "sdd/CONVENTIONS.md",
+      "target": "sdd/CONVENTIONS.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ],
+      "seed": true
+    },
+    {
+      "source": "sdd/WORKFLOW.md",
+      "target": "sdd/WORKFLOW.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/brainstorm.md",
+      "target": "sdd/templates/brainstorm.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/brief.md",
+      "target": "sdd/templates/brief.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/design_research.prompt.md",
+      "target": "sdd/templates/design_research.prompt.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/design_research.schema.json",
+      "target": "sdd/templates/design_research.schema.json",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/finding.md",
+      "target": "sdd/templates/finding.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/intake.procedure.md",
+      "target": "sdd/templates/intake.procedure.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/intake.schema.json",
+      "target": "sdd/templates/intake.schema.json",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/proposal.md",
+      "target": "sdd/templates/proposal.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/research_plan.prompt.md",
+      "target": "sdd/templates/research_plan.prompt.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/spec.md",
+      "target": "sdd/templates/spec.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/state.schema.json",
+      "target": "sdd/templates/state.schema.json",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/synthesis.prompt.md",
+      "target": "sdd/templates/synthesis.prompt.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/task.md",
+      "target": "sdd/templates/task.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    }
+  ]
+}

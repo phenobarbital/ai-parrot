@@ -1,0 +1,428 @@
+# SDD Workflow
+
+## Overview
+
+This document defines the **Spec-Driven Development (SDD)** methodology for this repository, unified across Claude Code, Codex, and Google Gemini via the Antigravity CLI with multi-agent task distribution.
+
+The key idea: specifications are the Single Source of Truth (SSOT). Agents across all supported platforms consume spec documents and produce **Task Artifacts** — discrete, self-contained files in `sdd/tasks/active/` that can be independently picked up and executed by agents in parallel.
+
+---
+
+## The SDD Lifecycle
+
+```
+                                 ┌─ /sdd-fromjira → jira-issue → brainstorm ────┐
+                                 │                                                 │
+                                 ├─ /sdd-proposal → discuss → brainstorm ──────────┤
+                                 │                                                 │
+                                 ├─ /sdd-spec → scaffold spec ─────────────────────┤
+[Human] ────────────────────────┤                                           Feature Spec → [Planner] Tasks → [Executors] Code → [Reviewer] Validation
+                                 │                                                 ↑              ↑                                       |
+                                 ├─ /sdd-tojira → jira-issue ──────────────────────┘              └────────── Feedback Loop ──────────────┘
+                                 │                                                                                                        |
+                                 └────────── /sdd-task → decomposes spec into tasks ──────────────────────────────────────────────────────┘
+```
+
+### Phase 0 — Exploration *(optional)*
+Start here when the idea is not yet well-defined:
+- `/sdd-brainstorm` compares options and writes `sdd/proposals/<feature>.brainstorm.md`.
+- `/sdd-proposal` researches a Jira issue, inline request or notes file and
+  writes `sdd/proposals/<feature>.proposal.md` (research state under `sdd/state/<FEAT-ID>/`).
+- `/sdd-fromjira` bootstraps a brainstorm from a Jira ticket.
+
+### Phase 1 — Feature Specification
+`/sdd-spec` writes `sdd/specs/<feature>.spec.md` from a brainstorm/proposal, a
+direct request, or an intake interview (FEAT-577), and reserves the
+`FEAT-<NNN>` via `parrot.sdd.scripts.reserve_ids` (not for hotfixes).
+
+### Phase 2 — Task Generation (Planner)
+`/sdd-task sdd/specs/<feature>.spec.md` decomposes the spec into Task Artifacts
+at `sdd/tasks/active/TASK-<NNN>-<slug>.md` and creates the **per-spec index**
+`sdd/tasks/index/<feature-slug>.json` (FEAT-145). TASK numbers come from
+`reserve_ids.py`; `/sdd-task` creates no worktree (FEAT-552).
+
+Tasks are designed to be:
+- **Atomic** — completable independently
+- **Bounded** — clear scope, no ambiguity
+- **Testable** — every task includes its own test criteria
+- **Assignable** — formatted so any agent can start immediately
+
+### Phase 3 — Task Execution (Executors)
+`/sdd-start TASK-<NNN>` (one task) or the `sdd-worker` agent (a whole feature)
+creates/reuses the feature worktree via `parrot sdd run ensure_worktree`,
+marks the task `in-progress` in the per-spec index, implements it, and closes it
+with `parrot sdd run close_task`, which moves the file to
+`sdd/tasks/completed/` and stamps the index. Code and SDD state are committed
+together on the feature branch. The manual (no-command) procedure is in
+`docs/sdd/WORKFLOW.md`.
+
+### Phase 4 — Validation (Reviewer)
+`/sdd-codereview` reviews completed tasks (with an adversarial `codex` cross-check);
+`/sdd-done FEAT-<NNN>` verifies every task, snapshots the ledger, pushes, and
+opens a PR against `base_branch` (`--merge` merges directly; it never merges into `main`).
+
+---
+
+## Task Artifact Format
+
+Every task file follows `sdd/templates/task.md`. Header: **Feature**, **Spec**,
+**Status**, **Priority**, **Estimated effort**, **Depends-on**, **Assigned-to**.
+Sections, in order: Context · Scope (with *NOT in scope*) · Files to Create /
+Modify · Codebase Contract (Verified Imports / Existing Signatures / Does NOT
+Exist) · Complexity Contract · Delegation Contract *(optional)* · Implementation
+Notes · Implementation Blueprint · Acceptance Criteria · Validation Commands ·
+Test Specification · Agent Instructions · Completion Note.
+
+Index `status` values: `pending` → `in-progress` → `done` | `done-with-issues`.
+
+---
+
+## Git Configuration (FEAT-187)
+
+Branch names are configuration, not convention: they live in `sdd/config.json`
+and every SDD command reads them from there.
+
+| Key | Role |
+|---|---|
+| `base_branch` | Integration branch for all feature work — the default base of `type: feature` flows. |
+| `staging_branch` | Release candidate branch, cut from `base_branch` when the team freezes a release. |
+| `hotfix_base` | Production branch (tagged releases only). Hotfixes land here via PR; no feature work ever bases on it. |
+
+**Sync-down automation** (optional, FEAT-187): if your repository runs a workflow
+that fast-forwards `staging_branch` and `base_branch` after every push to
+`hotfix_base`, a merged hotfix propagates by itself (opening a sync PR when a
+fast-forward is not possible). `/sdd-done --sync-down` is the manual fallback.
+
+---
+
+## Flow Types (FEAT-145, refined by FEAT-187)
+
+Every brainstorm/proposal/spec declares its flow type via YAML frontmatter
+at the top of the document:
+
+```yaml
+---
+type: feature          # one of: feature | hotfix
+base_branch: <branch>  # feature: base_branch or staging_branch; hotfix: hotfix_base (all from sdd/config.json)
+---
+```
+
+| Type      | base_branch               | When to use                                                  |
+|-----------|---------------------------|--------------------------------------------------------------|
+| `feature` | `base_branch` (default)   | Most work. Lands on the integration branch via `/sdd-done`.  |
+| `feature` | `staging_branch`          | Stabilization fix during a release freeze. Lands on staging. |
+| `feature` | `<other-branch>`          | Sub-features extending another feature branch.               |
+| `hotfix`  | `hotfix_base` (required)  | Production hotfixes, produced by `/sdd-brief`. `/sdd-done` opens the PR; merging it is manual. |
+
+Features MUST NOT base on the `hotfix_base`. `/sdd-done` enforces: it NEVER merges
+into the `hotfix_base` (`--merge` is refused); it opens the PR and merging is the
+human act; afterwards, any sync-down automation your repository runs propagates the
+change back to `staging_branch` and `base_branch`. If it fails (or you have none),
+run `/sdd-done --sync-down` locally.
+
+---
+
+## Document Taxonomy (FEAT-576)
+
+Brainstorms, proposals and specs carry two organizational frontmatter keys:
+
+```yaml
+projects: [ai-parrot, ai-parrot-server]   # parts of the codebase the doc concerns
+tags: [memory, compaction]                # free-form kebab-case keywords
+```
+
+- **projects** — The project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set.
+  Unknown values **warn but are kept**.
+- **tags** — lowercased, spaces/underscores → `-`, deduplicated.
+- Missing keys read as empty lists; the per-spec task index does not cache them.
+- `/sdd-spec` copies both from the brainstorm/proposal.
+
+### Querying
+
+List documents by taxonomy:
+
+```bash
+parrot sdd run doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+  [--project P ...] [--tag T ...] [--paths-only | --json | --summary]
+```
+
+- `--paths-only` — print relative paths only (one per line).
+- `--json` — full metadata JSON for each doc.
+- `--summary` — project and tag frequency tables.
+- With none of the three flags, prints one TSV row per doc (`path`, `kind`,
+  comma-joined `projects`, comma-joined `tags`).
+
+### Where they are used
+
+- `/sdd-status` and `/sdd-next` accept `--project` and `--tag` to filter the
+  displayed tasks.
+- `/sdd-tojira` maps `projects ∪ tags` to Jira labels (additive on update).
+- The wiki spec-page summary shows the taxonomy for each spec.
+
+### Backfill
+
+Infer missing `projects` frontmatter for existing docs (dry-run by default):
+
+```bash
+parrot sdd run backfill_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+  [--limit N] [--apply]
+```
+
+- Default is a dry run: prints `<path>: projects = [...]` and never writes.
+- `--apply` writes the edits as text insertions (never a YAML re-dump);
+  non-empty `projects` are never overwritten.
+- Review the proposed diff; if correct, re-run with `--apply` and commit
+  yourself — the script never commits.
+
+---
+
+## Release Cut
+
+When the team decides to freeze a release, a maintainer cuts `staging_branch`
+from `base_branch`. This is a manual, infrequent operation.
+
+### Cutting the branch
+
+```bash
+# Branch names come from sdd/config.json (base_branch, staging_branch).
+git checkout "$BASE_BRANCH"
+git pull --ff-only origin "$BASE_BRANCH"
+
+# First freeze (creates the branch):
+git checkout -B "$STAGING_BRANCH" "origin/$BASE_BRANCH"
+git push --set-upstream origin "$STAGING_BRANCH"
+
+# Subsequent freezes (staging already exists):
+git checkout "$STAGING_BRANCH"
+git merge --ff-only "$BASE_BRANCH"
+git push origin "$STAGING_BRANCH"
+```
+
+### During the freeze
+
+- New feature work continues on `base_branch`. It is destined for the NEXT
+  release, not this one.
+- Hotfixes land on `hotfix_base` as usual; sync-down (automation or
+  `/sdd-done --sync-down`) propagates them to `staging_branch` and `base_branch`.
+- Stabilization fixes that target THIS release should land on
+  `staging_branch` directly: open a brainstorm/spec with
+  `type: feature` and the `staging_branch` as `base_branch`.
+
+### Releasing
+
+1. Open PR `staging_branch → hotfix_base`.
+2. Review, run full CI, ensure all stabilization fixes are in.
+3. Merge the PR.
+4. Tag the merge commit: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+5. Propagate the merge commit back to `base_branch` (sync-down automation or
+   `/sdd-done --sync-down`).
+6. Publish the release artifacts with whatever your repository uses for tags.
+
+### Recommended Branch Protection
+
+`hotfix_base` (and `staging_branch` once in active use) should require PRs,
+passing CI status checks, and signed commits. Configure via your Git host's
+repository settings.
+
+---
+
+## Per-Spec Index Schema (`sdd/tasks/index/<feature-slug>.json`, FEAT-145)
+
+> **Migration history**: the legacy monolithic `sdd/tasks/.index.json` was
+> split into per-spec files by `parrot.sdd.scripts.migrate_index`. The original
+> monolith is preserved as a historical artifact. New tooling reads only
+> per-spec indexes.
+
+Each per-spec index file contains a header describing the feature plus
+the `tasks[]` array for that feature only. Two parallel features touch
+disjoint files and never collide on merge.
+
+```json
+{
+  "feature": "feature-slug",
+  "feature_id": "FEAT-NNN",
+  "spec": "sdd/specs/feature-slug.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "ISO-8601",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "slug": "base-loader-interface",
+      "title": "Define BaseLoader abstract interface",
+      "feature_id": "FEAT-NNN",
+      "feature": "feature-slug",
+      "status": "done",
+      "priority": "high",
+      "depends_on": [],
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "ISO-8601",
+      "file": "sdd/tasks/completed/TASK-001-base-loader-interface.md"
+    }
+  ]
+}
+```
+
+Tasks orphaned by the migration (no resolvable `feature`) live in
+`sdd/tasks/index/_orphans.json` with the same schema and `feature: "_orphans"`.
+`/sdd-status` surfaces them in a dedicated panel; `/sdd-next` skips them.
+
+See `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md` (FEAT-145) for
+the authoritative design rationale.
+
+---
+
+## TASK/FEAT ID Allocation (FEAT-387)
+
+`TASK-<NNN>` and `FEAT-<NNN>` numbers are allocated by a tiny, git-native
+compare-and-swap ledger, not by scanning existing files for the highest
+number and incrementing — that scan-and-increment approach has no lock and
+no re-check against `origin/<base_branch>` immediately before committing,
+so two `/sdd-task`/`/sdd-spec` runs racing each other (e.g. concurrent
+dev-loop planner dispatches) can silently allocate the same number to two
+different features. Different filenames mean git's merge machinery never
+flags the collision — this is exactly how six real `TASK-<NNN>` collisions
+between FEAT-380 (sandbox-hardening) and two unrelated features went
+undetected until `/sdd-done`'s closeout tooling stumbled on them.
+
+- **`sdd/tasks/.id_ledger.json`** — the ledger itself: a single, git-tracked
+  JSON file holding `next_task_id` and `next_feature_id`. Every allocation
+  reads this file, computes a reservation, and races to commit+push an
+  update — the push itself is the compare-and-swap (a non-fast-forward
+  rejection means someone else already advanced the counter).
+- **`parrot.sdd.scripts.id_ledger`** — the `IdLedger` Pydantic model plus
+  `load_ledger`/`save_ledger` and the one-time `bootstrap_ledger()` used to
+  seed the ledger strictly ahead of every ID already in use.
+- **`parrot.sdd.scripts.reserve_ids`** — the allocator `/sdd-task` and
+  `/sdd-spec` call instead of hand-computing a number:
+  ```bash
+  parrot sdd run reserve_ids --kind task --count 8 \
+    --base-branch <base_branch> --label <feature-slug>
+  ```
+  Reads the ledger **as of `origin/<base_branch>`**, builds a *ledger-only*
+  commit on that tip, and pushes it; on a rejected (non-fast-forward) push
+  it fetches, re-reads the now-current ledger, recomputes, and retries
+  (bounded, with jittered backoff) instead of silently succeeding with a
+  stale, already-claimed number. Prints the reserved IDs one per line.
+
+  **The reservation never touches local history.** The candidate commit is
+  assembled with git plumbing in a throwaway index, so no attempt mutates
+  the local branch, index or working tree, and the push carries that one
+  commit (`<sha>:refs/heads/<base>`) rather than `HEAD` — local-only
+  commits on the base branch are therefore neither published nor
+  destroyed. This is a fix for a real incident: the original implementation
+  committed on top of `HEAD`, pushed the whole branch, and ran
+  `git reset --hard origin/<base_branch>` on a lost race, silently eating
+  two unpushed commits and still exiting 0. After a successful push the
+  local branch is fast-forwarded onto the reservation as a convenience; if
+  it carries unpushed commits the fast-forward is skipped and a warning
+  tells you to reconcile with `git pull --no-rebase`.
+- **`parrot.sdd.scripts.check_id_collisions`** — an independent, read-only
+  defense-in-depth backstop (no dependency on the ledger/allocator): scans
+  `sdd/tasks/index/*.json`, `sdd/tasks/active/*.md`, and
+  `sdd/tasks/completed/*.md` for any `TASK-<NNN>` number claimed by more
+  than one distinct feature. If your repository runs it in CI, pair it with a
+  one-time baseline exception file so historical, pre-ledger
+  collisions don't retroactively fail the build — only a genuinely NEW
+  collision does. `FEAT-<NNN>` reuse across specs (an accepted,
+  intentional pattern — e.g. FEAT-380 split across three specs) is
+  reported informationally and never fails the build.
+
+An intentional, explicit `FEAT-<NNN>` reuse (splitting one initiative
+across multiple specs, the FEAT-380 pattern) skips the reservation call
+via a `reuse_feature_id: FEAT-<NNN>` frontmatter field — see
+`.claude/commands/sdd-spec.md`.
+
+---
+
+## Starting from an interview: `/sdd-spec` intake mode (FEAT-577)
+
+When you already know what you want and have no brainstorm or proposal, run
+`/sdd-spec` with no `--` notes (or pass `--interview`). It asks a fixed intake
+batch, researches the codebase (`--research full|light|none`, default `full`),
+runs 2–4 follow-up rounds informed by the findings, and writes a **spec**
+directly. The full procedure is `sdd/templates/intake.procedure.md`.
+
+### Flow
+```
+[Intake Interview] ──> [Codebase Research] ──> [2-4 Follow-up Rounds] ──> [Spec Generation]
+```
+
+### Flags
+- `--interview`: Force intake mode (warns and ignores if an exploration doc exists).
+- `--no-interview`: Skip intake and follow the standard path (unattended lanes always pass this).
+- `--resume [<staging-dir>]`: Resume an interrupted intake run from a staging directory.
+- `--research <full|light|none>`: Set codebase research depth (default: `full`).
+- `--no-gate`: Skip the research gate check.
+- `--budget <budget>`: Set token/time budget for the intake run.
+
+### Brainstorm Hand-off (G12)
+If the user decides during the interview that the feature is too complex or needs more exploration,
+they can decline the hand-off to spec generation. The intake run can then hand off to `/sdd-brainstorm`
+or `/sdd-proposal` to explore options first.
+
+### Staging & Retention (G13)
+Intake runs are staged under `sdd/state/.intake/` (which is git-ignored). Staged runs are pruned
+after 10 days by a daily git hook. Install this hook once with:
+```bash
+parrot sdd run install_hooks
+```
+To uninstall, run with `--uninstall`. The hook refuses to install if `core.hooksPath` is set to a custom path.
+Note that `/sdd-status` remains read-only during this process.
+
+---
+
+## Parallelism Rules
+
+Claude Code agents can work in parallel when tasks have no shared dependencies:
+
+```
+TASK-001 (base interface)
+    ├── TASK-002 (pgvector)    ← parallel after 001
+    ├── TASK-003 (arangodb)    ← parallel after 001
+    └── TASK-004 (embeddings)  ← parallel after 001
+            └── TASK-005 (rag-pipeline) ← waits for 002, 003, 004
+```
+
+An agent should **never start a task** unless every id in its `depends_on`
+is `"done"` in the per-spec index.
+
+---
+
+## Commands Reference
+
+The SDD workflow is unified across all three developer platforms:
+- **Claude Code**: Slash commands in `.claude/commands/sdd-*.md`
+- **Codex**: Repository skills in `.agents/skills/sdd-*` (invoked as `$sdd-*`) and agent `.codex/agents/sdd-worker.toml`
+- **Antigravity CLI (Google Gemini)**: Slash command workflows in `.agent/workflows/sdd-*.md` (invoked as `/sdd-*`), skills in `.agents/skills/sdd-*`, and subagents in `.agents/agents/`
+
+| Command | Skill | Description |
+|---|---|---|
+| `/sdd-proposal` | `sdd-proposal` | Research a Jira issue, inline request, or notes file before writing a spec |
+| `/sdd-brainstorm` | `sdd-brainstorm` | Explore a feature idea, compare options, and write a brainstorm document |
+| `/sdd-spec` | `sdd-spec` | Scaffold a formal Feature Specification from exploration, a direct request, or an intake interview (FEAT-577) |
+| `/sdd-task <spec.md>` | `sdd-task` | Decompose an approved spec into atomic task files and a per-spec index |
+| `/sdd-start <task>` | `sdd-start` | Implement and close one task inside the feature worktree |
+| `/sdd-done <feat>` | `sdd-done` | Verify, push, open or describe PR, and clean up the worktree |
+| `/sdd-codereview <task>` | `sdd-codereview` | Code review a completed task with adversarial cross-checks |
+| `/sdd-explain <target>` | `sdd-explain` | Code-grounded architectural map or deep implementation trace |
+| `/sdd-status` | `sdd-status` | Show task index status board across all per-spec indexes |
+| `/sdd-next` | `sdd-next` | Suggest next unblocked tasks to assign |
+| `/sdd-fix [issue-id]` | `sdd-fix` | Drain the work ledger: plan-fix, claim, route to the Fast or SDD lane, close by evidence, release the rest |
+| `/sdd-fromjira` | `sdd-fromjira` | Bootstrap an SDD brainstorm from a Jira ticket |
+| `/sdd-tojira` | `sdd-tojira` | Export an SDD specification to a Jira Story and subtasks |
+| `/sdd-insight` | `sdd-insight` | Analyze collaboration transcripts and repo-level SDD process adherence |
+
+---
+
+## Quality Rules for Agents
+
+1. **Never modify files outside the task scope** — respect boundaries
+2. **Follow existing patterns** — reference code mentioned in the task
+3. **Write tests first** — TDD approach per task
+4. **Update the index** — close tasks with `parrot sdd run close_task` (per-spec index), never the legacy monolith
+5. **Small commits** — one task = one logical commit
+6. **Ask via the spec** — if unclear, note the ambiguity in the completion note
+   and let the Planner agent refine the spec for the next iteration

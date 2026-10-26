@@ -61,8 +61,8 @@ def test_every_creator_calls_ensure_worktree(rel: str) -> None:
 _UNATTENDED_SPEC_CALLERS = (
     ".claude/agents/sdd-research.md",
     ".claude/agents/sdd-planner.md",
-    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md",
-    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-planner.md",
+    "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-research.md",
+    "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-planner.md",
 )
 
 

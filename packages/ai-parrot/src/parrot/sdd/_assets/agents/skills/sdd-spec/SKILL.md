@@ -1,0 +1,174 @@
+---
+name: sdd-spec
+description: Convert a brainstorm, proposal, or direct feature request into a formal SDD specification with verified codebase contracts and flow metadata.
+---
+
+# SDD Spec
+
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-spec procedure](../../../.claude/commands/sdd-spec.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
+Use this skill when the user asks to run `sdd-spec`, create a formal SDD
+specification, or convert a brainstorm/proposal into a spec.
+
+Codex invocation: `$sdd-spec [<feature-slug>] [--type feature] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]`.
+
+## Purpose
+
+Create `sdd/specs/<feature-slug>.spec.md`, the single source of truth for a
+feature. Hotfixes are not specs: use `$sdd-brief <source>` (FEAT-698).
+
+## Guardrails
+
+- Do not implement code.
+- Use `sdd/templates/spec.md`.
+- Preserve YAML frontmatter.
+- If prior exploration exists, consume it before asking the user questions.
+- Never re-ask brainstorm questions marked `[x]`; carry answers forward
+  verbatim and route them into the correct spec sections.
+- Build a verified Codebase Contract with file paths and line numbers.
+- Identify delegation-eligible modules (see the workflow note below).
+- Commit only the spec and this run's promoted design-research/intake artifacts.
+
+## Workflow
+
+#### Identify delegation-eligible modules
+
+While writing §3 Module Breakdown, fill the "Delegation-eligible modules"
+sub-table: for each module state whether its design is complete enough that
+implementing it is mechanical, and record the decided patterns and exact
+contracts (signatures, error codes, file layout). Architecture decisions
+stay with the thinking model — eligibility never delegates a design choice.
+
+1. Parse:
+   - feature slug
+   - free-form notes after `--`
+   - optional `--type`
+   - optional `--base-branch`
+   - intake flags (FEAT-577): with no brainstorm/proposal and no notes (or
+     with `--interview`), run intake mode by following
+     `sdd/templates/intake.procedure.md`; never in a non-interactive run.
+2. Locate prior exploration:
+   - `sdd/proposals/<feature-slug>.brainstorm.md`
+   - `sdd/proposals/<feature-slug>.proposal.md`
+3. If a brainstorm exists, treat it as authoritative:
+   - Problem Statement -> Motivation
+   - Constraints -> Goals and Acceptance Criteria
+   - Recommendation -> Architectural Overview
+   - Feature Description -> Overview, Integration Points, Risks
+   - Capabilities -> Module Breakdown
+   - Impact table -> Integration Points
+   - Code Context -> Codebase Contract, after re-verification
+   - Libraries -> External Dependencies
+   - Parallelism Assessment -> Worktree Strategy
+   - Open Questions -> preserve `[x]` and `[ ]`
+4. Resolve flow metadata with `parrot.sdd.scripts.sdd_meta.resolve_flow()`:
+   - explicit flags win
+   - exploration frontmatter is next
+   - default is `type: feature` with the `base_branch` from `sdd/config.json`
+5. Validate:
+   - `--type hotfix` or `type: hotfix` exploration frontmatter: abort with
+     `⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).`
+   - feature must not use `main`
+6. Sync base branch:
+   - refuse if inside `.claude/worktrees/`
+   - refuse dirty worktree
+   - `git checkout <base_branch>`
+   - `git pull --ff-only origin <base_branch>`
+7. Ask clarifying questions only for real blockers:
+   - missing target version/status/author preferences
+   - unresolved questions that block design
+   - contradictions discovered during codebase research
+8. Research codebase:
+   - run `wikitoolkit query "<focused question>"` before source scans
+   - inspect at least one wiki result when available
+   - use `rg`
+   - read every file before citing imports, methods, classes, signatures, or
+     paths
+   - record plausible things that do not exist
+8b. Optional independent design research, before drafting the spec:
+   - when prior exploration is accepted or intake reached `rounds_complete`,
+     follow the full procedure's collaborative research step using
+     `sdd/templates/design_research.prompt.md` and its schema
+   - supply only accepted input and verified code anchors, never your draft or
+     preferred conclusion; use a separate read-only reviewer, not this session
+   - bound execution, validate affected paths for repository containment and
+     existence, and disposition every suggestion as CONFIRM/REJECT/ESCALATE
+   - persist the brief, raw output and triage in run-scoped staging; fill §9
+     Design Research Cross-Check, or record the concrete skip reason
+   - this optional step never blocks spec creation when the capability fails
+9. Resolve identity before reserving:
+   - For `type: feature`, first check whether this slug already owns an ID in
+     `sdd/specs/<feature-slug>.spec.md` and its per-spec index. Preserve that
+     existing FEAT-ID on regeneration; never reserve a replacement. If the
+     spec and index disagree, stop and report the mismatch.
+   - If frontmatter has `reuse_feature_id`, use it only for an intentional
+     multi-spec split, document the reuse, and skip reservation.
+   - Only for a new feature without an existing or explicitly reused ID, call:
+     `parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
+   - Use the returned `FEAT-NNN` verbatim.
+   - Do not fall back to hand-computed IDs.
+10. Write the spec:
+   - frontmatter `type` and `base_branch`
+   - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
+   - Feature ID
+   - date
+   - architecture and module breakdown
+   - Interface Skeletons for every module: public signatures and docstrings,
+     with `verified: path:NN` anchors for existing code, and no implementation
+     bodies. `$sdd-task` derives its Implementation Blueprints from these.
+   - an Edit Sites table in §6 for every file the modules modify: the verbatim
+     attachment anchor, `path:NN`, and its occurrence count verified with
+     `grep -c`. Record the base commit used for verification. When an anchor
+     is non-unique, include two or three lines of surrounding context; list
+     only actual module files. For created files, record the path only.
+   - tests and acceptance criteria
+   - mandatory Codebase Contract
+   - Worktree Strategy
+   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback` (repos with `test_command` set in `sdd/config.json`: write `none — fallback`)
+     — or the FEAT-709 `runners:` form (pytest/vitest/cargo/parrot-e2e blocks; kinds, tiers and settings from
+     `.parrot/test_runners.toml`; `parrot-e2e` never at task tier). The flat form is lifted on read to one pytest runner.
+   - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
+     only when the feature exercises the deterministic E2E gate: `policy`
+     must be exactly `required`, `optional` or `none` (never coerced when
+     invalid — the loader fails plan loading closed instead); a `required`
+     policy needs at least one required, codified (non-exploratory,
+     node-bearing) scenario; live and exploratory scenarios are listed
+     separately from deterministic ones and are never called
+     "deterministic" — exploratory scenarios can never be `required`.
+     Omit both entirely for a feature with no E2E surface (absence defaults
+     the later-generated plan's policy to `optional`); the complete
+     `e2e-plan.md` frontmatter is generated later, at task decomposition,
+     once pytest node IDs are frozen
+   - Open Questions with resolved/unresolved state preserved
+11. Commit:
+   - preserve unrelated staging; stop before committing if it is outside this run's scope
+   - stage `sdd/specs/<feature-slug>.spec.md` and only this run's promoted artifacts
+   - promote design research into `sdd/state/<FEAT-ID>/design_research/`
+   - for intake, set `feat_id`, `phase: committed` and `updated_at` in
+     `intake.json`, then promote into `sdd/state/<FEAT-ID>/intake/`
+   - never overwrite existing promoted directories; retain staging and report
+     the collision for inspection; preserve source artifacts until copying succeeds
+   - verify cached names
+   - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
+
+## Output
+
+```text
+Spec created and committed: sdd/specs/<feature-slug>.spec.md
+Feature ID: FEAT-NNN
+Isolation: per-spec|mixed
+Next: review, mark approved, run $sdd-task sdd/specs/<feature-slug>.spec.md
+```
+
+## References
+
+- `sdd/templates/spec.md`
+- `sdd/WORKFLOW.md`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot.sdd.scripts.reserve_ids`

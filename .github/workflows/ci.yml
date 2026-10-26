@@ -112,6 +112,24 @@ jobs:
           uv run python -m scripts.sdd.check_task_state \
             --baseline scripts/sdd/.task_state_baseline.json
 
+      # FEAT-633: parrot/sdd/_assets/ is a generated copy of the SDD sources (.claude/, .agents/,
+      # .agent/, .codex/, sdd/); fail on any byte divergence. Fix: python scripts/sdd/check_asset_sync.py --write
+      # C16/C22: also fails on a shipped line naming a monorepo source path (packages/, scripts/,
+      # $CLAUDE_PROJECT_DIR/…) or monorepo-specific text (tests/sdd_scripts/, from navconfig,
+      # PYTHONPATH=, reference/sdd-insight/). Fix: edit the SOURCE file, then --write.
+      - name: Check packaged SDD assets are in sync (FEAT-633)
+        run: python scripts/sdd/check_asset_sync.py --check
+
+      # FEAT-633 C11c: the asset tree goes into the PUBLIC wheel. Fail on any organisation data,
+      # CLAUDE.md reference or hardcoded flow branch in a shipped file (kinds from TASK-4070).
+      # Fix: edit the SOURCE file (.claude/, .agents/, …), then `check_asset_sync.py --write`.
+      - name: Scan packaged SDD assets for publication-unsafe content (FEAT-633)
+        run: >
+          uv run --no-sync python -m parrot.sdd.audit
+          packages/ai-parrot/src/parrot/sdd/_assets
+          --root packages/ai-parrot/src/parrot/sdd/_assets
+          --fail-on org-data,claude-md-ref,branch-literal
+
       # FEAT-712: sdd/ledger/issues.jsonl has silently lost open issues twice
       # (ccbfef606, 769ca8516 — 25 issues, 14 of them open, including a
       # vulnerability), and the loss is invisible in review inside a 350+ line
@@ -130,6 +148,31 @@ jobs:
           git fetch origin "$BASE"
           uv run python -m scripts.sdd.check_ledger_snapshot \
             --base-ref "origin/$BASE"
+
+  # FEAT-633 (codex S8): prove the BUILT wheel carries the SDD asset tree. `uv build` builds the
+  # sdist first and the wheel from it, so this also proves MANIFEST.in. g++ is preinstalled on
+  # ubuntu-latest for the two Cython extensions; no uv sync / test deps needed.
+  sdd-assets-wheel:
+    name: SDD assets ship in the ai-parrot wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      - name: Build ai-parrot sdist + wheel
+        run: uv build --package ai-parrot --out-dir dist
+
+      - name: Verify wheel contains manifest.json, every manifest entry, nothing on the deny-list and no monorepo path
+        run: python scripts/sdd/check_asset_sync.py --wheel dist/ai_parrot-*.whl
 
   # FEAT-586: keeps docs/getting-started.md's factual claims honest (the
   # claim-verification harness) and both installer scripts parseable.

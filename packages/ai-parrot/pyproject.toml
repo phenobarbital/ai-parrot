@@ -981,10 +981,25 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 # FEAT-553: coder rule files read via importlib.resources by parrot.flows.conventions.
 "parrot.flows" = ["_rules_data/*.md"]
+# FEAT-633: packaged SDD flow assets deployed by `parrot sdd install`, read via importlib.resources.
+# Explicit per-subdir patterns (one per _assets/ subtree); test_check_asset_sync asserts they cover
+# every manifest entry, so a new subtree fails CI instead of silently missing from the wheel.
+"parrot.sdd" = [
+    "_assets/manifest.json",
+    "_assets/claude/commands/*.md",
+    "_assets/claude/agents/*.md",
+    "_assets/claude/hooks/*.sh",
+    "_assets/claude/rules/*.md",
+    "_assets/claude/skills/*/SKILL.md",
+    "_assets/agents/skills/*/SKILL.md",
+    "_assets/agents/agents/*/agent.md",
+    "_assets/agent/workflows/*.md",
+    "_assets/codex/agents/*.toml",
+    "_assets/sdd/sdd_templates/*",
+    "_assets/sdd/WORKFLOW.md",
+    "_assets/sdd/CONVENTIONS.md",
+]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
-# FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader
-# reads it via importlib.resources, so it MUST be in the wheel.
-"parrot.flows.dev_flow" = ["_subagent_data/*.md"]
 # FEAT-556: `parrot <host> install --toolkits` seeds .parrot/mcp-toolkits.yaml
 # from these templates, read via importlib.resources — they MUST be in the wheel.
 "parrot.mcp" = ["_toolkit_templates/*.yaml"]
