@@ -249,4 +249,5 @@ Use `$sdd-start TASK-4709` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: sonnet (native), 1 attempt. Tests use duck-typed fakes for LoadedModel/RoleCatalog/PbacGate; not run against a real loader snapshot (TASK-4478 e2e should cover). Conformance helper requires adapter.route(exposure,name,identity) (coder convention).
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.

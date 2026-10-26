@@ -524,7 +524,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -536,8 +536,9 @@
       "parallelism_notes": "TASK-4472: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py (Governance composition and subject/provenance digest (M6d)); TASK-4473: consumes packages/ai-parrot-semantic/src/parrot/semantic/catalog.py (Authorized catalog and saved-query expansion (M7)); TASK-4476: consumes packages/ai-parrot-semantic/src/parrot/semantic/results.py (Scoped result handles and exact retained provenance (M9b))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4709-semantic-guarded-dataset-sink.md"
+      "completed_at": "2026-10-26T00:00:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4709-semantic-guarded-dataset-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4710",
