@@ -128,16 +128,10 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
     llm = "google:gemini-3.5-flash"
     narrative_skill = "budget-narrative"
 
-    #: Temporary workaround: the WorkerPool-backed sandbox
-    #: (`PythonREPLTool`'s default `execution_mode="worker"`) is currently
-    #: unable to operate. Pins this agent's `python_repl_pandas` tool to
-    #: `execution_mode="inprocess"` (generated code runs inside the host
-    #: process — no process isolation, rlimits, or SIGKILL deadline; see
-    #: `parrot.tools.pythonrepl.PythonREPLTool.__init__`) so the agent stays
-    #: usable while the worker pool is down. Override per-instance with the
-    #: `python_repl_execution_mode=` constructor kwarg (e.g. `"worker"`) once
-    #: it's fixed, or flip this class attribute back to `"worker"`.
-    python_repl_execution_mode: ClassVar[str] = "inprocess"
+    #: Execution mode for the internal `python_repl_pandas` tool. "worker" is the
+    #: sandboxed worker-process default (FEAT-750 fixed the pyarrow DataFrame
+    #: transport that forced the old "inprocess" workaround).
+    python_repl_execution_mode: ClassVar[str] = "worker"
 
     #: Directory-discovery opt-in (FEAT-420 code-review fix) — see
     #: `SKILLS_DIR`'s comment above for why this is required for

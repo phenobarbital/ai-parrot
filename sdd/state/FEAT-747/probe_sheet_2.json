@@ -1,0 +1,299 @@
+[
+ {
+  "id": "c79",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "AgentSwarmToolkit",
+  "expected": "class AgentSwarmToolkit(AbstractToolkit):",
+  "expected_line": 24
+ },
+ {
+  "id": "c80",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "ask_agent",
+  "expected": null,
+  "expected_line": 53
+ },
+ {
+  "id": "c81",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "post_to_channel",
+  "expected": null,
+  "expected_line": 160
+ },
+ {
+  "id": "c101",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "AgentSwarmToolkit",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c117",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "ask_agent",
+  "expected": "async def ask_agent(self, agent, question, expected_schema=None, timeout=None) -> dict:",
+  "expected_line": 53
+ },
+ {
+  "id": "c118",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "send_feedback",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c119",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "list_agents",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c120",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "list_channels",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c121",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "post_to_channel",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c82",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "line": 1
+ },
+ {
+  "id": "c83",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "register_future",
+  "expected": "def register_future(self, correlation_id: str) -> asyncio.Future:",
+  "expected_line": 318
+ },
+ {
+  "id": "c84",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "discard_future",
+  "expected": null,
+  "expected_line": 318
+ },
+ {
+  "id": "c100",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "TunnelRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c63",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ParrotEventType",
+  "expected": "class ParrotEventType:",
+  "expected_line": 27
+ },
+ {
+  "id": "c64",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentCardEventContent",
+  "expected": "class AgentCardEventContent(BaseModel): ...  class TaskEventContent(BaseModel): ...",
+  "expected_line": 89
+ },
+ {
+  "id": "c65",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c66",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ResultEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c67",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "StatusEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c68",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentAnswer",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c69",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ChannelStateContent",
+  "expected": "class ChannelStateContent(BaseModel):   # m.parrot.channel, state_key=\"\"",
+  "expected_line": 269
+ },
+ {
+  "id": "c70",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TunnelStateContent",
+  "expected": "class TunnelStateContent(BaseModel):    # m.parrot.tunnel, state_key=\"\"",
+  "expected_line": 269
+ },
+ {
+  "id": "c97",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ParrotEventType",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c98",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c127",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentCardEventContent",
+  "expected": "class AgentCardEventContent(BaseModel)  # l.89",
+  "expected_line": 89
+ },
+ {
+  "id": "c128",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": "class TaskEventContent(BaseModel)       # l.110",
+  "expected_line": 89
+ },
+ {
+  "id": "c129",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ResultEventContent",
+  "expected": "class ResultEventContent(BaseModel)     # l.131",
+  "expected_line": 89
+ },
+ {
+  "id": "c130",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentAnswer",
+  "expected": "class AgentAnswer(BaseModel)            # l.165 \u2014 fixed envelope returned by ask_agent",
+  "expected_line": 89
+ },
+ {
+  "id": "c131",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "FeedbackEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c132",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ChannelStateContent",
+  "expected": "class ChannelStateContent(BaseModel)    # l.269 (state_key='')",
+  "expected_line": 89
+ },
+ {
+  "id": "c133",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TunnelStateContent",
+  "expected": "class TunnelStateContent(BaseModel)     # l.283",
+  "expected_line": 89
+ },
+ {
+  "id": "c92",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+  "name": "MatrixHook",
+  "expected": "class MatrixHook(BaseHook):",
+  "expected_line": 1
+ },
+ {
+  "id": "c126",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+  "name": "MatrixHook",
+  "expected": "class MatrixHook(BaseHook): hook_type = HookType.MATRIX  # room_routing -> agent/crew",
+  "expected_line": 1
+ },
+ {
+  "id": "c217",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_delegation.py",
+  "line": 1
+ },
+ {
+  "id": "c215",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_swarm_toolkit.py",
+  "line": 1
+ },
+ {
+  "id": "c216",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_tunnel.py",
+  "line": 1
+ },
+ {
+  "id": "c279",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot-server/src/parrot"
+ },
+ {
+  "id": "c96",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/evb.py",
+  "line": 1
+ },
+ {
+  "id": "c112",
+  "kind": "anchor",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+  "anchor": "(per FEAT-710 contract: the one place an EventBus is constructed in ai-parrot today)",
+  "for": "EventBus"
+ },
+ {
+  "id": "c44",
+  "kind": "file",
+  "path": "packages/ai-parrot/docs/lifecycle_events.md",
+  "line": null
+ }
+]
