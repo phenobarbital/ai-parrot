@@ -210,11 +210,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: Roost branch in ask_agent via optional `endpoint` kwarg; 23 matrix tests green. GAP: hop budget is NOT carried over the Roost path (RoostEndpoint.query has no hops param; editing endpoint.py is outside this task); expected_schema is accepted but discarded by query(); success metadata has no conversation_id. Filed as ledger issue:0f5ee739eca8 (major). Additions: failure dict includes 'detail'; success metadata includes status='ok'.
+Seat: opus (native) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: hops=ctx.current_hops+1 not passed (see issue:0f5ee739eca8)

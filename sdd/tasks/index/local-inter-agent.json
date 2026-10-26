@@ -394,7 +394,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -404,8 +404,9 @@
       "parallelism_notes": "RoostToolkit wraps RoostEndpoint/RoostFailure from TASK-4725 (roost/endpoint.py); AgentTool path calls endpoint.query",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4726-roost-toolkit-agenttool.md"
+      "completed_at": "2026-10-26T13:26:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4726-roost-toolkit-agenttool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4727",
@@ -436,7 +437,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -446,8 +447,9 @@
       "parallelism_notes": "ask_agent calls RoostEndpoint.request/query and catches RoostFailure from TASK-4725 (roost/endpoint.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4728-matrix-ask-agent-roost.md"
+      "completed_at": "2026-10-26T13:26:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4728-matrix-ask-agent-roost.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4729",

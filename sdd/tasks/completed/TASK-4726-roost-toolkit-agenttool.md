@@ -271,11 +271,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: Delivered by engine; merge-tier green.
+Seat: gpt-5.6-sol (codex) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: none
