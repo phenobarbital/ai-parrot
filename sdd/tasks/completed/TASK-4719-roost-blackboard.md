@@ -341,11 +341,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: Blackboard + optional FlowContext.blackboard field; 10+10 tests green. Coder made one premature commit then a fix commit. Task text drift: FlowContext needs initial_task and to_snapshot needs serializer (tests use both); task file not edited.
+Seat: opus (native) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: none

@@ -93,7 +93,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,9 @@
       "parallelism_notes": "scoring.py lives in the parrot/roost/ package whose __init__.py (lazy export map) TASK-4711 creates",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4712-roost-bid-scoring.md"
+      "completed_at": "2026-10-26T12:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4712-roost-bid-scoring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4713",
@@ -153,7 +154,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -163,8 +164,9 @@
       "parallelism_notes": "imports CarrierKind from TASK-4711 (roost/performatives.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4715-roost-directory-models.md"
+      "completed_at": "2026-10-26T12:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4715-roost-directory-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4716",
@@ -235,7 +237,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -245,8 +247,9 @@
       "parallelism_notes": "imports RoostMessage/AgentAddress from TASK-4711 (roost/messages.py) for the subscribe->inform bridge",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4719-roost-blackboard.md"
+      "completed_at": "2026-10-26T12:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4719-roost-blackboard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4720",
@@ -255,7 +258,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -265,8 +268,9 @@
       "parallelism_notes": "imports RoostMessage/AgentAddress/CarrierKind from TASK-4711; creates carriers/__init__.py lazy map so TASK-4721/4722 never edit it",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4720-roost-carriers-inprocess.md"
+      "completed_at": "2026-10-26T12:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4720-roost-carriers-inprocess.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4721",
