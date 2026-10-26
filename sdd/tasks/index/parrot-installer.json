@@ -470,7 +470,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -480,8 +480,9 @@
       "parallelism_notes": "imports script_path from TASK-4071 (parrot/launcher.py) for claude_code/assets.py + bookstore.py emitters",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4081-claude-portable-emitters.md"
+      "completed_at": "2026-10-26T18:59:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4081-claude-portable-emitters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4082",

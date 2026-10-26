@@ -597,10 +597,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented assets.py (script_path probes, keyword-only portable on hook_command/mcp_json_entry/toolkit_mcp_json_entry/permission_rules, PORTABLE_TOOLKIT_CONFIG, _sh_path quoting in git/ledger hook bodies) and bookstore.py (portable entry, portable-aware _is_managed_entry, install_bookstore(portable=)). 8 new tests + all 8 listed validation suites pass; ruff clean. PARROT_PROJECT env omitted in portable entries: spike S3 launch matrix/verdict is unfilled (no expansion evidence).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
