@@ -114,77 +114,42 @@ class Package:
 # Mirrors the *_VERSION_FILE variables in the Makefile. Keep both in sync when
 # a package is added — `status` fails loudly if a path disappears.
 PACKAGES: list[Package] = [
-    Package(
-        "ai-parrot",
-        [("packages/ai-parrot/src/parrot/version.py", "python")],
-        "packages/ai-parrot",
-        aliases=["core", "parrot"],
-    ),
-    Package(
-        "ai-parrot-tools",
-        [("packages/ai-parrot-tools/src/parrot_tools/version.py", "python")],
-        "packages/ai-parrot-tools",
-        aliases=["tools"],
-    ),
-    Package(
-        "ai-parrot-loaders",
-        [("packages/ai-parrot-loaders/src/parrot_loaders/version.py", "python")],
-        "packages/ai-parrot-loaders",
-        aliases=["loaders"],
-    ),
-    Package(
-        "ai-parrot-embeddings",
-        [("packages/ai-parrot-embeddings/src/parrot/embeddings/version.py", "python")],
-        "packages/ai-parrot-embeddings",
-        aliases=["embeddings"],
-    ),
-    Package(
-        "ai-parrot-pipelines",
-        [("packages/ai-parrot-pipelines/src/parrot_pipelines/version.py", "python")],
-        "packages/ai-parrot-pipelines",
-        aliases=["pipelines"],
-    ),
-    Package(
-        "ai-parrot-visualizations",
-        [("packages/ai-parrot-visualizations/src/parrot/outputs/formats/version.py", "python")],
-        "packages/ai-parrot-visualizations",
-        aliases=["visualizations", "viz"],
-    ),
-    Package(
-        "ai-parrot-integrations",
-        [("packages/ai-parrot-integrations/src/parrot/integrations/version.py", "python")],
-        "packages/ai-parrot-integrations",
-        aliases=["integrations"],
-    ),
-    Package(
-        "ai-parrot-server",
-        [("packages/ai-parrot-server/src/parrot/server/version.py", "python")],
-        "packages/ai-parrot-server",
-        aliases=["server"],
-    ),
-    Package(
-        "ai-parrot-advisors",
-        [("packages/ai-parrot-advisors/src/parrot/advisors/version.py", "python")],
-        "packages/ai-parrot-advisors",
-        aliases=["advisors"],
-    ),
-    Package(
-        "parrot-formdesigner",
-        [("packages/parrot-formdesigner/src/parrot_formdesigner/version.py", "python")],
-        "packages/parrot-formdesigner",
-        aliases=["formdesigner"],
-    ),
+    Package("ai-parrot",
+            [("packages/ai-parrot/src/parrot/version.py", "python")],
+            "packages/ai-parrot", aliases=["core", "parrot"]),
+    Package("ai-parrot-tools",
+            [("packages/ai-parrot-tools/src/parrot_tools/version.py", "python")],
+            "packages/ai-parrot-tools", aliases=["tools"]),
+    Package("ai-parrot-loaders",
+            [("packages/ai-parrot-loaders/src/parrot_loaders/version.py", "python")],
+            "packages/ai-parrot-loaders", aliases=["loaders"]),
+    Package("ai-parrot-embeddings",
+            [("packages/ai-parrot-embeddings/src/parrot/embeddings/version.py", "python")],
+            "packages/ai-parrot-embeddings", aliases=["embeddings"]),
+    Package("ai-parrot-pipelines",
+            [("packages/ai-parrot-pipelines/src/parrot_pipelines/version.py", "python")],
+            "packages/ai-parrot-pipelines", aliases=["pipelines"]),
+    Package("ai-parrot-visualizations",
+            [("packages/ai-parrot-visualizations/src/parrot/outputs/formats/version.py", "python")],
+            "packages/ai-parrot-visualizations", aliases=["visualizations", "viz"]),
+    Package("ai-parrot-integrations",
+            [("packages/ai-parrot-integrations/src/parrot/integrations/version.py", "python")],
+            "packages/ai-parrot-integrations", aliases=["integrations"]),
+    Package("ai-parrot-server",
+            [("packages/ai-parrot-server/src/parrot/server/version.py", "python")],
+            "packages/ai-parrot-server", aliases=["server"]),
+    Package("ai-parrot-advisors",
+            [("packages/ai-parrot-advisors/src/parrot/advisors/version.py", "python")],
+            "packages/ai-parrot-advisors", aliases=["advisors"]),
+    Package("parrot-formdesigner",
+            [("packages/parrot-formdesigner/src/parrot_formdesigner/version.py", "python")],
+            "packages/parrot-formdesigner", aliases=["formdesigner"]),
     # navrules keeps the same number in three files; __init__.py is the truth.
-    Package(
-        "navrules",
-        [
-            ("packages/navrules/src/navrules/__init__.py", "python"),
-            ("packages/navrules/pyproject.toml", "toml"),
-            ("packages/navrules/rust/Cargo.toml", "toml"),
-        ],
-        "packages/navrules",
-        aliases=["rules"],
-    ),
+    Package("navrules",
+            [("packages/navrules/src/navrules/__init__.py", "python"),
+             ("packages/navrules/pyproject.toml", "toml"),
+             ("packages/navrules/rust/Cargo.toml", "toml")],
+            "packages/navrules", aliases=["rules"]),
     # parrot_codec is a maturin/PyO3 crate: pyproject.toml and Cargo.toml
     # repeat the same number and must move together. NOTE: its Cargo.lock is
     # deliberately NOT listed — the "toml" handler rewrites the FIRST
@@ -197,15 +162,10 @@ PACKAGES: list[Package] = [
     # every sibling advanced: PyPI refuses new files on a release older than
     # 14 days, so once 0.1.0 aged out, each build matrix leg produced wheels
     # that could never upload and the 400 failed the whole deploy step.
-    Package(
-        "parrot-codec",
-        [
-            ("packages/ai-parrot/src/parrot/codec-rs/pyproject.toml", "toml"),
-            ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml"),
-        ],
-        "packages/ai-parrot/src/parrot/codec-rs",
-        aliases=["codec"],
-    ),
+    Package("parrot-codec",
+            [("packages/ai-parrot/src/parrot/codec-rs/pyproject.toml", "toml"),
+             ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml")],
+            "packages/ai-parrot/src/parrot/codec-rs", aliases=["codec"]),
     # FEAT-523: the ai-parrot-client-<provider> LLM-client satellites. Each
     # keeps a static `version = "X.Y.Z"` in its pyproject.toml (no version.py;
     # `[build-system]` precedes `[project]`, so the first `^version =` line IS
@@ -213,21 +173,17 @@ PACKAGES: list[Package] = [
     # bumped without touching this list; alias is the name minus the
     # `ai-parrot-` prefix (e.g. `--only client-anthropic`).
     *[
-        Package(
-            p.name,
-            [(f"packages/{p.name}/pyproject.toml", "toml")],
-            f"packages/{p.name}",
-            aliases=[p.name.removeprefix("ai-parrot-")],
-        )
+        Package(p.name,
+                [(f"packages/{p.name}/pyproject.toml", "toml")],
+                f"packages/{p.name}",
+                aliases=[p.name.removeprefix("ai-parrot-")])
         for p in sorted((REPO_ROOT / "packages").glob("ai-parrot-client-*"))
         if (p / "pyproject.toml").is_file()
     ],
-    Package(
-        "ai-parrot-openlit-bridge",
-        [("packages/ai-parrot-openlit-bridge/pyproject.toml", "toml")],
-        "packages/ai-parrot-openlit-bridge",
-        aliases=["openlit-bridge", "openlit"],
-    ),
+    Package("ai-parrot-openlit-bridge",
+            [("packages/ai-parrot-openlit-bridge/pyproject.toml", "toml")],
+            "packages/ai-parrot-openlit-bridge",
+            aliases=["openlit-bridge", "openlit"]),
     Package(
         "ai-parrot-semantic",
         [("packages/ai-parrot-semantic/src/parrot/semantic/version.py", "python")],
