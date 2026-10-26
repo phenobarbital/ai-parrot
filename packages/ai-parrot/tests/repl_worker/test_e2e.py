@@ -1,7 +1,7 @@
 """Full-session and concurrent-session end-to-end tests (FEAT-380 Module 7, TASK-1945).
 
 Exercises the whole stack together: `WorkerPool` acquisition, `inject_df`
-(Arrow transport), multi-turn `exec`, plots, and `snapshot` — plus the
+(Arrow transport), multi-turn `exec`, an altair chart, and `snapshot` — plus the
 concurrency ceiling under `WorkerPool` (TASK-1942) with real workers.
 """
 
@@ -43,11 +43,17 @@ async def test_e2e_data_analysis_session(real_worker_config, sample_df, repl_out
         assert isinstance(r2, str)
         assert "12" in r2  # sum([1,2,3]) * 2 == 12
 
-        # 3. plot
-        r3 = await handle.execute("plt.plot(sales['a'])\nresult = save_current_plot()")
+        # 3. plot — matplotlib and save_current_plot() were removed (TASK-2218);
+        # altair is the supported renderer and `report_directory` is the
+        # output dir exposed in the worker namespace. The chart is not bound to
+        # a variable: snapshot() would refuse to unpickle an altair Chart.
+        r3 = await handle.execute(
+            "altair.Chart(sales.reset_index()).mark_line().encode(x='index', y='a')"
+            ".save(str(report_directory / 'sales_chart.html'))"
+        )
         assert isinstance(r3, str)
-        assert "Plot saved" in r3
-        assert list(repl_output_dir.glob("*.png"))
+        assert "Error" not in r3
+        assert (repl_output_dir / "sales_chart.html").is_file()
 
         # 4. snapshot — sees the injected DataFrame and the computed scalar
         snap = await handle.snapshot()
