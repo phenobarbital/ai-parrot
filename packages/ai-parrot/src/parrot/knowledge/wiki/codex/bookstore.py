@@ -34,15 +34,25 @@ def _config(root: Path) -> tuple[Path, str]:
     return path, text
 
 
-def mcp_block(root: Path) -> str:
-    """Use the installer environment and explicit target cwd in any project."""
+def mcp_block(root: Path, *, portable: bool = False) -> str:
+    """Managed bookstore MCP table.
+
+    Baked (default): the installer interpreter + explicit target cwd (unchanged).
+    Portable (FEAT-633): the ``bookstore`` console script, no ``sys.executable`` and no ``cwd``.
+    """
+    if portable:
+        head = ['command = "bookstore"', 'args = ["mcp"]']
+    else:
+        head = [
+            f"command = {json.dumps(sys.executable)}",
+            'args = ["-m", "parrot.knowledge.bookstore.cli", "mcp"]',
+            f"cwd = {json.dumps(str(root.resolve()))}",
+        ]
     return "\n".join(
         [
             MCP_BEGIN,
             "[mcp_servers.bookstore]",
-            f"command = {json.dumps(sys.executable)}",
-            'args = ["-m", "parrot.knowledge.bookstore.cli", "mcp"]',
-            f"cwd = {json.dumps(str(root.resolve()))}",
+            *head,
             'env_vars = ["PARROT_LIBRARY_DIR", "PARROT_HOME", ' '"PARROT_BOOKSTORE_LLM", "PARROT_BOOKSTORE_LLM_LIGHT"]',
             "startup_timeout_sec = 30",
             "tool_timeout_sec = 180",
@@ -52,8 +62,13 @@ def mcp_block(root: Path) -> str:
     )
 
 
-def install_bookstore(root: Path) -> list[str]:
-    """Install for an existing library; report (not install) when none exists."""
+def install_bookstore(root: Path, *, portable: bool = False) -> list[str]:
+    """Install for an existing library; report (not install) when none exists.
+
+    Args:
+        root: Project root.
+        portable: Emit the portable (no absolute path) bookstore table.
+    """
     from .installer import _remove_marker_block, _upsert_marker_block, _validate_toml
 
     path, before = _config(root)
@@ -70,7 +85,7 @@ def install_bookstore(root: Path) -> list[str]:
     if "bookstore" in tomllib.loads(outside).get("mcp_servers", {}):
         actions.append("bookstore MCP — existing user configuration preserved")
     else:
-        after = _upsert_marker_block(before, mcp_block(root), MCP_BEGIN, MCP_END)
+        after = _upsert_marker_block(before, mcp_block(root, portable=portable), MCP_BEGIN, MCP_END)
         _validate_toml(path, after)
         if after != before:
             path.parent.mkdir(parents=True, exist_ok=True)

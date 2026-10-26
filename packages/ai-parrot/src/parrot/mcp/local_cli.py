@@ -170,7 +170,7 @@ def mcp_local(
 ) -> None:
     """Serve NAME as a local stdio MCP server.
 
-    The project root is the current working directory — the MCP host
+    The project root is ``$PARROT_PROJECT`` when set, else the current working directory — the MCP host
     (Claude Code, Codex, ...) starts this process inside the project
     directory, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to it.
 
@@ -180,7 +180,9 @@ def mcp_local(
       parrot mcp-local scraping --include scrape_url --include list_plans
       parrot mcp-local --list
     """
-    root = Path.cwd()
+    root = Path(os.environ.get("PARROT_PROJECT") or Path.cwd())
+    if config_path is not None and not config_path.is_absolute():
+        config_path = root / config_path
 
     if list_toolkits:
         _print_toolkit_list(root, config_path)
