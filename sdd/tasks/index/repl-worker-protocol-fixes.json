@@ -38,14 +38,14 @@
       "feature_id": "FEAT-751",
       "feature": "repl-worker-protocol-fixes",
       "spec": "sdd/specs/repl-worker-protocol-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task, no dependencies (fixes ledger issue:bbef2d4da62a)",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude-session",
+      "started_at": "2026-10-26T23:41:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4752-per-variable-snapshot-decode.md"
     }
