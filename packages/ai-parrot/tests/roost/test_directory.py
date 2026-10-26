@@ -1,5 +1,6 @@
 """Tests for Roost capability-directory models and ranking."""
 
+import os
 import sys
 
 import pytest
@@ -88,4 +89,16 @@ def test_model_defaults_are_isolated() -> None:
 
 def test_directory_does_not_import_registry() -> None:
     """The dependency-light directory module must not introduce a registry import cycle."""
-    assert "parrot.registry" not in sys.modules
+    import subprocess
+
+    code = "import sys, parrot.roost.directory; " "print('RESULT=' + str('parrot.registry' in sys.modules))"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert proc.returncode == 0, proc.stderr[-800:]
+    out = proc.stdout
+    last = [ln for ln in out.splitlines() if ln.startswith("RESULT=")][-1]
+    assert last == "RESULT=False"
