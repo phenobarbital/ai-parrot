@@ -170,6 +170,10 @@ tests:
 - packages/ai-parrot/tests/unit/bots/test_pandasagent_infer_tolerant.py
 markers: none
 
+### Test Data / Fixtures
+
+Inline DataFrames only (no shared fixtures).
+
 ---
 
 ## 5. Acceptance Criteria
