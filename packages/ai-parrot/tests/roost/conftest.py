@@ -1,4 +1,5 @@
 """Shared fixtures for Roost tests (FEAT-747)."""
+
 import pytest
 
 from parrot.core.events.lifecycle import TraceContext

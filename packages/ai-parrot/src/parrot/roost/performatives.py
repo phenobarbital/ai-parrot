@@ -1,4 +1,5 @@
 """Roost speech acts, protocols, failure codes and reply obligations (FEAT-747 M1)."""
+
 from __future__ import annotations
 
 from enum import Enum

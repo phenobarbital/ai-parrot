@@ -1,4 +1,5 @@
 """Unit tests for Roost's message vocabulary and local envelope."""
+
 import importlib
 import sys
 

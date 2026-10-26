@@ -1,4 +1,5 @@
 """Roost message model and the structural seam over the Squawk envelope (FEAT-747 M1)."""
+
 from __future__ import annotations
 
 import uuid
