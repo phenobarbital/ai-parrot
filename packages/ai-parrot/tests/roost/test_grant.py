@@ -1,4 +1,5 @@
 """Tests for the Roost inter-agent grant policy (TASK-4717)."""
+
 from parrot.roost.directory import InterAgentGrant, RoostAgentConfig
 from parrot.roost.grant import GrantDenied, GrantPolicy
 

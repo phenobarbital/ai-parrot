@@ -1,4 +1,5 @@
 """Caller-side inter-agent grant (FEAT-747 M4). Configuration, never model-visible."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -54,7 +55,8 @@ class GrantPolicy:
                 kept.append(scope)
         return InterAgentGrant(scopes=kept)
 
-    def filter_matches(self, config: Optional[RoostAgentConfig],
-                       matches: Iterable[CapabilityMatch]) -> list[CapabilityMatch]:
+    def filter_matches(
+        self, config: Optional[RoostAgentConfig], matches: Iterable[CapabilityMatch]
+    ) -> list[CapabilityMatch]:
         """Keep only matches the caller may call; order preserved."""
         return [m for m in matches if self.allows(config, m.cap_id)]
