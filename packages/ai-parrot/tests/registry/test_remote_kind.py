@@ -1,13 +1,12 @@
 """Tests for remote agent kinds in the registry (FEAT-746 M13)."""
+
 import pytest
 
 from parrot.registry import AgentKind, AgentRegistry, BotConfig, RemoteAgentNotInstantiable
 
 
 def _cfg(**kw):
-    return BotConfig(
-        name="hr", kind="squawk", endpoint="squawk://hr:7470", contract_categories=["hr.reports"], **kw
-    )
+    return BotConfig(name="hr", kind="squawk", endpoint="squawk://hr:7470", contract_categories=["hr.reports"], **kw)
 
 
 def test_remote_config_needs_endpoint():
