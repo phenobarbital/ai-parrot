@@ -57,10 +57,7 @@ def test_inform_addressed_wakes_broadcast_stores() -> None:
 
     assert dispatcher.dispatch(_message(P.INFORM, IP.INFORM, conversation_id="direct")).decision is D.WAKE_LLM
     assert (
-        dispatcher.dispatch(
-            _message(P.INFORM, IP.INFORM, (), "hr.*", conversation_id="broadcast")
-        ).decision
-        is D.STORE
+        dispatcher.dispatch(_message(P.INFORM, IP.INFORM, (), "hr.*", conversation_id="broadcast")).decision is D.STORE
     )
     assert dispatcher.wakes == 1
 
