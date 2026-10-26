@@ -2544,7 +2544,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Keep only candidates that are currently live, non-empty DataFrames.
         candidate_values: Dict[str, pd.DataFrame] = {}
         for var in candidates:
-            value = await pandas_tool.get_var(var)
+            try:
+                value = await pandas_tool.get_var(var)
+            except Exception as exc:  # best-effort inference must never fail the turn
+                self.logger.warning("Skipping data_variable candidate %r: get_var failed: %s", var, exc)
+                continue
             if isinstance(value, pd.DataFrame) and not value.empty:
                 candidate_values[var] = value
         live_dataframes = list(candidate_values.keys())
