@@ -13,6 +13,8 @@ from ..models.crew import AgentResult
 from ..models.outputs import OutputMode
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
+from ..roost.endpoint import RoostEndpoint, RoostFailure
+
 if TYPE_CHECKING:
     from ..bots.abstract import AbstractBot
 
@@ -176,6 +178,12 @@ class AgentTool(AbstractTool):
         if not question:
             return "Error: No question provided to agent tool"
 
+        # FEAT-747: Roost query path — only when both caller and target endpoints exist
+        roost_caller = kwargs.pop("_roost_caller", None) or getattr(self, "roost_caller", None)
+        roost_target = getattr(self.agent, "roost_endpoint", None)
+        if roost_caller is not None and roost_target is not None:
+            return await self._execute_roost(roost_caller, roost_target, question)
+
         # Cross-pollination: inject all previous agent results as context
         if include_previous and self.execution_memory and self.execution_memory.results:
             context_parts = self._build_cross_pollination_context()
@@ -305,6 +313,20 @@ class AgentTool(AbstractTool):
             error_msg = f"Error executing {self.name}: {str(e)}"
             self.logger.error(error_msg)
             return error_msg
+
+    async def _execute_roost(self, caller: RoostEndpoint, target: RoostEndpoint, question: str) -> str:
+        """Query a Roost-enabled agent and store its native answer by reference."""
+        try:
+            answer = await caller.query(question, receiver=target.address())
+        except RoostFailure as exc:
+            return f"Error: {exc}"
+
+        if caller.working_memory is None:
+            return "Error: Roost caller has no working memory"
+
+        key = f"roost:{target.agent_name}:{self.call_count}"
+        await caller.working_memory.store_result(key=key, data=answer, data_type="auto")
+        return f"Answer stored in working memory as '{key}'"
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get usage statistics for this agent tool."""
