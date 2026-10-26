@@ -493,10 +493,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Added reexec/_dispatch/main_parrot/main_wikitoolkit/main_bookstore, repointed 3 [project.scripts], stdlib-only test, subprocess state-machine tests (20 launcher tests pass), S4 report with measured numbers. Windows reexec branch (Popen, SIGINT ignored, terminate on teardown) is implemented but UNVERIFIED on Windows (S2 evidence comes from the install-matrix windows leg). Shared .venv console scripts not regenerated (by design).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
