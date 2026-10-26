@@ -253,11 +253,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: AGENT enum member, exact-match index, register_agent_capability/unregister_agent/find_exact + tests (6 passed; existing capability tests green). Same conftest-operand artefact in merge-tier run (123 passed on real targets).
+Seat: gpt-5.6-sol then gpt-5.6-terra (codex) both returned empty_delivery; attempt 3 implemented by the orchestrator (sdd-worker).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: Modified `packages/ai-parrot/tests/registry/test_capability_models.py` (not in the task's file list): its `test_has_five_members`/`test_values` pinned the enum at 5 members and necessarily break when ResourceType.AGENT is added; updated to 6/`agent`. The task's AC 'existing tests stay green' contradicts its own file list otherwise.

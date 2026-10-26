@@ -508,11 +508,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: Roost performatives/messages/lazy package + M1 tests delivered; 6 files match the task list. Merge-tier validation: all real test commands green (117 passed); the selector's conftest-only operand (`tests/roost/conftest.py`) exits 5 (nothing collected), so the run reports `failed` — selector artefact, not a test failure. Closed via close_task.sh, not finalize_task, for that reason.
+Seat: gpt-5.6-terra (codex) · Attempts: 1 · merged by engine.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: none

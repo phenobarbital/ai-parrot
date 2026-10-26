@@ -74,7 +74,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +82,9 @@
       "parallelism_notes": "root: no deps; creates parrot/roost/__init__.py lazy map + tests/roost/conftest.py so no later task edits them",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4711-roost-performatives-messages.md"
+      "completed_at": "2026-10-26T12:46:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4711-roost-performatives-messages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4712",
@@ -133,7 +134,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -141,8 +142,9 @@
       "parallelism_notes": "root: touches only FEAT-070 capabilities/models.py + capabilities/registry.py",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4714-capability-registry-agent-index.md"
+      "completed_at": "2026-10-26T12:46:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4714-capability-registry-agent-index.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4715",
