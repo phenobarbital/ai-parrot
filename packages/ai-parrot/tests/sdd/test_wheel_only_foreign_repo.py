@@ -303,6 +303,7 @@ COMMON: dict[str, str] = {
     "<p>": "demo",
     "<t>": "demo",
     "$(printf -- '--task-file %s ' <every task file of the index>)": "--task-file sdd/tasks/active/TASK-001-demo-task.md",
+    "$(printf -- '--task-file %s ' $TASK_FILES)": "--task-file sdd/tasks/active/TASK-001-demo-task.md",
 }
 
 
