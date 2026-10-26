@@ -617,7 +617,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -628,8 +628,9 @@
       "parallelism_notes": "imports parrot.sdd.scripts.sdd_meta re-export created by TASK-4085 (parrot/sdd/scripts/sdd_meta.py); git-mv's scripts/sdd/spec_tools.py from TASK-4334 (20th module)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4088-sdd-scripts-taxonomy-misc.md"
+      "completed_at": "2026-10-26T19:24:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4088-sdd-scripts-taxonomy-misc.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4089",

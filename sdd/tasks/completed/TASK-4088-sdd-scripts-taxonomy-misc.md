@@ -676,10 +676,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Moved 8 modules (doc_taxonomy, backfill_taxonomy, migrate_index, select_tests, insight, install_hooks, prune_intake, spec_tools) via git mv; sdd_meta/reserve_ids imports, _KERNEL_PARENT (package-relative), install_hooks rendered hook + marker, spec_tools prog rewritten; 8 alias shims (insight with bare-interpreter fallback; AC-4 verified by test). Tests: new file 18 passed; test_doc_taxonomy 4, backfill 4, migrate_index 7, select_tests 26, insight_sdd 7, install_hooks 12, prune_intake 11, spec_tools 18 all pass. ruff: 7 pre-existing findings in moved insight.py (kept 100% rename, AC-5) and 3 in unrelated scripts/sdd files; none introduced. Open follow-ups (NOT in scope): (1) install_hooks docstring/usage still names scripts.sdd.* and baked sys.executable stays; (2) select_tests kernel packages/<dist> layout is monorepo-only, foreign-repo use ungeneralised (TASK-4089 D2); (3) backfill_taxonomy._SDD_TOOLING_RE does not match new parrot.sdd.scripts references - flag for TASK-4089. Also docstring/prog strings and sdd-insight.md left for TASK-4089.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: AC-1 for select_tests: its main() swallows argparse SystemExit and returns 2 for --help (pre-existing behavior, unchanged); the new test accepts rc 0 or 2 for select_tests and asserts usage text on stdout.
