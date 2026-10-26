@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .directory import RoostAgentConfig
 from .grant import GrantPolicy
 from .messages import RoostMessage
-from .performatives import Performative
+from .performatives import InteractionProtocol, Performative
 from .protocols import ProtocolEngine, Transition
 
 
@@ -124,7 +124,10 @@ class GatingDispatcher:
                 else DispatchDecision.WAKE_LLM
             )
         elif msg.performative is Performative.INFORM:
-            if directly_addressed:
+            if transition is not None and msg.protocol in (InteractionProtocol.REQUEST, InteractionProtocol.QUERY):
+                # Terminal reply to our own request/query: the awaiting caller gets it by identity, no LLM wake.
+                decision = DispatchDecision.STORE
+            elif directly_addressed:
                 decision = DispatchDecision.WAKE_LLM
             else:
                 resolved = self.handlers.resolve(msg.content_type)

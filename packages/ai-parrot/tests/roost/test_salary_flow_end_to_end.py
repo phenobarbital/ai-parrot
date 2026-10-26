@@ -60,13 +60,6 @@ def _endpoint(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Gate defect (FEAT-747 M5 gating): the terminal INFORM reply of a Request is directly addressed to the "
-        "caller, so GatingDispatcher.dispatch returns WAKE_LLM and the caller wakes once (spec requires 0)."
-    ),
-)
 async def test_salary_question_end_to_end(tmp_path: Path) -> None:
     """A granted caller resolves HR through the directory and gets the native struct, without waking."""
     hr_cfg = RoostAgentConfig(
