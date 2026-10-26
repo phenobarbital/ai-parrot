@@ -22,6 +22,7 @@ import io as _io
 import json
 import pickle
 import struct
+import sys
 import types
 from typing import Any, BinaryIO, Literal, Optional
 
@@ -33,6 +34,14 @@ _LENGTH_STRUCT = struct.Struct(">I")
 
 #: Sentinel key identifying a pickle+base64-wrapped value inside a JSON payload.
 _PICKLE_MARKER = "__repl_worker_pickle_b64__"
+
+#: Sentinel key for a DataFrame/Series carried as a base64 Arrow IPC stream
+#: (FEAT-750). Arrow IPC is a data-only format, so decoding it never resolves
+#: a callable — DataFrames cross the boundary without touching the pickle guard
+#: below. This matters because pyarrow-backed columns (pandas 3's default `str`
+#: dtype, `ArrowDtype`) pickle through `pyarrow.lib`, which the guard refuses.
+_ARROW_MARKER = "__repl_worker_arrow_b64__"
+_ARROW_KINDS = frozenset({"dataframe", "series"})
 
 # ---------------------------------------------------------------------------
 # Insecure-deserialization guard (code-review finding, post-TASK-1945)
@@ -139,6 +148,114 @@ def _safe_pickle_loads(data: bytes) -> Any:
     return _RestrictedUnpickler(_io.BytesIO(data)).load()
 
 
+def _encode_arrow(value: Any) -> Optional[dict[str, Any]]:
+    """Encode a DataFrame or Series as a base64 Arrow IPC stream.
+
+    Args:
+        value: Any namespace value.
+
+    Returns:
+        ``{_ARROW_MARKER: <b64>, "kind": "dataframe"|"series"}``, or ``None``
+        when ``value`` is not a DataFrame/Series or Arrow cannot represent it
+        (the caller then falls back to pickle).
+    """
+    # Lazy: if pandas was never imported, `value` cannot be a pandas object —
+    # this keeps light paths (plain lists/dicts) from paying for the import.
+    pd = sys.modules.get("pandas")
+    if pd is None or not isinstance(value, (pd.DataFrame, pd.Series)):
+        return None
+
+    import pyarrow as pa
+
+    kind = "series" if isinstance(value, pd.Series) else "dataframe"
+    frame = value.to_frame() if kind == "series" else value
+    try:
+        table = pa.Table.from_pandas(frame)
+        sink = pa.BufferOutputStream()
+        with pa.ipc.new_stream(sink, table.schema) as writer:
+            writer.write_table(table)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+        return None
+    return {
+        _ARROW_MARKER: base64.b64encode(sink.getvalue().to_pybytes()).decode("ascii"),
+        "kind": kind,
+    }
+
+
+def _without_arrow_dtypes(value: Any) -> Any:
+    """Return a copy of a DataFrame/Series with pyarrow-backed parts cast to ``object``.
+
+    Used only on the pickle fallback (frames Arrow cannot carry, e.g. columns
+    of arbitrary Python objects). Under pandas 3 even string column labels are
+    pyarrow-backed, and those pickle through ``pyarrow.lib`` — which the
+    restricted unpickler refuses. Casting to ``object`` keeps the data and
+    loosens only the dtype, so the guard never has to trust ``pyarrow``.
+
+    Args:
+        value: Any value; non-pandas values are returned unchanged.
+
+    Returns:
+        ``value`` itself, or an ``object``-dtype copy of a DataFrame/Series.
+    """
+    pd = sys.modules.get("pandas")
+    if pd is None or not isinstance(value, (pd.DataFrame, pd.Series)):
+        return value
+
+    def _arrow_backed(dtype: Any) -> bool:
+        return isinstance(dtype, pd.ArrowDtype) or (
+            isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow"
+        )
+
+    def _plain_index(index: Any) -> Any:
+        if isinstance(index, pd.MultiIndex):
+            return index.set_levels(
+                [lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels]
+            )
+        return index.astype(object) if _arrow_backed(index.dtype) else index
+
+    result = value.copy()
+    if isinstance(result, pd.Series):
+        if _arrow_backed(result.dtype):
+            result = result.astype(object)
+    else:
+        for col_pos, dtype in enumerate(result.dtypes):
+            if _arrow_backed(dtype):
+                result.isetitem(col_pos, result.iloc[:, col_pos].astype(object))
+        result.columns = _plain_index(result.columns)
+    result.index = _plain_index(result.index)
+    return result
+
+
+def _decode_arrow(payload: dict[str, Any]) -> Any:
+    """Inverse of :func:`_encode_arrow`.
+
+    Args:
+        payload: A dict produced by :func:`_encode_arrow`.
+
+    Returns:
+        The reconstructed DataFrame or Series.
+
+    Raises:
+        ValueError: ``kind`` is unknown, or the payload is not valid base64.
+        pyarrow.ArrowInvalid: The bytes are not a valid Arrow IPC stream.
+    """
+    kind = payload.get("kind")
+    if kind not in _ARROW_KINDS:
+        raise ValueError(f"repl_worker: unknown arrow payload kind {kind!r}")
+    encoded = payload[_ARROW_MARKER]
+    if not isinstance(encoded, str):
+        raise ValueError("repl_worker: arrow payload must be a base64 string")
+
+    import pyarrow as pa
+
+    frame = pa.ipc.open_stream(base64.b64decode(encoded, validate=True)).read_all().to_pandas()
+    if kind == "series":
+        if frame.shape[1] != 1:
+            raise ValueError("repl_worker: arrow series payload must have exactly one column")
+        return frame.iloc[:, 0]
+    return frame
+
+
 def encode_value(value: Any) -> Any:
     """Best-effort JSON-safe encoding for one namespace value.
 
@@ -155,6 +272,9 @@ def encode_value(value: Any) -> Any:
     """
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
+    arrow_payload = _encode_arrow(value)
+    if arrow_payload is not None:
+        return arrow_payload
     if isinstance(value, (list, tuple)):
         return [encode_value(v) for v in value]
     if isinstance(value, dict):
@@ -176,7 +296,7 @@ def encode_value(value: Any) -> Any:
         json.dumps(value)
         return value
     except (TypeError, ValueError):
-        return {_PICKLE_MARKER: base64.b64encode(pickle.dumps(value)).decode("ascii")}
+        return {_PICKLE_MARKER: base64.b64encode(pickle.dumps(_without_arrow_dtypes(value))).decode("ascii")}
 
 
 def decode_value(value: Any) -> Any:
@@ -188,6 +308,8 @@ def decode_value(value: Any) -> Any:
     Returns:
         The original Python value (unpickled if it was pickle-wrapped).
     """
+    if isinstance(value, dict) and set(value) == {_ARROW_MARKER, "kind"}:
+        return _decode_arrow(value)
     if isinstance(value, dict) and set(value) == {_PICKLE_MARKER}:
         return _safe_pickle_loads(base64.b64decode(value[_PICKLE_MARKER]))
     if isinstance(value, dict):
