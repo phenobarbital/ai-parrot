@@ -123,6 +123,12 @@ def claude() -> None:
     default=None,
     help="Env var holding the bearer token (default: `remote.token_env` or WIKITOOLKIT_TOKEN).",
 )
+@click.option(
+    "--portable/--no-portable",
+    default=None,
+    help="Emit bare launcher commands (wikitoolkit/parrot/bookstore) with no absolute paths, so the "
+    "config can be committed. Default: keep the current form (baked absolute paths on a fresh install).",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
@@ -137,6 +143,7 @@ def install(
     use_remote: bool,
     remote_url: Optional[str],
     token_env: Optional[str],
+    portable: Optional[bool],
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -174,6 +181,7 @@ def install(
             typesafe_api_key=typesafe_api_key,
             plugin_cli=plugin_cli,
             remote=remote,
+            portable=portable,
         )
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

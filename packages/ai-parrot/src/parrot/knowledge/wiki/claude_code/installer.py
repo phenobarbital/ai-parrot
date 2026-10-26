@@ -27,7 +27,7 @@ import logging
 import shlex
 import stat
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from parrot.knowledge.wiki.claude_code import assets
@@ -86,6 +86,76 @@ def _remove_marker_block(text: str, begin: str, end: str) -> str:
     return head + ("\n" + tail.lstrip("\n") if tail.strip() else "\n")
 
 
+def _script_basename(command: str) -> str:
+    """Basename of a command/path token, Windows-safe (codex S4).
+
+    Splits on BOTH separators and drops a trailing ``.exe`` (case-insensitive), so
+    ``/r/.venv/bin/parrot``, ``C:\\r\\.venv\\Scripts\\parrot.exe`` and ``parrot`` all give ``parrot``.
+    """
+    name = command.replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-4] if name.lower().endswith(".exe") else name
+
+
+def _is_portable_wikitoolkit_entry(entry: Any) -> bool:
+    """Whether a ``.mcp.json`` wikitoolkit entry is in the portable (bare-command) form."""
+    return (
+        isinstance(entry, dict)
+        and entry.get("command") == assets.HOOK_BIN_NAME
+        and entry.get("args") == ["mcp"]
+    )
+
+
+def _is_portable_toolkit_entry(entry: Any) -> bool:
+    """Whether a managed ``parrot-<name>`` entry is in the portable form (relative config, no cwd)."""
+    args = entry.get("args") if isinstance(entry, dict) else None
+    return (
+        isinstance(args, list)
+        and len(args) >= 4
+        and args[2] == "--config"
+        and args[3] == assets.PORTABLE_TOOLKIT_CONFIG
+        and "cwd" not in entry
+    )
+
+
+def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:
+    """Portable iff ANY managed ``parrot-*`` entry is portable (the mode is sticky).
+
+    Used only when the ``wikitoolkit`` key cannot decide (http, url-only, absent or foreign); no managed
+    ``parrot-*`` entry gives ``False``.
+    """
+    managed = [
+        entry for key, entry in servers.items()
+        if key.startswith("parrot-") and _is_managed_toolkit_entry(entry, root, key[len("parrot-"):])
+    ]
+    return any(_is_portable_toolkit_entry(entry) for entry in managed)
+
+
+def _current_portable_mode(root: Path) -> bool:
+    """Infer the host's current mode (FEAT-633, sticky).
+
+    A managed stdio ``wikitoolkit`` entry decides it directly (baked gives ``False``). When that entry
+    is http, url-only, absent or foreign (``--remote`` decides only that key), the mode is inferred
+    from the managed ``parrot-*`` entries. A missing ``.mcp.json`` or unparsable JSON mean ``False``.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        True when the current configuration is in the portable form.
+    """
+    try:
+        data = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return False
+    wiki = servers.get("wikitoolkit")
+    if isinstance(wiki, dict) and "type" not in wiki and "url" not in wiki and _is_wikitoolkit_entry(wiki):
+        return _is_portable_wikitoolkit_entry(wiki)
+    return _portable_from_servers(servers, root)
+
+
 # --------------------------------------------------------------------------
 # Individual install steps (each returns a human-readable action string)
 # --------------------------------------------------------------------------
@@ -107,7 +177,7 @@ def _install_claude_md(root: Path) -> str:
     return "CLAUDE.md — wiki section already current"
 
 
-def _hook_entry(root: Path) -> dict[str, Any]:
+def _hook_entry(root: Path, *, portable: bool = False) -> dict[str, Any]:
     """Build the PreToolUse hook entry for settings.json.
 
     The command is resolved to an absolute path so the hook fires
@@ -119,7 +189,7 @@ def _hook_entry(root: Path) -> dict[str, Any]:
         "hooks": [
             {
                 "type": "command",
-                "command": assets.hook_command(root),
+                "command": assets.hook_command(root, portable=portable),
                 "timeout": 10,
             }
         ],
@@ -149,7 +219,9 @@ def _is_our_command(command: Any) -> bool:
         return assets.HOOK_COMMAND in text
     if assets.HOOK_SUBCOMMAND not in tokens:
         return False
-    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)
+    # shlex (POSIX mode) eats backslashes in an unquoted Windows path, so also test the raw
+    # whitespace split (codex S4).
+    return any(_script_basename(token) == assets.HOOK_BIN_NAME for token in [*tokens, *text.split()])
 
 
 def _is_our_hook(entry: dict[str, Any]) -> bool:
@@ -187,7 +259,7 @@ def _write_settings(path: Path, settings: dict[str, Any]) -> None:
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
-def _install_settings_hook(root: Path) -> str:
+def _install_settings_hook(root: Path, *, portable: bool = False) -> str:
     """Merge the PreToolUse nudge hook into .claude/settings.json."""
     path = root / ".claude" / "settings.json"
     settings = _load_settings(path) or {}
@@ -203,7 +275,7 @@ def _install_settings_hook(root: Path) -> str:
     if not isinstance(pre, list):
         raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
 
-    resolved_cmd = assets.hook_command(root)
+    resolved_cmd = assets.hook_command(root, portable=portable)
 
     ours = [e for e in pre if isinstance(e, dict) and _is_our_hook(e)]
     if ours:
@@ -244,12 +316,12 @@ def _install_settings_hook(root: Path) -> str:
                 return f".claude/settings.json — PreToolUse hook updated ({len(duplicates)} {noun} removed)"
             return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
-    pre.append(_hook_entry(root))
+    pre.append(_hook_entry(root, portable=portable))
     _write_settings(path, settings)
     return ".claude/settings.json — PreToolUse wiki nudge hook added"
 
 
-def _install_permissions(root: Path) -> list[str]:
+def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
     """Allowlist wikitoolkit commands in settings.local.json.
 
     Permissions are per-user (wikitoolkit is a local tool), so they
@@ -291,7 +363,7 @@ def _install_permissions(root: Path) -> list[str]:
     if not isinstance(allow, list):
         raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")
 
-    all_rules = assets.permission_rules(root)
+    all_rules = assets.permission_rules(root, portable=portable)
     missing = [r for r in all_rules if r not in allow]
     if not missing:
         actions.append(".claude/settings.local.json — wikitoolkit permissions " "already allowed")
@@ -583,13 +655,13 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     ``parrot-<name>`` key whose content does not match this shape is a
     foreign entry with a colliding name — it must never be overwritten or
     removed by reconciliation. A pinned entry whose ``--config`` points
-    outside ``root`` is treated as foreign (operator override).
+    outside ``root`` is treated as foreign (operator override). The portable shape
+    (relative ``--config .parrot/mcp-toolkits.yaml``, FEAT-633) is also ours.
     """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
-    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
-    if not isinstance(command, str) or not command.endswith(bin_name):
+    if not isinstance(command, str) or _script_basename(command) != "parrot":
         return False
     args = entry.get("args")
     if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
@@ -604,6 +676,8 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     # `config_path=/repo/worktree2/...` shares the `startswith` prefix but is
     # NOT inside `root` — a naive substring check would misclassify it as ours.
     if len(args) >= 4 and args[2] == "--config":
+        if args[3] == assets.PORTABLE_TOOLKIT_CONFIG:  # portable form (TASK-4081) — ours
+            return True
         config_path = Path(args[3])
         if not config_path.is_absolute():
             return False
@@ -614,13 +688,18 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     return True
 
 
-def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
+def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
     """Reconcile ONLY the `parrot-<name>` keys of .mcp.json from the toolkit config.
 
     Never reads or writes the "wikitoolkit" key, and never touches any other
     foreign key (FEAT-570 AC5). Upserts one entry per ENABLED section, skips a
     `parrot-<name>` key whose content is not our shape (reported as a warning),
     and deletes managed entries whose section is disabled or gone.
+
+    Args:
+        root: Repository root.
+        portable: ``None`` infers the mode via ``_current_portable_mode`` (FEAT-633 sticky rule — the
+            ``parrot toolkits`` path via ``mcp/hosts.py::ClaudeAdapter.reconcile``); True/False force it.
 
     Returns:
         (actions, warnings) — human-readable strings.
@@ -640,6 +719,9 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
 
+    if portable is None:
+        portable = _current_portable_mode(root)  # reads .mcp.json before this function writes it
+
     from parrot.mcp.toolkit_config import load_toolkits_config
 
     cfg = load_toolkits_config(root)
@@ -653,7 +735,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
 
     for name in sorted(enabled_names):
         key = f"parrot-{name}"
-        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name])
+        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name], portable=portable)
         existing = servers.get(key)
         if existing == toolkit_entry:
             continue
@@ -691,7 +773,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
     """Write/refresh the wikitoolkit entry plus one managed entry per
     enabled toolkit section in the project's .mcp.json (FEAT-485).
 
@@ -720,7 +802,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
     if remote is not None:
         entry = assets.mcp_json_entry_remote(remote.url, remote.token_env)
     else:
-        entry = assets.mcp_json_entry(root)
+        entry = assets.mcp_json_entry(root, portable=portable)
 
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
@@ -741,7 +823,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     # --- toolkit reconciliation (FEAT-485), delegated (FEAT-570) ----------
-    toolkit_actions, _warnings = reconcile_toolkit_entries(root)
+    toolkit_actions, _warnings = reconcile_toolkit_entries(root, portable=portable)
 
     if not changed and not toolkit_actions:
         return f".mcp.json — {wikitoolkit_status}"
@@ -751,7 +833,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
 
 
 def _is_wikitoolkit_entry(entry: Any) -> bool:
-    """True for BOTH managed shapes: stdio (``command`` ends with wikitoolkit, args == ["mcp"]) and http."""
+    """True for BOTH managed shapes: stdio (``command`` basename is wikitoolkit, args == ["mcp"]) and http."""
     if not isinstance(entry, dict):
         return False
     if entry.get("type") == "http":
@@ -759,7 +841,7 @@ def _is_wikitoolkit_entry(entry: Any) -> bool:
         auth = headers.get("Authorization", "") if isinstance(headers, dict) else ""
         return isinstance(entry.get("url"), str) and isinstance(auth, str) and auth.startswith("Bearer ${")
     command = entry.get("command")
-    return isinstance(command, str) and command.endswith("wikitoolkit") and entry.get("args") == ["mcp"]
+    return isinstance(command, str) and _script_basename(command) == assets.HOOK_BIN_NAME and entry.get("args") == ["mcp"]
 
 
 def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
@@ -893,9 +975,9 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     tokens = first_line[2:].split()
     if not tokens:
         return True
-    interpreter = PurePosixPath(tokens[0]).name
+    interpreter = _script_basename(tokens[0])
     if interpreter == "env" and len(tokens) > 1:
-        interpreter = PurePosixPath(tokens[1]).name
+        interpreter = _script_basename(tokens[1])
     return interpreter in _SH_FAMILY
 
 
@@ -1042,6 +1124,7 @@ def install_claude_integration(
     typesafe_api_key: Optional[str] = None,
     plugin_cli: bool = True,
     remote: Optional[WikiRemoteConfig] = None,
+    portable: Optional[bool] = None,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -1064,6 +1147,10 @@ def install_claude_integration(
             plugin`` CLI when it is on ``PATH``.
         remote: When given, register wikitoolkit as a native HTTP MCP entry
             pointing at this remote instead of the local stdio server.
+        portable: ``True`` emits bare launcher commands (committable ``.mcp.json``/settings hook, FEAT-633),
+            ``False`` bakes absolute paths (today's default), ``None`` keeps the host's current form
+            (from the managed stdio ``wikitoolkit`` entry, else the managed ``parrot-*`` entries;
+            a fresh repo is baked).
 
     Returns:
         Human-readable list of actions performed.
@@ -1090,11 +1177,14 @@ def install_claude_integration(
     else:
         actions = [".parrot/wiki.json — config already present"]
     save_project_config(root, config)
+    if portable is None:
+        portable = _current_portable_mode(root)
+    logger.debug("claude install: portable=%s", portable)
 
     actions.append(_install_claude_md(root))
-    actions.append(_install_settings_hook(root))
-    actions.extend(_install_permissions(root))
-    actions.append(_install_mcp_json(root, remote=remote))
+    actions.append(_install_settings_hook(root, portable=portable))
+    actions.extend(_install_permissions(root, portable=portable))
+    actions.append(_install_mcp_json(root, remote=remote, portable=portable))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -1116,7 +1206,7 @@ def install_claude_integration(
     if bookstore:
         from .bookstore import install_bookstore
 
-        actions.extend(install_bookstore(root))
+        actions.extend(install_bookstore(root, portable=portable))
     if compaction:
         from .compaction import install_compaction
 
