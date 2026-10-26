@@ -32,6 +32,7 @@ from parrot.tools.repl_worker.protocol import (
     SnapshotResponse,
     ValueResponse,
     WorkerConfig,
+    decode_snapshot,
     decode_value,
     encode_value,
     read_frame,
@@ -312,6 +313,64 @@ class TestInsecureDeserializationGuard:
         arr = np.array([1, 2, 3])
         decoded = decode_value(encode_value(arr))
         assert (decoded == arr).all()
+
+
+class _NotOnAllowlist:
+    """Module-level so it pickles; its module is outside the unpickle allowlist."""
+
+    def __init__(self, value: int = 1) -> None:
+        self.value = value
+
+
+def _pickle_marker(obj) -> dict:
+    return {"__repl_worker_pickle_b64__": base64.b64encode(pickle.dumps(obj)).decode("ascii")}
+
+
+def _placeholder(name: str) -> str:
+    return f"<{name}: refused by insecure-deserialization guard (not transportable)>"
+
+
+class TestDecodeSnapshot:
+    """`decode_snapshot()` degrades guard-refused entries to placeholders (FEAT-751)."""
+
+    def test_refused_entry_becomes_placeholder(self, caplog):
+        data = {"greeting": "hi", "n": 3, "bad": _pickle_marker(_NotOnAllowlist())}
+        with caplog.at_level("WARNING", logger="parrot.tools.repl_worker.protocol"):
+            decoded = decode_snapshot(data)
+        assert decoded["greeting"] == "hi"
+        assert decoded["n"] == 3
+        assert decoded["bad"] == _placeholder("bad")
+        assert any("'bad'" in record.getMessage() for record in caplog.records)
+
+    def test_decode_value_still_raises_for_refused_entry(self):
+        with pytest.raises(pickle.UnpicklingError):
+            decode_value(_pickle_marker(_NotOnAllowlist()))
+
+    def test_reduce_gadget_never_executes(self, tmp_path):
+        import os
+
+        marker_file = tmp_path / "pwned"
+
+        class Evil:
+            def __reduce__(self):
+                return (os.system, (f"touch {marker_file}",))
+
+        decoded = decode_snapshot({"ok": 1, "evil": _pickle_marker(Evil())})
+        assert decoded == {"ok": 1, "evil": _placeholder("evil")}
+        assert not marker_file.exists()
+
+    def test_allowlisted_values_round_trip(self):
+        import pathlib
+
+        import numpy as np
+
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        arr = np.array([1, 2, 3])
+        path = pathlib.Path("/srv/reports")
+        decoded = decode_snapshot({"df": encode_value(df), "arr": encode_value(arr), "path": encode_value(path)})
+        pd.testing.assert_frame_equal(decoded["df"], df)
+        assert (decoded["arr"] == arr).all()
+        assert decoded["path"] == path
 
 
 class TestArrowValueCodec:

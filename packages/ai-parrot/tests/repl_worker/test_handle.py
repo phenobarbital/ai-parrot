@@ -213,6 +213,22 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
+    async def test_snapshot_survives_unpicklable_value(self, real_worker_config, report_dir):
+        """An altair Chart in the namespace no longer costs the whole snapshot (FEAT-751)."""
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
+        await handle.start()
+        try:
+            await handle.execute("greeting = 'hi'")
+            await handle.execute(
+                "chart = altair.Chart(pd.DataFrame({'a': [1, 2]}).reset_index())"
+                ".mark_line().encode(x='index', y='a')"
+            )
+            data = await handle.snapshot()
+            assert data.get("greeting") == "hi"
+            assert data["chart"] == "<chart: refused by insecure-deserialization guard (not transportable)>"
+        finally:
+            await handle.kill()
+
     async def test_reset_clears_known_vars(self, real_worker_config, report_dir):
         handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
