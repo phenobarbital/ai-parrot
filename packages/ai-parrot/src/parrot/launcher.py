@@ -8,8 +8,9 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1382
 PARROT_VENV_ENV = "PARROT_VENV"            # new explicit override
@@ -165,3 +166,84 @@ def resolve_venv(script: str, *, argv: Sequence[str], env: Mapping[str, str], cw
         elif rule == "project" and exists:
             _warn_once(f"project:{venv}", f"project venv {venv} has no '{script}'; using the next candidate instead")
     return managed, "managed"
+
+
+def _strip_project(argv: list[str]) -> list[str]:
+    """Remove a LEADING ``--project p`` / ``--project=p`` (launcher-only option)."""
+    if argv[:1] == ["--project"]:
+        return argv[2:]
+    if argv and argv[0].startswith("--project="):
+        return argv[1:]
+    return argv
+
+
+def _resolved_target(script: str, argv: list[str]) -> Path | None:
+    """Return the script to re-exec into, or None to run in this interpreter."""
+    if os.environ.get(LOOP_GUARD_ENV) or not is_managed():
+        return None
+    try:
+        venv, rule = resolve_venv(script, argv=argv, env=os.environ, cwd=Path.cwd())
+    except OSError:
+        return None
+    return None if rule == "managed" else script_path(venv, script)
+
+
+def reexec(target: Path, argv: list[str]) -> int:
+    """Run ``target`` with ``argv`` (argv[0] included) under the loop guard.
+
+    POSIX: ``os.execv`` (never returns). Windows: child process with inherited stdio;
+    returns its exit code (spike S2).
+    """
+    os.environ[LOOP_GUARD_ENV] = "1"
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name != "nt":
+        os.execv(str(target), argv)
+    import signal
+    import subprocess
+
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        proc = subprocess.Popen([str(target), *argv[1:]])  # inherited stdio; same console receives Ctrl-C
+        try:
+            return proc.wait()
+        except BaseException:
+            proc.terminate()
+            raise
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
+    """Shared wrapper body: decide → maybe re-exec → else import and call the real entry."""
+    argv = _strip_project(sys.argv[1:])
+    target = _resolved_target(script, sys.argv[1:])
+    if target is not None:
+        return reexec(target, [str(target), *argv])
+    sys.argv[1:] = argv
+    result = load_entry()()
+    return result if isinstance(result, int) else 0
+
+
+def main_parrot() -> int:
+    """``parrot`` console script (real entry ``parrot.cli:cli``)."""
+    def load() -> Callable[[], Any]:
+        from parrot.cli import cli
+        return cli
+    return _dispatch("parrot", load)
+
+
+def main_wikitoolkit() -> int:
+    """``wikitoolkit`` console script (``parrot.knowledge.wiki.entry:main``; keeps the claude-hook fast path)."""
+    def load() -> Callable[[], Any]:
+        from parrot.knowledge.wiki.entry import main
+        return main
+    return _dispatch("wikitoolkit", load)
+
+
+def main_bookstore() -> int:
+    """``bookstore`` console script (``parrot.knowledge.bookstore.cli:main``)."""
+    def load() -> Callable[[], Any]:
+        from parrot.knowledge.bookstore.cli import main
+        return main
+    return _dispatch("bookstore", load)
