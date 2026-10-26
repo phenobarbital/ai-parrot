@@ -20,7 +20,6 @@ from .models import GovernedQuery, SemanticQuery
 from .results import ResultHandle
 from .toolkit import SemanticLayerToolkit
 
-
 _EVALUATOR_MODULES = (
     "navigator_auth.abac.policies.environment",
     "navigator_auth.abac.policies.evaluator",
@@ -128,8 +127,8 @@ class LocalSemanticLayerToolkit(SemanticLayerToolkit):
             evaluator_module, environment_module = (
                 importlib.import_module(module) for module in reversed(_EVALUATOR_MODULES)
             )
-            getattr(evaluator_module, "PolicyEvaluator")
-            getattr(environment_module, "Environment")
+            evaluator_module.PolicyEvaluator
+            environment_module.Environment
         except (AttributeError, ImportError, ModuleNotFoundError) as exc:
             raise SemanticPolicyError("pbac_unavailable", "Required PBAC evaluator modules are unavailable") from exc
 
@@ -162,7 +161,9 @@ class LocalSemanticLayerToolkit(SemanticLayerToolkit):
         except Exception as exc:  # noqa: BLE001 - policy construction must fail startup
             raise SemanticPolicyError("guard_factory_failed", "Configured PBAC policy could not be loaded") from exc
         if not isinstance(guard, DataPlanePolicyGuard) or getattr(guard, "_evaluator", None) is None:
-            raise SemanticPolicyError("invalid_policy_guard", "guard_factory must return a configured DataPlanePolicyGuard")
+            raise SemanticPolicyError(
+                "invalid_policy_guard", "guard_factory must return a configured DataPlanePolicyGuard"
+            )
         return guard
 
     def _create_tool_from_method(self, name: str, bound_method: callable) -> ToolkitTool:

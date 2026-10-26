@@ -20,7 +20,6 @@ from parrot.semantic.models import SemanticQuery
 from . import _guard_factory
 from ._models import models_dir  # noqa: F401
 
-
 sys.modules.setdefault("semantic_test_guard_factory", _guard_factory)
 
 
@@ -60,9 +59,7 @@ async def test_configured_factory_governed_allow_deny(tmp_path: Path, models_dir
     toolkit = server._owned_toolkit
     tool = toolkit.get_tool("sl_compile_query")
     assert tool is not None
-    allowed = await tool._execute(
-        query=SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
-    )
+    allowed = await tool._execute(query=SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]))
     assert "SELECT" in allowed["sql"]
     assert toolkit._ledger.entries[-1].static_subject is True
     assert toolkit._ledger.entries[-1].channel == "mcp-local"
@@ -71,12 +68,12 @@ async def test_configured_factory_governed_allow_deny(tmp_path: Path, models_dir
     denied_tool = denied_toolkit.get_tool("sl_compile_query")
     assert denied_tool is not None
     with pytest.raises(SemanticAccessError, match="PBAC denied"):
-        await denied_tool._execute(
-            query=SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
-        )
+        await denied_tool._execute(query=SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]))
 
 
-def test_missing_invalid_factory_fails_closed(tmp_path: Path, models_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_invalid_factory_fails_closed(
+    tmp_path: Path, models_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Reject absent factories, invalid returns, and policy-load failures at startup."""
     policy_dir = _write_policy(tmp_path / "policy", allow=True)
     kwargs = _kwargs(models_dir, policy_dir)
