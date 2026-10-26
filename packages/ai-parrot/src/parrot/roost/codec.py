@@ -60,11 +60,7 @@ class JsonEnvelopeCodec:
             "envelope": {
                 "envelope_id": envelope.envelope_id,
                 "correlation_id": envelope.correlation_id,
-                "trace": (
-                    {"trace_id": trace.trace_id, "span_id": trace.span_id}
-                    if trace is not None
-                    else None
-                ),
+                "trace": ({"trace_id": trace.trace_id, "span_id": trace.span_id} if trace is not None else None),
                 "budget_ms": envelope.budget_ms,
                 "token_budget": envelope.token_budget,
                 "caller": envelope.caller,

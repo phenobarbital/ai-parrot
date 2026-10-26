@@ -6,7 +6,7 @@ import base64
 import logging
 import os
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Mapping, Optional, Sequence
 
 from ..codec import EnvelopeCodec, JsonEnvelopeCodec
 from ..messages import AgentAddress, RoostMessage
