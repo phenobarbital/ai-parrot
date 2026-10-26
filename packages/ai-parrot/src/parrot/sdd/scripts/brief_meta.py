@@ -16,7 +16,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from scripts.sdd.sdd_meta import WORKTREE_ROOT, WorktreePlan
+from parrot.sdd.scripts.sdd_meta import WORKTREE_ROOT, WorktreePlan
 
 logger = logging.getLogger(__name__)
 

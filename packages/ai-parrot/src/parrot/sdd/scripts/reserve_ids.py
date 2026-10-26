@@ -39,7 +39,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from scripts.sdd.id_ledger import LEDGER_PATH, IdLedger, save_ledger
+from parrot.sdd.scripts.id_ledger import LEDGER_PATH, IdLedger, save_ledger
 
 #: Timeout (seconds) for every individual git subprocess call. This script
 #: is meant to serve concurrent, automated dev-loop dispatches — an

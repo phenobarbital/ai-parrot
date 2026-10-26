@@ -17,8 +17,8 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from scripts.sdd.brief_meta import brief_worktree_plan
-from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
+from parrot.sdd.scripts.brief_meta import brief_worktree_plan
+from parrot.sdd.scripts.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
 logger = logging.getLogger(__name__)
 

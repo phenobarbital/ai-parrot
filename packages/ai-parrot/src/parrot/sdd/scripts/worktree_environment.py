@@ -291,6 +291,9 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     return command
 
 
+_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
+
+
 def _load_guard_bash() -> Any:
     """Import the stdlib-only test-scope guard without importing Parrot.
 
@@ -300,10 +303,10 @@ def _load_guard_bash() -> Any:
     Raises:
         ImportError: The checkout serving this hook has no test-scope kernel.
     """
-    if __package__:
-        from .test_scope.guard import guard_bash
-    else:  # run as a script: this file's directory is sys.path[0]
-        from test_scope.guard import guard_bash
+    if str(_KERNEL_PARENT) not in sys.path:
+        sys.path.insert(0, str(_KERNEL_PARENT))
+    from test_scope.guard import guard_bash
+
     return guard_bash
 
 
