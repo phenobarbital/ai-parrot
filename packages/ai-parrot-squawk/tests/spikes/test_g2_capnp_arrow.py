@@ -1,4 +1,5 @@
 """G2 regression: an opt-in mTLS Arrow IPC cancellation spike."""
+
 from __future__ import annotations
 
 import asyncio

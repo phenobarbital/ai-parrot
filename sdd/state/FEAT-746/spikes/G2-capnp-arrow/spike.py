@@ -1,4 +1,5 @@
 """G2 Arrow IPC over Cap'n Proto RPC mTLS transport spike (FEAT-746)."""
+
 from __future__ import annotations
 
 import asyncio
