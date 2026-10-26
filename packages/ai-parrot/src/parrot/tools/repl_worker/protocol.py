@@ -205,15 +205,11 @@ def _without_arrow_dtypes(value: Any) -> Any:
         return value
 
     def _arrow_backed(dtype: Any) -> bool:
-        return isinstance(dtype, pd.ArrowDtype) or (
-            isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow"
-        )
+        return isinstance(dtype, pd.ArrowDtype) or (isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow")
 
     def _plain_index(index: Any) -> Any:
         if isinstance(index, pd.MultiIndex):
-            return index.set_levels(
-                [lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels]
-            )
+            return index.set_levels([lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels])
         return index.astype(object) if _arrow_backed(index.dtype) else index
 
     result = value.copy()
