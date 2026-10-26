@@ -412,10 +412,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Probe server + subprocess tests (2 pass) + S3 report skeleton (HUMAN-RUN matrix not filled — requires host CLIs). Report snippets' variable-expansion syntax per host is unverified against live host docs; human must confirm before the run.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
