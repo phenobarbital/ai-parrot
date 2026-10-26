@@ -368,7 +368,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -383,8 +383,9 @@
       "parallelism_notes": "composes GatingDispatcher (TASK-4718), Blackboard (TASK-4719), Carrier (TASK-4720), RoostAuditLedger (TASK-4723), squawk_bridge (TASK-4724) and calls AgentRegistry.find_capability (TASK-4716)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4725-roost-endpoint.md"
+      "completed_at": "2026-10-26T13:19:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4725-roost-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4726",
