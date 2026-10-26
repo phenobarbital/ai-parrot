@@ -49,7 +49,7 @@ import shutil
 import statistics
 import sys
 import webbrowser
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
 
 # --------------------------------------------------------------------------- #
@@ -520,7 +520,7 @@ def parse(files):
                 for _m in _CMD_NAME_RE.finditer(_text_of(content)):
                     _cmd = _m.group(1).strip().lstrip("/").lower()
                     c.all_commands[_cmd] += 1
-                    if _cmd.startswith("sdd-") or _cmd.startswith("sdd_"):
+                    if _cmd.startswith(("sdd-", "sdd_")):
                         c.sdd_commands[_cmd] += 1
                 if _is_tool_result(content):
                     c.filtered["tool results"] += 1
@@ -794,7 +794,7 @@ def band_for(score):
 
 
 def _cosine(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     return dot / (na * nb) if na and nb else 0.0
@@ -814,7 +814,7 @@ def classify_archetype(dim_scores, delegation_score):
     names = list(PROTOTYPES.keys())
     mat = [PROTOTYPES[n]["vec"] for n in names]
     # z-score each axis across prototypes + the user vector, then apply agency weights
-    cols = list(zip(*(mat + [V])))
+    cols = list(zip(*(mat + [V]), strict=False))
     means = [statistics.mean(col) for col in cols]
     stds = [statistics.pstdev(col) or 1.0 for col in cols]
     w = [AGENCY[ax] for ax in ARCHETYPE_AXES]
@@ -1057,7 +1057,7 @@ def _growth_cards_html(analysis):
             f'<div class="card prio"><div class="ph">Priority {i + 1} · written for you</div>'
             f'<h4>{title}</h4>'
             + (f'<p class="why"><b>Why it matters.</b> {why}</p>' if why else "")
-            + (f'<div class="wwh"><span class="lab">How to grow it</span>'
+            + ('<div class="wwh"><span class="lab">How to grow it</span>'
                + (f'<p class="how">{how}</p>' if how else "") + f'{ba}</div>'
                if (how or ba) else "")
             + '</div>')
@@ -1219,7 +1219,6 @@ def build_html(corpus, result, cards, strength, archive_info=None, analysis=None
     order = sorted(WEIGHTS, key=lambda n: result["shrunk"][n], reverse=True)
     for name in order:
         sc = round(result["shrunk"][name])
-        raw_sc = round(result["raw"][name])
         c = result["conf"][name]
         lowdata = c < 0.75
         tag = ""
@@ -1283,7 +1282,8 @@ def build_html(corpus, result, cards, strength, archive_info=None, analysis=None
         proj_counts = Counter(p["project"] for p in corpus.real_prompts)
         for e in ev[:3]:
             if name == "Direction" or name == "Iteration":
-                proj = e["project"]; txt = _scrub_paths(e["text"])
+                proj = e["project"]
+                txt = _scrub_paths(e["text"])
                 small = " <em>(illustrative, small sample)</em>" if proj_counts.get(proj, 0) < 10 else ""
                 items += f'<li>“{_esc(txt[:140])}” <span class="loc">— {_esc(_project_label(proj))}{small}</span></li>'
             elif name == "Context":
