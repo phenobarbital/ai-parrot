@@ -408,6 +408,7 @@ class RoostEndpoint:
     ) -> str:
         """Subscribe locally to a blackboard key or remotely through Roost."""
         if blackboard_key is not None and self.blackboard is not None:
+
             async def store_notification(msg: RoostMessage) -> Optional[Any]:
                 if handler is not None:
                     return await handler(msg)
