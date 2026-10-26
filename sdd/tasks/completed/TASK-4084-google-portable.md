@@ -660,10 +660,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented per blueprint. 6 new tests + conventions/toolkit_entries/integration/bookstore suites pass (2+14+6+5); ruff clean. Portable project pin (env) NOT emitted: spike S3 unverified and an env value would break cross-root byte identity. _current_portable_mode also catches OSError/ValueError besides RuntimeError.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
