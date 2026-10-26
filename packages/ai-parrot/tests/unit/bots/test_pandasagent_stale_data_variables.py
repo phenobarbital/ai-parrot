@@ -44,6 +44,8 @@ def _bind(dataframes=None, alias_map=None):
     ns = types.SimpleNamespace()
     ns.dataframes = dataframes or {}
     ns._get_dataframe_alias_map = lambda: (alias_map or {})
+    # staticmethod: attach the plain function, no binding needed.
+    ns._assignment_target_names = PandasAgent._assignment_target_names
     ns._current_turn_variable_names = types.MethodType(
         PandasAgent._current_turn_variable_names, ns
     )
