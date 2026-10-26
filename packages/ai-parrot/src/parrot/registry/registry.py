@@ -11,6 +11,7 @@ import sys
 import os
 import tempfile
 import asyncio
+from enum import Enum
 from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
 from pathlib import Path
 import hashlib
@@ -28,7 +29,7 @@ except ImportError:
     pass
 from navconfig.logging import logging
 from navconfig import BASE_DIR
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
@@ -46,6 +47,18 @@ class AgentFactory(Protocol):
     def __call__(self, **kwargs: Any) -> AbstractBot: ...
 
 
+class AgentKind(str, Enum):
+    """Where an agent runs: in-process, behind the A2A client, or behind a Squawk endpoint (FEAT-746 U2)."""
+
+    LOCAL = "local"
+    A2A = "a2a"
+    SQUAWK = "squawk"
+
+
+class RemoteAgentNotInstantiable(ValueError):
+    """get_instance() on a remote-kind registry entry; resolve it through the protocol client instead."""
+
+
 @dataclass(slots=True)
 class BotMetadata:
     """
@@ -56,7 +69,7 @@ class BotMetadata:
     """
 
     name: str
-    factory: Union[Type[AbstractBot], AgentFactory]
+    factory: Union[Type[AbstractBot], AgentFactory, None]
     module_path: str
     file_path: Path
     singleton: bool = False
@@ -67,17 +80,23 @@ class BotMetadata:
     startup_config: Dict[str, Any] = field(default_factory=dict)  # Config for startup instantiation
     bot_config: Optional[Any] = None  # Optional[BotConfig] – declarative agent configuration
     events_block: Optional[Dict[str, Any]] = None  # FEAT-176: parsed 'events:' YAML block
+    kind: AgentKind = AgentKind.LOCAL
+    endpoint: Optional[str] = None
+    contract_categories: List[str] = field(default_factory=list)
     _instance: Optional[AbstractBot] = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     def __post_init__(self):
         """Validate bot metadata after creation."""
-        # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
-        is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
-        is_factory = callable(self.factory)
+        if self.kind == AgentKind.LOCAL:
+            # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
+            is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
+            is_factory = callable(self.factory)
 
-        if not (is_class or is_factory):
-            raise ValueError(f"Bot {self.name} factory must be AbstractBot subclass or callable")
+            if not (is_class or is_factory):
+                raise ValueError(f"Bot {self.name} factory must be AbstractBot subclass or callable")
+        elif not self.endpoint:
+            raise ValueError(f"Remote bot {self.name} (kind={self.kind.value}) requires an endpoint")
         # If at_startup=True, automatically make it singleton
         if self.at_startup:
             self.singleton = True
@@ -228,8 +247,8 @@ class BotConfig(BaseModel):
     """Configuration for the bot in config-based discovery."""
 
     name: str
-    class_name: str
-    module: str
+    class_name: Optional[str] = None
+    module: Optional[str] = None
     enabled: bool = True
     # "repo": curated YAML committed to the repo. "factory": written at runtime
     # by AgentFactory and deletable via DELETE /api/v1/bots/{id}.
@@ -253,6 +272,20 @@ class BotConfig(BaseModel):
     # Each entry is a dict matching PolicyRuleConfig schema:
     #   {action: "agent:chat", effect: "allow", groups: ["engineering"]}
     policies: Optional[List["PolicyRuleConfig"]] = Field(default=None)
+    kind: AgentKind = AgentKind.LOCAL
+    endpoint: Optional[str] = None
+    contract_categories: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _kind_requirements(self) -> "BotConfig":
+        """Local agents need class_name/module; remote agents need an endpoint."""
+        if self.kind == AgentKind.LOCAL:
+            for fname in ("class_name", "module"):
+                if not getattr(self, fname):
+                    raise ValueError(f"{fname} is required for local agent {self.name!r}")
+        elif not self.endpoint:
+            raise ValueError(f"endpoint is required for {self.kind.value} agent {self.name!r}")
+        return self
 
 
 class AgentRegistry:
@@ -686,6 +719,10 @@ class AgentRegistry:
             return None
 
         metadata = self._registered_agents[name]
+        if metadata.kind != AgentKind.LOCAL:
+            raise RemoteAgentNotInstantiable(
+                f"{name} is a {metadata.kind.value} agent at {metadata.endpoint}; use the protocol client"
+            )
         try:
             instance = await metadata.get_instance(**kwargs)
             self.logger.debug(f"Retrieved instance for bot: {name}")
@@ -744,6 +781,11 @@ class AgentRegistry:
 
         for config in configs:
             if not config.enabled:
+                continue
+
+            if config.kind != AgentKind.LOCAL:
+                self.register_remote(config)
+                registered_count += 1
                 continue
 
             try:
@@ -1026,6 +1068,12 @@ class AgentRegistry:
 
         if not config.enabled:
             return False
+
+        if config.kind != AgentKind.LOCAL:
+            remote = self.register_remote(config)
+            remote.file_path = yaml_file
+            self.logger.info(f"Loaded remote agent definition from {yaml_file}: {config.name}")
+            return True
 
         # FEAT-176: parse optional top-level 'events:' block
         events_block = content.get("events") or None
@@ -1434,6 +1482,41 @@ class AgentRegistry:
             the ``BotMetadata`` objects themselves are shared.
         """
         return sorted(self._registered_agents.values(), key=lambda meta: meta.name)
+
+    def find_by_kind(self, kind: AgentKind) -> List[BotMetadata]:
+        """Registered entries of one kind, sorted by name."""
+        return [m for m in self.list_agents() if m.kind == kind]
+
+    def find_serving(self, category: str) -> List[BotMetadata]:
+        """Remote entries advertising `category` in contract_categories (exact match)."""
+        return [m for m in self.list_agents() if m.kind != AgentKind.LOCAL and category in m.contract_categories]
+
+    def register_remote(self, config: BotConfig) -> BotMetadata:
+        """Register a kind != local entry (no factory); never instantiates anything.
+
+        Args:
+            config: A validated remote ``BotConfig`` (kind ``a2a`` or ``squawk``).
+
+        Returns:
+            The stored :class:`BotMetadata`.
+        """
+        if config.kind == AgentKind.LOCAL:
+            raise ValueError(f"{config.name} is a local agent; use register()")
+        metadata = BotMetadata(
+            name=config.name,
+            factory=None,
+            module_path="",
+            file_path=Path("remote"),
+            tags=config.tags,
+            priority=config.priority,
+            bot_config=config,
+            kind=config.kind,
+            endpoint=config.endpoint,
+            contract_categories=list(config.contract_categories),
+        )
+        self._registered_agents[config.name] = metadata
+        self.logger.info(f"Registered remote bot: {config.name} ({config.kind.value} @ {config.endpoint})")
+        return metadata
 
     def list_agent_names(self) -> List[str]:
         """Return the names of every registered agent, sorted.
