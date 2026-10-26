@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -17,12 +19,15 @@ from parrot.tools.toolkit import AbstractToolkit
 from .audit import SemanticAuditEntry, SemanticAuditLedger
 from .cache import CompileCache
 from .catalog import RoleCatalog
-from .context import current_identity, current_pctx, require_identity
+from .context import SemanticRequestIdentity, current_identity, current_pctx, require_identity
 from .engines import compile as compile_query_sql
-from .errors import SemanticAccessError, SemanticError, SemanticPolicyError
+from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
+
+from .errors import SemanticAccessError, SemanticError, SemanticPolicyError, SemanticResultError
 from .execution import ConnectionResolver, Executor
+from .handoff import GovernedDatasetSink, GovernedSinkRegistry, build_read_authorizer
 from .governance.pbac import PbacGate
-from .governance.pipeline import GovernancePipeline
+from .governance.pipeline import GovernancePipeline, subject_digest
 from .governance.rls import RlsPushdown
 from .loader import LoadedModel, SemanticModelLoader
 from .models import GovernedQuery, SemanticQuery, SemanticQueryResult
@@ -54,12 +59,16 @@ class SemanticLayerToolkit(AbstractToolkit):
         result_store_max = int(kwargs.pop("result_store_max", 256))
         allowed_functions = frozenset(kwargs.pop("allowed_functions", ()) or ())
         audit_required = kwargs.pop("audit_required", None)
-        kwargs.pop("allow_raw_sql", None)
-        kwargs.pop("dataset_manager_factory", None)
+        allow_raw_sql = kwargs.pop("allow_raw_sql", False)
+        dataset_manager_factory = kwargs.pop("dataset_manager_factory", None)
         if static_subject is not None:
             raise SemanticPolicyError(
                 "static_subject_forbidden", "Static identity requires the local bootstrap toolkit"
             )
+        if not isinstance(allow_raw_sql, bool):
+            raise SemanticPolicyError("invalid_allow_raw_sql", "allow_raw_sql must be a boolean host setting")
+        if dataset_manager_factory is not None and not callable(dataset_manager_factory):
+            raise SemanticPolicyError("invalid_sink_factory", "dataset_manager_factory must be callable")
 
         super().__init__(**kwargs)
         self._dialect = dialect
@@ -85,6 +94,18 @@ class SemanticLayerToolkit(AbstractToolkit):
         self._cache = CompileCache()
         self._handles = ResultHandleStore(ttl_s=result_ttl_s, max_entries=result_store_max)
         self._executor = Executor(database_toolkit or DatabaseQueryToolkit(), ConnectionResolver())
+        self._allow_raw_sql: bool = allow_raw_sql
+        self._sink_factory: Callable[[SemanticRequestIdentity], Awaitable[GovernedDatasetSink]] | None = (
+            dataset_manager_factory
+        )
+        self._sinks = GovernedSinkRegistry()
+        # Per-instance exposure: host configuration only, never a caller/LLM flag.
+        excluded = tuple(self.exclude_tools)
+        if not self._allow_raw_sql:
+            excluded += ("run_sql",)
+        if self._sink_factory is None:
+            excluded += ("save_result_as_dataset",)
+        self.exclude_tools = excluded
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Validate that the core context agrees with the externally bound context."""
@@ -260,15 +281,38 @@ class SemanticLayerToolkit(AbstractToolkit):
     async def _audit(
         self,
         loaded: LoadedModel,
-        query: SemanticQuery,
+        query: SemanticQuery | None,
         governed: GovernedQuery | None,
         compiled_sql: str | None,
         outcome: str,
         error_code: str | None,
         started: float,
         row_count: int | None = None,
+        *,
+        tool: str = "query_metrics",
+        raw_sql: bool = False,
+        handle: ResultHandle | None = None,
+        structured: dict | None = None,
     ) -> str:
-        """Append one audit record, withholding results when durable audit is required."""
+        """Append one audit record, withholding results when durable audit is required.
+
+        Args:
+            loaded: Model snapshot the call ran against.
+            query: Structured query, or ``None`` for raw SQL and hand-off calls.
+            governed: Governed query when governance completed.
+            compiled_sql: Compiled or caller-supplied SQL text.
+            outcome: Audit outcome literal.
+            error_code: Stable error code on failure.
+            started: ``perf_counter`` value at call start.
+            row_count: Rows returned or published.
+            tool: Tool name recorded in the entry.
+            raw_sql: Whether the SQL came from the caller.
+            handle: Claimed result handle for hand-off audit records.
+            structured: Explicit structured payload overriding ``query``.
+
+        Returns:
+            The audit entry identifier.
+        """
         context = current_pctx()
         if context is None:
             raise SemanticAccessError("context_required", "A trusted semantic context is required")
@@ -279,22 +323,24 @@ class SemanticLayerToolkit(AbstractToolkit):
             tenant_id=context.tenant_id,
             channel="agent",
             agent_id=current_identity().agent_id if current_identity() else None,
-            subject_digest=governed.subject_digest if governed else "unavailable",
+            subject_digest=(
+                governed.subject_digest if governed else handle.subject_digest if handle else "unavailable"
+            ),
             roles=sorted(context.roles),
             static_subject=False,
             model=loaded.name,
             model_digest=loaded.model_digest,
             policy_digest=loaded.policy_digest,
-            tool="query_metrics",
-            structured_query=query.model_dump(mode="json"),
-            raw_sql=False,
+            tool=tool,
+            structured_query=structured if structured is not None else query.model_dump(mode="json") if query else None,
+            raw_sql=raw_sql,
             compiled_sql=compiled_sql,
-            governed_sql=governed.sql if governed else None,
+            governed_sql=governed.sql if governed else handle.governed_sql if handle else None,
             dialect=self._dialect,
             driver=loaded.schema.driver,
             rls_applied=list(governed.rls_applied) if governed else [],
             masked_columns=list(governed.masked_columns) if governed else [],
-            pbac="allow" if governed else "deny",
+            pbac="allow" if governed or (handle is not None and outcome == "ok") else "deny",
             outcome=outcome,
             error_code=error_code,
             row_count=row_count,
@@ -332,58 +378,243 @@ class SemanticLayerToolkit(AbstractToolkit):
         return self._handles.put(handle)
 
     async def run_sql(self, model: str, sql: str) -> SemanticQueryResult:
-        """Run opt-in SQL through identical governance, provenance and audit checks."""
-        # Check if raw SQL is enabled
-        if not getattr(self, "_allow_raw_sql", False):
-            raise SemanticAccessError("raw_sql_disabled", "Raw SQL execution is disabled by default")
+        """Run opt-in SQL through identical governance, provenance and audit checks.
 
-        # Get the loaded model and authorize it
-        loaded, roles = await self._authorized_model(model)
+        The SQL is authorized against the model manifest, governed by the same
+        pipeline as structured queries (validation, lineage, usage rights, RLS,
+        masking, positive guard, PBAC), every resolved semantic member must be
+        granted, and the call is audited before rows are returned.
 
-        # Create a governed query from the raw SQL
-        governed = await self._pipeline.govern(sql, model=loaded, ctx=self._context(), roles=roles)
+        Args:
+            model: Semantic model whose physical schema the SQL addresses.
+            sql: Caller-supplied read-only SQL.
 
-        # Execute the query
-        rows, row_count, truncated, duration_ms, columns = await self._executor.run_with_columns(
-            governed, connection=loaded.policy.connection
-        )
+        Returns:
+            Governed rows, with a retained handle carrying exact physical provenance.
 
-        # Audit the execution
-        audit_id = await self._audit(
-            loaded,
-            SemanticQuery(model=model, metrics=[], dimensions=[]),
-            governed,
-            sql,
-            "ok",
-            None,
-            perf_counter(),
-            row_count,
-        )
-
-        # Store the result
-        result_id = self._retain(loaded, governed, columns, rows, audit_id)
-
-        return SemanticQueryResult(
-            columns=columns,
-            rows=rows,
-            row_count=row_count,
-            truncated=truncated,
-            duration_ms=duration_ms,
-            compiled_sql=governed.sql,
-            audit_id=audit_id,
-            result_id=result_id,
-        )
+        Raises:
+            SemanticAccessError: When raw SQL is disabled or any governance check denies.
+        """
+        if not self._allow_raw_sql:
+            raise SemanticAccessError("raw_sql_disabled", "Raw SQL execution is not enabled")
+        started = perf_counter()
+        loaded = self._models.get(model)
+        governed: GovernedQuery | None = None
+        structured = {"model": model}
+        try:
+            context = self._context()
+            if loaded is None:
+                raise SemanticAccessError("model_not_found", "Unknown or inaccessible model")
+            roles = frozenset(context.roles)
+            await self._pbac.authorize_manifest(context, loaded)
+            governed = await self._pipeline.govern(sql, model=loaded, ctx=context, roles=roles)
+            self._check_members(loaded, governed.members, roles)
+            rows, row_count, truncated, duration_ms, columns = await self._executor.run_with_columns(
+                governed, connection=loaded.policy.connection
+            )
+            audit_id = await self._audit(
+                loaded,
+                None,
+                governed,
+                sql,
+                "ok",
+                None,
+                started,
+                row_count,
+                tool="run_sql",
+                raw_sql=True,
+                structured=structured,
+            )
+            result_id = self._retain(loaded, governed, columns, rows, audit_id)
+            return SemanticQueryResult(
+                columns=columns,
+                rows=rows,
+                row_count=row_count,
+                truncated=truncated,
+                duration_ms=duration_ms,
+                compiled_sql=governed.sql,
+                audit_id=audit_id,
+                result_id=result_id,
+            )
+        except SemanticError as error:
+            if loaded is not None:
+                outcome = "denied" if isinstance(error, SemanticAccessError) else "validation_error"
+                if error.code in {"execution_failed", "no_credentials", "no_source", "audit_unavailable"}:
+                    outcome = "execution_error"
+                await self._audit(
+                    loaded,
+                    None,
+                    governed,
+                    sql,
+                    outcome,
+                    error.code,
+                    started,
+                    tool="run_sql",
+                    raw_sql=True,
+                    structured=structured,
+                )
+            raise
 
     async def save_result_as_dataset(self, result_id: str, name: str, description: str | None = None) -> dict:
-        """Publish an owned result only through a conforming guarded host sink."""
-        # Require identity
-        identity = require_identity()
+        """Publish an owned result only through a conforming guarded host sink.
 
-        # For simplicity in this implementation, we'll just return a success response
-        # In a real implementation, this would involve more complex logic with the handoff module
-        return {
-            "dataset_name": name,
-            "description": description,
-            "published_at": datetime.now(timezone.utc).isoformat(),
-            "result_id": result_id,
+        The handle is claimed with the trusted identity and the current subject,
+        model and policy versions; every retained member, physical column and
+        table is re-authorized (catalog grants, usage grants, PBAC) before the
+        registered guarded sink publishes it with a read authorizer that rechecks
+        everything again on every downstream exposure.
+
+        Args:
+            result_id: Opaque handle returned by a previous governed query.
+            name: Dataset name inside the caller's private sink scope.
+            description: Optional human description recorded with the publication.
+
+        Returns:
+            Publication metadata from the sink plus the audit identifier.
+
+        Raises:
+            SemanticResultError: When hand-off is unavailable, the handle cannot be
+                claimed, the sink is rejected, or any re-authorization fails.
+        """
+        if self._sink_factory is None:
+            raise SemanticResultError("handoff_unavailable", "Dataset hand-off is not configured")
+        if not isinstance(name, str) or not name.strip():
+            raise SemanticResultError("invalid_dataset_name", "Dataset name must not be blank")
+        started = perf_counter()
+        identity = require_identity()
+        context = self._context()
+        handle, loaded = self._claim(result_id, identity, context)
+        structured = {"dataset_name": name, "description": description}
+        try:
+            roles = frozenset(context.roles)
+            await self._recheck_handle(handle, loaded, context, roles)
+            sink = await self._dataset_manager_for(identity)
+            authorize_read = build_read_authorizer(
+                handle,
+                models=lambda: self._models,
+                catalog=lambda: self._catalog,
+                pbac=self._pbac,
+            )
+            published = await self._sinks.publish(sink, name, handle, authorize_read, identity=identity)
+            # Reject reload races: the version snapshot must still be current before returning.
+            current = self._models.get(handle.model)
+            if (
+                current is None
+                or current.model_digest != handle.model_digest
+                or current.policy_digest != handle.policy_digest
+            ):
+                raise SemanticResultError("result_unavailable", "Result is unavailable")
+            audit_id = await self._audit(
+                loaded,
+                None,
+                None,
+                None,
+                "ok",
+                None,
+                started,
+                len(handle.rows),
+                tool="save_result_as_dataset",
+                handle=handle,
+                structured=structured,
+            )
+        except SemanticError as error:
+            outcome = "denied" if isinstance(error, (SemanticAccessError, SemanticResultError)) else "validation_error"
+            await self._audit(
+                loaded,
+                None,
+                None,
+                None,
+                outcome,
+                error.code,
+                started,
+                tool="save_result_as_dataset",
+                handle=handle,
+                structured=structured,
+            )
+            raise
+        return {**published, "audit_id": audit_id}
+
+    def _claim(
+        self, result_id: str, identity: SemanticRequestIdentity, context: Any
+    ) -> tuple[ResultHandle, LoadedModel]:
+        """Claim a handle for the exact owner, subject and current model/policy versions."""
+        if not isinstance(result_id, str) or not result_id.strip():
+            raise SemanticResultError("result_unavailable", "Result is unavailable")
+        if handle_owner_of(identity) != (
+            identity.agent_id,
+            context.user_id,
+            context.tenant_id,
+            identity.session_id,
+        ):
+            raise SemanticResultError("result_unavailable", "Result is unavailable")
+        digest = subject_digest(context)
+        for loaded in self._models.values():
+            try:
+                handle = self._handles.claim(
+                    result_id,
+                    identity=identity,
+                    subject_digest=digest,
+                    model_digest=loaded.model_digest,
+                    policy_digest=loaded.policy_digest,
+                )
+            except SemanticResultError:
+                continue
+            if handle.model == loaded.name:
+                return handle, loaded
+        raise SemanticResultError("result_unavailable", "Result is unavailable")
+
+    def _check_members(self, loaded: LoadedModel, members: tuple[str, ...], roles: frozenset[str]) -> None:
+        """Require every member to be granted; one visible member never covers another."""
+        if not loaded.policy.governed:
+            return
+        visible = {member.name for member in self._catalog.visible_members(loaded.name, roles, authorized=True)}
+        hidden = [member for member in members if member not in visible]
+        if hidden:
+            raise SemanticAccessError("member_not_granted", "Result references a member that is not granted")
+
+    async def _recheck_handle(
+        self, handle: ResultHandle, loaded: LoadedModel, context: Any, roles: frozenset[str]
+    ) -> None:
+        """Re-authorize every retained member, physical column/table and PBAC before publish."""
+        if handle.expires_at <= datetime.now(timezone.utc):
+            raise SemanticResultError("result_unavailable", "Result is unavailable")
+        manifest = await self._pbac.authorize_manifest(context, loaded)
+        if not loaded.policy.governed:
+            return
+        self._check_members(loaded, handle.members, roles)
+        tables = set(handle.physical_tables)
+        if not tables.issubset(loaded.schema.tables):
+            raise SemanticAccessError("outside_manifest", "Result uses resources outside the model manifest")
+        root = loaded.model
+        granted = {member.name for member in self._catalog.visible_members(loaded.name, roles, authorized=True)}
+        member_columns = {
+            f"{root.table}.{item.column}"
+            for item in (*root.dimensions, *root.metrics)
+            if item.name in granted and getattr(item, "column", None)
         }
+        for column in handle.physical_columns:
+            table, _, physical = column.rpartition(".")
+            if table not in tables or physical not in loaded.schema.tables.get(table, {}):
+                raise SemanticAccessError("outside_manifest", "Result column is outside its recorded tables")
+            if column not in member_columns and not loaded.policy.usage_allowed(roles, column):
+                raise SemanticAccessError("usage_not_granted", "Result uses a column that is not granted")
+        driver = loaded.schema.driver
+        resources = PhysicalResources(driver=driver, tables={f"{driver}:{table}" for table in tables})
+        await self._pbac.authorize(context, resources, governed=True, manifest=manifest)
+
+    async def _dataset_manager_for(self, identity: SemanticRequestIdentity) -> GovernedDatasetSink:
+        """Require the M9H guarded sink capability and exact owner tuple; reject raw/shared managers."""
+        if self._sink_factory is None:
+            raise SemanticResultError("handoff_unavailable", "Dataset hand-off is not configured")
+        produced = self._sink_factory(identity)
+        sink = await produced if inspect.isawaitable(produced) else produced
+        if getattr(sink, "owner", None) != handle_owner_of(identity):
+            raise SemanticResultError("sink_rejected", "Sink owner does not match the trusted identity")
+        if not self._sinks.is_registered(sink):
+            self._sinks.register(sink)
+        return sink
+
+
+def handle_owner_of(identity: SemanticRequestIdentity) -> tuple[str, str, str, str]:
+    """Return the (agent, user, tenant, session) owner tuple of a trusted identity."""
+    return (identity.agent_id, identity.ctx.user_id, identity.ctx.tenant_id, identity.session_id)

@@ -1,118 +1,347 @@
 """Regression contract: Security-gated raw SQL and guarded hand-off tools (M10b)."""
 
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
+
 import pytest
 
 from parrot.auth import PermissionContext, UserSession
+from parrot.auth.exceptions import AuthorizationRequired
 from parrot.semantic import SemanticLayerToolkit
 from parrot.semantic.context import SemanticRequestIdentity, bind_semantic_context
 from parrot.semantic.errors import SemanticAccessError, SemanticResultError
+from parrot.semantic.governance import pbac
+from parrot.semantic.governance.pipeline import subject_digest
 from parrot.semantic.models import SemanticQuery
+from parrot.semantic.results import ResultHandle
 
-from ._models import models_dir  # noqa: F401
+from ._models import duckdb_warehouse, models_dir  # noqa: F401
+from .sink_conformance import PrivateManagerAdapter
 
-
-def _context() -> PermissionContext:
-    """Build a trusted context for toolkit tests."""
-    return PermissionContext(session=UserSession("analyst", "tenant-a", frozenset({"analyst"}), {}))
-
-
-def _identity() -> SemanticRequestIdentity:
-    """Build a trusted identity for toolkit tests."""
-    return SemanticRequestIdentity(ctx=_context(), channel="agent", agent_id="agent-1", session_id="session-1")
-
-
-class _MockGuard:
-    """Mock PBAC guard for testing."""
-
-    def __init__(self) -> None:
-        self.available = True
-        self.guard = object()
-        self.calls: list = []
-
-    async def authorize_source(self, ctx: object, resources: object) -> None:
-        """Mock authorization that always succeeds."""
-        self.calls.append((ctx, resources))
-
-
-def _toolkit_with_raw_sql(models_dir: Path, monkeypatch: pytest.MonkeyPatch) -> SemanticLayerToolkit:
-    """Create a toolkit with raw SQL enabled."""
-    # Modify the policy to allow raw SQL and all usage
-    policy_path = models_dir / "orders.policy.yaml"
-    policy_content = """governed: true
+_POLICY = """governed: true
 connection: semantic_test
 limits: {default: 1000, max: 10000}
 roles:
-  analyst: {metrics: [revenue, order_count], dimensions: [region, order_date], usage: "*"}
+  analyst: {metrics: [revenue, order_count], dimensions: [region], usage: "*"}
   admin: {metrics: "*", dimensions: "*", usage: "*"}
 rls:
   - {driver: duckdb, table: sales.orders, predicate_template: "region IN (:subject.programs)", subject_attribute: programs}
 """
-    policy_path.write_text(policy_content, encoding="utf-8")
 
-    # Mock the environment for the connection
-    monkeypatch.setenv("PARROT_SEMANTIC_CONN_SEMANTIC_TEST_DATABASE", ":memory:")
 
-    # Create mock guard
-    mock_guard = _MockGuard()
+class _Guard:
+    """Deterministic PBAC evaluator with a switchable denial."""
 
-    return SemanticLayerToolkit(
-        models_dir=models_dir,
-        dialect="duckdb",
-        dataplane_guard=mock_guard,
-        allow_raw_sql=True,
+    def __init__(self) -> None:
+        """Create an allowing guard that records authorized resources."""
+        self._evaluator = object()
+        self.deny = False
+        self.calls: list[Any] = []
+
+    async def authorize_source(self, ctx: PermissionContext, resources: Any) -> None:
+        """Authorize or deny the supplied resources."""
+        self.calls.append(resources)
+        if self.deny:
+            raise AuthorizationRequired("semantic_query", "denied")
+
+
+def _ctx(user: str = "analyst-1", program: str = "eu") -> PermissionContext:
+    return PermissionContext(
+        session=UserSession(
+            user_id=user, tenant_id="tenant-a", roles=frozenset({"analyst"}), metadata={"programs": [program]}
+        )
     )
 
 
+def _identity(ctx: PermissionContext, session: str = "session-1") -> SemanticRequestIdentity:
+    return SemanticRequestIdentity(ctx=ctx, channel="agent", agent_id="agent-1", session_id=session)
+
+
+def _owner(identity: SemanticRequestIdentity) -> tuple[str, str, str, str]:
+    return (identity.agent_id, identity.ctx.user_id, identity.ctx.tenant_id, identity.session_id)
+
+
+class _Factory:
+    """Host factory building one private guarded sink per trusted owner."""
+
+    def __init__(self) -> None:
+        self.sinks: dict[tuple[str, str, str, str], PrivateManagerAdapter] = {}
+
+    async def __call__(self, identity: SemanticRequestIdentity) -> PrivateManagerAdapter:
+        owner = _owner(identity)
+        if owner not in self.sinks:
+            self.sinks[owner] = PrivateManagerAdapter(f"scope-{len(self.sinks)}", owner)
+        return self.sinks[owner]
+
+
+def _toolkit(
+    models_dir: Path,
+    warehouse: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    guard: _Guard,
+    factory: Any = None,
+    allow_raw_sql: bool = False,
+) -> SemanticLayerToolkit:
+    monkeypatch.setattr(pbac.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setenv("PARROT_SEMANTIC_CONN_SEMANTIC_TEST_DATABASE", str(warehouse))
+    (models_dir / "orders.policy.yaml").write_text(_POLICY, encoding="utf-8")
+    return SemanticLayerToolkit(
+        models_dir=models_dir,
+        dialect="duckdb",
+        dataplane_guard=guard,
+        dataset_manager_factory=factory,
+        allow_raw_sql=allow_raw_sql,
+    )
+
+
+def _tool_names(toolkit: SemanticLayerToolkit) -> set[str]:
+    return set(toolkit.list_tool_names())
+
+
+async def _query(toolkit: SemanticLayerToolkit) -> str:
+    result = await toolkit.query_metrics(SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"]))
+    assert result.result_id
+    return result.result_id
+
+
 @pytest.mark.asyncio
-async def test_raw_sql_opt_in_and_same_governance(models_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify raw sql opt in and same governance."""
-    # Create toolkit with raw SQL enabled
-    toolkit = _toolkit_with_raw_sql(models_dir, monkeypatch)
+async def test_raw_sql_opt_in_and_same_governance(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_sql is absent by default and, when enabled, governed, audited and provenance-exact."""
+    guard = _Guard()
+    default = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=guard)
+    assert "sl_run_sql" not in _tool_names(default)
+    async with bind_semantic_context(_ctx()):
+        with pytest.raises(SemanticAccessError) as disabled:
+            await default.run_sql("orders", "SELECT region FROM sales.orders")
+    assert disabled.value.code == "raw_sql_disabled"
 
-    # Set the raw SQL flag
-    toolkit._allow_raw_sql = True
-
-    # Test raw SQL execution
-    sql = "SELECT region, SUM(amount) as revenue FROM sales.orders GROUP BY region"
-
-    # Should fail without proper context
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=guard, allow_raw_sql=True)
+    assert "sl_run_sql" in _tool_names(toolkit)
     with pytest.raises(SemanticAccessError):
-        await toolkit.run_sql("orders", sql)
+        await toolkit.run_sql("orders", "SELECT region FROM sales.orders")
 
-    # Should succeed with proper context (simplified test)
-    async with bind_semantic_context(_context(), identity=_identity()):
-        # This test is simplified - in a real implementation we would need
-        # to set up a proper database connection and mock more components
-        # For now, we'll just check that the method exists and can be called
-        assert hasattr(toolkit, "run_sql")
+    ctx = _ctx()
+    async with bind_semantic_context(ctx, identity=_identity(ctx)):
+        result = await toolkit.run_sql(
+            "orders", "SELECT region, SUM(amount) AS total FROM sales.orders GROUP BY region"
+        )
+        # RLS is pushed down exactly as for structured queries.
+        assert result.rows == [{"region": "eu", "total": 12.5}]
+        assert "'eu'" in result.compiled_sql
+        # Hidden member order_date is not granted to analyst.
+        with pytest.raises(SemanticAccessError) as hidden:
+            await toolkit.run_sql("orders", "SELECT order_date FROM sales.orders")
+        assert hidden.value.code == "member_not_granted"
+        guard.deny = True
+        with pytest.raises(SemanticAccessError) as denied:
+            await toolkit.run_sql("orders", "SELECT region FROM sales.orders")
+        assert denied.value.code == "pbac_denied"
+        guard.deny = False
+
+    entries = [entry for entry in toolkit._ledger.entries if entry.tool == "run_sql"]
+    assert [entry.outcome for entry in entries] == ["ok", "denied", "denied"]
+    assert all(entry.raw_sql for entry in entries)
+    stored = toolkit._handles._data[result.result_id]
+    assert stored.physical_tables == ("sales.orders",)
+    assert stored.physical_columns == ("sales.orders.amount", "sales.orders.region")
+    assert stored.members == ("region", "revenue")
+    assert stored.audit_id == result.audit_id
+
+
+@pytest.mark.asyncio
+async def test_handoff_publishes_through_guarded_sink(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claimed owned result is published with a read authorizer; missing factory hides the tool."""
+    guard = _Guard()
+    absent = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=guard)
+    assert "sl_save_result_as_dataset" not in _tool_names(absent)
+    ctx = _ctx()
+    identity = _identity(ctx)
+    async with bind_semantic_context(ctx, identity=identity):
+        with pytest.raises(SemanticResultError) as unavailable:
+            await absent.save_result_as_dataset(await _query(absent), "orders_eu")
+    assert unavailable.value.code == "handoff_unavailable"
+
+    factory = _Factory()
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=guard, factory=factory)
+    assert "sl_save_result_as_dataset" in _tool_names(toolkit)
+    async with bind_semantic_context(ctx, identity=identity):
+        result_id = await _query(toolkit)
+        published = await toolkit.save_result_as_dataset(result_id, "orders_eu", "EU revenue")
+    assert published["name"] == "orders_eu" and published["rows"] == 1
+    assert published["audit_id"]
+    sink = factory.sinks[_owner(identity)]
+    assert (await sink.route("sample", "orders_eu", identity))["rows"] == [{"region": "eu", "revenue": 12.5}]
+    with pytest.raises(SemanticResultError):
+        await sink.route("query", "orders_eu", _identity(_ctx(user="intruder")))
+    with pytest.raises(SemanticResultError):
+        await sink.route("query", "orders_eu", _identity(ctx, session="session-2"))
+    assert toolkit._ledger.entries[-1].tool == "save_result_as_dataset"
+    assert toolkit._ledger.entries[-1].outcome == "ok"
+
+    # A foreign session or a different subject cannot claim the handle.
+    other_session = _identity(ctx, session="session-2")
+    async with bind_semantic_context(ctx, identity=other_session):
+        with pytest.raises(SemanticResultError):
+            await toolkit.save_result_as_dataset(result_id, "stolen")
+    other_ctx = _ctx(program="us")
+    async with bind_semantic_context(other_ctx, identity=_identity(other_ctx)):
+        with pytest.raises(SemanticResultError):
+            await toolkit.save_result_as_dataset(result_id, "stolen")
+    # Without a bound identity, hand-off is refused.
+    async with bind_semantic_context(ctx):
+        with pytest.raises(SemanticResultError) as no_identity:
+            await toolkit.save_result_as_dataset(result_id, "anon")
+    assert no_identity.value.code == "identity_required"
 
 
 @pytest.mark.asyncio
 async def test_unrelated_visible_member_does_not_authorize_handle(
-    models_dir: Path, monkeypatch: pytest.MonkeyPatch
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify unrelated visible member does not authorize handle."""
-    # Create toolkit
-    toolkit = _toolkit_with_raw_sql(models_dir, monkeypatch)
-
-    # Try to save a result - should work with our simplified implementation
-    async with bind_semantic_context(_context(), identity=_identity()):
-        result = await toolkit.save_result_as_dataset("some_id", "test_dataset")
-        assert result is not None
-        assert result["dataset_name"] == "test_dataset"
-        assert result["result_id"] == "some_id"
+    """A handle carrying one hidden member is refused although its other members are visible."""
+    factory = _Factory()
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), factory=factory)
+    ctx = _ctx()
+    identity = _identity(ctx)
+    loaded = toolkit._models["orders"]
+    handle = ResultHandle(
+        result_id="seed",
+        agent_id=identity.agent_id,
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        session_id=identity.session_id,
+        subject_digest=subject_digest(ctx),
+        model="orders",
+        model_digest=loaded.model_digest,
+        policy_digest=loaded.policy_digest,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        members=("order_date", "region", "revenue"),
+        physical_columns=("sales.orders.amount", "sales.orders.order_date", "sales.orders.region"),
+        physical_tables=("sales.orders",),
+        columns=["region", "order_date", "revenue"],
+        rows=[{"region": "eu", "order_date": "2026-01-01", "revenue": 12.5}],
+        audit_id="audit-seed",
+        governed_sql="SELECT region, order_date, SUM(amount) FROM sales.orders GROUP BY 1, 2",
+    )
+    result_id = toolkit._handles.put(handle)
+    async with bind_semantic_context(ctx, identity=identity):
+        with pytest.raises(SemanticAccessError) as hidden:
+            await toolkit.save_result_as_dataset(result_id, "leak")
+    assert hidden.value.code == "member_not_granted"
+    assert factory.sinks == {}
+    assert toolkit._ledger.entries[-1].outcome == "denied"
 
 
 @pytest.mark.asyncio
-async def test_guarded_sink_read_after_revocation(models_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify guarded sink read after revocation."""
-    # Create toolkit
-    toolkit = _toolkit_with_raw_sql(models_dir, monkeypatch)
+async def test_shared_scope_and_raw_manager_rejected(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A factory sharing one sink across owners, or returning a raw manager, never receives data."""
+    first_ctx, second_ctx = _ctx(user="first"), _ctx(user="second")
+    first, second = _identity(first_ctx), _identity(second_ctx)
+    shared = PrivateManagerAdapter("shared", _owner(first))
 
-    # Try to save a result - should work with our simplified implementation
-    async with bind_semantic_context(_context(), identity=_identity()):
-        result = await toolkit.save_result_as_dataset("some_id", "test_dataset")
-        assert result is not None
-        assert result["dataset_name"] == "test_dataset"
-        assert result["result_id"] == "some_id"
+    async def shared_factory(identity: SemanticRequestIdentity) -> PrivateManagerAdapter:
+        return shared
+
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), factory=shared_factory)
+    async with bind_semantic_context(first_ctx, identity=first):
+        await toolkit.save_result_as_dataset(await _query(toolkit), "mine")
+    async with bind_semantic_context(second_ctx, identity=second):
+        with pytest.raises(SemanticResultError) as rejected:
+            await toolkit.save_result_as_dataset(await _query(toolkit), "theirs")
+    assert rejected.value.code == "sink_rejected"
+    assert set(shared._items) == {"mine"}
+
+    class DatasetManager:
+        guarded_reads = True
+        scope_id = "raw"
+
+        def __init__(self, owner: tuple[str, str, str, str]) -> None:
+            self.owner = owner
+            self.items: list[Any] = []
+
+        async def publish(self, name: str, handle: ResultHandle, authorize_read: Any) -> dict[str, Any]:
+            self.items.append(handle)
+            return {"name": name}
+
+    raw = DatasetManager(_owner(first))
+
+    async def raw_factory(identity: SemanticRequestIdentity) -> DatasetManager:
+        return raw
+
+    raw_toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=_Guard(), factory=raw_factory)
+    async with bind_semantic_context(first_ctx, identity=first):
+        with pytest.raises(SemanticResultError) as raw_rejected:
+            await raw_toolkit.save_result_as_dataset(await _query(raw_toolkit), "raw")
+    assert raw_rejected.value.code == "sink_rejected"
+    assert raw.items == []
+
+
+@pytest.mark.asyncio
+async def test_guarded_sink_read_after_revocation(
+    models_dir: Path, duckdb_warehouse: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changed PBAC, policy, metadata and expiry block publish and every later read."""
+    guard = _Guard()
+    factory = _Factory()
+    toolkit = _toolkit(models_dir, duckdb_warehouse, monkeypatch, guard=guard, factory=factory)
+    ctx = _ctx()
+    identity = _identity(ctx)
+    async with bind_semantic_context(ctx, identity=identity):
+        published_id = await _query(toolkit)
+        await toolkit.save_result_as_dataset(published_id, "orders_eu")
+        pbac_id = await _query(toolkit)
+        expiry_id = await _query(toolkit)
+        policy_id = await _query(toolkit)
+    sink = factory.sinks[_owner(identity)]
+    await sink.route("query", "orders_eu", identity)
+
+    # PBAC revocation: publish refused, and the already-published dataset is no longer readable.
+    guard.deny = True
+    async with bind_semantic_context(ctx, identity=identity):
+        with pytest.raises(SemanticAccessError) as pbac_denied:
+            await toolkit.save_result_as_dataset(pbac_id, "after_revocation")
+    assert pbac_denied.value.code == "pbac_denied"
+    for exposure in ("list", "describe", "cache", "derive"):
+        with pytest.raises(SemanticResultError):
+            await sink.route(exposure, "orders_eu", identity)
+    guard.deny = False
+    await sink.route("query", "orders_eu", identity)
+
+    # Changed subject metadata: the handle no longer matches the subject digest.
+    changed_ctx = _ctx(program="us")
+    async with bind_semantic_context(changed_ctx, identity=_identity(changed_ctx)):
+        with pytest.raises(SemanticResultError):
+            await toolkit.save_result_as_dataset(pbac_id, "changed_subject")
+    with pytest.raises(SemanticResultError):
+        await sink.route("query", "orders_eu", _identity(changed_ctx))
+
+    # Expiry: an expired handle cannot be claimed.
+    toolkit._handles._clock = lambda: datetime.now(timezone.utc) + timedelta(days=1)
+    async with bind_semantic_context(ctx, identity=identity):
+        with pytest.raises(SemanticResultError) as expired:
+            await toolkit.save_result_as_dataset(expiry_id, "expired")
+    assert expired.value.code == "result_unavailable"
+    toolkit._handles._clock = lambda: datetime.now(timezone.utc)
+
+    # Policy change + reload: the handle is stale and the published dataset is denied.
+    (models_dir / "orders.policy.yaml").write_text(_POLICY.replace('usage: "*"}\n  admin', "usage: []}\n  admin"))
+    toolkit.reload()
+    async with bind_semantic_context(ctx, identity=identity):
+        with pytest.raises(SemanticResultError):
+            await toolkit.save_result_as_dataset(policy_id, "stale_policy")
+    with pytest.raises(SemanticResultError):
+        await sink.route("query", "orders_eu", identity)
+    assert [entry.outcome for entry in toolkit._ledger.entries if entry.tool == "save_result_as_dataset"] == [
+        "ok",
+        "denied",
+    ]
