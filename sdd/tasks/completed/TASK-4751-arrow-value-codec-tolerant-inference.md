@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-750 — bots-data-fixes (Arrow transport for DataFrames in repl_worker values)
 **Spec**: `sdd/specs/bots-data-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -198,8 +198,19 @@ def _decode_arrow(payload: dict[str, Any]) -> Any:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Opus 5.5 (/sdd-fix issue:e19ac9b4ba42)
+**Date**: 2026-10-26
+**Notes**: Implemented in b0106db53. `encode_value`/`decode_value` carry DataFrame/Series as base64 Arrow IPC
+(`__repl_worker_arrow_b64__` + `kind`); forged payloads raise ValueError/ArrowInvalid. `_infer_data_variable_from_tools`
+skips a candidate whose `get_var` raises (warning logged). Validation: test_protocol.py 52 passed (incl. the 2 tests that
+failed on dev with this bug), test_pandasagent_infer_tolerant.py 2 passed, test_handle.py / test_strict_worker_transport.py /
+test_inprocess.py pass. Real-worker e2e (PythonREPLTool worker mode, `str` + `double[pyarrow]` frame): base crashes in
+get_var, fixed returns the frame with dtypes intact via get_var and snapshot.
+Pre-existing, unrelated (identical on the unmodified base): 7 failures in test_worker.py and 3 in test_transport.py
+(worker cannot boot: pytest tmp output_dir "escapes allowed directories"); 7 ruff findings in data.py on untouched lines;
+3 failures in test_pandasagent_stale_data_variables.py (stale SimpleNamespace fixture lacks `_assignment_target_names`).
 
-**Deviations from spec**: none
+**Deviations from spec**: one addition — the pickle fallback (frames Arrow cannot carry, e.g. dict/list object columns)
+first casts pyarrow-backed columns and index/column labels to `object` (`_without_arrow_dtypes`). Without it the fallback
+still hit the guard, because under pandas 3 even string column labels are pyarrow-backed. The guard constants are
+unchanged. DatetimeIndex `freq` is not preserved by Arrow (values and tz are).
