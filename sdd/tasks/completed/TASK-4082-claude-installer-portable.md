@@ -720,10 +720,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented tri-state portable resolution (install_claude_integration resolves once via _current_portable_mode), sticky reconcile_toolkit_entries, portable-aware managed detection, Windows-safe _script_basename (incl. _is_wikitoolkit_entry), --portable/--no-portable CLI flag. New test file 11 passed; all 7 other validation test files pass; ruff clean. Contract anchors verified (line numbers matched).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
