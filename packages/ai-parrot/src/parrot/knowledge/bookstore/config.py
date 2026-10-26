@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
+from parrot.launcher import parrot_home as _launcher_parrot_home  # stdlib-only: keeps the no-wiki-chain guarantee
+
 ENV_LIBRARY_DIR = "PARROT_LIBRARY_DIR"
 LIBRARY_SUBPATH = Path(".parrot") / "library"
 DB_FILENAME = "library.db"
@@ -66,13 +68,12 @@ def _find_git_root(start: Path) -> Optional[Path]:
 def _parrot_home() -> Path:
     """Per-user parrot state dir (``~/.parrot``), ``PARROT_HOME``-overridable.
 
-    Kept local (instead of importing
-    :func:`parrot.knowledge.wiki.project.parrot_home`) so that importing
-    ``bookstore.config`` never drags the wiki module chain in — but the
-    contract is identical.
+    Delegates to :func:`parrot.launcher.parrot_home` (FEAT-633), which is
+    stdlib-only — so importing ``bookstore.config`` still never drags the
+    wiki module chain in, and the contract stays identical to
+    :func:`parrot.knowledge.wiki.project.parrot_home`.
     """
-    raw = os.environ.get("PARROT_HOME") or "~/.parrot"
-    return Path(raw).expanduser()
+    return _launcher_parrot_home()
 
 
 def resolve_locations(

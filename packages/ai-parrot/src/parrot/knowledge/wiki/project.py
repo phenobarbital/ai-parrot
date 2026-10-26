@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from parrot.knowledge.wiki.decisions.models import DecisionConfig
 from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig
+from parrot.launcher import parrot_home as _launcher_parrot_home  # FEAT-633: single PARROT_HOME authority (stdlib-only)
 
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import in
@@ -1376,11 +1377,12 @@ def parrot_home() -> Path:
     value is read on every call — never cached at import time — so a
     ``monkeypatch.setenv`` in a test is always seen.
 
+    Delegates to :func:`parrot.launcher.parrot_home` (FEAT-633).
+
     Returns:
         The expanded, absolute parrot home directory.
     """
-    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"
-    return Path(raw).expanduser()
+    return _launcher_parrot_home()
 
 
 def global_registry_path() -> Path:
