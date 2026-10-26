@@ -236,4 +236,5 @@ Use `$sdd-start TASK-4480` in the feature worktree; it provisions isolation. Rea
 
 ## Completion Note
 
-Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.
+Seat: gpt-5.6-terra (codex), 1 attempt, 365s. Merge-tier selector timed out sweeping direct importers of manager.py; pre-existing failures in tests/bots/prompts/test_yaml_prompt_config.py (BotManager._build_prompt_builder missing on origin/dev too) are unrelated. Own tests verified directly: test_semantic_handler.py + test_botmanager_wiring.py 6 passed. 1 residual ruff finding left for /sdd-done.
+Engine fidelity gate clean; merge-tier validation green; orchestrator review approved.
