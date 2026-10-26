@@ -340,7 +340,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -351,8 +351,9 @@
       "parallelism_notes": "TASK-4477: consumes packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (Governed catalog, compile and query toolkit (M10a)); TASK-4708: consumes packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py (Repair stock DuckDB source execution (M9D))",
       "assigned_to": null,
       "started_at": "2026-10-25T23:06:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4478-semantic-e2e-security-suite.md"
+      "completed_at": "2026-10-26T00:13:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4478-semantic-e2e-security-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4479",
