@@ -41,7 +41,6 @@ from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: 
 from ..tools.spec import AgentMCPServerSpec, ToolkitSpec, normalize_tooling
 from ..roost.directory import CapabilityMatch, Locality, RoostAgentConfig, locality_of, rank
 
-
 class AgentFactory(Protocol):
     """Protocol for agent factory callable."""
 
@@ -1551,11 +1550,7 @@ class AgentRegistry:
             scopes = grant.scopes if grant is not None else []
             if not scopes:
                 return []
-            matches = [
-                match
-                for match in matches
-                if any(fnmatch.fnmatchcase(match.cap_id, scope) for scope in scopes)
-            ]
+            matches = [match for match in matches if any(fnmatch.fnmatchcase(match.cap_id, scope) for scope in scopes)]
 
         if not include_remote:
             matches = [match for match in matches if match.locality != Locality.REMOTE]
