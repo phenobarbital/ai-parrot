@@ -125,6 +125,8 @@ cli._lazy_commands = {
     "gemini": "parrot.knowledge.wiki.google.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
+    # FEAT-633 — SDD flow installer (parrot sdd install|uninstall|status|run).
+    "sdd": "parrot.sdd.cli",
     # FEAT-601 — Procedure Graph manuals CLI, ships in ai-parrot-tools.
     "manuals": "parrot_tools.procedures.cli",
     # FEAT-696 — Jira toolkit CLI (local 3LO auth, KB sync), ships in ai-parrot-tools.
