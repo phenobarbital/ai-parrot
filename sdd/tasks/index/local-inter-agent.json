@@ -219,7 +219,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "imports ProtocolEngine/Transition from TASK-4713 (roost/protocols.py) and GrantPolicy from TASK-4717 (roost/grant.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4718-roost-gating-dispatcher.md"
+      "completed_at": "2026-10-26T13:09:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4718-roost-gating-dispatcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4719",
@@ -303,7 +304,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -313,8 +314,9 @@
       "parallelism_notes": "subclasses Carrier from TASK-4720 (roost/carriers/base.py); codec uses LocalEnvelope from TASK-4711",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4722-roost-codec-bus-carrier.md"
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4722-roost-codec-bus-carrier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4723",
@@ -323,7 +325,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -333,8 +335,9 @@
       "parallelism_notes": "imports RoostMessage/Performative from TASK-4711 (roost/messages.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4723-roost-audit-ledger.md"
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4723-roost-audit-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4724",
@@ -409,7 +412,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -420,8 +423,9 @@
       "parallelism_notes": "MatrixCarrier subclasses Carrier from TASK-4720; MatrixBlackboard subclasses Blackboard from TASK-4719",
       "assigned_to": null,
       "started_at": "2026-10-26T12:39:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4727-matrix-roost-carrier-blackboard.md"
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4727-matrix-roost-carrier-blackboard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4728",

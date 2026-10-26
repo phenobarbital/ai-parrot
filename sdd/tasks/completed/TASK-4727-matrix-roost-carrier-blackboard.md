@@ -336,11 +336,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-747 execution 0b6f3a52)
+**Date**: 2026-10-26
+**Notes**: MatrixCarrier + MatrixBlackboard + ROOST/BLACKBOARD event types; 10 tests green. Coder notes: (1) non-JSON content accepted via any object with str handle_id (ArtifactHandle belongs to FEAT-746); (2) from_content rebuilds LocalEnvelope, addresses come back carrier=MATRIX without endpoint; (3) MatrixBlackboard.keys lists only keys seen by this instance (no state-listing API); (4) cross-process CAS race window documented; (5) constructor `client, *, room_id, scope, policy` was unspecified in the task. Pre-existing F401 in events.py untouched.
+Seat: sonnet (native) · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
-
+**Deviations from spec**: handle_id duck-typing and constructor signature chosen by coder (unspecified)
