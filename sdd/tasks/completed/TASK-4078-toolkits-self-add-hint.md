@@ -330,10 +330,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: ToolkitRow gained requires_pip/post_install/requires_env filled by inventory(); _self_add_hint helper; hints in picker title, list footer, install epilogue. 19 tests pass (cli + mcp toolkit_install), ruff clean. load_template imported from toolkit_install (lazy, with dist_available so module patching works).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
