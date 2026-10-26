@@ -14,7 +14,7 @@ depends_on: [FEAT-746]
 **Feature ID**: FEAT-747
 **Date**: 2026-10-26
 **Author**: Jesus Lara / AI-Parrot Team
-**Status**: review
+**Status**: approved
 **Target version**: 1.3.0
 **Proposal**: `sdd/proposals/local-inter-agent.proposal.md` (status `review`, 9/9 questions resolved 2026-10-26)
 **Source brainstorm**: `sdd/state/FEAT-747/source.md`
