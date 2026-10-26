@@ -82,8 +82,8 @@ class TestEncodeDecodeRoundtrip:
 class TestWorkerHandleInjectDataframe:
     """Real host -> worker delivery via WorkerHandle (spawns a real worker)."""
 
-    async def test_df_arrow_roundtrip(self, real_worker_config, sample_df, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_df_arrow_roundtrip(self, real_worker_config, sample_df, repl_output_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=str(repl_output_dir))
         await handle.start()
         try:
             await handle.inject_dataframe("my_df", sample_df)
@@ -93,8 +93,8 @@ class TestWorkerHandleInjectDataframe:
         finally:
             await handle.kill()
 
-    async def test_df_visible_to_executed_code(self, real_worker_config, sample_df, tmp_path):
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+    async def test_df_visible_to_executed_code(self, real_worker_config, sample_df, repl_output_dir):
+        handle = WorkerHandle(real_worker_config, output_dir=str(repl_output_dir))
         await handle.start()
         try:
             await handle.inject_dataframe("my_df", sample_df)
@@ -104,12 +104,12 @@ class TestWorkerHandleInjectDataframe:
         finally:
             await handle.kill()
 
-    async def test_no_shm_leaks_after_inject(self, real_worker_config, sample_df, tmp_path):
+    async def test_no_shm_leaks_after_inject(self, real_worker_config, sample_df, repl_output_dir):
         """The host unlinks the shm block once the worker has ack'd (no leaks)."""
         import glob
 
         before = set(glob.glob("/dev/shm/*"))
-        handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
+        handle = WorkerHandle(real_worker_config, output_dir=str(repl_output_dir))
         await handle.start()
         try:
             await handle.inject_dataframe("my_df", sample_df)
