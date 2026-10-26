@@ -392,8 +392,11 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> tu
         deletion out and the ``active/`` copy alive in HEAD.
     """
     close_script = repo_root / "scripts" / "sdd" / "close_task.sh"
-    if not close_script.is_file():
-        raise OperationError(f"close_task.sh not found at {close_script}")
+    if close_script.is_file():
+        close_argv = ["bash", str(close_script)]
+    else:
+        # Foreign repo (installed flow): the repo-local wrapper does not exist.
+        close_argv = [sys.executable, "-m", "parrot.sdd.scripts.close_task"]
 
     real_index_path = Path(
         _run_git(["rev-parse", "--path-format=absolute", "--git-path", "index"], cwd=repo_root).stdout.strip()
@@ -420,7 +423,7 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> tu
         tmp_env = {**os.environ, "GIT_INDEX_FILE": str(tmp_index_path)}
 
         proc = subprocess.run(
-            ["bash", str(close_script), task_id, feature_slug, _VERIFICATION],
+            [*close_argv, task_id, feature_slug, _VERIFICATION],
             cwd=repo_root,
             env=tmp_env,
             capture_output=True,
