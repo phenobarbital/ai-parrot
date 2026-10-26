@@ -1,0 +1,54 @@
+name: install-matrix
+on:
+  workflow_dispatch:
+    inputs:
+      spec: {description: "pip requirements to install (whitespace-separated)", default: "ai-parrot ai-parrot-tools", type: string}
+      python: {description: "uv-managed Python", default: "3.12", type: string}
+  workflow_call:
+    inputs:
+      spec: {type: string, default: "ai-parrot ai-parrot-tools", required: false}
+      wheel-artifact-pattern: {type: string, default: "", required: false}
+      python: {type: string, default: "3.12", required: false}
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.2.0
+      - if: ${{ inputs.wheel-artifact-pattern != '' }}
+        uses: actions/download-artifact@v8
+        with: {pattern: "${{ inputs.wheel-artifact-pattern }}", merge-multiple: true, path: dist}
+      - name: Smoke
+        shell: bash
+        run: |
+          ARGS=(--spec "${{ inputs.spec }}")
+          if [ -n "${{ inputs.wheel-artifact-pattern }}" ] && ls dist/*.whl >/dev/null 2>&1; then
+            CORE=$(uv run --no-project --python "${{ inputs.python }}" python - <<'PY'
+          import glob, platform, sys
+          tag = "cp%d%d" % sys.version_info[:2]
+          sysname, mach = platform.system(), platform.machine().lower()
+          plat = {"Linux": "manylinux", "Darwin": "macosx", "Windows": "win"}[sysname]
+          arch = {"x86_64": "x86_64", "amd64": "amd64", "arm64": "arm64", "aarch64": "aarch64"}.get(mach, mach)
+          for w in sorted(glob.glob("dist/ai_parrot-*.whl")):
+              n = w.rsplit("/", 1)[-1]
+              if tag in n and plat in n and (arch in n or "universal" in n or (sysname == "Windows" and "amd64" in n)):
+                  print(w); break
+          PY
+            )
+            TOOLS=$(ls dist/ai_parrot_tools-*.whl 2>/dev/null | head -1 || true)
+            if [ -n "$CORE" ] && [ -n "$TOOLS" ]; then
+              ARGS=(--wheel "$CORE" --wheel "$TOOLS")
+            fi
+          fi
+          uv run --no-project --python "${{ inputs.python }}" scripts/install/smoke_install.py \
+            "${ARGS[@]}" --python "${{ inputs.python }}" --json-out "smoke-${{ matrix.os }}.json"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with: {name: "smoke-${{ matrix.os }}", path: "smoke-${{ matrix.os }}.json"}
