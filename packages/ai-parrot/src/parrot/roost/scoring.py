@@ -1,4 +1,5 @@
 """Contract Net bid scoring (FEAT-747 M2). Pure, deterministic, no I/O."""
+
 from __future__ import annotations
 
 from typing import Literal, Optional, Protocol, Sequence
