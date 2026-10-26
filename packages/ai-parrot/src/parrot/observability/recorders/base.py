@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 
 from parrot.observability.recorders.models import CapabilityCallRecord, UsageRecord
 
-
 class AbstractLogger(ABC):
     """Abstract base for pluggable usage/token/cost recorders.
 

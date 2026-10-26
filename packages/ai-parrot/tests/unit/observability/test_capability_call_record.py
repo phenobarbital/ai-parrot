@@ -1,4 +1,5 @@
 """Tests for the FEAT-746 capability-call telemetry seam."""
+
 import pytest
 from navigator_eventbus.lifecycle.trace import TraceContext
 

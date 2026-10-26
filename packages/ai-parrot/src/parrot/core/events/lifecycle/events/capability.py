@@ -2,6 +2,7 @@
 
 Emitted on both sides of a Squawk call under the caller's trace_id.
 """
+
 from dataclasses import dataclass
 
 from navigator_eventbus.lifecycle.base import LifecycleEvent
