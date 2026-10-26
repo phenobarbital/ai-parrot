@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from parrot.launcher import script_path
+
 if TYPE_CHECKING:
     from parrot.mcp.toolkit_config import ToolkitSection
 
@@ -17,6 +19,8 @@ GEMINI_PATH = Path("GEMINI.md")
 SKILL_PATH = Path(".agents/skills/parrot-wiki/SKILL.md")
 ALT_SKILL_PATH = Path(".agent/skills/parrot-wiki/SKILL.md")
 PLUGIN_DIR = Path(".agents/plugins/parrot")
+#: Relative toolkit config used by portable toolkit entries (FEAT-633).
+PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
 
 CONVENTIONS_BEGIN = "<!-- parrot:conventions:google:begin -->"
 CONVENTIONS_END = "<!-- parrot:conventions:google:end -->"
@@ -65,14 +69,22 @@ def default_mcp_config_path() -> Path:
 
 def resolve_binary(root: Path, name: str) -> str:
     """Resolve a project-venv binary, then PATH, then bare name."""
-    venv_binary = root / ".venv" / "bin" / name
+    venv_binary = script_path(root / ".venv", name)
     if venv_binary.exists():
         return str(venv_binary)
     return shutil.which(name) or name
 
 
-def wikitoolkit_mcp_entry(root: Path) -> dict[str, Any]:
-    """Build the wikitoolkit MCP server entry for Antigravity."""
+def wikitoolkit_mcp_entry(root: Path, *, portable: bool = False) -> dict[str, Any]:
+    """Build the wikitoolkit MCP server entry for Antigravity.
+
+    Portable (FEAT-633): ``{"command": "wikitoolkit", "args": ["mcp"]}`` — no absolute ``cwd``,
+    so the USER-GLOBAL config holds one entry valid for every repository. No project pin is
+    emitted: variable expansion by the host is not verified (spike S3), and an env value would
+    have to be root-specific, breaking byte-identity across roots.
+    """
+    if portable:
+        return {"command": "wikitoolkit", "args": ["mcp"]}
     return {
         "command": resolve_binary(root, "wikitoolkit"),
         "args": ["mcp"],
@@ -80,32 +92,38 @@ def wikitoolkit_mcp_entry(root: Path) -> dict[str, Any]:
     }
 
 
-def toolkit_mcp_entries(root: Path, sections: dict[str, ToolkitSection]) -> dict[str, dict[str, Any]]:
+def toolkit_mcp_entries(
+    root: Path, sections: dict[str, ToolkitSection], *, portable: bool = False
+) -> dict[str, dict[str, Any]]:
     """Build dictionary of parrot-<name> MCP server entries for enabled toolkits.
 
-    Each entry's ``args`` pins an absolute ``--config`` pointing at
-    ``<root>/.parrot/mcp-toolkits.yaml`` (FEAT-556), alongside the
-    pre-existing ``cwd``, so ``parrot mcp-local`` resolves the toolkit
-    independently of the host's cwd handling.
+    Baked: each entry's ``args`` pins an absolute ``--config`` pointing at
+    ``<root>/.parrot/mcp-toolkits.yaml`` (FEAT-556), alongside ``cwd``.
+    Portable (FEAT-633): bare ``parrot`` command, relative ``--config``, no ``cwd``.
     """
     entries: dict[str, dict[str, Any]] = {}
-    parrot_bin = resolve_binary(root, "parrot")
-    config_path = str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
+    parrot_bin = "parrot" if portable else resolve_binary(root, "parrot")
+    config_path = PORTABLE_TOOLKIT_CONFIG if portable else str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
     for name in sorted(sections):
         section = sections[name]
-        entry: dict[str, Any] = {
-            "command": parrot_bin,
-            "args": ["mcp-local", name, "--config", config_path],
-            "cwd": str(root.resolve()),
-        }
+        entry: dict[str, Any] = {"command": parrot_bin, "args": ["mcp-local", name, "--config", config_path]}
+        if not portable:
+            entry["cwd"] = str(root.resolve())
+        # No portable project pin: see wikitoolkit_mcp_entry (spike S3 unverified).
         if section.env:
             entry["env"] = dict(section.env)
         entries[f"parrot-{name}"] = entry
     return entries
 
 
-def bookstore_mcp_entry(root: Path) -> dict[str, Any]:
-    """Build bookstore PageIndex MCP server entry for Antigravity."""
+def bookstore_mcp_entry(root: Path, *, portable: bool = False) -> dict[str, Any]:
+    """Build bookstore PageIndex MCP server entry for Antigravity.
+
+    Portable (FEAT-633): ``{"command": "bookstore", "args": ["mcp"]}`` — no ``sys.executable``, no
+    ``cwd`` and no environment snapshot (its values are machine paths).
+    """
+    if portable:
+        return {"command": "bookstore", "args": ["mcp"]}
     env: dict[str, str] = {}
     for key in (
         "PARROT_LIBRARY_DIR",
@@ -125,6 +143,8 @@ def bookstore_mcp_entry(root: Path) -> dict[str, Any]:
     if env:
         entry["env"] = env
     return entry
+
+
 
 
 def plugin_manifest() -> dict[str, Any]:

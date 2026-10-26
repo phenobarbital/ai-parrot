@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.google import assets
@@ -65,12 +65,36 @@ def _save_mcp_config(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _script_basename(command: str) -> str:
+    """Basename of a command path, separator- and ``.exe``-agnostic (codex S4)."""
+    name = command.replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-4] if name.lower().endswith(".exe") else name
+
+
+def _current_portable_mode(root: Path, mcp_path: Optional[Path] = None) -> bool:
+    """Infer the current mode (FEAT-633, sticky) from the managed wikitoolkit entry.
+
+    Reads the repo-local plugin config first (per-repo — one repo's choice must not leak into
+    another through the USER-GLOBAL file), then the user-global config. Never raises.
+    """
+    portable_entry = assets.wikitoolkit_mcp_entry(root, portable=True)
+    for path in (root / assets.PLUGIN_DIR / "mcp_config.json", mcp_path or assets.default_mcp_config_path()):
+        try:
+            if not path.exists():
+                continue
+            servers = _load_mcp_config(path).get("mcpServers")
+        except (RuntimeError, OSError, ValueError):
+            continue
+        if isinstance(servers, dict) and "wikitoolkit" in servers:
+            return servers["wikitoolkit"] == portable_entry
+    return False
+
+
 def _is_managed_wikitoolkit_entry(entry: Any, root: Path) -> bool:
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
-    bin_name = PurePosixPath(assets.resolve_binary(root, "wikitoolkit")).name
-    return isinstance(command, str) and command.endswith(bin_name) and entry.get("args") == ["mcp"]
+    return isinstance(command, str) and _script_basename(command) == "wikitoolkit" and entry.get("args") == ["mcp"]
 
 
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
@@ -91,13 +115,14 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
-    bin_name = PurePosixPath(assets.resolve_binary(root, "parrot")).name
-    if not isinstance(command, str) or not command.endswith(bin_name):
+    if not isinstance(command, str) or _script_basename(command) != "parrot":
         return False
     args = entry.get("args")
     if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
         return False
     if len(args) >= 4 and args[2] == "--config":
+        if args[3] == assets.PORTABLE_TOOLKIT_CONFIG:  # portable form — ours
+            return True
         config_path = Path(args[3])
         if not config_path.is_absolute():
             return False
@@ -152,8 +177,13 @@ def toolkit_config_paths(root: Path, mcp_path: Optional[Path] = None) -> tuple[P
     return (primary, root / assets.PLUGIN_DIR / "mcp_config.json")
 
 
-def reconcile_toolkit_entries(root: Path, mcp_path: Optional[Path] = None) -> tuple[list[str], list[str]]:
+def reconcile_toolkit_entries(
+    root: Path, mcp_path: Optional[Path] = None, *, portable: Optional[bool] = None
+) -> tuple[list[str], list[str]]:
     """Reconcile ONLY `parrot-<name>` entries, in BOTH Antigravity config files.
+
+    ``portable=None`` infers the form via ``_current_portable_mode`` (sticky — the
+    `parrot toolkits` path through ``mcp/hosts.py::GoogleAdapter.reconcile``).
 
     Never reads or writes the "wikitoolkit" key in either file (FEAT-570 AC5).
     Upserts one entry per ENABLED section, preserves a `parrot-<name>` key whose
@@ -167,7 +197,9 @@ def reconcile_toolkit_entries(root: Path, mcp_path: Optional[Path] = None) -> tu
 
     cfg = load_toolkits_config(root)
     enabled_toolkits = {name: section for name, section in cfg.toolkits.items() if section.enabled}
-    desired_toolkits = assets.toolkit_mcp_entries(root, enabled_toolkits)
+    if portable is None:
+        portable = _current_portable_mode(root, mcp_path)
+    desired_toolkits = assets.toolkit_mcp_entries(root, enabled_toolkits, portable=portable)
 
     all_actions: list[str] = []
     all_warnings: list[str] = []
@@ -219,7 +251,7 @@ def reconcile_toolkit_entries(root: Path, mcp_path: Optional[Path] = None) -> tu
     return all_actions, all_warnings
 
 
-def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
+def _install_mcp(root: Path, mcp_path: Optional[Path] = None, *, portable: bool = False) -> list[str]:
     """Write/refresh wikitoolkit and toolkit MCP entries in mcp_config.json and workspace plugin."""
     actions: list[str] = []
     target_mcp = mcp_path or assets.default_mcp_config_path()
@@ -227,7 +259,7 @@ def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
     servers = mcp_data.setdefault("mcpServers", {})
 
     # wikitoolkit entry — never delegated to reconcile_toolkit_entries (FEAT-570 AC5)
-    wiki_entry = assets.wikitoolkit_mcp_entry(root)
+    wiki_entry = assets.wikitoolkit_mcp_entry(root, portable=portable)
     existing_wiki = servers.get("wikitoolkit")
     changed_global = False
 
@@ -244,7 +276,7 @@ def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
         _save_mcp_config(target_mcp, mcp_data)
 
     # Toolkit entries — one reconciliation covering both config files (FEAT-570)
-    toolkit_actions, _toolkit_warnings = reconcile_toolkit_entries(root, mcp_path)
+    toolkit_actions, _toolkit_warnings = reconcile_toolkit_entries(root, mcp_path, portable=portable)
     actions.extend(toolkit_actions)
 
     # Also maintain workspace plugin (.agents/plugins/parrot)
@@ -288,8 +320,14 @@ def install_google_integration(
     gitignore: bool = True,
     bookstore: bool = True,
     mcp_config_path: Optional[Path] = None,
+    portable: Optional[bool] = None,
 ) -> list[str]:
     """Install Google Antigravity / Gemini CLI instructions, skills, and MCP configuration.
+
+    Args:
+        portable: True: bare launcher commands, no cwd (multi-repo-safe user-global config);
+            False: baked absolute paths (today); None: keep the current form (plugin file,
+            then user-global).
 
     Note:
         Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens here —
@@ -300,6 +338,8 @@ def install_google_integration(
     config = config or load_effective_config(root).config
     existed = config_path(root).exists()
     save_project_config(root, config)
+    if portable is None:
+        portable = _current_portable_mode(root, mcp_config_path)
 
     actions = [
         (
@@ -311,7 +351,7 @@ def install_google_integration(
     ]
     actions.extend(_install_skills(root))
 
-    actions.extend(_install_mcp(root, mcp_path=mcp_config_path))
+    actions.extend(_install_mcp(root, mcp_path=mcp_config_path, portable=portable))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -322,7 +362,7 @@ def install_google_integration(
         actions.append(_install_gitignore(root))
 
     if bookstore:
-        actions.extend(install_bookstore(root, mcp_path=mcp_config_path))
+        actions.extend(install_bookstore(root, mcp_path=mcp_config_path, portable=portable))
 
     return actions
 
