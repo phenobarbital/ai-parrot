@@ -54,3 +54,11 @@ def test_lookup_under_5ms():
     t0 = time.perf_counter()
     assert reg.find_exact("salary")
     assert (time.perf_counter() - t0) < 0.005
+
+
+def test_find_exact_partial_segment_glob():
+    reg = CapabilityRegistry()
+    reg.register_agent_capability("hr-agent", "hr.people.salary")
+    for q in ("hr.p*", "hr.people.sal*", "*.salary"):
+        assert [e.metadata["agent_name"] for e in reg.find_exact(q)] == ["hr-agent"], q
+    assert reg.find_exact("fin.*") == []

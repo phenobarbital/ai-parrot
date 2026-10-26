@@ -175,3 +175,12 @@ def test_subscribe_cancel_expire() -> None:
     expiring = _msg(P.SUBSCRIBE, IP.SUBSCRIBE)
     expiry_engine.open(expiring, budget=ConversationBudget(deadline=now + timedelta(milliseconds=10)))
     assert expiry_engine.expire(now=now + timedelta(milliseconds=11))[0].state.terminal is TerminalState.TIMED_OUT
+
+
+def test_not_understood_is_never_answered() -> None:
+    """A not-understood arriving for an unknown conversation emits nothing (no ping-pong)."""
+    engine = ProtocolEngine()
+    stray = engine.accept(_msg(P.AGREE, IP.REQUEST, cid="ghost"))
+    assert stray.kind == "not_understood" and len(stray.emit) == 1
+    reply = engine.accept(stray.emit[0])
+    assert reply.kind == "not_understood" and reply.emit == []

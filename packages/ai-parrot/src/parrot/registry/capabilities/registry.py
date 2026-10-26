@@ -276,7 +276,10 @@ class CapabilityRegistry:
             return []
         if "*" in q or "?" in q:
             prefix = q[:-2] if q.endswith(".*") else q.split("*")[0].split("?")[0].rstrip(".")
-            candidates = self._exact_index.get(prefix, set()) if prefix else set(self._by_name)
+            # whole-segment prefixes are index keys; a partial-segment glob (``hr.p*``) falls back to a scan
+            candidates = self._exact_index.get(prefix) if prefix else None
+            if candidates is None:
+                candidates = set(self._by_name)
             names = {
                 n for n in candidates
                 if fnmatch.fnmatchcase(str(self._by_name[n].metadata["cap_id"]).lower(), q)

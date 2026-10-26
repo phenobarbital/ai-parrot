@@ -135,11 +135,19 @@ class RoostEndpoint:
         """Run a deterministic serving tool through the manager's policy guard."""
         content = msg.content if isinstance(msg.content, dict) else {}
         tool_name = content.get("tool") or (msg.capability_filter or "").replace(".", "_")
-        result = await self.tool_manager.execute_tool(
-            tool_name,
-            content,
-            permission_context=squawk_bridge.resolve_authority(msg),
-        )
+        try:
+            result = await self.tool_manager.execute_tool(
+                tool_name,
+                content,
+                permission_context=squawk_bridge.resolve_authority(msg),
+            )
+        except Exception as exc:  # noqa: BLE001 — any tool error must become a typed failure, never a silent hang
+            self.logger.warning("Roost tool %r failed for conversation %s: %s", tool_name, msg.conversation_id, exc)
+            code = FailureCode.POLICY if isinstance(exc, PermissionError) else FailureCode.INTERNAL
+            await self._send_reply(
+                msg.reply(Performative.FAILURE, failure=FailureInfo(code=code, detail=f"{type(exc).__name__}: {exc}"))
+            )
+            return
         if msg.performative is Performative.REQUEST:
             await self._send_reply(msg.reply(Performative.AGREE))
         await self._send_reply(msg.reply(Performative.INFORM, content=result))

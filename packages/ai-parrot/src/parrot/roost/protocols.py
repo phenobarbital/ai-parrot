@@ -208,6 +208,9 @@ def _accepted(state: ConversationState, msg: RoostMessage, obligations: tuple[Pe
 
 def _not_understood(state: ConversationState, msg: RoostMessage) -> Transition:
     """Return the standard out-of-state reply transition."""
+    if msg.performative is Performative.NOT_UNDERSTOOD:
+        # A not-understood is never answered: replying to it would ping-pong between two endpoints forever.
+        return Transition(kind="not_understood", state=state, emit=[])
     return Transition(kind="not_understood", state=state, emit=[msg.reply(Performative.NOT_UNDERSTOOD)])
 
 

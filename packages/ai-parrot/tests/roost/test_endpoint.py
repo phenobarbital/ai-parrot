@@ -171,3 +171,27 @@ async def test_find_and_mount_degrades_when_satellite_is_missing(monkeypatch: py
     monkeypatch.setattr(squawk_bridge, "squawk_available", lambda: False)
     assert await endpoint.find_and_mount("hr.people.salary") == []
     registry.find_capability.assert_called_once_with("hr.people.salary", caller="caller", limit=5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [(RuntimeError("boom"), FailureCode.INTERNAL), (PermissionError("denied"), FailureCode.POLICY)],
+)
+async def test_failing_tool_yields_typed_failure_not_timeout(error: Exception, code: FailureCode) -> None:
+    """A tool that raises answers with a typed failure instead of leaving the caller to time out."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint(
+        "hr", carrier, config=RoostAgentConfig(capabilities=["hr.people.salary"], backing="deterministic")
+    )
+    hr.tool_manager.execute_tool = AsyncMock(side_effect=error)
+    caller = make_endpoint("caller", carrier)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.people.salary", {}, receiver=AgentAddress(name="hr"), timeout=2)
+        assert exc_info.value.failure.code is code
+    finally:
+        await caller.stop()
+        await hr.stop()
