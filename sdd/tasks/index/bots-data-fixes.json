@@ -40,14 +40,14 @@
       "feature_id": "FEAT-750",
       "feature": "bots-data-fixes",
       "spec": "sdd/specs/bots-data-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no dependencies (fixes ledger issue:e19ac9b4ba42)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-26T17:32:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4751-arrow-value-codec-tolerant-inference.md"
     }
