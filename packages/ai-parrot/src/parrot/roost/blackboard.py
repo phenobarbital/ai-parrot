@@ -1,4 +1,5 @@
 """Roost blackboard — versioned single-writer keys with ACLs and subscriptions (FEAT-747 M6)."""
+
 from __future__ import annotations
 
 import asyncio
