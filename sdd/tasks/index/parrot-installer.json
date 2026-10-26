@@ -427,7 +427,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -438,8 +438,9 @@
       "parallelism_notes": "imports parrot_home/resolve_venv from TASK-4071 (parrot/launcher.py) and reads requires_pip/post_install from TASK-4077 (mcp/toolkit_seed.py)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4079-self-components.md"
+      "completed_at": "2026-10-26T18:54:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4079-self-components.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4080",

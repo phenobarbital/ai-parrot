@@ -519,10 +519,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented parrot.self_.components (bundled_uv, install_component, update_runtime, uninstall_runtime) and tests; all FILL INs completed. 10 tests pass (subprocess mocked), ruff clean. Contract verified (launcher, toolkit_seed requires_pip/post_install). Extras policy: plain --upgrade, no state file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
