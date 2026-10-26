@@ -294,7 +294,8 @@ def test_programmatic_claude_protection_does_not_depend_on_project_settings(tmp_
     hook = json.loads(options.extra_args["settings"])["hooks"]["PreToolUse"][0]
     assert "Bash" in hook["matcher"]
     command = hook["hooks"][0]["command"]
-    assert "worktree_environment.py" in command
+    assert "-m parrot.sdd.scripts.worktree_environment --hook" in command
+    assert "packages/" not in command and "flows/dev_loop" not in command
     assert command.endswith(" || exit 2")
 
 

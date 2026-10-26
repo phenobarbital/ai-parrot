@@ -33,7 +33,6 @@ import contextvars
 import json
 import logging
 import os
-from pathlib import Path
 import shlex
 import sys
 import time
@@ -63,7 +62,6 @@ from parrot.flows.dev_loop.dispatchers._shared import (
 )
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent, DispatchLabels
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.flows.dev_loop import worktree_environment
 from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -622,7 +620,7 @@ class ClaudeCodeDispatcher:
             # Programmatic AgentDefinitions strip prompt frontmatter. Supply
             # the protection independently of project settings and prompt hooks.
             hook_command = (
-                shlex.join([sys.executable, str(Path(worktree_environment.__file__).resolve()), "--hook"])
+                shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"])
                 + " || exit 2"
             )
             extra_args = {

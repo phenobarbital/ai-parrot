@@ -225,9 +225,21 @@ def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
     return result if isinstance(result, int) else 0
 
 
+SDD_HOOK_ARGV = ["sdd", "run", "worktree_environment", "--hook"]
+
+
 def main_parrot() -> int:
-    """``parrot`` console script (real entry ``parrot.cli:cli``)."""
+    """``parrot`` console script (real entry ``parrot.cli:cli``; keeps the C16 sdd-hook fast path)."""
     def load() -> Callable[[], Any]:
+        if sys.argv[1:] == SDD_HOOK_ARGV:
+            from parrot.sdd.scripts.worktree_environment import main as hook_main
+
+            def run_hook() -> int:
+                sys.argv[1:] = ["--hook"]
+                hook_main()
+                return 0
+
+            return run_hook
         from parrot.cli import cli
         return cli
     return _dispatch("parrot", load)

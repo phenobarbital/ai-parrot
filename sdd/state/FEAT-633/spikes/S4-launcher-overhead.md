@@ -30,3 +30,16 @@ non-managed fast path adds only the rows above.
 ## Verdict
 pass (budget met for the launcher's own overhead) — Linux, Python 3.11, 2026-10-26. Re-measure on macOS/Windows during the
 install-matrix run; Windows child-process semantics (S2) remain unverified here.
+
+## `parrot sdd run worktree_environment --hook` round trip (TASK-4509, measured 2026-10-26)
+Method: Linux x86_64, Python 3.11 dev venv, 30 runs after 3 warmups, `subprocess.run` wall clock, allow payload on stdin, non-managed venv.
+Baseline = `python -m parrot.sdd.scripts.worktree_environment --hook`; fast path = `main_parrot()` with argv `sdd run worktree_environment --hook` (neither `click` nor `parrot.cli` imported; test-enforced).
+
+| Case | Median (ms) | p95 (ms) | Δ median vs baseline | Within budget? |
+|---|---|---|---|---|
+| `python -m parrot.sdd.scripts.worktree_environment --hook` | 45.5 | 47.3 | baseline | — |
+| launcher fast path (`main_parrot`, non-managed) | 48.1 | 49.3 | +2.6 | yes (≤ 5 ms) |
+
+Managed → project re-exec adds one interpreter start (~33 ms floor, see above), within the ≤ 50 ms target; functional survival is covered by `test_fast_path_survives_reexec`.
+
+Verdict: pass (Linux, Python 3.11). Re-measure on macOS/Windows during the install-matrix run.
