@@ -64,7 +64,9 @@ class SemanticLayerHandler(BaseView):
         except Exception as exc:  # Semantic errors and host PBAC denials are fail-closed.
             return self._semantic_error(exc)
 
-    async def _dispatch(self, toolkit: object, context: PermissionContext, identity: object, body: dict[str, Any]) -> dict:
+    async def _dispatch(
+        self, toolkit: object, context: PermissionContext, identity: object, body: dict[str, Any]
+    ) -> dict:
         """Execute one supported semantic operation in the trusted binding."""
         from parrot.semantic.context import bind_semantic_context
         from parrot.semantic.models import SemanticQuery
@@ -125,7 +127,11 @@ class SemanticLayerHandler(BaseView):
         userinfo = session.get("user") or session.get("userinfo") or session.get("auth")
         if userinfo is None:
             userinfo = next(
-                (value for value in getattr(session, "values", lambda: ())() if isinstance(value, dict) and "user_id" in value),
+                (
+                    value
+                    for value in getattr(session, "values", lambda: ())()
+                    if isinstance(value, dict) and "user_id" in value
+                ),
                 {},
             )
         if not isinstance(userinfo, dict):

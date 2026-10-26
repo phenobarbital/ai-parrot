@@ -109,7 +109,9 @@ async def test_trusted_agent_session_and_local_class_rejection(monkeypatch: pyte
     monkeypatch.setattr(handler, "_toolkit", SemanticLayerHandler._toolkit.__get__(handler, SemanticLayerHandler))
 
     tool_manager = MagicMock()
-    tool_manager.find_registered_toolkit.side_effect = lambda cls: object() if cls is LocalSemanticLayerToolkit else None
+    tool_manager.find_registered_toolkit.side_effect = lambda cls: (
+        object() if cls is LocalSemanticLayerToolkit else None
+    )
     bot_manager = MagicMock()
     bot_manager.get_bot = AsyncMock(return_value=SimpleNamespace(tool_manager=tool_manager))
     request.app["bot_manager"] = bot_manager
