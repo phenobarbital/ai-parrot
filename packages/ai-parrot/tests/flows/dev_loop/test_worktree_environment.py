@@ -682,3 +682,17 @@ def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: 
     )
     updated = response["hookSpecificOutput"]["updatedInput"]
     assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "cd /w && python v.py"]
+
+
+def test_module_imports_without_os_getuid() -> None:
+    """Windows has no os.getuid: the installed hook must still import (it used to crash before reading its payload)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[3] / "src"
+    code = "import os; del os.getuid; import parrot.sdd.scripts.worktree_environment as m; print(m.CLAUDE_SCRATCH_ROOT)"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False, env={"PYTHONPATH": str(src)}
+    )
+    assert result.returncode == 0, result.stderr

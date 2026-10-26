@@ -145,7 +145,8 @@ SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
 # private tmpfs, so the root is bound back in — writable — for all sessions of
 # this user at once; every session on the host belongs to the same user.
-CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid()}"
+# ``os.getuid`` does not exist on Windows; the hook must still import there (the path is only used by the POSIX sandbox).
+CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid() if hasattr(os, 'getuid') else 0}"
 
 
 def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
