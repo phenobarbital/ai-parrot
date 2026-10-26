@@ -340,10 +340,8 @@ package-relative `_KERNEL_PARENT` that resolves inside the installed `parrot` pa
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Moved the four helpers via git mv into parrot.sdd.scripts, package-relative _KERNEL_PARENT (parents[2]/flows/dev_loop) in cache_test_contract and test_report, Usage paths updated, shims at old paths. New tests: 14 pass; existing suites 38 + 52 pass; ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: test_module_help_runs: cache_test_contract and test_report main() swallow argparse SystemExit and return 2 on --help (pre-existing, behaviour unchanged per scope), so the test asserts usage text for those two instead of rc 0; AC 'python -m ... --help exits 0' therefore not literally true for them.

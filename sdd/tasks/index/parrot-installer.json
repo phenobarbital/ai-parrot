@@ -860,18 +860,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-26T19:29:36+00:00",
       "effort": "M",
       "depends_on": [
         "TASK-4085"
       ],
       "parallelism_notes": "git mv of scripts/sdd/{cache_test_contract,test_report,check_e2e_closeout,close_resolved_issues}.py into parrot/sdd/scripts/ (package root from TASK-4085) + shims; touches no file of TASK-4086/4087/4088; TASK-4089 depends on it (rewrites their invocations); added by the 2026-10-19 readiness review",
-      "file": "sdd/tasks/active/TASK-4508-sdd-helpers-move-d.md"
+      "file": "sdd/tasks/completed/TASK-4508-sdd-helpers-move-d.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4509",
