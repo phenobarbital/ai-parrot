@@ -949,10 +949,36 @@ tests:
 - packages/ai-parrot-integrations/tests/test_matrix_swarm_events.py
 - packages/ai-parrot-integrations/tests/test_matrix_tunnel.py
 - packages/ai-parrot-integrations/tests/test_matrix_reply_to.py
+- packages/ai-parrot/tests/roost/test_performatives_messages.py
+- packages/ai-parrot/tests/roost/test_scoring.py
+- packages/ai-parrot/tests/roost/test_protocols.py
+- packages/ai-parrot/tests/roost/test_directory.py
+- packages/ai-parrot/tests/roost/test_grant.py
+- packages/ai-parrot/tests/roost/test_gating.py
+- packages/ai-parrot/tests/roost/test_blackboard.py
+- packages/ai-parrot/tests/roost/test_carriers_inprocess.py
+- packages/ai-parrot/tests/roost/test_carrier_shm.py
+- packages/ai-parrot/tests/roost/test_codec_bus.py
+- packages/ai-parrot/tests/roost/test_audit.py
+- packages/ai-parrot/tests/roost/test_squawk_bridge.py
+- packages/ai-parrot/tests/roost/test_endpoint.py
+- packages/ai-parrot/tests/roost/test_toolkit.py
+- packages/ai-parrot/tests/roost/test_agent_tool_roost.py
+- packages/ai-parrot/tests/roost/test_gate_ls1_wakes.py
+- packages/ai-parrot/tests/roost/test_gate_ls2_inform_no_reply.py
+- packages/ai-parrot/tests/roost/test_gate_ls3_directory_lookup.py
+- packages/ai-parrot/tests/roost/test_gate_ls4_by_reference.py
+- packages/ai-parrot/tests/roost/test_gate_ls5_single_writer.py
+- packages/ai-parrot/tests/roost/test_salary_flow_end_to_end.py
+- packages/ai-parrot/tests/registry/test_capability_agent_index.py
+- packages/ai-parrot/tests/registry/test_find_capability.py
+- packages/ai-parrot/tests/registry/test_get_instance_pbac.py
+- packages/ai-parrot-integrations/tests/test_matrix_roost_carrier.py
+- packages/ai-parrot-integrations/tests/test_matrix_roost_blackboard.py
+- packages/ai-parrot-integrations/tests/test_matrix_roost_ask_agent.py
 markers: none
 
-> The new `packages/ai-parrot/tests/roost/` and `packages/ai-parrot-integrations/tests/test_matrix_roost_*.py` files are
-> added to this list by `/sdd-task` once they exist (they cannot be declared before creation). `test_gate_ls6_matrix_carrier`
+> The new `tests/roost/` and `test_matrix_roost_*.py` files were added by `/sdd-task` (TASK-4711…4729 create them). `test_gate_ls6_matrix_carrier`
 > is `integration`-marked and env-gated; it is never listed here.
 
 ### Test Data / Fixtures
