@@ -166,3 +166,26 @@ def test_cli_flags_mutually_exclusive_and_exit_codes(monkeypatch: pytest.MonkeyP
     with mock.patch("parrot.self_.doctor.run_doctor", return_value=real_fail):
         result = CliRunner().invoke(cli, ["self", "doctor", "--sdd"])
         assert result.exit_code == 1 and "gh auth login" in result.output
+
+
+def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`git ls-remote` that never answers must not hang the doctor: it degrades to an informational check."""
+    import os
+    import shutil
+
+    real_git = shutil.which("git")
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "git").write_text(
+        f'#!/bin/sh\ncase "$*" in *ls-remote*) sleep 30;; esac\nexec {real_git} "$@"\n', encoding="utf-8"
+    )
+    (shim / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(doctor, "GIT_TIMEOUT_S", 0.5)
+    import time
+
+    started = time.monotonic()
+    result = doctor._check_sdd_git(ready_repo, "dev")
+    assert time.monotonic() - started < 10
+    origin_check = next(c for c in result if c.name == "sdd: base branch on origin")
+    assert origin_check.informational and "timed out" in origin_check.detail

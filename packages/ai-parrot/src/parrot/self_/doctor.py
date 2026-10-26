@@ -148,8 +148,20 @@ def _check_tools_wiki() -> DoctorCheck:
 
 # --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
 
+#: Upper bound for any single ``git`` call the doctor makes (``ls-remote`` over a dead network would hang it).
+GIT_TIMEOUT_S: float = 20.0
+
+
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+    """Run ``git -C root ...`` with a timeout and no credential prompt; a timeout is a non-zero result."""
+    cmd = ["git", "-C", str(root), *args]
+    try:
+        return subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=GIT_TIMEOUT_S,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", f"timed out after {GIT_TIMEOUT_S:g}s")
 
 
 def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
