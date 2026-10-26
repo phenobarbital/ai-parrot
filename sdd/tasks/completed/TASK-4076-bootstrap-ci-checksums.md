@@ -314,11 +314,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Added POSIX --global dry-run leg, soft pwsh -Global -DryRun leg and 'sha256sum -c SHA256SUMS' step to ci.yml install-guide; generated scripts/install/SHA256SUMS; added two wiring tests. test_ci_install_wiring.py 3/3 pass; local global dry-run and sha256sum -c OK; ruff clean. test_install_posix.py::test_posix_script_dry_run fails only because system python is 3.10 (pre-existing env issue); other 14 pass. pwsh leg not exercised locally. Regenerate: cd scripts/install && sha256sum install-parrot.sh install-parrot.ps1 > SHA256SUMS
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Record the regeneration command: `cd scripts/install && sha256sum install-parrot.sh install-parrot.ps1 > SHA256SUMS`.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
