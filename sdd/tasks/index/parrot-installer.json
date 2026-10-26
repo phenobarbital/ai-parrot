@@ -690,7 +690,7 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -703,8 +703,9 @@
       "parallelism_notes": "reads parrot/sdd/_assets populated by TASK-4090, reports via scan from TASK-4070 (parrot/sdd/audit.py); serialized after TASK-4080 (cli/__init__.py _lazy_commands); seeds sdd/config.json via parrot.sdd.config.default_sdd_config (TASK-4299)",
       "assigned_to": null,
       "started_at": "2026-10-26T18:22:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4091-sdd-installer-cli.md"
+      "completed_at": "2026-10-26T20:49:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4091-sdd-installer-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4092",

@@ -1829,10 +1829,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-5-5)
+**Date**: 2026-10-26
+**Notes**: Implemented installer.py (receipt C4, dry-run C5, seeds, C23 gitattributes+ledger hooks, C21 warning, C25 guard-hook rendering + sdd_status guard_hook), cli.py (install/uninstall/status/run, --portable), lazy registration, and 3 test files. Results: test_installer 29 pass, test_sdd_cli 12 pass, test_wheel_only_foreign_repo 6 pass (-m integration, built wheel, PARROT_WHEEL_PATH). Finding outside scope: 'select_tests --run' raises a FileNotFoundError traceback in a foreign repo (no pytest on PATH) instead of a clean error; the C3 scenario drops --run for it.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test scaffolding fixes: _claude_targets excludes seeds; idempotency assertion tightened; REPO_ROOT parents[4]; venv python derived from wheel tag (cp311) instead of 3.12; managed home gets env/dev/.env (navconfig); <base_branch>->dev with dev branch on origin; private bare origin per scenario; multi-exit tolerance (no Traceback) for helpers needing real state; prose forms run --help; select_tests --run dropped.
