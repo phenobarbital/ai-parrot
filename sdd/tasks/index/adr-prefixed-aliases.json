@@ -80,7 +80,7 @@
       "feature_id": "FEAT-760",
       "feature": "adr-prefixed-aliases",
       "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -90,8 +90,9 @@
       "parallelism_notes": "Consumes DecisionConfig.effective_prefixes() from TASK-4818 (wiki/decisions/models.py). Parser grammar is a spec contract, not an implementation dependency.",
       "assigned_to": null,
       "started_at": "2026-10-27T18:10:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4819-adr-prefix-graphindex.md"
+      "completed_at": "2026-10-27T18:23:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4819-adr-prefix-graphindex.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4820",
@@ -100,7 +101,7 @@
       "feature_id": "FEAT-760",
       "feature": "adr-prefixed-aliases",
       "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -111,8 +112,9 @@
       "parallelism_notes": "Consumes normalize_adr_alias/parse_adr known_prefixes signatures from TASK-4817 (parser.py) and effective_prefixes/local_prefix from TASK-4818 (models.py).",
       "assigned_to": null,
       "started_at": "2026-10-27T18:10:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4820-adr-prefix-resolution.md"
+      "completed_at": "2026-10-27T18:23:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4820-adr-prefix-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4821",
