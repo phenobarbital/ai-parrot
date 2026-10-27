@@ -25,21 +25,35 @@ PERIOD = ResolvedPeriod(
 
 
 def _def(source: dict, binding: dict | None = None) -> MetricDefinition:
-    return MetricDefinition.model_validate({
-        "id": "worked_hours", "name": "Worked Hours",
-        "time": {"binding": binding or {"start_placeholder": "firstdate", "end_placeholder": "lastdate"}},
-        "default_shape": {"component": "KPICard", "value_column": "hours"}, "source": source})
+    return MetricDefinition.model_validate(
+        {
+            "id": "worked_hours",
+            "name": "Worked Hours",
+            "time": {"binding": binding or {"start_placeholder": "firstdate", "end_placeholder": "lastdate"}},
+            "default_shape": {"component": "KPICard", "value_column": "hours"},
+            "source": source,
+        }
+    )
 
 
 def _qs(rows=None):
-    return SimpleNamespace(execute_slug=AsyncMock(return_value=SimpleNamespace(
-        rows=rows if rows is not None else [{"hours": 5}], columns=["hours"], applied_conditions={}, truncated=False)))
+    return SimpleNamespace(
+        execute_slug=AsyncMock(
+            return_value=SimpleNamespace(
+                rows=rows if rows is not None else [{"hours": 5}],
+                columns=["hours"],
+                applied_conditions={},
+                truncated=False,
+            )
+        )
+    )
 
 
 async def test_query_slug_executor_request():
     qs = _qs()
-    frame = await QuerySlugExecutor(qs).fetch(_def({"kind": "query_slug", "slug": "flex_hours"}),
-                                              period=PERIOD, dimension=None, filters={}, tenant=None)
+    frame = await QuerySlugExecutor(qs).fetch(
+        _def({"kind": "query_slug", "slug": "flex_hours"}), period=PERIOD, dimension=None, filters={}, tenant=None
+    )
     kwargs = qs.execute_slug.await_args.kwargs
     assert kwargs["placeholders"] == {"firstdate": "2026-10-01", "lastdate": "2026-10-31"}
     assert frame.rows == [{"hours": 5}]
@@ -48,10 +62,10 @@ async def test_query_slug_executor_request():
 
 async def test_query_slug_filters_and_dimension():
     qs = _qs()
-    d = _def({"kind": "query_slug", "slug": "s", "filter": {"a": 1, "b": 2}, "fields": ["hours"],
-              "grouping": ["x"]})
-    await QuerySlugExecutor(qs).fetch(d, period=PERIOD, dimension=DimensionSpec(name="store", column="store_id"),
-                                      filters={"b": 3}, tenant=None)
+    d = _def({"kind": "query_slug", "slug": "s", "filter": {"a": 1, "b": 2}, "fields": ["hours"], "grouping": ["x"]})
+    await QuerySlugExecutor(qs).fetch(
+        d, period=PERIOD, dimension=DimensionSpec(name="store", column="store_id"), filters={"b": 3}, tenant=None
+    )
     kwargs = qs.execute_slug.await_args.kwargs
     assert kwargs["filter"] == {"a": 1, "b": 3}
     assert kwargs["grouping"] == ["x", "store_id"]
@@ -104,20 +118,30 @@ async def test_recipe_executor_refuses_none_pctx():
         await ex.fetch(d, period=PERIOD, dimension=None, filters={}, tenant=None)
 
 
-@pytest.mark.parametrize("path,expected", [
-    ("/payroll_hero/worked_hours_total", [{"hours": 42}]),
-    ("/rows", [{"a": 1}, {"a": 2}]),
-    ("/cols", [{"x": 1, "y": 3}, {"x": 2, "y": 4}]),
-    ("/a~1b", [{"hours": 7}]),
-])
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/payroll_hero/worked_hours_total", [{"hours": 42}]),
+        ("/rows", [{"a": 1}, {"a": 2}]),
+        ("/cols", [{"x": 1, "y": 3}, {"x": 2, "y": 4}]),
+        ("/a~1b", [{"hours": 7}]),
+    ],
+)
 async def test_recipe_executor_pointer_read(path, expected):
-    data_model = {"payroll_hero": {"worked_hours_total": 42}, "rows": [{"a": 1}, {"a": 2}],
-                  "cols": {"x": [1, 2], "y": [3, 4]}, "a/b": 7}
-    runner = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(
-        metadata={"source_envelope": {"dataModel": data_model}})))
+    data_model = {
+        "payroll_hero": {"worked_hours_total": 42},
+        "rows": [{"a": 1}, {"a": 2}],
+        "cols": {"x": [1, 2], "y": [3, 4]},
+        "a/b": 7,
+    }
+    runner = SimpleNamespace(
+        run=AsyncMock(return_value=SimpleNamespace(metadata={"source_envelope": {"dataModel": data_model}}))
+    )
     ex = RecipeExecutor(runner, pctx_provider=lambda: object())
-    d = _def({"kind": "recipe", "recipe_name": "flex", "data_model_path": path, "param_map": {"store": "store_id"}},
-             binding={"start_placeholder": "month", "end_placeholder": "month_end"})
+    d = _def(
+        {"kind": "recipe", "recipe_name": "flex", "data_model_path": path, "param_map": {"store": "store_id"}},
+        binding={"start_placeholder": "month", "end_placeholder": "month_end"},
+    )
     frame = await ex.fetch(d, period=PERIOD, dimension=None, filters={"store": 9}, tenant=None)
     assert frame.rows == expected
     kwargs = runner.run.await_args.kwargs
@@ -133,8 +157,14 @@ def test_semantic_metric_unavailable():
 
 def test_executor_for_dispatch():
     qs = _qs()
-    assert isinstance(executor_for(_def({"kind": "query_slug", "slug": "s"}).source, querysource=qs, runner=None,
-                                   pctx_provider=None), QuerySlugExecutor)
+    assert isinstance(
+        executor_for(_def({"kind": "query_slug", "slug": "s"}).source, querysource=qs, runner=None, pctx_provider=None),
+        QuerySlugExecutor,
+    )
     with pytest.raises(ValueError):
-        executor_for(_def({"kind": "recipe", "recipe_name": "r", "data_model_path": "/x"}).source,
-                     querysource=None, runner=object(), pctx_provider=None)
+        executor_for(
+            _def({"kind": "recipe", "recipe_name": "r", "data_model_path": "/x"}).source,
+            querysource=None,
+            runner=object(),
+            pctx_provider=None,
+        )

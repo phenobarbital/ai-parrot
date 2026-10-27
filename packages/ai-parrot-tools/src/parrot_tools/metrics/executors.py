@@ -1,4 +1,5 @@
 """Source executors: MetricDefinition + period → rows (spec §3 M6)."""
+
 from __future__ import annotations
 
 import logging
@@ -303,9 +304,7 @@ class RecipeExecutor:
             if value and all(isinstance(v, list) for v in value.values()):
                 keys = list(value.keys())
                 length = max(len(v) for v in value.values())
-                return [
-                    {k: (value[k][i] if i < len(value[k]) else None) for k in keys} for i in range(length)
-                ]
+                return [{k: (value[k][i] if i < len(value[k]) else None) for k in keys} for i in range(length)]
             return [dict(value)]
         shape = definition.default_shape
         column = shape.value_column if isinstance(shape, KPICardShape) else "value"
