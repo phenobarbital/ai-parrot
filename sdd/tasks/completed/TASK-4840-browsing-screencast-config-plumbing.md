@@ -429,10 +429,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4840
+- Feature: browsing-playwright-default-and-screencast
+- Implementation SHA: 495af874bd085be5def985b779f4f875cde3d903
+- Closed at (UTC): 2026-10-27T21:39:19+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| summary | Opt-in recording config wired through factory and live session registry; 98 tests passed. |
