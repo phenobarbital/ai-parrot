@@ -275,6 +275,8 @@ tests:
 - packages/ai-parrot-tools/tests/test_materialize_widget_tool.py
 - packages/ai-parrot-tools/tests/querysource/test_build_linked_surface_tool.py
 - packages/ai-parrot-tools/tests/test_publish_surface_tool_linked.py
+- packages/ai-parrot-tools/tests/querysource/test_materialize_widget_roundtrip.py
+- packages/ai-parrot/tests/outputs/a2ui/test_linked_docs.py
 markers: none
 
 ### Test Data / Fixtures
