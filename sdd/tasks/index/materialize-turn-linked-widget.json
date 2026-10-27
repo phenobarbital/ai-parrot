@@ -41,7 +41,7 @@
       "feature_id": "FEAT-757",
       "feature": "materialize-turn-linked-widget",
       "spec": "sdd/specs/materialize-turn-linked-widget.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -49,8 +49,9 @@
       "parallelism_notes": "root task: creates parrot/outputs/a2ui/linked/materialize.py, no in-feature dependency",
       "assigned_to": null,
       "started_at": "2026-10-27T01:49:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4753-materialize-origin-extraction.md"
+      "completed_at": "2026-10-27T01:54:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4753-materialize-origin-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4754",
