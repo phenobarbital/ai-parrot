@@ -75,3 +75,44 @@ async def test_real_playwright_session_produces_webm_recording(tmp_path: Path) -
         assert path.stat().st_size > 0
     finally:
         await toolkit.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("confined", [True, False])
+async def test_recording_override_cannot_escape_files_root(tmp_path: Path, confined: bool) -> None:
+    """Per-call config cannot bypass the recording output boundary."""
+    from parrot_tools.scraping.confine import PathConfinementError
+
+    toolkit = WebBrowsingToolkit(
+        catalog_dir=tmp_path / "catalog",
+        plans_dir=tmp_path / "plans",
+        confine_paths=confined,
+    )
+    with pytest.raises(PathConfinementError, match="recording path"):
+        await toolkit.scrape(
+            "https://example.com",
+            steps=[],
+            browser_config_override={"record_video_dir": str(tmp_path / "outside")},
+        )
+    assert toolkit._session_driver is None
+    assert not (tmp_path / "outside").exists()
+
+
+@pytest.mark.asyncio
+async def test_recording_symlink_escape_rejected_at_start(tmp_path: Path) -> None:
+    """Validate at launch, since a symlink can appear after toolkit construction."""
+    from parrot_tools.scraping.confine import PathConfinementError
+
+    toolkit = WebBrowsingToolkit(
+        catalog_dir=tmp_path / "catalog",
+        plans_dir=tmp_path / "plans",
+        record_video=True,
+    )
+    toolkit.files_root.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (toolkit.files_root / "recordings").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(PathConfinementError, match="recording path"):
+        await toolkit.start()
+    assert toolkit._session_driver is None
+    assert list(outside.iterdir()) == []

@@ -20,7 +20,7 @@ from .models import ScrapingResult
 from .page_snapshot import PageSnapshot, snapshot_from_driver
 from .plan import ScrapingPlan
 from .plan_generator import PlanGenerator
-from .confine import confine_to_files_root
+from .confine import PathConfinementError, confine_to_files_root
 from .plan_io import is_within, load_plan_from_disk, save_plan_to_disk
 from .registry import PlanRegistry
 from .toolkit_models import DriverConfig, PlanSaveResult, PlanSummary
@@ -375,6 +375,15 @@ class WebScrapingToolkit(AbstractToolkit):
         """Where the actions of a confined toolkit may read and write files: ``<plans_dir>/files``."""
         return self._plans_dir / "files"
 
+    def _recording_config(self, config: DriverConfig) -> DriverConfig:
+        """Confine recording writes, including per-call overrides and symlinks."""
+        if config.driver_type != "playwright" or not config.record_video_dir:
+            return config
+        path = Path(config.record_video_dir)
+        if not is_within(path, self.files_root):
+            raise PathConfinementError("recording path outside the permitted directory")
+        return config.merge({"record_video_dir": str(path.resolve())})
+
     # ── Lifecycle ─────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -389,7 +398,7 @@ class WebScrapingToolkit(AbstractToolkit):
         """
         if self._session_based and self._session_driver is None:
             factory = DriverRegistry.get(self._config.driver_type)
-            setup = factory(self._config)
+            setup = factory(self._recording_config(self._config))
             self._session_driver = await setup.get_driver()
             self.logger.info("Session driver started (%s)", self._config.driver_type)
 
@@ -780,7 +789,7 @@ class WebScrapingToolkit(AbstractToolkit):
             refinement ran, returns the result of the FINAL pass (not
             the initial one), regardless of whether it scored higher.
         """
-        config = self._config.merge(browser_config_override)
+        config = self._recording_config(self._config.merge(browser_config_override))
 
         # Raw steps mode — bypass plan resolution
         if steps is not None:
@@ -947,7 +956,7 @@ class WebScrapingToolkit(AbstractToolkit):
             follow_selector=follow_selector,
             follow_pattern=follow_pattern,
             concurrency=concurrency,
-            driver_config=self._config,
+            driver_config=self._recording_config(self._config),
         )
 
         result = await engine.run()
