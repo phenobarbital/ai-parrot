@@ -39,6 +39,7 @@ from parrot.bots.github_reviewer import (
     _WIKI_READ_TOOLS,
     _WIKI_TOOLS_PROMPT,
 )
+from parrot.core.hooks.github_webhook import GitHubWebhookHook
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
@@ -781,6 +782,94 @@ class TestSDDReviewerFoundations:
                 pr_number=42,
                 repository="owner/repo",
             )
+
+
+class TestSDDReviewIntegration:
+    """Integration regressions for selecting SDD requirements during review."""
+
+    @pytest.mark.asyncio
+    async def test_jira_fetch_failure_never_uses_spec(self) -> None:
+        """A Jira key wins even if a feature identifier is also present."""
+        payload = {**_PAYLOAD, "pr_body": "Fixes NAV-1 and FEAT-9001"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_ticket = AsyncMock(return_value=None)
+        reviewer._fetch_spec_requirement = AsyncMock()
+        reviewer._notify_ticket_not_found = AsyncMock(return_value=None)
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome == {"status": "ticket_not_found", "jira_key": "NAV-1", "pr_number": 42}
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+        reviewer.git_toolkit.submit_pr_review.assert_not_called()
+
+        strict = _wire_strict(ticket=None)
+        strict._fetch_spec_requirement = AsyncMock()
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome == {
+            "status": "ticket_not_found",
+            "repository": "owner/repo",
+            "pr_number": 42,
+            "jira_key": "NAV-1",
+        }
+        strict._fetch_spec_requirement.assert_not_awaited()
+        strict.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_review_outcomes_expose_selected_requirement_source(self) -> None:
+        """The selected source overwrites untrusted source metadata from the LLM."""
+        payload = {**_PAYLOAD, "pr_body": "Implements FEAT-9001", "base_ref": "release/next"}
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+        result = PRReviewResult(jira_key="wrong", summary="ready", approve=True, requirement_source="jira")
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._fetch_diff = AsyncMock(return_value=("diff", False, True))
+        reviewer._ask_llm_for_review = AsyncMock(return_value=result)
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert result.requirement_source == "sdd_spec"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-9001", "release/next")
+        reviewer._fetch_ticket.assert_not_awaited()
+        assert reviewer.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        strict._fetch_ticket = AsyncMock()
+        strict._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert strict._ask_llm_for_review.return_value.requirement_source == "sdd_spec"
+        strict._fetch_ticket.assert_not_awaited()
+        assert strict.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+    def test_webhook_payloads_keep_the_base_ref_for_review_events(self) -> None:
+        """Opened, reopened and synchronized payloads retain the supplied base branch."""
+        raw_payload = {
+            "repository": {"full_name": "owner/repo", "owner": {"login": "owner"}, "name": "repo"},
+            "pull_request": {
+                "number": 42,
+                "html_url": "https://github.com/owner/repo/pull/42",
+                "title": "Implements FEAT-9001",
+                "body": "Implements FEAT-9001",
+                "head": {"sha": "head", "ref": "feature"},
+                "base": {"ref": "release/next"},
+                "user": {"login": "octocat"},
+            },
+        }
+
+        for action in ("opened", "reopened", "synchronize"):
+            payload = GitHubWebhookHook._build_event_payload(
+                "pull_request", f"pr_{action}", {**raw_payload, "action": action}, action
+            )
+            assert payload["base_ref"] == "release/next"
 
 
 class TestSDDSpecRequirements:

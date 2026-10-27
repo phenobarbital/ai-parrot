@@ -1591,6 +1591,15 @@ class GitHubReviewer(Agent):
             }
 
         ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
+        requirement_source = "jira"
+        ticket = None
+        if not ticket_key and self.enable_sdd_spec_fallback:
+            feature_id = self._extract_feature_id(payload.get("pr_body") or "", payload.get("pr_title") or "")
+            if feature_id:
+                ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
+                if ticket is not None:
+                    ticket_key = feature_id
+                    requirement_source = "sdd_spec"
         if not ticket_key:
             self.logger.info(
                 "PR %s#%s does not reference a %s ticket; skipping.",
@@ -1609,7 +1618,8 @@ class GitHubReviewer(Agent):
 
         wiki_refresh = self._start_wiki_refresh(repo)
 
-        ticket = await self._fetch_ticket(ticket_key)
+        if requirement_source == "jira":
+            ticket = await self._fetch_ticket(ticket_key)
         if ticket is None:
             self.logger.warning(
                 "GitHubReviewer: ticket %s not found for PR %s#%s; review aborted.",
@@ -1643,6 +1653,7 @@ class GitHubReviewer(Agent):
                     diff_available=diff_available,
                     use_wiki=wiki_leased,
                 )
+            result.requirement_source = requirement_source
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "GitHubReviewer: review crashed for %s#%s (%s): %s",
@@ -1668,6 +1679,7 @@ class GitHubReviewer(Agent):
             "pr_number": pr_number,
             "repository": repo,
             "jira_key": ticket_key,
+            "requirement_source": requirement_source,
             "approve": result.approve,
             "discrepancies": [d.model_dump() for d in result.discrepancies],
             "summary": result.summary,
@@ -3028,6 +3040,15 @@ class GitHubReviewer(Agent):
         repo = payload.get("repository") or self.repository
 
         ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
+        requirement_source = "jira"
+        ticket = None
+        if not ticket_key and self.enable_sdd_spec_fallback:
+            feature_id = self._extract_feature_id(payload.get("pr_body") or "", payload.get("pr_title") or "")
+            if feature_id:
+                ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
+                if ticket is not None:
+                    ticket_key = feature_id
+                    requirement_source = "sdd_spec"
         if not ticket_key:
             outcome: Dict[str, Any] = {"status": "no_ticket", "repository": repo, "pr_number": pr_number}
             comment = await self._notify_missing_ticket(repo=repo, pr_number=pr_number, payload=payload)
@@ -3036,7 +3057,8 @@ class GitHubReviewer(Agent):
             return outcome
 
         wiki_refresh = self._start_wiki_refresh(repo)
-        ticket = await self._fetch_ticket(ticket_key, fields=self._jira_strict_fields)
+        if requirement_source == "jira":
+            ticket = await self._fetch_ticket(ticket_key, fields=self._jira_strict_fields)
         if ticket is None:
             await self._await_wiki_refresh(wiki_refresh)
             return {
@@ -3060,6 +3082,7 @@ class GitHubReviewer(Agent):
                 diff_available=diff_available,
                 use_wiki=wiki_leased,
             )
+        result.requirement_source = requirement_source
 
         verdict = self._merge_verdict(result, checks)
         outcome = {
@@ -3067,6 +3090,7 @@ class GitHubReviewer(Agent):
             "repository": repo,
             "pr_number": pr_number,
             "jira_key": ticket_key,
+            "requirement_source": requirement_source,
             "approve": result.approve,
             "discrepancies": [d.model_dump() for d in result.discrepancies],
             "summary": result.summary,
