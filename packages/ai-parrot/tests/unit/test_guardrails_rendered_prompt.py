@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4837 — rendered system prompt capture for OUTPUT guardrails."""
+
 import asyncio
 import inspect
 from types import SimpleNamespace
