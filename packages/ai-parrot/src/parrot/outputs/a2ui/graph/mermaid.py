@@ -3,8 +3,8 @@
 Mermaid is a deterministic IMPORT/EXPORT codec only — :class:`~parrot.
 outputs.a2ui.graph.models.GraphSpec` stays the single wire vocabulary
 (spec §7 "Patterns to Follow"). This module hand-writes a tokenizer/parser
-for a deliberately small subset of three mermaid dialects (``flowchart``,
-``stateDiagram-v2``, ``sequenceDiagram``); no external parsing dependency
+for a deliberately small subset of four mermaid dialects (``flowchart``,
+``stateDiagram-v2``, ``sequenceDiagram``, C4); no external parsing dependency
 is introduced (spec Non-Goals — no ``mermaid``/``lark``/``pyparsing``, etc.).
 
 Supported subset (spec §3 Module 3):
@@ -22,6 +22,8 @@ Supported subset (spec §3 Module 3):
   (``GraphSpec.edges`` is already an ordered list — no separate ordering
   field is needed or exists on :class:`~parrot.outputs.a2ui.graph.models.
   GraphEdge`).
+* **C4**: ``C4Context`` / ``C4Container`` / ``C4Component`` / ``C4Dynamic``
+  source is emitted by :mod:`.mermaid_c4`.
 
 ``%%`` lines are comments (ignored); ``%%{...`` init directives,
 ``classDef``/``click``/``style``/``linkStyle``, and sequence
@@ -215,6 +217,11 @@ def to_mermaid(spec: GraphSpec) -> str:
     Returns:
         Mermaid source text (trailing newline included).
     """
+    if spec.kind == "c4":
+        # Function-local: mermaid_c4 imports this module's shared helpers.
+        from .mermaid_c4 import to_mermaid_c4
+
+        return to_mermaid_c4(spec)
     if spec.kind == "sequence":
         return _emit_sequence(spec)
     if spec.kind == "state":
