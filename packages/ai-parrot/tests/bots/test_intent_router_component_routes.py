@@ -284,9 +284,11 @@ class TestAskWiring:
         source = self._DATA_SOURCE.read_text(encoding="utf-8")
 
         assert 'a2ui_component = kwargs.pop("a2ui_component", None)' in source
-        assert "if a2ui_component:" in source
+        assert "if a2ui_component and not is_inline_component(a2ui_component):" in source
+        assert "if a2ui_component and output_mode == OutputMode.DEFAULT:" in source
         assert "set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))" in source
         assert "elif output_mode == OutputMode.DEFAULT:" in source
+        assert "elif a2ui_component:" in source  # explicit output_mode wins over the hint (G2)
         assert "_resolved_mode = await self._resolve_output_mode(question, ctx)" in source
 
     def test_a2ui_component_uses_catalog_prompt_and_model(self):

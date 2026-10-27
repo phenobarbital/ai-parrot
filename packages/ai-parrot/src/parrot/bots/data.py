@@ -28,7 +28,7 @@ from .agent import BasicAgent
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..registry.routing.route_bank import resolve_route_banks
-from parrot.registry.routing.route_labels import OutputShape, get_component_hint, set_output_shape
+from parrot.registry.routing.route_labels import OutputShape, get_component_hint, is_inline_component, set_output_shape
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
@@ -1436,8 +1436,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # after the None->DEFAULT normalization above and only when the
             # caller did not specify a mode (precedence: explicit > router >
             # default). No-op unless a routing mixin (IntentRouterMixin) is present.
-            if a2ui_component:
+            if a2ui_component and not is_inline_component(a2ui_component):
+                # G3: an unknown / action-bearing component must never reach the
+                # prompt/model builders (they raise KeyError); degrade to the
+                # normal flow instead.
+                self.logger.warning(
+                    "a2ui_component=%r is not an inline-capable component; ignoring the hint", a2ui_component
+                )
+                a2ui_component = None
+            if a2ui_component and output_mode == OutputMode.DEFAULT:
                 output_mode = set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))
+            elif a2ui_component:
+                # G2: an explicit output_mode is never overridden by the hint.
+                a2ui_component = None
             elif output_mode == OutputMode.DEFAULT:
                 _resolved_mode = await self._resolve_output_mode(question, ctx)
                 if _resolved_mode is not None:
