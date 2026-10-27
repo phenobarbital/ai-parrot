@@ -321,7 +321,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -333,8 +333,9 @@
       "parallelism_notes": "registers MetricsToolkit from TASK-4852 (parrot_tools/metrics/toolkit.py) in TOOL_REGISTRY; exports MetricRoutingMixin from TASK-4853 (bots/mixins/metric_routing.py); mounts MetricDefinitionsHandler from TASK-4855 (handlers/metric_definitions.py) in manager.py",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4856-metrics-wiring-and-docs.md"
+      "completed_at": "2026-10-27T23:45:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4856-metrics-wiring-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

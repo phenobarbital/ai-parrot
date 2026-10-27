@@ -2094,3 +2094,5 @@
 {"event_id":"842135ace999","kind":"task.closed","subject":"task:TASK-4845","actor":"agent:close_task.sh","ts":"2026-10-27T23:40:32.358191+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
 {"event_id":"daf17ce9b4ad","kind":"task.closed","subject":"task:TASK-4852","actor":"agent:close_task.sh","ts":"2026-10-27T23:40:32.672414+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
 {"event_id":"2c1cfefb4e36","kind":"task.closed","subject":"task:TASK-4853","actor":"agent:close_task.sh","ts":"2026-10-27T23:40:32.980496+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
+{"event_id":"edf43c61dee1","kind":"task.closed","subject":"task:TASK-4862","actor":"agent:close_task.sh","ts":"2026-10-27T23:43:59.206471+00:00","payload":{"feature":"ledger-outbox-integration","verification":"verified"}}
+{"event_id":"5854b4a4876e","kind":"task.closed","subject":"task:TASK-4856","actor":"agent:close_task.sh","ts":"2026-10-27T23:45:06.695786+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
