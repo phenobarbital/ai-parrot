@@ -55,8 +55,7 @@ def _footprint(
     member_width = min(len(members), shape_in_row)
     member_rows = (len(members) + shape_in_row - 1) // shape_in_row
     child_footprints = [
-        _footprint(child.id, child.nodes, children, shape_in_row, depth + 1)
-        for child in children.get(group_id, [])
+        _footprint(child.id, child.nodes, children, shape_in_row, depth + 1) for child in children.get(group_id, [])
     ]
     child_footprints = [footprint for footprint in child_footprints if footprint != (0, 0)]
 
@@ -72,10 +71,7 @@ def _place(spec: GraphSpec, shape_in_row: int, boundary_in_row: int) -> dict[str
     """Return integer ``(rank_slot, cross_slot)`` coordinates for every node."""
     slots: dict[str, tuple[int, int]] = {}
     nodes_by_id = {node.id: node for node in spec.nodes}
-    tier_nodes = {
-        tier: [node.id for node in spec.nodes if _tier_of(node) == tier]
-        for tier in (0, 1, 2)
-    }
+    tier_nodes = {tier: [node.id for node in spec.nodes if _tier_of(node) == tier] for tier in (0, 1, 2)}
 
     def place_row(nodes: list[str], rank_origin: int) -> int:
         for index, node_id in enumerate(nodes):
@@ -98,9 +94,7 @@ def _place(spec: GraphSpec, shape_in_row: int, boundary_in_row: int) -> dict[str
 
     def place_group(group: GraphGroup, rank_origin: int, cross_origin: int, depth: int) -> None:
         members = [
-            member_id
-            for member_id in group.nodes
-            if member_id in nodes_by_id and _tier_of(nodes_by_id[member_id]) == 1
+            member_id for member_id in group.nodes if member_id in nodes_by_id and _tier_of(nodes_by_id[member_id]) == 1
         ]
         for index, member_id in enumerate(members):
             row, column = divmod(index, shape_in_row)
@@ -126,9 +120,7 @@ def _place(spec: GraphSpec, shape_in_row: int, boundary_in_row: int) -> dict[str
         )
     for group in children.get(None, []):
         members = [
-            member_id
-            for member_id in group.nodes
-            if member_id in nodes_by_id and _tier_of(nodes_by_id[member_id]) == 1
+            member_id for member_id in group.nodes if member_id in nodes_by_id and _tier_of(nodes_by_id[member_id]) == 1
         ]
         footprint = _footprint(group.id, members, children, shape_in_row, 1)
         if footprint != (0, 0):

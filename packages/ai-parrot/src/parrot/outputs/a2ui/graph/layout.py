@@ -127,7 +127,7 @@ def _break_cycles(
         adjacency[from_id].append(to_id)
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {node_id: WHITE for node_id in node_ids}
+    color = dict.fromkeys(node_ids, WHITE)
     back_edges: set[tuple[str, str]] = set()
 
     def _visit(start: str) -> None:
@@ -367,18 +367,20 @@ def _group_boxes(spec: GraphSpec, positions: dict[str, Position]) -> dict[str, t
             if not member_positions and not child_boxes:
                 continue
 
-            min_x = min(
-                [position.x for position in member_positions] + [box[0] for box in child_boxes]
-            ) - _GROUP_PADDING
-            min_y = min(
-                [position.y for position in member_positions] + [box[1] for box in child_boxes]
-            ) - _GROUP_PADDING
-            max_x = max(
-                [position.x for position in member_positions] + [box[0] + box[2] for box in child_boxes]
-            ) + _GROUP_PADDING
-            max_y = max(
-                [position.y for position in member_positions] + [box[1] + box[3] for box in child_boxes]
-            ) + _GROUP_PADDING
+            min_x = (
+                min([position.x for position in member_positions] + [box[0] for box in child_boxes]) - _GROUP_PADDING
+            )
+            min_y = (
+                min([position.y for position in member_positions] + [box[1] for box in child_boxes]) - _GROUP_PADDING
+            )
+            max_x = (
+                max([position.x for position in member_positions] + [box[0] + box[2] for box in child_boxes])
+                + _GROUP_PADDING
+            )
+            max_y = (
+                max([position.y for position in member_positions] + [box[1] + box[3] for box in child_boxes])
+                + _GROUP_PADDING
+            )
             boxes[group.id] = (min_x, min_y, max_x - min_x, max_y - min_y)
 
         if not resolved_any:
