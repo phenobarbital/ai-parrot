@@ -314,4 +314,4 @@ See the test blueprints above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 101s. CLI `ledger outbox prepare|status|integrate` + `export-log --stage` rejection; merge-tier validation green. Diff reviewed, no corrections.
