@@ -153,6 +153,7 @@ async def test_postgres_sink_inserts_all_ddl_columns_with_fake_pool() -> None:
     assert "ON CONFLICT (entry_id) DO NOTHING" in query
     assert len(args) == 16
     assert args[0] == signed.entry_id
+    assert args[1] == signed.created_at and isinstance(args[1], datetime)
     assert json.loads(args[2]) == signed.caller.model_dump(mode="json")
     assert json.loads(args[10]) == signed.cost.model_dump(mode="json")
     assert args[14] == signed.signature

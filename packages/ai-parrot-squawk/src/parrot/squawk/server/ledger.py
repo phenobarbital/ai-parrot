@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import deque
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from parrot.interagent import ServedLedgerEntry
@@ -109,7 +110,7 @@ def postgres_ledger_sink(dsn_or_pool: str | Any, *, table: str = "squawk_served_
             await connection.execute(
                 query,
                 row["entry_id"],
-                row["created_at"],
+                datetime.fromisoformat(row["created_at"]),  # asyncpg needs a datetime for timestamptz
                 json.dumps(row["caller"]),
                 row["cap_id"],
                 row["category"],
