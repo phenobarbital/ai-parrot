@@ -30,6 +30,7 @@ from .resolution import find_field_by_uid, resolve_answer, resolve_rule_referenc
 from .schema import (
     BUILTIN_METADATA_SOURCE_NAMES,
     FormField,
+    FormDialect,
     FormMetadataField,
     FormSchema,
     FormSection,
@@ -57,11 +58,31 @@ from .voice_answer import (
     unwrap_voice,
     wrap_voice,
 )
+from .audit_trail import (
+    DEFAULT_MAX_BYTES,
+    AuditDetail,
+    AuditTrailConfig,
+    CheckId,
+    CheckOutcome,
+    CheckRecord,
+    FieldTrace,
+    SkipReason,
+    ValidationTrace,
+)
+from .public_access import (
+    AvailabilityState,
+    CompletionAction,
+    PublicAccessConfig,
+    RejectionReason,
+    evaluate_open,
+    normalize_key_value,
+)
 from .llm_validation import (
     LLMValidationConfig,
     PlausibilityReport,
     PlausibilityVerdict,
     llm_validation_enabled,
+    implausible_fields,
 )
 from .voice import (
     FieldVoiceMeta,
@@ -91,10 +112,27 @@ __all__ = [
     "is_sensitive",
     "field_voice_meta",
     "resolve_voice_config",
+    "AuditDetail",
+    "AuditTrailConfig",
+    "CheckId",
+    "CheckOutcome",
+    "CheckRecord",
+    "DEFAULT_MAX_BYTES",
+    "FieldTrace",
+    "SkipReason",
+    "ValidationTrace",
     "LLMValidationConfig",
+    # Public response controls (FEAT-730)
+    "PublicAccessConfig",
+    "CompletionAction",
+    "AvailabilityState",
+    "RejectionReason",
+    "evaluate_open",
+    "normalize_key_value",
     "PlausibilityVerdict",
     "PlausibilityReport",
     "llm_validation_enabled",
+    "implausible_fields",
     # Auth
     "AuthConfig",
     "NoAuth",
@@ -127,6 +165,7 @@ __all__ = [
     "FormSchema",
     "FormType",
     "UnknownFieldsPolicy",
+    "FormDialect",
     "FormMetadataField",
     "MetadataSource",
     "BUILTIN_METADATA_SOURCE_NAMES",

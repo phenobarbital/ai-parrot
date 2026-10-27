@@ -36,6 +36,29 @@ def test_cli_export_log_stage_runs_git_add(tmp_path: Path, monkeypatch) -> None:
     assert staged.stdout.strip() == "sdd/ledger/events.jsonl"
 
 
+def test_cli_export_log_stage_reports_git_add_failure(tmp_path: Path, monkeypatch) -> None:
+    """A failed staged export reports git's error without a traceback."""
+    monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))
+    dest = tmp_path / "sdd" / "ledger" / "events.jsonl"
+    service = MagicMock(spec=LedgerService)
+    service.export_shared_log = AsyncMock(
+        return_value=SharedLogExportReport(dest=dest, created=True, added=1, skipped_local_only=0, total_committed=1)
+    )
+
+    def fail_git_add(command: list[str], **kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, command, stderr="permission denied")
+
+    with (
+        patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service),
+        patch("parrot.knowledge.wiki.cli.subprocess.run", side_effect=fail_git_add),
+    ):
+        result = CliRunner().invoke(ledger, ["export-log", "--repo-root", str(tmp_path), "--stage"])
+
+    assert result.exit_code == 1
+    assert "git add failed: permission denied" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_cli_import_log_outputs_and_exit_codes(tmp_path: Path, monkeypatch) -> None:
     """Import prints no-op/results/conflicts and exits two when its index is busy."""
     monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))

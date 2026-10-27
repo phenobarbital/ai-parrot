@@ -9,6 +9,7 @@ Replaces the hand-rolled ``git worktree add`` blocks that used to live in
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import shutil
@@ -20,6 +21,29 @@ from typing import Sequence
 from parrot.sdd.config import load_sdd_config
 from parrot.sdd.scripts.brief_meta import brief_worktree_plan
 from parrot.sdd.scripts.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
+
+
+
+def _load_native_artifacts():
+    """Load ``native_artifacts.py`` by file path (stdlib + pydantic only).
+
+    Loaded standalone so the sync never depends on the Cython ``parrot.utils.types``
+    artifact this command exists to provide (FEAT-722).
+    """
+    name = "_parrot_native_artifacts"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[2] / "flows" / "dev_loop" / "native_artifacts.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_native = _load_native_artifacts()
+NativeSyncReport = _native.NativeSyncReport
+sync_native_artifacts = _native.sync_native_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +316,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--no-sync", action="store_true", help="Skip fetching origin/<base_branch>.")
     parser.add_argument("--dry-run", action="store_true", help="Resolve and report without mutating git.")
     parser.add_argument("--json", action="store_true", help="Output JSON instead of bare path.")
+    parser.add_argument(
+        "--no-native-sync",
+        action="store_true",
+        help="Do not copy declared native build artifacts into the worktree (FEAT-722).",
+    )
+    parser.add_argument(
+        "--no-autobuild",
+        action="store_true",
+        help="Copy native artifacts that exist, but never build a missing one (FEAT-722).",
+    )
 
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
@@ -353,6 +387,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             dry_run=args.dry_run,
         )
 
+        native = NativeSyncReport(enabled=False)
+        if not args.dry_run and not args.no_native_sync:
+            try:
+                native = sync_native_artifacts(
+                    main_root=repo_root,
+                    target=path,
+                    autobuild=not args.no_autobuild,
+                )
+            except Exception as exc:  # never fail worktree creation (FEAT-722)
+                native = NativeSyncReport(enabled=False, warnings=[f"native artifact sync failed: {exc}"])
+        for warning in native.warnings:
+            # stderr ONLY: stdout is captured as the worktree path by callers.
+            sys.stderr.write(f"warning: {warning}\n")
+
         if args.json:
             print(
                 json.dumps(
@@ -366,6 +414,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "worktree_path": str(path),
                         "base_ref": plan.base_ref,
                         "created": created,
+                        "native": {
+                            "enabled": native.enabled,
+                            "copied": native.copied,
+                            "skipped": native.skipped,
+                            "built": native.built,
+                            "missing": [entry.model_dump() for entry in native.missing],
+                            "warnings": native.warnings,
+                        },
                     }
                 )
             )

@@ -186,6 +186,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         the base configuration completes.
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
@@ -762,6 +764,12 @@ class BasicAgent(Chatbot, NotificationMixin):
             if mode == "verbatim":
                 speakable_text = self._to_speakable(report)
             else:
+                if not self.speakers:
+                    raise ValueError(
+                        f"{type(self).__name__}.speakers is empty; script mode needs at least "
+                        "one speaker definition to pick a narrator. Set `speakers` on the "
+                        "agent class or use speech_mode='verbatim'."
+                    )
                 speaker_data = dict(next(iter(self.speakers.values())))
                 speaker_data["gender"] = speaker_data.get("gender", "neutral").lower()
                 narrator = FictionalSpeaker(**speaker_data)
@@ -829,6 +837,12 @@ class BasicAgent(Chatbot, NotificationMixin):
         # shared by every instance, so it must never be mutated here.
         if num_speakers < 1:
             raise ValueError(f"num_speakers must be >= 1 (got {num_speakers}).")
+        if not self.speakers:
+            raise ValueError(
+                f"{type(self).__name__}.speakers is empty; script mode needs at least "
+                "one speaker definition. Set `speakers` on the agent class or use "
+                "speech_mode='verbatim'."
+            )
         definitions = list(self.speakers.values())
         if len(definitions) > num_speakers:
             self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")

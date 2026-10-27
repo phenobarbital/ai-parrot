@@ -1,0 +1,13 @@
+- Async-first Python, aiohttp, Pydantic v2, uv workspace under packages/.
+- The deterministic trace must be collected additively: the return signature of
+  FormValidator.validate_field (list[str]) must not change and its callers must not
+  break. An explicitly passed optional collector, never an implicit ContextVar.
+- Every channel (HTTP, A2UI, MS Teams, Telegram, audio) must inherit the trace by
+  construction, taken from the ValidationResult the shared SubmissionPipeline already
+  produces -- not re-implemented per channel.
+- A 200-field form at roughly 8 checks per field must not overflow the stored row:
+  a hard size cap with an explicit truncation marker is required.
+- The trace must be reconstructable: a reader must be able to re-derive which checks
+  those were, and against which exact ruleset version.
+- This is a follow-on to FEAT-728 (LLM plausibility enforcement policy), which is
+  already merged and closed.

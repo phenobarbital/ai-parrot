@@ -1,66 +1,71 @@
-# TASK-4466: Apache Ossie 0.1.1 document validation (M4 — ossie)
+# TASK-4466: Vendored Ossie 0.1.1 validation (M4 import boundary)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: medium
-**Estimated effort**: S (< 2h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4464
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 4 (ossie part) + AC15: Apache Ossie 0.1.1 documents are validated against a vendored JSON Schema before sidemantic's importer sees them; a 0.2 document is rejected, not coerced (§7).
-
----
+Spec rev 0.4, §3 M4; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Vendor the Apache Ossie 0.1.1 JSON Schema at `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json`.
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py`: `OSSIE_SPEC_VERSION`, `is_ossie_document`, `validate_ossie_document`.
-- Add a valid fixture `packages/ai-parrot-semantic/tests/fixtures/ossie/orders.ossie.json` (the `orders` model of spec §4 Test Data) and test it.
+- Vendor the official Ossie 0.1.1 JSON Schema with provenance; consult original format documentation only, never sidemantic source or its importer.
+- Implement is_ossie_document and validate_ossie_document; fail with first error path on invalid/version-mismatched documents. Valid fixture demonstrates physical columns and measure input needed by the loader.
+- Keep validation separate from lowering; typed graph construction belongs to the loader. Package data inclusion is provided by the skeleton task.
 
-**NOT in scope**: loading the document into sidemantic (TASK-4467).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json` | CREATE | vendored Ossie 0.1.1 JSON Schema |
-| `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py` | CREATE | detection + validation |
-| `packages/ai-parrot-semantic/tests/fixtures/ossie/orders.ossie.json` | CREATE | valid 0.1.1 fixture |
-| `packages/ai-parrot-semantic/tests/test_ossie.py` | CREATE | schema tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/fixtures/ossie/orders.ossie.json` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_ossie.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-import jsonschema                                  # declared by TASK-4463 (jsonschema>=4.20)
-from importlib.resources import files              # stdlib — load the vendored schema from package data
-from parrot.semantic.errors import SemanticPolicyError   # TASK-4464
+from .errors import SemanticPolicyError
+from __future__ import annotations
+from functools import lru_cache
+from importlib.resources import files
+from pathlib import Path
+from typing import Any
+import json
+import jsonschema
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
-```python
-# no existing core signature is used by this task
-```
+
+No existing project symbol is extended; consume only dependency-created satellite contracts and the installed libraries below.
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2))
+
+- Consumer-specific evidence: SemanticPolicyError from errors.py
 
 ### Does NOT Exist
-- ~~An Apache Ossie Python SDK on PyPI~~ — `ossie` / `apache-ossie` / `osi-spec` do not exist; the schema is vendored.
-- ~~Network access at test time~~ — the schema is read from package data only.
 
----
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -89,34 +94,32 @@ from parrot.semantic.errors import SemanticPolicyError   # TASK-4464
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Obtain the official 0.1.1 schema file from the Apache Ossie repository (tagged 0.1.1) and record its source URL + commit in the Completion Note. If it cannot be obtained, STOP and mark the task `done-with-issues` — do not hand-write a schema.
-- `is_ossie_document` keys off the document's declared spec-version field as named by the schema (read it from the schema, do not guess).
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Vendor the schema file — *why*: no SDK exists (spec §6 Does NOT Exist).
-2. Write `ossie.py` — *why*: the loader (TASK-4467) calls it before sidemantic.
-3. Write the fixture + tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json` (CREATE)
+
+```json
+{"$comment": "FILL IN: vendor the complete official Ossie 0.1.1 JSON Schema; preserve its declared draft, version and provenance. No generated substitute schema."}
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py` (CREATE)
+
 ```python
 """Apache Ossie 0.1.1 detection and validation against the vendored JSON Schema."""
 from __future__ import annotations
@@ -155,72 +158,70 @@ def validate_ossie_document(doc: dict) -> None:
     #          "$schema" names) -> sorted(iter_errors) by path; raise on the first
     raise NotImplementedError
 ```
-**Why**: spec §3 M4 skeleton; `files()` reads package data shipped via `[tool.setuptools.package-data]` (TASK-4463).
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/fixtures/ossie/orders.ossie.json` (CREATE)
+
+```json
+{"$comment": "FILL IN: a valid official Ossie 0.1.1 orders fixture with physical columns and measure inputs; verify using the vendored schema, never a sidemantic importer."}
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_ossie.py` (CREATE)
+
+```python
+"""Regression contract: Vendored Ossie 0.1.1 validation (M4 import boundary)."""
+from pathlib import Path
+import pytest
+
+
+def test_official_fixture_and_version(tmp_path: Path) -> None:
+    """Verify official fixture and version."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_invalid_document_reports_path(tmp_path: Path) -> None:
+    """Verify invalid document reports path."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### FILL IN checklist
-- [ ] `is_ossie_document` marker — bounded by the vendored schema.
-- [ ] `validate_ossie_document` error codes — `ossie_version` / `ossie_invalid`.
-- [ ] Schema provenance in the Completion Note.
 
----
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/fixtures/ossie/orders.ossie.json` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_ossie.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] `test_ossie_schema_validation` passes: fixture validates; a doc missing a required field fails with its path; a `0.2.0` doc fails with `ossie_version` (AC15).
-
----
+- [ ] Vendor the official Ossie 0.1.1 JSON Schema with provenance; consult original format documentation only, never sidemantic source or its importer.
+- [ ] Implement is_ossie_document and validate_ossie_document; fail with first error path on invalid/version-mismatched documents. Valid fixture demonstrates physical columns and measure input needed by the loader.
+- [ ] Keep validation separate from lowering; typed graph construction belongs to the loader. Package data inclusion is provided by the skeleton task.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
 
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
 - `pytest packages/ai-parrot-semantic/tests/test_ossie.py -q`
-
----
 
 ## Test Specification
 
-```python
-# packages/ai-parrot-semantic/tests/test_ossie.py
-import json
-from pathlib import Path
-import pytest
-from parrot.semantic.ossie import validate_ossie_document, is_ossie_document
-from parrot.semantic.errors import SemanticPolicyError
-
-FIX = Path(__file__).parent / "fixtures/ossie/orders.ossie.json"
-
-
-def test_ossie_schema_validation():
-    doc = json.loads(FIX.read_text())
-    assert is_ossie_document(doc)
-    validate_ossie_document(doc)
-    # FILL IN: drop a required key -> SemanticPolicyError with details["path"]; bump version -> code "ossie_version"
-```
-
----
+- `test_official_fixture_and_version`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_invalid_document_reports_path`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4466 — Apache Ossie 0.1.1 document validation (M4 — ossie)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4466 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4466` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

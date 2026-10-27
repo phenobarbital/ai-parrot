@@ -29,7 +29,7 @@ parrot sdd run ensure_worktree --slug <slug> --brief-key <KEY> --base-branch <br
 
 `ensure()` clears the auto-set upstream of a fresh worktree branch (FEAT-698), so the first push is an explicit `git push -u origin <branch>`.
 
-- Created by whoever implements: `/sdd-start`, `sdd-worker`, and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
+- Created by whoever implements: `/sdd-start`, `sdd-worker`, `/sdd-fix` (Fast lane, via `--brief-key <ledger-short-id> --base-branch <base_branch>`), and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
 - **Never** `claude --worktree` (it branches from `main`, which has no SDD artifacts) and never hand-build `git worktree add` for SDD work.
 - Skip the worktree entirely for docs-only changes, single-commit fixes, single-task specs and brainstorms — work on a plain branch.
 
@@ -50,6 +50,7 @@ inside `<path>`* — never in the primary checkout.
 
 - Run git as `git -C <path> ...` (or `cd` in). Small commits, one task per commit, and **push early** (`git push -u origin <branch>`): other sessions may merge or `reset --hard` the shared tree, and only pushed commits are safe.
 - Run commands with the environment your repository documents (`sdd/CONVENTIONS.md` § Repository layout), and never reinstall a shared environment from inside a worktree.
+- Compiled artifacts arrive with the worktree: `ensure_worktree` copies the native build artifacts a repository declares (for example under `[tool.parrot.worktree]` in its root `pyproject.toml`) from the main checkout on create and on reuse, and builds a missing one automatically. Never hand-copy `.so` files and never run `maturin develop` to repair a tree — it rewrites the shared environment. If a warning says a build failed, run the repository's documented native build yourself. Opt out with `--no-native-sync` / `--no-autobuild`.
 - Shared environments are read/execute-only for worktree agents. Use installed tools directly or `uv run --no-sync`; `uv add --no-sync` may update scoped dependency declarations without installing. Dependency installation requires a real task-local environment with an explicit interpreter target, or a controlled installation by the main-checkout operator. Agents must not switch to the main checkout to perform that installation themselves.
 - SDD in-process commands and native Claude Bash hooks use Bubblewrap filesystem protection. The checkout, Git metadata, the primary checkout's `.claude/worktrees/` (so `/sdd-done` can add the ledger-snapshot worktree and remove the feature worktree from inside it) and the primary checkout's `.parrot/ledger/` (so `wikitoolkit ledger open/claim/close` work from inside a worktree) are writable; the rest of the primary checkout and shared environments are mounted read-only, with private temporary storage — except Claude Code's scratchpad root (`/tmp/claude-<uid>`), which is bound back in so the session scratchpad persists across Bash calls. Missing Bubblewrap or denied namespaces must stop execution, never trigger an unsandboxed retry. Other CLI hosts must provide equivalent protection. Command allowlists and prompt rules alone do not guarantee this policy.
 - Run the tests your task names; do not start with a full baseline sweep.

@@ -28,7 +28,7 @@ HOST_ORDER: tuple[str, ...] = ("claude", "codex", "google")
 #: (git pathspec glob relative to the repo root, hosts) — see the task's mapping table.
 #: NEVER list `codebase-conventions.md` here (C10: ai-parrot's rulebook does not ship).
 ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (".claude/commands/sdd-*.md", ("claude",)),
+    (".claude/commands/sdd-*.md", HOST_ORDER),                        # codex/google skills point at the command bodies
     (".claude/agents/sdd-*.md", ("claude",)),
     (".claude/hooks/sdd-worker-format.sh", ("claude",)),
     (".claude/rules/worktree-management.md", ("claude",)),
@@ -41,6 +41,15 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sdd/WORKFLOW.md", HOST_ORDER),
     ("sdd/CONVENTIONS.md", HOST_ORDER),                               # C10 — seed, see SEED_TARGETS
 )
+#: Hand-maintained, repo-neutral assets that exist ONLY in the wheel (their repo-side originals name monorepo paths,
+#: so they cannot be copied): (install target, asset source under ``_assets/``, hosts). The asset file is the source of
+#: truth — ``--write`` never copies over or deletes them; the monorepo-path gates still scan their bytes.
+PACKAGED_ONLY: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (".claude/agents/code-reviewer.md", "claude/agents/code-reviewer.md", ("claude",)),
+    (".claude/agents/qa-runner.md", "claude/agents/qa-runner.md", ("claude",)),
+    ("docs/sdd/CODEX.md", "sdd/CODEX.md", ("codex", "google")),
+)
+PACKAGED_SOURCES: frozenset[str] = frozenset(source for _target, source, _hosts in PACKAGED_ONLY)
 #: rev 0.5 C22 — `/sdd-insight` does not ship on any host (it depends on unshipped `reference/sdd-insight/`
 #: and `.claude/workflows/sdd-insight.js`); these targets match the globs above and are dropped.
 EXCLUDED_TARGETS: frozenset[str] = frozenset({
@@ -106,7 +115,7 @@ def asset_source_for(target: str) -> str:
 
 
 def expected_entries(root: Path) -> list[AssetEntry]:
-    """Resolve ``ASSET_SOURCES`` against the git-tracked files of ``root``, sorted by target."""
+    """Resolve ``ASSET_SOURCES`` against the git-tracked files of ``root``, sorted by target, then ``PACKAGED_ONLY``."""
     out = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z"], check=True, capture_output=True
     ).stdout.decode("utf-8")
@@ -127,6 +136,10 @@ def expected_entries(root: Path) -> list[AssetEntry]:
             seed=target in SEED_TARGETS,
         )
         for target in sorted(entries)
+    ] + [
+        AssetEntry(source=source, target=target, hosts=hosts)
+        for target, source, hosts in PACKAGED_ONLY
+        if (root / ASSETS_DIR).is_dir()   # only a repo that already ships the wheel assets (not a bare fixture)
     ]
 
 
@@ -166,6 +179,12 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
     for entry in entries:
         asset = assets_dir / entry.source
         expected.add(asset)
+        if entry.source in PACKAGED_SOURCES:
+            if not asset.is_file():
+                problems.append(f"missing: {entry.source} (packaged-only asset)")
+            else:
+                problems.extend(monorepo_path_problems(entry.target, asset.read_bytes()))
+            continue
         source_bytes = (root / entry.target).read_bytes()
         if not asset.is_file():
             problems.append(f"missing: {entry.source} (source {entry.target})")
@@ -193,6 +212,8 @@ def write_assets(root: Path, assets_dir: Path) -> list[AssetEntry]:
             elif path.is_dir() and not any(path.iterdir()):
                 path.rmdir()
     for entry in entries:
+        if entry.source in PACKAGED_SOURCES:
+            continue
         dest = assets_dir / entry.source
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / entry.target, dest)

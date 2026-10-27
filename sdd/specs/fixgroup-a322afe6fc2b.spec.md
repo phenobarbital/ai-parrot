@@ -286,12 +286,24 @@ must pass both with and without an activated venv on `PATH`.
 
 ### Validation Contract
 
-```bash
-# activated shell (baseline — must stay green)
-python -m pytest tests/sdd/test_close_task_ledger.py tests/sdd/test_ledger_lifecycle_acceptance.py -q
+tests:
+- tests/sdd/test_close_task_ledger.py
+- tests/sdd/test_ledger_lifecycle_acceptance.py
+markers: none
 
-# sabotaged PATH (the reported failure — must now be green too)
-PATH=<stub-dir>:/usr/bin:/bin .venv/bin/python -m pytest \
+### Test Data / Fixtures
+
+The existing `_init_repo(tmp_path)` git fixture, plus a stub `python3`
+(`#!/bin/sh` + `exit 1`) written into `tmp_path/"bin"` by the new tests. No
+network, no database, no real venv is created.
+
+Both contract files must **additionally** be run once with a sabotaged `PATH`
+— a `python3` first on `PATH` that cannot import `parrot` — which is the
+environment the reported failure needs:
+
+```bash
+printf '#!/bin/sh\nexit 1\n' > "$STUB/python3" && chmod +x "$STUB/python3"
+PATH="$STUB:/usr/bin:/bin" .venv/bin/python -m pytest \
   tests/sdd/test_close_task_ledger.py tests/sdd/test_ledger_lifecycle_acceptance.py -q
 
 bash -n scripts/sdd/close_task.sh
@@ -300,12 +312,6 @@ bash -n scripts/sdd/close_task.sh
 `artifacts/logs/feat-566-lifecycle.log` is rewritten by the regression-gate
 test on every run; it is evidence, and any diff in it must not be committed as
 part of this feature.
-
-### Test Data / Fixtures
-
-The existing `_init_repo(tmp_path)` git fixture, plus a stub `python3`
-(`#!/bin/sh` + `exit 1`) written into `tmp_path/"bin"` by the new tests. No
-network, no database, no real venv is created.
 
 ---
 

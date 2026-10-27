@@ -1,5 +1,6 @@
 """Routing tests for the FEAT-551 `_formdesigner` branch (skips without botbuilder, like test_a2ui_submit.py)."""
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -21,6 +22,9 @@ def _wrapper(allowed_hosts=("forms.test",)) -> MSTeamsAgentWrapper:
         formdesigner_submit_token=None,
         formdesigner_submit_secret=None,
         formdesigner_submit_timeout=5.0,
+        formdesigner_allow_unsigned_submissions=True,
+        formdesigner_tenant_map=None,
+        formdesigner_api_base_path="/api/v1",
     )
     w.logger = MagicMock()
     w._command_router = MagicMock()
@@ -140,3 +144,235 @@ async def test_teams_wrapper_malformed_envelope_is_text_reply():
 
         # continue_dialog should NOT be called
         dialog_context.continue_dialog.assert_not_awaited()
+
+
+def _submission_data(tenant: str = "testtenant") -> dict:
+    """Build a valid legacy FormDesigner submission envelope."""
+    form_uid = "f0000000-0000-0000-0000-000000000001"
+    return {
+        "_formdesigner": {
+            "v": 1,
+            "wire": "legacy",
+            "form_uid": form_uid,
+            "tenant": tenant,
+            "form_version": "1.0",
+            "is_public": True,
+            "submit_url": f"https://forms.test/api/v1/{tenant}/forms/{form_uid}/data",
+            "form_url": f"https://forms.test/{tenant}/forms/{form_uid}",
+        },
+        "_action": "submit",
+        "name": "John Doe",
+    }
+
+
+class TestFormDesignerSubmitSecurity:
+    """FEAT-733 wrapper security wiring."""
+
+    @pytest.mark.parametrize(("allow_unsigned", "require_signature"), [(False, True), (True, False)])
+    async def test_require_signature_passed_from_config(self, allow_unsigned: bool, require_signature: bool):
+        """The unsigned-submission hatch controls verification explicitly."""
+        w = _wrapper()
+        w.config.formdesigner_allow_unsigned_submissions = allow_unsigned
+
+        with (
+            patch.object(wrapper_mod, "verify_envelope") as mock_verify,
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        assert mock_verify.call_args.kwargs["require_signature"] is require_signature
+
+    async def test_refused_envelope_never_posts(self):
+        """An EnvelopeRejected refusal is returned as text before any POST."""
+        w = _wrapper()
+        with (
+            patch.object(wrapper_mod, "verify_envelope", side_effect=wrapper_mod.EnvelopeRejected("refused")),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+        ):
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        mock_post.assert_not_awaited()
+        w.send_text.assert_awaited_once_with("refused", w.send_text.call_args.args[1])
+
+    async def test_derivation_runs_after_verification(self):
+        """Failed verification prevents tenant resolution."""
+        w = _wrapper()
+        with (
+            patch.object(wrapper_mod, "verify_envelope", side_effect=wrapper_mod.EnvelopeRejected("refused")),
+            patch.object(wrapper_mod, "resolve_submit_tenant") as mock_resolve,
+        ):
+            await w._handle_formdesigner_submit(_ctx(_submission_data()), _submission_data())
+
+        mock_resolve.assert_not_called()
+
+    async def test_mapped_tenant_rebinds_env_for_post(self):
+        """A mapped Bot Framework tenant is used for the outbound submission."""
+        w = _wrapper()
+        w.config.formdesigner_tenant_map = {"aad-tenant": "resolved-tenant"}
+        ctx = _ctx(_submission_data())
+        ctx.activity.channel_data = {"tenant": {"id": "aad-tenant"}}
+        with (
+            patch.object(wrapper_mod, "verify_envelope"),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(ctx, _submission_data())
+
+        assert mock_post.call_args.args[1].tenant == "resolved-tenant"
+        override_calls = [call for call in w.logger.info.call_args_list if "tenant claim overridden" in call.args[0]]
+        assert len(override_calls) == 1
+
+    @pytest.mark.parametrize("channel_data", [None, {}, "not-a-dict"])
+    async def test_missing_channel_data_does_not_raise(self, channel_data):
+        """Missing or non-dict channel data leaves the envelope tenant intact."""
+        w = _wrapper()
+        ctx = _ctx(_submission_data())
+        ctx.activity.channel_data = channel_data
+        with (
+            patch.object(wrapper_mod, "verify_envelope"),
+            patch.object(wrapper_mod, "post_submission", new_callable=AsyncMock) as mock_post,
+            patch.object(wrapper_mod, "build_reply_card", return_value={}),
+            patch.object(w, "_get_formdesigner_session", new_callable=AsyncMock),
+        ):
+            mock_post.return_value = SubmitOutcome(status=200, body={})
+            await w._handle_formdesigner_submit(ctx, _submission_data())
+
+        assert mock_post.call_args.args[1].tenant == "testtenant"
+        assert all("tenant claim overridden" not in call.args[0] for call in w.logger.info.call_args_list)
+
+
+class _FDAgent:
+    """Minimal FormDesigner mixin stand-in with observable request-local state."""
+
+    formdesigner_serving = True
+
+    def __init__(self, handled: bool = True) -> None:
+        self.handled = handled
+        self.events: list[str] = []
+        self.handle_formdesigner_card = AsyncMock(side_effect=self._handle_card)
+        self.apply_teams_config = MagicMock()
+        self.bind_teams_identity = MagicMock()
+        self.getform_handler = AsyncMock()
+        self.listforms_handler = AsyncMock()
+        self.flush_formdesigner_cards = AsyncMock(side_effect=self._flush)
+
+    async def _handle_card(self, *args) -> bool:
+        return self.handled
+
+    def teams_commands(self) -> dict[str, AsyncMock]:
+        return {"getform": self.getform_handler, "listforms": self.listforms_handler}
+
+    @asynccontextmanager
+    async def formdesigner_turn(self, turn_context):
+        self.events.append("enter")
+        try:
+            yield None
+        finally:
+            self.events.append("exit")
+
+    async def _flush(self, turn_context) -> None:
+        self.events.append("flush")
+
+
+async def test_wrapper_falls_back_without_mixin():
+    """A non-mixin agent keeps the legacy envelope route."""
+    w = _wrapper()
+    w.agent = MagicMock()
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    w._handle_formdesigner_submit.assert_awaited_once_with(context, {"_formdesigner": {}})
+
+
+async def test_wrapper_asks_mixin_first():
+    """A mixin that handles an envelope prevents the legacy POST branch."""
+    w = _wrapper()
+    agent = _FDAgent(handled=True)
+    w.agent = agent
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    agent.handle_formdesigner_card.assert_awaited_once_with(context, {"_formdesigner": {}})
+    w._handle_formdesigner_submit.assert_not_awaited()
+
+
+async def test_mixin_declines_unknown_envelope_falls_back():
+    """A declined envelope continues into the legacy submission handler."""
+    w = _wrapper()
+    agent = _FDAgent(handled=False)
+    w.agent = agent
+    w._handle_formdesigner_submit = AsyncMock()
+    context = _ctx({"_formdesigner": {}})
+
+    await w._handle_card_submission(context, MagicMock())
+
+    agent.handle_formdesigner_card.assert_awaited_once()
+    w._handle_formdesigner_submit.assert_awaited_once_with(context, {"_formdesigner": {}})
+
+
+async def test_picker_action_routed_to_mixin():
+    """Picker actions are handled by the mixin before dialog processing."""
+    w = _wrapper()
+    agent = _FDAgent(handled=True)
+    w.agent = agent
+    context = _ctx({"_formdesigner_action": "get_form"})
+    dialog_context = MagicMock(continue_dialog=AsyncMock())
+
+    await w._handle_card_submission(context, dialog_context)
+
+    agent.handle_formdesigner_card.assert_awaited_once_with(context, {"_formdesigner_action": "get_form"})
+    dialog_context.continue_dialog.assert_not_awaited()
+
+
+async def test_wire_registers_commands_and_binds_store():
+    """Wiring uses the wrapper-owned config and session store exactly once."""
+    w = _wrapper()
+    agent = _FDAgent()
+    w.agent = agent
+    w.config.name = "forms-agent"
+    w._session_store = object()
+
+    w._wire_formdesigner_agent()
+
+    agent.apply_teams_config.assert_called_once_with(w.config)
+    agent.bind_teams_identity.assert_called_once_with(w._session_store)
+    assert w._command_router.register.call_args_list == [
+        (("getform", agent.getform_handler),),
+        (("listforms", agent.listforms_handler),),
+    ]
+
+
+async def test_toolkit_voice_and_card_continuations():
+    """A2UI and voice process-message calls bind and flush only successful turns."""
+    w = _wrapper()
+    agent = _FDAgent()
+    w.agent = agent
+    successful = SimpleNamespace(has_error=False, raw_response=None, response_text="done", needs_form=False)
+    failed = SimpleNamespace(has_error=True, error="failed")
+    w.form_orchestrator.process_message = AsyncMock(side_effect=[successful, failed])
+    w._effective_user_id = AsyncMock(return_value="user-1")
+    w.dialogs = MagicMock(create_context=AsyncMock(return_value=MagicMock()))
+    w.send_typing = AsyncMock()
+
+    await w._handle_card_submission(_ctx({"a2ui_action": {"name": "save"}}), MagicMock())
+    await w._process_transcribed_message(_ctx({}), "voice note", "conv-1")
+
+    assert agent.events == ["enter", "flush", "exit", "enter", "exit"]
+    agent.flush_formdesigner_cards.assert_awaited_once()
+
+
+async def test_magicmock_agent_is_not_treated_as_mixin():
+    """MagicMock's synthetic attributes cannot activate FormDesigner seams."""
+    w = _wrapper()
+    w.agent = MagicMock()
+
+    assert w._formdesigner_agent() is None

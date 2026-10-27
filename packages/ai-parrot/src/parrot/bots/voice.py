@@ -392,6 +392,12 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         """
         Configure the bot.
         """
+        # FEAT-726: pre-super work — a repeat entry would call setup_a2a() again
+        # and re-register this bot's A2A routes on the same app. Still enter
+        # super() so the counter and the INFO log stay truthful.
+        if self.configure_is_noop(app):
+            await super().configure(app)
+            return
         # Default to Redis memory for VoiceBot if not specified
         if not self.memory_type or self.memory_type == "memory":
             self.memory_type = "redis"

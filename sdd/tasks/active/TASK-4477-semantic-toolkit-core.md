@@ -1,94 +1,96 @@
-# TASK-4477: SemanticLayerToolkit — catalog, compile and query tools (M10a)
+# TASK-4477: Governed catalog, compile and query toolkit (M10a)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: L (4-8h)
-**Depends-on**: TASK-4468, TASK-4472, TASK-4473, TASK-4474, TASK-4475, TASK-4476
+**Estimated effort**: M (2–4h)
+**Depends-on**: TASK-4706, TASK-4472, TASK-4473, TASK-4474, TASK-4475, TASK-4476, TASK-4707, TASK-4709
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 10 + §2 New Public Interfaces + §8 Q5: the `AbstractToolkit` surface (`tool_prefix="sl"`). `_pre_execute` sets the satellite ContextVar AND `parrot.auth.context._pctx_var` from `_permission_context` (or a flagged `static_subject`); every tool goes catalog-check → compile (cached) → govern → execute/return → audit. This task ships the governed metric tools; `run_sql` and `save_result_as_dataset` are TASK-4479 (security-gated last, spec Worktree Strategy).
-
----
+Spec rev 0.4, §3 M10; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/context.py` (`_semantic_pctx_var`, `current_pctx`).
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py`: `StaticSubject`, `SemanticLayerToolkit` with `list_models`, `list_metrics`, `get_dimensions`, `get_dimension_values`, `search_data_model`, `list_saved_queries`, `compile_query`, `query_metrics`, `reload`, `_pre_execute`, `_post_execute`.
-- Constructor: load models, register policy RLS rules into the `RlsRegistry`, refuse governed models without `dataplane_guard` (`SemanticPolicyError`), resolve `audit_required=None` → `ledger.durable` with a startup log line (§8 Q5), `exclude_tools` includes `run_sql` and `save_result_as_dataset` (TASK-4479 makes them conditional).
-- Finalize `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` exports.
-- Write `test_toolkit.py` (exposure, static subject, audit_required resolution).
+- Create SemanticLayerToolkit composing loader/catalog/compiler/governance/executor/audit/handles. Reject any non-null static_subject on ordinary instances and governed construction without a guard.
+- Implement list_models/list_metrics/get_dimensions/get_dimension_values/search_data_model/list_saved_queries/compile_query/query_metrics, with precompile manifest authorization, per-request governance and audit-before-return.
+- Validate bound context in _pre_execute; do not set global identity there or clean up in _post_execute. Shared get_tools calls must not carry mutable per-request identity on the toolkit instance.
+- Expose reload only as a host method. Retain results only with complete trusted identity; capture exact member/physical provenance. Keep raw SQL/save tools excluded until the security-gated extension task; finalize safe package exports.
 
-**NOT in scope**: `run_sql`, `save_result_as_dataset`, `_dataset_manager_for` (TASK-4479); the e2e security suite (TASK-4478); HTTP/MCP (TASK-4480/4481).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/context.py` | CREATE | per-call subject ContextVar |
-| `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py` | CREATE | SemanticLayerToolkit |
-| `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` | MODIFY | public exports |
-| `packages/ai-parrot-semantic/tests/test_toolkit.py` | CREATE | toolkit unit tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` | MODIFY | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_toolkit.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.tools.toolkit import AbstractToolkit                       # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:225
-from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit    # verified: databasequery/toolkit.py:115
-from parrot.auth import PermissionContext, UserSession, RlsRegistry, DataPlanePolicyGuard   # verified: auth/__init__.py lazy map
-from parrot.auth.context import _pctx_var                              # verified: packages/ai-parrot/src/parrot/auth/context.py:33
-from parrot.security import AbstractKMSSigner                          # verified: security/__init__.py:50-55
-from parrot.semantic.loader import SemanticModelLoader, LoadedModel    # TASK-4467
-from parrot.semantic.engines import compile as compile_query_sql      # TASK-4467 (native branch: TASK-4468)
-from parrot.semantic.governance.pbac import PbacGate                   # TASK-4469
-from parrot.semantic.governance.rls import RlsPushdown                 # TASK-4470
-from parrot.semantic.governance.pipeline import GovernancePipeline, subject_digest   # TASK-4472
-from parrot.semantic.catalog import RoleCatalog                        # TASK-4473
-from parrot.semantic.audit import SemanticAuditLedger, SemanticAuditEntry   # TASK-4474
-from parrot.semantic.execution import ConnectionResolver, Executor     # TASK-4475
-from parrot.semantic.cache import CompileCache                         # TASK-4475
-from parrot.semantic.results import ResultHandleStore, ResultHandle    # TASK-4476
+from .context import current_pctx, current_identity, require_identity
+from .errors import SemanticPolicyError, SemanticAccessError
+from .models import SemanticQuery, SemanticQueryResult
+from .toolkit import SemanticLayerToolkit
+from __future__ import annotations
+from parrot.tools.toolkit import AbstractToolkit
+from pathlib import Path
+from typing import Any
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/tools/toolkit.py
-class ToolkitTool(AbstractTool):   # line 37 — re-injects hook_kwargs["_permission_context"] = pctx before toolkit._pre_execute (174-178)
-class AbstractToolkit(ServerManagedToolkit, ABC):   # line 225
-    exclude_tools: tuple[str, ...] = ()   # line 262
-    tool_prefix: str | None = None        # line 276
-    def __init__(self, **kwargs)          # line 357 — reads return_direct/base_url/credential_provider/executor/...
-    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None             # line 491
-    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any   # line 506 — tool params only (no _permission_context)
-    def get_tools(...)                    # line 522
-# packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py:175-176 — conditional exclusion pattern:
-#     if self._output_dir is None: self.exclude_tools = self.exclude_tools + ("save_result",)
-# packages/ai-parrot/src/parrot/auth/context.py:33 — _pctx_var: ContextVar["PermissionContext | None"]
-# packages/ai-parrot/src/parrot/auth/rls_registry.py:112 — RlsRegistry.register(rule)
+# packages/ai-parrot/src/parrot/tools/toolkit.py:225
+class AbstractToolkit(ServerManagedToolkit, ABC):
+    # line 357
+    def __init__(self, **kwargs):
+    # line 491
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
+    # line 506
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
+    # line 522
+    def get_tools(self, permission_context: Optional['PermissionContext']=None, resolver: Optional['AbstractPermissionResolver']=None) -> list[AbstractTool]:
 ```
 
-### Does NOT Exist
-- ~~`_post_execute` receiving `_permission_context`~~ — read the ContextVar set in `_pre_execute`.
-- ~~Storing the subject on `self`~~ — forbidden (concurrent calls); ContextVar only.
-- ~~`SemanticLayerToolkit.run_sql` / `.save_result_as_dataset`~~ — TASK-4479; this task only lists them in `exclude_tools`.
-- ~~`RlsRegistry()` with required args~~ — FILL IN: read its `__init__` (rls_registry.py:87-111) before constructing a default.
+```python
+# packages/ai-parrot/src/parrot/tools/toolkit.py:37
+class ToolkitTool(AbstractTool):
+    # line 42
+    def __init__(self, name: str, bound_method: callable, description: str=None, args_schema: type[BaseModel]=None, **kwargs):
+    # line 142
+    async def _execute(self, **kwargs) -> Any:
+```
 
----
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4706: consumes packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py (Join-grain safety, filtered and derived metrics (M5b))
+- TASK-4472: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py (Governance composition and subject/provenance digest (M6d))
+- TASK-4473: consumes packages/ai-parrot-semantic/src/parrot/semantic/catalog.py (Authorized catalog and saved-query expansion (M7))
+- TASK-4474: consumes packages/ai-parrot-semantic/src/parrot/semantic/audit.py, packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql (Signed audit ledger and optional Postgres sink (M8))
+- TASK-4475: consumes packages/ai-parrot-semantic/src/parrot/semantic/execution.py, packages/ai-parrot-semantic/src/parrot/semantic/cache.py (Execution bridge and pre-governance compile cache (M9a))
+- TASK-4476: consumes packages/ai-parrot-semantic/src/parrot/semantic/results.py (Scoped result handles and exact retained provenance (M9b))
+- TASK-4707: consumes packages/ai-parrot-semantic/src/parrot/semantic/context.py (Scoped identity binding and exception-safe cleanup (M10 context))
+- TASK-4709: consumes packages/ai-parrot-semantic/src/parrot/semantic/handoff.py (Guarded dataset sink and read-time authorization (M9H))
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -96,10 +98,6 @@ class AbstractToolkit(ServerManagedToolkit, ABC):   # line 225
 {
   "schema_version": 1,
   "targets": [
-    {
-      "path": "packages/ai-parrot-semantic/src/parrot/semantic/context.py",
-      "action": "CREATE"
-    },
     {
       "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
       "action": "CREATE"
@@ -115,229 +113,164 @@ class AbstractToolkit(ServerManagedToolkit, ABC):   # line 225
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit",
-    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#ToolkitTool",
-    "sym:packages/ai-parrot/src/parrot/auth/rls_registry.py#RlsRegistry"
+    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#ToolkitTool"
   ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Tool methods are public `async def` with Google docstrings — the docstring IS the LLM tool description.
-- Errors: tools catch `SemanticError` and return `{"error": code, "message": ..., "details": ...}` — never SQL; every outcome (ok/denied/validation_error/execution_error) still appends an audit entry.
-- `static_subject` → `PermissionContext(UserSession(...))` built per call, logged at WARNING once per call, audit `static_subject=True`, `channel="mcp-local"`.
-- Blueprint size: toolkit.py exceeds 80 lines in total — write the skeleton below, then the tool bodies, each following the same `_run_governed` helper.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `context.py` — *why*: per-call subject isolation.
-2. Write the constructor wiring (loader, registry, pbac, pipeline, catalog, ledger, executor, cache, handles) — *why*: fail closed at startup when governed + no guard.
-3. Write `_pre_execute`/`_post_execute` — *why*: ContextVars + dict serialization.
-4. Write `_run_governed(query, *, execute: bool)` once and make every tool use it — *why*: one governance path (AC3-AC9).
-5. Finalize `__init__.py`; write tests.
 
-### `packages/ai-parrot-semantic/src/parrot/semantic/context.py` (CREATE)
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py` (CREATE)
+
 ```python
-"""Per-call subject ContextVar for the semantic toolkit (never stored on the instance)."""
+"""Governed semantic tools with trusted host-bound request identity."""
 from __future__ import annotations
-
-import contextvars
-
-from parrot.auth import PermissionContext
-
-_semantic_pctx_var: contextvars.ContextVar[PermissionContext | None] = contextvars.ContextVar(
-    "semantic_pctx", default=None)
-_static_subject_var: contextvars.ContextVar[bool] = contextvars.ContextVar("semantic_static", default=False)
-
-
-def current_pctx() -> PermissionContext | None:
-    """PermissionContext of the current tool call, or None."""
-    return _semantic_pctx_var.get()
-```
-
-### `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py` (CREATE — skeleton; tool bodies follow the same pattern)
-```python
-"""SemanticLayerToolkit — governed metric queries for agents (spec §3 Module 10)."""
-from __future__ import annotations
-
-from pathlib import Path
 from typing import Any
-
-from pydantic import BaseModel, Field
-
-from parrot.auth import PermissionContext, UserSession
-from parrot.auth.context import _pctx_var
 from parrot.tools.toolkit import AbstractToolkit
-
-from .context import _semantic_pctx_var, _static_subject_var, current_pctx
-from .errors import SemanticError, SemanticPolicyError
 from .models import SemanticQuery, SemanticQueryResult
-
-
-class StaticSubject(BaseModel):
-    user_id: str
-    tenant_id: str
-    roles: list[str]
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
+from .context import current_pctx, current_identity, require_identity
+from .errors import SemanticPolicyError, SemanticAccessError
 
 class SemanticLayerToolkit(AbstractToolkit):
-    """Governed semantic-layer tools: catalog, compile and metric queries."""
+    """Catalog, compile and metric query surface over one governance pipeline."""
     tool_prefix = "sl"
     exclude_tools = ("reload", "run_sql", "save_result_as_dataset")
-
     def __init__(self, **kwargs: Any) -> None:
-        """kwargs: models_dir, dialect, dataplane_guard, rls_registry, database_toolkit, signer, audit_storage,
-        allow_raw_sql=False, static_subject=None, dataset_manager_factory=None, result_ttl_s=900,
-        result_store_max=256, allowed_functions=None, audit_required=None."""
-        super().__init__(**kwargs)
-        # FILL IN: pop our kwargs; loader = SemanticModelLoader(Path(models_dir), driver=...); self._models = loader.load();
-        #   any governed model and dataplane_guard is None -> SemanticPolicyError("guard_required");
-        #   registry = rls_registry or RlsRegistry(...); register every model.policy.rls rule;
-        #   self._pipeline = GovernancePipeline(pbac=PbacGate(guard), rls=RlsPushdown(registry), allowed_functions=...);
-        #   self._catalog, self._ledger (SemanticAuditLedger(signer, audit_storage)), self._cache, self._handles,
-        #   self._executor (Executor(database_toolkit or DatabaseQueryToolkit(), ConnectionResolver()));
-        #   self._audit_required = ledger.durable if audit_required is None else bool(audit_required)  (§8 Q5)
-        #   + self.logger.info("semantic audit_required=%s (durable sink=%s)", ...)
-
+        """Construct components; reject static_subject and missing governed guard."""
+        # FILL IN: consume satellite kwargs before super(), wire dependencies,
+        # resolve audit_required, retain results only with complete identity.
+        ...
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
-        """Set both ContextVars from kwargs['_permission_context'] or the static subject (flagged + logged)."""
-        # FILL IN: pctx = kwargs.get("_permission_context"); if None and self._static_subject: build
-        #   PermissionContext(session=UserSession(...), channel="mcp-local"), _static_subject_var.set(True),
-        #   self.logger.warning("static_subject %s used for %s", user_id, tool_name);
-        #   _semantic_pctx_var.set(pctx); _pctx_var.set(pctx)
-
+        """Validate bound trusted context; never set or fall back to static identity."""
+        ...
     async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
-        """Serialize pydantic results to plain dicts for the LLM."""
-        return result.model_dump(mode="json") if isinstance(result, BaseModel) else result
-
-    async def query_metrics(self, query: SemanticQuery) -> SemanticQueryResult | dict:
-        """Run a governed metric query: role check, compile, govern (PBAC, lineage, RLS, masking, guard),
-        execute and audit. Returns rows plus the governed SQL as executed."""
-        # FILL IN: return await self._run_governed(query, execute=True)
-
-    async def _run_governed(self, query: SemanticQuery, *, execute: bool) -> Any:
-        """The single governance path every tool uses."""
-        # FILL IN: ctx = current_pctx(); roles = frozenset(ctx.session.roles) if ctx else frozenset();
-        #   model = self._models[query.model]; query = self._catalog.expand_saved_query(query) if saved;
-        #   await pbac.authorize_manifest (governed); self._catalog.check_query_rights(query, roles);
-        #   compiled = await compile_query_sql(query, model, dialect, cache=self._cache);
-        #   governed = await self._pipeline.govern(compiled.sql, model=..., ctx=ctx, roles=roles, requested_limit=query.limit);
-        #   execute -> self._executor.run(...); store handle when enabled; audit entry for EVERY outcome
-        #   (await self._ledger.append(entry, required=self._audit_required) — required failure withholds rows);
-        #   SemanticError -> {"error": e.code, ...} after auditing
-        raise NotImplementedError
-
-    # FILL IN: list_models, list_metrics, get_dimensions, get_dimension_values (governed SELECT DISTINCT via
-    #   _run_governed-equivalent path), search_data_model, list_saved_queries, compile_query (govern, no execute),
-    #   reload (not a tool — excluded) — signatures verbatim from spec §2 New Public Interfaces
+        """Serialize results; context cleanup belongs to the surrounding wrapper."""
+        ...
+    async def list_models(self) -> list[dict]:
+        """List only models authorized for the current subject."""
+        ...
+    async def list_metrics(self, model: str) -> list[dict]:
+        """Describe allowed metrics of an authorized model."""
+        ...
+    async def get_dimensions(self, model: str, metrics: list[str] | None = None) -> list[dict]:
+        """Describe allowed dimensions compatible with requested metrics."""
+        ...
+    async def get_dimension_values(self, model: str, dimension: str,
+                                   metrics: list[str] | None = None, limit: int = 50) -> SemanticQueryResult:
+        """Query authorized dimension values through the complete governance path."""
+        ...
+    async def search_data_model(self, text: str, model: str | None = None) -> list[dict]:
+        """Search only authorized model members."""
+        ...
+    async def list_saved_queries(self, model: str) -> list[dict]:
+        """List saved queries whose referenced members are all allowed."""
+        ...
+    async def compile_query(self, query: SemanticQuery) -> dict:
+        """Return audited governed SQL without database execution."""
+        ...
+    async def query_metrics(self, query: SemanticQuery) -> SemanticQueryResult:
+        """Authorize, compile, govern, execute and audit before returning rows."""
+        ...
+    def reload(self) -> None:
+        """Reload model snapshots and invalidate caches; not an LLM tool."""
+        ...
+    # FILL IN: implement shared private orchestration helpers; AC3–AC10/AC25.
+    # Caller binds contexts externally; direct HTTP calls use the same context manager.
 ```
-**Why**: spec §3 M10 skeleton; one `_run_governed` path is what makes AC3-AC9 hold for every tool.
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` (MODIFY)
-```python
-# occurrences: 1 (verified at task start: grep -c -F '__all__ = ["__version__"]' packages/ai-parrot-semantic/src/parrot/semantic/__init__.py — created by TASK-4463)
-# REPLACE `__all__ = ["__version__"]` with:
-from .errors import (SemanticAccessError, SemanticError, SemanticExecutionError, SemanticPolicyError,
-                     SemanticResultError, SemanticValidationError)
-from .models import SemanticQuery, SemanticQueryResult
-from .toolkit import SemanticLayerToolkit, StaticSubject
 
-__all__ = ["__version__", "SemanticLayerToolkit", "StaticSubject", "SemanticQuery", "SemanticQueryResult",
-           "SemanticError", "SemanticValidationError", "SemanticPolicyError", "SemanticAccessError",
-           "SemanticExecutionError", "SemanticResultError"]
+Dependency-created anchor `__all__ = ["__version__"]` — expected occurrences: **1** in the producer blueprint. It is absent on dev; re-read its actual line/count after the producer lands, before any edit.
+
+```python
+# AFTER dependency-created __all__ = ["__version__"] (expected occurrences: 1).
+from .models import SemanticQuery, SemanticQueryResult
+from .toolkit import SemanticLayerToolkit
+__all__ += ["SemanticQuery", "SemanticQueryResult", "SemanticLayerToolkit"]
+# FILL IN: preserve lazy optional-backend imports; importing the namespace must
+# not require a warehouse driver, static subject or provider SDK.
 ```
 
-### FILL IN checklist
-- [ ] Constructor wiring — bounded by spec M10 (fail closed without guard) and §8 Q5.
-- [ ] `_pre_execute` — bounded by AC13 (static subject logged + flagged).
-- [ ] `_run_governed` — bounded by AC3-AC9, AC19.
-- [ ] Remaining catalog tools — bounded by AC19 (nothing without an authorized subject).
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
+### `packages/ai-parrot-semantic/tests/test_toolkit.py` (CREATE)
+
+```python
+"""Regression contract: Governed catalog, compile and query toolkit (M10a)."""
+from pathlib import Path
+import pytest
+
+
+def test_catalog_compile_query_govern_and_audit(tmp_path: Path) -> None:
+    """Verify catalog compile query govern and audit."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_no_static_fallback_or_missing_guard(tmp_path: Path) -> None:
+    """Verify no static fallback or missing guard."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_trusted_retention_and_audit_before_return(tmp_path: Path) -> None:
+    """Verify trusted retention and audit before return."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_toolkit.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] `test_toolkit_tool_exposure` (core half: no `sl_run_sql`, no `sl_save_result_as_dataset`; governed + no guard → constructor error), `test_toolkit_static_subject_logged`, `test_audit_required_resolution` pass.
-- [ ] Tool names are prefixed `sl_` (`sl_query_metrics`, ...).
-- [ ] `from parrot.semantic import SemanticLayerToolkit` works.
-
----
+- [ ] Create SemanticLayerToolkit composing loader/catalog/compiler/governance/executor/audit/handles. Reject any non-null static_subject on ordinary instances and governed construction without a guard.
+- [ ] Implement list_models/list_metrics/get_dimensions/get_dimension_values/search_data_model/list_saved_queries/compile_query/query_metrics, with precompile manifest authorization, per-request governance and audit-before-return.
+- [ ] Validate bound context in _pre_execute; do not set global identity there or clean up in _post_execute. Shared get_tools calls must not carry mutable per-request identity on the toolkit instance.
+- [ ] Expose reload only as a host method. Retain results only with complete trusted identity; capture exact member/physical provenance. Keep raw SQL/save tools excluded until the security-gated extension task; finalize safe package exports.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
 
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
 - `pytest packages/ai-parrot-semantic/tests/test_toolkit.py -q`
-
----
 
 ## Test Specification
 
-```python
-# packages/ai-parrot-semantic/tests/test_toolkit.py
-import pytest
-from ._models import models_dir, duckdb_warehouse  # noqa: F401
-from parrot.semantic import SemanticLayerToolkit, SemanticPolicyError
-
-
-def test_toolkit_tool_exposure(models_dir):
-    with pytest.raises(SemanticPolicyError):
-        SemanticLayerToolkit(models_dir=models_dir, dialect="duckdb")   # governed model, no guard
-    # FILL IN: with allow_all_guard -> names include sl_query_metrics, exclude sl_run_sql / sl_save_result_as_dataset
-
-
-def test_audit_required_resolution(models_dir, allow_all_guard):
-    # FILL IN: no audit_storage -> _audit_required False; audit_storage=AsyncMock() -> True; explicit False wins;
-    #          True + failing sink -> query_metrics returns error audit_unavailable and no rows
-    ...
-
-
-async def test_toolkit_static_subject_logged(models_dir, allow_all_guard, caplog):
-    # FILL IN: static_subject={"user_id": "operator", "tenant_id": "local", "roles": ["admin"]};
-    #          call a tool without _permission_context -> warning logged; ledger entry static_subject True
-    ...
-```
-
----
+- `test_catalog_compile_query_govern_and_audit`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_no_static_fallback_or_missing_guard`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_trusted_retention_and_audit_before_return`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4477 — SemanticLayerToolkit — catalog, compile and query tools (M10a)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4477 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4477` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

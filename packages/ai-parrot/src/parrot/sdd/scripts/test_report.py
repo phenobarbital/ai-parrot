@@ -70,8 +70,35 @@ def _final_head(worktree: Path) -> str:
     return result.stdout.strip() or "unknown"
 
 
+NO_DATA_HEADING = "## Tests \u2014 no data"
+
+
+def _no_data_markdown(index_path: Path) -> str:
+    """Render the placeholder section emitted when the feature index is unusable."""
+    return "\n".join(
+        [
+            NO_DATA_HEADING,
+            "",
+            f"_No test evidence: the feature index at `{index_path}` is missing or unreadable._",
+            "_Reported, not fatal \u2014 this step never blocks closeout (`/sdd-done` \u00a74.7)._",
+        ]
+    )
+
+
+def _emit(markdown: str, out: Path | None) -> None:
+    """Write the section to ``out``, falling back to stdout when the write fails."""
+    if out is not None:
+        try:
+            out.write_text(markdown, encoding="utf-8")
+        except OSError as exc:
+            print(f"test_report: could not write {out}: {exc}", file=sys.stderr)  # noqa: T201 - CLI output
+        else:
+            return
+    print(markdown)  # noqa: T201 - CLI output
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Return 0 for reports and 2 for usage errors or unreadable indexes."""
+    """Return 0 for every report, no-data ones included, and 2 only for argument usage errors."""
     try:
         args = _build_parser().parse_args(argv)
     except SystemExit:
@@ -79,7 +106,11 @@ def main(argv: list[str] | None = None) -> int:
 
     index = _read_index(args.index)
     if index is None:
-        return 2
+        if args.command == "decide-rerun":
+            print("skip (no data)")  # noqa: T201 - CLI output
+        else:
+            _emit(_no_data_markdown(args.index), args.out)
+        return 0
     feature_id, task_ids = index
     try:
         report_mod = _load_report()
@@ -99,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             print("skip (no tasks)")  # noqa: T201 - CLI output
         return 0
 
-    records, _notes = report_mod.load_records(feature_id)
+    records, notes = report_mod.load_records(feature_id)
     rerun = records.pop(report_mod.RERUN_RECORD, None)
     rerun_skip_reason = None if rerun is not None or report_mod.should_rerun(task_count) else "no tasks"
     markdown = report_mod.render_markdown(
@@ -108,11 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         final_head=_final_head(args.worktree),
         rerun=rerun,
         rerun_skip_reason=rerun_skip_reason,
+        notes=tuple(notes),
     )
-    if args.out is None:
-        print(markdown)  # noqa: T201 - CLI output
-    else:
-        args.out.write_text(markdown, encoding="utf-8")
+    _emit(markdown, args.out)
     return 0
 
 

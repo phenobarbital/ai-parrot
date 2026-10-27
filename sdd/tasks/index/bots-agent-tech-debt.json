@@ -1,0 +1,162 @@
+{
+  "feature": "bots-agent-tech-debt",
+  "feature_id": "FEAT-726",
+  "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T17:05:00Z",
+  "completed_at": "2026-10-22T17:17:03+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/bots/test_double_configure.py",
+          "packages/ai-parrot/tests/bots/test_configure_override_guards.py",
+          "packages/ai-parrot/tests/bots/test_jira_specialist_reconfigure.py",
+          "packages/ai-parrot/tests/bots/test_fireflies_insights.py",
+          "packages/ai-parrot/tests/test_basic_agent_new.py",
+          "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:dc35da989f25af8073018e74e4aa833a60e4f390e0b0ac141d6098d32f52cc0e"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4616",
+      "slug": "abstractbot-configure-signals",
+      "title": "Publish the configure no-op decision on AbstractBot",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root of the graph: owns bots/abstract.py and creates tests/bots/test_configure_override_guards.py; no inbound edge",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:00:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4616-abstractbot-configure-signals.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4617",
+      "slug": "post-super-configure-guards",
+      "title": "Guard the nine post-super configure() override sites",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4616"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads AbstractBot.configure_skipped created by TASK-4616 (bots/abstract.py), and appends to tests/bots/test_configure_override_guards.py which TASK-4616 creates",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:06:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4617-post-super-configure-guards.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4618",
+      "slug": "pre-super-configure-guards",
+      "title": "Guard the three pre-super configure() override sites",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4617"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs AbstractBot.configure_is_noop from TASK-4616 (bots/abstract.py) and shares tests/bots/test_configure_override_guards.py with TASK-4617, so it is serialized behind TASK-4617 (which transitively covers TASK-4616)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4618-pre-super-configure-guards.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4619",
+      "slug": "speech-report-empty-speakers-guard",
+      "title": "speech_report raises a clear error on empty self.speakers",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4617"
+      ],
+      "parallel": true,
+      "parallelism_notes": "file-overlap only: both this task and TASK-4617 modify bots/agent.py, so the lower id runs first; no symbol dependency",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:14:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4619-speech-report-empty-speakers-guard.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4620",
+      "slug": "speech-report-google-tts-verbatim-test",
+      "title": "speech_report + google_tts verbatim zero-LLM-calls test",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4619"
+      ],
+      "parallel": true,
+      "parallelism_notes": "file-overlap only: both this task and TASK-4619 append to tests/test_basic_agent_new.py; no symbol dependency",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:17:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4620-speech-report-google-tts-verbatim-test.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4621",
+      "slug": "agent-configure-lifecycle-docs",
+      "title": "Correct the configure-lifecycle documentation",
+      "feature_id": "FEAT-726",
+      "feature": "bots-agent-tech-debt",
+      "spec": "sdd/specs/bots-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4618"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents configure_skipped and configure_is_noop by their final names, and the pre-super pattern TASK-4618 lands (transitively covers TASK-4616/4617); docs-only file, no code overlap",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-22T17:17:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4621-agent-configure-lifecycle-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

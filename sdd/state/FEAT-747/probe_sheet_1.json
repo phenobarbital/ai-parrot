@@ -1,0 +1,284 @@
+[
+ {
+  "id": "c108",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": null
+ },
+ {
+  "id": "c140",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 1
+ },
+ {
+  "id": "c141",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 39
+ },
+ {
+  "id": "c142",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 86
+ },
+ {
+  "id": "c263",
+  "kind": "file",
+  "path": "docs/architecture/02-a2a.md",
+  "line": null
+ },
+ {
+  "id": "c244",
+  "kind": "file",
+  "path": "docs/events/eventbus-migration.md",
+  "line": null
+ },
+ {
+  "id": "c243",
+  "kind": "file",
+  "path": "docs/events/eventbus-v2.md",
+  "line": null
+ },
+ {
+  "id": "c61",
+  "kind": "file",
+  "path": "docs/orchestration/agentcrew.md",
+  "line": null
+ },
+ {
+  "id": "c236",
+  "kind": "file",
+  "path": "docs/security/pbac-guardrails.md",
+  "line": null
+ },
+ {
+  "id": "c278",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot-integrations/src/parrot"
+ },
+ {
+  "id": "c62",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/__init__.py",
+  "line": 1
+ },
+ {
+  "id": "c76",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "MatrixA2ATransport",
+  "expected": null,
+  "expected_line": 25
+ },
+ {
+  "id": "c77",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "publish_card",
+  "expected": null,
+  "expected_line": 54
+ },
+ {
+  "id": "c78",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "discover_card",
+  "expected": null,
+  "expected_line": 54
+ },
+ {
+  "id": "c134",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "MatrixA2ATransport",
+  "expected": "class MatrixA2ATransport:  # publish_card(room_id, card_data) -> room state; discover_card; send_task; send_result; send_status; wait_for_result(room_id, task_id)",
+  "expected_line": 1
+ },
+ {
+  "id": "c21",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "send_reply_as_agent",
+  "expected": null,
+  "expected_line": 341
+ },
+ {
+  "id": "c99",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "MatrixAppService",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c125",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "MatrixAppService",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c71",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "send_event",
+  "expected": "async def send_event(self, room_id: str, event_type: str, content: Dict[str, Any]) -> str:",
+  "expected_line": 193
+ },
+ {
+  "id": "c72",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "set_room_state",
+  "expected": "async def set_room_state(self, room_id, event_type, content, state_key: str = \"\") -> str:",
+  "expected_line": 193
+ },
+ {
+  "id": "c73",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "get_room_state_event",
+  "expected": "async def get_room_state_event(self, room_id, event_type, state_key=\"\") -> Optional[Dict]:",
+  "expected_line": 193
+ },
+ {
+  "id": "c74",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "on_message",
+  "expected": null,
+  "expected_line": 277
+ },
+ {
+  "id": "c75",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "on_custom_event",
+  "expected": "def on_custom_event(self, event_type: str, callback) -> None:",
+  "expected_line": 277
+ },
+ {
+  "id": "c124",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "MatrixClientWrapper",
+  "expected": "class MatrixClientWrapper:  # send_text, edit_message, send_event, set_room_state, get_room_state_event, on_message, on_custom_event",
+  "expected_line": 1
+ },
+ {
+  "id": "c103",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/config.py",
+  "name": "MatrixCrewConfig",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c91",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/coordinator.py",
+  "name": "MatrixCoordinator",
+  "expected": null,
+  "expected_line": 17
+ },
+ {
+  "id": "c85",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "DelegationRequest",
+  "expected": null,
+  "expected_line": 31
+ },
+ {
+  "id": "c86",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "delegate",
+  "expected": null,
+  "expected_line": 71
+ },
+ {
+  "id": "c122",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "HybridDelegator",
+  "expected": "class HybridDelegator: delegate(request, timeout) ; _wait_for_result(task_id, timeout)",
+  "expected_line": 1
+ },
+ {
+  "id": "c123",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "DelegationRequest",
+  "expected": "class DelegationRequest(BaseModel): requester_name, target_agent, task_description, room_id, context",
+  "expected_line": 1
+ },
+ {
+  "id": "c22",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/mention.py",
+  "name": "build_reply_relation",
+  "expected": null,
+  "expected_line": 102
+ },
+ {
+  "id": "c87",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixAgentCard",
+  "expected": null,
+  "expected_line": 16
+ },
+ {
+  "id": "c88",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": null,
+  "expected_line": 67
+ },
+ {
+  "id": "c102",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c135",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": "class MatrixCrewRegistry: register/unregister/update_status/get/get_by_mxid/all_agents/is_human",
+  "expected_line": 1
+ },
+ {
+  "id": "c136",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixAgentCard",
+  "expected": "class MatrixAgentCard(BaseModel): agent_name, display_name, mxid, status ('ready | busy | offline'), current_task, skills: List[str]",
+  "expected_line": 1
+ },
+ {
+  "id": "c89",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/session_models.py",
+  "name": "SessionPhase",
+  "expected": null,
+  "expected_line": 14
+ },
+ {
+  "id": "c90",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/session_models.py",
+  "name": "AgentRoundResult",
+  "expected": null,
+  "expected_line": 34
+ }
+]

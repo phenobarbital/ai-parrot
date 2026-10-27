@@ -45,6 +45,20 @@ def _get_infographic_result_class() -> Optional[type]:
         return None
 
 
+def _resolve_call_tenant(tenant: Optional[str], ctx: Any) -> Optional[str]:
+    """Resolve the tenant bound for a bot invocation.
+
+    Explicit call input takes precedence over the request context. Returning
+    ``None`` tells callers to preserve an enclosing tenant binding.
+    """
+    if tenant is not None:
+        return tenant
+    ctx_kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None
+    if isinstance(ctx_kwargs, dict):
+        return ctx_kwargs.get("tenant")
+    return None
+
+
 # FEAT-176: Lifecycle Events
 # FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
 # via the parrot.core.events.lifecycle re-export facade.
@@ -58,10 +72,13 @@ from parrot.core.events.lifecycle.events import (
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 # user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
 # current_memory_key_id (FEAT-525): scopes read_omitted_content's omission-store lookup
+from parrot.observability.cost import backfill_estimated_cost as _backfill_estimated_cost
+from parrot.observability.cost import last_call_cost as _last_call_cost
 from parrot.observability.context import (
     current_agent_name,
     current_memory_key_id,
     current_session_id,
+    current_tenant,
     current_user_id,
 )
 
@@ -588,6 +605,9 @@ class BaseBot(AbstractBot):
                             duration_ms=_conv_duration_ms,
                             source_type="agent",
                             source_name=self.name,
+                            tenant=current_tenant.get(),
+                            user_id=current_user_id.get(),
+                            session_id=current_session_id.get(),
                         )
                     )
                     # return the response Object:
@@ -609,6 +629,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -626,6 +649,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -1099,6 +1125,7 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        _generic_tenant_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1115,6 +1142,9 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _call_tenant = _resolve_call_tenant(tenant, ctx)
+            if _call_tenant is not None:
+                _generic_tenant_token = current_tenant.set(_call_tenant)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
@@ -1763,6 +1793,9 @@ class BaseBot(AbstractBot):
                         output_tokens=getattr(_usage, "completion_tokens", None) if _usage else None,
                         source_type="agent",
                         source_name=self.name,
+                        tenant=current_tenant.get(),
+                        user_id=current_user_id.get(),
+                        session_id=current_session_id.get(),
                     )
                 )
                 return response
@@ -1781,6 +1814,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             self.status = AgentStatus.FAILED
@@ -1800,6 +1836,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             self.status = AgentStatus.FAILED
@@ -1811,6 +1850,8 @@ class BaseBot(AbstractBot):
             _exit = getattr(self, "_exit_skill_tenant", None)
             if _exit is not None and _tenant_token is not None:
                 _exit(_tenant_token)
+            if _generic_tenant_token is not None:
+                current_tenant.reset(_generic_tenant_token)
             exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
@@ -1862,6 +1903,7 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        _generic_tenant_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1871,6 +1913,9 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _call_tenant = _resolve_call_tenant(tenant, ctx)
+            if _call_tenant is not None:
+                _generic_tenant_token = current_tenant.set(_call_tenant)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
@@ -2096,9 +2141,11 @@ class BaseBot(AbstractBot):
                     try:
                         _stream_blocked = False
                         try:
+                            _last_call_cost.set(None)
                             async for chunk in client.ask_stream(**llm_kwargs):
                                 if isinstance(chunk, AIMessage):
                                     ai_message = chunk
+                                    _backfill_estimated_cost(ai_message)
                                 else:
                                     # FEAT-396 (TASK-2029): wrap chunk yields through
                                     # registered StreamingGuardrail adapters + the
@@ -2248,6 +2295,9 @@ class BaseBot(AbstractBot):
                             duration_ms=_stream_duration_ms,
                             source_type="agent",
                             source_name=self.name,
+                            tenant=current_tenant.get(),
+                            user_id=current_user_id.get(),
+                            session_id=current_session_id.get(),
                         )
                     )
                     yield ai_message
@@ -2266,6 +2316,9 @@ class BaseBot(AbstractBot):
                     error_message="Cancelled",
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -2283,6 +2336,9 @@ class BaseBot(AbstractBot):
                     error_message=str(e),
                     source_type="agent",
                     source_name=self.name,
+                    tenant=current_tenant.get(),
+                    user_id=current_user_id.get(),
+                    session_id=current_session_id.get(),
                 )
             )
             raise
@@ -2292,6 +2348,8 @@ class BaseBot(AbstractBot):
             _exit = getattr(self, "_exit_skill_tenant", None)
             if _exit is not None and _tenant_token is not None:
                 _exit(_tenant_token)
+            if _generic_tenant_token is not None:
+                current_tenant.reset(_generic_tenant_token)
             exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self._current_trace_context = None

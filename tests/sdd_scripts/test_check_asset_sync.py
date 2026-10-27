@@ -143,7 +143,7 @@ def test_no_rulebook_and_no_dot_rules_ship() -> None:
     assert ".claude/skills/second-opinion/SKILL.md" in targets          # C9
     assert "sdd/CONVENTIONS.md" in targets                              # C10
     assert not any("sdd-insight" in t for t in targets)                  # rev 0.5 C22
-    assert len(targets) == 80                                           # rev 0.5 C22 (+ probe on claude and google)
+    assert len(targets) == 83                                           # rev 0.5 C22 + code-reviewer, qa-runner, CODEX.md (packaged-only)
 
 
 def test_assets_have_no_publication_findings() -> None:

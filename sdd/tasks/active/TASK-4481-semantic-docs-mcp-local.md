@@ -1,68 +1,78 @@
-# TASK-4481: mcp-local exposure + semantic-layer docs (M11b)
+# TASK-4481: Local MCP configuration and semantic-layer documentation (M11b)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: medium
-**Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4479
+**Estimated effort**: M (2–4h)
+**Depends-on**: TASK-4710
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 11 (MCP + docs) + AC13/AC16/AC21. **Drift found at task time:** `.parrot/mcp-toolkits.yaml` and `.mcp.json` are git-ignored, operator-local files (`.gitignore:411`, `:392`) and contain neither `database-query:` nor `parrot-database-query` anchors — they cannot be committed. The `semantic-layer:` section and `.mcp.json` entry are therefore DOCUMENTED (copy-paste blocks) and exercised by tests with a temporary config file.
-
----
+Spec rev 0.4, §3 M11; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Create `docs/tools/semantic-layer.md`: tools, policy file schema (incl. `allowed_functions` additive rule), `audit_required` resolution + Postgres sink (`semantic_audit_events.sql`, `postgres_audit_storage`), AGPL notice, mcp-local `static_subject` identity, the `.parrot/mcp-toolkits.yaml` section and `.mcp.json` entry to paste.
-- Write `test_mcp_local.py`: `test_mcp_toolkits_yaml_section` (`load_toolkits_config` on a temp root) and `test_e2e_mcp_local_semantic_layer` (`parrot mcp-local semantic-layer --list` via click's CliRunner against a temp config; tool list matches exposure rules; no real LLM).
+- Document clean-room model schema, aggregate/join examples, all tool signatures, policy schema, default governance, exact provenance, audit-required resolution and Postgres sink.
+- Add semantic-layer YAML class LocalSemanticLayerToolkit with required host guard_factory/agent_id/static_subject; add matching MCP entry at verified anchors. Preserve all unrelated operator settings/secrets; never commit private values.
+- Configs are operator-local if ignored: document identical copyable examples and test temporary files; do not force-add private config wholesale. The future implementation may edit local config only with safe placeholder values.
+- Test actual server factory with governed fixture and explicit evaluator, not merely config parsing/listing. Document fail-closed startup, absent sink default, conformance requirements and no bare-manager hand-off.
 
-**NOT in scope**: editing the git-ignored local config files; HTTP handler (TASK-4480).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `docs/tools/semantic-layer.md` | CREATE | user/operator documentation |
-| `packages/ai-parrot-semantic/tests/test_mcp_local.py` | CREATE | mcp-local config + listing tests |
-
----
+| `docs/tools/semantic-layer.md` | CREATE | Scoped deliverable per blueprint |
+| `.parrot/mcp-toolkits.yaml` | MODIFY | Scoped deliverable per blueprint |
+| `.mcp.json` | MODIFY | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_mcp_local.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.mcp.toolkit_config import ToolkitSection, MCPToolkitsConfig, load_toolkits_config   # verified: toolkit_config.py:20,80,90
-from click.testing import CliRunner
-# parrot/mcp/local_cli.py — `mcp_local` click command (lines 136-170): argument NAME + 4 options (read their names before use)
+from pathlib import Path
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/mcp/toolkit_config.py
-class ToolkitSection(BaseModel):   # line 20 — class_path (alias "class"), enabled, kwargs, include, exclude, llm, llm_kwargs, env (50-57)
-class MCPToolkitsConfig(BaseModel):   # line 80 — toolkits: dict[str, ToolkitSection]
-def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPToolkitsConfig   # line 90 — reads <root>/.parrot/mcp-toolkits.yaml
-# packages/ai-parrot/src/parrot/mcp/local_cli.py:164 — def mcp_local(name, config_path, include, exclude, list_toolkits)
+# packages/ai-parrot/src/parrot/mcp/toolkit_config.py:20
+class ToolkitSection(BaseModel):
 ```
 
-### Does NOT Exist
-- ~~A committed `.parrot/mcp-toolkits.yaml` / `.mcp.json` edit~~ — both git-ignored; document instead.
-- ~~Server code changes for `mcp-local`~~ — a YAML `class:` section suffices (toolkit_config.py:50).
-- ~~`docs/mcp-local-toolkits.md` needing changes~~ — link to it, do not edit it.
+```python
+# packages/ai-parrot/src/parrot/mcp/toolkit_config.py:90
+def load_toolkits_config(root: Path, config_path: Path | None=None) -> MCPToolkitsConfig:
+```
 
----
+```python
+# packages/ai-parrot/src/parrot/mcp/toolkit_server.py:137
+def create_toolkit_mcp_server(name: str, root: Path=Path.cwd(), **overrides: Any) -> StdioMCPServer:
+```
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4710: consumes packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py (MCP-local identity and configured PBAC bootstrap (M10c))
+
+- Consumer-specific evidence: LocalSemanticLayerToolkit constructor and explicit fixture guard factory for actual MCP startup
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -75,134 +85,166 @@ def load_toolkits_config(root: Path, config_path: Path | None = None) -> MCPTool
       "action": "CREATE"
     },
     {
+      "path": ".parrot/mcp-toolkits.yaml",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".mcp.json",
+      "action": "MODIFY"
+    },
+    {
       "path": "packages/ai-parrot-semantic/tests/test_mcp_local.py",
       "action": "CREATE"
     }
   ],
   "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/mcp/toolkit_config.py#ToolkitSection",
     "sym:packages/ai-parrot/src/parrot/mcp/toolkit_config.py#load_toolkits_config",
-    "sym:packages/ai-parrot/src/parrot/mcp/toolkit_config.py#ToolkitSection"
+    "sym:packages/ai-parrot/src/parrot/mcp/toolkit_server.py#create_toolkit_mcp_server"
   ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Section to document (spec §3 M11): `semantic-layer: {class: parrot.semantic.toolkit.SemanticLayerToolkit, kwargs: {models_dir, dialect, static_subject: {user_id: operator, tenant_id: local, roles: [admin]}}, env: {}}`.
-- `.mcp.json` entry mirrors the operator's existing `parrot-database-query`-style entries: command `parrot mcp-local semantic-layer`.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write the docs — *why*: AC16/AC21.
-2. Write the two tests against a temp root — *why*: AC13 without touching ignored files.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `docs/tools/semantic-layer.md` (CREATE)
+
 ```markdown
-# Semantic Layer (`ai-parrot-semantic`)
+# Governed semantic layer
 
-Governed metric queries for agents: sidemantic compiles, ai-parrot governs (PBAC, RLS push-down,
-column lineage, masking, positive SQL guard, signed audit). FEAT-704.
-
-## Install
-## Tools (`sl_*`)
-<!-- FILL IN: table of every tool from spec §2 New Public Interfaces; note run_sql (allow_raw_sql) and
-     save_result_as_dataset (dataset_manager_factory) are absent unless enabled -->
-## Models directory and `<model>.policy.yaml`
-<!-- FILL IN: the spec §2 policy example; governed default; allowed_functions = DEFAULT ∪ additions, never removal -->
-## Audit
-<!-- FILL IN: SemanticAuditEntry fields; audit_required=None -> True iff audit_storage set; explicit False opt-out;
-     Postgres sink: apply parrot/semantic/sql/semantic_audit_events.sql, pass postgres_audit_storage(dsn) -->
-## HTTP API
-## `parrot mcp-local semantic-layer`
-<!-- FILL IN: the .parrot/mcp-toolkits.yaml section + .mcp.json entry to paste (both files are local/ignored);
-     static_subject is a single operator identity, logged and flagged in every audit entry; link docs/mcp-local-toolkits.md -->
-## License notice
-sidemantic is AGPL-3.0 (network clause applies to hosted use). Sign-off: Jesus Lara, 2026-10-19.
+## Installation and clean-room format
+<!-- FILL IN: native-only compiler, dependencies/extras, graph examples with
+aggregate inputs/composite keys, supported grains and fan-out rejection. -->
+## Authorization and identity
+<!-- FILL IN: governed defaults, trusted host binding, local-only operator
+identity, configured guard factory, no caller-supplied credentials. -->
+## Tools and audit
+<!-- FILL IN: tool contracts, saved queries, raw SQL opt-in, limits, signed
+ledger, audit_required and Postgres storage wiring. -->
+## Guarded dataset hand-off
+<!-- FILL IN: M9H protocol, conformance tests and every-read authorization;
+plain DatasetManager factory rejected, absent by default, expiry/revocation. -->
+## MCP-local configuration
+<!-- FILL IN: exact local subclass + guard_factory YAML and MCP JSON blocks;
+temporary-config startup command, explicit allow/deny validation. -->
 ```
 
-### FILL IN checklist
-- [ ] Docs sections — bounded by AC16/AC21 and spec §8 Q3-Q5.
-- [ ] Test bodies (read local_cli option names first).
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
+### `.parrot/mcp-toolkits.yaml` (MODIFY)
 
-## Acceptance Criteria
+Anchor `  database-query:` — occurrences: **1**, freshly verified at `.parrot/mcp-toolkits.yaml:110`.
 
-- [ ] `docs/tools/semantic-layer.md` exists with tools, policy, audit, HTTP, mcp-local and license sections (AC16, AC21).
-- [ ] `test_mcp_toolkits_yaml_section` and `test_e2e_mcp_local_semantic_layer` pass (AC13).
+```yaml
+# BEFORE verified database-query sibling under toolkits: (count below).
+  semantic-layer:
+    class: parrot.semantic.bootstrap.LocalSemanticLayerToolkit
+    kwargs:
+      models_dir: /path/to/models
+      dialect: duckdb
+      agent_id: local-semantic
+      static_subject: {user_id: operator, tenant_id: local, roles: [admin]}
+      guard_factory: myapp.semantic_auth.build_guard
+      guard_factory_kwargs: {policy_dir: /path/to/policies}
+    env: {}
+# Host must supply the factory; missing configuration fails closed.
+# Never force-add unrelated private config; document/test the same block.
+```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
-## Validation Commands
+### `.mcp.json` (MODIFY)
 
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
+Anchor `    "parrot-database-query": {` — occurrences: **1**, freshly verified at `.mcp.json:64`.
 
-- `pytest packages/ai-parrot-semantic/tests/test_mcp_local.py -q`
+```json
+{
+  "parrot-semantic-layer": {
+    "command": "parrot",
+    "args": ["mcp-local", "semantic-layer"]
+  }
+}
+```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_mcp_local.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_mcp_local.py
+"""Regression contract: Local MCP configuration and semantic-layer documentation (M11b)."""
 from pathlib import Path
-from parrot.mcp.toolkit_config import load_toolkits_config
+import pytest
 
 
-def test_mcp_toolkits_yaml_section(tmp_path):
-    (tmp_path / ".parrot").mkdir()
-    (tmp_path / ".parrot/mcp-toolkits.yaml").write_text(
-        "toolkits:\n  semantic-layer:\n    class: parrot.semantic.toolkit.SemanticLayerToolkit\n"
-        "    kwargs: {models_dir: /tmp/m, dialect: duckdb}\n")
-    cfg = load_toolkits_config(tmp_path)
-    assert cfg.toolkits["semantic-layer"].class_path == "parrot.semantic.toolkit.SemanticLayerToolkit"
+def test_yaml_and_json_example_contract(tmp_path: Path) -> None:
+    """Verify yaml and json example contract."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
 
 
-def test_e2e_mcp_local_semantic_layer(tmp_path):
-    # FILL IN: CliRunner().invoke(mcp_local, ["semantic-layer", "--list"/config option...]) with a temp config
-    #          pointing at the fixture models dir + static_subject; assert sl_query_metrics listed, sl_run_sql not
+def test_actual_mcp_factory_governed_startup(tmp_path: Path) -> None:
+    """Verify actual mcp factory governed startup."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_explicit_allow_and_deny_calls(tmp_path: Path) -> None:
+    """Verify explicit allow and deny calls."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `docs/tools/semantic-layer.md` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `.parrot/mcp-toolkits.yaml` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `.mcp.json` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_mcp_local.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Document clean-room model schema, aggregate/join examples, all tool signatures, policy schema, default governance, exact provenance, audit-required resolution and Postgres sink.
+- [ ] Add semantic-layer YAML class LocalSemanticLayerToolkit with required host guard_factory/agent_id/static_subject; add matching MCP entry at verified anchors. Preserve all unrelated operator settings/secrets; never commit private values.
+- [ ] Configs are operator-local if ignored: document identical copyable examples and test temporary files; do not force-add private config wholesale. The future implementation may edit local config only with safe placeholder values.
+- [ ] Test actual server factory with governed fixture and explicit evaluator, not merely config parsing/listing. Document fail-closed startup, absent sink default, conformance requirements and no bare-manager hand-off.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_mcp_local.py -q`
+
+## Test Specification
+
+- `test_yaml_and_json_example_contract`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_actual_mcp_factory_governed_startup`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_explicit_allow_and_deny_calls`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4481 — mcp-local exposure + semantic-layer docs (M11b)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4481 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4481` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

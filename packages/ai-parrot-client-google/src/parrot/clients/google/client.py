@@ -267,6 +267,35 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         "drag_and_drop": "computer_drag_and_drop",
     }
 
+    # gemini-3.8-flash computer-use vocabulary (live probe 2026-10-22,
+    # FEAT-719 spec §6). Every call also carries an ``intent`` string, which
+    # is stripped by _adapt_computer_use_args before toolkit dispatch.
+    _COMPUTER_USE_V3_8_MAP = {
+        "click": "computer_click_at",
+        "move": "computer_hover_at",
+        "type": "computer_type_text",
+        "scroll": "computer_scroll_at",
+        "hotkey": "computer_key_combination",
+        "wait": "computer_wait",
+        "navigate": "computer_navigate",
+        "go_back": "computer_go_back",
+        "drag_and_drop": "computer_drag_and_drop",
+    }
+
+    computer_use: bool = False
+
+    def _computer_use_enabled(self, model: str) -> bool:
+        """Return whether computer use is enabled for ``model``.
+
+        The explicit switch enables computer use for current models, while
+        legacy computer-use model identifiers remain enabled for compatibility.
+        """
+        return bool(self.computer_use) or self._is_computer_use_model(model)
+
+    def _computer_use_vocabulary(self, model: str) -> str:
+        """Return the native computer-use action vocabulary for ``model``."""
+        return "legacy" if self._is_computer_use_model(model) else "v3_8"
+
     @staticmethod
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
@@ -1279,6 +1308,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # ComputerUse tool type for vision-based browser automation.
             # Requires self._computer_use_config (set by ComputerAgent or caller).
             config = getattr(self, "_computer_use_config", None)
+            if config is None and self.computer_use:
+                raise ValueError(
+                    "computer_use is enabled but _computer_use_config is not set " "(configure ComputerAgent first)."
+                )
             excluded = []
             if config is not None:
                 excluded = getattr(config, "excluded_actions", [])
@@ -1799,7 +1832,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
 
     @staticmethod
-    def _adapt_computer_use_args(native_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _adapt_computer_use_args(native_name: str, args: Dict[str, Any], vocabulary: str = "legacy") -> Dict[str, Any]:
         """Adapt native computer-use call args to the toolkit method signature.
 
         Most predefined actions map 1:1 (coordinates are already 0-1000
@@ -1810,6 +1843,29 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         - ``key_combination`` may arrive as a list (``["control", "c"]``) or a
           ``"+"``-joined string; the toolkit expects a comma-separated string.
         """
+        if vocabulary == "v3_8":
+            args = dict(args)
+            args.pop("intent", None)
+            if native_name == "scroll":
+                if "magnitude_in_pixels" in args:
+                    args["magnitude"] = args.pop("magnitude_in_pixels")
+            elif native_name == "drag_and_drop":
+                for source, target in (
+                    ("start_x", "x"),
+                    ("start_y", "y"),
+                    ("end_x", "destination_x"),
+                    ("end_y", "destination_y"),
+                ):
+                    if source in args:
+                        args[target] = args.pop(source)
+            elif native_name == "hotkey":
+                keys = args.get("keys")
+                if isinstance(keys, (list, tuple)):
+                    args["keys"] = ",".join(str(key) for key in keys)
+                elif isinstance(keys, str) and "+" in keys:
+                    args["keys"] = ",".join(key.strip() for key in keys.split("+"))
+            return args
+
         if native_name == "wait_5_seconds":
             return {}
         if native_name == "key_combination":
@@ -1820,7 +1876,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 args["keys"] = ",".join(k.strip() for k in keys.split("+"))
         return args
 
-    async def _execute_computer_use_call(self, tool_name: str, args: Dict[str, Any]) -> Any:
+    async def _execute_computer_use_call(
+        self, tool_name: str, args: Dict[str, Any], model: Optional[str] = None
+    ) -> Any:
         """Execute a single computer-use function call, handling safety.
 
         The model embeds an optional ``safety_decision`` object inside the
@@ -1833,7 +1891,25 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         rejection the action is skipped and a refusal is returned.
         """
         args = dict(args or {})
+        vocabulary = self._computer_use_vocabulary(model) if model else "legacy"
+        intent = None
+        if vocabulary == "v3_8":
+            mapped = self._COMPUTER_USE_V3_8_MAP.get(tool_name)
+            if mapped is None:
+                self.logger.error("Unknown v3_8 computer-use action: %s", tool_name)
+                return {
+                    "error": True,
+                    "message": f"Unsupported computer-use action: {tool_name}",
+                    "action": tool_name,
+                }
+            intent = args.get("intent")
+            if intent is not None:
+                self.logger.debug("Computer-use action %s intent: %s", tool_name, intent)
+            args = self._adapt_computer_use_args(tool_name, args, vocabulary)
+            tool_name = mapped
         safety = args.pop("safety_decision", None)
+        if vocabulary == "v3_8" and isinstance(safety, dict) and intent is not None:
+            safety = {**safety, "intent": intent}
         acknowledged = False
         if isinstance(safety, dict) and safety.get("decision") == "require_confirmation":
             approved = await self._confirm_computer_use_safety(tool_name, safety, args)
@@ -1866,6 +1942,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             "explanation": safety.get("explanation", ""),
             "decision": safety.get("decision"),
         }
+        if "intent" in safety:
+            decision["intent"] = safety["intent"]
         if handler is None:
             self.logger.warning(
                 "Computer-use safety_decision auto-acknowledged (no handler set): %s",
@@ -2110,7 +2188,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # Execute tools
             start_time = time.time()
-            if self._is_computer_use_model(model):
+            if self._computer_use_enabled(model):
                 # Computer-use calls carry an optional ``safety_decision`` in
                 # their args. Each is handled sequentially (a confirmation may
                 # block on human input) — see _execute_computer_use_call.
@@ -2121,6 +2199,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             await self._execute_computer_use_call(
                                 fc.name,
                                 dict(fc.args) if hasattr(fc.args, "items") else (fc.args or {}),
+                                model=model,
                             )
                         )
                     except Exception as exc:  # mirror gather(return_exceptions=True)
@@ -2210,7 +2289,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     else:
                         current_config.tools = None
 
-            is_computer_use = self._is_computer_use_model(model)
+            is_computer_use = self._computer_use_enabled(model)
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
@@ -3301,7 +3380,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if kw_tool_type == "builtin_tools":
             tool_type = kw_tool_type
             _use_tools = True
-        elif _use_tools and self._is_computer_use_model(model):
+        elif _use_tools and self._computer_use_enabled(model):
             # Computer-use models REQUIRE types.Tool(computer_use=...) in the
             # request — sending only function_declarations yields a 400
             # INVALID_ARGUMENT ("This model requires the use of the Computer
@@ -3411,7 +3490,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 max_thinking_tokens=100,
                 max_thinking_time=10,
             )
-        elif self._is_computer_use_model(model):
+        elif self._computer_use_enabled(model):
             # Computer-use models reason over screenshots and require thoughts
             # enabled (see Gemini computer-use docs / reference implementation).
             thinking_config = ThinkingConfig(include_thoughts=True)

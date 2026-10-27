@@ -24,7 +24,7 @@ from __future__ import annotations
 import navigator_auth.decorators as _auth_dec
 import pytest
 
-from tests.handlers.conftest import _SERVER_SRC, _register_package
+from .conftest import _SERVER_SRC, _register_package
 
 
 def _noop_auth_factory(*_args, **_kwargs):
@@ -45,20 +45,20 @@ finally:
     _auth_dec.is_authenticated = _orig_is_authenticated
     _auth_dec.user_session = _orig_user_session
 
-from datetime import UTC
+from datetime import UTC  # noqa: E402
 
-from parrot.bots.flows.core.checkpoint import (
+from parrot.bots.flows.core.checkpoint import (  # noqa: E402
     CheckpointNotFoundError,
     CheckpointStore,
     FlowCheckpoint,
     FlowLockedError,
 )
-from parrot.bots.flows.flow.definition import (
+from parrot.bots.flows.flow.definition import (  # noqa: E402
     EdgeDefinition,
     FlowDefinition,
     NodeDefinition,
 )
-from parrot.handlers.flows.checkpoints import FlowCheckpointHandler
+from parrot.handlers.flows.checkpoints import FlowCheckpointHandler  # noqa: E402
 
 
 class _MockRelUrl:

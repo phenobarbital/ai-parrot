@@ -1,66 +1,73 @@
-# TASK-4476: Owner-bound result handle store (M9b)
+# TASK-4476: Scoped result handles and exact retained provenance (M9b)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: S (< 2h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4464
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 9 (results) + AC10: opaque, bounded, expiring handles bound to (agent, user, tenant, session, model/policy versions, subject digest); `claim()` re-verifies everything — metadata alone is never authorization.
-
----
+Spec rev 0.4, §3 M9; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/results.py`: `ResultHandle`, `ResultHandleStore` (`put`, `claim`).
-- Write `test_results.py`.
+- Implement ResultHandle and ResultHandleStore per rev 0.4: nonempty user/tenant/agent/session identity, exact semantic members, qualified physical columns/tables, expiry, digests and audit id.
+- claim(result_id, *, identity, subject_digest, model_digest, policy_digest) checks every scope component, expiry and versions. Never substitute null/session defaults or request_id.
+- Return defensive snapshots, bound retention by count/TTL and opaque random ids. Alias names are output metadata only, never authorization provenance.
+- Test same user across agents/sessions, changed roles/metadata, foreign/expired/stale handles and mutation of returned row objects.
 
-**NOT in scope**: the `sl_save_result_as_dataset` tool (TASK-4479).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/results.py` | CREATE | handle store |
-| `packages/ai-parrot-semantic/tests/test_results.py` | CREATE | ownership tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/results.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_results.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-import secrets
-from datetime import datetime, timedelta, timezone
-from parrot.auth import PermissionContext                     # verified: auth/__init__.py lazy map
-from parrot.semantic.errors import SemanticResultError        # TASK-4464
+from .context import SemanticRequestIdentity
+from .errors import SemanticResultError
+from __future__ import annotations
+from datetime import datetime
+from parrot.auth import PermissionContext
+from pathlib import Path
+from pydantic import BaseModel
+from typing import Any
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/auth/permission.py
-class UserSession:        # line 21 — user_id, tenant_id, roles, metadata (46-49); metadata NOT in the hash (49)
-class PermissionContext:  # line 81 — session; request_id; channel; trace_context; extra (122-126)
+# packages/ai-parrot/src/parrot/auth/permission.py:81
+class PermissionContext():
 ```
 
-### Does NOT Exist
-- ~~`PermissionContext.session_id`~~ — not a field; read the session id from `ctx.extra.get("session_id")` and record that choice (the HTTP handler sets it).
-- ~~Sequential/guessable result ids~~ — `secrets.token_urlsafe(24)` only.
+### Dependency Contracts and Parallelism Evidence
 
----
+- TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2))
+
+- Consumer-specific evidence: SemanticRequestIdentity and SemanticResultError for owner-bound claims
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -83,143 +90,133 @@ class PermissionContext:  # line 81 — session; request_id; channel; trace_cont
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Every mismatch raises the SAME code (`result_unavailable`) — never reveal whether a handle exists for someone else.
-- Eviction: drop expired entries on every put/claim, then oldest beyond `max_entries`.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `ResultHandle` verbatim from spec §3 M9.
-2. Write the store with constant error codes — *why*: AC10.
-3. Write tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/results.py` (CREATE)
+
 ```python
-"""Opaque, bounded, expiring, owner-bound result handles (spec §3 Module 9, AC10)."""
+"""Bounded expiring handles with immutable ownership and authorization provenance."""
 from __future__ import annotations
-
-import secrets
-import threading
-from collections import OrderedDict
-from datetime import datetime, timedelta, timezone
-
+from datetime import datetime
+from typing import Any
 from pydantic import BaseModel
-
 from parrot.auth import PermissionContext
-
+from .context import SemanticRequestIdentity
 from .errors import SemanticResultError
 
-
 class ResultHandle(BaseModel):
-    result_id: str = ""
-    agent_id: str | None
+    """A defensive retained result, never a grant by itself."""
+    result_id: str
+    agent_id: str
     user_id: str
     tenant_id: str
-    session_id: str | None
+    session_id: str
     subject_digest: str
     model: str
     model_digest: str
     policy_digest: str
     expires_at: datetime
+    members: tuple[str, ...]
+    physical_columns: tuple[str, ...]
+    physical_tables: tuple[str, ...]
     columns: list[str]
-    rows: list[dict]
+    rows: list[dict[str, Any]]
     audit_id: str
     governed_sql: str
-
+    # FILL IN: strict nonempty identifiers and copied provenance/rows; AC25.
 
 class ResultHandleStore:
+    """Opaque TTL store with complete owner and version checks."""
     def __init__(self, *, ttl_s: int = 900, max_entries: int = 256) -> None:
-        self.ttl = timedelta(seconds=ttl_s)
-        self.max_entries = max_entries
-        self._data: OrderedDict[str, ResultHandle] = OrderedDict()
-        self._lock = threading.Lock()
-
+        # FILL IN: bounded private store and injectable clock for deterministic tests.
+        ...
     def put(self, handle: ResultHandle) -> str:
-        """Store with a fresh opaque id (secrets.token_urlsafe) and expires_at = now + ttl."""
-        # FILL IN: purge expired; assign id + expires_at via model_copy; evict oldest beyond max_entries
-        raise NotImplementedError
-
-    def claim(self, result_id: str, *, ctx: PermissionContext, subject_digest: str,
-              model_digest: str, policy_digest: str) -> ResultHandle:
-        """Owner, session, subject digest and versions must match and the handle be unexpired."""
-        # FILL IN: any mismatch/unknown/expired -> SemanticResultError("result_unavailable") (same code always)
-        raise NotImplementedError
+        """Store a defensive snapshot under a random opaque id."""
+        ...
+    def claim(self, result_id: str, *, identity: SemanticRequestIdentity,
+              subject_digest: str, model_digest: str, policy_digest: str) -> ResultHandle:
+        """Return a snapshot only for exact current owner, context and versions."""
+        # FILL IN: all ownership/expiry checks; no wildcard null fields.
+        ...
 ```
 
-### FILL IN checklist
-- [ ] `put` / `claim` — bounded by AC10.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
-
-## Acceptance Criteria
-
-- [ ] `test_result_handle_ownership` passes: foreign user, other session, changed subject digest, changed policy digest, expired, unknown → same `result_unavailable` error (AC10).
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_results.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_results.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_results.py
+"""Regression contract: Scoped result handles and exact retained provenance (M9b)."""
+from pathlib import Path
 import pytest
-from parrot.semantic.results import ResultHandleStore, ResultHandle
-from parrot.semantic.errors import SemanticResultError
 
 
-def test_result_handle_ownership(pctx_factory):
-    # FILL IN: put a handle for user-a; claim as user-b / other session / changed digests / after expiry
-    #          (ttl_s=0) -> SemanticResultError with code "result_unavailable"; owner claim succeeds
+def test_same_user_distinct_sessions_and_agents(tmp_path: Path) -> None:
+    """Verify same user distinct sessions and agents."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_expiry_context_policy_and_provenance(tmp_path: Path) -> None:
+    """Verify expiry context policy and provenance."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_defensive_copy_and_bounded_store(tmp_path: Path) -> None:
+    """Verify defensive copy and bounded store."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/results.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_results.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Implement ResultHandle and ResultHandleStore per rev 0.4: nonempty user/tenant/agent/session identity, exact semantic members, qualified physical columns/tables, expiry, digests and audit id.
+- [ ] claim(result_id, *, identity, subject_digest, model_digest, policy_digest) checks every scope component, expiry and versions. Never substitute null/session defaults or request_id.
+- [ ] Return defensive snapshots, bound retention by count/TTL and opaque random ids. Alias names are output metadata only, never authorization provenance.
+- [ ] Test same user across agents/sessions, changed roles/metadata, foreign/expired/stale handles and mutation of returned row objects.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_results.py -q`
+
+## Test Specification
+
+- `test_same_user_distinct_sessions_and_agents`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_expiry_context_policy_and_provenance`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_defensive_copy_and_bounded_store`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4476 — Owner-bound result handle store (M9b)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4476 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4476` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

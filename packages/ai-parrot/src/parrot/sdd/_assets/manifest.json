@@ -635,14 +635,6 @@
       ]
     },
     {
-      "source": "sdd/CODEX.md",
-      "target": "docs/sdd/CODEX.md",
-      "hosts": [
-        "codex",
-        "google"
-      ]
-    },
-    {
       "source": "claude/agents/code-reviewer.md",
       "target": ".claude/agents/code-reviewer.md",
       "hosts": [
@@ -654,6 +646,14 @@
       "target": ".claude/agents/qa-runner.md",
       "hosts": [
         "claude"
+      ]
+    },
+    {
+      "source": "sdd/CODEX.md",
+      "target": "docs/sdd/CODEX.md",
+      "hosts": [
+        "codex",
+        "google"
       ]
     }
   ]

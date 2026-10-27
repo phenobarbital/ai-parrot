@@ -1,18 +1,23 @@
 ---
 type: feature
 base_branch: dev
-projects: [ai-parrot-semantic, ai-parrot-server, ai-parrot]  # FEAT-576 — carried from the brainstorm
-tags: [semantic-layer, sidemantic, sqlglot, rls, pbac, mcp]     # FEAT-576 — carried from the brainstorm
+projects: [ai-parrot-semantic, ai-parrot, ai-parrot-server, ci]  # FEAT-576 — rev 0.3 adds `ci` (CI workflow edits), carried from the rev2 proposal
+tags: [semantic-layer, sqlglot, clean-room, licensing, rls, pbac, mcp]  # FEAT-576 — rev 0.3 drops `sidemantic` (removed dependency), adds `clean-room`
 ---
 
 # Feature Specification: Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
 
 **Feature ID**: FEAT-704
-**Date**: 2026-10-19
+**Date**: 2026-10-19 (rev 0.4: 2026-10-25)
 **Author**: Jesus Lara
-**Status**: approved
+**Status**: approved; rev 0.4 incorporates the requested specification-review fixes
 **Target version**: 1.3.0
 **Source**: `sdd/proposals/semantic-layer.brainstorm.md` (accepted 2026-10-19, Option B) ← `sdd/proposals/semantic-layer.proposal.md`
+**Rev 0.3 source**: `sdd/proposals/semantic-layer-rev2.proposal.md` (status: review, 2026-10-25) — supersedes the
+sidemantic-core design below; see Revision History. The unmerged `origin/feat-FEAT-704-semantic-layer`
+branch (20/20 tasks, built against rev 0.2) is a **salvage source only**, never a merge base: it is 94
+commits ahead of its merge-base with `dev` while `dev` is 1,386 commits ahead of the same point
+(verified 2026-10-25). Rev 0.3 tasks run in a fresh worktree off `origin/dev`.
 
 ---
 
@@ -47,9 +52,9 @@ Facts the design rests on (from the research proposal and the brainstorm):
 
 ### Goals
 
-- G1. Declare metrics, dimensions, relationships and time grains once (sidemantic YAML or Apache
-  Ossie 0.1.1 documents) and compile governed SQL for Postgres, BigQuery and DuckDB on demand,
-  with no warehouse connection at compile time.
+- G1. Declare metrics, dimensions, relationships and time grains once (**(rev 0.3)** the own clean-room
+  YAML format or Apache Ossie 0.1.1 documents) and compile governed SQL for Postgres, BigQuery and
+  DuckDB on demand, with no warehouse connection at compile time.
 - G2. Governance is ai-parrot code and engine-independent: PBAC gate on every request, RLS pushed
   **below aggregation**, per-role member allowlist, column masking **and** column-usage rights
   enforced through full AST lineage, positive SQL allowlist, forced `LIMIT`, signed audit.
@@ -57,28 +62,50 @@ Facts the design rests on (from the research proposal and the brainstorm):
   available PBAC evaluator unless its policy explicitly sets `governed: false`.
 - G4. Caches never carry governed SQL or authorization decisions; results are never shared across
   subjects; dataset hand-off is owner/session-bound and expiring.
-- G5. One opt-in satellite distribution `ai-parrot-semantic` confines the AGPL-3.0 dependency
-  (sidemantic) and the `parrot.semantic` namespace; core, `ai-parrot-tools` and `ai-parrot-server`
-  never import sidemantic at module level.
+- G5. **(rev 0.3)** One opt-in satellite distribution `ai-parrot-semantic`, MIT-only, with **no AGPL-3.0
+  dependency at all** — sidemantic is neither a dependency nor a reference (clean-room: only Cube, dbt
+  MetricFlow and Apache Ossie 0.1.1 **public format documentation** informs the typed model schema). The
+  repo-wide `sidemantic` import ban (TID251) carries no per-file exemption anywhere, including the satellite.
 - G6. Four surfaces over one implementation: `SemanticLayerToolkit` (`sl_*` tools), `parrot
   mcp-local semantic-layer`, aiohttp handlers in `ai-parrot-server`, and a guarded hand-off to a
-  subject-scoped `DatasetManager`.
-- G7. A native fallback compiler (sqlglot) covers the simple-aggregation subset so sidemantic can
-  be bypassed per model (`engine: native`) or dropped later, with parity tests on DuckDB.
+  subject/session-scoped dataset sink (M9H).
+- G7. **(rev 0.3)** A single native sqlglot compiler is the sole engine — no dual-engine dispatch, no
+  `engine` field on model/policy. v1 covers the subset in M5 (aggregations, `DATE_TRUNC` grains, declared
+  one-to-many joins with fan-out rejection, filtered measures lowered to `FILTER (WHERE …)` / `CASE WHEN`,
+  derived metrics over metrics) with golden-SQL snapshots + a DuckDB execution oracle + a cross-process
+  determinism hash check replacing the former sidemantic-parity tests.
 
 ### Non-Goals (explicitly out of scope)
 
-- Executing through sidemantic's own (sync) adapters; a result cache; cross-request result reuse.
-- Symmetric aggregates, cumulative / time-comparison / cohort metrics in the **native** engine (sidemantic-only in v1).
+- **(rev 0.3)** Porting, adapting, or opening sidemantic's source code in any form — the clean-room rule
+  is absolute: sidemantic is dropped as a dependency *and* as a code reference. Only the public Cube, dbt
+  MetricFlow and Apache Ossie 0.1.1 format specs (read from their own documentation) inform the typed
+  model schema; the branch's sidemantic-API glue (`loader.py` body, `sidemantic_engine.py`, the Ossie
+  shim built against sidemantic's importer) is deleted, never adapted.
+- A result cache beyond the pre-governance `CompileCache`; cross-request result reuse.
+- Symmetric aggregates, cumulative / time-comparison / cohort metrics (no engine implements them in v1).
 - Pushing governance into the warehouse (views + native RLS) — rejected as brainstorm Option D.
-- BSL-over-Ibis or Ibis-direct compilation — rejected as brainstorm Option A (Ibis NO-GO, TASK-1437).
-- sidemantic's `SecurityPolicy` / `security:` blocks — rejected at load; RLS has exactly one semantics (ours).
-- Changes to `DatabaseQueryToolkit`, `AuditLedgerEntry`, `RlsRegistry`, `DataPlanePolicyGuard` or
-  `parrot/clients/base.py` — all are consumed as they are. The only core edits are M12's behavioural
-  fix of `dataset_manager/sources/authorizing.py` and `handlers/datasets.py` (§8 Q6, `issue:90cf04ce8edd`),
-  which changes no public signature.
+- **(rev 0.3)** BSL-over-Ibis or Ibis-direct compilation remains a non-goal. The recorded NO-GO
+  (`TASK-1437`, cited at `dataset_manager/spatial/compiler.py:19`) concerned **connection/credential
+  mapping** (asyncpg DSN ≠ libpq/psycopg format; BigQuery credentials need a `google.oauth2.Credentials`
+  shim) — compile-only `ibis.to_sql()` was never evaluated. This spec adds no Ibis/BSL dependency; the
+  NO-GO's scope is explicitly narrowed to connections so a later, scoped joins-phase spec may re-open
+  compile-only BSL/Ibis usage without contradicting this record.
+- **(rev 0.4)** No core edits except the DuckDB execution prerequisite M9D and its focused tests. Rev 0.2's M12 (behavioural fix of
+  `dataset_manager/sources/authorizing.py` / `handlers/datasets.py`, `issue:90cf04ce8edd`) is dropped —
+  **FEAT-738 (TASK-4678/4679, merged 2026-10-24) already shipped the identical request-scoped-RLS fix on
+  `dev`**: `AuthorizingDataSource._apply_rls` now returns a per-call target instead of mutating
+  `self._inner` (verified `authorizing.py:147,152`, 2026-10-25), and `test_authorizing_data_source.py`
+  already asserts the non-mutating behavior. The semantic implementation stays in the satellite; M9D is the sole core-source exception; `DatabaseQueryToolkit`,
+  `AuditLedgerEntry`, `RlsRegistry`, `DataPlanePolicyGuard`, `parrot/clients/base.py` are all consumed as
+  they are.
+- **(rev 0.3)** The Rust/PyO3 phase (deriving SemaFlow's `sql_ast.rs` + `dialect/{duckdb,postgres,bigquery}.rs`
+  under MIT with attribution) is **out of scope for this spec**, tracked as its own reserved feature,
+  **FEAT-742** (`semantic-layer-rust-compiler`, reserved 2026-10-25). This spec only fixes the IR/compiler
+  shape FEAT-742 would later consume; no Rust code, crate, build step, or `THIRD_PARTY.md` entry is added here.
 - Dialects other than Postgres, BigQuery, DuckDB for **execution** (compile-only may emit any sqlglot dialect).
-- A metric-authoring UI; Ossie **export**; dbt/LookML import beyond what sidemantic's auto-detect already provides (not tested in v1).
+- A metric-authoring UI; Ossie **export**; dbt/LookML import beyond the own-format loader and the vendored
+  Ossie 0.1.1 schema.
 
 ---
 
@@ -86,20 +113,22 @@ Facts the design rests on (from the research proposal and the brainstorm):
 
 ### Overview
 
-**Option B (brainstorm):** sidemantic (`==0.12.0`, AGPL accepted) owns the semantic core —
-model/dimension/metric definitions, relationships with cardinalities and symmetric aggregates,
-15-format directory loading (Apache Ossie included), and `compile(metrics, dimensions, filters,
-order_by, limit, dialect)` → SQL with no connection. ai-parrot owns everything that decides *who
-sees what*, written on **sqlglot** and applied identically to sidemantic output, native-compiler
-output and (optional) free SQL:
+**Rev 0.3 (amends rev 0.2's "Option B"):** sidemantic is dropped entirely — as a dependency and as a
+code reference (clean-room). ai-parrot owns the **whole** semantic core now: a typed, frozen Pydantic v2
+model graph (`SemanticModel` / `Dimension` / `Metric` / `Relationship`, §3 M4) authored from the *public*
+Cube, dbt MetricFlow and Apache Ossie 0.1.1 format specs, loaded from the own YAML format and Ossie
+documents, and compiled by **one native sqlglot compiler** (§3 M5, promoted from "fallback" to sole
+engine — 87% already exists on the salvage branch, see §6). Governance, written on **sqlglot** and
+applied identically to compiled output and (optional) free SQL, is unchanged from rev 0.2 and entirely
+engine-neutral:
 
 1. **`SemanticQuery`** — the pydantic request contract (metrics · dimensions · time dimensions
    with grain · typed `and`/`or` filter tree · order · limit · offset · timezone · `saved_query`
-   XOR `metrics`). Compiles to sidemantic filter strings or to the native AST builder.
-2. **Compile** (`asyncio.to_thread`) via one internal `compile()` that dispatches on
-   `model.engine ∈ {sidemantic, native}` — *no plugin protocol, no engine registry* (resolved
-   brainstorm question). Output is an immutable `CompiledQuery` containing **no subject-derived
-   content**; this is the only thing the LRU cache may store.
+   exclusive with explicit query members). Compiles directly to the native sqlglot AST builder.
+2. **Compile** (`asyncio.to_thread`) via one internal `compile()` — **no dispatch, no `engine` field,
+   no plugin protocol, no engine registry** (rev 0.3 drops even the two-way dispatch rev 0.2 kept).
+   Output is an immutable `CompiledQuery` containing **no subject-derived content**; this is the only
+   thing the LRU cache may store.
 3. **Govern** — a sqlglot pass over a *clone* of the compiled AST, run on **every** request
    including cache hits, compile-only requests, saved queries, dimension-value lookups, raw
    SQL **and catalog exposure** (a governed model's members are never listed without an
@@ -122,21 +151,22 @@ output and (optional) free SQL:
    dialect, row count, duration, outcome.
 6. **Hand-off** — results are retained only when enabled, under opaque `result_id` handles in a
    bounded TTL store bound to (agent, user, tenant, session, model/policy versions, subject
-   digest). `sl_save_result_as_dataset` re-checks ownership/expiry/context and PBAC, then calls
-   `add_dataframe()` on a **subject/session-scoped** `DatasetManager` obtained from a host-provided
-   factory; without that factory the tool is not exposed.
+   digest). `sl_save_result_as_dataset` re-checks ownership/expiry/context and PBAC, then publishes through a host-provided **guarded, subject/session-scoped** dataset sink (M9H), which reauthorizes every downstream read. A plain `DatasetManager.add_dataframe()` target is refused; without a conforming sink the tool is not exposed.
 7. **Surfaces** — `SemanticLayerToolkit(AbstractToolkit, tool_prefix="sl")`; `parrot mcp-local
    semantic-layer` from a `.parrot/mcp-toolkits.yaml` section (optional `static_subject` operator
    identity, logged and audited — resolved question); `SemanticLayerHandler(BaseView)` at
    `/api/v1/agents/semantic/{agent_id}` registered in `manager.py` (lazy import); the hand-off above.
-8. **Licensing** — satellite `license = "MIT"` like the other satellites, with the AGPL-3.0
-   dependency and its network clause documented in README and §7 (resolved question); written
-   legal sign-off tracked in §8.
+8. **Licensing** — **(rev 0.3)** satellite `license = "MIT"` like the other satellites, now with
+   **no AGPL dependency to document**: the README's former "License notice: sidemantic is AGPL-3.0"
+   section is removed; §8 Q1's legal sign-off is now moot (recorded as superseded, not re-litigated).
 
 Resolved brainstorm decisions reflected in this design (see §8 for the trail): license field;
-single `compile()` dispatch; separate audit ledger; governed-by-default; mcp-local
-`static_subject`; satellite-side credential resolution; `sl_run_sql` shipped behind
-`allow_raw_sql=False`; native subset as drafted; proposal committed.
+separate audit ledger; governed-by-default; mcp-local `static_subject`; satellite-side credential
+resolution; `sl_run_sql` shipped behind `allow_raw_sql=False`; native subset as drafted; proposal
+committed. **(rev 0.3)** additionally resolved: no sidemantic dependency or reference (clean-room);
+single compiler with no dispatch; branch is salvage-only; one-to-many joins kept in v1 (U4); FEAT-704
+rev 0.3 creates the satellite skeleton, FEAT-713 extends it (U6); Rust phase gets its own reserved
+FEAT-742 (U3); Ibis NO-GO scope-narrowed to connections (U5).
 
 ### Component Diagram
 ```
@@ -145,16 +175,16 @@ single `compile()` dispatch; separate audit ledger; governed-by-default; mcp-loc
  Agent / AgentCrew tool call ───────────────────┤    _permission_context kwarg / static_subject)
                                                 ▼
                                SemanticLayerToolkit  (sl_* tools, tool_prefix="sl")
-                                 │ _pre_execute → ContextVar(pctx)
+                                 │ trusted wrapper → ContextVars; _pre_execute validates
                                  ▼
-   SemanticModelLoader ──► LoadedModel{layer, policy, schema_map, digests}
-   (sidemantic dir + Ossie 0.1.1 + <model>.policy.yaml)     │
+   SemanticModelLoader ──► LoadedModel{model: SemanticModel, policy, schema_map, digests}
+   (own YAML dir + Ossie 0.1.1 + <model>.policy.yaml, clean-room)     │
                                  │                           │
    RoleCatalog (role-filtered view, saved-query expansion) ◄─┘
                                  │  SemanticQuery (validated, expanded)
                                  ▼
-   compile(query, model, dialect)  ── engine=sidemantic ─► sidemantic.SemanticLayer.compile
-        │  (to_thread, pre-governance LRU)    └ engine=native ──► NativeCompiler (sqlglot AST)
+   compile(query, model, dialect)  ── NativeCompiler (sqlglot AST, sole engine)
+        │  (to_thread, pre-governance LRU)
         ▼  CompiledQuery (immutable, subject-free)
    GovernancePipeline.govern(compiled, ctx, model)   ← also for sl_run_sql(sql)
         qualify → PhysicalResources → PbacGate.authorize (DataPlanePolicyGuard.authorize_source)
@@ -166,28 +196,28 @@ single `compile()` dispatch; separate audit ledger; governed-by-default; mcp-loc
    SemanticAuditLedger.append(SemanticAuditEntry)   ResultHandleStore (TTL, owner-bound)
                                                           │ sl_save_result_as_dataset
                                                           ▼
-                                   dataset_manager_factory(ctx) → DatasetManager.add_dataframe()
+                                   dataset_manager_factory(identity) → GovernedDatasetSink.publish() → guarded reads
 ```
 
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `parrot.tools.toolkit.AbstractToolkit` / `ToolkitTool` | extends | `SemanticLayerToolkit` subclasses it; `_pre_execute` receives `_permission_context` (toolkit.py:174-178) and sets the satellite's ContextVar (DatasetManager pattern, tool.py:2663) |
+| `parrot.tools.toolkit.AbstractToolkit` / `ToolkitTool` | extends | `SemanticLayerToolkit` subclasses it; `_pre_execute` receives `_permission_context` (toolkit.py:174-178); validates identity bound by the satellite execution wrapper (M10) |
 | `parrot.tools.databasequery.toolkit.DatabaseQueryToolkit.get_source()` + `AbstractDatabaseSource.query()` | uses | execution bridge for `pg` / `bigquery` / `duckdb`; no change to the toolkit |
 | `parrot.auth.dataplane_guard.DataPlanePolicyGuard.authorize_source()` / `.rls_predicates()` | uses | PBAC gate (`driver:connect`, `table:read`) on every request; satellite never passes `ctx=None` (guard would fail open) |
 | `parrot.auth.rls_registry.RlsRegistry` / `RlsRule` / `RlsPredicate` | uses | RLS rules looked up by `(driver, {schema.table})`, rendered per subject; predicates re-parsed into sqlglot and pushed below aggregation |
 | `parrot.auth.permission.PermissionContext` / `UserSession` | uses | subject identity; roles/tenant/metadata feed the subject digest and policy evaluation |
-| `parrot.auth.context._pctx_var` | depends on | the same ContextVar `DatabaseQueryTool` reads (tool.py:598-600) is **set** by the toolkit's `_pre_execute` so downstream guards see the context |
+| `parrot.auth.context._pctx_var` | depends on | the same ContextVar `DatabaseQueryTool` reads (tool.py:598-600) is **bound and reset** by the satellite wrapper so downstream guards see only the current context |
 | `parrot.security.query_validator.QueryValidator.validate_sql_ast()` | uses | negative base (multi-statement/DDL/DML rejection) run before the positive guard |
 | `parrot.security.audit_ledger.AbstractKMSSigner` / `LocalHMACSigner` / `AzureKeyVaultSigner` | uses | signer for `SemanticAuditEntry`; `AuditLedger` itself is **not** used (its entry is credential-shaped) |
-| `parrot.tools.dataset_manager.tool.DatasetManager.add_dataframe()` | uses | hand-off target, only through a host-provided subject/session-scoped manager |
+| `parrot.tools.dataset_manager.tool.DatasetManager.add_dataframe()` | uses | not a sufficient hand-off target by itself; M9H requires a guarded host sink |
 | `parrot.tools.dataset_manager.sources.resolver.PhysicalResources` | uses | the resource shape `authorize_source` expects; built from the governed AST's tables (`"driver:schema.table"` strings) |
 | `parrot.tools.dataset_manager.sources.dialects.driver_to_dialect()` + `parrot.knowledge.common.sql_dialects.SQLGLOT_DIALECT_MAP` | uses | driver ↔ sqlglot dialect mapping |
 | `parrot.interfaces.database.get_default_credentials(driver)` | uses | default credentials per driver; `ConnectionResolver` layers a named-connection env prefix on top |
 | `parrot mcp-local` (`parrot/mcp/local_cli.py`, `toolkit_config.ToolkitSection`) | config | new `semantic-layer:` section (`class`, `kwargs`, `env`); no server code |
 | `ai-parrot-server` `manager/manager.py` router | extends | `SemanticLayerHandler` registered next to `DatasetManagerHandler` (manager.py:2571) behind a lazy `parrot.semantic` import |
-| `ai-parrot-server` `handlers/datasets.py::_get_dataset_manager()` | reuses pattern | per-user, per-agent `DatasetManager` from the session is the hand-off factory in the HTTP surface |
+| `ai-parrot-server` `handlers/datasets.py::_get_dataset_manager()` | reuses pattern | per-user/session ownership precedent only; does not provide the M9H semantic read gate |
 | root `pyproject.toml` `[tool.uv.sources]`, `scripts/release.py` `PACKAGES`, `ruff.toml` TID251, `.github/workflows/ci.yml` | modifies | workspace member, release list, `sidemantic` import ban outside the satellite, CI test step |
 
 ### Data Models
@@ -231,16 +261,17 @@ class SemanticQuery(BaseModel):
     limit: int | None = None            # None → policy default; clamped to policy max
     offset: int = 0                     # requires order_by
     timezone: str | None = None
-    saved_query: str | None = None      # XOR metrics; expanded by RoleCatalog before compile
+    saved_query: str | None = None      # exclusive with explicit members; expanded before compile
 
 class CompiledQuery(BaseModel, frozen=True):
     """Pre-governance compiler output. MUST contain no subject-derived predicates or values."""
     sql: str
     dialect: str
-    engine: Literal["sidemantic", "native"]
+    # (rev 0.3) no `engine` field — the native compiler is the sole engine; `compiler_version` below
+    # replaces the old "engine+version" cache-key component (invalidates on compiler codegen changes).
     members: tuple[str, ...]            # metrics + dimensions referenced
     tables: tuple[str, ...]             # "schema.table" physical tables referenced
-    cache_key: str                      # (model digest, policy digest, canonical query, dialect, engine+version, connection id)
+    cache_key: str                      # (model digest, policy digest, canonical query, dialect, compiler_version, connection id)
 
 class GovernedQuery(BaseModel, frozen=True):
     sql: str
@@ -251,6 +282,8 @@ class GovernedQuery(BaseModel, frozen=True):
     masked_columns: tuple[str, ...]
     limit: int
     subject_digest: str
+    members: tuple[str, ...]            # exact semantic provenance including dependencies
+    physical_columns: tuple[str, ...]   # resolved qualified lineage; never inferred from output aliases
 
 class SemanticQueryResult(BaseModel):
     columns: list[str]
@@ -266,7 +299,7 @@ class SemanticQueryResult(BaseModel):
 ```yaml
 # <models_dir>/<model>.policy.yaml  (new side-file; schema in parrot/semantic/policy.py)
 governed: true                 # default true; `false` opts the model out of PBAC/RLS/role checks
-engine: sidemantic             # or: native
+# (rev 0.3) no `engine:` key — the native compiler is the only engine
 connection: warehouse_pg       # named connection resolved by ConnectionResolver
 limits: {default: 1000, max: 10000}
 roles:
@@ -297,7 +330,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
     async def compile_query(self, query: SemanticQuery) -> dict          # governed SQL + explanation, no execution
     async def query_metrics(self, query: SemanticQuery) -> SemanticQueryResult
     async def run_sql(self, model: str, sql: str) -> SemanticQueryResult  # only when allow_raw_sql=True
-    async def save_result_as_dataset(self, result_id: str, name: str, description: str | None = None) -> dict  # only with a factory
+    async def save_result_as_dataset(self, result_id: str, name: str, description: str | None = None) -> dict  # only with a conforming guarded sink factory
 ```
 
 ---
@@ -311,22 +344,28 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: Distribution skeleton | yes | PEP 420 layout mirrors `packages/ai-parrot-embeddings`; exact pins and anchors in §6/§7 | — |
-| M2: Query & result contracts | yes | pydantic v2 models above; validators enumerated in M2 skeleton; error hierarchy fixed | — |
-| M3: Model policy side-file | yes | YAML schema above; unknown member ⇒ `SemanticPolicyError`; `governed` default `true` | — |
-| M4: Loader + sidemantic engine | no | sidemantic API surface (`load_from_directory`, `compile`, filter-string grammar, `security:` detection) must be confirmed against the pinned wheel in the first task (spike) | engine API confirmation |
-| M5: Native compiler | yes (after M4) | subset fixed in §2; sqlglot AST builder; fan-out ⇒ `SemanticValidationError` | — |
-| M6: Governance pipeline | no | RLS push-down and lineage rules are security-critical; the thinking model owns the AST strategy | security design |
-| M7: Role catalog + saved queries | yes | filter semantics fixed (`"*"` or list; `usage` list); suggestion = top-3 by difflib ratio | — |
-| M8: Semantic audit ledger | yes | `SemanticAuditEntry` fields fixed below; `canonical_bytes` = sorted-key JSON without `signature` | — |
-| M9: Execution bridge, compile cache, result handles | yes | `ConnectionResolver` env grammar fixed; LRU keyed by `CompiledQuery.cache_key`; handle fields fixed | — |
-| M10: SemanticLayerToolkit | no | orchestration of M4–M9 with ContextVar + static_subject; exposure rules | integration surface |
-| M11: HTTP handler + MCP config + docs | yes | `BaseView` pattern of `handlers/datasets.py`; YAML/JSON anchors in §6 | — |
-| M12: Core request-scoped RLS fix (`issue:90cf04ce8edd`) | no | — | security-critical rewrite of an enforcement path; the thinking model owns the copy strategy |
+| M1: Distribution skeleton | yes | PEP 420 layout mirrors `packages/ai-parrot-embeddings`; exact pins and anchors in §6/§7; **(rev 0.3)** no `sidemantic` dependency | — |
+| M2: Query & result contracts | yes | pydantic v2 models above; validators enumerated in M2 skeleton; error hierarchy fixed; **(rev 0.3)** no `engine` field | — |
+| M3: Model policy side-file | yes | YAML schema above; unknown member ⇒ `SemanticPolicyError`; `governed` default `true`; **(rev 0.3)** no `engine` field | — |
+| M4: Typed model graph + loader (rev 0.3, clean-room) | no | own YAML format + Ossie 0.1.1 loader; `SemanticModel`/`Dimension`/`Metric`/`Relationship` fixed below; salvages `PhysicalSchema`/digests from the branch (`loader.py`, 386 lines, verified) | new clean-room schema design — public-spec authorship is a real design choice, not mechanical |
+| M5: Sole native compiler | yes (after M4) | subset fixed in §2 + rev 0.3 additions (filtered measures, derived-over-metrics); salvaged `engines/native.py` (236 lines, verified) re-pointed to the typed graph; fan-out ⇒ `SemanticValidationError`; **fixes the LIKE-escape bug** (`issue:46e8f6219bf5`, verified present at `native.py:199-200` on the branch) | — |
+| M6: Governance pipeline | no | RLS push-down and lineage rules are security-critical; the thinking model owns the AST strategy; **(rev 0.3)** salvaged as-is, engine-neutral | security design |
+| M7: Role catalog + saved queries | yes | filter semantics fixed (`"*"` or list; `usage` list); suggestion = top-3 by difflib ratio; **(rev 0.3)** salvaged as-is | — |
+| M8: Semantic audit ledger | yes | `SemanticAuditEntry` fields fixed below; `canonical_bytes` = sorted-key JSON without `signature`; **(rev 0.3)** `engine` field becomes a fixed `"native"` provenance value, salvaged as-is | — |
+| M9: Execution bridge, compile cache, result handles | yes | `ConnectionResolver` env grammar fixed; LRU keyed by `CompiledQuery.cache_key`; handle fields and provenance fixed; salvage then apply rev 0.4 ownership changes | — |
+| M10: SemanticLayerToolkit | no | orchestration of M4–M9 with ContextVar + static_subject; exposure rules; **(rev 0.4)** salvage then adapt to trusted identity/bootstrap and resolve `issue:3c4d154c0172` S3/S5 as mandatory security gates; track any remaining nits separately | integration surface |
+| M9D: DuckDB prerequisite | yes | source API unchanged; real-file tests and thread-isolated connections | — |
+| M9H: Guarded hand-off | no | protocol + read authorization + adapter conformance suite | security boundary |
+| M11: HTTP handler + MCP config + docs | yes | `BaseView` pattern of `handlers/datasets.py`; YAML/JSON anchors in §6; **(rev 0.3)** drop the AGPL notice from docs/README | — |
+
+**(rev 0.3) M12 removed** — superseded by FEAT-738 (TASK-4678/4679, merged 2026-10-24, PR #1801):
+`AuthorizingDataSource._apply_rls` already returns a per-call target without mutating `self._inner`
+(verified `authorizing.py:147,152`, 2026-10-25) and `_clone_agent_dm` already avoids sharing
+`entry.source`; `test_authorizing_data_source.py` already asserts the non-mutating behavior. M9D is the sole core-source exception; M12 remains removed.
 
 ### Module 1: `ai-parrot-semantic` distribution skeleton
 - **Path**: `packages/ai-parrot-semantic/pyproject.toml`, `README.md`, `src/parrot/semantic/__init__.py`, `src/parrot/semantic/version.py`, `tests/__init__.py`, `tests/conftest.py`; MODIFY root `pyproject.toml`, `scripts/release.py`, `ruff.toml`, `.github/workflows/ci.yml`
-- **Responsibility**: make `parrot.semantic` an installable PEP 420 satellite (`src/parrot/` has **no** `__init__.py`; only `src/parrot/semantic/__init__.py`), pinned `sidemantic==0.12.0`, `sqlglot>=30.1,<31`, `jsonschema>=4.20`, `pyyaml>=6`, `ai-parrot`; extras `bigquery` (`google-cloud-bigquery>=3.30`), `duckdb` (`duckdb>=1.0`); `license = "MIT"` + README section "License notice: sidemantic is AGPL-3.0" (network clause spelled out); workspace source entry; `release.py` `PACKAGES` entry; `ruff.toml` TID251 ban `"sidemantic"` with a per-file ignore for `packages/ai-parrot-semantic/**`; CI step running the satellite tests.
+- **Responsibility**: make `parrot.semantic` an installable PEP 420 satellite (`src/parrot/` has **no** `__init__.py`; only `src/parrot/semantic/__init__.py`). **(rev 0.3)** pinned `sqlglot>=30.1,<31` (no `sidemantic` — dropped entirely), `jsonschema>=4.20`, `pyyaml>=6`, `ai-parrot`; extras `bigquery` (`google-cloud-bigquery>=3.30`), `duckdb` (`duckdb>=1.0`); `license = "MIT"`, no AGPL notice in README; workspace source entry; `release.py` `PACKAGES` entry; `ruff.toml` TID251 ban `"sidemantic"` **with no per-file ignore anywhere** (rev 0.2's exemption for `packages/ai-parrot-semantic/**` is removed — the ban now fires everywhere, including the satellite, since nothing in it needs sidemantic); CI step running the satellite tests.
 - **Depends on**: nothing (first task).
 - **Interface Skeleton**:
   ```python
@@ -334,7 +373,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   __version__ = "1.3.0"
 
   # packages/ai-parrot-semantic/src/parrot/semantic/__init__.py  (new — written once here, finalized by M10)
-  """ai-parrot-semantic — governed semantic layer (sidemantic core + sqlglot governance)."""
+  """ai-parrot-semantic — governed semantic layer (native sqlglot compiler + sqlglot governance)."""
   from .version import __version__
   __all__ = ["__version__"]
   ```
@@ -349,21 +388,20 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
           "packages/ai-parrot-semantic", aliases=["semantic"]),
   ```
   ```toml
-  # ruff.toml  (modifies ruff.toml:125 banned-api table; ruff.toml:137 per-file-ignores)
-  "sidemantic".msg = "AGPL-3.0 dependency confined to ai-parrot-semantic; import it only under packages/ai-parrot-semantic/."
-  "packages/ai-parrot-semantic/**" = ["TID251"]
+  # ruff.toml  (modifies ruff.toml:125 banned-api table — rev 0.3 adds NO per-file-ignore)
+  "sidemantic".msg = "AGPL-3.0 removed from ai-parrot entirely (FEAT-704 rev2); do not reintroduce it anywhere, including the satellite."
   ```
 
 ### Module 2: Query & result contracts + error taxonomy
-- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/models.py`, `errors.py`
-- **Responsibility**: the pydantic contracts in §2 Data Models and the exception hierarchy. Validators: `saved_query` XOR `metrics`; a `FilterGroup` never mixes metric leaves and dimension leaves (member kinds resolved later by M7, so the validator takes a `member_kinds: dict[str, Literal["metric","dimension"]]` argument via `SemanticQuery.validate_against(model_members)`); `offset > 0` requires `order_by`; `grain` required for time dimensions; `limit` ≥ 1.
+- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/models.py`, `errors.py`, `context.py` (identity model only)
+- **Responsibility**: the pydantic contracts in §2 Data Models and the exception hierarchy. Validators: `saved_query` is exclusive with explicit members/filters/order; otherwise at least one metric, dimension or time dimension is required (dimension-value queries are valid); a `FilterGroup` never mixes metric leaves and dimension leaves (member kinds resolved later by M7, so the validator takes a `member_kinds: dict[str, Literal["metric","dimension"]]` argument via `SemanticQuery.validate_against(model_members)`); `offset > 0` requires `order_by`; `grain` required for time dimensions; `limit` ≥ 1.
 - **Depends on**: M1.
 - **Interface Skeleton**:
   ```python
   # parrot/semantic/errors.py  (new)
   class SemanticError(Exception): """Base for all semantic-layer errors; carries `code: str` and `details: dict`."""
   class SemanticValidationError(SemanticError): """Malformed or unsatisfiable SemanticQuery (unknown member, mixed filter group, missing grain, fan-out in native)."""
-  class SemanticPolicyError(SemanticError): """Invalid model/policy definition (unknown member in policy, sidemantic `security:` block, bad RLS binding)."""
+  class SemanticPolicyError(SemanticError): """Invalid model/policy definition (unknown member in policy, bad RLS binding, invalid own-format or Ossie document)."""
   class SemanticAccessError(SemanticError): """Denied: no PermissionContext, evaluator unavailable, PBAC denial, member not granted, usage right missing, unresolved lineage."""
   class SemanticExecutionError(SemanticError): """Database execution failed; `audit_id` set, SQL never included in the message."""
   class SemanticResultError(SemanticError): """Result handle unknown, foreign, expired or stale (context/policy changed)."""
@@ -376,6 +414,16 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   class ModelMember(BaseModel): name: str; kind: Literal["metric", "dimension", "time_dimension", "entity"]; description: str = ""; grain: Grain | None = None; sensitive: bool = False
   ```
 
+M2 also owns `context.py`'s identity model (M10 later adds the binding helpers; serialize these edits):
+
+```python
+class SemanticRequestIdentity(BaseModel, frozen=True):
+    ctx: PermissionContext  # immutable snapshot of trusted session attributes, defensively copied
+    channel: Literal["http", "agent", "mcp-local"]
+    agent_id: str           # nonempty server-owned identifier
+    session_id: str         # nonempty server-owned identifier, never request_id
+```
+
 ### Module 3: Model policy side-file
 - **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/policy.py`
 - **Responsibility**: parse and validate `<model>.policy.yaml` into `ModelPolicy`; compute `policy_digest`; answer role questions (`allowed_members(roles)`, `usage_allowed(roles, column)`, `mask_for(roles, column)`); reject unknown members (a misspelled binding must never silently remove a restriction); `governed` defaults to `true`.
@@ -387,7 +435,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   class MaskRule(BaseModel): strategy: Literal["null", "hash", "partial"]; projection_roles: list[str] = []; usage_roles: list[str] = []
   class SavedQuery(BaseModel): name: str; query: SemanticQuery; verified_by: str; verified_at: date; description: str = ""
   class ModelPolicy(BaseModel):
-      governed: bool = True; engine: Literal["sidemantic", "native"] = "sidemantic"; connection: str
+      governed: bool = True; connection: str   # (rev 0.3) no `engine` field — the native compiler is the only engine
       limits: Limits = Limits(default=1000, max=10000)
       roles: dict[str, RoleGrant] = {}; masks: dict[str, MaskRule] = {}
       rls: list[RlsRule] = []            # RlsRule verified: packages/ai-parrot/src/parrot/auth/rls_registry.py:49
@@ -403,24 +451,55 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       boolean expression over columns of its `table`; anything else is a policy error, so RLS text is never trusted as raw SQL at runtime."""
   ```
 
-### Module 4: Model loader, Ossie import, sidemantic engine
-- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/loader.py`, `ossie.py`, `engines/__init__.py`, `engines/sidemantic_engine.py`, `schemas/ossie-0.1.1.schema.json` (vendored)
-- **Responsibility**: load a models directory into `LoadedModel`s (sidemantic `SemanticLayer` via its directory loader; Ossie documents validated against the vendored 0.1.1 JSON Schema first; `security:` blocks rejected); derive `ModelMember`s and the **physical schema map** (`schema.table` → columns/types) for `qualify`, lineage and RLS; compile a `SemanticQuery` with sidemantic (filter tree → sidemantic filter strings) into a `CompiledQuery`; the single `compile()` dispatch on `policy.engine`. The first task of this module is a bounded **spike** that confirms the sidemantic 0.12.0 API names used here against the installed wheel and records them in the task Completion Note (names below are the brainstorm's reading of the sidemantic docs and are marked `(unverified — check before use)` until then).
+### Module 4: Typed semantic model graph + loader, Ossie import (rev 0.3 — clean-room rewrite)
+- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/model.py` (new), `loader.py` (new — a
+  rewrite, not a port: the branch file of the same name is a **salvage reference only**, 386 lines,
+  `LoadedModel` at line 58, `layer: Any` at line 64, `SemanticModelLoader` at line 73, verified
+  2026-10-25), `ossie.py`, `schemas/ossie-0.1.1.schema.json` (vendored). **`engines/sidemantic_engine.py`
+  is never created** (deleted from scope — it existed only on the branch, 169 lines, verified absent on dev).
+- **Responsibility**: **(rev 0.3)** a frozen, clean-room `SemanticModel` graph (`Dimension` categorical/
+  numeric/time+grain; `Metric` with `agg`/`sql`/optional `filter`/derived expression; `Relationship` with
+  cardinality) authored from the *public* Cube, dbt MetricFlow and Apache Ossie 0.1.1 format
+  documentation — never from sidemantic's code or API. The loader reads the own YAML format and Ossie
+  documents (validated against the vendored 0.1.1 JSON Schema) into that graph; it salvages the branch's
+  `PhysicalSchema` / `sqlglot_schema()` / digest-computation structure (engine-neutral plumbing) but
+  rewrites the model-graph construction itself. Derives `ModelMember`s and the **physical schema map**
+  (`schema.table` → columns/types) for `qualify`, lineage and RLS. No spike task: there is no third-party
+  API to confirm (rev 0.2's M4 spike against the sidemantic wheel is dropped along with sidemantic).
 - **Depends on**: M2, M3.
 - **Interface Skeleton**:
   ```python
-  # parrot/semantic/loader.py  (new)
+  # parrot/semantic/model.py  (new)
+  class Dimension(BaseModel, frozen=True):
+      name: str; kind: Literal["categorical", "numeric", "time"]; column: str
+      grain: Grain | None = None   # required when kind == "time"
+  class Metric(BaseModel, frozen=True):
+      name: str; agg: Literal["sum", "count", "count_distinct", "avg", "min", "max"] | None = None
+      column: str | None = None    # physical input for aggregate metrics; None only for count(*)
+      sql: str | None = None       # derived-metric arithmetic over qualified metric names; mutually exclusive with agg/column/filter
+      filter: "FilterGroup | None" = None   # filtered-measure (FILTER (WHERE …) / CASE WHEN, dialect-dependent)
+  class Relationship(BaseModel, frozen=True):
+      from_model: str; to_model: str; cardinality: Literal["one_to_many"]
+      from_columns: tuple[str, ...]; to_columns: tuple[str, ...]  # paired physical keys
+      join_type: Literal["inner", "left"] = "left"
+  class SemanticModel(BaseModel, frozen=True):
+      name: str; table: str; columns: dict[str, str]; primary_key: tuple[str, ...]
+      dimensions: tuple[Dimension, ...]; metrics: tuple[Metric, ...]; relationships: tuple[Relationship, ...]
+      def digest(self) -> str: """SHA-256 of canonical JSON — part of every cache key and audit entry."""
+
+  # parrot/semantic/loader.py  (new — rewrite; salvages PhysicalSchema/digest plumbing only, see above)
   class PhysicalSchema(BaseModel):
       driver: str; tables: dict[str, dict[str, str]]   # "schema.table" -> {column: sqlglot type}
       def sqlglot_schema(self) -> dict: """Nested mapping accepted by sqlglot.optimizer.qualify.qualify(schema=...)."""
-  class LoadedModel(BaseModel, arbitrary_types_allowed=True):
-      name: str; layer: Any  # sidemantic.SemanticLayer (unverified — check before use)
+  class LoadedModel(BaseModel):
+      name: str; model: SemanticModel   # (rev 0.3) was `layer: Any` (sidemantic graph) — now the typed graph
+      related_models: dict[str, SemanticModel]
       policy: ModelPolicy; members: list[ModelMember]; schema: PhysicalSchema
-      model_digest: str; policy_digest: str; engine_version: str
+      model_digest: str; policy_digest: str; compiler_version: str   # (rev 0.3) was `engine_version`
   class SemanticModelLoader:
       def __init__(self, models_dir: Path, *, driver: str) -> None: ...
       def load(self) -> dict[str, LoadedModel]:
-          """Load every model + policy pair; raise SemanticPolicyError for `security:` blocks or policy/model mismatch."""
+          """Load every model + policy pair from the own YAML format and Ossie 0.1.1 documents; raise SemanticPolicyError for an unknown policy member or a policy/model mismatch."""
       def reload_if_changed(self) -> bool: """Re-read when any file mtime/digest changed; returns True when versions moved."""
 
   # parrot/semantic/ossie.py  (new)
@@ -428,20 +507,25 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   def validate_ossie_document(doc: dict) -> None: """jsonschema-validate against the vendored schema; raise SemanticPolicyError with the first error path."""
   def is_ossie_document(doc: dict) -> bool
 
-  # parrot/semantic/engines/sidemantic_engine.py  (new)
-  def filter_tree_to_sidemantic(filters: FilterGroup | None, members: dict[str, ModelMember]) -> list[str]:
-      """Translate the typed filter tree into sidemantic filter expressions; values rendered as typed literals via sqlglot."""
-  def compile_sidemantic(query: SemanticQuery, model: LoadedModel, dialect: str) -> CompiledQuery:
-      """Sync, CPU-only; called under asyncio.to_thread by engines.compile(). Never passes user_attributes (no sidemantic SecurityPolicy)."""
-
   # parrot/semantic/engines/__init__.py  (new)
   async def compile(query: SemanticQuery, model: LoadedModel, dialect: str, *, cache: "CompileCache | None" = None) -> CompiledQuery:
-      """Dispatch on model.policy.engine ∈ {sidemantic, native}; LRU hit skips compilation only. No plugin protocol."""
+      """asyncio.to_thread wrapper around NativeCompiler(model).compile(query, dialect); LRU hit skips compilation only. No dispatch, no plugin protocol — the native compiler is the sole engine."""
   ```
 
-### Module 5: Native fallback compiler
-- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py`
-- **Responsibility**: compile the v1 subset — metrics with `sum/count/count_distinct/avg/min/max`, dimensions, `DATE_TRUNC` grains (`exp.DateTrunc`), declared one-to-many joins (fan-out ⇒ `SemanticValidationError`), filter tree (WHERE vs HAVING), order/limit/offset — into a sqlglot AST rendered per dialect. Metric/dimension expressions come from the `LoadedModel` members (sidemantic model objects read for definitions only). Parity tests against the sidemantic engine on DuckDB fixtures.
+### M4 model validation and join contract (rev 0.4)
+
+- Own YAML uses exactly the fields above (`extra="forbid"` on all graph models); Ossie import lowers into the same graph. `columns` maps physical column names to sqlglot types and supplies the schema without a warehouse connection. Dimensions, metric inputs, keys and policy bindings must resolve against it. Collections are defensively copied; no loaded graph is mutated after publication.
+- An aggregate has `agg` and no `sql`. `sum/avg/min/max/count_distinct` require `column`; `count` with no column means `COUNT(*)`, otherwise `COUNT(column)`. Its optional filter contains dimension leaves only. A derived metric has `sql` and no `agg`, `column` or `filter`; its closed grammar permits qualified metric references, numeric constants, parentheses and arithmetic only. Validate references, reject dependency cycles and expand dependencies in deterministic topological order. Divide-by-zero returns NULL using a compiler-owned CASE expression. Preserve dependency provenance for lineage and audit.
+- Join key tuples are nonempty, equally sized and type-compatible. `from_model` is the one side: `from_columns` must equal its declared primary key; `to_columns` are the many-side foreign keys. Reject unknown models, self-joins, ambiguous paths and unsupported cardinalities at load/compile. The loader resolves a model directory as a graph; `LoadedModel` additionally carries `related_models: dict[str, SemanticModel]` for the reachable models. Its digest and physical manifest include the reachable graph, not only the root.
+- Plan from the metric's row grain. Traversing many→one is safe; any traversal that can multiply rows contributing to an aggregate is rejected, including sibling many-side joins and mixed-grain metrics. Do not infer safety from `count_distinct`. A dimensions-only query may traverse declared joins and emits DISTINCT. Declaration of primary-key uniqueness is an authoring precondition, documented and exercised by fixtures; v1 does not inspect warehouse constraints.
+- Example: `revenue={agg: sum, column: amount}` and `avg_order={sql: "orders.revenue / orders.order_count"}`; `customers(id)` → `orders(customer_id)` declares `from_columns: [id]`, `to_columns: [customer_id]`. Revenue grouped by customer attributes is safe; customer-level sums grouped by orders are rejected as fan-out.
+
+### Module 5: Sole native compiler (rev 0.3 — promoted from "fallback")
+- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` — **salvaged from the
+  branch** (236 lines, `NativeCompiler` at line 18, `compile` at line 26, `_joins_for` with fan-out
+  rejection at lines 126-138, verified 2026-10-25), re-pointed from `LoadedModel.layer.graph` (6 call
+  sites on the branch) to the typed `LoadedModel.model` graph of M4.
+- **Responsibility**: compile the v1 subset — metrics with `sum/count/count_distinct/avg/min/max`, dimensions, `DATE_TRUNC` grains (`exp.DateTrunc`), declared one-to-many joins (fan-out ⇒ `SemanticValidationError`), filter tree (WHERE vs HAVING), order/limit/offset — into a sqlglot AST rendered per dialect. Metric/dimension expressions come from the typed `SemanticModel` (M4). **(rev 0.3 additions, per the rev2 proposal):** filtered measures lowered to `FILTER (WHERE …)` or `CASE WHEN` per dialect, and derived metrics computed over other metrics. **(rev 0.3 fix, mandatory — `issue:46e8f6219bf5`):** the branch's `contains` filter builds `exp.Like(this=column, expression=exp.Literal.string(f"%{value}%"))` with **no escaping** of `%`/`_` in the user value (verified present at `native.py:199-200`, 2026-10-25) — a value of `"%"` matches every row. This bug was originally opened against `sidemantic_engine.py::filter_tree_to_sidemantic` (now deleted); it reproduces identically in the sole surviving filter-translation path and must be fixed here: escape `\`, `%`, `_` in the value and add an `exp.Escape` clause, plus a regression test. Ledger issue `issue:46e8f6219bf5` is re-pointed to this file and closed by the fixing task. Golden-SQL snapshots (postgres/bigquery/duckdb) + a DuckDB execution oracle against hand-computed expectations + a cross-process determinism hash check replace the former sidemantic-parity tests (no sidemantic to compare against).
 - **Depends on**: M2, M3, M4 (`LoadedModel`, `PhysicalSchema`).
 - **Interface Skeleton**:
   ```python
@@ -463,7 +547,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   # parrot/semantic/governance/pbac.py  (new)
   class PbacGate:
       def __init__(self, guard: DataPlanePolicyGuard | None) -> None:   # DataPlanePolicyGuard verified: packages/ai-parrot/src/parrot/auth/dataplane_guard.py:45
-          """Probe evaluator availability at construction (navigator-auth importable, guard not None); record `available`."""
+          """Probe navigator_auth.abac.policies.environment and navigator_auth.abac.policies.evaluator at construction, and require a configured guard/evaluator; record `available`."""
       async def authorize_manifest(self, ctx: PermissionContext | None, model: "LoadedModel") -> PhysicalResources:
           """Phase (a): authorize the model's declared driver + all schema-map tables BEFORE compile; returns the authorized manifest."""
       async def authorize(self, ctx: PermissionContext | None, resources: PhysicalResources, *, governed: bool, manifest: PhysicalResources | None = None) -> None:   # PhysicalResources verified: resolver.py:47
@@ -529,7 +613,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       schema_version: int = 1
       entry_id: str; created_at: datetime; user_id: str; tenant_id: str; channel: str; agent_id: str | None
       subject_digest: str; roles: list[str]; static_subject: bool
-      model: str; model_digest: str; policy_digest: str; engine: str; tool: str
+      model: str; model_digest: str; policy_digest: str; engine: str = "native"; tool: str   # (rev 0.3) fixed provenance value, no dispatch
       structured_query: dict | None; raw_sql: bool
       compiled_sql: str | None; governed_sql: str | None; dialect: str; driver: str
       rls_applied: list[str]; masked_columns: list[str]; pbac: Literal["allow", "deny", "unavailable", "not_governed"]
@@ -540,7 +624,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       def __init__(self, signer: AbstractKMSSigner | None = None, storage: Callable[[str], Awaitable[None]] | None = None, max_entries: int = 10_000) -> None: ...   # AbstractKMSSigner verified: audit_ledger.py:135
       async def append(self, entry: SemanticAuditEntry, *, required: bool = False) -> SemanticAuditEntry:
           """Sign, keep in a bounded in-memory deque, forward JSON to `storage`. Storage failure is logged; when `required=True` it raises SemanticExecutionError('audit_unavailable') so the toolkit withholds results (toolkit kwarg `audit_required`, resolved per §8 Q5: None → True iff a durable `storage` is configured)."""
-      def verify(self, entry: SemanticAuditEntry) -> bool
+      async def verify(self, entry: SemanticAuditEntry) -> bool: """Await signer.verify(canonical_bytes, signature); never block the event loop."""
       @property
       def durable(self) -> bool: """True when a `storage` callable is configured — drives the `audit_required=None` resolution in M10."""
   def postgres_audit_storage(dsn_or_pool: str | Any, *, table: str = "semantic_audit_events") -> Callable[[str], Awaitable[None]]:
@@ -572,21 +656,40 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 
   # parrot/semantic/results.py  (new)
   class ResultHandle(BaseModel):
-      result_id: str; agent_id: str | None; user_id: str; tenant_id: str; session_id: str | None
+      result_id: str; agent_id: str; user_id: str; tenant_id: str; session_id: str
       subject_digest: str   # SHA-256 over (user_id, tenant_id, sorted roles, sorted policy-relevant session.metadata items) — metadata is NOT part of UserSession's hash (permission.py:49), so it is hashed explicitly here
       model: str; model_digest: str; policy_digest: str; expires_at: datetime
+      members: tuple[str, ...]  # exact semantic members referenced, including filters/order/dependencies
+      physical_columns: tuple[str, ...]; physical_tables: tuple[str, ...]  # qualified lineage, including raw SQL
       columns: list[str]; rows: list[dict]; audit_id: str; governed_sql: str
   class ResultHandleStore:
       def __init__(self, *, ttl_s: int = 900, max_entries: int = 256) -> None: ...
       def put(self, handle: ResultHandle) -> str: """Opaque random id (secrets.token_urlsafe)."""
-      def claim(self, result_id: str, *, ctx: PermissionContext, subject_digest: str, model_digest: str, policy_digest: str) -> ResultHandle:
-          """Owner, session, context digest and versions must all match and the handle must be unexpired; else SemanticResultError. Metadata alone is never authorization."""
+      def claim(self, result_id: str, *, identity: SemanticRequestIdentity, subject_digest: str, model_digest: str, policy_digest: str) -> ResultHandle:
+          """identity.ctx user/tenant, identity.agent_id/session_id, context digest and versions must all match and the handle must be unexpired; else SemanticResultError. Metadata alone is never authorization."""
   ```
 
+### M9D: DuckDB execution prerequisite (rev 0.4)
+
+- **MODIFY** `packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py`; **CREATE** `packages/ai-parrot/tests/test_semantic_duckdb_source.py`.
+- Restore the rev2 proposal §3 prerequisite, manually applying the behavior of branch commit `b9f9983d67` to current dev: execute the DuckDB Python API in `asyncio.to_thread` with a per-call connection closed in `finally`, preserving source signatures and QueryResult/RowResult contracts. Keep DuckDB optional through a lazy import with a clear missing-extra error. No other database source or core API changes.
+- The old asyncdb path awaited synchronous `fetchall()`; do not substitute a fake source in the semantic integration tests. Test a real temporary database: query, query_row, metadata, empty result columns, named/positional parameters, error cleanup and event-loop responsiveness. Store logs under `artifacts/logs/`.
+- **Depends on** M1 for the test environment; M9's DuckDB integration and M10 security suite depend on M9D. M12 stays removed: do not copy the branch's authorizing/dataset-handler edits or lockfile. Regenerate the task index to give M9D an explicit owner and dependency edges.
+
+### M9H: Guarded dataset hand-off contract (rev 0.4)
+
+- **CREATE** `packages/ai-parrot-semantic/src/parrot/semantic/handoff.py`. A plain `DatasetManager`, including the existing HTTP session manager, is not a valid hand-off target: `add_dataframe()` preloads an InMemorySource and does not revalidate semantic policy on reads.
+- Replace the bare-manager factory contract with `dataset_manager_factory(identity: SemanticRequestIdentity) -> Awaitable[GovernedDatasetSink]`. This is a trusted host integration, never an LLM parameter. The sink has a nonempty opaque `scope_id`, an immutable owner tuple `(agent_id, user_id, tenant_id, session_id)`, and `async publish(name: str, handle: ResultHandle, authorize_read: Callable[[SemanticRequestIdentity], Awaitable[None]]) -> dict`. Scope reuse across different owners is refused.
+- `authorize_read` is constructed by the satellite and closes over immutable provenance, not the original PermissionContext. It loads current model/policy versions, requires an unexpired handle, compares the current owner and subject digest, authorizes the current manifest through PBAC and checks **all** retained semantic members and physical-column usage. Any changed version/context, revoked grant, missing provenance or unavailable evaluator denies; never re-filter stale aggregates. Raw-SQL handles retain resolved physical lineage and must pass the same checks.
+- The sink declares `guarded_reads: Literal[True]`; this is a host capability assertion, not proof of safety, so the conformance suite is mandatory. A conforming sink invokes `authorize_read` immediately before every exposure: list/describe/sample, cached reads, dataframe retrieval, SQL queries and exports. Derived datasets inherit provenance and the earliest expiry of all inputs. A publication stores a defensive snapshot; it never exposes the private manager, an unguarded source, dataframe reference or alternate dataset endpoint. On denial it withholds data and metadata; expiry/revocation removes cached copies. Authorization and publication/read use one immutable version snapshot; reject if reload changes that snapshot before return.
+- The satellite ships the protocol, authorization callback and a reusable adapter conformance suite. Hosts must explicitly register an adapter that passes that suite; a raw manager or an adapter without guarded-read capability is rejected. No default adapter over `DatasetManagerHandler._get_dataset_manager()` is supplied. Without one, the save tool is absent and HTTP hand-off returns `handoff_unavailable`; normal query/compile surfaces remain usable. The suite exercises a representative host adapter and rejects a plain-manager factory; it does not assume metadata tags constitute enforcement.
+- Hand-off tests cover read after expiry, model/policy change, PBAC revocation with unchanged roles, removed member rights, changed subject metadata, two users/two sessions, cached/derived outputs and missing identity. Creating a handle alone is not authorization to publish it.
+- **Depends on** M2, M3, M6, M7, M9; M10/M11 hand-off integration depends on M9H. Host adapter implementation is opt-in host responsibility; this feature ships no unguarded fallback.
+
 ### Module 10: `SemanticLayerToolkit`
-- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py`, `context.py`; finalize `__init__.py` exports
-- **Responsibility**: the `AbstractToolkit` surface of §2 New Public Interfaces. `_pre_execute` stores `_permission_context` (or a `PermissionContext` built from `static_subject`, flagged) in a module-level ContextVar **and** in `parrot.auth.context._pctx_var`; every tool goes catalog-check → compile (cached) → govern → execute/return → audit. `run_sql` exposed only when `allow_raw_sql=True`; `save_result_as_dataset` only when `dataset_manager_factory` is provided (via `exclude_tools`, like `DatabaseQueryToolkit` does for `save_result`, toolkit.py:175-176). A `governed` model with no `dataplane_guard` makes the toolkit refuse to construct (fail closed at startup).
-- **Depends on**: M3–M9.
+- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py`, `context.py`, `bootstrap.py`; finalize `__init__.py` exports
+- **Responsibility**: the `AbstractToolkit` surface of §2 New Public Interfaces. The trusted wrapper binds identity and both ContextVars; `_pre_execute` validates `_permission_context` against that binding; every tool goes catalog-check → compile (cached) → govern → execute → audit → return (compile/catalog omit execution). Context binding and cleanup follow the rev 0.4 contract below. `run_sql` exposed only when `allow_raw_sql=True`; `save_result_as_dataset` only when a conforming `dataset_manager_factory` is provided (via `exclude_tools`, like `DatabaseQueryToolkit` does for `save_result`, toolkit.py:175-176). A `governed` model with no `dataplane_guard` makes the toolkit refuse to construct (fail closed at startup).
+- **Depends on**: M3–M9, M9D and M9H.
 - **Interface Skeleton**:
   ```python
   # parrot/semantic/context.py  (new)
@@ -603,16 +706,27 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
           allow_raw_sql=False, static_subject=None, dataset_manager_factory=None, result_ttl_s=900, result_store_max=256,
           allowed_functions=None, audit_required=None. `audit_required` None → ledger.durable (§8 Q5); explicit bool wins. Raises SemanticPolicyError when a governed model exists and dataplane_guard is None."""
       async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:   # hook contract verified: toolkit.py:491, pctx kwarg toolkit.py:174-178
-          """Set ContextVars from kwargs['_permission_context'] or static_subject; log static use."""
+          """Validate the bound trusted identity against kwargs['_permission_context']; never fall back to static identity here."""
       async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:   # toolkit.py:506 — serialize pydantic results to dicts
       # tools — see §2 New Public Interfaces for signatures/docstrings
       def reload(self) -> None: """Not a tool; re-run the loader and invalidate caches."""
-      def _dataset_manager_for(self, ctx: PermissionContext) -> Awaitable[DatasetManager]: """Call the host factory; a factory returning a shared manager (same instance for two subjects) raises SemanticResultError."""
+      def _dataset_manager_for(self, identity: SemanticRequestIdentity) -> Awaitable[GovernedDatasetSink]: """Require the M9H guarded sink capability and exact owner tuple; reject raw/shared managers."""
   ```
+
+### M10 trusted request identity and bootstrap (rev 0.4)
+
+Uses `SemanticRequestIdentity` defined by M2 in `context.py`; no fields are added to core PermissionContext.
+
+- Server/agent hosts bind this identity through a satellite async context manager around the complete call. It sets both satellite identity and `parrot.auth.context._pctx_var`, keeps reset tokens locally and resets in `finally`, including failures/cancellation. `_pre_execute` validates that its `_permission_context` matches the bound identity; it must not elevate a missing context to static identity. The `_post_execute` hook is not a cleanup boundary: core skips it on exceptions. HTTP dispatch uses the same binding around direct method calls.
+- HTTP obtains agent identity from the resolved authorized agent route and session identity from the authenticated server session. Agent adapters supply the server-owned agent/conversation identifiers. `request_id` is not a session id. Caller JSON, tool arguments and arbitrary metadata cannot set these fields. When only a trusted PermissionContext is available, the wrapper binds that context without constructing SemanticRequestIdentity; `_pre_execute` may permit an otherwise authorized query, but retention is disabled and creating/claiming/publishing a handle is denied. Empty identifiers are invalid. Do not use null/default identifiers to collapse unrelated sessions.
+- Default `SemanticLayerToolkit` rejects `static_subject` at construction. New satellite `LocalSemanticLayerToolkit` in `bootstrap.py` is the sole static-identity entry point; it is for trusted stdio configuration only and is forbidden in the HTTP handler/agent registry. It requires `static_subject`, configured `agent_id` and `guard_factory`, fixes channel to `mcp-local`, and creates a random process-session id once per instance. Requests cannot override these. Its tool execution wrapper supplies the configured static PermissionContext to the wrapped ToolkitTool call and binds/resets identity in `try/finally`; no core hook edits are needed. HTTP explicitly rejects this local-only class. Static use is logged/audited on every call.
+- `guard_factory` is a trusted configuration-only dotted callable with signature `factory(*, rls_registry: RlsRegistry, **configured_kwargs) -> DataPlanePolicyGuard`; optional JSON `guard_factory_kwargs` hold non-secret policy locations only and are passed as additional keyword arguments to the factory. The satellite imports/calls it synchronously at startup and validates the guard and exact navigator-auth submodule availability. The host factory constructs the evaluator from its configured policy store; credentials remain environment-only. Missing factory, missing modules, invalid result or failed policy loading makes startup fail closed. Never synthesize an allow-all evaluator from the static subject's roles. Ordinary server instances receive their existing guard by dependency injection.
+- `bootstrap.py` documents this host factory contract and ships a test fixture factory with explicit allow/deny policies. MCP tests start the actual local toolkit with governed models and this factory, then test a permitted and denied call. Tests also reject absent factory and operator-identity fallback on HTTP/agent calls. The generic MCP factory is unchanged: it instantiates the configured local subclass from YAML kwargs.
+- Before publishing, require every handle member to remain allowed (including filters/order/derived dependencies), and check raw SQL's retained lineage. Output aliases are never reverse-guessed into member names. S3 and S5 from `issue:3c4d154c0172` are release gates, not optional salvage hardening.
 
 ### Module 11: HTTP handler, MCP exposure, docs
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/semantic.py` (new); MODIFY `packages/ai-parrot-server/src/parrot/manager/manager.py`, `.parrot/mcp-toolkits.yaml`, `.mcp.json`; `docs/tools/semantic-layer.md` (new)
-- **Responsibility**: `SemanticLayerHandler(BaseView)` with `GET` (catalog for the session subject), `POST …/compile`, `POST …/query`, `POST …/results/{result_id}/dataset`; `PermissionContext` from the navigator-auth session (same decorators as `handlers/datasets.py:20`); the hand-off factory is `DatasetManagerHandler._get_dataset_manager`'s per-user manager (datasets.py:162). Registration in `manager.py` guarded by `importlib.util.find_spec("parrot.semantic")`. MCP: a `semantic-layer:` section (class path, `kwargs` incl. `static_subject`, `env`) + `.mcp.json` entry mirroring `parrot-database-query`. Docs: `docs/tools/semantic-layer.md` (tools, policy file, AGPL notice, mcp-local identity).
+- **Responsibility**: `SemanticLayerHandler(BaseView)` with `GET` (catalog for the session subject), `POST …/compile`, `POST …/query`, `POST …/results/{result_id}/dataset`; `PermissionContext` from the navigator-auth session (same decorators as `handlers/datasets.py:20`); the hand-off factory must be an explicitly configured M9H guarded sink; the existing session manager alone is not eligible. Obtain and bind trusted request identity per M10; reject local-only static toolkits. Registration in `manager.py` guarded by `importlib.util.find_spec("parrot.semantic")`. MCP: a `semantic-layer:` section (class path, `kwargs` incl. `static_subject`, `env`) + `.mcp.json` entry mirroring `parrot-database-query`. Docs: `docs/tools/semantic-layer.md` (tools, policy file, mcp-local identity). **(rev 0.3)** no AGPL notice — there is no AGPL dependency to document.
 - **Depends on**: M10.
 - **Interface Skeleton**:
   ```python
@@ -630,41 +744,31 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
   ```
   ```yaml
-  # .parrot/mcp-toolkits.yaml  (modifies .parrot/mcp-toolkits.yaml:121 — new sibling section before `database-query:`)
+  # .parrot/mcp-toolkits.yaml  (modifies .parrot/mcp-toolkits.yaml:110 — new sibling section before `database-query:`; verified 2026-10-25, was :121 in rev 0.2)
   semantic-layer:
-    class: parrot.semantic.toolkit.SemanticLayerToolkit
-    kwargs: {models_dir: /path/to/models, dialect: duckdb, static_subject: {user_id: operator, tenant_id: local, roles: [admin]}}
+    class: parrot.semantic.bootstrap.LocalSemanticLayerToolkit
+    kwargs:
+      models_dir: /path/to/models
+      dialect: duckdb
+      agent_id: local-semantic
+      static_subject: {user_id: operator, tenant_id: local, roles: [admin]}
+      guard_factory: myapp.semantic_auth.build_guard  # host-supplied callable, required
+      guard_factory_kwargs: {policy_dir: /path/to/policies}
     env: {}
   ```
 
 ---
 
-### Module 12: Core fix — request-scoped RLS in `AuthorizingDataSource`, cloned sources in `_clone_agent_dm` (§8 Q6)
-- **Path**: `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py`, `packages/ai-parrot-server/src/parrot/handlers/datasets.py`
-- **Discovered-from**: `issue:90cf04ce8edd` (vulnerability, major) — the M12 task carries this line so `/sdd-done` closes the issue.
-- **Responsibility**: make RLS injection **request-scoped**. Today `_apply_rls` (authorizing.py:153) rewrites the wrapped source in place (`self._inner.sql = rewritten_sql`, :191; `_permanent_filter` / `required_filter` mutations for Table/QuerySlug/Mongo), so predicates accumulate across fetches and leak to every holder of the same inner object; `_clone_agent_dm` (datasets.py:47) then hands the SAME `entry.source` to every per-user `DatasetManager` (:70). Fix: (1) `_apply_rls` returns a **per-call shallow copy** of the inner source (`copy.copy`, so pools/credentials are shared but the mutable filter state is not) with the rewritten SQL / a copied-and-extended `_permanent_filter` / merged mongo filter applied to the copy, and `fetch()` delegates to that copy; `self._inner` is never mutated. (2) `_clone_agent_dm` builds each `DatasetEntry` with `source=_clone_source(entry.source)` (shallow copy + fresh `dict` for `_permanent_filter` when present) so no two user managers share a source object. No public signature changes (AC17): `_apply_rls`'s return type goes `None → DataSource` (private).
-- **Depends on**: nothing in M1–M11 (core-only; runs concurrently with the satellite tasks).
-- **Interface Skeleton**:
-  ```python
-  # packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py  (modify)
-  import copy                                                             # add next to `import logging` (authorizing.py:27)
-  class AuthorizingDataSource(DataSource):                                # line 41 — unchanged signature
-      async def fetch(self, **params) -> pd.DataFrame:                    # line 74 — Step 5/6 become:
-          # target = self._apply_rls(predicates, resources) if predicates else self._inner
-          # return await target.fetch(**params)
-      def _apply_rls(self, predicates: "list[RlsPredicate]", resources: "PhysicalResources") -> DataSource:   # was -> None
-          """Return a request-scoped copy of ``self._inner`` with RLS applied; NEVER mutate ``self._inner``.
-          scoped = copy.copy(self._inner); SQLQuerySource → scoped.sql = rewritten; TableSource/QuerySlugSource →
-          scoped._permanent_filter = dict(self._inner._permanent_filter) then inject_rls_*(scoped, predicates);
-          MongoSource → merged filter assigned on `scoped` only; unknown source type → return scoped unchanged (existing warning kept)."""
+### Module 12 — removed (rev 0.3)
 
-  # packages/ai-parrot-server/src/parrot/handlers/datasets.py  (modify)
-  def _clone_source(source: "DataSource | None") -> "DataSource | None":  # new module-level helper above _clone_agent_dm (datasets.py:47)
-      """Shallow-copy a DataSource for a per-user manager; copy `_permanent_filter` into a fresh dict when the source has one; None stays None."""
-  def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:   # line 47 — unchanged signature; `source=entry.source,` (:70) → `source=_clone_source(entry.source),`
-  ```
-- **Behavioural guarantees** (tested in §4): two consecutive `fetch()` calls on one `AuthorizingDataSource` apply exactly one RLS wrapper each and leave `inner.sql` untouched; two subjects with different predicates fetching through the same wrapper never see each other's predicate; `_clone_agent_dm` produces entries whose `source` objects are pairwise distinct and whose `_permanent_filter` dicts are not shared with the agent's entry.
-- **Existing test to amend**: `packages/ai-parrot/tests/auth/test_authorizing_data_source.py::test_rls_injected_before_fetch` (line 189) asserts the buggy in-place mutation (`assert "_rls" in inner.sql`, :210) — rewrite it to assert the fetch target carries the wrapper while `inner.sql` is unchanged (use a `SQLQuerySource` subclass whose `fetch` records `self.sql`).
+Rev 0.2's M12 (`issue:90cf04ce8edd`, request-scoped RLS fix in `AuthorizingDataSource` /
+`_clone_agent_dm`) is **superseded by FEAT-738** (TASK-4678/4679, merged 2026-10-24): the identical
+fix already ships on `dev` — `_apply_rls` returns a per-call target instead of mutating `self._inner`
+(verified `authorizing.py:147,152`, 2026-10-25) and `_clone_agent_dm` no longer shares `entry.source`
+directly (verified `datasets.py:48,131`). `test_authorizing_data_source.py` already asserts the
+fetch-target behavior rather than the old buggy in-place mutation. M9D is the sole core-source exception; M12 remains removed.
+
+---
 
 ## 4. Test Specification
 
@@ -672,16 +776,18 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | Test | Module | Description |
 |---|---|---|
 | `test_packaging_namespace` | M1 | `import parrot.semantic` works alongside core; `src/parrot/` has no `__init__.py`; version matches |
-| `test_sidemantic_import_ban` | M1 | `ruff check` flags `import sidemantic` in a temp file under `packages/ai-parrot/src`, not under the satellite |
-| `test_semantic_query_validators` | M2 | saved_query XOR metrics; mixed filter group rejected; offset needs order_by; grain required |
+| `test_sidemantic_import_ban_no_exemption` | M1 | `ruff check` flags `import sidemantic` under `packages/ai-parrot/src` AND under the satellite — no per-file ignore exists anywhere (rev 0.3) |
+| `test_semantic_query_validators` | M2 | saved-query exclusivity and dimensions-only queries; mixed filter group rejected; offset needs order_by; grain required |
 | `test_canonical_json_stable` | M2 | key order / whitespace independent |
 | `test_policy_unknown_member_rejected` | M3 | misspelled metric/table/role binding → `SemanticPolicyError` |
 | `test_policy_defaults_governed` | M3 | missing `governed` → `True`; `governed: false` honoured |
-| `test_loader_rejects_security_block` | M4 | model with sidemantic `security:` → `SemanticPolicyError` |
+| `test_model_graph_clean_room_digest` | M4 | `SemanticModel` built from own YAML + Ossie fixtures only; digest is canonical-JSON SHA-256; no sidemantic import anywhere in the module |
 | `test_ossie_schema_validation` | M4 | Apache Ossie 0.1.1 fixtures load; a schema-invalid doc fails with the error path |
-| `test_sidemantic_compile_pg_bq_duckdb` | M4 | same query → three dialects, no connection, output has no subject values |
-| `test_native_compiler_subset` | M5 | aggregations, grains, 1:N joins compile; many-to-many → `SemanticValidationError` |
-| `test_native_vs_sidemantic_parity` | M5 | identical row sets on DuckDB fixtures for the subset |
+| `test_native_compile_pg_bq_duckdb` | M4/M5 | same query → three dialects, no connection, output has no subject values |
+| `test_native_compiler_subset` | M5 | aggregations, grains, 1:N joins, filtered measures (`FILTER`/`CASE WHEN`), derived metrics-over-metrics compile; many-to-many → `SemanticValidationError` |
+| `test_contains_filter_escapes_like_wildcards` | M5 | `issue:46e8f6219bf5` — a filter value of `%` or `_` matches only its literal self, not every row/any char; `exp.Escape` clause present |
+| `test_native_golden_sql_duckdb_oracle` | M5 | per-dialect golden-SQL snapshots + DuckDB execution against hand-computed expected rows replace the sidemantic parity oracle |
+| `test_native_cross_process_determinism` | M5 | same (model digest, canonical query, dialect) across two processes → byte-identical SQL (no dict/set iteration order leak) |
 | `test_pbac_gate_fail_closed` | M6 | ctx None / guard None / evaluator unavailable on governed → `SemanticAccessError`; ungoverned passes |
 | `test_pbac_denied_table_blocks_sql` | M6 | `table:read` denied on one joined table → no SQL returned, source never called |
 | `test_rls_pushdown_below_aggregation` | M6 | `SUM` over a tenant-filtered base scan equals the expected subset; wrapping strategy would differ |
@@ -690,8 +796,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | `test_masking_strategies` | M6 | null / hash / partial projections; catalog hides hidden members |
 | `test_positive_guard` | M6 | unknown column/function/table, DDL/DML, multi-statement, missing LIMIT, over-cap LIMIT |
 | `test_positive_guard_adversarial_matrix` | M6 | `SELECT *`, quoted/mixed-case identifiers, aliases, CTEs, nested subqueries, windows, joins, derived sensitive columns, `exp.Command`, comments — across postgres / bigquery / duckdb dialects |
-| `test_compile_concurrent_to_thread` | M4 | 32 concurrent `compile()` calls through `asyncio.to_thread` on one `LoadedModel` produce identical SQL to the serial run (reentrancy gate, §8 Q2) |
-| `test_dialect_sql_snapshots` | M4/M5 | normalized-AST snapshots of the fixture queries for postgres and bigquery (both engines) — a diff is a release gate, not a warning |
+| `test_dialect_sql_snapshots` | M5 | normalized-AST snapshots of the fixture queries for postgres and bigquery — a diff is a release gate, not a warning |
 | `test_catalog_role_filtering_and_suggestions` | M7 | unlisted member → error with ≤3 suggestions among allowed members; empty catalog message |
 | `test_saved_query_expansion` | M7 | expansion then rights check; unknown name |
 | `test_audit_entry_signature` | M8 | sign/verify round-trip; storage callable receives JSON; storage failure logged not raised |
@@ -706,9 +811,18 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | `test_policy_allowed_functions_additive` | M3/M6 | `allowed_functions: [REGEXP_REPLACE]` extends the default set; a policy cannot drop `SUM`; lower-case names normalised |
 | `test_audit_required_resolution` | M10 | `audit_required=None` → `True` with `audit_storage`, `False` without; explicit bool wins; `True` + failing sink withholds the result |
 | `test_postgres_audit_storage_insert` | M8 | `postgres_audit_storage` callable INSERTs the JSON row into a fake asyncpg pool; DDL file parses (sqlglot, postgres) |
-| `test_rls_not_persisted_across_fetches` | M12 | two `fetch()` calls → each fetch target has exactly one RLS wrapper; `inner.sql` unchanged (amends `test_rls_injected_before_fetch`) |
-| `test_rls_two_subjects_isolated` | M12 | subjects A/B with different predicates through one `AuthorizingDataSource`; neither sees the other's predicate; Table/QuerySlug `_permanent_filter` of the inner untouched |
-| `test_clone_agent_dm_copies_source` | M12 | `_clone_agent_dm` twice → source objects pairwise distinct from each other and from the agent's; `_permanent_filter` dicts not shared; `None` source preserved (`packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`) |
+
+### Review regression gates (rev 0.4)
+| Test | Required evidence |
+|---|---|
+| `test_model_inputs_and_join_keys` | Own YAML/Ossie lowering preserves aggregate inputs, physical types, composite join keys; missing/invalid keys and derived cycles fail |
+| `test_join_grain_safety` | Many→one sums equal hand-computed rows; one→many and sibling fan-out reject; graph digest changes when a related model changes |
+| `test_identity_scope_and_cleanup` | Same user in two sessions/agents cannot claim the other's handle; missing identity disables retention; failure/cancellation restores both ContextVars |
+| `test_static_subject_local_only` | HTTP/agent construction and calls cannot fall back to operator identity; local subclass cannot be attached to HTTP |
+| `test_handoff_exact_provenance` | A visible unrelated member does not authorize handle members; aliases/raw SQL retain exact lineage |
+| `test_guarded_sink_conformance` | Every read/list/metadata/cache/export/derived route checks current identity, grants, versions and expiry; plain-manager factories reject |
+| `test_mcp_governed_bootstrap` | Actual config/factory startup and allow/deny calls; missing/invalid factory and unavailable evaluator fail closed |
+| `test_semantic_duckdb_source` | M9D real-file source tests, no source mocks; integration suite uses repaired stock source |
 
 ### Integration Tests
 | Test | Description |
@@ -718,19 +832,20 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | `test_e2e_pbac_denial_paths` | denial on `driver:connect` / `table:read` across compile-only, saved query, dimension values, raw SQL and cache hits → no SQL, no execution |
 | `test_e2e_masked_inference_matrix` | the §4 lineage matrix end-to-end through `sl_run_sql` and structured filters |
 | `test_e2e_handoff_two_users_two_sessions` | foreign/expired handles rejected; identical names isolated; read after policy change denied; shared manager cannot enable the tool |
-| `test_e2e_native_engine_switch` | `engine: native` model produces parity results with sidemantic on DuckDB |
 | `test_e2e_mcp_local_semantic_layer` | `parrot mcp-local semantic-layer --list` resolves the section; tool list matches exposure rules (stdio, no real LLM) |
-| `test_e2e_dataset_manager_rls_two_users` | M12 end-to-end: one agent `DatasetManager` with a SQL source cloned for users A and B (`_clone_agent_dm`), fetched under each `PermissionContext` — rows differ per subject, the agent's source SQL is unchanged, repeated fetches do not stack predicates (`packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py`) |
+
+**(rev 0.3)** `test_e2e_native_engine_switch` and `test_e2e_dataset_manager_rls_two_users` are removed:
+the former tested a sidemantic↔native engine switch that no longer exists (single engine, no switch);
+the latter was M12's end-to-end test and M12 is superseded by FEAT-738 (already merged and tested on `dev`).
 
 ### Validation Contract
 
-tests:
-- packages/ai-parrot/tests/auth/test_authorizing_data_source.py
-- packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py
-markers: none
+none — fallback
 
-> The two existing files above exercise M12's targets. No existing test exercises the satellite; its new
-> files live under `packages/ai-parrot-semantic/tests/` and `packages/ai-parrot-server/tests/` and are each
+> **Rev 0.4** adds M9D source tests and M9H/M10 security tests to task validation commands. The task decomposition must include them explicitly; the existing M12 tests remain unrelated.
+> **(rev 0.3)** No existing test on `dev` exercises this feature: M12 (the only module with existing-test
+> coverage in rev 0.2) is dropped, superseded by FEAT-738. All new files live under
+> `packages/ai-parrot-semantic/tests/` and `packages/ai-parrot-server/tests/` and are each
 > task's own `## Validation Commands`, added by the selector at merge/feature tier.
 
 ### Test Data / Fixtures
@@ -742,7 +857,7 @@ def duckdb_warehouse(tmp_path) -> str:
 
 @pytest.fixture
 def models_dir(tmp_path) -> Path:
-    """sidemantic YAML `orders` model + `orders.policy.yaml` (roles analyst/admin, mask customers.email, RLS on sales.orders by programs) + an Ossie 0.1.1 document."""
+    """Own-format YAML `orders` model + `orders.policy.yaml` (roles analyst/admin, mask customers.email, RLS on sales.orders by programs) + an Ossie 0.1.1 document."""
 
 @pytest.fixture
 def pctx_factory():
@@ -759,7 +874,7 @@ def allow_all_guard() / deny_table_guard():
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] AC1 `pip install ai-parrot-semantic` (workspace member) installs `sidemantic==0.12.0`; `import parrot.semantic` works; no file under `packages/ai-parrot/`, `ai-parrot-tools/` or `ai-parrot-server/` imports `sidemantic` at module level, and `ruff check` enforces it (TID251).
+- [ ] AC1 `pip install ai-parrot-semantic` (workspace member) installs with **no AGPL-3.0 dependency at all**; `import parrot.semantic` works; no file anywhere in the repo, including `packages/ai-parrot-semantic/`, imports `sidemantic` at module level, and `ruff check` (TID251) enforces this with **no per-file exemption**.
 - [ ] AC2 Compilation never opens a database connection and runs under `asyncio.to_thread`; the same `SemanticQuery` compiles to Postgres, BigQuery and DuckDB SQL.
 - [ ] AC3 A model without `governed: false` denies compile, execute, dimension values, saved queries and raw SQL when `PermissionContext` is `None` or the PBAC evaluator is unavailable; `DataPlanePolicyGuard.authorize_source` is never called with `ctx=None` by the satellite.
 - [ ] AC4 PBAC (`driver:connect`, `table:read`) is evaluated on every request including cache hits; a denial returns no SQL and calls no source.
@@ -767,19 +882,31 @@ def allow_all_guard() / deny_table_guard():
 - [ ] AC6 Column masking and usage rights: masked projections render per strategy; any filter/join/group/order/window/derived use of a masked or hidden column without usage rights is denied through aliases, CTEs and subqueries; unresolved lineage denies.
 - [ ] AC7 The positive guard rejects unknown tables/columns/functions, DDL/DML, multi-statement SQL and `exp.Command`; `LIMIT` is injected (policy default) or clamped (policy max).
 - [ ] AC8 The compile cache stores only pre-governance `CompiledQuery` objects (no subject values); governance re-runs on every hit; model/policy digest changes invalidate.
-- [ ] AC9 Every request appends a signed `SemanticAuditEntry` (structured query, subject digest, model/policy digests, engine, compiled + governed SQL, dialect, outcome, rows, duration); verification of the signature succeeds; storage failures never fail the request.
-- [ ] AC10 Result handles are opaque, bounded, expiring and owner/session/context/version-bound; `sl_save_result_as_dataset` rejects foreign/expired/stale handles, re-checks member rights and PBAC, and is not exposed without a subject-scoped `DatasetManager` factory; a factory returning a shared manager is refused.
-- [ ] AC11 The native engine compiles the v1 subset and matches sidemantic row-for-row on the DuckDB parity fixtures; a many-to-many join on a native model is rejected.
+- [ ] AC9 Every request appends a signed `SemanticAuditEntry` (structured query, subject digest, model/policy digests, engine, compiled + governed SQL, dialect, outcome, rows, duration); awaited verification of the signature succeeds; storage failures do not fail requests only when resolved `audit_required=False`; otherwise results are withheld (AC21).
+- [ ] AC10 Result handles are opaque, bounded, expiring and owner/session/context/version-bound; `sl_save_result_as_dataset` rejects foreign/expired/stale handles, re-checks member rights and PBAC, and is not exposed without an M9H guarded sink factory; raw/shared managers are refused and downstream reads reauthorize.
+- [ ] AC11 The native compiler compiles the full v1 subset — including declared one-to-many joins with fan-out rejection, filtered measures, and derived metrics-over-metrics — and matches hand-computed expected rows on the DuckDB golden fixtures across all three dialects; a many-to-many join is rejected; `contains` filters correctly escape `%`/`_` LIKE wildcards (closes `issue:46e8f6219bf5`).
 - [ ] AC12 `sl_run_sql` exists only when `allow_raw_sql=True` and goes through the identical governance pipeline.
 - [ ] AC13 `parrot mcp-local semantic-layer` serves the toolkit from a YAML section; `static_subject` use is logged and flagged in the audit entry.
 - [ ] AC14 `SemanticLayerHandler` routes are registered only when `parrot.semantic` is importable and return 401 without a session.
-- [ ] AC15 Apache Ossie 0.1.1 documents validate against the vendored schema and load; sidemantic `security:` blocks and unknown policy members are rejected at load.
-- [ ] AC16 All unit + integration tests above pass with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` and in CI; `docs/tools/semantic-layer.md` and the satellite README (AGPL notice) exist.
-- [ ] AC17 No public API of core, `ai-parrot-tools` or `ai-parrot-server` changes; `scripts/release.py` lists the new package.
-- [ ] AC18 Release gates: concurrent-compile test, sidemantic↔native normalized-AST parity on the DuckDB fixtures, and postgres/bigquery SQL snapshots all pass; the positive-guard adversarial matrix passes for all three dialects.
+- [ ] AC15 Apache Ossie 0.1.1 documents validate against the vendored schema and load; unknown policy members are rejected at load.
+- [ ] AC16 All unit + integration tests above pass with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` and in CI; `docs/tools/semantic-layer.md` and the satellite README exist (no AGPL notice).
+- [ ] AC17 No public API of core, `ai-parrot-tools` or `ai-parrot-server` changes, and **(rev 0.4) only the DuckDB source and its focused tests may change in core** (M9D; M12 remains dropped); `scripts/release.py` lists the new package.
+- [ ] AC18 Release gates: per-dialect golden-SQL snapshots (postgres/bigquery/duckdb), a DuckDB execution oracle against hand-computed expectations, and a cross-process determinism hash check all pass; the positive-guard adversarial matrix passes for all three dialects.
 - [ ] AC19 A governed model's catalog (`sl_list_models/metrics`, `sl_get_dimensions`, `sl_search_data_model`, `sl_list_saved_queries`) exposes nothing without an authorized subject; the model's declared resource manifest is authorized before compile and every compiled table is within it.
-- [ ] AC20 (M12, `issue:90cf04ce8edd`) `AuthorizingDataSource.fetch()` never mutates its inner source: after N fetches `inner.sql` / `_permanent_filter` equal their constructor values and each fetch target carries exactly one RLS rewrite; `_clone_agent_dm` yields pairwise-distinct source objects per user manager; `test_authorizing_data_source.py` and `test_datasetmanager_authz_integration.py` pass; the ledger issue is closed by `/sdd-done`.
+- [ ] AC20 **(rev 0.3 — removed, superseded)**. `M12`/`issue:90cf04ce8edd` is dropped: FEAT-738
+  (TASK-4678/4679, merged 2026-10-24) already ships the identical fix and test coverage on `dev`.
 - [ ] AC21 (§8 Q3–Q5) `ModelPolicy.allowed_functions` only extends `DEFAULT_ALLOWED_FUNCTIONS`; `audit_required=None` resolves to `True` iff a durable `audit_storage` is configured and then withholds results on sink failure; `postgres_audit_storage` + `semantic_audit_events.sql` ship in the satellite and are documented.
+- [ ] AC22 **(rev 0.3)** No file under `packages/ai-parrot-semantic/`, `ai-parrot/`, `ai-parrot-tools/` or
+  `ai-parrot-server/` imports, vendors, or otherwise references sidemantic's source or API; the typed
+  model schema (`model.py`) is authored only from the public Cube, dbt MetricFlow and Apache Ossie 0.1.1
+  format documentation (clean-room).
+- [ ] AC23 **(rev 0.3)** FEAT-742 (Rust/PyO3 phase) is reserved and referenced in Non-Goals and Known
+  Risks; this spec adds no Rust code, crate, build step, dependency, or `THIRD_PARTY.md` entry.
+- [ ] AC24 (rev 0.4) The M4 graph represents physical types, aggregate inputs, composite join keys and derived dependencies; invalid/cyclic references and fan-out fail deterministically with the review regression gates passing.
+- [ ] AC25 (rev 0.4) Retained handles require trusted nonempty agent/session identity and exact member/physical provenance; missing or mismatched scope denies hand-off. ContextVars restore after success, error and cancellation.
+- [ ] AC26 (rev 0.4) Static operator identity is available only through LocalSemanticLayerToolkit; configured guard-factory startup works with governed models and fails closed otherwise. S3/S5 are fixed with evidence before release.
+- [ ] AC27 (rev 0.4) Hand-off uses only a conforming M9H sink. Every subsequent exposure rechecks current authorization, owner, subject, expiry and versions, including cached/derived results; no bare-manager fallback or alternate unguarded endpoint exists. Without a conforming host adapter the tool is absent and HTTP returns `handoff_unavailable`.
+- [ ] AC28 (rev 0.4) M9D's DuckDB prerequisite is implemented and real-source tests pass before semantic E2E validation. The only core-source edits are the DuckDB source and focused tests; M12 stays removed.
 
 ---
 
@@ -789,7 +916,8 @@ def allow_all_guard() / deny_table_guard():
 > This section is the single source of truth for what exists in the codebase.
 > Implementation agents MUST NOT reference imports, attributes, or methods
 > not listed here without first verifying they exist via `grep` or `read`.
-> Verified against commit `ea2c1224b` (dev, 2026-10-19).
+> Verified against commit `ea2c1224b` (dev, 2026-10-19); **rev 0.3 re-verified against `71999bd06`
+> (dev, 2026-10-25)**. `packages/ai-parrot-semantic/` is still absent on `dev` (re-confirmed 2026-10-25).
 
 ### Verified Imports
 ```python
@@ -806,36 +934,54 @@ from parrot.security import QueryLanguage, QueryValidator                    # v
 from parrot.security import AuditLedgerEntry, AbstractKMSSigner, LocalHMACSigner, AuditLedger  # verified: security/__init__.py:50-55
 from parrot.security.audit_ledger import AzureKeyVaultSigner                 # verified: audit_ledger.py:199 (not re-exported by __init__)
 from parrot.knowledge.common.sql_dialects import SQLGLOT_DIALECT_MAP         # verified: packages/ai-parrot/src/parrot/knowledge/common/sql_dialects.py:6
-# M12 (core) — verified 2026-10-19
-from parrot.tools.dataset_manager.sources.base import DataSource            # verified: sources/authorizing.py:32 (import site)
-from parrot.tools.dataset_manager.sources.sql import SQLQuerySource          # verified: sources/sql.py:26; `self.sql = sql` at :53
-from parrot.tools.dataset_manager.sources.rls import inject_rls_sql, inject_rls_table_source, inject_rls_query_slug   # verified: sources/rls.py:72,132,172 (table/slug variants mutate `source._permanent_filter` in place — rls.py:138,180)
-from parrot.tools.dataset_manager import DatasetEntry, DatasetManager       # verified: handlers/datasets.py:32 (import site); DatasetEntry.__init__ dataset_manager/tool.py:144-153
-from parrot.tools.dataset_manager.sources.dialects import driver_to_dialect  # verified: dialects.py:41
-from parrot.tools.dataset_manager.sources.resolver import PhysicalResources, resolve_physical_resources  # verified: resolver.py:47,120
-from parrot.tools.dataset_manager.sources.rls import inject_rls_sql          # verified: rls.py:72 (reference only — NOT used by the semantic layer)
 from parrot.tools.dataset_manager import DatasetManager                      # verified: handlers/datasets.py:32 (import site); class at dataset_manager/tool.py:499
 from parrot.interfaces.database import get_default_credentials               # verified: packages/ai-parrot/src/parrot/interfaces/database.py:501
 from parrot.mcp.toolkit_config import ToolkitSection, MCPToolkitsConfig, load_toolkits_config  # verified: toolkit_config.py:20,80,90
 from navigator.views import BaseView                                         # verified: packages/ai-parrot-server/src/parrot/handlers/datasets.py:19
 from navigator_auth.decorators import is_authenticated, user_session         # verified: handlers/datasets.py:20
 from navigator_session import get_session                                    # verified: handlers/datasets.py:21
-import sqlglot; from sqlglot import exp; from sqlglot.optimizer.qualify import qualify   # sqlglot 30.23.0 installed; core floor "sqlglot>=20.0" (ai-parrot/pyproject.toml:182)
+import sqlglot; from sqlglot import exp; from sqlglot.optimizer.qualify import qualify   # sqlglot 30.23.0 installed; core floor "sqlglot>=20.0" (ai-parrot/pyproject.toml:182); satellite pins "sqlglot>=30.1,<31" (M1)
 ```
 
-### Existing Class Signatures
-```python
-# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py   (M12)
-class AuthorizingDataSource(DataSource):                                  # line 41
-    def __init__(self, inner: DataSource, guard: "DataPlanePolicyGuard", pctx_provider: Callable[[], Optional["PermissionContext"]]) -> None   # line 58; self._inner = inner (:65)
-    async def fetch(self, **params) -> pd.DataFrame                        # line 74; Step 5 `self._apply_rls(predicates, resources)` (:149), Step 6 `return await self._inner.fetch(**params)` (:151)
-    def _apply_rls(self, predicates: "list[RlsPredicate]", resources: "PhysicalResources") -> None   # line 153; mutates self._inner.sql (:191), inject_rls_table_source(self._inner) (:199), inject_rls_query_slug(self._inner) (:207), self._inner.required_filter (:228,:232)
-# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/table.py / query_slug.py
-#   TableSource.__init__(..., permanent_filter: Optional[Dict[str, Any]] = None)   # table.py:188; self._permanent_filter: Dict[str, Any] (:196)
-#   QuerySlugSource: self._permanent_filter: Dict[str, Any]                 # query_slug.py:98
-# packages/ai-parrot-server/src/parrot/handlers/datasets.py   (M12)
-def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None   # line 47; `source=entry.source,` at :70 inside DatasetEntry(name=, source=, metadata=, is_active=, auto_detect_types=, cache_ttl=)
+**(rev 0.3) M12 imports removed** — `DataSource`, `SQLQuerySource`, `inject_rls_*`, `DatasetEntry`,
+`PhysicalResources`/`resolve_physical_resources`, `driver_to_dialect` were only needed by the dropped
+M12 core fix. The satellite builds `PhysicalResources(driver=, tables={...})` directly from the compiled
+AST (unchanged from rev 0.2 — this was never an M12 import).
 
+### Branch Salvage Source (verified against `origin/feat-FEAT-704-semantic-layer`, 2026-10-25)
+```python
+# packages/ai-parrot-semantic/src/parrot/semantic/loader.py  (branch, 386 lines)
+# class LoadedModel(BaseModel):         line 58
+#     layer: Any                        line 64   (rev 0.3: replaced by `model: SemanticModel`)
+# class SemanticModelLoader:            line 73
+#   (PhysicalSchema / digest / scoping plumbing salvaged; sidemantic graph construction is rewritten)
+
+# packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py  (branch, 236 lines — SALVAGED for M5)
+# class NativeCompiler:                 line 18
+#   def compile(self, query, dialect):  line 26
+#   def _joins_for(self, target_models): line 126-138  (fan-out rejection: `raise SemanticValidationError("fan_out")` at line 136)
+#   LIKE-escape bug: `exp.Like(this=column, expression=exp.Literal.string(f"%{item.values[0]}%"))` at line 199-200,
+#   NO escaping of `%`/`_` — must be fixed by M5 (closes issue:46e8f6219bf5)
+
+# packages/ai-parrot-semantic/src/parrot/semantic/models.py  (branch) — `engine: Literal["sidemantic", "native"]` at line 148 — DROPPED in rev 0.3
+# packages/ai-parrot-semantic/src/parrot/semantic/policy.py  (branch) — `engine: Literal["sidemantic", "native"] = "sidemantic"` at line 56 — DROPPED in rev 0.3
+```
+These are read with `git show origin/feat-FEAT-704-semantic-layer:<path>`, never checked out or merged.
+The branch is 94 commits ahead of its merge-base with `dev`, while `dev` is 1,386 commits ahead of the
+same point (verified 2026-10-25) — far too stale to rebase; only the files named above (plus governance,
+toolkit, audit, cache, catalog, execution, results, ossie validation, and the HTTP handler — all
+engine-neutral salvage candidates, adapted to rev 0.4 contracts per §3) are read from it.
+
+### Existing Class Signatures
+
+**(rev 0.3)** The M12 signatures (`AuthorizingDataSource`, `_clone_agent_dm`) are removed from this
+contract — M12 is dropped. For the record, the fix FEAT-738 already shipped: `_apply_rls`
+(`authorizing.py:152`) now returns a per-call target (`authorizing.py:147`: `target =
+self._apply_rls(predicates, resources) if predicates else self._inner`) instead of mutating
+`self._inner.sql` in place, and `_clone_agent_dm` (`datasets.py:48`) no longer passes `source=entry.source`
+directly (verified 2026-10-25).
+
+```python
 # packages/ai-parrot/src/parrot/tools/databasequery/base.py
 class AbstractDatabaseSource(ABC):                                        # line 323
     driver: str                                                           # line 336
@@ -947,7 +1093,7 @@ def get_default_credentials(driver: str) -> dict[str, Any]                # line
 |---|---|---|---|
 | `SemanticLayerToolkit` | `AbstractToolkit.__init__/_pre_execute/_post_execute/get_tools` | subclass + hook overrides | `tools/toolkit.py:225,357,491,506,522` |
 | `SemanticLayerToolkit._pre_execute` | `kwargs["_permission_context"]` | re-injected by `ToolkitTool._execute` | `tools/toolkit.py:174-178` |
-| `SemanticLayerToolkit._pre_execute` | `parrot.auth.context._pctx_var.set()` | ContextVar | `auth/context.py:33` |
+| `SemanticLayerToolkit` scoped wrapper | `parrot.auth.context._pctx_var` via scoped wrapper | ContextVar set/reset | `auth/context.py:33` |
 | `PbacGate.authorize` | `DataPlanePolicyGuard.authorize_source(ctx, resources)` | method call, never with `ctx=None` | `auth/dataplane_guard.py:193` |
 | `RlsPushdown.apply` | `RlsRegistry.lookup(driver, tables)` / `.render(rule, ctx)` | method calls | `auth/rls_registry.py:125,150` |
 | `ModelPolicy.rls` | `RlsRule` | pydantic reuse; rules registered into the toolkit's `RlsRegistry.register()` | `auth/rls_registry.py:49,112` |
@@ -955,57 +1101,55 @@ def get_default_credentials(driver: str) -> dict[str, Any]                # line
 | `Executor.run` | `DatabaseQueryToolkit.get_source(driver)` → `AbstractDatabaseSource.query(credentials, sql)` | method calls | `databasequery/toolkit.py:202`, `base.py:446` |
 | `ConnectionResolver.resolve` | `get_default_credentials(driver)` | function call | `interfaces/database.py:501` |
 | `SemanticAuditLedger` | `AbstractKMSSigner.sign/verify`, `LocalHMACSigner` | constructor injection | `security/audit_ledger.py:135,143,154,166` |
-| `SemanticLayerToolkit.save_result_as_dataset` | `DatasetManager.add_dataframe(...)` on the factory's manager | method call | `dataset_manager/tool.py:1091` |
+| `SemanticLayerToolkit.save_result_as_dataset` | `GovernedDatasetSink.publish(...)` with a mandatory authorize-read callback (new satellite contract) | method call | `dataset_manager/tool.py:1091` |
 | `SemanticLayerHandler` | `BaseView`, `is_authenticated`, `user_session`, `get_session` | same imports as `DatasetManagerHandler` | `handlers/datasets.py:19-21,141` |
 | `manager.py` registration | `router.add_view(...)` | two new lines after the datasets views | `manager/manager.py:2571-2572` |
 | `.parrot/mcp-toolkits.yaml` `semantic-layer:` | `ToolkitSection(class, kwargs, env)` → `parrot mcp-local semantic-layer` | config | `mcp/toolkit_config.py:50-57`, `local_cli.py:164` |
 | `GovernancePipeline` dialects | `SQLGLOT_DIALECT_MAP` / `driver_to_dialect` | lookup | `knowledge/common/sql_dialects.py:6`, `dataset_manager/sources/dialects.py:41` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`parrot.semantic`~~, ~~`packages/ai-parrot-semantic/`~~ — created by this feature (M1). ~~`parrot_tools.semantic`~~ — must NOT be created (AGPL boundary).
-- ~~`sidemantic`~~, ~~`boring_semantic_layer`~~, ~~`ibis`~~ — not installed in the venv (2026-10-19); only the satellite declares `sidemantic`. No `import ibis` in `packages/*/src` except the throwaway `dataset_manager/spatial/_ibis_probe.py`.
-- sidemantic API names used in M4 (`SemanticLayer`, `load_from_directory`, `compile(metrics=, dimensions=, filters=, order_by=, limit=, dialect=)`, the `ossie` importer) are **(unverified — check before use)** until the M4 spike records them from the installed `sidemantic==0.12.0` wheel.
-- ~~`SemanticQuery`~~, ~~`CompiledQuery`~~, ~~`GovernedQuery`~~, ~~`SemanticLayerToolkit`~~, ~~`sl_*` tools~~, ~~`SemanticAuditEntry`~~, ~~`ModelPolicy`~~, ~~`PbacGate`~~, ~~`RlsPushdown`~~, ~~`ResultHandleStore`~~ — none exist; names are fixed by this spec.
+- ~~`parrot.semantic`~~, ~~`packages/ai-parrot-semantic/`~~ — still absent on `dev` (re-confirmed 2026-10-25); created by this feature (M1). ~~`parrot_tools.semantic`~~ — must NOT be created.
+- **(rev 0.3)** ~~`sidemantic`~~ — dropped entirely; not a dependency anywhere, not a code reference anywhere (clean-room). ~~`boring_semantic_layer`~~, ~~`ibis`~~ — not installed in the venv. No `import ibis` in `packages/*/src` except the throwaway `dataset_manager/spatial/_ibis_probe.py`.
+- **(rev 0.3)** ~~`engines/sidemantic_engine.py`~~ — never created; existed only on the salvage branch (169 lines) and is explicitly dropped. ~~A spike task confirming a sidemantic API~~ — no sidemantic API to confirm; M4 has no spike.
+- ~~`SemanticQuery`~~, ~~`CompiledQuery`~~, ~~`GovernedQuery`~~, ~~`SemanticLayerToolkit`~~, ~~`sl_*` tools~~, ~~`SemanticAuditEntry`~~, ~~`ModelPolicy`~~, ~~`PbacGate`~~, ~~`RlsPushdown`~~, ~~`ResultHandleStore`~~, ~~`SemanticModel`/`Dimension`/`Metric`/`Relationship`~~ — none exist on `dev`; names are fixed by this spec.
 - ~~`AuditLedgerEntry.payload` / `.compiled_sql` / `.structured_query`~~ — `AuditLedgerEntry` has only credential-shaped fields; `AuditLedger.append()` requires `credential_material`. Decision: a separate `SemanticAuditEntry` ledger (M8).
 - ~~RLS push-down below aggregation anywhere in core~~ — `inject_rls_sql` (rls.py:72) only **wraps** the statement; the semantic layer does not call it.
 - ~~A positive table/column allowlist in core~~ — `QueryValidator.validate_sql_ast` and `SQLToolkit._check_query_safety` (`bots/database/toolkits/sql.py:578`) are negative guards.
 - ~~Named-connection credentials in `DatabaseQueryToolkit`~~ — `__init__` accepts only `output_dir`/`static_dir`; credentials are the first positional argument of `AbstractDatabaseSource.query()`. Decision: `ConnectionResolver` in the satellite (M9).
-- ~~`_post_execute` receiving `_permission_context`~~ — it receives tool params only (toolkit.py:195-198); read the context from the ContextVar set in `_pre_execute`.
+- ~~`_post_execute` receiving `_permission_context`~~ — it receives tool params only (toolkit.py:195-198); read the scoped ContextVar. It is not called on failure and cannot own cleanup.
 - ~~`DataPlanePolicyGuard` failing closed on `ctx=None`~~ — it fails **open** (dataplane_guard.py:52, 193-200); `PbacGate` must deny before calling it.
 - ~~`resolve_physical_resources(sql, driver)`~~ — it takes a `DataSource` (resolver.py:120); the satellite builds `PhysicalResources(driver=, tables={...})` from the AST itself.
 - ~~`packages/ai-parrot-server/src/parrot/models/datasets.py`~~ — request models live in core `packages/ai-parrot/src/parrot/models/datasets.py`.
 - ~~`UserInfoService.get_attributes()`~~ — only `get_profile(user_id)` / `get_profile_by_email(email)` exist (auth/userinfo.py:80,149,197).
-- ~~An async API in sidemantic / BSL / MetricFlow~~ — none; compile in `asyncio.to_thread`.
-- ~~`sidemantic-rs` as a requirement of `sidemantic==0.12.0`~~ — the published wheel does not require it (PyPI JSON 2026-10-19); `main` does — hence the exact pin.
-- ~~An Apache Ossie Python SDK on PyPI~~ — `ossie` / `apache-ossie` / `osi-spec` do not exist; validation is the vendored JSON Schema + sidemantic's importer.
-- ~~Server code changes for `mcp-local`~~ — a YAML `class:` section is sufficient (`toolkit_config.py:50`).
-- ~~`ai-parrot-semantic` in `KNOWN_PROJECTS`~~ — `parrot.knowledge.wiki.ledger.sdd_meta.KNOWN_PROJECTS` does not list it (warns only); add it in M1 if the vocabulary is editable in-repo, otherwise leave the warning.
-- ~~A `ruff.toml` entry banning `sidemantic`~~ — the TID251 table (ruff.toml:125-135) bans requests/httpx/starlette/fastapi/uvicorn/langchain*/langgraph/langsmith only; M1 adds `sidemantic`.
-- ~~`DataSource.copy()` / `.clone()` / `model_copy()`~~ — `DataSource` subclasses are plain classes (not pydantic); M12 uses `copy.copy` + explicit `dict()` of `_permanent_filter`.
-- ~~`MongoSource.required_filter` as a dict~~ — `MongoSource.__init__` takes `required_filter: bool` and stores `self._required_filter` (mongo.py:77,84); the attribute `authorizing.py:228,232` assigns is a dynamic one. M12 keeps that branch's semantics but applies it to the per-call copy only; redesigning the Mongo filter is out of scope.
-- ~~`packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`~~ — created by M12.
+- ~~An async API anywhere in this feature's compiler~~ — none; compile in `asyncio.to_thread`.
+- ~~An Apache Ossie Python SDK on PyPI~~ — `ossie` / `apache-ossie` / `osi-spec` do not exist; validation is the vendored JSON Schema + the own loader (rev 0.3: not sidemantic's importer).
+- ~~Server code changes for `mcp-local`~~ — the generic factory remains unchanged; YAML selects LocalSemanticLayerToolkit plus its required configured guard factory (M10).
+- ~~`ai-parrot-semantic` in `KNOWN_PROJECTS`~~ — `parrot.knowledge.wiki.ledger.sdd_meta.KNOWN_PROJECTS` does not list it (warns only; `KNOWN_PROJECTS` defined at `sdd_meta.py:45`, re-verified 2026-10-25); leave this warning; changing the core vocabulary is outside the M9D-only core-source exception.
+- **(rev 0.3)** ~~A `ruff.toml` per-file ignore for `sidemantic` under the satellite~~ — rev 0.2 would have added one; rev 0.3 adds the ban (`ruff.toml:125`) with **no exemption anywhere**, since the satellite no longer needs sidemantic. Re-verified 2026-10-25: `ruff.toml` has no `sidemantic` entry yet (added by M1).
+- **(rev 0.3, M12 dropped)** ~~`AuthorizingDataSource` mutating `self._inner.sql` in place~~, ~~`_clone_agent_dm` sharing `entry.source`~~ — both already **fixed on `dev`** by FEAT-738 (TASK-4678/4679, merged 2026-10-24, verified `authorizing.py:147,152` and `datasets.py:48,131`, 2026-10-25). ~~`DataSource.copy()` / `.clone()` / `model_copy()`~~, ~~`packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`~~ — moot; M9D is the only core-source exception.
 - ~~`asyncdb` as a satellite dependency~~ — `postgres_audit_storage` uses `asyncpg` directly (already a transitive dependency of `ai-parrot`).
 - ~~A CI step running `packages/ai-parrot-semantic/tests`~~ — `ci.yml` runs `uv sync --all-packages` (line 27) and per-suite pytest steps (e.g. line 506); M1 adds the satellite step.
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `ea2c1224b`
+Verified against: `ea2c1224b`; **rev 0.3 anchors re-verified against `71999bd06` (dev, 2026-10-25)** —
+two anchor lines shifted (`pyproject.toml`, `.github/workflows/ci.yml`; noted below), the rest held.
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
-| `pyproject.toml` | MODIFY | `ai-parrot-openlit-bridge = { workspace = true }` | `pyproject.toml:239` | 1 |
+| `pyproject.toml` | MODIFY | `ai-parrot-openlit-bridge = { workspace = true }` | `pyproject.toml:244` (was :239 in rev 0.2) | 1 |
 | `scripts/release.py` | MODIFY | `PACKAGES: list[Package] = [` | `scripts/release.py:116` | 1 |
 | `ruff.toml` | MODIFY | `[lint.flake8-tidy-imports.banned-api]` | `ruff.toml:125` | 1 |
-| `ruff.toml` | MODIFY | `[lint.per-file-ignores]` | `ruff.toml:137` | 1 |
-| `.github/workflows/ci.yml` | MODIFY | `        run: uv run pytest packages/ai-parrot-tools/tests/tool_optimizations -q --tb=short` | `.github/workflows/ci.yml:506` | 1 |
+| `.github/workflows/ci.yml` | MODIFY | `        run: uv run pytest packages/ai-parrot-tools/tests/tool_optimizations -q --tb=short` | `.github/workflows/ci.yml:531` (was :506 in rev 0.2) | 1 |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `from ..handlers.datasets import DatasetManagerHandler` | `manager.py:45` | 1 |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `        router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)` | `manager.py:2571` | 1 |
-| `.parrot/mcp-toolkits.yaml` | MODIFY | `  database-query:` | `.parrot/mcp-toolkits.yaml:121` | 1 |
+| `.parrot/mcp-toolkits.yaml` | MODIFY | `  database-query:` | `.parrot/mcp-toolkits.yaml:110` (was :121 in rev 0.2) | 1 |
 | `.mcp.json` | MODIFY | `    "parrot-database-query": {` | `.mcp.json:64` | 1 |
 | `packages/ai-parrot-semantic/pyproject.toml` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/README.md` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` | CREATE (M1), MODIFY (M10 exports) | `__all__ = ["__version__"]` (after M1) | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/version.py` | CREATE | — | — | — |
+| `packages/ai-parrot-semantic/src/parrot/semantic/model.py` | CREATE (rev 0.3 — typed clean-room graph) | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/models.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/errors.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/policy.py` | CREATE | — | — | — |
@@ -1013,28 +1157,26 @@ Verified against: `ea2c1224b`
 | `packages/ai-parrot-semantic/src/parrot/semantic/ossie.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/schemas/ossie-0.1.1.schema.json` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py` | CREATE | — | — | — |
-| `packages/ai-parrot-semantic/src/parrot/semantic/engines/sidemantic_engine.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/governance/{__init__,pbac,lineage,rls,masking,guard,pipeline}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/catalog.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/audit.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/{execution,cache,results}.py` | CREATE | — | — | — |
-| `packages/ai-parrot-semantic/src/parrot/semantic/{toolkit,context}.py` | CREATE | — | — | — |
+| `packages/ai-parrot-semantic/src/parrot/semantic/context.py` | CREATE (M2), MODIFY (M10 binding helpers) | — | — | — |
+| `packages/ai-parrot-semantic/src/parrot/semantic/{toolkit,bootstrap,handoff}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/tests/{__init__,conftest}.py` + `tests/test_*.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/handlers/semantic.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/tests/unit/test_semantic_handler.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py` | MODIFY (M9D) | `class DuckDBSource(AbstractDatabaseSource):` | duckdb.py:29 | 1 |
+| `packages/ai-parrot/tests/test_semantic_duckdb_source.py` | CREATE (M9D) | — | — | — |
 | `docs/tools/semantic-layer.md` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` | CREATE (M8) | — | — | — |
-| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `import logging` | `authorizing.py:27` | 1 |
-| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `            self._apply_rls(predicates, resources)` | `authorizing.py:149` | 1 |
-| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `            self._inner.sql = rewritten_sql` | `authorizing.py:191` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/datasets.py` | MODIFY (M12) | `def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:` | `datasets.py:47` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/datasets.py` | MODIFY (M12) | `                source=entry.source,` | `datasets.py:70` | 1 |
-| `packages/ai-parrot/tests/auth/test_authorizing_data_source.py` | MODIFY (M12) | `    async def test_rls_injected_before_fetch(` | `test_authorizing_data_source.py:189` | 1 |
-| `packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py` | MODIFY (M12) | — (append a test class) | — | — |
-| `packages/ai-parrot-server/tests/handlers/test_datasets_clone.py` | CREATE (M12) | — | — | — |
 
-- `__init__.py` of the satellite is the only file two modules touch (M1 creates, M10 finalizes); their tasks are serialized.
+**(rev 0.3)** `engines/sidemantic_engine.py` row removed — never created. All M12 rows removed
+(`authorizing.py`, `datasets.py`, `test_authorizing_data_source.py`,
+`test_datasetmanager_authz_integration.py`, `test_datasets_clone.py`) — M12 is dropped, superseded by FEAT-738. M9D separately restores the DuckDB prerequisite identified in the rev2 proposal.
+
+- Shared files are serialized: `__init__.py` (M1 creates, M10 finalizes) and `context.py` (M2 creates identity model, M10 adds binding helpers).
 - `/sdd-task` MUST re-run `grep -c -F` for every MODIFY row; `grep` in this repo is aliased to `ugrep` by RTK, so use `-F` for anchors containing `(`, `[` or `{`.
 
 ---
@@ -1042,44 +1184,47 @@ Verified against: `ea2c1224b`
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- **ContextVar for the per-call subject** (`DatasetManager._get_current_pctx`, tool.py:2663; `DatabaseQueryTool`, tool.py:598-600): set in `_pre_execute`, read inside tools, never stored on `self`.
+- **ContextVar for the per-call subject** (`DatasetManager._get_current_pctx`, tool.py:2663; `DatabaseQueryTool`, tool.py:598-600): bind/reset in the execution wrapper with `try/finally`, validate in `_pre_execute`, read inside tools, never store per-call identity on `self`.
 - **Toolkit exposure via `exclude_tools`** (`DatabaseQueryToolkit.__init__`, toolkit.py:175-176) for `run_sql` and `save_result_as_dataset`.
 - **Satellite packaging** mirrors `packages/ai-parrot-embeddings/pyproject.toml` (setuptools, `dynamic = ["version"]`, `dependencies = ["ai-parrot"]`, `license = "MIT"`, `requires-python = ">=3.11,<3.14"`); PEP 420: no `src/parrot/__init__.py`.
 - **Trusted provenance by node identity**: RLS and mask nodes injected by the pipeline are remembered by `id(node)` in the same pass; callers can never label SQL as trusted.
 - **Fail closed everywhere governance is involved**; fail open is only acceptable for `governed: false` models, and never for hand-off ownership.
 - **Credentials from env/navconfig only**; tool arguments never carry credentials or connection names.
 - **Async-first**: compile and sqlglot passes run in `asyncio.to_thread`; execution via the async sources; `self.logger` logging; Pydantic v2; 120 cols; Google docstrings.
-- **Worktree testing**: `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src pytest packages/ai-parrot-semantic/tests`; never `uv sync` inside a worktree; `sidemantic` is installed by the main-checkout operator once M1 lands.
+- **Worktree testing**: `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src pytest packages/ai-parrot-semantic/tests`; never `uv sync` inside a worktree. **(rev 0.3)** no sidemantic install needed — the satellite has no AGPL dependency.
 
 ### Known Risks / Gotchas
-- **AGPL-3.0 network clause** (sidemantic): the satellite is opt-in and documents it; legal sign-off recorded in §8 Q1 (Jesus Lara, 2026-10-19). Keep every sidemantic import under `packages/ai-parrot-semantic/` (TID251 backstop, AC1).
-- **Single maintainer, unlabeled breaking changes** in sidemantic: exact pin `==0.12.0`; upgrade only through a spike task that re-runs the parity and governance suites; `main` already adds a Rust wheel.
-- **`SemanticLayer.compile` reentrancy unknown**: one layer per model, compile under an `asyncio.Lock` until the M4 spike proves it reentrant (§8 Q2); cache hits bypass the lock.
+- **(rev 0.3) Clean-room boundary**: the typed model schema is authored only from Cube / dbt MetricFlow / Apache Ossie 0.1.1 *public documentation*; never open or copy sidemantic's source, including the salvage branch's `loader.py` body or `sidemantic_engine.py`. §8 Q1's AGPL sign-off is now moot (no AGPL dependency exists).
+- **(rev 0.3) Salvage drift**: `origin/feat-FEAT-704-semantic-layer` is 94 commits ahead of its merge-base with `dev` while `dev` is 1,386 commits ahead of the same point (verified 2026-10-25) — too stale to rebase. Only the named files (§6) are read via `git show`; core edits on the branch are never copied wholesale; M9D manually reapplies only the DuckDB fix against current dev.
+- **(rev 0.3) LIKE-wildcard escaping (`issue:46e8f6219bf5`)**: the branch's `contains` filter translation builds `exp.Like` with an unescaped `%{value}%` pattern — a value of `"%"` matches every row. This bug moved with the code from `sidemantic_engine.py` (deleted) to `engines/native.py` (the sole surviving filter-translation path) and must be fixed there, not merely closed as moot.
 - **Wrapping RLS is wrong for aggregates**: never call `inject_rls_sql` from the semantic layer; AC5 pins push-down below aggregation with a numeric parity test.
 - **`DataPlanePolicyGuard` fails open on `ctx=None` and on missing navigator-auth**: `PbacGate` denies before the call and probes availability at construction.
 - **Schema drift**: compile succeeds, DB fails → `SemanticExecutionError` with the audit id; SQL goes to the audit, never to the LLM message.
 - **Mixed WHERE/HAVING filter groups**, **grain missing**, **offset without order** → validation errors (M2).
-- **Fan-out joins in native mode** → rejected; sidemantic's symmetric aggregates are the only v1 path for many-to-many.
+- **Fan-out joins in native mode** → rejected; U4 (2026-10-25) keeps declared one-to-many joins in v1; no many-to-many / symmetric-aggregate path exists in rev 0.3 (no sidemantic to provide one).
 - **Cache poisoning across subjects**: cache stores pre-governance SQL only; `cache_key` excludes subject data; AC8 + `test_e2e_rls_two_subjects_same_roles`.
-- **Hand-off into a shared `DatasetManager`** would leak governed rows: factory must return a subject/session-scoped manager; shared instance detection refuses the tool (AC10). Hosts without downstream gates must not provide a factory.
+- **Hand-off into a shared `DatasetManager`** would leak governed rows: factory must return a guarded subject/session-scoped sink; M9H validates the owner tuple and rejects raw/shared managers (AC10). Hosts without a conforming read gate cannot enable hand-off.
 - **RTK/ugrep** aliasing in this repo turns `grep` patterns into regex; use `-F` for anchors.
 - **Dialect without a source** (e.g. `snowflake`): compile allowed, execution refused with a clear error.
 - **`static_subject` is a single operator identity** for `parrot mcp-local`: every call runs as that subject, so the YAML must never grant it broader roles than the operator holds; a per-call signed identity envelope was considered (design research S9) and deferred — mcp-local is a local developer surface, the identity is explicit, logged and flagged in every audit entry.
-- **Core `AuthorizingDataSource` mutates its inner SQL and HTTP clones share `entry.source`** (`sources/authorizing.py:191`, `handlers/datasets.py:70`): fixed by **M12** in this feature (§8 Q6, `issue:90cf04ce8edd`, AC20). Independently of the fix, the semantic layer never registers a *source*, only a copied DataFrame, and the host factory must hand out subject/session-scoped managers (AC10). Gotcha for M12: `copy.copy` shares connection objects by design — only the mutable filter state (`sql`, `_permanent_filter`, mongo filter) must be per-call.
+- **(rev 0.3) M12 is dropped, not just deferred**: `AuthorizingDataSource`/`_clone_agent_dm` are already fixed on `dev` by FEAT-738 (TASK-4678/4679, merged 2026-10-24) — do not re-attempt this fix; it is out of scope for this feature entirely.
 - **`audit_required` auto-resolves to `True` with a durable sink** (§8 Q5): a misconfigured Postgres DSN makes every governed call fail closed with `audit_unavailable` — surface it at toolkit construction with a startup log line, and document `audit_required=False` as the explicit opt-out.
 - **`allowed_functions` policy additions are a widening of the positive guard** (§8 Q4): review them like RLS text; the loader upper-cases names and rejects anything that is not a bare identifier.
 - **Ossie 0.1.x is a moving spec**: version pinned in the vendored schema; a 0.2 document is rejected, not coerced.
+- **(rev 0.3) Open ledger findings on salvaged code**: `issue:3c4d154c0172` (toolkit/cache/pbac hardening — S1/S2/S4 already fixed on the branch at commit `d63ac6bf4`, salvage from that commit or later; S3/S5 + nits still open) S3/S5 are mandatory M10 acceptance gates in rev 0.4: static identity is local-only and hand-off authorizes the exact retained members. Close by evidence, or split genuinely remaining nits into a separate issue; never carry S3/S5 as nonblocking debt.
+- **(rev 0.3) Rust phase is a separate feature (FEAT-742)**: do not derive SemaFlow code or add a Rust crate under this spec; FEAT-742 will need the compiler's IR shape fixed by M4/M5 to remain stable.
 
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| `sidemantic` | `==0.12.0` (AGPL-3.0, 2026-09-13) | semantic model core, 15-format import (Ossie), metric compile; transitive: `antlr4-python3-runtime>=4.13.2`, `click>=8`, `duckdb>=1.0`, `jinja2>=3.1`, `pydantic>=2`, `pyyaml>=6`, `sqlglot>=30.1`, `typer>=0.18` |
 | `sqlglot` | `>=30.1,<31` (MIT; venv 30.23.0) | AST guard, lineage, RLS push-down, masking, native compiler, dialect rendering |
 | `jsonschema` | `>=4.20` | Apache Ossie 0.1.1 document validation |
-| `pyyaml` | `>=6` (already in core) | policy side-files |
-| `duckdb` | `>=1.0` (venv 1.5.6; extra `duckdb`) | sidemantic hard dependency; parity/e2e fixtures via `DuckDBSource` |
+| `pyyaml` | `>=6` (already in core) | policy side-files and the own model-graph format |
+| `duckdb` | `>=1.0` (venv 1.5.6; extra `duckdb`) | golden/e2e fixtures via `DuckDBSource`; **(rev 0.3)** no longer a transitive requirement of sidemantic — now a direct, explicit dependency |
 | `google-cloud-bigquery` | `>=3.30` (extra `bigquery`; venv 3.46.2) | BigQuery execution via the existing source |
 | `asyncpg` | via `ai-parrot` (venv 0.32.0) | Postgres execution via the existing source |
+
+**(rev 0.3) `sidemantic` row removed** — no longer a dependency (AGPL-3.0 dropped entirely, clean-room).
 
 ---
 
@@ -1087,8 +1232,8 @@ Verified against: `ea2c1224b`
 
 > Questions that must be resolved before or during implementation.
 
-- [x] License field of the satellite — *Resolved in brainstorm*: MIT for the satellite (`license = "MIT"` like the other satellites); the AGPL-3.0 dependency and its network clause are documented in the satellite README and the spec; written legal sign-off is tracked as a spec §8 item, not a blocker
-- [x] "No abstraction" vs native fallback — *Resolved in brainstorm*: confirmed — one internal `compile()` dispatching on `model.engine ∈ {sidemantic, native}`; no plugin protocol, no third-party engine registry
+- [x] License field of the satellite — *Resolved in brainstorm, superseded by rev 0.3*: MIT for the satellite (`license = "MIT"` like the other satellites). Rev 0.2 documented the AGPL-3.0 dependency and its network clause; **rev 0.3 removes sidemantic entirely, so there is no AGPL dependency to document** — this question is moot, not re-litigated.
+- [x] "No abstraction" vs native fallback — *Resolved in brainstorm, superseded by rev 0.3*: rev 0.2 kept one internal `compile()` dispatching on `model.engine ∈ {sidemantic, native}`. **Rev 0.3 drops the dispatch entirely** — the native compiler is the sole engine, no `engine` field, no plugin protocol, no third-party engine registry.
 - [x] Audit storage — *Resolved in brainstorm*: separate `SemanticAuditEntry` ledger in the satellite, reusing `AbstractKMSSigner`/`LocalHMACSigner` and the async `storage` callable contract; zero core change. Production sink wiring stays configurable (storage callable), default in-memory
 - [x] Deny-by-default scope — *Resolved in brainstorm*: every model is governed by default — compile/execute deny without a `PermissionContext` or evaluator unless the policy file sets `governed: false`
 - [x] `mcp-local` identity — *Resolved in brainstorm*: allowed — `.parrot/mcp-toolkits.yaml` may declare a `static_subject` (user, tenant, roles, metadata) for `parrot mcp-local semantic-layer`; it is logged on every call and recorded in the audit entry
@@ -1096,12 +1241,17 @@ Verified against: `ea2c1224b`
 - [x] Free SQL (`sl_run_sql`) — *Resolved in brainstorm*: ship in v1, disabled by default (`allow_raw_sql=False`), on the same governance path (PBAC, lineage, RLS, positive guard, audit)
 - [x] Native compiler v1 subset — *Resolved in brainstorm*: confirmed as drafted — simple aggregations, dimensions, `DATE_TRUNC` grains, declared one-to-many joins, filter tree, order/limit; no symmetric aggregates, no cumulative/time-comparison metrics
 - [x] Commit the proposal doc — *Resolved in brainstorm*: yes — committed to `dev` together with this brainstorm acceptance
-- [x] Q1 Written legal sign-off for the AGPL-3.0 dependency — *Resolved 2026-10-19*: approved by **Jesus Lara (2026-10-19)**. The satellite stays `license = "MIT"`; sidemantic's AGPL-3.0 network clause (hosted API) is documented in the satellite README and `docs/tools/semantic-layer.md` (M11). No further sign-off gates `/sdd-done` or the 1.3.0 tag.
-- [x] Q2 sidemantic `SemanticLayer.compile` reentrancy and `load_from_directory` acceptance of Apache Ossie 0.1.1 fixtures — *Resolved 2026-10-19 (delegated)*: decided by the M4 spike task against the installed `sidemantic==0.12.0` wheel. Until the spike proves `compile` reentrant, the engine compiles under a per-model `asyncio.Lock` (safe default, §7). The spike's Completion Note records lock vs lock-free and the importer-fidelity outcome; the spec is not reopened for it.
+- [x] Q1 Written legal sign-off for the AGPL-3.0 dependency — *Resolved 2026-10-19, superseded 2026-10-25*: approved by **Jesus Lara (2026-10-19)** for rev 0.2. **Rev 0.3 removes sidemantic entirely** (clean-room, no AGPL dependency) — the sign-off is moot. No sign-off gates `/sdd-done` or the 1.3.0 tag.
+- [x] Q2 sidemantic `SemanticLayer.compile` reentrancy and `load_from_directory` acceptance of Apache Ossie 0.1.1 fixtures — *Resolved 2026-10-19, superseded 2026-10-25*: rev 0.2 delegated this to an M4 spike against the sidemantic wheel, with a per-model `asyncio.Lock` as a safe default pending the result. **Rev 0.3 drops sidemantic entirely — there is no third-party `compile()` reentrancy to prove, and no spike or lock is needed**: the sole native sqlglot compiler is a pure, stateless function per call. Apache Ossie 0.1.1 acceptance is validated by the vendored JSON Schema (M4), independent of any third-party importer.
 - [x] Q3 Production sink for `SemanticAuditLedger.storage` — *Resolved 2026-10-19*: **Postgres table shipped by the satellite** — `parrot/semantic/sql/semantic_audit_events.sql` (DDL modelled on `security/security_events.sql`, one row per `SemanticAuditEntry`, JSONB payload + indexed `user_id`/`tenant_id`/`model`/`outcome`/`created_at`) and an opt-in `postgres_audit_storage(dsn_or_pool, table="semantic_audit_events")` factory returning the async `storage(json_str)` callable (M8). Default remains the in-memory ledger; the Postgres callable is wired by the host (toolkit kwarg `audit_storage` / YAML `kwargs`). The credential-ledger sink is NOT reused (two schemas in one table rejected).
 - [x] Q4 Allowed-function allowlist default for the positive guard — *Resolved 2026-10-19*: `DEFAULT_ALLOWED_FUNCTIONS` (M6 `guard.py`) = aggregates `SUM, COUNT, COUNT DISTINCT, AVG, MIN, MAX` + `DATE_TRUNC, EXTRACT, COALESCE, CAST, LOWER, UPPER` + arithmetic / comparison / boolean operators (operators are sqlglot expression nodes, not `exp.Func`, and are always allowed). Per-model **additive** override: `ModelPolicy.allowed_functions: list[str]` (M3) — the effective set is `DEFAULT ∪ toolkit kwarg allowed_functions ∪ policy.allowed_functions`; nothing can remove a default, and DDL/DML/`exp.Command` stay denied regardless.
 - [x] Q5 `audit_required` default — *Resolved 2026-10-19*: the toolkit kwarg becomes `audit_required: bool | None = None` and is **resolved at construction**: `None` → `True` when a durable `audit_storage` callable is configured, `False` when only the in-memory ledger is in use (it cannot fail). An explicit `True`/`False` always wins. With `True`, a storage failure raises `SemanticExecutionError('audit_unavailable')` and the governed result is withheld (M8/M10); AC9's "storage failures never fail the request" applies to the resolved-`False` case only.
-- [x] Q6 Core finding (S2) `AuthorizingDataSource` in-place RLS rewrite + `_clone_agent_dm` shared `entry.source` — *Resolved 2026-10-19*: **folded into this feature as Module 12** (behavioural fix, no public signature change, so AC17 holds). Ledger issue `issue:90cf04ce8edd` is claimed by the M12 task (`**Discovered-from**: issue:90cf04ce8edd`) and closed by `/sdd-done` with the two-key evidence. M12 has no edge to M1–M11 and runs concurrently.
+- [x] Q6 Core finding (S2) `AuthorizingDataSource` in-place RLS rewrite + `_clone_agent_dm` shared `entry.source` — *Resolved 2026-10-19, superseded 2026-10-25*: rev 0.2 folded this in as Module 12. **FEAT-738 (TASK-4678/4679, merged 2026-10-24, PR #1801) independently shipped the identical fix on `dev`** — verified `authorizing.py:147,152` and `datasets.py:48,131`, 2026-10-25. M12 is dropped from rev 0.3; `issue:90cf04ce8edd` is already resolved on `dev` and needs no task here.
+- [x] U2 Stay inside FEAT-704 (spec rev 0.3) or supersede with a new FEAT id? — *Resolved 2026-10-25 (owner)*: amend FEAT-704 to rev 0.3; TASK-4467/4468 re-scoped and TASK-4482 dropped by the next `/sdd-task` run; no new FEAT id for the generic semantic layer.
+- [x] U3 Rust/PyO3 phase timing and location — *Resolved 2026-10-25 (owner)*: own FEAT now, crate inside the satellite. **FEAT-742** (`semantic-layer-rust-compiler`) reserved 2026-10-25; its crate will live at `packages/ai-parrot-semantic/rust/` (navrules-style: pyo3 0.29 abi3-py311, `extension-module` feature off for `cargo test`, `native_group` registration). Not specced here — a future `/sdd-spec` run owns FEAT-742's design.
+- [x] U4 v1 join scope — *Resolved 2026-10-25 (owner)*: keep the branch's declared one-to-many joins with fan-out rejection in v1 (verified present and working at `engines/native.py:126-138` on the branch).
+- [x] U5 BSL/Ibis vs the Ibis NO-GO — *Resolved 2026-10-25 (owner)*: a scoped re-opening note. The Ibis NO-GO (TASK-1437) is narrowed to connection/credential mapping; compile-only BSL/Ibis usage remains re-evaluable by a future, scoped joins-phase spec (see Non-Goals). No Ibis/BSL dependency is added by rev 0.3.
+- [x] U6 Who creates `packages/ai-parrot-semantic/` first, FEAT-704 or FEAT-713? — *Resolved 2026-10-25 (owner)*: **FEAT-704 rev 0.3 creates the skeleton (M1)**; FEAT-713's M1 becomes "extend" (resolves `accounting-metrics-layer.spec.md` §8 Q10 — that edit is out of scope for this spec and must be made the next time FEAT-713's spec is touched).
 
 ---
 
@@ -1130,6 +1280,8 @@ Verified against: `ea2c1224b`
 | S12 | Make free SQL and dataset hand-off later opt-in features (alternative) | CONFIRM (ordering) / REJECT (defer to another spec) | Both tools are already opt-in and off by default (resolved brainstorm question); their tasks are now ordered last and gated on the security suite rather than deferred to a separate spec | Worktree Strategy (ordering inside M10) |
 
 Summary: **10** confirmed (two of them partially, with the rejected part recorded) · **2** rejected (S9; the deferral half of S12) · **2** escalated (S2 → Q6, S8 → Q5).
+
+**Rev 0.3 note**: no new design-research pass ran for this amendment — `sdd/proposals/semantic-layer-rev2.proposal.md` carries `status: review` (not `accepted`), which does not meet the `codex` design-research preconditions (§3b of `/sdd-spec`). Status: **skipped (exploration doc status is 'review', not 'accepted')**. Two rev 0.2 items are now moot rather than resolved by new review: **S2**'s escalation (→ Q6) is superseded — the core defect it flagged is already fixed on `dev` by FEAT-738, independently of this spec. **S11**'s reentrancy half (`test_compile_concurrent_to_thread`) is superseded — there is no third-party engine to prove reentrant; the native compiler is a pure function. S11's parity/snapshot half stands, re-pointed from sidemantic-parity to the DuckDB execution oracle.
 ---
 
 ## Worktree Strategy
@@ -1140,27 +1292,46 @@ Summary: **10** confirmed (two of them partially, with the rejected part recorde
   - M2 → M1 (package must exist to import `parrot.semantic.errors`).
   - M3 → M2 (`ModelPolicy` embeds `SemanticQuery` in `SavedQuery` and reuses `ModelMember`).
   - M4 → M2, M3 (`LoadedModel` carries `ModelPolicy`; `compile()` returns `CompiledQuery`).
-  - M5 → M4 (`NativeCompiler(LoadedModel)` uses `PhysicalSchema` and members).
+  - M5 → M4 (`NativeCompiler(LoadedModel)` uses the typed `SemanticModel`, `PhysicalSchema` and members).
   - M6 → M2, M3, M4 (`GovernancePipeline.govern(model: LoadedModel)`; `ModelPolicy.usage_allowed/mask_for`).
   - M7 → M3, M4 (`RoleCatalog(models: dict[str, LoadedModel])`).
   - M8 → M2 only (`SemanticAuditEntry` is self-contained).
   - M9 → M2, M6 (`Executor.run(GovernedQuery)`; `CompileCache(CompiledQuery)`).
-  - M10 → M3…M9.  M11 → M10.
-  - **M12 → nothing** (core-only edit of `sources/authorizing.py` + `handlers/datasets.py`; no satellite import). It may start in wave 1 alongside M1.
+  - M9D → M1; M9 DuckDB validation → M9D. M9H → M2, M3, M6, M7, M9.
+  - M10 → M3…M9, M9D, M9H. M11 → M10; hand-off requires the guarded sink contract.
+  - **(rev 0.3) M12 removed** — M9D is a separate prerequisite, not a revival of M12; every module depends transitively on M1.
   - **Concurrent after M4**: M5, M6, M7, M8, M9 have no edges among themselves (M9 needs only `GovernedQuery`
     from M2/M6's contract, which is fixed in §2 — M9 may start on the model alone).
-- **Shared files**: `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` (M1 create, M10
-  finalize) — serialized. `handlers/datasets.py` is modified by M12 only (M11 creates `handlers/semantic.py` and
-  edits `manager.py`, not `datasets.py`). No other file is touched by two modules.
-- **Exclusive resources**: M1 changes `uv.lock`/workspace membership and requires the main-checkout
-  operator to install `sidemantic` into the shared venv (`parallel: false`); M11's `manager.py`,
-  `.parrot/mcp-toolkits.yaml`, `.mcp.json` edits are single-task.
+- **Shared files**: `context.py` (M2 identity model, then M10 binding helpers) and `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` (M1 create, M10
+  finalize) — serialized. **(rev 0.4)** M1 edits workspace/release/lint/CI configuration, M9D edits the DuckDB source and tests, and M11 creates
+  `handlers/semantic.py` and edits `manager.py`; `handlers/datasets.py` is never touched — M12 is gone.
+  No other file is touched by two modules. M9D exclusively owns its core source/test files.
+- **Exclusive resources**: M1 changes `uv.lock`/workspace membership (`parallel: false`); **(rev 0.3)**
+  no main-checkout operator install step is needed — there is no sidemantic (or any other new heavy
+  dependency) to install into the shared venv. M11's `manager.py`, `.parrot/mcp-toolkits.yaml`,
+  `.mcp.json` edits are single-task.
 - **Ordering inside M10**: the `run_sql` and `save_result_as_dataset` tools are the **last** tasks of the feature and depend on the
   governance/lineage/cache-isolation/hand-off security tests (§4) being green — governed metric queries ship first (design research S12).
-- **Cross-feature dependencies**: none in flight touch the integration points (checked 2026-10-19
-  over `sdd/tasks/index/*.json`). `FEAT-699` test-selector changes are already on `dev`.
+- **Cross-feature dependencies**: **FEAT-713** (`accounting-metrics-layer`, draft spec, not yet
+  decomposed) extends the skeleton this feature creates (U6, 2026-10-25) — its own spec's §8 Q10 needs
+  a follow-up edit (out of scope here) once this spec lands. **FEAT-742** (Rust/PyO3 phase, reserved
+  2026-10-25) depends on this feature's IR/compiler shape but is not implemented by it. `FEAT-699`
+  test-selector changes are already on `dev`.
 
 ---
+
+## Rev 0.4 review resolution (2026-10-25)
+
+This amendment incorporates the specification review including `semantic-layer-rev2.proposal.md`. It preserves the resolved one-to-many join scope (U4), FEAT-704 skeleton ownership (U6), FEAT-742 Rust deferral and the scoped Ibis note. It supersedes rev 0.3's blanket no-core-edit claim only for M9D and its optional treatment of S3/S5. It introduces no implementation changes by itself; task decomposition must be regenerated before coding, and ledger issues close only after implementation evidence.
+
+| Review issue | Resolution | Validation |
+|---|---|---|
+| Aggregate/join fields missing | M4 inputs, schema, keys and graph/grain validation | AC24 |
+| Downstream policy bypass after DataFrame hand-off | M9H guarded host sink; no default plain manager | AC27 |
+| Session/agent ownership undefined | M10 trusted identity and M9 explicit claim scope | AC25 |
+| MCP missing PBAC construction | M10 local subclass and configured guard factory | AC26 |
+| DuckDB prerequisite dropped | M9D restored as the sole core-source exception | AC28 |
+| S3/S5 treated as optional | Local-only static identity and exact retained member provenance are mandatory | AC25–AC26 |
 
 ## Revision History
 
@@ -1168,3 +1339,7 @@ Summary: **10** confirmed (two of them partially, with the rejected part recorde
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara | Initial draft from the accepted brainstorm (Option B), 9 brainstorm questions carried forward as resolved |
 | 0.2 | 2026-10-19 | Jesus Lara | §8 Q1–Q6 resolved: AGPL sign-off recorded; Q2 delegated to the M4 spike; Postgres audit sink + `postgres_audit_storage` (M8); `DEFAULT_ALLOWED_FUNCTIONS` + additive `ModelPolicy.allowed_functions` (M3/M6); `audit_required=None` auto-resolution (M10); core fix `issue:90cf04ce8edd` folded in as **M12** (new tests, AC20–AC21, §6 anchors, validation contract now lists the two existing auth test files) |
+| 0.3 | 2026-10-25 | Jesus Lara | **Amends via `sdd/proposals/semantic-layer-rev2.proposal.md`** (status: review). sidemantic (AGPL-3.0) dropped entirely — no dependency, no code reference (clean-room: typed model graph authored from Cube/dbt MetricFlow/Ossie 0.1.1 public docs). The branch-salvaged `engines/native.py` native compiler becomes the sole engine (no `engine` field, no dispatch); M4 rewritten as "typed model graph + loader", its sidemantic spike and `engines/sidemantic_engine.py` dropped. **M12 removed** — superseded by FEAT-738 (TASK-4678/4679, merged 2026-10-24); AC20 removed, §6 M12 anchors/imports removed, Validation Contract → `none — fallback`. Fixed `issue:46e8f6219bf5` (LIKE-wildcard escaping, carried from the deleted file into the surviving `native.py` path) as a mandatory M5 item; AC11/AC18 re-pointed to golden-SQL + DuckDB execution + cross-process determinism (no sidemantic parity oracle); §8 Q1/Q2/Q6 marked superseded; U2/U4/U6 resolved (amend FEAT-704; keep one-to-many joins; FEAT-704 creates the skeleton, FEAT-713 extends); U3 resolved — Rust/PyO3 phase gets its own reserved **FEAT-742**; U5 resolved — Ibis NO-GO scope-narrowed to connections, re-opening reserved for a future joins-phase spec. Design research: skipped (exploration doc status is `review`, not `accepted`). |
+| 0.4 | 2026-10-25 | Codex, at owner request | Resolve all six specification-review findings: complete typed graph contracts; trusted scoped identity; guarded downstream hand-off; local MCP guard bootstrap; mandatory S3/S5 fixes; restore DuckDB prerequisite M9D. Align tests, acceptance criteria, edit sites and dependency graph. |
+
+**Rev 0.4 contract clarification (owner-approved, 2026-10-25):** `SemanticAuditLedger.verify` is async, matching `AbstractKMSSigner.verify`; signing and verification must both be awaited. TASK-4474 tests awaited round-trip verification and tamper rejection without blocking the event loop.

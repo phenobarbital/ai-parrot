@@ -1,72 +1,93 @@
-# TASK-4474: Signed semantic audit ledger + Postgres sink (M8)
+# TASK-4474: Signed audit ledger and optional Postgres sink (M8)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4464
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 8 + §8 Q3/Q5 + AC9/AC21: a separate signed `SemanticAuditEntry` ledger reusing the core signers and the async `storage(json_str)` contract, plus the satellite-owned Postgres sink (`semantic_audit_events.sql` + `postgres_audit_storage`).
+Owner-approved contract clarification (2026-10-25): `SemanticAuditLedger.verify` is async, matching the updated spec and `AbstractKMSSigner.verify`; callers and tests await it.
 
----
+Spec rev 0.4, §3 M8; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/audit.py`: `SemanticAuditEntry` (+ `canonical_bytes`), `SemanticAuditLedger` (`append(required=)`, `verify`, `durable`), `postgres_audit_storage`.
-- Create `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` modelled on `packages/ai-parrot/src/parrot/security/security_events.sql`.
-- Write `test_audit.py`.
+- Implement SemanticAuditEntry and bounded SemanticAuditLedger using async AbstractKMSSigner sign/verify, canonical sorted JSON without signature and independent async storage.
+- Keep engine fixed native as provenance only. Every allowed/denied/validation/execution outcome is representable; SQL belongs in audit not exception messages.
+- Implement postgres_audit_storage(dsn_or_pool, table=...) and satellite SQL DDL. Validate/quote table identifiers and bind payload parameters. Injected pools are not closed; owned connections always close.
+- required=True withholds result on sink failure; optional mode logs failure. Test signatures, tampering, configured durability and fake asyncpg insert; do not run shared DDL.
 
-**NOT in scope**: resolving `audit_required` (TASK-4477); `AuditLedger` itself (not used — credential-shaped).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/audit.py` | CREATE | entry + ledger + postgres sink |
-| `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` | CREATE | audit table DDL |
-| `packages/ai-parrot-semantic/tests/test_audit.py` | CREATE | audit tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/audit.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_audit.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.security import AbstractKMSSigner, LocalHMACSigner     # verified: security/__init__.py:50-55
-from parrot.semantic.errors import SemanticExecutionError          # TASK-4464
-import asyncpg                                                    # transitive via ai-parrot (venv 0.32.0)
+from .errors import SemanticExecutionError
+from __future__ import annotations
+from collections import deque
+from datetime import datetime
+from parrot.security import AbstractKMSSigner, LocalHMACSigner
+from pathlib import Path
+from pydantic import BaseModel
+from typing import Any, Awaitable, Callable, Literal
+import json
+import logging
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/security/audit_ledger.py
-class AuditLedgerEntry(BaseModel):       # line 80
-    def canonical_bytes(self) -> bytes   # line 109 — sorted-key JSON without `signature` (pattern to copy)
-class AbstractKMSSigner(ABC):            # line 135 — sign(data) -> str (143); verify(data, signature) -> bool (154)
-class LocalHMACSigner(AbstractKMSSigner) # line 166
-class AuditLedger:                       # line 296 — storage: async callable(json_str), awaited ~line 383 (pattern only)
-# packages/ai-parrot/src/parrot/security/security_events.sql — CREATE TABLE IF NOT EXISTS + JSONB + per-column indexes
+# packages/ai-parrot/src/parrot/security/audit_ledger.py:135
+class AbstractKMSSigner(ABC):
+    # line 143
+    async def sign(self, data: bytes) -> str:
+    # line 154
+    async def verify(self, data: bytes, signature: str) -> bool:
 ```
 
-### Does NOT Exist
-- ~~`AuditLedgerEntry.payload` / `.compiled_sql`~~ — credential-shaped only; do not reuse `AuditLedger`.
-- ~~`asyncdb` in the satellite~~ — use `asyncpg` directly.
-- ~~`LocalHMACSigner()` with no args reading an env key~~ — FILL IN: read its `__init__` (audit_ledger.py:166) before constructing it in tests.
+```python
+# packages/ai-parrot/src/parrot/security/audit_ledger.py:166
+class LocalHMACSigner(AbstractKMSSigner):
+    # line 180
+    def __init__(self, secret: Optional[bytes]=None) -> None:
+    # line 183
+    async def sign(self, data: bytes) -> str:
+    # line 187
+    async def verify(self, data: bytes, signature: str) -> bool:
+```
 
----
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2))
+
+- Consumer-specific evidence: SemanticExecutionError for required-audit failures
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -94,35 +115,24 @@ class AuditLedger:                       # line 296 — storage: async callable(
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Table `semantic_audit_events(entry_id UUID PK, created_at TIMESTAMPTZ, user_id, tenant_id, model, outcome, payload JSONB, signature TEXT)` + indexes on user_id, tenant_id, model, outcome, created_at DESC.
-- `postgres_audit_storage(dsn_or_pool)` accepts a DSN (creates a pool lazily on first call) or an existing pool with `.execute`.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `SemanticAuditEntry` fields verbatim from spec §3 M8 — *why*: AC9 field list.
-2. Write the ledger (bounded deque, sign, storage, `required`) — *why*: §8 Q5.
-3. Write DDL + `postgres_audit_storage` — *why*: §8 Q3.
-4. Write tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/audit.py` (CREATE)
+
 ```python
 """Signed semantic audit ledger (spec §3 Module 8, §8 Q3/Q5)."""
 from __future__ import annotations
@@ -135,7 +145,7 @@ from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel
 
-from parrot.security import AbstractKMSSigner
+from parrot.security import AbstractKMSSigner, LocalHMACSigner
 
 from .errors import SemanticExecutionError
 
@@ -144,7 +154,34 @@ logger = logging.getLogger(__name__)
 
 class SemanticAuditEntry(BaseModel):
     schema_version: int = 1
-    # FILL IN: every field verbatim from spec §3 Module 8 (entry_id ... signature: str = "")
+    entry_id: str
+    created_at: datetime
+    user_id: str
+    tenant_id: str
+    channel: str
+    agent_id: str | None
+    subject_digest: str
+    roles: list[str]
+    static_subject: bool
+    model: str
+    model_digest: str
+    policy_digest: str
+    engine: str = "native"
+    tool: str
+    structured_query: dict | None
+    raw_sql: bool
+    compiled_sql: str | None
+    governed_sql: str | None
+    dialect: str
+    driver: str
+    rls_applied: list[str]
+    masked_columns: list[str]
+    pbac: Literal["allow", "deny", "unavailable", "not_governed"]
+    outcome: Literal["ok", "denied", "validation_error", "execution_error"]
+    error_code: str | None
+    row_count: int | None
+    duration_ms: int | None
+    signature: str = ""
 
     def canonical_bytes(self) -> bytes:
         """Sorted-key JSON without `signature` (same approach as AuditLedgerEntry.canonical_bytes)."""
@@ -152,10 +189,13 @@ class SemanticAuditEntry(BaseModel):
         return json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
 
 
+```
+
+```python
 class SemanticAuditLedger:
     def __init__(self, signer: AbstractKMSSigner | None = None,
                  storage: Callable[[str], Awaitable[None]] | None = None, max_entries: int = 10_000) -> None:
-        self.signer = signer
+        self.signer = signer or LocalHMACSigner()
         self.storage = storage
         self.entries: deque[SemanticAuditEntry] = deque(maxlen=max_entries)
 
@@ -166,13 +206,14 @@ class SemanticAuditLedger:
 
     async def append(self, entry: SemanticAuditEntry, *, required: bool = False) -> SemanticAuditEntry:
         """Sign, keep in memory, forward JSON to storage; storage failure raises only when required."""
-        # FILL IN: signature = signer.sign(canonical_bytes) when signer (check sign()'s arg type at audit_ledger.py:143);
+        # FILL IN: signature = await signer.sign(canonical_bytes) when signer (check sign()'s arg type at audit_ledger.py:143);
         #   append; try await storage(entry.model_dump_json()) except Exception: logger.error(...);
         #   if required: raise SemanticExecutionError("audit_unavailable", details={"audit_id": entry.entry_id})
         raise NotImplementedError
 
-    def verify(self, entry: SemanticAuditEntry) -> bool:
-        # FILL IN: signer.verify(canonical_bytes, entry.signature); no signer -> False
+    async def verify(self, entry: SemanticAuditEntry) -> bool:
+        """Await signature verification using the configured async KMS signer."""
+        # FILL IN: return await self.signer.verify(entry.canonical_bytes(), entry.signature)
         raise NotImplementedError
 
 
@@ -183,7 +224,10 @@ def postgres_audit_storage(dsn_or_pool: str | Any, *, table: str = "semantic_aud
     raise NotImplementedError
 ```
 
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
 ### `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` (CREATE)
+
 ```sql
 -- FEAT-704 §8 Q3 — semantic-layer audit events (one row per SemanticAuditEntry)
 CREATE TABLE IF NOT EXISTS semantic_audit_events (
@@ -203,74 +247,72 @@ CREATE INDEX IF NOT EXISTS idx_semantic_audit_outcome ON semantic_audit_events(o
 CREATE INDEX IF NOT EXISTS idx_semantic_audit_created_at ON semantic_audit_events(created_at DESC);
 ```
 
-### FILL IN checklist
-- [ ] `SemanticAuditEntry` fields verbatim from spec §3 M8.
-- [ ] `append` / `verify`.
-- [ ] `postgres_audit_storage` — bounded by §8 Q3.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
-
-## Acceptance Criteria
-
-- [ ] `test_audit_entry_signature` and `test_postgres_audit_storage_insert` pass (AC9, AC21).
-- [ ] `append(required=True)` with a failing sink raises `SemanticExecutionError('audit_unavailable')`; `required=False` only logs.
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_audit.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_audit.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_audit.py
-import pytest
-import sqlglot
+"""Regression contract: Signed audit ledger and optional Postgres sink (M8)."""
 from pathlib import Path
-from parrot.semantic.audit import SemanticAuditLedger, postgres_audit_storage
-from parrot.semantic.errors import SemanticExecutionError
+import pytest
 
 
-async def test_audit_entry_signature():
-    # FILL IN: LocalHMACSigner(...) ; append -> signature set; verify True; tampered entry -> False;
-    #          storage callable receives JSON; failing storage + required=False logs, required=True raises
+def test_signed_roundtrip_and_tampering(tmp_path: Path) -> None:
+    """Verify signed roundtrip and tampering."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 
 
-async def test_postgres_audit_storage_insert():
-    ddl = (Path(__import__("parrot.semantic").semantic.__file__).parent / "sql/semantic_audit_events.sql").read_text()
-    assert sqlglot.parse(ddl, read="postgres")
-    # FILL IN: fake pool with AsyncMock execute; storage(json) -> execute called with INSERT INTO semantic_audit_events
+def test_durable_required_and_optional_failures(tmp_path: Path) -> None:
+    """Verify durable required and optional failures."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_postgres_storage_bound_values_and_cleanup(tmp_path: Path) -> None:
+    """Verify postgres storage bound values and cleanup."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/audit.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_audit.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Implement SemanticAuditEntry and bounded SemanticAuditLedger using async AbstractKMSSigner sign/verify, canonical sorted JSON without signature and independent async storage.
+- [ ] Keep engine fixed native as provenance only. Every allowed/denied/validation/execution outcome is representable; SQL belongs in audit not exception messages.
+- [ ] Implement postgres_audit_storage(dsn_or_pool, table=...) and satellite SQL DDL. Validate/quote table identifiers and bind payload parameters. Injected pools are not closed; owned connections always close.
+- [ ] required=True withholds result on sink failure; optional mode logs failure. Test signatures, tampering, configured durability and fake asyncpg insert; do not run shared DDL.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+- [ ] `await ledger.verify(entry)` accepts intact entries and rejects tampered entries; a yielding signer is awaited without blocking the event loop.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_audit.py -q`
+
+## Test Specification
+
+- `test_signed_roundtrip_and_tampering`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_durable_required_and_optional_failures`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_postgres_storage_bound_values_and_cleanup`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4474 — Signed semantic audit ledger + Postgres sink (M8)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4474 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4474` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

@@ -9,6 +9,7 @@ tests.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from contextlib import asynccontextmanager
@@ -41,10 +42,12 @@ from parrot.bots.github_reviewer import (
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
+    GitToolkit,
     StatsNotReadyError,
     WeeklyCodeFrequency,
 )
-
+from parrot_tools.jiratoolkit import JiraToolkit
+from parrot.tools.manager import ToolManager
 
 class _MinimalReviewer:
     """Cheap stand-in that reuses real helpers but skips Agent.__init__."""
@@ -4930,3 +4933,91 @@ class TestWorkflowRunSourcedVerdict:
             PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
         )
         assert (verdict.mergeable, verdict.defer) == (True, False)
+
+
+class TestPostConfigureReentrant:
+    """FEAT-721 — a second post_configure() adopts instead of rebuilding."""
+
+    async def test_github_reviewer_post_configure_twice_adopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two post_configure() calls adopt registered toolkits instead of rebuilding."""
+        # Stub exactly what post_configure() reads (lines 956-1008):
+        #   logger, public_channel_id, management_chat_id (management_chat_is_fallback is a property
+        #   over them, :938), tool_manager = ToolManager(include_search_tool=False), tools = [],
+        #   _llm = None, _wiki_cache = None, _wiki_warmup_task = None, app = None, name.
+        reviewer = GitHubReviewer.__new__(GitHubReviewer)
+        reviewer.logger = logging.getLogger(__name__)
+        reviewer.public_channel_id = "public123"
+        reviewer.management_chat_id = None
+        reviewer.configured_management_chat_id = None
+        reviewer.tool_manager = ToolManager(include_search_tool=False)
+        reviewer.tools = []
+        reviewer._llm = None
+        reviewer._wiki_cache = None
+        reviewer._wiki_warmup_task = None
+        reviewer.app = None
+        reviewer.name = "test-reviewer"
+
+        # Build ONE toolkit object per builder that `find_registered_toolkit` can match by
+        # EXACT class — e.g. GitToolkit.__new__(GitToolkit) / JiraToolkit.__new__(JiraToolkit) only if
+        # register_toolkit() can generate their tools without __init__ state; otherwise construct them
+        # offline (read their __init__ first — `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:874`). Count builder calls with a
+        # MagicMock(side_effect=[...]) patched over _build_git_toolkit / _build_jira_toolkit.
+        from parrot.bots import github_reviewer as gr_module
+        from parrot.tools.toolkit import AbstractToolkit
+
+        class FakeGit(AbstractToolkit):
+            """Offline stand-in for GitToolkit."""
+
+            async def fake_git_op(self) -> str:
+                """Fake git operation."""
+                return "ok"
+
+        class FakeJira(AbstractToolkit):
+            """Offline stand-in for JiraToolkit."""
+
+            async def fake_jira_op(self) -> str:
+                """Fake jira operation."""
+                return "ok"
+
+        monkeypatch.setattr(gr_module, "GitToolkit", FakeGit)
+        monkeypatch.setattr(gr_module, "JiraToolkit", FakeJira)
+        git_toolkit = FakeGit()
+        jira_toolkit = FakeJira()
+
+        # Track builder calls
+        git_build_calls = []
+        jira_build_calls = []
+
+        def mock_build_git_toolkit():
+            git_build_calls.append(1)
+            return git_toolkit
+
+        def mock_build_jira_toolkit():
+            jira_build_calls.append(1)
+            return jira_toolkit
+
+        # Patch _build_wiki_cache → None, _attach_webhook_listener / _ensure_webhook_subscription → AsyncMock()
+        monkeypatch.setattr(reviewer, "_build_git_toolkit", mock_build_git_toolkit)
+        monkeypatch.setattr(reviewer, "_build_jira_toolkit", mock_build_jira_toolkit)
+        monkeypatch.setattr(reviewer, "_build_wiki_cache", lambda: None)
+        monkeypatch.setattr(reviewer, "_attach_webhook_listener", AsyncMock())
+        monkeypatch.setattr(reviewer, "_ensure_webhook_subscription", AsyncMock())
+
+        # First call
+        await reviewer.post_configure()
+
+        # Second call
+        await reviewer.post_configure()
+
+        # Assert each builder called once
+        assert len(git_build_calls) == 1, f"Expected 1 git build call, got {len(git_build_calls)}"
+        assert len(jira_build_calls) == 1, f"Expected 1 jira build call, got {len(jira_build_calls)}"
+
+        # reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(GitToolkit)
+        assert reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(
+            FakeGit
+        ), "git_toolkit should be the registered instance"
+
+        # No duplicate names in reviewer.tools
+        tool_names = {getattr(tool, "name", None) for tool in reviewer.tools}
+        assert len(tool_names) == len(reviewer.tools), "No duplicate tool names should exist"

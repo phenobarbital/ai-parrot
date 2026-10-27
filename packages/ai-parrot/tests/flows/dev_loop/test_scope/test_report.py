@@ -186,6 +186,42 @@ def test_junit_paths_are_unique_per_invocation():
     assert first != second
 
 
+# FEAT-736 / TASK-4675 -- brief runs (BRIEF-<KEY> feature ids, HOTFIX-<KEY>-<n>
+# task ids) used to collapse into `_invalid/junit/_invalid--<suite>--<n>.xml`,
+# so two brief tasks overwrote each other's junit XML (issue:0ea4f0acaefd).
+
+
+def test_junit_path_for_brief_ids():
+    path = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-1", "one", 1)
+    assert "_invalid" not in path.parts
+    assert "BRIEF-CS-228" in path.parts
+    assert path.name.startswith("HOTFIX-CS-228-1--")
+
+
+def test_junit_path_for_brief_tasks_do_not_collide():
+    first = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-1", "one", 1)
+    second = report.junit_path_for("BRIEF-CS-228", "HOTFIX-CS-228-2", "one", 1)
+    assert first != second
+    assert "_invalid" not in first.parts + second.parts
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["../etc", "a/b", "HOTFIX-a..b-1", "BRIEF-a..b", "BRIEF-CS.228", "hotfix-cs-228-1", "", "HOTFIX-"],
+)
+def test_junit_path_for_rejects_traversal(bad):
+    """A dotted or unsafe key must still fall back to the neutral component."""
+    assert report._safe_id(bad) is False
+    path = report.junit_path_for("FEAT-695", bad, "one", 1)
+    assert path.name.startswith("_invalid--")
+
+
+def test_junit_path_for_keeps_rerun_sentinel():
+    assert report._safe_id("_rerun") is True
+    assert report._safe_id("FEAT-695") is True
+    assert report._safe_id("TASK-1") is True
+
+
 def test_append_suite_replaces_same_suite():
     report.append_suite("FEAT-695", "TASK-1", _result("a"), head_sha="one", base_ref="dev", tier="task", source="test")
     report.append_suite("FEAT-695", "TASK-1", _result("b"), head_sha="two", base_ref="dev", tier="task", source="test")
@@ -264,6 +300,43 @@ def test_render_rerun_column_and_skip_reason():
     assert "Final HEAD re-run" in output
     output = report.render_markdown({}, [], final_head="final", rerun=None, rerun_skip_reason="no tasks")
     assert "re-run skipped (no tasks)" in output
+
+
+def test_render_flags_zero_count_non_ok_status():
+    """A suite that never produced counts must not read as green (issue:5b33290f55c9)."""
+    records = {"TASK-1": _record("TASK-1", _result("a", tests=0, passed=0, status="timed_out"))}
+    output = report.render_markdown(records, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None)
+    assert "| a ❌ | 0 | 0 | 0 | 0 | 0 | — | — | — | 1.25s |" in output
+    assert "| Total (per-task invocation totals) ❌ |" in output
+    assert "Gate: ⚠️ failures not classified" in output
+
+
+def test_render_flags_non_ok_rerun_suite():
+    """A count-less non-ok re-run suite is flagged in the final-head column."""
+    rerun = _record(report.RERUN_RECORD, _result("a", tests=0, passed=0, status="no_junit"))
+    output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
+    assert "| 0/0 ❌ |" in output
+
+
+def test_render_marks_stale_rerun_column():
+    """The re-run column header reports staleness against the final HEAD."""
+    rerun = _record(report.RERUN_RECORD, _result("a"), head="old")
+    output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
+    assert "Final HEAD re-run (stale)" in output
+    fresh = report.render_markdown(
+        {}, [], final_head="final", rerun=_record(report.RERUN_RECORD, _result("a")), rerun_skip_reason=None
+    )
+    assert "Final HEAD re-run (stale)" not in fresh
+
+
+def test_render_notes_section():
+    """Notes are rendered only when present."""
+    output = report.render_markdown(
+        {}, [], final_head="final", rerun=None, rerun_skip_reason=None, notes=("skipped corrupt report: bad.json",)
+    )
+    assert "### Notes" in output
+    assert "- skipped corrupt report: bad.json" in output
+    assert "### Notes" not in report.render_markdown({}, [], final_head="final", rerun=None, rerun_skip_reason=None)
 
 
 def test_render_baseline_reds_are_not_new_reds_and_cached_targets_are_counted():

@@ -249,7 +249,7 @@ async def _run(
     if resume_id:
         config.session_id = resume_id
 
-    runner = TurnRunner(bot, config, capabilities=getattr(bot, "capabilities", None))
+    runner = TurnRunner(bot, config)
 
     exit_code = 0
     try:

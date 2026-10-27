@@ -281,6 +281,8 @@ COMMON: dict[str, str] = {
     "<base>": "main",
     "<branch>": "main",
     "<KEY>": "KEY-1",
+    "<issue-short-id>": "ab12cd34",
+    "<suggested_slug>": "demo-fix",
     "<JIRA-KEY>": "KEY-1",
     "<N>": "2",
     "<spec-path>": f"sdd/specs/{SLUG}.spec.md",

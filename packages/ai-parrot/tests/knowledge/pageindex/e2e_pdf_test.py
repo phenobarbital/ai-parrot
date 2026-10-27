@@ -9,9 +9,6 @@ import logging
 import sys
 import os
 
-# Ensure project root is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("e2e_pageindex")
 

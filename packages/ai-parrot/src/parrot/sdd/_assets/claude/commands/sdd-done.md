@@ -280,6 +280,10 @@ Then render the section (always, even when the re-run was skipped or failed):
 parrot sdd run test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
 ```
 
+`render` always writes `$TEST_REPORT_MD` and exits 0 — an unusable index yields a visible
+`## Tests — no data` section instead of an error, so no later step can fail on a missing file
+(issue:326c8c0da36c). Only a malformed invocation exits 2.
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -571,7 +575,7 @@ gh pr create \
 
 <N>/<total> tasks verified.
 
-$(cat "$TEST_REPORT_MD")
+$(cat "$TEST_REPORT_MD" 2>/dev/null)
 
 ---
 _Closed by /sdd-done_
@@ -584,9 +588,11 @@ If `gh` is missing, unauthenticated, or fails, fail closed: keep the worktree an
 ```
 ℹ️  Could not create PR automatically. Run manually:
 
+    # --body-file only when the rendered report is present (it may be unset in a fresh shell)
+    BODY=(--body "_Closed by /sdd-done_")
+    [ -s "$TEST_REPORT_MD" ] && BODY=(--body-file "$TEST_REPORT_MD")
     gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
-      --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
-      --body-file "$TEST_REPORT_MD"
+      --title "feat(<feature-slug>): FEAT-<ID> — <title>" "${BODY[@]}"
 ```
 
 **Brief ledger close (FEAT-698):** a brief with `ledger_issue` set closes its ledger issue

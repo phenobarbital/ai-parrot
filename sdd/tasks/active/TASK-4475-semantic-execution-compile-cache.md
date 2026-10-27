@@ -1,77 +1,97 @@
-# TASK-4475: Execution bridge, connection resolver and compile cache (M9a)
+# TASK-4475: Execution bridge and pre-governance compile cache (M9a)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4464
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 9 (execution + cache) + AC8: credentials resolved inside the satellite from a named connection (never from tool arguments); governed SQL executed through the existing `DatabaseQueryToolkit` sources; an LRU that stores ONLY pre-governance `CompiledQuery` objects.
-
----
+Spec rev 0.4, §3 M9; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/execution.py`: `ConnectionResolver`, `Executor`.
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/cache.py`: `CompileCache` (`get`, `put`, `invalidate_model`).
-- Write `test_execution.py` and `test_cache.py`.
+- Implement ConnectionResolver.resolve using named environment overlay over get_default_credentials(driver); credentials never come from SemanticQuery/tool arguments.
+- Executor.run unwraps QueryResult.rows/row_count/columns correctly; never treat source.query as a list. Preserve empty-result column information through a private metadata helper when building SemanticQueryResult.
+- Implement bounded CompileCache with get/put/invalidate_model and a model-digest index; invalidation must actually remove entries. Cache only pre-governance objects and canonical versioned keys.
+- Unit tests use source doubles here; stock DuckDB integration is validated after its dedicated repair. Cap rows and define truncated from actual overfetch evidence, not equality with LIMIT.
 
-**NOT in scope**: result handles (TASK-4476); deciding the connection name (it comes from `ModelPolicy.connection`).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/execution.py` | CREATE | ConnectionResolver + Executor |
-| `packages/ai-parrot-semantic/src/parrot/semantic/cache.py` | CREATE | pre-governance LRU |
-| `packages/ai-parrot-semantic/tests/test_execution.py` | CREATE | resolver/executor tests |
-| `packages/ai-parrot-semantic/tests/test_cache.py` | CREATE | cache tests |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/execution.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/cache.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_execution.py` | CREATE | Focused regression evidence |
+| `packages/ai-parrot-semantic/tests/test_cache.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit    # verified: packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py:115
-from parrot.tools.databasequery.base import AbstractDatabaseSource, QueryResult   # verified: base.py:323,148
-from parrot.interfaces.database import get_default_credentials        # verified: packages/ai-parrot/src/parrot/interfaces/database.py:501
-from parrot.semantic.models import GovernedQuery, CompiledQuery       # TASK-4464
-from parrot.semantic.errors import SemanticExecutionError             # TASK-4464
+from .errors import SemanticExecutionError
+from .models import CompiledQuery
+from .models import GovernedQuery
+from __future__ import annotations
+from collections import OrderedDict
+from parrot.interfaces.database import get_default_credentials
+from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
+from pathlib import Path
+from typing import Any, Mapping
+import logging
+import os
+import pytest
+import re
+import threading
+import time
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
+
 ```python
-# packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py
-class DatabaseQueryToolkit(AbstractToolkit):     # line 115 — __init__(**kwargs) accepts only output_dir/static_dir (+ AbstractToolkit kwargs)
-    def get_source(self, driver: str) -> AbstractDatabaseSource   # line 202 — cached per driver
-# packages/ai-parrot/src/parrot/tools/databasequery/base.py
-class QueryResult(BaseModel):   # line 148 — driver: str; rows: list[dict[str, Any]]; row_count; columns; execution_time_ms
-class AbstractDatabaseSource(ABC):   # line 323
-    async def query(self, credentials: dict[str, Any], sql: str, params: dict[str, Any] | None = None) -> QueryResult   # line 446
-# packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py — credentials.get("database", credentials.get("dsn", ":memory:")) (line 63)
-# packages/ai-parrot/src/parrot/interfaces/database.py:501 — get_default_credentials(driver) -> dict ({} when unknown/unset; None values stripped)
+# packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py:115
+class DatabaseQueryToolkit(AbstractToolkit):
+    # line 154
+    def __init__(self, **kwargs: Any) -> None:
+    # line 180
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
+    # line 202
+    def get_source(self, driver: str) -> AbstractDatabaseSource:
 ```
 
-### Does NOT Exist
-- ~~Named-connection credentials in `DatabaseQueryToolkit`~~ — credentials are the first positional argument of `query()`.
-- ~~`query()` returning a list of rows~~ — it returns `QueryResult` (spec skeleton says `rows = await source.query(...)`; use `.rows`/`.row_count`).
-- ~~Caching governed SQL~~ — forbidden (AC8).
+```python
+# packages/ai-parrot/src/parrot/tools/databasequery/base.py:148
+class QueryResult(BaseModel):
+```
 
----
+```python
+# packages/ai-parrot/src/parrot/interfaces/database.py:501
+def get_default_credentials(driver: str) -> dict[str, Any]:
+```
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4464: consumes packages/ai-parrot-semantic/src/parrot/semantic/errors.py, packages/ai-parrot-semantic/src/parrot/semantic/models.py (Query/result contracts and trusted identity model (M2))
+
+- Consumer-specific evidence: GovernedQuery/CompiledQuery for source execution and immutable cache entries
+
+### Does NOT Exist
+
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -98,41 +118,30 @@ class AbstractDatabaseSource(ABC):   # line 323
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py#DatabaseQueryToolkit",
+    "sym:packages/ai-parrot/src/parrot/tools/databasequery/base.py#QueryResult",
     "sym:packages/ai-parrot/src/parrot/interfaces/database.py#get_default_credentials"
   ]
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Env grammar: `PARROT_SEMANTIC_CONN_<CONNECTION>_<KEY>` (connection upper-cased, non-alnum → `_`); KEY lower-cased into the dict and overlays the defaults.
-- Executor truncation: if `row_count > governed.limit` (should not happen after the guard) set `truncated=True` and cut rows; timing via `time.perf_counter()`.
-- `get_default_credentials` imports navconfig lazily; tests pass an explicit `env` mapping and monkeypatch the function.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `ConnectionResolver` — *why*: credentials never from tool args.
-2. Write `Executor.run` — *why*: execution bridge, no SQL in error messages.
-3. Write `CompileCache` (OrderedDict LRU keyed by `cache_key`) — *why*: AC8.
-4. Write tests.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/execution.py` (CREATE)
+
 ```python
 """Named-connection credential resolution and governed-SQL execution (spec §3 Module 9)."""
 from __future__ import annotations
@@ -179,7 +188,10 @@ class Executor:
         raise NotImplementedError
 ```
 
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
 ### `packages/ai-parrot-semantic/src/parrot/semantic/cache.py` (CREATE)
+
 ```python
 """LRU of pre-governance CompiledQuery objects only (AC8)."""
 from __future__ import annotations
@@ -209,79 +221,112 @@ class CompileCache:
 
     def invalidate_model(self, model_digest: str) -> int:
         """Drop entries compiled for `model_digest`; returns the count."""
-        # FILL IN: the cache_key is a hash, so keep a side map key -> model_digest filled by put()
-        #          (put needs the digest: add keyword-only `model_digest: str | None = None` to put)
+        # FILL IN: cache_key is canonical JSON containing the full versioned key tuple;
+        # extract its model_digest component at put() and maintain a side index.
+        # Keep put(compiled) signature fixed; do not use an undecodable opaque hash.
         raise NotImplementedError
 ```
-**Why**: spec §3 M9 skeleton; `invalidate_model` needs a key→digest side map because the key is an opaque hash.
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_execution.py` (CREATE)
+
+```python
+"""Regression contract: Execution bridge and pre-governance compile cache (M9a)."""
+from pathlib import Path
+import pytest
+
+
+def test_named_env_overlay_and_missing_credentials(tmp_path: Path) -> None:
+    """Verify named env overlay and missing credentials."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_queryresult_unwrap_and_execution_failure(tmp_path: Path) -> None:
+    """Verify queryresult unwrap and execution failure."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_lru_bounds_and_real_model_invalidation(tmp_path: Path) -> None:
+    """Verify lru bounds and real model invalidation."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_cache.py` (CREATE)
+
+```python
+"""Regression contract: Execution bridge and pre-governance compile cache (M9a)."""
+from pathlib import Path
+import pytest
+
+
+def test_named_env_overlay_and_missing_credentials(tmp_path: Path) -> None:
+    """Verify named env overlay and missing credentials."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_queryresult_unwrap_and_execution_failure(tmp_path: Path) -> None:
+    """Verify queryresult unwrap and execution failure."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_lru_bounds_and_real_model_invalidation(tmp_path: Path) -> None:
+    """Verify lru bounds and real model invalidation."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### FILL IN checklist
-- [ ] `ConnectionResolver.resolve`.
-- [ ] `Executor.run` — no SQL in messages (spec §7 schema drift).
-- [ ] `CompileCache.put` / `invalidate_model`.
 
----
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/execution.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/cache.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_execution.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_cache.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] `test_connection_resolver_env_overlay` and `test_compile_cache_pre_governance_only` pass (AC8).
-- [ ] Executor runs governed SQL against an in-process DuckDB source in a test.
-
----
+- [ ] Implement ConnectionResolver.resolve using named environment overlay over get_default_credentials(driver); credentials never come from SemanticQuery/tool arguments.
+- [ ] Executor.run unwraps QueryResult.rows/row_count/columns correctly; never treat source.query as a list. Preserve empty-result column information through a private metadata helper when building SemanticQueryResult.
+- [ ] Implement bounded CompileCache with get/put/invalidate_model and a model-digest index; invalidation must actually remove entries. Cache only pre-governance objects and canonical versioned keys.
+- [ ] Unit tests use source doubles here; stock DuckDB integration is validated after its dedicated repair. Cap rows and define truncated from actual overfetch evidence, not equality with LIMIT.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
 
 - `pytest packages/ai-parrot-semantic/tests/test_execution.py -q`
 - `pytest packages/ai-parrot-semantic/tests/test_cache.py -q`
 
----
-
 ## Test Specification
 
-```python
-# packages/ai-parrot-semantic/tests/test_execution.py
-import pytest
-from parrot.semantic.execution import ConnectionResolver
-from parrot.semantic.errors import SemanticExecutionError
-
-
-def test_connection_resolver_env_overlay(monkeypatch):
-    monkeypatch.setattr("parrot.semantic.execution.get_default_credentials", lambda d: {"user": "u", "password": "x"})
-    r = ConnectionResolver(env={"PARROT_SEMANTIC_CONN_WAREHOUSE_PG_PASSWORD": "y"})
-    assert r.resolve("warehouse_pg", "pg")["password"] == "y"
-    monkeypatch.setattr("parrot.semantic.execution.get_default_credentials", lambda d: {})
-    with pytest.raises(SemanticExecutionError):
-        ConnectionResolver(env={}).resolve("x", "pg")
-
-# FILL IN: Executor against DatabaseQueryToolkit().get_source("duckdb") with a tmp duckdb file;
-#          test_cache.py: test_compile_cache_pre_governance_only (LRU eviction, invalidate_model)
-```
-
----
+- `test_named_env_overlay_and_missing_credentials`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_queryresult_unwrap_and_execution_failure`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_lru_bounds_and_real_model_invalidation`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4475 — Execution bridge, connection resolver and compile cache (M9a)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4475 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4475` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

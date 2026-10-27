@@ -1,0 +1,97 @@
+{
+  "feature": "sdd-fix-brief-change",
+  "feature_id": "FEAT-740",
+  "spec": "sdd/specs/sdd-fix-brief-change.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-24T00:56:57+00:00",
+  "completed_at": "2026-10-24T02:11:42+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd/test_ledger_workflow_twins.py",
+          "tests/sdd/test_sdd_fix_docs.py",
+          "tests/sdd/test_codex_sdd_sync.py",
+          "tests/sdd_scripts/test_pr_policy_wording_contract.py",
+          "tests/sdd_scripts/test_sdd_brief_twin_contract.py",
+          "tests/sdd_scripts/test_sdd_brief_command_contract.py",
+          "tests/sdd_scripts/test_command_contracts.py",
+          "tests/sdd_scripts/test_feat722_doc_contract.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c6fe14a3f62d2482edb22d3ed9b317313ab1b584528f038e979873fef5184b29"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4695",
+      "slug": "sdd-fix-fast-lane-worktree",
+      "title": "Fast lane provisions, works in, and reaps its own worktree (three /sdd-fix twins)",
+      "feature_id": "FEAT-740",
+      "feature": "sdd-fix-brief-change",
+      "spec": "sdd/specs/sdd-fix-brief-change.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no deps: owns the three sdd-fix twins exclusively (.claude/commands, .agent/workflows, .agents/skills); wording fixed by spec §3 M1, so it needs nothing from TASK-4696/4697",
+      "assigned_to": null,
+      "started_at": "2026-10-24T01:00:31+00:00",
+      "completed_at": "2026-10-24T01:21:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4695-sdd-fix-fast-lane-worktree.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4696",
+      "slug": "fix-lane-policy-docs",
+      "title": "Policy docs describe the Fast lane as a worktree lane",
+      "feature_id": "FEAT-740",
+      "feature": "sdd-fix-brief-change",
+      "spec": "sdd/specs/sdd-fix-brief-change.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no deps: docs/sdd/WORKFLOW.md, docs/sdd/PLATFORM.md and both worktree-management copies are touched by no other task; replacement lines fixed by spec §3 M2, not derived from TASK-4695's edit",
+      "assigned_to": null,
+      "started_at": "2026-10-24T01:00:31+00:00",
+      "completed_at": "2026-10-24T01:20:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4696-fix-lane-policy-docs.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4697",
+      "slug": "sdd-brief-handoff-clarity",
+      "title": "/sdd-brief hand-off states that /sdd-done opens the PR and removes the worktree",
+      "feature_id": "FEAT-740",
+      "feature": "sdd-fix-brief-change",
+      "spec": "sdd/specs/sdd-fix-brief-change.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no deps: only the Claude + agy sdd-brief surfaces, disjoint from TASK-4695/4696; agy twin equality is self-contained within this task's two files",
+      "assigned_to": null,
+      "started_at": "2026-10-24T01:00:31+00:00",
+      "completed_at": "2026-10-24T01:20:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4697-sdd-brief-handoff-clarity.md",
+      "verification": "verified"
+    }
+  ]
+}

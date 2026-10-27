@@ -29,7 +29,7 @@ from parrot.integrations.agentd.mcp_server import build_proxy_tools
 from parrot.mcp.local_server import StdioMCPServer
 from parrot.mcp.server_base import LocalServerConfig
 
-from tests.agentd.fakes import EchoAgent
+from .fakes import EchoAgent
 
 from .conftest import run_daemon, stop_daemon
 
@@ -54,7 +54,7 @@ class _TrackingEchoAgent(EchoAgent):
     """EchoAgent subclass recording per-`session_id` conversation history.
 
     Module-level so it can be resolved via
-    `"tests.agentd.test_e2e:_TrackingEchoAgent"`. Used to assert that
+    `<package>.test_e2e:_TrackingEchoAgent`. Used to assert that
     concurrent daemon connections (spec §2: one UDS connection = one
     conversation session) stay isolated from each other.
     """
@@ -70,7 +70,7 @@ class _TrackingEchoAgent(EchoAgent):
 
 class _IntervalEchoAgent(EchoAgent):
     """EchoAgent subclass with a decorated schedule -- module-level so it
-    can be resolved via `"tests.agentd.test_e2e:_IntervalEchoAgent"`.
+    can be resolved via `<package>.test_e2e:_IntervalEchoAgent`.
 
     Decorating requires `parrot.scheduler.manager` (ai-parrot-server) to
     be importable; when it's absent, `tick` simply lacks
@@ -120,7 +120,7 @@ class TestEndToEnd:
         config = AgentServiceConfig(
             name="tracking-echo",
             agent=AgentTargetConfig(
-                target="tests.agentd.test_e2e:_TrackingEchoAgent"
+                target=f"{__package__}.test_e2e:_TrackingEchoAgent"
             ),
             socket=tmp_path / "tracking.sock",
             scheduler=SchedulerConfig(enabled=False),
@@ -160,7 +160,7 @@ class TestEndToEnd:
         config = AgentServiceConfig(
             name="interval-echo",
             agent=AgentTargetConfig(
-                target="tests.agentd.test_e2e:_IntervalEchoAgent"
+                target=f"{__package__}.test_e2e:_IntervalEchoAgent"
             ),
             socket=tmp_path / "interval.sock",
             scheduler=SchedulerConfig(enabled=True, dsn=None, redis=False),
@@ -218,7 +218,7 @@ class TestEndToEnd:
         yaml_path = tmp_path / "agentd.yaml"
         yaml_path.write_text(
             "name: sigterm-echo\n"
-            'agent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'agent:\n  target: "tests.agentd.fakes:EchoAgent"\n'  # tests-root-ok: spawned process resolves it via PYTHONPATH
             "scheduler:\n  enabled: false\n"
             f"socket: {socket_path}\n"
             "shutdown_grace: 5.0\n"
@@ -274,7 +274,7 @@ class TestCliE2E:
         yaml_path = tmp_path / "cli_echo.yaml"
         yaml_path.write_text(
             "name: cli-echo\n"
-            'agent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'agent:\n  target: "tests.agentd.fakes:EchoAgent"\n'  # tests-root-ok: spawned process resolves it via PYTHONPATH
             "scheduler:\n  enabled: false\n"
             f"socket: {socket_path}\n"
         )
@@ -319,7 +319,7 @@ class TestCliE2E:
         assert missing_result.exit_code == 1
 
 
-_NO_AIOHTTP_SCRIPT = """
+_NO_AIOHTTP_SCRIPT = f"""
 import sys
 sys.modules["parrot.scheduler.manager"] = None
 
@@ -338,7 +338,7 @@ async def main() -> None:
     socket_path = Path(sys.argv[1])
     cfg = AgentServiceConfig(
         name="isolated",
-        agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
+        agent=AgentTargetConfig(target="{__package__}.fakes:EchoAgent"),
         socket=socket_path,
         scheduler=SchedulerConfig(enabled=True),
     )

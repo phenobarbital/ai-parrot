@@ -77,7 +77,16 @@ def report_root() -> Path:
     return Path("/tmp") / f"claude-{os.getuid()}" / "sdd-tests"
 
 
-_SAFE_ID_RE = re.compile(r"^(?:FEAT-\d+|TASK-\d+|_rerun)$")
+# Feature/task ids safe as a PATH COMPONENT. Deliberately stricter than the
+# sdd_coder task-id gates (`models._TASK_ID_RE` and friends, FEAT-736): their
+# key class `[A-Za-z0-9._-]` mirrors `brief_meta._SAFE_REF_RE` and admits `.`,
+# which here would make `HOTFIX-a..b-1` a usable path component. The key class
+# below excludes `.`, so a dotted brief key falls back to `_invalid` -- safe,
+# and no worse than refusing every brief id as this did before. `_safe_id`
+# uses `.match()`, so the trailing `$` is what makes this a full match: keep it.
+_SAFE_ID_RE = re.compile(
+    r"^(?:FEAT-\d+|TASK-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9_-]*|HOTFIX-[A-Za-z0-9][A-Za-z0-9_-]*-\d+|_rerun)$"
+)
 
 
 def _safe_id(value: str) -> bool:
@@ -446,6 +455,16 @@ def _aggregate(records: dict[str, TaskTestRecord]) -> dict[str, list[float]]:
     return totals
 
 
+def _is_failure(result: SuiteResult) -> bool:
+    """Return whether a suite result must be flagged, including zero-count non-ok statuses."""
+    return result.status != "ok" or bool(result.failed or result.errors)
+
+
+def _failed_suites(records: dict[str, TaskTestRecord]) -> set[str]:
+    """Suite names with at least one flagged result across all records."""
+    return {result.suite for record in records.values() for result in record.suites if _is_failure(result)}
+
+
 def _rerun_value(rerun: TaskTestRecord | None, suite: str) -> str:
     """Render the final-head count cell for one suite."""
     if rerun is None:
@@ -453,13 +472,13 @@ def _rerun_value(rerun: TaskTestRecord | None, suite: str) -> str:
     result = next((item for item in rerun.suites if item.suite == suite), None)
     if result is None:
         return "—"
-    marker = " ❌" if result.failed or result.errors else ""
+    marker = " ❌" if _is_failure(result) else ""
     return f"{result.passed}/{result.tests}{marker}"
 
 
 def _baseline_counts(results: Sequence[SuiteResult]) -> tuple[int | None, int | None, int | None]:
     """Return new-red, baseline-red, and unknown counts for aggregated suite results."""
-    if any((result.failed or result.errors) and not result.baseline for result in results):
+    if any(_is_failure(result) and not result.baseline for result in results):
         return None, None, None
     counts = {"new_red": 0, "baseline_red": 0, "unknown": 0}
     for result in results:
@@ -476,9 +495,11 @@ def render_markdown(
     final_head: str,
     rerun: TaskTestRecord | None,
     rerun_skip_reason: str | None,
+    notes: tuple[str, ...] = (),
 ) -> str:
     """Render a deterministic Tests section including aggregate and per-task evidence."""
     totals = _aggregate(records)
+    failed_suites = _failed_suites(records)
     has_rerun = rerun is not None
     suites: dict[str, list[SuiteResult]] = {}
     for record in records.values():
@@ -487,7 +508,7 @@ def render_markdown(
     header = "| Suite | Tests | Passed | Failed | Skipped | Errors | New red | Baseline red | Unknown | Duration"
     separator = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---:"
     if has_rerun:
-        header += " | Final HEAD re-run"
+        header += " | Final HEAD re-run (stale)" if rerun.head_sha != final_head else " | Final HEAD re-run"
         separator += " | ---"
     rows = ["## Tests", "", header + " |", separator + " |"]
     grand_total = [0, 0, 0, 0, 0, 0.0]
@@ -498,7 +519,7 @@ def render_markdown(
         values = totals.get(suite, [0, 0, 0, 0, 0, 0.0])
         for index, value in enumerate(values):
             grand_total[index] += value
-        label = f"{suite}{' ❌' if values[2] or values[4] else ''}"
+        label = f"{suite}{' ❌' if suite in failed_suites else ''}"
         if ":" in suite:
             baseline_cells = ("n/a", "n/a", "n/a")
         else:
@@ -520,7 +541,7 @@ def render_markdown(
         rows.append(row + " |")
     total_label = "Total (per-task invocation totals)"
     row = (
-        f"| {total_label}{' ❌' if grand_total[2] or grand_total[4] else ''} | {int(grand_total[0])} | "
+        f"| {total_label}{' ❌' if failed_suites else ''} | {int(grand_total[0])} | "
         f"{int(grand_total[1])} | {int(grand_total[2])} | {int(grand_total[3])} | {int(grand_total[4])} | "
         f"{baseline_totals[0] if not unclassified_failures else '—'} | "
         f"{baseline_totals[1] if not unclassified_failures else '—'} | "
@@ -529,9 +550,7 @@ def render_markdown(
     if has_rerun:
         rerun_tests = sum(result.tests for result in rerun.suites)
         rerun_passed = sum(result.passed for result in rerun.suites)
-        rerun_failed = sum(result.failed for result in rerun.suites)
-        rerun_errors = sum(result.errors for result in rerun.suites)
-        marker = " ❌" if rerun_failed or rerun_errors else ""
+        marker = " ❌" if any(_is_failure(result) for result in rerun.suites) else ""
         row += f" | {rerun_passed}/{rerun_tests}{marker}"
     rows.append(row + " |")
     cached = sum(len(record.cached) for record in records.values())
@@ -553,4 +572,8 @@ def render_markdown(
             state = " (stale)" if record.head_sha != final_head else ""
             rows.append(f"- {task_id}{state}: {len(record.suites)} suite(s), {record.attempts} attempt(s)")
     rows.extend(["", "</details>", ""])
+    if notes:
+        rows.extend(["### Notes", ""])
+        rows.extend(f"- {note}" for note in notes)
+        rows.append("")
     return "\n".join(rows)

@@ -7,7 +7,12 @@
       "is_container": false,
       "label": "AI Capture",
       "render_hint": "capture",
-      "snippet": {},
+      "snippet": {
+        "description": "Automatically extracted information from documents or images",
+        "field_id": "ai_extracted_data",
+        "field_type": "ai_capture",
+        "label": "AI extracted data"
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -61,7 +66,12 @@
       "is_container": false,
       "label": "Audio",
       "render_hint": "audio-recorder",
-      "snippet": {},
+      "snippet": {
+        "description": "Record or upload an audio message",
+        "field_id": "audio_recording",
+        "field_type": "audio",
+        "label": "Audio recording"
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -207,7 +217,12 @@
       "is_container": false,
       "label": "Color Picker",
       "render_hint": "color",
-      "snippet": {},
+      "snippet": {
+        "default": "#0ea5e9",
+        "field_id": "theme_color",
+        "field_type": "color_picker",
+        "label": "Theme color"
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -237,7 +252,12 @@
       "is_container": false,
       "label": "Credit Card",
       "render_hint": "input",
-      "snippet": {},
+      "snippet": {
+        "field_id": "payment_method",
+        "field_type": "credit_card",
+        "label": "Payment method",
+        "required": true
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -284,7 +304,12 @@
       "is_container": false,
       "label": "Cron Expression",
       "render_hint": "input",
-      "snippet": {},
+      "snippet": {
+        "field_id": "schedule",
+        "field_type": "cron",
+        "label": "Schedule",
+        "placeholder": "0 0 * * *"
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -501,7 +526,12 @@
       "is_container": false,
       "label": "Emoji",
       "render_hint": "picker",
-      "snippet": {},
+      "snippet": {
+        "field_id": "mood",
+        "field_type": "emoji",
+        "label": "Mood",
+        "placeholder": "Select an emoji..."
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -1091,7 +1121,12 @@
       "is_container": false,
       "label": "Fixed-Format Text",
       "render_hint": "input",
-      "snippet": {},
+      "snippet": {
+        "field_id": "credit_card_number",
+        "field_type": "masked",
+        "label": "Credit card number",
+        "placeholder": "\u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022"
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -1445,7 +1480,12 @@
       "is_container": false,
       "label": "Place",
       "render_hint": "cascade-select",
-      "snippet": {},
+      "snippet": {
+        "field_id": "location",
+        "field_type": "place",
+        "label": "Location",
+        "required": true
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -1639,7 +1679,12 @@
       "is_container": false,
       "label": "Search",
       "render_hint": "select",
-      "snippet": {},
+      "snippet": {
+        "field_id": "search_query",
+        "field_type": "search",
+        "label": "Search",
+        "placeholder": "Type to search..."
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -1759,7 +1804,12 @@
       "is_container": false,
       "label": "Signature Pad",
       "render_hint": "signature",
-      "snippet": {},
+      "snippet": {
+        "field_id": "digital_signature",
+        "field_type": "signature_pad",
+        "label": "Digital signature",
+        "required": true
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -2016,7 +2066,41 @@
       "is_container": false,
       "label": "Nested Picker",
       "render_hint": "select",
-      "snippet": {},
+      "snippet": {
+        "field_id": "category_tree",
+        "field_type": "tree_select",
+        "label": "Category",
+        "options": [
+          {
+            "children": [
+              {
+                "label": "Phones",
+                "value": "phones"
+              },
+              {
+                "label": "Laptops",
+                "value": "laptops"
+              }
+            ],
+            "label": "Electronics",
+            "value": "electronics"
+          },
+          {
+            "children": [
+              {
+                "label": "Men",
+                "value": "men"
+              },
+              {
+                "label": "Women",
+                "value": "women"
+              }
+            ],
+            "label": "Clothing",
+            "value": "clothing"
+          }
+        ]
+      },
       "supported_effects": [
         "show",
         "hide",

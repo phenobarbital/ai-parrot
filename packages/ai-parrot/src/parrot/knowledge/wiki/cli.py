@@ -3550,6 +3550,26 @@ def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
         raise SystemExit(2) from exc
 
 
+@ledger.command("retract-feedback")
+@click.argument("feedback_ids", nargs=-1, required=True)
+@click.option("--reason", required=True, help="Why the recorded correction is wrong (kept in the audit trail).")
+@click.option("--actor", default="agent:cli", help="Actor withdrawing the correction, e.g. human:jesus.")
+def ledger_retract_feedback(feedback_ids: tuple[str, ...], reason: str, actor: str) -> None:
+    """Withdraw misattributed coder feedback (`coder-feedback:<digest>` ids) from model lessons."""
+    from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackStore
+
+    store = CoderFeedbackStore.from_root(Path.cwd())
+    missing = 0
+    for feedback_id in feedback_ids:
+        if _run(store.retract(feedback_id, reason, actor)):
+            click.echo(f"Retracted {feedback_id}")
+        else:
+            click.echo(f"Could not retract {feedback_id} (unknown or already retracted)")
+            missing += 1
+    if missing:
+        raise SystemExit(1)
+
+
 @ledger.command("context")
 @click.argument("file_paths", nargs=-1, required=True)
 @click.option("--max-tokens", default=3000, help="Token budget for context.")
@@ -3635,7 +3655,16 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
         if stage and (report.added > 0 or report.created):
-            subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3691,7 +3720,16 @@ def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | No
                 str(SHARED_LOG_REL_PATH),
                 *(str(path.relative_to(root)) for path in report.archives_touched),
             ]
-            subprocess.run(["git", "-C", str(root), "add", "--", *staged_paths], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", *staged_paths],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -5945,6 +5983,7 @@ def ingest(
 @click.option("--archive/--no-archive", default=True)
 @click.option("--force", is_flag=True)
 @click.option("--json", "as_json", is_flag=True)
+@click.option("--watch", is_flag=True, help="Observe the inbox directory and ingest continuously until interrupted.")
 def inbox(
     path_: str | None,
     dry_run: bool,
@@ -5955,11 +5994,15 @@ def inbox(
     archive: bool,
     force: bool,
     as_json: bool,
+    watch: bool,
 ) -> None:
     """Ingest every safe document from the configured inbox directory.
 
     The processor, rather than the CLI, owns the whole-run write lock.
     """
+    if watch and (limit is not None or dry_run):
+        raise click.UsageError("--watch cannot be combined with --limit or --dry-run")
+
     from parrot.knowledge.wiki.charter import load_charter
     from parrot.knowledge.wiki.inbox.processor import InboxLockBusy, InboxProcessor
     from parrot.knowledge.wiki.project import validate_inbox_paths
@@ -6000,6 +6043,27 @@ def inbox(
             lightweight_model_opt=lightweight_model_opt,
             model_opt=model_opt,
         )
+    if watch:
+        from parrot.knowledge.wiki.inbox.watcher import InboxWatcher, WatcherUnavailable
+
+        watcher = InboxWatcher(runtime, force=force, archive=archive)
+        try:
+            _run(watcher.run_forever())
+        except WatcherUnavailable as exc:
+            raise click.UsageError(str(exc)) from exc
+        except KeyboardInterrupt:
+            pass
+        if as_json:
+            click.echo(watcher.stats.model_dump_json())
+        else:
+            stats = watcher.stats
+            click.echo(
+                "Watcher: "
+                f"events={stats.events_seen} runs={stats.runs_started} "
+                f"documents={stats.documents_processed} lock_retries={stats.lock_busy_retries}"
+            )
+        return
+
     try:
         report = _run(InboxProcessor(runtime).run(dry_run=dry_run, limit=limit, force=force, archive=archive))
     except WikiConfigError as exc:

@@ -927,14 +927,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         prompt: Union[str, VideoGenInput],
         output_directory: Optional[Union[str, Path]] = None,
-        model: Union[str, GoogleModel] = GoogleModel.VEO_3_1,
+        model: Optional[str] = None,
         aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
         negative_prompt: Optional[str] = None,
         number_of_videos: int = 1,
         reference_image: Optional[Union[str, Path, Image.Image]] = None,
         generate_image_first: bool = False,
         image_prompt: Optional[str] = None,
-        duration: int = 8,
+        duration: Optional[int] = None,
         resolution: Optional[str] = None,
         person_generation: str = "allow_adult",
         include_audio: bool = True,
@@ -947,26 +947,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         session_id: Optional[str] = None,
         **kwargs: Any,
     ) -> AIMessage:
-        """
-        Generates videos using Google's Veo models.
+        """Generate videos through the FEAT-564 profile registry.
 
-        Accepts either a plain ``str`` prompt or a fully-specified
-        :class:`~parrot.models.VideoGenInput` object.  Individual kwargs always
-        take precedence over fields inside ``VideoGenInput``.
-
-        Supports:
-        - Text-to-video (all models)
-        - Image-to-video / image animation (all models)
-        - First-and-last-frame interpolation (VEO 3.1 only)
-        - Reference image guidance — up to 3 images (VEO 3.1 only)
-        - Video extension (VEO 3.1 only)
-        - Resolution control: 720p / 1080p / 4k (VEO 3.1 only)
-        - Audio stripping via moviepy when ``include_audio=False``
-
-        Duration rules:
-        - VEO 3.1: 4s / 6s / 8s (default 8)
-        - VEO 2.0: 5s / 6s / 8s
-        - Must be 8s when using 1080p/4k resolution, reference images, or extension.
+        ``model`` None resolves to the registry default for this client's API
+        surface. Unsupported options fail validation before a provider call.
         """
         # --- Unpack VideoGenInput when given as structured input -----------------
         if isinstance(prompt, VideoGenInput):
@@ -974,7 +958,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             prompt_text = vin.prompt
             # kwargs supplied explicitly override VideoGenInput fields
             negative_prompt = negative_prompt if negative_prompt is not None else vin.negative_prompt
-            duration = duration if duration != 8 else vin.duration
+            # VideoGenInput.duration defaults to 8 (a Veo value), so 8 there means "unset".
+            duration = duration if duration is not None else (vin.duration if vin.duration != 8 else None)
             aspect_ratio = aspect_ratio if aspect_ratio != AspectRatio.RATIO_16_9 else vin.aspect_ratio
             resolution = resolution if resolution is not None else vin.resolution
             person_generation = person_generation if person_generation != "allow_adult" else vin.person_generation
@@ -997,14 +982,30 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         else:
             prompt_text = prompt
 
-        # --- Model resolution ---------------------------------------------------
-        model_str = model.value if isinstance(model, GoogleModel) else model
+        from .reel.download import ProviderMediaDownloader
+        from .reel.omni import OmniClipAdapter
+        from .reel.profiles import VideoProfileRegistry, VideoRequestOptions
+        from .reel.veo import VeoClipAdapter
 
-        _veo31_models = {GoogleModel.VEO_3_1.value, GoogleModel.VEO_3_1_FAST.value}
-        is_veo31 = model_str in _veo31_models
+        api_surface = "vertex" if getattr(self, "vertexai", False) else "gemini_developer"
+        registry = VideoProfileRegistry.default()
+        model_id = getattr(model, "value", model) or registry.default_video_model(api_surface)
+        profile = registry.resolve(model_id, api_surface)
 
-        if not any(m in model_str for m in ["veo", "video"]):
-            self.logger.warning(f"Model {model_str!r} may not be a video generation model.")
+        # ``duration`` None means "provider default"; an explicit value (8 included)
+        # is validated against the profile and rejected when unsupported (Omni).
+        duration_seconds = duration
+        options = VideoRequestOptions(
+            resolution=resolution.value if isinstance(resolution, VideoResolution) else resolution,
+            duration_seconds=duration_seconds,
+            number_of_videos=number_of_videos,
+            has_starting_frame=generate_image_first or reference_image is not None,
+            has_last_frame=last_frame is not None,
+            reference_image_count=len(reference_images or []),
+            extends_video=extend_video is not None,
+            audio_mode="native" if include_audio else "muted",
+        )
+        registry.validate_request(profile, request=options)
 
         # --- Output directory ---------------------------------------------------
         if output_directory:
@@ -1016,195 +1017,87 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         # --- Aspect ratio normalisation ----------------------------------------
         ar_str = aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else str(aspect_ratio)
-        # VEO models only support 16:9 and 9:16
-        if ar_str not in ("16:9", "9:16"):
-            self.logger.warning(f"Unsupported aspect ratio {ar_str!r} for VEO models; falling back to '16:9'.")
-            ar_str = "16:9"
-
-        # --- Reference image (starting frame) ----------------------------------
-        ref_img_pil: Optional[Image.Image] = None
+        starting_frame: Optional[Path] = None
         if generate_image_first:
             self.logger.info("Generating reference image for video...")
             img_response = await self.generate_image(
                 prompt=image_prompt or prompt_text, aspect_ratio=ar_str, output_directory=str(out_dir)
             )
             if img_response.images:
-                ref_img_pil = Image.open(img_response.images[0])
+                starting_frame = Path(img_response.images[0])
                 self.logger.info(f"Generated reference image: {img_response.images[0]}")
             else:
                 self.logger.warning("Failed to generate reference image, proceeding without it.")
         elif reference_image:
-            ref_img_pil = self._load_image(reference_image)
+            starting_frame = Path(reference_image)
 
-        def _pil_to_types_image(img: Image.Image) -> types.Image:
-            """Convert PIL Image to ``types.Image`` (JPEG bytes)."""
-            buf = io.BytesIO()
-            converted = img.convert("RGB") if img.mode in ("RGBA", "P") else img
-            converted.save(buf, format="JPEG")
-            return types.Image(image_bytes=buf.getvalue(), mime_type="image/jpeg")
+        deadline = time.monotonic() + _reel_scene_deadline_seconds()
+        from .reel.errors import ReelErrorCode, ReelValidationError
 
-        # --- Build GenerateVideosConfig ----------------------------------------
-        # FEAT-564 TASK-3324: the wire value is lowercase (verified: reel/profiles.py's
-        # person_generation_values, reel/veo.py's adapter) — the SDK previously
-        # uppercased this, which the SDK serializes as-is (uppercase survives).
-        pg_val = person_generation.lower() if isinstance(person_generation, str) else person_generation
-        # VEO 3.x only accepts specific personGeneration values, and they differ
-        # by modality (per https://ai.google.dev/gemini-api/docs/video):
-        #   - text-to-video & extension: 'allow_all' only
-        #   - image-to-video / interpolation / reference images: 'allow_adult' only
-        # 'dont_allow' is never supported on VEO 3.x. Force the correct value to
-        # avoid a 400 INVALID_ARGUMENT.
-        if is_veo31:
-            is_image_to_video = ref_img_pil is not None or bool(reference_images) or last_frame is not None
-            required = "allow_adult" if is_image_to_video else "allow_all"
-            if pg_val != required:
-                self.logger.warning(
-                    f"person_generation={pg_val!r} is not supported by VEO 3.x for "
-                    f"{'image-to-video' if is_image_to_video else 'text-to-video'}; "
-                    f"overriding to {required!r}."
-                )
-                pg_val = required
-        config_kwargs: dict = {
-            "aspect_ratio": ar_str,
-            "negative_prompt": negative_prompt,
-            "number_of_videos": number_of_videos,
-            "person_generation": pg_val,
-            "duration_seconds": duration,
-        }
-
-        # Resolution — VEO 3.1 only
-        if resolution is not None:
-            if is_veo31:
-                res_str = resolution.value if isinstance(resolution, VideoResolution) else resolution
-                # Force duration=8 for 1080p/4k
-                if res_str in ("1080p", "4k") and duration != 8:
-                    self.logger.warning(f"Resolution {res_str!r} requires duration=8; overriding duration.")
-                    config_kwargs["duration_seconds"] = 8
-                config_kwargs["resolution"] = res_str
-            else:
-                self.logger.warning(f"Resolution parameter is not supported by model {model_str!r}; ignoring.")
-
-        # Seed — VEO 3.x only
-        if seed is not None and is_veo31:
-            config_kwargs["seed"] = seed
-
-        # Last frame (interpolation) — VEO 3.1 only
-        if last_frame is not None:
-            if is_veo31:
-                config_kwargs["last_frame"] = _pil_to_types_image(self._load_image(last_frame))
-            else:
-                self.logger.warning("last_frame is only supported on VEO 3.1 models; ignoring.")
-
-        # Reference images — VEO 3.1 only (requires duration=8)
-        ref_image_objects: Optional[List] = None
-        if reference_images:
-            if is_veo31:
-                if len(reference_images) > 3:
-                    self.logger.warning("Only up to 3 reference images supported; using first 3.")
-                    reference_images = reference_images[:3]
-                ref_image_objects = [
-                    types.VideoGenerationReferenceImage(
-                        image=_pil_to_types_image(self._load_image(img)),
-                        reference_type=reference_type,
-                    )
-                    for img in reference_images
-                ]
-                # Reference images require duration=8
-                config_kwargs["duration_seconds"] = 8
-            else:
-                self.logger.warning("reference_images are only supported on VEO 3.1 models; ignoring.")
-
-        if ref_image_objects:
-            config_kwargs["reference_images"] = ref_image_objects
-
-        config = types.GenerateVideosConfig(**config_kwargs)
-
-        # --- Build generate_videos kwargs --------------------------------------
-        gen_kwargs: dict = {
-            "model": model_str,
-            "prompt": prompt_text,
-            "config": config,
-        }
-
-        # Starting frame (image-to-video)
-        if ref_img_pil is not None:
-            gen_kwargs["image"] = _pil_to_types_image(ref_img_pil)
-
-        # Video extension — VEO 3.1 only
-        if extend_video is not None:
-            if is_veo31:
-                gen_kwargs["video"] = extend_video
-                # Extension requires 720p
-                if resolution and resolution not in ("720p", VideoResolution.RES_720P):
-                    self.logger.warning("Video extension only supports 720p resolution; overriding.")
-                    config_kwargs["resolution"] = "720p"
-                    config_kwargs["duration_seconds"] = 8
-                    gen_kwargs["config"] = types.GenerateVideosConfig(**config_kwargs)
-            else:
-                self.logger.warning("Video extension is only supported on VEO 3.1 models; ignoring.")
-
-        self.logger.info(
-            f"Starting video generation: model={model_str!r}, duration={duration}s, "
-            f"resolution={resolution or 'default'}, aspect={ar_str}, audio={include_audio}"
-        )
-
-        try:
-            client = await self.get_client()
-
-            # LRO — start operation
-            operation = await client.aio.models.generate_videos(**gen_kwargs)
-            self.logger.info(f"Video generation started: operation={operation.name!r}")
-
-            # Poll
-            poll_interval = 10
-            while not operation.done:
-                self.logger.debug("Waiting for video generation...")
-                await asyncio.sleep(poll_interval)
-                operation = await client.aio.operations.get(operation)
-
-            if operation.error:
-                raise RuntimeError(f"Video generation failed: {operation.error}")
-
-            # Download and save
-            response = operation.response or operation.result
-            generated_videos = response.generated_videos if response else None
-            if not generated_videos:
-                # Check if videos were filtered by safety (RAI)
-                rai_count = getattr(response, "rai_media_filtered_count", None)
-                rai_reasons = getattr(response, "rai_media_filtered_reasons", None)
-                if rai_count or rai_reasons:
-                    raise RuntimeError(
-                        f"Video blocked by content safety filter: "
-                        f"{rai_count or 0} video(s) filtered. "
-                        f"Reasons: {rai_reasons or 'not specified'}. "
-                        f"Try rephrasing the prompt."
-                    )
-                raise RuntimeError("Video generation completed but returned no videos. " "The API response was empty.")
-            generated_paths: List[Path] = []
-            for i, vid in enumerate(generated_videos):
-                video_bytes = await client.aio.files.download(file=vid.video)
-                saved_path = await self._async_save_video_file(video_bytes, out_dir, i)
-
-                # Strip audio if requested
-                if not include_audio:
-                    saved_path = await self._strip_audio(saved_path)
-
-                generated_paths.append(saved_path)
-
-            return AIMessageFactory.from_video(
-                output=response,
-                files=generated_paths,
-                input=prompt_text,
-                model=model_str,
-                provider="google_genai",
-                usage=CompletionUsage(),
-                user_id=user_id,
-                session_id=session_id,
+        def _reject(option: str) -> None:
+            raise ReelValidationError(
+                ReelErrorCode.UNSUPPORTED_OPTION,
+                f"Model {profile.model_id!r} does not support option {option!r}.",
             )
 
-        except Exception as e:
-            self.logger.error(f"Video generation failed: {e}")
-            raise
+        if profile.backend == "omni":
+            # Options the Omni Interactions path cannot honour are rejected, never dropped silently.
+            if negative_prompt:
+                _reject("negative_prompt")
+            if seed is not None:
+                _reject("seed")
+            if person_generation != "allow_adult":
+                _reject("person_generation")
+            if reference_type != "asset":
+                _reject("reference_type")
+            if image_prompt:
+                _reject("image_prompt")
+            clips = await OmniClipAdapter(self, ProviderMediaDownloader()).generate_many(
+                profile=profile,
+                prompt=prompt_text,
+                output_directory=out_dir,
+                aspect_ratio=ar_str,
+                number_of_videos=number_of_videos,
+                deadline=deadline,
+            )
+        else:
+            for name, value in (
+                ("last_frame", last_frame),
+                ("reference_images", reference_images),
+                ("extend_video", extend_video),
+                ("seed", seed),
+                ("negative_prompt", negative_prompt),
+            ):
+                if value:
+                    _reject(name)
+            adapter = VeoClipAdapter(self)
+            clips = [
+                await adapter.generate(
+                    profile=profile,
+                    prompt=prompt_text,
+                    output_directory=out_dir,
+                    aspect_ratio=ar_str,
+                    resolution=options.resolution or "",
+                    target_duration_seconds=float(duration or 8),
+                    starting_frame=starting_frame,
+                    deadline=deadline,
+                )
+                for _ in range(number_of_videos)
+            ]
+
+        generated_paths = [clip.local_path for clip in clips]
+        if not include_audio:
+            generated_paths = [await self._strip_audio(path) for path in generated_paths]
+        return AIMessageFactory.from_video(
+            output=None,
+            files=generated_paths,
+            input=prompt_text,
+            model=model_id,
+            provider="google_genai",
+            usage=CompletionUsage(),
+            user_id=user_id,
+            session_id=session_id,
+        )
 
     async def _async_save_video_file(
         self, video_bytes: bytes, output_directory: Path, video_number: int = 0, mime_format: str = "video/mp4"
@@ -1970,7 +1863,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         reference_image: Optional[Path] = None,
         output_directory: Optional[Path] = None,
         mime_format: str = "video/mp4",
-        model: Union[str, GoogleModel] = GoogleModel.VEO_3_1,
+        model: Optional[str] = None,
     ) -> AIMessage:
         """
         Generate a video using the specified model and prompt (handler-facing method).
@@ -1980,35 +1873,24 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         """
         if isinstance(prompt, VideoGenerationPrompt) and prompt.model:
             model = prompt.model
-        model_str = model.value if isinstance(model, GoogleModel) else model
-
-        _valid_models = {
-            GoogleModel.VEO_3_1.value,
-            GoogleModel.VEO_3_1_FAST.value,
-            GoogleModel.VEO_3_1_LITE.value,
-        }
-        if model_str not in _valid_models:
-            raise ValueError(
-                f"generate_videos: unsupported model {model_str!r}. " f"Valid models: {sorted(_valid_models)}"
-            )
 
         prompt_text = prompt.prompt if isinstance(prompt, VideoGenerationPrompt) else prompt
         aspect_ratio = prompt.aspect_ratio if isinstance(prompt, VideoGenerationPrompt) else "16:9"
         negative_prompt = prompt.negative_prompt if isinstance(prompt, VideoGenerationPrompt) else None
         resolution = prompt.resolution if isinstance(prompt, VideoGenerationPrompt) else None
-        duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else 8
+        duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else None
         seed = prompt.seed if isinstance(prompt, VideoGenerationPrompt) else None
         include_audio = prompt.include_audio if isinstance(prompt, VideoGenerationPrompt) else True
 
         return await self.video_generation(
             prompt=prompt_text,
-            model=model_str,
+            model=model,
             output_directory=output_directory,
             reference_image=reference_image,
             aspect_ratio=aspect_ratio,
             negative_prompt=negative_prompt or None,
             resolution=resolution,
-            duration=duration or 8,
+            duration=duration,
             seed=seed,
             include_audio=include_audio,
         )

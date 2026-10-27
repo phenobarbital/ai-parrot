@@ -1,61 +1,61 @@
-# TASK-4478: End-to-end governed-query security suite on DuckDB (M10 gate)
+# TASK-4478: Real-DuckDB governed-query security gate (M10 gate)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4477
+**Estimated effort**: M (2–4h)
+**Depends-on**: TASK-4477, TASK-4708
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §4 Integration Tests + Worktree Strategy 'Ordering inside M10': the governance, cache-isolation and engine-switch e2e tests must be green before `run_sql` / `save_result_as_dataset` (TASK-4479) ship. This task writes those tests; it should change no source file — a failing test is reported, then fixed in the owning module's file only with a note.
-
----
+Spec rev 0.4, §3 M10; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Write `test_e2e_governed.py`: `test_e2e_duckdb_governed_query`, `test_e2e_rls_two_subjects_same_roles`, `test_e2e_pbac_denial_paths` (structured paths; the raw-SQL leg is added by TASK-4479), `test_e2e_native_engine_switch`.
+- Exercise stock repaired DuckDBSource end to end with model/policy fixtures and trusted identity binding; no source mocks and no LLM/network.
+- Validate RLS below aggregation for two subjects with identical roles/tenant and different programs, including warm compile cache; prove cached compiler output unchanged.
+- Cover PBAC denial/no-context/evaluator failure, compile-only/catalog/dimension-value/saved-query paths, masks/lineage, role-filtered suggestions and audit failure withholding.
+- Test concurrent identity isolation and cleanup after cancellation, context-only queries without handles, stale versions and exact result provenance. This gate is consumed before exposing raw SQL and hand-off.
 
-**NOT in scope**: raw SQL and hand-off e2e (TASK-4479); fixing production code beyond a minimal, noted fix.
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/tests/test_e2e_governed.py` | CREATE | e2e security suite |
-
----
+| `packages/ai-parrot-semantic/tests/test_e2e_governed.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from parrot.semantic import SemanticLayerToolkit, SemanticQuery    # TASK-4477
-from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit   # verified: databasequery/toolkit.py:115
+from pathlib import Path
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
-```python
-# TASK-4477 — SemanticLayerToolkit(models_dir=, dialect=, dataplane_guard=, database_toolkit=, ...);
-#             tools invoked through get_tools() so _pre_execute receives _permission_context (toolkit.py:174-178)
-```
+
+No existing project symbol is extended; consume only dependency-created satellite contracts and the installed libraries below.
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4477: consumes packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py, packages/ai-parrot-semantic/src/parrot/semantic/__init__.py (Governed catalog, compile and query toolkit (M10a))
+- TASK-4708: consumes packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py (Repair stock DuckDB source execution (M9D))
 
 ### Does NOT Exist
-- ~~Calling tool methods directly to test PBAC~~ — direct calls bypass `_pre_execute`; invoke through the generated `ToolkitTool.execute(..., _permission_context=pctx)` path.
-- ~~A real Postgres/BigQuery~~ — DuckDB only (SQL snapshots cover other dialects).
 
----
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -68,135 +68,86 @@ from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit   # verified
       "action": "CREATE"
     }
   ],
-  "contract_symbols": [
-    "sym:packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py#DatabaseQueryToolkit"
-  ]
+  "contract_symbols": []
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Point the model's connection at the DuckDB file with `PARROT_SEMANTIC_CONN_<NAME>_DATABASE` via monkeypatch.setenv.
-- Two subjects with identical roles/tenant but different `programs` metadata must get different rows from one warm cache entry (AC8).
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Build the toolkit against the DuckDB fixture — *why*: real execution.
-2. Write the four e2e tests — *why*: release gate for TASK-4479.
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
 
 ### `packages/ai-parrot-semantic/tests/test_e2e_governed.py` (CREATE)
-```python
-"""FEAT-704 e2e security gate: governed queries on an in-process DuckDB (spec §4 Integration Tests)."""
-from __future__ import annotations
 
+```python
+"""Regression contract: Real-DuckDB governed-query security gate (M10 gate)."""
+from pathlib import Path
 import pytest
 
-from ._models import duckdb_warehouse, models_dir  # noqa: F401
-from parrot.semantic import SemanticLayerToolkit
 
-
-@pytest.fixture
-def toolkit(models_dir, duckdb_warehouse, allow_all_guard, monkeypatch):
-    # FILL IN: monkeypatch.setenv("PARROT_SEMANTIC_CONN_<CONN>_DATABASE", duckdb_warehouse) for the fixture
-    #          policy's connection name; return SemanticLayerToolkit(models_dir=models_dir, dialect="duckdb",
-    #          dataplane_guard=allow_all_guard)
-    raise NotImplementedError
-
-
-async def _call(tk, name: str, pctx, **params):
-    tool = next(t for t in tk.get_tools() if t.name == name)
-    # FILL IN: await tool.execute(**params, _permission_context=pctx) and unwrap the ToolResult payload
-    raise NotImplementedError
-
-
-async def test_e2e_duckdb_governed_query(toolkit, pctx_factory):
-    # FILL IN: rows returned; ledger has one ok entry with governed_sql; compiled SQL recorded
+def test_real_source_two_subjects_warm_cache(tmp_path: Path) -> None:
+    """Verify real source two subjects warm cache."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 
 
-async def test_e2e_rls_two_subjects_same_roles(toolkit, pctx_factory):
-    # FILL IN: warm cache as A (programs=[north]); B same roles/tenant, programs=[south] -> only south rows;
-    #          the cached CompiledQuery.sql is byte-identical before/after
+def test_all_denial_paths_and_no_sql_leak(tmp_path: Path) -> None:
+    """Verify all denial paths and no sql leak."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 
 
-async def test_e2e_pbac_denial_paths(models_dir, duckdb_warehouse, deny_table_guard, pctx_factory):
-    # FILL IN: deny "sales.orders" -> compile_query, query_metrics, saved query, dimension values and a cache hit
-    #          all return error pbac_denied, no SQL in the payload, DuckDB never queried
-    ...
-
-
-async def test_e2e_native_engine_switch(models_dir, duckdb_warehouse, allow_all_guard, pctx_factory):
-    # FILL IN: copy the policy with engine: native -> same rows as the sidemantic model
+def test_concurrent_context_and_required_audit_failure(tmp_path: Path) -> None:
+    """Verify concurrent context and required audit failure."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
-### FILL IN checklist
-- [ ] Fixture + `_call` helper.
-- [ ] Four e2e test bodies — bounded by AC4, AC5, AC8, AC11.
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
----
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/tests/test_e2e_governed.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
 
 ## Acceptance Criteria
 
-- [ ] All four tests pass on DuckDB.
-- [ ] No source file changed, or each change is a minimal fix noted in the Completion Note.
-
----
+- [ ] Exercise stock repaired DuckDBSource end to end with model/policy fixtures and trusted identity binding; no source mocks and no LLM/network.
+- [ ] Validate RLS below aggregation for two subjects with identical roles/tenant and different programs, including warm compile cache; prove cached compiler output unchanged.
+- [ ] Cover PBAC denial/no-context/evaluator failure, compile-only/catalog/dimension-value/saved-query paths, masks/lineage, role-filtered suggestions and audit failure withholding.
+- [ ] Test concurrent identity isolation and cleanup after cancellation, context-only queries without handles, stale versions and exact result provenance. This gate is consumed before exposing raw SQL and hand-off.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
 
 ## Validation Commands
 
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
 - `pytest packages/ai-parrot-semantic/tests/test_e2e_governed.py -q`
-
----
 
 ## Test Specification
 
-```python
-# see the packages/ai-parrot-semantic/tests/test_e2e_governed.py block above — it IS the test file
-```
-
----
+- `test_real_source_two_subjects_warm_cache`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_all_denial_paths_and_no_sql_leak`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_concurrent_context_and_required_audit_failure`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4478 — End-to-end governed-query security suite on DuckDB (M10 gate)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4478 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4478` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

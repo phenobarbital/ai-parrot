@@ -54,3 +54,21 @@ async def test_shutdown_msteams_close_failure_is_isolated():
     healthy.close_formdesigner_client.assert_awaited_once()
     healthy.close_voice_transcriber.assert_awaited_once()
     assert manager.msteams_bots == {}
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_client_sessions():
+    """Agent FormDesigner clients are closed once and failures do not skip siblings."""
+    manager = _manager()
+    failing = _fake_msteams_wrapper()
+    failing.agent.aclose = AsyncMock(side_effect=RuntimeError("boom"))
+    healthy = _fake_msteams_wrapper()
+    healthy.agent.aclose = AsyncMock()
+    manager.msteams_bots["failing"] = failing
+    manager.msteams_bots["healthy"] = healthy
+
+    await manager.shutdown()
+
+    failing.agent.aclose.assert_awaited_once()
+    healthy.agent.aclose.assert_awaited_once()
+    assert manager.msteams_bots == {}

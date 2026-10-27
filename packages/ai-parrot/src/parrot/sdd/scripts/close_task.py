@@ -74,24 +74,53 @@ def update_index(index: Path, task_id: str, verification: str, completed_file: s
 
 
 def _emit_task_closed(start_dir: Path, task_id: str, feature_slug: str, verification: str) -> None:
-    """C14: best-effort ``task.closed`` ledger event; never raises, never changes the exit code."""
-    try:
-        from parrot.knowledge.wiki.ledger.events import LedgerEvent  # lazy: navconfig chdirs on import
-        from parrot.knowledge.wiki.ledger.log import LedgerLog
-        from parrot.knowledge.wiki.project import find_shared_root
+    """C14: best-effort ``task.closed`` ledger event; never raises, never changes the exit code.
 
-        shared_root = find_shared_root(start_dir) or start_dir
-        ledger_dir = shared_root / ".parrot" / "ledger"
-        ledger_dir.mkdir(parents=True, exist_ok=True)
-        event = LedgerEvent(
-            kind="task.closed",
-            subject=f"task:{task_id}",
-            actor="agent:close_task.sh",
-            payload={"feature": feature_slug, "verification": verification},
+    An executable ``$SDD_LEDGER_PYTHON`` (operator override, FEAT-718) runs the emission in that interpreter; a
+    non-executable one is ignored. Its failure is reported but never undoes the closure.
+    """
+    override = os.environ.get("SDD_LEDGER_PYTHON", "")
+    if override and os.access(override, os.X_OK) and Path(override).resolve() != Path(sys.executable).resolve():
+        code = (
+            "import sys; from pathlib import Path; "
+            "from parrot.sdd.scripts.close_task import _emit_task_closed_inprocess as e; "
+            "e(Path(sys.argv[1]), *sys.argv[2:5])"
         )
-        LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
+        try:
+            proc = subprocess.run(
+                [override, "-c", code, str(start_dir), task_id, feature_slug, verification],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            _err(f"⚠️  task.closed ledger emission skipped ({override}): {exc}")
+            return
+        if proc.returncode != 0:
+            _err(f"⚠️  task.closed ledger emission skipped ({override} exited {proc.returncode}): {proc.stderr.strip()}")
+        return
+    try:
+        _emit_task_closed_inprocess(start_dir, task_id, feature_slug, verification)
     except Exception as exc:  # noqa: BLE001 — ledger emission never blocks closure
         _err(f"⚠️  task.closed ledger emission skipped: {exc}")
+
+
+def _emit_task_closed_inprocess(start_dir: Path, task_id: str, feature_slug: str, verification: str) -> None:
+    """Append the ``task.closed`` event in this interpreter (raises on any failure)."""
+    from parrot.knowledge.wiki.ledger.events import LedgerEvent  # lazy: navconfig chdirs on import
+    from parrot.knowledge.wiki.ledger.log import LedgerLog
+    from parrot.knowledge.wiki.project import find_shared_root
+
+    shared_root = find_shared_root(start_dir) or start_dir
+    ledger_dir = shared_root / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    event = LedgerEvent(
+        kind="task.closed",
+        subject=f"task:{task_id}",
+        actor="agent:close_task.sh",
+        payload={"feature": feature_slug, "verification": verification},
+    )
+    LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

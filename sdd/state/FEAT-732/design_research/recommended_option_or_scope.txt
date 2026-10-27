@@ -1,0 +1,28 @@
+Four decisions are already fixed by the product owner and are constraints, not options:
+
+1. Granularity: a per-form configuration block with three levels. "summary" (default):
+   a header, a schema fingerprint, per field the list of names of the checks that ran,
+   and failures in full. "full" (opt-in): every check with its bound and its PASS/FAIL
+   outcome. "off": today's behaviour. The schema fingerprint is a canonical sha256 over
+   the validation-relevant subset of the FormSchema (constraints, required, options,
+   rules, types).
+
+2. Persistence: in context["validation"] as JSONB, symmetric with the existing
+   context["llm_validation"]. No migration, no new column.
+
+3. Model identity: do NOT change the meaning of PlausibilityReport.model (it stays the
+   value requested in config, and is already documented). Add resolved_model, provider
+   and usage read off the response AIMessage. A report with status="ok" must never lack
+   an identified effective model; status="skipped"/"blocked" legitimately has none.
+
+4. Exposure: the trace is NOT returned in the 200 of submit, nor in the validate
+   response. It is read by submission_id through an authenticated, RBAC-permissioned
+   read, so public form clients never see constraints or check names.
+
+Scope: the deterministic checks to trace are _detect_circular_dependencies and
+validate_rules (form level, early returns), the RuleEvaluator resolution of effective
+visible/required (which is what RELAXES a required), required, _validate_relation_shape,
+_coerce_value, the FieldConstraints bounds (min_length/max_length/min_value/max_value/
+pattern/min_items/max_items/allowed_mime_types), _validate_by_type, the SELECT/
+MULTI_SELECT option set, _run_cross_field_validation, _run_async_validator,
+_validate_remote_response and _validate_rest_field.

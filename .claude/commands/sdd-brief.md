@@ -176,7 +176,9 @@ step. Offer either manual implementation or:
 cd <wt> && claude --agent sdd-worker --model sonnet --verbose
 ```
 
-Finish by directing the owner to run `/sdd-done <KEY>` after implementation.
+Finish by directing the owner to run `/sdd-done <KEY>` after implementation: it verifies the
+brief's tasks, opens the PR against `base_branch`, and removes this worktree. `/sdd-brief`
+itself opens no PR and removes nothing — the worktree must survive for implementation.
 
 ## Output
 

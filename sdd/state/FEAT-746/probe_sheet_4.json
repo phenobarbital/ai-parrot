@@ -1,0 +1,262 @@
+[
+ {
+  "id": "c59",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c60",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "AuditLedgerEntry",
+  "expected_line": 80
+ },
+ {
+  "id": "c61",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "sign",
+  "expected_line": 135
+ },
+ {
+  "id": "c62",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "LocalHMACSigner",
+  "expected_line": 166
+ },
+ {
+  "id": "c63",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "__init__",
+  "expected_line": 296
+ },
+ {
+  "id": "c64",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "append",
+  "expected_line": 338
+ },
+ {
+  "id": "c65",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "symbol": "verify",
+  "expected_line": 407
+ },
+ {
+  "id": "c122",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c82",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/redaction.py",
+  "symbol": "ScrubPolicy",
+  "expected_line": 128
+ },
+ {
+  "id": "c123",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/redaction.py",
+  "line": 1
+ },
+ {
+  "id": "c143",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/",
+  "line": null
+ },
+ {
+  "id": "c127",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/backends/postgres.py",
+  "line": 1
+ },
+ {
+  "id": "c126",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/storage/s3_overflow.py",
+  "line": 1
+ },
+ {
+  "id": "c43",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "get_tool_schema",
+  "expected_line": 703
+ },
+ {
+  "id": "c74",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "execute",
+  "expected_line": 916
+ },
+ {
+  "id": "c75",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "symbol": "_ensure_open",
+  "expected_line": 999
+ },
+ {
+  "id": "c45",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/decorators.py",
+  "symbol": "tool_schema",
+  "expected_line": 39
+ },
+ {
+  "id": "c27",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "ToolFormat",
+  "expected_line": 75
+ },
+ {
+  "id": "c28",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "clean_schema_for_provider",
+  "expected_line": 87
+ },
+ {
+  "id": "c29",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "ToolManager",
+  "expected_line": 289
+ },
+ {
+  "id": "c30",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_tool",
+  "expected_line": 853
+ },
+ {
+  "id": "c31",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_toolkit",
+  "expected_line": 1190
+ },
+ {
+  "id": "c32",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "get_tool_schemas",
+  "expected_line": 1313
+ },
+ {
+  "id": "c33",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "list_categories",
+  "expected_line": 1404
+ },
+ {
+  "id": "c34",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "unregister_tool",
+  "expected_line": 1434
+ },
+ {
+  "id": "c35",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "rank_tools",
+  "expected_line": 723
+ },
+ {
+  "id": "c36",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "execute_tool",
+  "expected_line": 1787
+ },
+ {
+  "id": "c37",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "set_resolver",
+  "expected_line": 435
+ },
+ {
+  "id": "c38",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "register_a2a_agent",
+  "expected_line": 2302
+ },
+ {
+  "id": "c39",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "import",
+  "expected_line": 18
+ },
+ {
+  "id": "c40",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "_apply_output_guards",
+  "expected_line": 2429
+ },
+ {
+  "id": "c41",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "share_dataframe",
+  "expected_line": 2895
+ },
+ {
+  "id": "c42",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "symbol": "cleanup_toolkits",
+  "expected_line": 2952
+ },
+ {
+  "id": "c136",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/",
+  "line": null
+ },
+ {
+  "id": "c109",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "symbol": "dataframe",
+  "expected_line": 545
+ },
+ {
+  "id": "c110",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "symbol": "WorkingMemoryCatalog",
+  "expected_line": 778
+ },
+ {
+  "id": "c108",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "symbol": "preview",
+  "expected_line": 178
+ },
+ {
+  "id": "c111",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/artifacts.py",
+  "symbol": "InMemoryArtifactStore",
+  "expected_line": 290
+ }
+]

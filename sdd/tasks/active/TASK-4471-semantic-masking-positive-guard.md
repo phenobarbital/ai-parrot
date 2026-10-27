@@ -1,69 +1,70 @@
-# TASK-4471: Governance: masking and positive SQL guard (M6c)
+# TASK-4471: Projection masks and positive SQL guard (M6c)
 
-**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents (`ai-parrot-semantic`)
+**Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4469
 **Assigned-to**: unassigned
-
----
+**Spec revision**: 0.4
 
 ## Context
 
-Spec §3 Module 6 (masking + guard) + §8 Q4 + AC6/AC7: projected masked columns are rewritten per strategy; the positive guard admits only a single SELECT over allowlisted tables/columns/functions, forbids DDL/DML/`exp.Command`, and injects or clamps LIMIT.
-
----
+Spec rev 0.4, §3 M6; replaces the prior task text for this same reserved identity. The unmerged branch is a salvage reference only; no completion state is inherited.
 
 ## Scope
 
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py`: `apply_masks`.
-- Implement `packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py`: `DEFAULT_ALLOWED_FUNCTIONS`, `effective_allowed_functions`, `PositiveGuard.check_and_limit`.
-- Write `test_masking.py` and `test_positive_guard.py` (incl. the adversarial matrix across postgres/bigquery/duckdb and the guard half of `test_policy_allowed_functions_additive`).
+- Implement null/hash/partial projection masking using resolved physical lineage; return masked names and retained trusted-node identities.
+- Implement default/additive function allowlist and PositiveGuard.check_and_limit(tree). Require one SELECT root, known physical tables/columns, allowlisted functions and policy limit cap; no DDL/DML/Command or extra statements.
+- Handle compiler-owned CASE/filter expressions and trusted masking functions explicitly without granting arbitrary caller functions. Resolve CTE references to physical scans.
+- Add the adversarial matrix across postgres/bigquery/duckdb: star, aliases, case/quoted identifiers, CTEs, subqueries, windows and sensitive derived projections.
 
-**NOT in scope**: pipeline ordering (TASK-4472); catalog hiding of hidden members (TASK-4473).
-
----
+**NOT in scope**: changes outside the target table; provider SDK calls; a third-party semantic engine; symmetric aggregates; reviving the removed M12 core RLS work. Blueprint gaps are planning instructions only and must not survive in implementation files.
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py` | CREATE | mask rewrites |
-| `packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py` | CREATE | positive guard + default allowlist |
-| `packages/ai-parrot-semantic/tests/test_masking.py` | CREATE | strategy tests |
-| `packages/ai-parrot-semantic/tests/test_positive_guard.py` | CREATE | guard + adversarial matrix |
-
----
+| `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py` | CREATE | Scoped deliverable per blueprint |
+| `packages/ai-parrot-semantic/tests/test_masking.py` | CREATE | Focused regression evidence |
+| `packages/ai-parrot-semantic/tests/test_positive_guard.py` | CREATE | Focused regression evidence |
 
 ## Codebase Contract (Anti-Hallucination)
 
-> **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (re-verified on `dev` @ 754878f67, 2026-10-19). Use these exact imports, class names and
-> method signatures. **DO NOT** invent, guess or assume anything not listed here — verify first.
-> `grep` in this repo is aliased to `ugrep` by RTK: use `grep -F` for anchors with `(`, `[`, `{`.
+Verified against main-checkout `dev` at `c431642e2` on 2026-10-25. Existing source definitions below were re-read. Satellite imports are **planned contracts**, not claims that those files already exist on dev; their producer tasks must land first.
 
 ### Verified Imports
+
 ```python
-from sqlglot import exp                                               # sqlglot 30.23.0
-from parrot.semantic.governance.lineage import ColumnUse              # TASK-4469
-from parrot.semantic.loader import PhysicalSchema                     # TASK-4467
-from parrot.semantic.policy import ModelPolicy, MaskRule              # TASK-4465
-from parrot.semantic.models import Limits                             # TASK-4464
-from parrot.semantic.errors import SemanticValidationError            # TASK-4464
+from ..errors import SemanticValidationError
+from ..loader import PhysicalSchema
+from ..models import Limits
+from ..policy import ModelPolicy
+from .lineage import ColumnUse
+from __future__ import annotations
+from pathlib import Path
+from sqlglot import exp
+import pytest
 ```
+
+Standard-library imports are built in; pydantic v2, sqlglot, PyYAML/jsonschema and pytest are governed by existing metadata and M1's explicit dependency/extra declarations. Reverify optional backend imports in the implementation environment. Relative satellite imports below resolve within the target package and are bounded by the listed dependency contracts.
 
 ### Existing Signatures to Use
-```python
-# no core signature used directly; QueryValidator is invoked by the pipeline (TASK-4472)
-```
+
+No existing project symbol is extended; consume only dependency-created satellite contracts and the installed libraries below.
+
+### Dependency Contracts and Parallelism Evidence
+
+- TASK-4469: consumes packages/ai-parrot-semantic/src/parrot/semantic/governance/__init__.py, packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py (Fail-closed PBAC and full column lineage (M6a))
 
 ### Does NOT Exist
-- ~~A positive table/column allowlist in core~~ — `QueryValidator.validate_sql_ast` and `SQLToolkit._check_query_safety` are negative guards.
-- ~~`add_row_limit` for LIMIT injection~~ — string-level (base.py:213); the guard works on the AST.
 
----
+- `parrot.semantic` on dev — the package and symbols are created by this graph, never imported from the salvage branch environment.
+- A semantic engine selector, sidemantic adapter or sidemantic parity oracle — native SQL generation is the only path.
+- `PermissionContext.session_id` or `.agent_id` — the satellite identity contract carries trusted scope; request_id is not a session id.
+- Automatic semantic authorization in `DatasetManager.add_dataframe()` — retained snapshots require the guarded host-sink contract.
 
 ## Complexity Contract
 
@@ -92,34 +93,47 @@ from parrot.semantic.errors import SemanticValidationError            # TASK-446
 }
 ```
 
----
-
 ## Implementation Notes
 
-- Operators (arithmetic/comparison/boolean) are expression nodes, not `exp.Func` — always allowed; check only `exp.Func` subclasses by their SQL name (`func.sql_name()`), plus `exp.Anonymous` by `.name`.
-- `hash` strategy = MD5 of the column cast to text (dialect-aware rendering); `partial` = keep last 4 chars, mask the rest; `null` = `CAST(NULL AS <type>)` aliased to the column name.
-
-### Key Constraints
-- Async-first; sync CPU-only work (sqlglot, sidemantic compile) runs under `asyncio.to_thread` at the call site.
-- Pydantic v2 models; `logging.getLogger(__name__)` / `self.logger`, never `print`.
-- Google-style docstrings, strict type hints, 120-column lines; `ruff check` clean (TID251 bans apply).
-- Fail closed wherever governance is involved (spec §7 "Patterns to Follow").
-- Worktree testing: prefix pytest with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` (add `:packages/ai-parrot-server/src` for server tests); never `uv sync` inside a worktree.
-
----
+- Keep the scope and signatures fixed by spec rev 0.4. Complete the bounded blueprint gaps, not a broad refactor. Preserve the clean-room rule: do not open sidemantic source/API glue.
+- Use async I/O, Pydantic v2, strict types and Google-style docstrings. CPU SQL passes run off the event loop. Use logging, not print; black/ruff are the format/lint gates.
+- Run in the feature worktree with the existing venv activated; never repair the shared environment. Write test logs to `artifacts/logs/`.
+- The full-file snippets below are starting points. Recheck dependency-created MODIFY anchors after their tasks land; they cannot be falsely reported verified on dev today.
 
 ## Implementation Blueprint
 
-> **Executor-ready starting point.** Write each block to its declared path nearly verbatim,
-> then complete every `# FILL IN:` marker. Never change a signature, class name or path the
-> blueprint fixes (they come from the spec §3 Interface Skeletons).
-
 ### Steps (in order)
-1. Write `guard.py` with the §8 Q4 default set — *why*: fixed by the spec.
-2. Write `masking.py` — *why*: AC6 masked projections.
-3. Write tests incl. the adversarial matrix (AC18).
+
+1. Verify existing anchors and dependency contracts — because stale signatures invalidate a mechanical implementation.
+2. Implement the listed targets in their blueprint order — because each target has one explicit owner and the graph orders shared writers.
+3. Complete all scope-specific validation branches and regression scenarios — because success-path-only tests cannot establish the required fail-closed behavior.
+4. Run this task's validation commands and focused lint — because only evidence from its declared files closes this task.
+
+### `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py` (CREATE)
+
+```python
+"""Rewrite projected masked columns per MaskRule.strategy (null / md5-hash / partial)."""
+from __future__ import annotations
+
+from sqlglot import exp
+
+from ..policy import ModelPolicy
+from .lineage import ColumnUse
+
+
+def apply_masks(tree: exp.Expression, uses: list[ColumnUse], policy: ModelPolicy, roles: frozenset[str],
+                dialect: str) -> tuple[exp.Expression, tuple[str, ...], set[int]]:
+    """Returns (tree, masked column names "table.column", ids of injected trusted nodes)."""
+    # FILL IN: for each projection use with policy.mask_for(roles, f"{u.table}.{u.column}") -> rule:
+    #   replace the projected expression with the strategy expression aliased to the original output name;
+    #   record id() of every injected node — bounded by AC6
+    raise NotImplementedError
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
 ### `packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py` (CREATE)
+
 ```python
 """Positive SQL guard: single SELECT, allowlisted tables/columns/functions, forced LIMIT."""
 from __future__ import annotations
@@ -147,7 +161,7 @@ class PositiveGuard:
         self.allowed_functions = allowed_functions
         self.limits = limits
 
-    def check_and_limit(self, tree: exp.Expression, *, requested_limit: int | None = None) -> exp.Expression:
+    def check_and_limit(self, tree: exp.Expression) -> exp.Expression:
         """Exactly one exp.Select root (CTEs allowed); every table/column in schema; functions allowlisted;
         no exp.Command/DDL/DML; inject (policy default) or clamp (policy max) LIMIT.
 
@@ -158,105 +172,110 @@ class PositiveGuard:
         # FILL IN: root must be exp.Select (exp.Union etc. -> not_select); any exp.Command/Insert/Update/Delete/
         #   Create/Drop/Alter anywhere -> command_forbidden; physical tables (excluding CTE names) in
         #   self.schema.tables; qualified columns in that table's column map; functions by sql_name in the allowset;
-        #   limit = min(requested_limit or existing LIMIT or limits.default, limits.max) -> tree.limit(limit, copy=False)
+        #   limit = min(existing LIMIT or limits.default, limits.max) -> tree.limit(limit, copy=False)
         raise NotImplementedError
 ```
-**Why**: §8 Q4 fixes the default set and the additive rule; `requested_limit` lets the pipeline pass `SemanticQuery.limit` (keyword-only addition, record in Completion Note).
 
-### `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py` (CREATE)
-```python
-"""Rewrite projected masked columns per MaskRule.strategy (null / md5-hash / partial)."""
-from __future__ import annotations
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
 
-from sqlglot import exp
-
-from ..policy import ModelPolicy
-from .lineage import ColumnUse
-
-
-def apply_masks(tree: exp.Expression, uses: list[ColumnUse], policy: ModelPolicy, roles: frozenset[str],
-                dialect: str) -> tuple[exp.Expression, tuple[str, ...], set[int]]:
-    """Returns (tree, masked column names "table.column", ids of injected trusted nodes)."""
-    # FILL IN: for each projection use with policy.mask_for(roles, f"{u.table}.{u.column}") -> rule:
-    #   replace the projected expression with the strategy expression aliased to the original output name;
-    #   record id() of every injected node — bounded by AC6
-    raise NotImplementedError
-```
-
-### FILL IN checklist
-- [ ] `check_and_limit` — bounded by AC7 and the adversarial matrix (AC18).
-- [ ] `apply_masks` strategies — bounded by AC6.
-
----
-
-## Acceptance Criteria
-
-- [ ] `test_positive_guard`, `test_positive_guard_adversarial_matrix` (3 dialects), `test_masking_strategies` pass (AC6, AC7, AC18).
-- [ ] A policy adding `REGEXP_REPLACE` admits it; no policy can remove `SUM` (§8 Q4).
-
----
-
-## Validation Commands
-
-> File-level pytest only — no directories, no package roots. Run with `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src` in a worktree.
-
-- `pytest packages/ai-parrot-semantic/tests/test_positive_guard.py -q`
-- `pytest packages/ai-parrot-semantic/tests/test_masking.py -q`
-
----
-
-## Test Specification
+### `packages/ai-parrot-semantic/tests/test_masking.py` (CREATE)
 
 ```python
-# packages/ai-parrot-semantic/tests/test_positive_guard.py
+"""Regression contract: Projection masks and positive SQL guard (M6c)."""
+from pathlib import Path
 import pytest
-import sqlglot
-from parrot.semantic.governance.guard import PositiveGuard, DEFAULT_ALLOWED_FUNCTIONS
-from parrot.semantic.loader import PhysicalSchema
-from parrot.semantic.models import Limits
-from parrot.semantic.errors import SemanticValidationError
-
-SCHEMA = PhysicalSchema(driver="duckdb", tables={"sales.orders": {"region": "TEXT", "amount": "DOUBLE"}})
 
 
-@pytest.mark.parametrize("dialect", ["postgres", "bigquery", "duckdb"])
-@pytest.mark.parametrize("sql", ["DELETE FROM sales.orders", "SELECT pg_sleep(10) FROM sales.orders",
-                                 "SELECT secret FROM sales.orders", "SELECT 1 FROM other.t"])
-def test_positive_guard_adversarial_matrix(dialect, sql):
-    guard = PositiveGuard(SCHEMA, DEFAULT_ALLOWED_FUNCTIONS, Limits())
-    with pytest.raises(SemanticValidationError):
-        guard.check_and_limit(sqlglot.parse_one(sql, dialect=dialect))
-    # FILL IN: extend with SELECT *, quoted/mixed-case identifiers, CTEs, nested subqueries, windows, comments, Command
+def test_mask_strategies_and_derived_projection(tmp_path: Path) -> None:
+    """Verify mask strategies and derived projection."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
 
 
-def test_positive_guard():
-    # FILL IN: missing LIMIT -> default injected; LIMIT 999999 -> clamped to max
+def test_allowlist_and_limits(tmp_path: Path) -> None:
+    """Verify allowlist and limits."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_three_dialect_adversarial_matrix(tmp_path: Path) -> None:
+    """Verify three dialect adversarial matrix."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
     ...
 ```
 
----
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### `packages/ai-parrot-semantic/tests/test_positive_guard.py` (CREATE)
+
+```python
+"""Regression contract: Projection masks and positive SQL guard (M6c)."""
+from pathlib import Path
+import pytest
+
+
+def test_mask_strategies_and_derived_projection(tmp_path: Path) -> None:
+    """Verify mask strategies and derived projection."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_allowlist_and_limits(tmp_path: Path) -> None:
+    """Verify allowlist and limits."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+
+
+def test_three_dialect_adversarial_matrix(tmp_path: Path) -> None:
+    """Verify three dialect adversarial matrix."""
+    # FILL IN: arrange isolated inputs, exercise public behavior, assert the exact
+    # result/denial and side effects required by this task scope and spec ACs.
+    # For async paths use pytest.mark.asyncio and async def; never nest asyncio.run.
+    ...
+```
+
+**Why**: this file implements the scoped responsibility above; preserve its public contract and complete its marked decisions under the task acceptance criteria.
+
+### FILL IN checklist
+
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/governance/masking.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/src/parrot/semantic/governance/guard.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_masking.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+- [ ] `packages/ai-parrot-semantic/tests/test_positive_guard.py` — complete the bounded behavior, validation and error paths in its blueprint; no unfinished placeholders in the implementation.
+
+## Acceptance Criteria
+
+- [ ] Implement null/hash/partial projection masking using resolved physical lineage; return masked names and retained trusted-node identities.
+- [ ] Implement default/additive function allowlist and PositiveGuard.check_and_limit(tree). Require one SELECT root, known physical tables/columns, allowlisted functions and policy limit cap; no DDL/DML/Command or extra statements.
+- [ ] Handle compiler-owned CASE/filter expressions and trusted masking functions explicitly without granting arbitrary caller functions. Resolve CTE references to physical scans.
+- [ ] Add the adversarial matrix across postgres/bigquery/duckdb: star, aliases, case/quoted identifiers, CTEs, subqueries, windows and sensitive derived projections.
+- [ ] The task-specific regression cases below pass; focused black/ruff checks pass on changed code. No unrelated target is modified.
+
+## Validation Commands
+
+- `pytest packages/ai-parrot-semantic/tests/test_masking.py -q`
+- `pytest packages/ai-parrot-semantic/tests/test_positive_guard.py -q`
+
+## Test Specification
+
+- `test_mask_strategies_and_derived_projection`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_allowlist_and_limits`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
+- `test_three_dialect_adversarial_matrix`: assert the observable behavior and denial/cleanup effects described in Scope; use deterministic isolated fixtures.
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Work in the feature worktree** — never on `dev`
-   (`python -m scripts.sdd.ensure_worktree --slug semantic-layer --feature-id FEAT-704 --spec sdd/specs/semantic-layer.spec.md --index sdd/tasks/index/semantic-layer.json`).
-2. **Read the spec** (`sdd/specs/semantic-layer.spec.md`), especially the sections named in Context.
-3. **Check dependencies** — every `Depends-on` task is `done` in `sdd/tasks/index/semantic-layer.json`.
-4. **Verify the Codebase Contract** before writing code; fix a stale entry in this file first.
-5. **Implement** exactly the files above, following the blueprint; touch nothing else.
-6. **Validate**: `ruff check --fix <files>`, then the Validation Commands.
-7. **Commit** only the listed files: `feat(semantic-layer): TASK-4471 — Governance: masking and positive SQL guard (M6c)`.
-8. **Close** with `scripts/sdd/close_task.sh TASK-4471 semantic-layer verified` and fill in the Completion Note.
-
----
+Use `$sdd-start TASK-4471` in the feature worktree; it provisions isolation. Read spec/dependencies, reverify contracts, implement only declared targets, run validation and commit code. Use `scripts.sdd.finalize_task` with real TaskCompletionEvidence and the exact implementation HEAD; do not use close_task.sh or manually move/stamp completion artifacts.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+Populated only by the authorized completion workflow with implementation/validation evidence. Task planning is not completion.

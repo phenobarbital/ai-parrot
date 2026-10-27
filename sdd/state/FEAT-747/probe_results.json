@@ -1,0 +1,67 @@
+{
+  "checks": 293,
+  "probe_sheets": 8,
+  "head": "14d4fc780",
+  "classification": {
+    "verified": 284,
+    "stale": 5,
+    "missing": 0,
+    "unverifiable_anchor_resolved_inline": 4
+  },
+  "stale": [
+    {
+      "id": "c22",
+      "finding": "F002",
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/mention.py",
+      "cited": "build_reply_relation:102",
+      "actual": "build_reply_content def l.85, relation dict l.100-105"
+    },
+    {
+      "id": "c53",
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+      "cited": "_build_reexecution_prompt:3745-3753",
+      "actual": "_build_ask_user_prompt def l.3647 (lines 3741-3753 verified)"
+    },
+    {
+      "id": "c153",
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+      "cited": "BlobKind:135",
+      "actual": "comment line; pyarrow imports 244-245, 306, 331-332"
+    },
+    {
+      "id": "c112",
+      "finding": "F006",
+      "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+      "cited": "EventBus:245",
+      "actual": "EventBus( at l.240"
+    },
+    {
+      "id": "c197",
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "cited": "ToolManager.__init__:289-330",
+      "actual": "class l.289, __init__ l.299"
+    }
+  ],
+  "resolved_inline": [
+    "c13 agent_registry = AgentRegistry( multi-line l.7",
+    "c190 check l.233 / check_access l.274",
+    "c235 parse_bot_permissions l.73",
+    "c112 EventBus( l.240"
+  ],
+  "ambiguous_symbol_with_cited_line_among_matches": [
+    "c17 get_instance (85, 659)",
+    "c175 AuditLedger.__init__ (180, 221, 327)",
+    "c177 verify (154, 187, 269, 407)",
+    "c197 __init__ (284, 299)"
+  ],
+  "paraphrased_expected_signatures": "lane excerpts for register_bot_decorator, AgentRegistry, ToolManager, EntryType/OperationType, AgentCardEventContent were paraphrases; symbols and lines verified, excerpt text is not verbatim",
+  "unprobed_directories": [
+    "packages/ai-parrot/src/parrot/core/events/lifecycle/",
+    "packages/ai-parrot/src/parrot/a2a/",
+    "packages/ai-parrot-server/src/parrot/a2a/"
+  ],
+  "note": "Full per-check JSON reports were returned inline by eight sdd-contract-probe agents (head 14d4fc780) and classified per /sdd-proposal \u00a75b; this file is the classification record."
+}

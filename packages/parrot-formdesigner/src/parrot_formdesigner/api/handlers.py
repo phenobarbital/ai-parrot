@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any, get_args
 from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
+from ..core import FormDialect
 from ..core.events import FormEventAbort, FormEventName
 
+from ..core.llm_validation import wire_report
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
@@ -30,10 +32,15 @@ from ..services.validators import FormValidator
 from . import a2ui_wire
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 from .tenant import (
+    TenantForbiddenError,
     assert_body_tenant_matches,
     declared_tenant,
     enforce_membership_unless_public,
 )
+
+#: RBAC codename for the FEAT-732 audit read. Granted per user, at CLIENT scope or
+#: wider, through POST /org/users/{user_id}/assign. Never seeded.
+READ_FORM_AUDIT = "read_form_audit"
 
 
 def extract_form_uid(request: web.Request) -> _uuid.UUID:
@@ -92,10 +99,13 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from .submission_events import SubmittedCallback
     from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
+    from ..services.llm_quota import LLMQuota
     from ..services.org_graph import OrgGraphService
+    from ..services.rbac import RBACScope
     from ..services.partial_saves import PartialSaveStore
     from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
@@ -106,6 +116,10 @@ if TYPE_CHECKING:
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
     from ..tools.services.networkninja import ImportDiffReport
+
+# Delayed until after ``extract_form_uid``: ``api.render`` imports that helper.
+from .dialect import A2UI_LIST_MAX, render_a2ui_schema  # noqa: E402
+from .render import get_renderer, supported_formats  # noqa: E402
 
 
 class FormAPIHandler:
@@ -156,6 +170,8 @@ class FormAPIHandler:
         venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
         sink_factory: "SinkFactory | None" = None,
+        tenant_scoped_submissions: bool = False,
+        on_submitted: "SubmittedCallback | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
@@ -165,6 +181,10 @@ class FormAPIHandler:
         # declaring `persistence` write exclusively to their own sink
         # instead of `submission_storage` — see submit_data's branch.
         self._sink_factory = sink_factory
+        # FEAT-730 G8: host opt-in to store generic submissions under the URL tenant.
+        self._tenant_scoped_submissions = tenant_scoped_submissions
+        # FEAT-730 — host hook after a successful REST /data store.
+        self._on_submitted = on_submitted
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
         self._org_graph_service = org_graph_service
@@ -283,9 +303,39 @@ class FormAPIHandler:
             partial_store=self._partial_store,
             plausibility=checker,
             sink_factory=self._sink_factory,
+            tenant_scoped_submissions=self._tenant_scoped_submissions,
             logger=self.logger,
             dispatch_fn=lambda *a, **k: dispatch(*a, **k),  # resolved late: hosts/tests may rebind handlers.dispatch
         )
+
+    def _llm_quota(self) -> "LLMQuota":
+        """Return the configured quota, creating a default for direct handlers."""
+        quota = getattr(self, "llm_quota", None)
+        if quota is None:
+            from ..services.llm_quota import LLMQuota
+
+            quota = LLMQuota()
+            self.llm_quota = quota
+        return quota
+
+    @staticmethod
+    def _plausibility_ack(request: web.Request, body: Any) -> bool:
+        """Read the plausibility reconfirmation flag (FEAT-728).
+
+        Accepts ``?plausibility_ack=true`` or a body ``plausibility_ack: true``,
+        and pops the body key so it is never judged as an undeclared answer.
+
+        Args:
+            request: The inbound request (query string).
+            body: The parsed JSON body, mutated in place when it is a dict.
+
+        Returns:
+            True when the client reconfirmed the flagged answers.
+        """
+        ack = request.query.get("plausibility_ack", "").lower() == "true"
+        if isinstance(body, dict) and body.pop("plausibility_ack", None) is True:
+            ack = True
+        return ack
 
     # ------------------------------------------------------------------
     # User context helpers (navigator-auth integration)
@@ -829,6 +879,9 @@ class FormAPIHandler:
         Supports ``?slug=<form_id>`` (FEAT-389) to filter results down to
         forms whose slug matches — resolved via
         ``FormRegistry.get_by_slug()`` rather than scanning the full list.
+        ``?dialect=a2ui`` adds a surface URL manifest, while
+        ``?dialect=a2ui&include=surface`` also renders inline surfaces. The
+        optional ``locale`` query parameter selects the rendering locale.
 
         Args:
             request: Incoming HTTP request.
@@ -841,6 +894,21 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
 
         slug = request.query.get("slug")
+        # FEAT-650 — ?dialect=a2ui → manifest (surface_url); &include=surface → inline envelopes (capped)
+        raw_dialect = request.query.get("dialect")
+        want_a2ui = False
+        if raw_dialect is not None:
+            try:
+                want_a2ui = FormDialect(raw_dialect) is FormDialect.A2UI
+            except ValueError:
+                return JSONResponse(
+                    {"error": f"unknown dialect {raw_dialect!r}", "supported": [d.value for d in FormDialect]},
+                    status=400,
+                )
+            if want_a2ui and get_renderer("a2ui") is None:
+                return JSONResponse({"supported": supported_formats()}, status=415)
+        include_surface = want_a2ui and request.query.get("include") == "surface"
+
         if slug:
             form = await self.registry.get_by_slug(slug, tenant=tenant)
             if form is None:
@@ -857,6 +925,7 @@ class FormAPIHandler:
                             "description": _loc_to_str(form.description),
                             "version": form.version,
                             "source": "memory",
+                            "dialect": form.dialect.value,
                             "created_at": ts.isoformat() if ts is not None else None,
                         }
                     ]
@@ -875,6 +944,7 @@ class FormAPIHandler:
                 "description": _loc_to_str(form.description),
                 "version": form.version,
                 "source": "memory",
+                "dialect": form.dialect.value,
                 "created_at": ts.isoformat() if ts is not None else None,
             }
 
@@ -916,10 +986,46 @@ class FormAPIHandler:
                         "description": _loc_to_str(row.get("description")),
                         "version": row.get("version", "1.0"),
                         "source": "db",
+                        "dialect": row.get("dialect", FormDialect.JSON_SCHEMA.value),
                         "created_at": row.get("created_at"),
                     }
 
         forms = sorted(descriptors.values(), key=lambda d: d["form_id"] or "")
+        if want_a2ui:
+            prefix = request.app.get("_form_prefix", "")
+            if include_surface and len(forms) > A2UI_LIST_MAX:
+                return JSONResponse(
+                    {"error": "too many forms for inline a2ui; use POST /forms/export", "max": A2UI_LIST_MAX},
+                    status=400,
+                )
+            for descriptor in forms:
+                descriptor["surface_url"] = f"{prefix}/{tenant}/forms/{descriptor['form_uid']}/schema?dialect=a2ui"
+                if not include_surface:
+                    continue
+                try:
+                    form = await self.registry.get(descriptor["form_uid"], tenant=tenant)
+                    enforce_membership_unless_public(request, form, tenant)
+                    rendered = await self.schema_renderer.render(form)
+                    resolution = await dispatch(
+                        "onSchemaLoaded",
+                        form=form,
+                        request=request,
+                        tenant=tenant,
+                        auth_context=self._build_auth_context(request),
+                        schema_dump=rendered.content,
+                    )
+                    envelopes, _rendered, warnings = await render_a2ui_schema(
+                        form,
+                        locale=request.query.get("locale", "en"),
+                        overrides=resolution.schema_overrides,
+                    )
+                    descriptor["surface"] = envelopes[0] if len(envelopes) == 1 else {"messages": envelopes}
+                    descriptor["warnings"] = warnings
+                except (TenantForbiddenError, FormEventAbort):
+                    continue
+                except Exception as exc:  # noqa: BLE001 — one bad form must not 500 the list
+                    self.logger.warning("list_forms: a2ui render failed for %s: %s", descriptor["form_uid"], exc)
+                    descriptor["surface"], descriptor["warnings"] = None, ["render_failed"]
         return JSONResponse({"forms": forms})
 
     @staticmethod
@@ -940,6 +1046,32 @@ class FormAPIHandler:
             if binding is not None and getattr(binding, "remote", False):
                 return True
         return False
+
+    async def get_availability(self, request: web.Request) -> web.Response:
+        """GET /{tenant}/forms/{form_uid}/availability — can this form take a response now? (FEAT-730)"""
+        from datetime import datetime, timezone
+
+        from ..core.public_access import AvailabilityState, evaluate_open
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_uid, tenant=tenant)
+        if form is None:
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        enforce_membership_unless_public(request, form, tenant)
+        cfg = form.public_access
+        if cfg is None:
+            return JSONResponse(AvailabilityState(accepting=True).model_dump(mode="json"))
+        reason = evaluate_open(cfg, now=datetime.now(timezone.utc))
+        if reason is None and cfg.max_responses and self._submission_storage is not None:
+            count = await self._submission_storage.count_responses(
+                form.form_uid, tenant=tenant if self._tenant_scoped_submissions else None
+            )
+            if count >= cfg.max_responses:
+                reason = "response_limit_reached"
+        state = AvailabilityState(accepting=reason is None, reason=reason, completion=cfg.completion)
+        return JSONResponse(state.model_dump(mode="json"))
 
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid} — Get full FormSchema as JSON."""
@@ -979,7 +1111,7 @@ class FormAPIHandler:
         return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/schema — Get JSON Schema (structural)."""
+        """GET /api/v1/forms/{form_uid}/schema — Get the negotiated schema dialect."""
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
@@ -1005,10 +1137,137 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
+        from ..core import FormDialect
+
+        requested_dialect = request.query.get("dialect")
+        accepts_a2ui = isinstance(
+            request.headers.get("Accept", ""), str
+        ) and "application/a2ui+json" in request.headers.get("Accept", "")
+        if form.dialect is FormDialect.A2UI or isinstance(requested_dialect, str) or accepts_a2ui:
+            from .dialect import DialectError, render_a2ui_schema, resolve_dialect
+
+            try:
+                dialect = resolve_dialect(request, form)
+            except DialectError as exc:
+                return JSONResponse(exc.payload, status=exc.status)
+            if dialect is FormDialect.A2UI:
+                locale = request.query.get("locale", "en")
+                envelopes, a2ui_rendered, a2ui_warnings = await render_a2ui_schema(
+                    form, locale=locale, overrides=resolution.schema_overrides
+                )
+                if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+                    return web.json_response(
+                        {
+                            "content": envelopes[0] if len(envelopes) == 1 else {"messages": envelopes},
+                            "content_type": a2ui_rendered.content_type,
+                            "warnings": [warning.model_dump(mode="json") for warning in a2ui_rendered.warnings]
+                            + a2ui_warnings,
+                            "metadata": a2ui_rendered.metadata,
+                        }
+                    )
+                return a2ui_wire.a2ui_response(envelopes, status=200)
         content = rendered.content
         if resolution.schema_overrides:
             content = apply_schema_overrides(content, dict(resolution.schema_overrides))
         return JSONResponse(content)
+
+    async def export_forms(self, request: web.Request) -> web.Response:
+        """Stream one export row per form for the route tenant as NDJSON.
+
+        Args:
+            request: Request containing export dialect and filter options.
+
+        Returns:
+            A streaming NDJSON response or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "body must be an object"}, status=400)
+
+        raw_dialect = body.get("dialect", "a2ui")
+        try:
+            dialect = FormDialect(raw_dialect)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": f"unknown dialect {raw_dialect!r}", "supported": [item.value for item in FormDialect]},
+                status=400,
+            )
+        if dialect is FormDialect.A2UI and get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        raw_form_uids = body.get("form_uids")
+        if raw_form_uids is not None and not isinstance(raw_form_uids, list):
+            return JSONResponse({"error": "form_uids must be a list"}, status=400)
+        try:
+            form_uids = None if raw_form_uids is None else [_uuid.UUID(form_uid) for form_uid in raw_form_uids]
+        except (AttributeError, TypeError, ValueError):
+            return JSONResponse({"error": "form_uids entries must be UUIDs"}, status=400)
+
+        published_only = body.get("published_only", False)
+        if not isinstance(published_only, bool):
+            return JSONResponse({"error": "published_only must be a boolean"}, status=400)
+        locale = body.get("locale", "en")
+        if not isinstance(locale, str):
+            return JSONResponse({"error": "locale must be a string"}, status=400)
+
+        from ..services.a2ui_export import A2UIExportService
+
+        service = A2UIExportService(self.registry, dialect=dialect.value, locale=locale)
+        response = web.StreamResponse(status=200, headers={"Content-Type": "application/x-ndjson"})
+        await response.prepare(request)
+        async for row in service.export_tenant(tenant, form_uids=form_uids, published_only=published_only):
+            await response.write((json.dumps(row.model_dump(mode="json")) + "\n").encode("utf-8"))
+        await response.write_eof()
+        return response
+
+    async def translate_form(self, request: web.Request) -> web.Response:
+        """Translate a JSON Schema into a stateless A2UI surface.
+
+        Args:
+            request: Request containing ``schema`` and optional form metadata.
+
+        Returns:
+            The translated createSurface envelope, or a validation error response.
+        """
+        tenant = self._get_tenant(request)
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            return JSONResponse({"error": "body too large", "max_bytes": a2ui_wire.A2UI_MAX_BODY_BYTES}, status=413)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        schema = body.get("schema") if isinstance(body, dict) else None
+        if not isinstance(schema, dict):
+            return JSONResponse({"error": "schema (object) is required"}, status=400)
+        if get_renderer("a2ui") is None:
+            return JSONResponse({"supported": supported_formats()}, status=415)
+
+        from ..services.a2ui_translate import translate_jsonschema_to_a2ui
+
+        try:
+            rendered = await translate_jsonschema_to_a2ui(
+                schema,
+                form_id=body.get("form_id"),
+                title=body.get("title"),
+                tenant=tenant,
+                locale=body.get("locale", "en"),
+            )
+        except (ValidationError, ValueError) as exc:
+            return JSONResponse({"error": "invalid schema", "details": str(exc)}, status=400)
+        if request.query.get("with_meta", "").lower() in ("1", "true", "yes"):
+            return web.json_response(
+                {
+                    "content": rendered.content,
+                    "content_type": rendered.content_type,
+                    "warnings": [warning.model_dump(mode="json") for warning in rendered.warnings],
+                    "metadata": rendered.metadata,
+                }
+            )
+        return a2ui_wire.a2ui_response([rendered.content], status=200)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid}/style — Get style schema."""
@@ -1114,6 +1373,7 @@ class FormAPIHandler:
         `VALIDATION_FAILED` envelopes (422, invalid) instead of plain JSON.
         A legacy JSON caller is completely unaffected.
         """
+        from ..core.llm_validation import llm_validation_enabled
         from ..core.schema import UnknownFieldsPolicy
 
         form_uid = extract_form_uid(request)
@@ -1151,17 +1411,37 @@ class FormAPIHandler:
             body = submission_in.answers
 
         from ..services.plausibility import PlausibilityBlocked
+        from ..services.submission_pipeline import PlausibilityRateLimited
 
         # Opt-in plausibility check; popped BEFORE visit-context extraction so the flag is
         # never reported as an unknown field.
         llm_opt_in = request.query.get("llm_validation", "").lower() == "true"
         if isinstance(body, dict) and body.pop("llm_validation", None) is True:
             llm_opt_in = True
+        opt_in_skipped: str | None = None
+        # navigator-auth stores None under request["session"] for anonymous callers, so key presence proves nothing.
+        has_session = request.get("session") is not None
+        if llm_opt_in and not has_session:
+            llm_opt_in = False
+            opt_in_skipped = "unauthenticated_opt_in"
+        ack = self._plausibility_ack(request, body)
         data, visit_context = self._extract_visit_context(form, body)
         pipeline = self._build_submission_pipeline(form if llm_opt_in else None)
         try:
             result, plausibility = await pipeline.validate(
-                form, data, locale="en", auth_context=None, llm_validation=llm_opt_in, visit_context=visit_context
+                form,
+                data,
+                locale="en",
+                auth_context=None,
+                llm_validation=llm_opt_in,
+                visit_context=visit_context,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
+            )
+        except PlausibilityRateLimited as exc:
+            return JSONResponse(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
             )
         except PlausibilityBlocked as exc:
             return JSONResponse(
@@ -1175,6 +1455,10 @@ class FormAPIHandler:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
+        gate = pipeline.gate_for(form, plausibility, ack=ack) if is_valid else None
+        if gate is not None:
+            is_valid = False
+            errors.update(gate.errors)
 
         if a2ui_surface_id is not None:
             if is_valid:
@@ -1182,8 +1466,14 @@ class FormAPIHandler:
             return a2ui_wire.a2ui_response(a2ui_wire.validation_errors(a2ui_surface_id, errors), status=422)
 
         payload: dict[str, Any] = {"is_valid": is_valid, "errors": errors}
+        if gate is not None:
+            payload["code"] = gate.code
         if plausibility is not None:
-            payload["plausibility"] = plausibility.model_dump(mode="json", exclude_none=True)
+            payload["plausibility"] = wire_report(plausibility, mode="json", exclude_none=True)
+        elif opt_in_skipped is not None and any(
+            llm_validation_enabled(form, field) for field in form.iter_fields_recursive()
+        ):
+            payload["plausibility"] = {"status": "skipped", "reason": opt_in_skipped}
         return JSONResponse(payload, status=200 if is_valid else 422)
 
     async def create_blank_form(self, request: web.Request) -> web.Response:
@@ -1250,6 +1540,16 @@ class FormAPIHandler:
         """POST /api/v1/forms — Create a form from a natural language prompt."""
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "create_form")
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        tenant = self._get_tenant(request)
+        # FEAT-650 — dual-wire: an A2UI createSurface body is an import, not a prompt (S5: before the LLM guard)
+        if a2ui_wire.is_a2ui_surface_body(request, body):
+            return await self._import_a2ui_surface(request, body, tenant=tenant)
+
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -1258,16 +1558,11 @@ class FormAPIHandler:
                 {"error": "No LLM client configured for form creation"},
                 status=503,
             )
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, ValueError):
-            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
             return JSONResponse({"error": "prompt is required"}, status=400)
 
-        tenant = self._get_tenant(request)
         from ..tools.create_form import CreateFormTool
 
         create_tool = CreateFormTool(
@@ -1299,6 +1594,57 @@ class FormAPIHandler:
                 "title": title,
                 "url": f"{prefix}/{tenant}/forms/{form_uid}",
             }
+        )
+
+    async def _import_a2ui_surface(self, request: web.Request, body: dict[str, Any], *, tenant: str) -> web.Response:
+        """Import an A2UI surface as a persisted form."""
+        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
+            from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+            surface = body.get("createSurface")
+            surface_id = surface.get("surfaceId") if isinstance(surface, dict) else None
+            return a2ui_wire.a2ui_response(
+                [error_envelope(A2UIErrorCode.INTERNAL, "body too large", surface_id=surface_id or "form-import")],
+                status=413,
+            )
+
+        from ..extractors import A2UIExtractor
+
+        try:
+            result = A2UIExtractor().extract(body, tenant=tenant)
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status=415)
+        except ValueError as exc:
+            return JSONResponse({"error": "invalid surface", "details": str(exc)}, status=422)
+
+        form = result.form.model_copy(update={"tenant": tenant})
+        overwrite = request.query.get("overwrite", "").lower() in ("1", "true", "yes")
+        existing = await self.registry.get(form.form_uid, tenant=tenant)
+        if existing is not None:
+            if not overwrite:
+                return JSONResponse({"error": "form already exists", "form_uid": str(form.form_uid)}, status=409)
+            enforce_membership_unless_public(request, existing, tenant)
+            form = form.model_copy(update={"version": _bump_version(existing.version)})
+
+        try:
+            await self.registry.register(form, persist=True, overwrite=True, tenant=tenant)
+        except FormAlreadyExistsError as exc:
+            return JSONResponse({"error": str(exc), "form_id": form.form_id}, status=409)
+
+        prefix = request.app.get("_form_prefix", "")
+        return JSONResponse(
+            {
+                "form_uid": str(form.form_uid),
+                "form_id": form.form_id,
+                "url": f"{prefix}/{tenant}/forms/{form.form_uid}",
+                "dialect": form.dialect.value,
+                "import": {
+                    "mode": result.mode.value,
+                    "warnings": result.warnings,
+                    "dropped": [d.model_dump() for d in result.dropped],
+                },
+            },
+            status=201,
         )
 
     async def edit_form(self, request: web.Request) -> web.Response:
@@ -1609,6 +1955,26 @@ class FormAPIHandler:
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
 
+    async def _notify_submitted(self, form: FormSchema, outcome: Any, tenant: str) -> None:
+        """Await the host's on_submitted hook; never fails the submit (FEAT-730)."""
+        from datetime import datetime, timezone
+
+        from .submission_events import SubmittedEvent
+
+        try:
+            event = SubmittedEvent(
+                submission_id=outcome.submission_id,
+                form_uid=form.form_uid,
+                form_id=form.form_id,
+                form_version=form.version,
+                tenant=tenant,
+                is_public=bool(form.is_public),
+                created_at=outcome.created_at or datetime.now(timezone.utc),
+            )
+            await self._on_submitted(event)
+        except Exception as exc:  # noqa: BLE001 — the submit already succeeded
+            self.logger.warning("on_submitted hook failed for %s: %s", outcome.submission_id, exc)
+
     async def submit_data(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/data — Receive and process a form submission.
 
@@ -1718,6 +2084,8 @@ class FormAPIHandler:
             )
             return a2ui_wire.a2ui_response([envelope], status=status)
 
+        plausibility_ack = self._plausibility_ack(request, body)
+
         # Split off an optional caller-supplied store context before it can
         # be treated as an answer field by the merge/lifecycle steps below
         # (spec §3 Module 5) — `data` is pure answers from here on.
@@ -1762,7 +2130,13 @@ class FormAPIHandler:
                     )
 
         from ..services.plausibility import PlausibilityBlocked
-        from ..services.submission_pipeline import SubmitSinkError, ValidationFailed
+        from ..services.submission_pipeline import (
+            ImplausibleSubmission,
+            PlausibilityRateLimited,
+            SubmissionRejected,
+            SubmitSinkError,
+            ValidationFailed,
+        )
 
         pipeline = self._build_submission_pipeline(form)
         try:
@@ -1776,6 +2150,8 @@ class FormAPIHandler:
                 extra_data=None,
                 auth_context=_auth_ctx,
                 merge_session_id=None,  # partial cleanup stays here: keyed by the URL form_uid (see below)
+                plausibility_ack=plausibility_ack,
+                quota_check=lambda: self._llm_quota().acquire(request, tenant=tenant, form_uid=str(form_uid)),
                 request=request,
                 visit_context=visit_context,
             )
@@ -1784,6 +2160,28 @@ class FormAPIHandler:
             return JSONResponse({"error": exc.user_message, "reason": exc.reason}, status=exc.status_code)
         except ValidationFailed as exc:
             return _reply({"is_valid": False, "errors": exc.errors}, status=422)
+        except PlausibilityRateLimited as exc:
+            return _reply(
+                {"error": "Answer plausibility check rate limited", "code": "PLAUSIBILITY_RATE_LIMITED"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after_s)},
+            )
+        except ImplausibleSubmission as exc:
+            return _reply(
+                {
+                    "is_valid": False,
+                    "code": exc.code,
+                    "errors": exc.errors,
+                    "plausibility": wire_report(exc.report, mode="json", exclude_none=True),
+                },
+                status=422,
+            )
+        except SubmissionRejected as exc:
+            # FEAT-730 — response-policy refusal; controlled flow, never routed to onError.
+            rejection: dict[str, Any] = {"error": str(exc), "reason": exc.reason}
+            if exc.field_id is not None:
+                rejection["field_id"] = exc.field_id
+            return _reply(rejection, status=409)
         except SubmitSinkError as exc:
             return _reply({"error": str(exc)}, status=exc.status, headers=exc.headers or None)
         except PlausibilityBlocked as exc:
@@ -1807,7 +2205,9 @@ class FormAPIHandler:
             "forward_error": outcome.forward_error,
         }
         if outcome.plausibility is not None:
-            body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
+            body_out["plausibility"] = wire_report(outcome.plausibility, mode="json", exclude_none=True)
+        if self._on_submitted is not None and outcome.stored_in != "none":
+            await self._notify_submitted(form, outcome, tenant)
         return _reply(body_out, status=200)
 
     async def load_from_db(self, request: web.Request) -> web.Response:
@@ -2197,6 +2597,113 @@ class FormAPIHandler:
                     codename,
                     tenant,
                 )
+
+    async def _rbac_require(
+        self,
+        request: web.Request,
+        codename: str,
+        *,
+        scope: "RBACScope | None" = None,
+    ) -> None:
+        """Require an RBAC permission, denying on missing or failed RBAC.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+            codename: Permission codename to require.
+            scope: Minimum permission scope required.
+
+        Raises:
+            web.HTTPForbidden: If RBAC is unavailable, resolution fails, or
+                the resolved context lacks the required permission.
+        """
+        if self._rbac_service is None:
+            self.logger.warning(
+                "_rbac_require: DENY codename=%s — no RBAC service configured",
+                codename,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+        user = getattr(request, "user", None)
+        user_id = str(getattr(user, "id", "anonymous")) if user else "anonymous"
+        tenant = self._get_tenant(request)
+        # H-4: _get_programs() returns program SLUGS, not numeric IDs. There is
+        # no reliable numeric program_id in the slug-only session, so the gate
+        # resolves at tenant+user granularity (program_id=0). RBACService.resolve
+        # filters policies by user+tenant, so program scoping is not required here.
+        program_id = 0
+
+        try:
+            ctx = await self._rbac_service.resolve(user_id, program_id=program_id, tenant=tenant)
+            allowed = ctx.has_permission(codename, scope=scope)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "_rbac_require: DENY resolution failed for %s/%s: %s",
+                user_id,
+                codename,
+                exc,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}") from exc
+
+        if not allowed:
+            self.logger.warning(
+                "_rbac_require: DENY user=%s codename=%s tenant=%s",
+                user_id,
+                codename,
+                tenant,
+            )
+            raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
+
+    async def get_submission_audit(self, request: web.Request) -> web.Response:
+        """Return the audit projection for one submission.
+
+        Args:
+            request: Incoming authenticated aiohttp request.
+
+        Returns:
+            The six-field audit projection, or a JSON error response when
+            storage is unavailable or the submission cannot be read here.
+
+        Raises:
+            web.HTTPForbidden: If the caller lacks ``read_form_audit`` at
+                ``CLIENT`` scope or wider.
+        """
+        from ..services.rbac import RBACScope
+
+        await self._rbac_require(request, READ_FORM_AUDIT, scope=RBACScope.CLIENT)
+        if self._submission_storage is None:
+            return JSONResponse({"error": "Submission storage not configured"}, status=503)
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        submission_id = request.match_info["submission_id"]
+        row = await self._submission_storage.get_submission(submission_id, tenant=tenant)
+        if row is None:
+            form = await self.registry.get(form_uid, tenant=tenant)
+            if form is not None and form.persistence is not None:
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Submission was written to its own persistence sink; "
+                            "read the audit trail from that sink's context column"
+                        )
+                    },
+                    status=501,
+                )
+            return JSONResponse({"error": "Submission not found"}, status=404)
+        if row.form_uid != form_uid:
+            return JSONResponse({"error": "Submission not found"}, status=404)
+
+        context = row.context or {}
+        return JSONResponse(
+            {
+                "submission_id": row.submission_id,
+                "form_uid": str(row.form_uid),
+                "form_version": row.form_version,
+                "is_valid": row.is_valid,
+                "validation": context.get("validation"),
+                "llm_validation": context.get("llm_validation"),
+            }
+        )
 
     # ------------------------------------------------------------------
     # FEAT-302 — Org Graph endpoints
