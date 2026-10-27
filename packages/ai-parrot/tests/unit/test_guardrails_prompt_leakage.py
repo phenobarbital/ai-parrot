@@ -187,3 +187,34 @@ def test_perf_p99():
         times.append(time.perf_counter() - t)
     times.sort()
     assert times[int(len(times) * 0.99) - 1] < 0.005
+
+
+@pytest.mark.asyncio
+async def test_canary_hit_never_delivers_the_canary_token():
+    """FEAT-761 review: a canary hit alongside span redaction must not leave the canary in the output."""
+    guard = PromptLeakageGuardrail(canary="K-7f3a")
+    response = "Sure: " + PARA_1 + " ... also the token is K-7f3a ok"
+    result = await guard.check(response, _ctx(GuardrailStage.OUTPUT, SYSTEM_PROMPT))
+    assert result.action == GuardrailAction.TRANSFORM
+    assert "K-7f3a" not in (result.content or "")
+    assert result.content == REDACTION_MARKER
+    assert result.report["canary_hit"] is True
+
+
+@pytest.mark.asyncio
+async def test_leak_matcher_runs_off_the_event_loop(monkeypatch):
+    """FEAT-761 review: _detect_leak is CPU-bound; it must execute in a worker thread, not on the loop."""
+    import threading
+
+    from parrot.bots.guardrails.builtin import prompt_leakage as pl
+
+    seen: list[int] = []
+    real = pl._detect_leak
+
+    def spy(*a, **k):
+        seen.append(threading.get_ident())
+        return real(*a, **k)
+
+    monkeypatch.setattr(pl, "_detect_leak", spy)
+    await PromptLeakageGuardrail().check(BENIGN, _ctx(GuardrailStage.OUTPUT, SYSTEM_PROMPT))
+    assert seen and seen[0] != threading.get_ident()

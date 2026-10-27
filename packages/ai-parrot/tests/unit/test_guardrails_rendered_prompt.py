@@ -46,22 +46,28 @@ def _reset():
     abstract_mod._RENDERED_SYSTEM_PROMPT.reset(token)
 
 
+def _captured(bot) -> object:
+    return (abstract_mod._RENDERED_SYSTEM_PROMPT.get() or {}).get(id(bot))
+
+
 def test_capture_str():
-    _bot()._capture_rendered_prompt("hello")
-    assert abstract_mod._RENDERED_SYSTEM_PROMPT.get() == "hello"
+    bot = _bot()
+    bot._capture_rendered_prompt("hello")
+    assert _captured(bot) == "hello"
 
 
 def test_capture_segments():
     segs = [CacheableSegment(text="a", cacheable=True), CacheableSegment(text="b", cacheable=False)]
-    _bot()._capture_rendered_prompt(segs)
-    assert abstract_mod._RENDERED_SYSTEM_PROMPT.get() == "ab"
+    bot = _bot()
+    bot._capture_rendered_prompt(segs)
+    assert _captured(bot) == "ab"
 
 
 def test_capture_none():
     bot = _bot()
     bot._capture_rendered_prompt("x")
     bot._capture_rendered_prompt(None)
-    assert abstract_mod._RENDERED_SYSTEM_PROMPT.get() is None
+    assert _captured(bot) is None
 
 
 def test_extras_without_requirement():
@@ -93,6 +99,15 @@ async def test_concurrent_turns_do_not_cross_talk():
         asyncio.create_task(turn("prompt-B", 0.0)),
     )
     assert (a, b) == ("prompt-A", "prompt-B")
+
+
+def test_nested_call_to_another_bot_does_not_overwrite_outer_prompt():
+    """FEAT-761 review: an awaited inner bot call in the SAME task must not replace the outer prompt."""
+    outer, inner = _bot(), _bot()
+    outer._capture_rendered_prompt("OUTER PROMPT")
+    inner._capture_rendered_prompt("INNER PROMPT")  # e.g. agent-as-tool inside the outer turn
+    assert outer._output_extras("r", _pipeline(requires=True))["system_prompt"] == "OUTER PROMPT"
+    assert inner._output_extras("r", _pipeline(requires=True))["system_prompt"] == "INNER PROMPT"
 
 
 def test_base_call_sites_capture():

@@ -37,10 +37,12 @@ _JAILBREAK_SPEC = EngineSpec(
 )
 
 #: Heuristic floor (no model resolved). Data, not logic — ES/EN, compiled once.
-_HEURISTIC_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+#: ``DAN`` is matched case-sensitively and separately: ignoring case would flag the Spanish verb
+#: "dan" and the name "Dan" (benign false positives on the default engine).
+_DAN_PATTERN: re.Pattern[str] = re.compile(r"\bDAN\b")
+_HEURISTIC_PATTERNS: tuple[re.Pattern[str], ...] = (_DAN_PATTERN,) + tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"\bDAN\b",
         r"\bdeveloper\s+mode\b",
         r"ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?",
         r"disregard\s+(?:all\s+)?(?:previous|prior|above|your)\s+instructions?",

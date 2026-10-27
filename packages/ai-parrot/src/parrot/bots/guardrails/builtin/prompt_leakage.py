@@ -7,6 +7,7 @@ message only (v1): chunks already sent cannot be retracted — reports carry
 ``stream_checked: "final_only"``.
 """
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -214,7 +215,8 @@ class PromptLeakageGuardrail(Guardrail):
         prompt = ctx.extras.get("system_prompt")
         if not isinstance(prompt, str) or not prompt.strip():
             return GuardrailResult(action=GuardrailAction.PASS)
-        match = _detect_leak(prompt, content, self.policy)
+        # CPU-bound (shingles + fuzzy alignment): keep it off the event loop.
+        match = await asyncio.to_thread(_detect_leak, prompt, content, self.policy)
         if not match.leaked:
             return GuardrailResult(action=GuardrailAction.PASS)
         severity = ThreatLevel.CRITICAL if match.canary_hit else ThreatLevel.HIGH
@@ -241,5 +243,7 @@ class PromptLeakageGuardrail(Guardrail):
         }
         if self.policy.block_on_threat:
             return GuardrailResult(action=GuardrailAction.BLOCK, reason="prompt_leakage_detected", report=report)
-        redacted = _redact(content, match.spans) if match.spans else REDACTION_MARKER
+        # A canary hit means the response carries the canary token itself; span redaction never
+        # covers it, so the whole response is replaced rather than delivered with the canary intact.
+        redacted = REDACTION_MARKER if (match.canary_hit or not match.spans) else _redact(content, match.spans)
         return GuardrailResult(action=GuardrailAction.TRANSFORM, content=redacted, report=report)
