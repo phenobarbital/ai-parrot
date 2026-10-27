@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from parrot.knowledge.wiki.decisions.codec import documented_decision_id
 from parrot.knowledge.wiki.decisions.ingest import discover_adr_sources, refresh_decisions
-from parrot.knowledge.wiki.decisions.models import DecisionRecord
+from parrot.knowledge.wiki.decisions.models import DecisionConfig, DecisionRecord
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 
 class TestDiscovery:
@@ -278,3 +281,119 @@ class TestRefresh:
 
         result = await refresh_decisions(adr_store, adr_repo, adr_config)
         assert result is not None
+
+
+class TestPrefixedRefresh:
+    """Configured prefix resolution through the persisted ADR inventory."""
+
+    @staticmethod
+    def _write_adr(root: Path, filename: str, alias: str) -> str:
+        """Create one minimal documented ADR and return its relative path."""
+        relative_path = f"docs/adr/{filename}"
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"---\nid: {alias}\n---\n\n# {alias}\n\n## Decision\nKeep {alias}.\n",
+            encoding="utf-8",
+        )
+        return relative_path
+
+    async def test_sync_with_two_origins_links_both(self, tmp_path: Path, adr_store: BaseWikiStore) -> None:
+        """Cold and partial refresh resolve two origins sharing a number."""
+        parrot_path = self._write_adr(tmp_path, "PARROT-0007.md", "PARROT-ADR-7")
+        fs_path = self._write_adr(tmp_path, "FS-0007.md", "FS-ADR-7")
+        source = tmp_path / "src" / "citations.py"
+        source.parent.mkdir()
+        source.write_text(
+            "def parrot_target():\n    # PARROT-ADR-7\n    return 1\n\n"
+            "def fs_target():\n    # FS-ADR-7\n    return 2\n",
+            encoding="utf-8",
+        )
+        config = DecisionConfig(local_prefix="FS", known_prefixes=["PARROT"])
+
+        cold = await refresh_decisions(adr_store, tmp_path, config)
+        assert not any(diagnostic.code == "ADR_REFERENCE_AMBIGUOUS" for diagnostic in cold.diagnostics)
+
+        repo = DecisionRepository(adr_store)
+        parrot, _ = await repo.get(documented_decision_id(parrot_path))
+        fs, _ = await repo.get(documented_decision_id(fs_path))
+        assert {link.target_id for link in parrot.links if link.relation == "explains"} == {
+            "sym:src/citations.py#parrot_target"
+        }
+        assert {link.target_id for link in fs.links if link.relation == "explains"} == {"sym:src/citations.py#fs_target"}
+
+        partial = await refresh_decisions(adr_store, tmp_path, config, paths=[parrot_path])
+        assert partial.updated + partial.unchanged >= 1
+        refreshed_fs, _ = await repo.get(documented_decision_id(fs_path))
+        assert {link.target_id for link in refreshed_fs.links if link.relation == "explains"} == {
+            "sym:src/citations.py#fs_target"
+        }
+
+    @pytest.mark.parametrize(
+        ("aliases", "citation", "config", "expected_code", "expected_alias"),
+        [
+            (["ADR-7", "FS-ADR-7", "FS-ADR-7"], "ADR-7", DecisionConfig(local_prefix="FS"), None, "ADR-7"),
+            (["FS-ADR-7", "FS-ADR-7"], "ADR-7", DecisionConfig(local_prefix="FS"), "ADR_REFERENCE_AMBIGUOUS", None),
+            (["FS-ADR-7"], "ADR-7", DecisionConfig(local_prefix="FS"), None, "FS-ADR-7"),
+            (
+                ["ADR-7", "FS-ADR-7", "FS-ADR-7"],
+                "FS-ADR-7",
+                DecisionConfig(known_prefixes=["FS"]),
+                "ADR_REFERENCE_AMBIGUOUS",
+                None,
+            ),
+            (["ADR-7", "ADR-7", "FS-ADR-7"], "ADR-7", DecisionConfig(local_prefix="FS"), "ADR_REFERENCE_AMBIGUOUS", None),
+            (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["XX"]), "ADR_REFERENCE_MISSING", None),
+            (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["FS"]), None, "ADR-7"),
+        ],
+    )
+    async def test_exact_and_local_resolution(
+        self,
+        tmp_path: Path,
+        adr_store: BaseWikiStore,
+        aliases: list[str],
+        citation: str,
+        config: DecisionConfig,
+        expected_code: str | None,
+        expected_alias: str | None,
+    ) -> None:
+        """Exact/local ambiguity and misses have deterministic outcomes."""
+        for index, alias in enumerate(aliases, start=1):
+            self._write_adr(tmp_path, f"{index:04d}.md", alias)
+        source = tmp_path / "src" / "resolution.py"
+        source.parent.mkdir()
+        source.write_text(f"def cited():\n    # {citation}\n    return 1\n", encoding="utf-8")
+
+        result = await refresh_decisions(adr_store, tmp_path, config)
+        codes = [diagnostic.code for diagnostic in result.diagnostics]
+        if expected_code is not None:
+            assert expected_code in codes
+            return
+        assert "ADR_REFERENCE_AMBIGUOUS" not in codes
+        assert "ADR_REFERENCE_MISSING" not in codes
+        repo = DecisionRepository(adr_store)
+        matching_records = [record for record in await repo.inventory() if record.external_id == expected_alias]
+        assert len(matching_records) == 1
+        assert [link.target_id for link in matching_records[0].links if link.relation == "explains"] == [
+            "sym:src/resolution.py#cited"
+        ]
+
+    async def test_unconfigured_repo_is_byte_identical(self, tmp_path: Path, adr_store: BaseWikiStore) -> None:
+        """Unconfigured sync preserves the pre-feature records and diagnostics."""
+        path = self._write_adr(tmp_path, "0003-legacy.md", "ADR-3")
+        source = tmp_path / "src" / "legacy.py"
+        source.parent.mkdir()
+        source.write_text("def cited():\n    # XX-ADR-3\n    return 1\n", encoding="utf-8")
+
+        result = await refresh_decisions(adr_store, tmp_path, DecisionConfig())
+        record, _ = await DecisionRepository(adr_store).get(documented_decision_id(path))
+        assert result.diagnostics == []
+        assert {
+            "decision_id": record.decision_id,
+            "external_id": record.external_id,
+            "links": [(link.target_id, link.relation, link.provenance) for link in record.links],
+        } == {
+            "decision_id": "adr:doc:3bbfb337e291604ba6a151ce04b0f4a7b4856788",
+            "external_id": "ADR-3",
+            "links": [("sym:src/legacy.py#cited", "explains", "extracted")],
+        }
