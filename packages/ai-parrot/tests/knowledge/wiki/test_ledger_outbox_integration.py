@@ -53,7 +53,9 @@ def test_merge_skips_exact_duplicates_and_keeps_order() -> None:
     """Exact remote duplicates are skipped and captured batch ordering is retained."""
     first = _ev("insight.recorded", "spec:one", {"fact": "one", "title": "one", "derived_from": "spec:FEAT-758"}, 1)
     second = _ev("insight.recorded", "spec:two", {"fact": "two", "title": "two", "derived_from": "spec:FEAT-758"}, 2)
-    third = _ev("insight.recorded", "spec:three", {"fact": "three", "title": "three", "derived_from": "spec:FEAT-758"}, 3)
+    third = _ev(
+        "insight.recorded", "spec:three", {"fact": "three", "title": "three", "derived_from": "spec:FEAT-758"}, 3
+    )
 
     plan = merge_batch([(_line(first), first)], [(_line(first), first), (_line(third), third), (_line(second), second)])
 
@@ -112,7 +114,9 @@ def test_same_owner_claim_and_identical_close_are_not_conflicts() -> None:
     claim_subject = "issue:claim"
     close_subject = "issue:close"
     claim = _ev("issue.claimed", claim_subject, {"claimed_by": "agent:one"}, 2)
-    close = _ev("issue.closed", close_subject, {"closed_by": "agent:one", "reason": "done", "resolved_by": "task:TASK-1"}, 4)
+    close = _ev(
+        "issue.closed", close_subject, {"closed_by": "agent:one", "reason": "done", "resolved_by": "task:TASK-1"}, 4
+    )
     remote = [_opened(claim_subject, 1), claim, _opened(close_subject, 3), close]
 
     assert find_transition_conflicts(remote, [claim, close]) == []
@@ -133,6 +137,8 @@ async def test_scratch_replay_remote_closed_wins_and_legacy_rows_survive(tmp_pat
         [_line(opened), _line(closed), _line(stale_claim)], scratch_dir=tmp_path / "scratch", dest=dest
     )
 
-    rows = {row["issue_id"]: row for row in (json.loads(line) for line in dest.read_text(encoding="utf-8").splitlines())}
+    rows = {
+        row["issue_id"]: row for row in (json.loads(line) for line in dest.read_text(encoding="utf-8").splitlines())
+    }
     assert rows[subject]["status"] == "closed"
     assert rows["issue:legacy"] == legacy
