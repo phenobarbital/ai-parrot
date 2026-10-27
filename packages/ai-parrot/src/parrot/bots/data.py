@@ -27,6 +27,7 @@ from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
+from ..registry.routing.route_bank import resolve_route_banks
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
@@ -37,7 +38,7 @@ from ..observability.context import (
     current_session_id,
     current_user_id,
 )
-from ..conf import STATIC_DIR
+from ..conf import AGENTS_DIR, STATIC_DIR
 from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -331,6 +332,78 @@ DEFAULT_OUTPUT_MODE_ROUTES: Dict[str, List[str]] = {
         "dibuja un mapa",
         "renderiza un mapa",
         "muéstralo geográficamente",
+    ],
+    "a2ui:KPICard": [
+        "show me total worked hours this month",
+        "what is the total revenue",
+        "give me the KPI for customer retention",
+        "how many visits did we get this week",
+        "show the average order value",
+        "what is our conversion rate",
+        "display the monthly sales target progress",
+        "give me the key performance indicator for churn",
+        "dame las horas trabajadas este mes",
+        "cuál es el total de ventas",
+        "muéstrame el KPI de retención de clientes",
+        "cuántas visitas tuvimos esta semana",
+        "dame el valor medio de los pedidos",
+        "cuál es nuestra tasa de conversión",
+        "muestra el progreso de la meta mensual de ventas",
+        "dame el indicador clave de abandono",
+    ],
+    "a2ui:InfoCard": [
+        "tell me about this customer",
+        "show a summary of the project",
+        "give me the profile for account 42",
+        "what details do we have for this employee",
+        "summarize the product information",
+        "show the key facts about this order",
+        "give me an overview of the supplier",
+        "display the details for this record",
+        "háblame de este cliente",
+        "muéstrame un resumen del proyecto",
+        "dame el perfil de la cuenta 42",
+        "qué detalles tenemos de este empleado",
+        "resume la información del producto",
+        "muestra los datos clave de este pedido",
+        "dame una visión general del proveedor",
+        "muestra los detalles de este registro",
+    ],
+    "a2ui:Timeline": [
+        "show the timeline of releases this quarter",
+        "when did these events happen",
+        "display the project milestones in order",
+        "show the history of status changes",
+        "give me a chronological view of customer activity",
+        "map out the deployment sequence",
+        "show the schedule from start to finish",
+        "list the product launches over time",
+        "muestra la línea de tiempo de lanzamientos de este trimestre",
+        "cuándo ocurrieron estos eventos",
+        "muestra los hitos del proyecto en orden",
+        "muestra el historial de cambios de estado",
+        "dame una vista cronológica de la actividad del cliente",
+        "detalla la secuencia de despliegue",
+        "muestra el calendario de principio a fin",
+        "lista los lanzamientos de productos a lo largo del tiempo",
+    ],
+    "a2ui:Graph": [
+        "diagram the approval flow",
+        "show the dependencies between services",
+        "draw the organization relationships",
+        "map the workflow connections",
+        "visualize how these systems are linked",
+        "show the network of related accounts",
+        "create a graph of task dependencies",
+        "display the process flow",
+        "diagrama el flujo de aprobación",
+        "muestra las dependencias entre servicios",
+        "dibuja las relaciones de la organización",
+        "mapea las conexiones del flujo de trabajo",
+        "visualiza cómo están conectados estos sistemas",
+        "muestra la red de cuentas relacionadas",
+        "crea un grafo de dependencias de tareas",
+        "muestra el flujo del proceso",
     ],
 }
 
@@ -896,10 +969,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # and encoding the phrase bank is CPU-bound, so it runs off the event
         # loop and only when explicitly enabled.
         if self._output_routing_enabled or self._output_routing_config is not None:
-            router_cfg = self._output_routing_config or IntentRouterConfig(
-                enable_output_mode_routing=True,
-                output_mode_routes=DEFAULT_OUTPUT_MODE_ROUTES,
-            )
+            router_cfg = self._output_routing_config
+            if router_cfg is None:
+                banks = await asyncio.to_thread(
+                    resolve_route_banks,
+                    AGENTS_DIR.joinpath(self.agent_id),
+                    defaults=DEFAULT_OUTPUT_MODE_ROUTES,
+                    tenant_based=getattr(self, "tenant_based", False),
+                )
+                router_cfg = IntentRouterConfig(
+                    enable_output_mode_routing=True,
+                    output_mode_routes=banks.routes,
+                    tenant_output_mode_routes=banks.tenant_routes,
+                    output_mode_threshold=banks.threshold if banks.threshold is not None else 0.85,
+                    discrepancy_margin=banks.margin if banks.margin is not None else 0.05,
+                )
             await asyncio.to_thread(self.configure_output_router, router_cfg)
 
         # Cache data after configuration

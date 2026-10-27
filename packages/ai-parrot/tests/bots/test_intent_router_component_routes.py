@@ -7,8 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from parrot.bots.mixins.intent_router import IntentRouterMixin
+from parrot.bots.data import DEFAULT_OUTPUT_MODE_ROUTES, PandasAgent
+from parrot.conf import AGENTS_DIR
 from parrot.models.outputs import OutputMode
 from parrot.registry.capabilities.models import IntentRouterConfig
+from parrot.registry.routing.route_bank import ResolvedRouteBanks
 from parrot.registry.routing.embedding_router import RouteScore
 
 
@@ -192,3 +195,79 @@ class TestTieBreaker:
 
         agent.invoke = invoke
         assert await agent._resolve_output_mode("render this", None) is OutputMode.STRUCTURED_CHART
+
+
+class TestDefaultBankAndConfigure:
+    """PandasAgent builds component routing from the resolved route banks."""
+
+    def test_default_component_banks_are_bilingual_and_complete(self):
+        component_routes = ("a2ui:KPICard", "a2ui:InfoCard", "a2ui:Timeline", "a2ui:Graph")
+
+        for route in component_routes:
+            utterances = DEFAULT_OUTPUT_MODE_ROUTES[route]
+            english_utterances = utterances[:8]
+            spanish_utterances = utterances[8:]
+            assert len(utterances) >= 16
+            assert all(utterance.strip() for utterance in utterances)
+            assert len(english_utterances) >= 8
+            assert len(spanish_utterances) >= 8
+
+    @staticmethod
+    def _stub_configure_dependencies(monkeypatch):
+        async def configure_parent(self, app=None):
+            return None
+
+        monkeypatch.setattr("parrot.bots.data.BasicAgent.configure", configure_parent)
+        monkeypatch.setattr(PandasAgent, "_sync_dataframes_from_dm", lambda self: None)
+        monkeypatch.setattr(PandasAgent, "_define_prompt", lambda self: None)
+
+    async def test_configure_resolves_and_forwards_global_and_tenant_banks(self, monkeypatch):
+        self._stub_configure_dependencies(monkeypatch)
+        resolved = ResolvedRouteBanks(
+            routes={"a2ui:KPICard": ["total revenue"]},
+            tenant_routes={"north": {"a2ui:InfoCard": ["account summary"]}},
+            threshold=0.81,
+            margin=0.09,
+        )
+        calls = []
+        configured = []
+
+        def resolve(agent_root, *, defaults, tenant_based):
+            calls.append((agent_root, defaults, tenant_based))
+            return resolved
+
+        agent = PandasAgent(name="route-bank-test", output_routing=True)
+        agent.tenant_based = True
+        monkeypatch.setattr("parrot.bots.data.resolve_route_banks", resolve)
+        monkeypatch.setattr(agent, "configure_output_router", configured.append)
+
+        await agent.configure()
+
+        assert calls == [(AGENTS_DIR.joinpath(agent.agent_id), DEFAULT_OUTPUT_MODE_ROUTES, True)]
+        assert configured == [
+            IntentRouterConfig(
+                enable_output_mode_routing=True,
+                output_mode_routes=resolved.routes,
+                tenant_output_mode_routes=resolved.tenant_routes,
+                output_mode_threshold=0.81,
+                discrepancy_margin=0.09,
+            )
+        ]
+
+    async def test_configure_keeps_explicit_routing_config(self, monkeypatch):
+        self._stub_configure_dependencies(monkeypatch)
+        explicit = IntentRouterConfig(
+            enable_output_mode_routing=True,
+            output_mode_routes={"structured_table": ["show a table"]},
+        )
+        configured = []
+        agent = PandasAgent(name="explicit-route-config-test", output_routing_config=explicit)
+        monkeypatch.setattr(
+            "parrot.bots.data.resolve_route_banks",
+            lambda *args, **kwargs: pytest.fail("explicit config must skip route-bank resolution"),
+        )
+        monkeypatch.setattr(agent, "configure_output_router", configured.append)
+
+        await agent.configure()
+
+        assert configured == [explicit]
