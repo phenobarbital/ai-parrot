@@ -6,22 +6,25 @@ from parrot_tools.metrics.periods import comparison_period, resolve_period, seri
 TODAY = date(2026, 10, 27)
 
 
-@pytest.mark.parametrize("preset,start,end", [
-    ("today", TODAY, TODAY),
-    ("yesterday", date(2026, 10, 26), date(2026, 10, 26)),
-    ("this_week", date(2026, 10, 26), date(2026, 11, 1)),  # Week of Monday Oct 26 to Sunday Nov 1
-    ("last_week", date(2026, 10, 19), date(2026, 10, 25)),  # Previous week Monday Oct 19 to Sunday Oct 25
-    ("this_month", date(2026, 10, 1), date(2026, 10, 31)),
-    ("last_month", date(2026, 9, 1), date(2026, 9, 30)),
-    ("mtd", date(2026, 10, 1), TODAY),
-    ("qtd", date(2026, 10, 1), TODAY),  # Q4 2026 QTD
-    ("ytd", date(2026, 1, 1), TODAY),
-    ("last_7d", date(2026, 10, 21), TODAY),
-    ("last_30d", date(2026, 9, 28), TODAY),
-    ("last_90d", date(2026, 7, 30), TODAY),
-    ("this_year", date(2026, 1, 1), date(2026, 12, 31)),
-    ("last_year", date(2025, 1, 1), date(2025, 12, 31)),
-])
+@pytest.mark.parametrize(
+    "preset,start,end",
+    [
+        ("today", TODAY, TODAY),
+        ("yesterday", date(2026, 10, 26), date(2026, 10, 26)),
+        ("this_week", date(2026, 10, 26), date(2026, 11, 1)),  # Week of Monday Oct 26 to Sunday Nov 1
+        ("last_week", date(2026, 10, 19), date(2026, 10, 25)),  # Previous week Monday Oct 19 to Sunday Oct 25
+        ("this_month", date(2026, 10, 1), date(2026, 10, 31)),
+        ("last_month", date(2026, 9, 1), date(2026, 9, 30)),
+        ("mtd", date(2026, 10, 1), TODAY),
+        ("qtd", date(2026, 10, 1), TODAY),  # Q4 2026 QTD
+        ("ytd", date(2026, 1, 1), TODAY),
+        ("last_7d", date(2026, 10, 21), TODAY),
+        ("last_30d", date(2026, 9, 28), TODAY),
+        ("last_90d", date(2026, 7, 30), TODAY),
+        ("this_year", date(2026, 1, 1), date(2026, 12, 31)),
+        ("last_year", date(2025, 1, 1), date(2025, 12, 31)),
+    ],
+)
 def test_resolve_period_presets(preset, start, end):
     p = resolve_period(preset, today=TODAY)
     assert (p.start, p.end) == (start, end)
@@ -57,7 +60,7 @@ def test_comparison_period_modes():
     assert prev.end == date(2026, 9, 30)
     assert prev.start == date(2026, 8, 31)  # Same length (31 days) ending the day before Oct 1
     assert comparison_period(cur, ComparisonPolicy(mode="none")) is None
-    
+
     # Test same_period_last_year
     last_year = comparison_period(cur, ComparisonPolicy(mode="same_period_last_year"))
     assert last_year is not None

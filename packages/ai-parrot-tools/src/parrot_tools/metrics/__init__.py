@@ -1,4 +1,5 @@
 """Metric registry tools (FEAT-756): periods, shape emitter, source executors and MetricsToolkit."""
+
 from __future__ import annotations
 
 import importlib
