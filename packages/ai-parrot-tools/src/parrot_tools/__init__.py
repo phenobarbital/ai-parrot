@@ -125,6 +125,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bounded_source": "parrot_tools.tool_optimizations.reader.BoundedSourceToolkit",
     "targeted_writer": "parrot_tools.tool_optimizations.writer.TargetedWriterToolkit",
     "publish_surface": "parrot_tools.ui_surfaces.PublishSurfaceTool",
+    "mermaid_diagram": "parrot_tools.mermaid_diagram.MermaidDiagramTool",
     "wiki_decisions_for_symbol": "parrot_tools.wiki.decisions.WikiDecisionsForSymbolTool",
     "wiki_decision_why": "parrot_tools.wiki.decisions.WikiDecisionWhyTool",
     "wiki_decision_generate": "parrot_tools.wiki.decisions.WikiDecisionGenerateTool",
