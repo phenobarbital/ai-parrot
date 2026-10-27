@@ -62,7 +62,9 @@ class _FakeFileManager:
     async def find_files(self, *, prefix: str) -> list[_FileMetadata]:
         """Return every object recursively under a prefix."""
         self.calls.append(("find_files", prefix))
-        return [_FileMetadata(path=path, size=len(data)) for path, data in self.storage.items() if path.startswith(prefix)]
+        return [
+            _FileMetadata(path=path, size=len(data)) for path, data in self.storage.items() if path.startswith(prefix)
+        ]
 
     def __getattr__(self, name: str) -> object:
         """Reject every method outside the six-method duck contract."""
@@ -131,7 +133,9 @@ async def test_blob_dedup_digest_mismatch_and_publish_order(blob_key: str) -> No
     assert len([path for path in manager.storage if path.endswith(".meta.json")]) == 1
     binary_create = next(index for index, call in enumerate(first_calls) if call[0] == "create_from_bytes")
     metadata_create = next(
-        index for index, call in enumerate(first_calls) if call[0] == "create_from_bytes" and call[1].endswith(".meta.json")
+        index
+        for index, call in enumerate(first_calls)
+        if call[0] == "create_from_bytes" and call[1].endswith(".meta.json")
     )
     assert binary_create < metadata_create
     assert any(call[0] == "exists" and call[1].endswith(".bin") for call in first_calls[binary_create:metadata_create])
