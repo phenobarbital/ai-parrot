@@ -305,15 +305,14 @@ def main(argv: Sequence[str] | None = None) -> int: """Exit 0 ok · 1 blocking f
 | `test_run_closeout_hooks.py::test_end_to_end_pre_pr_with_agent_record` | real subprocess command + agent record → finalize |
 
 ### Validation Contract
-```yaml
 tests:
-  - tests/sdd_scripts/test_closeout_hooks_config.py
-  - tests/sdd_scripts/test_run_closeout_hooks.py
-  - tests/sdd_scripts/test_closeout_builtins.py
-  - tests/sdd_scripts/test_sdd_done_hooks_contract.py
-  - tests/sdd_scripts/test_e2e_closeout_contract.py
-  - tests/sdd_scripts/test_sdd_done_brief_contract.py
-```
+- tests/sdd_scripts/test_closeout_hooks_config.py
+- tests/sdd_scripts/test_run_closeout_hooks.py
+- tests/sdd_scripts/test_closeout_builtins.py
+- tests/sdd_scripts/test_sdd_done_hooks_contract.py
+- tests/sdd_scripts/test_e2e_closeout_contract.py
+- tests/sdd_scripts/test_sdd_done_brief_contract.py
+markers: none
 
 ### Test Data / Fixtures
 - `tmp_path` repo root holding `.parrot/sdd_hooks.toml`; `SDD_HOOKS_ARTIFACT_ROOT=tmp_path/art`.
