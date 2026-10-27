@@ -274,48 +274,83 @@ class TestDefaultBankAndConfigure:
         assert configured == [explicit]
 
 
-class TestAskWiring:
-    """PandasAgent keeps component-routing seams at the one-turn ask boundary."""
+class _RecordingClient:
+    """Async client double recording each ask() call's prompt and structured_output."""
 
-    _DATA_SOURCE = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "data.py"
+    def __init__(self) -> None:
+        self.calls: list = []
 
-    def test_explicit_component_sets_a2ui_shape_and_skips_router(self):
-        """An explicit component selection takes precedence over route resolution."""
-        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+    async def __aenter__(self) -> "_RecordingClient":
+        return self
 
-        assert 'a2ui_component = kwargs.pop("a2ui_component", None)' in source
-        assert "if a2ui_component and not is_inline_component(a2ui_component):" in source
-        assert "if a2ui_component and output_mode == OutputMode.DEFAULT:" in source
-        assert "set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))" in source
-        assert "elif output_mode == OutputMode.DEFAULT:" in source
-        assert "elif a2ui_component:" in source  # explicit output_mode wins over the hint (G2)
-        assert "_resolved_mode = await self._resolve_output_mode(question, ctx)" in source
+    async def __aexit__(self, *exc) -> bool:
+        return False
 
-    def test_a2ui_component_uses_catalog_prompt_and_model(self):
-        """A hinted A2UI turn advertises the catalog contract in its first call."""
-        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+    async def close(self) -> None:
+        return None
 
-        assert "component_hint = get_component_hint(ctx) or a2ui_component" in source
-        assert "system_prompt += build_component_prompt(component_hint)" in source
-        assert "_forced_output_type = component_model(component_hint)" in source
+    async def ask(self, prompt, system_prompt=None, structured_output=None, **kwargs):
+        from parrot.models.basic import CompletionUsage
+        from parrot.models.responses import AIMessage
 
-    def test_existing_structured_forcing_paths_remain_available(self):
-        """Chart and ordinary structured requests retain their established models."""
-        source = self._DATA_SOURCE.read_text(encoding="utf-8")
-
-        assert "elif output_mode == OutputMode.STRUCTURED_CHART:" in source
-        assert "_forced_output_type = StructuredChartConfig" in source
-        assert "_forced_output_type = PandasAgentResponse" in source
-
-    def test_inline_emitter_is_guarded_and_degrades_through_existing_fallback(self):
-        """Inline emission only runs for an unresolved hinted A2UI response."""
-        source = self._DATA_SOURCE.read_text(encoding="utf-8")
-
-        assert 'getattr(response, "a2ui_envelope", None) is None' in source
-        assert "outcome = emit_inline_component(" in source
-        assert "frame=response.data if isinstance(response.data, pd.DataFrame) else None" in source
-        assert 'if outcome.status == "degraded":' in source
-        assert "Inline A2UI emit degraded (%s): %s" in source
-        assert source.index("outcome = emit_inline_component(") < source.index(
-            "# A2UI was requested but nothing rendered a surface this turn"
+        self.calls.append({"system_prompt": system_prompt or "", "structured_output": structured_output})
+        return AIMessage(
+            input=prompt,
+            output="prose answer",
+            response="prose answer",
+            model="fake",
+            provider="fake",
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
         )
+
+
+class TestAskWiring:
+    """PandasAgent.ask() behaviour for component hints, through a stub client."""
+
+    @staticmethod
+    def _agent():
+        from parrot.bots.data import PandasAgent
+
+        agent = PandasAgent(name="a2ui-component-probe", llm="google:gemini-2.5-flash")
+        client = _RecordingClient()
+        agent._llm = client
+        return agent, client
+
+    async def _ask(self, agent, **kwargs):
+        return await agent.ask("show total hours", use_conversation_history=False, **kwargs)
+
+    @pytest.mark.asyncio
+    async def test_explicit_component_injects_prompt_in_single_llm_call(self):
+        """G1/G2: the hint adds the catalog addon to the one and only LLM call."""
+        from parrot.outputs.a2ui.inline.prompt import build_component_prompt
+
+        agent, client = self._agent()
+        await self._ask(agent, a2ui_component="KPICard")
+
+        assert len(client.calls) == 1
+        assert build_component_prompt("KPICard") in client.calls[0]["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_unregistered_component_degrades_without_raising(self):
+        """G3: an unknown component never reaches the prompt builders or escapes ask()."""
+        from parrot.outputs.a2ui.inline.prompt import build_component_prompt
+
+        agent, client = self._agent()
+        response = await self._ask(agent, a2ui_component="Bogus")
+
+        assert response is not None
+        assert len(client.calls) == 1
+        assert "Bogus" not in client.calls[0]["system_prompt"]
+        assert build_component_prompt("KPICard") not in client.calls[0]["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_explicit_output_mode_wins_over_component_hint(self):
+        """G2: an explicit output_mode is never overridden by a component hint."""
+        from parrot.models.outputs import OutputMode
+        from parrot.outputs.a2ui.inline.prompt import build_component_prompt
+
+        agent, client = self._agent()
+        await self._ask(agent, output_mode=OutputMode.TEXT, a2ui_component="KPICard")
+
+        assert len(client.calls) == 1
+        assert build_component_prompt("KPICard") not in client.calls[0]["system_prompt"]

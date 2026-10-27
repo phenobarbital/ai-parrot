@@ -28,14 +28,14 @@ from .agent import BasicAgent
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..registry.routing.route_bank import resolve_route_banks
-from parrot.registry.routing.route_labels import OutputShape, get_component_hint, is_inline_component, set_output_shape
+from ..registry.routing.route_labels import OutputShape, get_component_hint, is_inline_component, set_output_shape
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
-from parrot.outputs.a2ui.catalog._model import component_model
-from parrot.outputs.a2ui.inline.emitter import emit_inline_component
-from parrot.outputs.a2ui.inline.prompt import build_component_prompt
+from ..outputs.a2ui.catalog._model import component_model
+from ..outputs.a2ui.inline.emitter import emit_inline_component
+from ..outputs.a2ui.inline.prompt import build_component_prompt
 from ..memory.abstract import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
@@ -1436,6 +1436,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # after the None->DEFAULT normalization above and only when the
             # caller did not specify a mode (precedence: explicit > router >
             # default). No-op unless a routing mixin (IntentRouterMixin) is present.
+            if ctx is not None:
+                # A reused context must not leak a previous turn's component hint.
+                ctx.a2ui_component = None
             if a2ui_component and not is_inline_component(a2ui_component):
                 # G3: an unknown / action-bearing component must never reach the
                 # prompt/model builders (they raise KeyError); degrade to the

@@ -197,12 +197,47 @@ class IntentRouterMixin:
         logger = getattr(self, "logger", logging.getLogger(__name__))
         if not config.enable_output_mode_routing:
             return
+        router = self._build_output_router(config, config.output_mode_routes)
+        self._output_router = router
+        self._tenant_output_routers = {}
+        self._warned_output_router_tenants.clear()
+        # Share ONE encoder across tenant routers (no per-tenant model load).
+        # Only forced when tenant banks exist, so an empty config stays lazy.
+        # Each tenant router re-encodes its full merged bank, so configure()
+        # encode cost grows with the number of tenants.
+        encoder = router._ensure_encoder() if config.tenant_output_mode_routes else None
+        for tenant, bank in config.tenant_output_mode_routes.items():
+            self._tenant_output_routers[tenant] = self._build_output_router(config, bank, encoder=encoder)
+        logger.info(
+            "Output-mode router configured (%d routes, threshold=%.2f).",
+            len(config.output_mode_routes),
+            config.output_mode_threshold,
+        )
+
+    def _build_output_router(
+        self,
+        config: IntentRouterConfig,
+        routes: "dict[str, list[str]]",
+        encoder: Any = None,
+    ) -> "EmbeddingIntentRouter":
+        """Build one embedding router from a route bank, skipping invalid labels.
+
+        Args:
+            config: Router configuration (model, threshold, margin).
+            routes: Mapping of route label to utterances.
+            encoder: Optional shared encoder to reuse instead of loading one.
+
+        Returns:
+            The populated router.
+        """
+        logger = getattr(self, "logger", logging.getLogger(__name__))
         router = EmbeddingIntentRouter(
             config.embedding_model,
             config.output_mode_threshold,
             config.discrepancy_margin,
+            encoder=encoder,
         )
-        for label, utterances in config.output_mode_routes.items():
+        for label, utterances in routes.items():
             try:
                 shape = parse_route_label(label)
             except ValueError:
@@ -210,41 +245,12 @@ class IntentRouterMixin:
                 continue
             if shape.component is not None and not is_inline_component(shape.component):
                 logger.warning(
-                    "Route label %s names a component that is not registered or is " "action-bearing; skipping.",
+                    "Route label %s names a component that is not registered or is action-bearing; skipping.",
                     label,
                 )
                 continue
             router.add_route(label, utterances)
-        self._output_router = router
-        encoder = router._ensure_encoder()
-        self._tenant_output_routers = {}
-        self._warned_output_router_tenants.clear()
-        for tenant, bank in config.tenant_output_mode_routes.items():
-            tenant_router = EmbeddingIntentRouter(
-                config.embedding_model,
-                config.output_mode_threshold,
-                config.discrepancy_margin,
-                encoder=encoder,
-            )
-            for label, utterances in bank.items():
-                try:
-                    shape = parse_route_label(label)
-                except ValueError:
-                    logger.warning("Invalid route label in output_mode_routes: %s", label)
-                    continue
-                if shape.component is not None and not is_inline_component(shape.component):
-                    logger.warning(
-                        "Route label %s names a component that is not registered or is " "action-bearing; skipping.",
-                        label,
-                    )
-                    continue
-                tenant_router.add_route(label, utterances)
-            self._tenant_output_routers[tenant] = tenant_router
-        logger.info(
-            "Output-mode router configured (%d routes, threshold=%.2f).",
-            len(config.output_mode_routes),
-            config.output_mode_threshold,
-        )
+        return router
 
     def _select_output_router(self, ctx: Any) -> Optional["EmbeddingIntentRouter"]:
         """Pick the router for this request.
