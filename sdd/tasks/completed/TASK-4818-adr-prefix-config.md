@@ -134,4 +134,4 @@ spec validation contract once; do not widen this task to directory-wide pytest.
 
 ## Completion Note
 
-Pending; populated by the finalization workflow after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, merged; merge-tier validation 90 passed. Contract amended: `.parrot/wiki.json` is gitignored/absent in worktrees, so the PARROT local_prefix opt-in is NOT committed — operator must add `"local_prefix": "PARROT"` to the decisions block of the main checkout's `.parrot/wiki.json` by hand.
