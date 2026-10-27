@@ -291,10 +291,15 @@ def test_disabled_hook_filtered_by_for_event(tmp_path): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4867
+- Feature: sdd-done-closeout-hooks
+- Implementation SHA: 4b42804ab1925a175511e9295edf6d828d05f9ae
+- Closed at (UTC): 2026-10-27T23:59:42+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 166s · Tokens: n/a |
