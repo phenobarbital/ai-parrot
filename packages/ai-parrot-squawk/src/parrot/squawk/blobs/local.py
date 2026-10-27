@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncIterator
@@ -15,6 +16,7 @@ from parrot.interagent import HandleClaimError, HandleOwner, MediaType, SquawkEr
 from parrot.squawk.blobs.store import BlobMeta, SquawkBlobStore, _authorize
 
 CHUNK = 1024 * 1024
+_KEY_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _sweep_expired(root: Path, now: datetime) -> int:
@@ -76,7 +78,13 @@ class LocalDiskBlobStore(SquawkBlobStore):
 
         Returns:
             Binary and metadata paths.
+
+        Raises:
+            HandleClaimError: If the key is not a well-formed ``sha256:<64 hex>`` key
+                (never used as a path segment otherwise, so no path traversal).
         """
+        if not _KEY_RE.fullmatch(key):
+            raise HandleClaimError()
         hex_digest = key.split(":", 1)[1]
         directory = self._root / hex_digest[:2]
         return directory / f"{hex_digest}.bin", directory / f"{hex_digest}.meta.json"

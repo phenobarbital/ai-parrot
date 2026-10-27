@@ -151,3 +151,15 @@ def test_encryption_requires_environment_key(tmp_path: Path, monkeypatch: pytest
 
     assert exc_info.value.code is SquawkErrorCode.UPSTREAM_FAILED
     assert exc_info.value.detail == "no_blob_key"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_key", ["sha256:../../escape", "sha256:" + "a" * 63, "nocolon", "sha256:" + "A" * 64, ""])
+async def test_malformed_keys_are_refused_without_touching_disk(tmp_path: Path, blob_key: str, bad_key: str) -> None:
+    """A caller-supplied key is never used as a path segment unless it is sha256:<64 hex>."""
+    store = LocalDiskBlobStore(tmp_path / "store")
+    with pytest.raises(HandleClaimError):
+        await store.meta(bad_key)
+    with pytest.raises(HandleClaimError):
+        await store.delete(bad_key, owner=_owner())
+
