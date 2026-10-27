@@ -151,9 +151,7 @@ class TestIdentity:
             "# ADR-7: Keep bare identifiers\n\n"
             "## Decision\nKeep both identity forms available.\n"
         )
-        record, diagnostics = parse_adr(
-            "docs/adr/fs-0042-prefixed.md", text, frozenset({"FS", "PARROT"})
-        )
+        record, diagnostics = parse_adr("docs/adr/fs-0042-prefixed.md", text, frozenset({"FS", "PARROT"}))
         assert record is not None
         assert record.external_id == "FS-ADR-7"
         assert [link.target_id for link in record.links] == ["PARROT-ADR-6"]

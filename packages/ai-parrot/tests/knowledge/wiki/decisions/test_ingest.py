@@ -12,7 +12,6 @@ from parrot.knowledge.wiki.decisions.models import DecisionConfig, DecisionRecor
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.store import BaseWikiStore
 
-
 class TestDiscovery:
     def test_only_configured_globs_are_discovered(self, adr_repo, adr_config):
         found = discover_adr_sources(adr_repo, adr_config)
@@ -320,7 +319,9 @@ class TestPrefixedRefresh:
         assert {link.target_id for link in parrot.links if link.relation == "explains"} == {
             "sym:src/citations.py#parrot_target"
         }
-        assert {link.target_id for link in fs.links if link.relation == "explains"} == {"sym:src/citations.py#fs_target"}
+        assert {link.target_id for link in fs.links if link.relation == "explains"} == {
+            "sym:src/citations.py#fs_target"
+        }
 
         partial = await refresh_decisions(adr_store, tmp_path, config, paths=[parrot_path])
         assert partial.updated + partial.unchanged >= 1
@@ -342,7 +343,13 @@ class TestPrefixedRefresh:
                 "ADR_REFERENCE_AMBIGUOUS",
                 None,
             ),
-            (["ADR-7", "ADR-7", "FS-ADR-7"], "ADR-7", DecisionConfig(local_prefix="FS"), "ADR_REFERENCE_AMBIGUOUS", None),
+            (
+                ["ADR-7", "ADR-7", "FS-ADR-7"],
+                "ADR-7",
+                DecisionConfig(local_prefix="FS"),
+                "ADR_REFERENCE_AMBIGUOUS",
+                None,
+            ),
             (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["XX"]), "ADR_REFERENCE_MISSING", None),
             (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["FS"]), None, "ADR-7"),
         ],
