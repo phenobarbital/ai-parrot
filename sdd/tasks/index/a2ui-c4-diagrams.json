@@ -104,7 +104,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -114,8 +114,9 @@
       "parallelism_notes": "modifies graph/mermaid_c4.py, graph/mermaid.py and test_mermaid_c4.py created/edited by TASK-4785; inverts its _ELEMENT_MACRO tables",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4786-mermaid-c4-parser.md"
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4786-mermaid-c4-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4787",
@@ -145,7 +146,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -155,8 +156,9 @@
       "parallelism_notes": "graph-source node calls to_mermaid on a c4 spec, which needs to_mermaid_c4 from TASK-4785 (graph/mermaid_c4.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4788-graph-c4-lowering.md"
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4788-graph-c4-lowering.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4789",
@@ -165,7 +167,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -175,8 +177,9 @@
       "parallelism_notes": "build_graph calls compute_positions, whose c4 dispatch to compute_c4_positions is created by TASK-4787 (graph/layout_c4.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4789-build-c4-diagram.md"
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4789-build-c4-diagram.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4790",
