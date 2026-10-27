@@ -261,7 +261,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -272,8 +272,9 @@
       "parallelism_notes": "calls resolve_route_banks from TASK-4759 (registry/routing/route_bank.py) and feeds configure_output_router reworked by TASK-4760 (bots/mixins/intent_router.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4766-pandasagent-configure-routes.md"
+      "completed_at": "2026-10-27T03:38:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4766-pandasagent-configure-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4767",
@@ -345,7 +346,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -355,8 +356,9 @@
       "parallelism_notes": "calls emit_inline_component from TASK-4765 (inline/emitter.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4770-inline-emitter-conformance.md"
+      "completed_at": "2026-10-27T03:38:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4770-inline-emitter-conformance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4771",

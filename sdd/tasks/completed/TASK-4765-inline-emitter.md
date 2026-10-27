@@ -428,3 +428,5 @@ When you pick up this task:
 **Notes**: Added inline/emitter.py, inline/__init__.py package exports, and test_emitter.py. Merge-tier validation (chunk 2) green: 337 passed. Reviewed for file fidelity only (no line-level diff review). Closed via close_task.sh (no durable review EvidenceRef available for finalize_task).
 
 **Deviations from spec**: none
+
+**Post-merge fix (orchestrator, commit c82d23c3)**: the emitter used `build_surface` as the task blueprint prescribed, but `build_surface` has no catalog id, so Graph (registered under viz-core) always degraded with `catalog_validation_failed`. Fixed by setting `catalogId=VIZ_CORE_CATALOG_ID` on the Graph component config, like `build_graph`; regression test `test_graph_emits_under_viz_core_catalog` added. Spec/blueprint gap, not a model defect.

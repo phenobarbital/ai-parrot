@@ -225,10 +225,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by native/opus (attempt 1)
+**Date**: 2026-10-27
+**Notes**: Added parametrized inline-emitter conformance test (KPICard, InfoCard, Timeline, Graph) to test_all_emitters.py; 29 conformance tests passed. The test exposed a TASK-4765 emitter defect (Graph needs component-level catalogId); fixed by the orchestrator in c82d23c3, not in this task. Merge-tier validation green: 345 passed. Reviewed for file fidelity only (no line-level diff review). Closed via close_task.sh (no durable review EvidenceRef available for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
