@@ -1,6 +1,7 @@
 """Regression contract: MIT satellite packaging, workspace and CI (M1)."""
 
 from pathlib import Path
+import re
 import tomllib
 
 import pytest
@@ -22,7 +23,9 @@ def test_namespace_version_and_package_data(tmp_path: Path) -> None:
     """Verify namespace version and package data metadata."""
     package_config = tomllib.loads(_isolated_copy(PACKAGE_ROOT / "pyproject.toml", tmp_path).read_text())
 
-    assert __version__ == "1.3.0"
+    # Shape only: scripts/release.py bumps version.py on every release, so a pinned
+    # literal here breaks CI after each release.
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
     assert package_config["project"]["license"] == "MIT"
     assert package_config["project"]["dependencies"] == [
         "ai-parrot",
@@ -64,5 +67,7 @@ def test_workspace_ci_duckdb_extra(tmp_path: Path) -> None:
     assert root_config["tool"]["uv"]["sources"]["ai-parrot-semantic"] == {"workspace": True}
     assert 'Package(\n        "ai-parrot-semantic",' in release_script
     assert "packages/ai-parrot-semantic/src/parrot/semantic/version.py" in release_script
-    assert "uv sync --all-packages --extra duckdb --package ai-parrot-semantic" in ci_workflow
+    assert "uv sync --all-packages --extra duckdb\n" in ci_workflow
+    # `--all-packages` and `--package` are mutually exclusive (uv exits 2).
+    assert "--all-packages --extra duckdb --package" not in ci_workflow
     assert "uv run pytest packages/ai-parrot-semantic/tests -q --tb=short" in ci_workflow
