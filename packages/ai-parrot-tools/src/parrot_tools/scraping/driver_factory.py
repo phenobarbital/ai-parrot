@@ -50,12 +50,12 @@ class DriverFactory:
         Args:
             config: Driver configuration.  Can be a ``dict``, a Pydantic
                 model (with ``model_dump()``), or a dataclass.  If ``None``,
-                defaults to ``SeleniumDriver`` with Chrome.
+                defaults to ``PlaywrightDriver`` with Chrome.
 
                 Key fields:
 
                 - ``driver_type``: ``"selenium"``, ``"playwright"``, or
-                  ``"obscura"`` (default: ``"selenium"``). ``"obscura"``
+                  ``"obscura"`` (default: ``"playwright"``). ``"obscura"``
                   returns a ``PlaywrightDriver`` connected over CDP to a
                   supervised Obscura process (see
                   ``parrot.mcp.obscura.ObscuraProcessManager``) — it does
@@ -91,7 +91,7 @@ class DriverFactory:
         elif hasattr(config, "__dataclass_fields__"):
             config = asdict(config)
 
-        driver_type: str = config.get("driver_type", "selenium")
+        driver_type: str = config.get("driver_type", "playwright")
         browser: str = config.get("browser", "chrome")
         headless: bool = config.get("headless", True)
 

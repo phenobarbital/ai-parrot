@@ -111,7 +111,7 @@ class DriverConfig(BaseModel):
             ``--allow-private-network`` flag.
     """
 
-    driver_type: Literal["selenium", "playwright", "obscura"] = "selenium"
+    driver_type: Literal["selenium", "playwright", "obscura"] = "playwright"
     browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome"
     headless: bool = True
     mobile: bool = False

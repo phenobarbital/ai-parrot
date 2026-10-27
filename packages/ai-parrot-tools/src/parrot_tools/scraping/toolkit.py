@@ -305,7 +305,7 @@ class WebScrapingToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        driver_type: Literal["selenium", "playwright", "obscura"] = "selenium",
+        driver_type: Literal["selenium", "playwright", "obscura"] = "playwright",
         browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome",
         headless: bool = True,
         session_based: bool = False,
@@ -930,7 +930,7 @@ class WebScrapingToolkit(AbstractToolkit):
         try:
             from .crawl_engine import CrawlEngine
         except ImportError:
-            raise NotImplementedError("CrawlEngine is not available. Install FEAT-013 to enable crawling.")
+            raise NotImplementedError("CrawlEngine is not available. Install FEAT-013 to enable crawling.") from None
 
         # Resolve the per-page plan
         resolved = await self._resolve_plan(start_url, plan, objective)
