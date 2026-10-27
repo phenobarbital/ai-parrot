@@ -75,21 +75,24 @@ policies.
 
 Three deliverables, mirroring how `PromptInjectionGuardrail` is built:
 
-1. **`JailbreakGuardrail`** (INPUT, sanitizer band): its own ONNX engine —
-   primary candidate **`0dinai/jailbreak-embeddings-base-onnx`** (0din /
-   Mozilla threat-feed fine-tune of `intfloat/multilingual-e5-base`,
-   ~278M params, 768-dim, multilingual XLM-R backbone, 512 max tokens;
-   model card verified 2026-10-27). It is an **embedding-similarity
-   detector, not a classifier**: the engine embeds the input (mean pooling
-   + L2 norm, implemented app-side per the card) and scores it as the max
-   cosine similarity against a **reference corpus of known jailbreak
-   prompts** (card's optimal threshold ≈ 0.70). The corpus is a managed
-   data asset — seeded from WildJailbreak + curated ES/EN attacks — so
-   detection improves by *adding vectors*, no retraining. Alternative if
-   the license or FP gate fails: a classifier head (Meta Prompt Guard 2
-   86M, exported to ONNX ourselves via the existing `export.py` flow).
-   Same resolution chain and its own `warmup_jailbreak_model()`; heuristic
-   keyword/pattern floor when no model is available.
+1. **`JailbreakGuardrail`** (INPUT, sanitizer band): its own ONNX engine,
+   **selected by a mandatory bake-off** — the same process that picked
+   Wolf Defender for injection (`compare_models.py` latency + ES/EN
+   accuracy + Spanish-benign FP gate), run over the candidate matrix below
+   BEFORE a default is pinned. The bake-off is the feature's first task;
+   the guardrail code is engine-agnostic. Two engine *shapes* are in the
+   matrix, both behind the chassis `score(text) -> [0,1]` protocol:
+   - **Classifier** (softmax over logits — wolf-defender shape): Prompt
+     Guard 2 ONNX re-exports, mmBERT jailbreak detectors, mDeBERTa
+     fine-tunes.
+   - **Embedding similarity** (0din shape): embed the input (mean pooling
+     + L2 norm) and score = max cosine vs a **reference corpus of known
+     jailbreak prompts** (managed, versioned data asset seeded from
+     WildJailbreak + curated ES/EN attacks; hardening = append vectors,
+     no retrain).
+   Same resolution chain as injection and its own
+   `warmup_jailbreak_model()`; heuristic keyword/pattern floor when no
+   model is available.
 2. **Tool-output injection scanning**: extend `PromptInjectionGuardrail`
    with an opt-in `scan_tool_output=True` policy that adds
    `GuardrailStage.TOOL_OUTPUT` to its stages. On detection in a tool/RAG
@@ -143,11 +146,21 @@ cosine vs a reference-corpus matrix). Both ML guardrails consume it.
 | Package | Purpose | Notes |
 |---|---|---|
 | `onnxruntime>=1.16` | Jailbreak engine inference | already a core dep (pyproject:747) |
-| `0dinai/jailbreak-embeddings-base-onnx` | Jailbreak embedding model, primary candidate | multilingual e5-base fine-tune (0din/Mozilla threat feed); ONNX at `onnx/model.onnx` + `tokenizer.json`; threshold ≈0.70; **NO license declared on either 0dinai repo (HF API checked 2026-10-27) — must be resolved before adoption**; single-turn only; ~1 GB fp32 |
-| `0dinai/jailbreak-embeddings-large-onnx-int8` | Quantized sibling | e5-large int8 — benchmark against base for latency/size/accuracy |
-| `allenai/wildjailbreak` | Seed dataset for the reference attack corpus | public (AI2); also check its license for redistribution of derived embeddings |
-| `meta-llama/Llama-Prompt-Guard-2-86M` | Fallback classifier candidate | multilingual; Llama community license — verify; no official ONNX found, export via existing `export.py` flow; benchmark gate decides |
-| `protectai/deberta-v3-base-prompt-injection-v2` | Comparison baseline | known 7–8/10 ES FPs — likely fails the gate |
+
+**Jailbreak candidate matrix for the bake-off** (HF metadata verified 2026-10-27; licenses re-checked per repo before download):
+
+| Candidate | Shape | License | ONNX | Multilingual | Notes |
+|---|---|---|---|---|---|
+| `gravitee-io/Llama-Prompt-Guard-2-86M-onnx` | classifier | llama4 community | ✅ (+ int8 `model.quant.onnx`) | ✅ en/fr/de/hi/it/pt/**es**/th | ready export of Meta Prompt Guard 2; 22M sibling for latency |
+| `vllm-sr/mmbert32k-jailbreak-detector-merged` | classifier | **apache-2.0** | ✅ (`onnx/model.onnx` + label/type mappings) | mmBERT base (card says en — verify ES) | fresh (2026-10); also emits jailbreak *type* |
+| `madhurjindal/Jailbreak-Detector-Large` | classifier | **MIT** | ❌ export via `export.py` | mDeBERTa-v3 base (multilingual pretraining) | popular; safetensors only |
+| `0dinai/jailbreak-embeddings-base-onnx` (+ `large-onnx-int8`) | embedding | **NONE declared — blocker** | ✅ | ✅ e5-base | threshold ≈0.70; needs reference corpus; single-turn; ~1 GB fp32 |
+| `enguard/medium-guard-128m-xx-prompt-jailbreak-binary-in-the-wild` | static-embedding classifier (model2vec) | MIT | ❌ (numpy-fast anyway) | ✅ potion-multilingual | ultra-low-latency dark horse |
+| `protectai/deberta-v3-base-prompt-injection-v2` | classifier | apache-2.0 | ✅ | ❌ (7–8/10 ES FPs) | comparison baseline only |
+
+| Package | Purpose | Notes |
+|---|---|---|
+| `allenai/wildjailbreak` | Seed dataset for the reference attack corpus (if an embedding engine wins) + bake-off attack corpus | public (AI2); check license for redistributing derived embeddings |
 | `rapidfuzz>=3.0` | Fuzzy leak matching | already pinned but **declared only in the `graphindex` extra** (pyproject:282, boundary test at :354); either move/add to core or use stdlib `difflib` — open question |
 
 🔗 **Existing Code to Reuse:**
@@ -284,6 +297,20 @@ unchanged.
   an optional extra; Option D's heuristic ruleset becomes the jailbreak
   guardrail's no-model floor — so the fallback path still ships value.
 
+### Follow-ups (explicitly out of scope here)
+
+- **DLP output classification**: evaluate
+  `patronus-studio/orca-sonar-document-classifier` (apache-2.0, ONNX,
+  multilingual card de/en, base `jhu-clsp/mmBERT-small` — the same base
+  family and vendor as wolf-defender; HF metadata verified 2026-10-27) as
+  an OUTPUT/TOOL_OUTPUT-stage guardrail that classifies outgoing content
+  into document/data categories (finance, HR, legal, internal-tech,
+  education, marketing — hierarchical L1 + per-category L2 `*_vs_rest`
+  ONNX heads) for data-loss-prevention policies (category → FLAG/BLOCK,
+  `ModerationPolicy`-style). The chassis classifier shape and the OUTPUT
+  seam built by THIS feature are its sockets; it gets its own
+  brainstorm/spec.
+
 ---
 
 ## Feature Description
@@ -320,18 +347,17 @@ unchanged.
 - **`JailbreakGuardrail`** (`name="jailbreak"`, stages={INPUT}, priority 11 —
   runs right after `prompt_injection` in the sanitizer band): resolves its
   engine via the chassis (env dir → cached snapshot → heuristic floor).
-  Primary engine shape is **embedding similarity** (0din model): embed the
-  INPUT (ONNX backbone → mean pooling → L2 norm, per the model card) and
-  score = max cosine similarity against the reference attack-corpus matrix
-  (pre-embedded vectors loaded next to the model; default threshold ≈0.70,
-  calibrated by the benchmark). Over-threshold ⇒ threat record →
-  SecurityEventLogger → TRANSFORM-wrap (or BLOCK under `block_on_threat`).
-  The corpus is a versioned data asset (seeded from WildJailbreak + curated
-  ES/EN attacks); hardening against a new attack family = append vectors,
-  no retrain. The model is single-turn — each INPUT is scored standalone.
-  The heuristic floor is a curated multilingual pattern set
-  (instruction-override, persona-switch, ignore-previous framings) shipped
-  as data, not model.
+  The default model is **whatever wins the bake-off** (the guardrail is
+  engine-agnostic; both chassis shapes expose `score(text) -> [0,1]`):
+  a classifier scores directly; an embedding engine embeds the INPUT
+  (ONNX backbone → mean pooling → L2 norm) and scores as max cosine
+  similarity against a pre-embedded reference attack-corpus matrix loaded
+  next to the model (versioned data asset; hardening against a new attack
+  family = append vectors, no retrain). Scoring is single-turn — each
+  INPUT standalone. Over-threshold ⇒ threat record → SecurityEventLogger →
+  TRANSFORM-wrap (or BLOCK under `block_on_threat`). The heuristic floor
+  is a curated multilingual pattern set (instruction-override,
+  persona-switch, ignore-previous framings) shipped as data, not model.
 - **Tool-output injection**: `PromptInjectionGuardrail` gains
   `scan_tool_output: bool = False`. When true, `stages` includes
   TOOL_OUTPUT; `check()` branches on `ctx.stage`: at TOOL_OUTPUT the verdict
@@ -358,8 +384,13 @@ unchanged.
     normalized substring) and counts as CRITICAL.
 - Registration: two new lazy factories in `registry.py`; no eager imports.
 - Benchmarks: `benchmarks/injection_guardrail_latency/` gains a jailbreak
-  corpus (ES/EN attacks + benign) and leakage-attempt corpus; the existing
-  FP gate pattern applies before any model becomes the default.
+  corpus (ES/EN attacks + benign) and leakage-attempt corpus, and
+  `compare_models.py`/`detectors.py` gain the candidate-matrix entries
+  (incl. an embedding-similarity detector wrapper). **The jailbreak
+  bake-off is the feature's first task and a hard gate: no default model
+  is pinned in code until it has passed latency + ES/EN accuracy + the
+  Spanish-benign FP gate — exactly the process that selected Wolf
+  Defender.**
 
 ### Edge Cases & Error Handling
 
@@ -525,11 +556,13 @@ from parrot.bots.guardrails.registry import register_guardrail  # registry.py:41
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: moderate. The chassis extraction (touching
-  `prompt_injection.py`) is a load-bearing first module and must be
-  sequential. After it: `JailbreakGuardrail` ∥ `PromptLeakageGuardrail` ∥
-  benchmark-corpus work are disjoint files. The `scan_tool_output`
-  extension depends on the chassis module (same file).
+- **Internal parallelism**: moderate. Two independent entry lanes: the
+  **jailbreak bake-off** (benchmarks-only, disjoint files, gates the
+  default-model constant) and the **chassis extraction** (touching
+  `prompt_injection.py`, load-bearing, sequential). After the chassis:
+  `JailbreakGuardrail` ∥ `PromptLeakageGuardrail` are disjoint files; the
+  `scan_tool_output` extension depends on the chassis (same file). The
+  jailbreak default-model pin is the only task needing BOTH lanes done.
 - **Cross-feature independence**: no in-flight spec touches
   `bots/guardrails/` (FEAT-396/398/406/439 are merged); the
   `_run_output_pipeline` edit in `bots/abstract.py` is small but that file
@@ -543,22 +576,23 @@ from parrot.bots.guardrails.registry import register_guardrail  # registry.py:41
 
 ## Open Questions
 
-- [ ] **0din model license**: neither `0dinai/jailbreak-embeddings-base-onnx`
-  nor `...-large-onnx-int8` declares ANY license (HF API verified
-  2026-10-27). Base model `intfloat/multilingual-e5-base` is MIT, but the
-  fine-tune's terms are unstated — contact 0din (Mozilla) or treat as
-  unusable until clarified. Fallback: Prompt Guard 2 86M (Llama community
-  license, also to verify; no official ONNX — we export ourselves). —
+- [ ] **Jailbreak bake-off** (feature's first task, hard gate): run the
+  candidate matrix (Option A table) through the extended
+  `compare_models.py` — latency, ES/EN accuracy, Spanish-benign FP gate —
+  and pin the winner as default. Licenses re-verified per candidate at
+  that point: 0din repos declare NONE (blocker unless clarified with
+  0din/Mozilla; base `multilingual-e5-base` is MIT but the fine-tune's
+  terms are unstated); gravitee re-exports are llama4 community;
+  `vllm-sr` mmbert32k and `madhurjindal` Large are apache-2.0/MIT. —
   *Owner: Jesús*
-- [ ] **Benign FP behavior of the 0din model**: trained/evaluated only for
-  duplicate detection among attacks (55-pair eval, "directional"); whether
-  benign ES/EN prompts stay under the 0.70 similarity band vs the attack
-  corpus is unknown — the extended benchmark gate decides, and base vs
-  large-int8 variant is picked there too. — *Owner: Jesús*
-- [ ] **Reference attack corpus**: sourcing (WildJailbreak license for
-  derived embeddings? curated internal set?), size budget, where it ships
-  (package data vs HF dataset vs env dir), and update cadence. —
+- [ ] **0din-specific caveat if it competes**: trained/evaluated only for
+  duplicate detection among attacks (55-pair eval, "directional") — its
+  benign-vs-attack FP behavior is exactly what the gate must establish. —
   *Owner: Jesús*
+- [ ] **Reference attack corpus** (only if an embedding engine wins):
+  sourcing (WildJailbreak license for derived embeddings? curated internal
+  set?), size budget, where it ships (package data vs HF dataset vs env
+  dir), and update cadence. — *Owner: Jesús*
 - [ ] Fuzzy matcher for leakage: add `rapidfuzz` to core deps (touches
   `test_dependency_boundary.py`) vs stdlib `difflib.SequenceMatcher`
   (slower, zero deps)? — *Owner: Jesús*
