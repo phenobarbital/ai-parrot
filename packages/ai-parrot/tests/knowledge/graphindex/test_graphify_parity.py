@@ -107,6 +107,7 @@ async def _extract(src: str):
 
 
 class TestCitationExtraction:
+
     @pytest.mark.asyncio
     async def test_graphindex_prefix_labels_and_rfc(self) -> None:
         """Only allowed ADR prefixes change citation labels and identifiers."""
@@ -131,9 +132,7 @@ def configured():
 
         configured_symbol = next(node for node in nodes if node.title == "configured")
         reference_edges = [
-            edge
-            for edge in edges
-            if edge.kind == EdgeKind.REFERENCES and edge.source_id == configured_symbol.node_id
+            edge for edge in edges if edge.kind == EdgeKind.REFERENCES and edge.source_id == configured_symbol.node_id
         ]
         assert {edge.target_id for edge in reference_edges} == {node.node_id for node in citations.values()}
         assert len(reference_edges) == 3
@@ -163,8 +162,7 @@ def legacy():
             nodes, _edges = await CodeExtractor(known_prefixes=known_prefixes).extract("legacy.py", source)
             citations = {node.title: node for node in nodes if node.domain_tags.get("tag") == "CITATION"}
             assert {
-                title: (node.node_id, node.domain_tags["citation_kind"])
-                for title, node in citations.items()
+                title: (node.node_id, node.domain_tags["citation_kind"]) for title, node in citations.items()
             } == expected
             assert {title: node.domain_tags["citation_ref"] for title, node in citations.items()} == {
                 title: title for title in expected

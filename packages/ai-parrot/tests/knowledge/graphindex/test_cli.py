@@ -93,6 +93,7 @@ class TestDiscovery:
 
 
 class TestBuildCodeGraph:
+
     @pytest.mark.asyncio
     async def test_configured_prefixes_reach_extractor(self, tmp_path: Path) -> None:
         """The production build loads local and foreign ADR prefixes from config."""
