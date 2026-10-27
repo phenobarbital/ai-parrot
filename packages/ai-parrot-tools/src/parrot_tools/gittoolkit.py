@@ -2648,9 +2648,7 @@ class GitToolkit(AbstractToolkit):
 
         payload = response.json()
         if not isinstance(payload, list):
-            raise GitToolkitError(
-                f"GitHub Contents API returned a non-directory response for {path!r} at ref {ref!r}."
-            )
+            raise GitToolkitError(f"GitHub Contents API returned a non-directory response for {path!r} at ref {ref!r}.")
 
         entries = [
             RepoDirectoryEntry(name=entry["name"], path=entry["path"], type=entry["type"])

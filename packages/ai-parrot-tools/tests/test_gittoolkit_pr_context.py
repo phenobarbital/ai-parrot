@@ -26,7 +26,6 @@ from parrot_tools.gittoolkit import (
 )
 import parrot_tools.gittoolkit as gittoolkit_module
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
