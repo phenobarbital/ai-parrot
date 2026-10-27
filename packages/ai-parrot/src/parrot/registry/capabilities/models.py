@@ -213,9 +213,14 @@ class IntentRouterConfig(BaseModel):
     )
     output_mode_routes: dict[str, list[str]] = Field(
         default_factory=dict,
+        description="Phrase bank: OutputMode value (str) or 'a2ui:<Component>' -> reference utterances.",
+    )
+    tenant_output_mode_routes: dict[str, dict[str, list[str]]] = Field(
+        default_factory=dict,
         description=(
-            "Phrase bank: OutputMode value (str) -> reference utterances. "
-            "Keys are OutputMode *values* (e.g. 'structured_chart')."
+            "FEAT-755: per-tenant phrase banks, tenant id -> (label -> utterances). "
+            "Built by route_bank.resolve_route_banks(); each entry becomes its own "
+            "EmbeddingIntentRouter sharing the global router's encoder."
         ),
     )
     output_mode_threshold: float = Field(

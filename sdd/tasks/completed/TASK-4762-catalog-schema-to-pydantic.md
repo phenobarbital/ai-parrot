@@ -376,10 +376,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by native/opus (attempt 1)
+**Date**: 2026-10-27
+**Notes**: Added model_from_schema/component_model/clear_model_cache in catalog/_model.py, Graph SOURCE_MODEL, and tests (62 passed per coder). Fidelity gate clean. Merge-tier validation (chunk 0) green: exit 0. Closed via close_task.sh because finalize_task needs a durable review EvidenceRef that coder_record_review does not return; review recorded as coder-review feedback ids.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Choices beyond blueprint: number->Union[int,float]; unsafe property names get alias; unusable enums fall back to Any.

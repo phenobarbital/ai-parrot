@@ -158,6 +158,7 @@ is reserved for official extensions, so this codebase's own keys are always
 | `parrot_unit`, `parrot_trend`, `parrot_series_data`, ... | Component-specific presentation hints (KPICard's unit/trend, a lowered Chart series' original binding, ...) |
 | `parrot_data_sources` | **Surface-level** (`createSurface.metadata.extensions`, FEAT-598): linked data-source descriptors keyed by `dataModel` root key — see [a2ui-linked-surfaces.md](a2ui-linked-surfaces.md). TOOL-origin only (`DATA_SOURCES_NOT_ALLOWED_FOR_LLM`) |
 | `parrot_param` | On a `FilterBar` filter / its lowered `ChoicePicker` (FEAT-598): `{"source": "<key>", "name": "<param>"}` — changing the filter re-fetches that source instead of filtering locally |
+| `parrot_presentation` | **Surface-level** (`createSurface.metadata.extensions`, FEAT-755): how the surface was produced — `{"kind": "widget", "inline": true, "origin": "chat_turn", "component": "KPICard"}`. Set by the inline emitter so renderers stop inferring widget-vs-dashboard from the root component; overrides the `inferSurfaceKind()` heuristic |
 
 `metadata.extensions` validates against the official
 `common_types.json#/$defs/Extensions` (`patternProperties` on the UAX #31

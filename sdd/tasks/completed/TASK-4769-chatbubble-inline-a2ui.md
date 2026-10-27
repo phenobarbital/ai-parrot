@@ -277,10 +277,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (orchestrator), delivery by sdd-coder (codex gpt-5.6-sol, attempt 3)
+**Date**: 2026-10-27
+**Notes**: Delivered exactly the 3 listed files. HAND-MERGED at the user's explicit instruction: the task-tier gate reported validation_failed because the pytest vitest wrapper skips without ui/node_modules. Running the real vitest (node_modules temporarily symlinked, removed after) exposed 2 wrong test assertions (getByText("Hello world") against content "Hello **world**", split across elements). Fixed in b7a12fff6 (assert on the <strong> element); ChatBubble tests then pass. Two unrelated pre-existing failures in canvas/a2ui (FEAT-611 DataTable/KPICard format tests) are in untouched files. The merge also carried a ledger-hook change to sdd/ledger/events.jsonl (auto-written, not coder work). Model feedback not recorded via coder_record_feedback.
