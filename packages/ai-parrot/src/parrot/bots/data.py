@@ -2994,7 +2994,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         for file_path in files:
             path = Path(file_path)
 
-            if not path.exists():
+            if not await asyncio.to_thread(path.exists):
                 raise FileNotFoundError(f"File not found: {path}")
 
             # Determine file type and load
