@@ -65,8 +65,8 @@ When a citation is resolved, the system follows this exact order:
 - PARROT for ai-parrot only: ai-parrot's own `local_prefix` is `PARROT`, frozen before the first ADR is written. This is a repository-specific choice, not a global default.
 - Filename gating: A prefixed filename (e.g., `FS-0007-...`) supplies an alias only if its upper-cased prefix is in `known_prefixes`. Otherwise it supplies no candidate, never a degraded bare alias.
 - No rewriting of bare identities: A file that declares `ADR-7` owns the alias `ADR-7`. The parser never injects `local_prefix` into a bare `id:` field.
-- Prefixed supersedes: A `supersedes:` header can use prefixed aliases (e.g., `supersedes: FS-ADR-3`). The resolution order applies to these as well.
-- Same-alias ambiguity: If two different prefixes produce the same canonical alias (e.g., `FS-ADR-7` and `PARROT-ADR-7`), both are distinct entries in the alias map and neither is marked ambiguous.
+- Prefixed supersedes: A `supersedes:` header may name prefixed aliases (e.g., `supersedes: FS-ADR-3`); they are parsed and stored as canonical alias strings. The resolution order above applies to code citations, not to `supersedes:` targets.
+- Distinct prefixes: `FS-ADR-7` and `PARROT-ADR-7` are different canonical aliases, so both resolve and neither is ambiguous.
 - RFC non-prefixing: RFC references are never prefixed. The shared prefix group matches them lexically, but the prefix is discarded when the kind is `RFC`.
 
 ## How Decisions Attach to Code
