@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.registry.registry import AgentRegistry
+from parrot.registry.registry import AgentKind, AgentRegistry
 from parrot.auth.agent_guard import AgentAccessDenied
 
 
@@ -28,6 +28,7 @@ def _registry_with_fake_bot(bot_name: str = "finance_bot") -> tuple[AgentRegistr
     fake_instance.name = bot_name
 
     fake_metadata = MagicMock()
+    fake_metadata.kind = AgentKind.LOCAL  # FEAT-746: remote kinds are refused by get_instance
     fake_metadata.get_instance = AsyncMock(return_value=fake_instance)
     reg._registered_agents[bot_name] = fake_metadata
 
