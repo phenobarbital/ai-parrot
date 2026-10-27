@@ -115,7 +115,7 @@ def detect_shelf_edges(image: np.ndarray, *, min_length: float = 0.35) -> List[i
         return []
     max_tan = np.tan(np.radians(_EDGE_MAX_ANGLE_DEG))
     ys: List[float] = []
-    for x1, y1, x2, y2 in lines[:, 0, :]:
+    for x1, y1, x2, y2 in lines.reshape(-1, 4):
         dx = abs(int(x2) - int(x1))
         if dx == 0 or abs(int(y2) - int(y1)) / dx > max_tan:
             continue

@@ -53,6 +53,7 @@ from parrot.outputs.a2ui.graph import (
     VizSize,
     compute_positions,
 )
+from parrot.outputs.a2ui.graph.mermaid_source import detect_diagram_type, normalize_mermaid_source
 from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface, Extensions, SurfaceMetadata
 
 __all__ = [
@@ -62,6 +63,7 @@ __all__ = [
     "build_datatable",
     "build_graph",
     "build_html_document",
+    "build_mermaid_diagram",
     "build_infographic",
     "build_kpicard",
     "build_linked_surface",
@@ -327,6 +329,58 @@ def build_html_document(
         origin=ProducerOrigin.TOOL,
         metadata=metadata,
     )
+
+
+def build_mermaid_diagram(
+    *,
+    source: str,
+    title: str | None = None,
+    caption: str | None = None,
+    theme: str | None = None,
+    accessible_description: str | None = None,
+    diagram_type: str | None = None,
+    surface_id: str = "mermaid-diagram",
+    origin: ProducerOrigin = ProducerOrigin.TOOL,
+    metadata: ComponentMetadata | None = None,
+) -> CreateSurface:
+    """Build a validated single-component ``MermaidDiagram`` ``CreateSurface`` (FEAT-753).
+
+    Normalizes ``source`` first (directives stripped, ``theme`` lifted — an explicit ``theme`` wins),
+    fills ``diagramType`` from :func:`detect_diagram_type` unless given, then delegates to
+    :func:`build_surface`. Pure: same input -> byte-identical envelope.
+
+    Args:
+        source: Mermaid source.
+        title: Optional title.
+        caption: Optional caption.
+        theme: Optional theme hint (``default``/``neutral``/``dark``/``forest``/``base``).
+        accessible_description: One-sentence screen-reader summary.
+        diagram_type: Declared type; a mismatch with the detected one fails validation.
+        surface_id: Envelope surface id.
+        origin: Producer origin (default TOOL; pass ``ProducerOrigin.LLM`` to apply the LLM gates).
+        metadata: Optional component-level metadata forwarded to ``build_surface``.
+
+    Returns:
+        The validated ``CreateSurface``.
+
+    Raises:
+        CatalogValidationError: size cap, unsafe statement, or declared ``diagram_type`` mismatch.
+    """
+    normalized, lifted_theme = normalize_mermaid_source(source)
+    props: dict[str, Any] = {
+        "source": normalized,
+        "diagramType": diagram_type or detect_diagram_type(normalized),
+    }
+    if title is not None:
+        props["title"] = title
+    if caption is not None:
+        props["caption"] = caption
+    effective_theme = theme if theme is not None else lifted_theme
+    if effective_theme is not None:
+        props["theme"] = effective_theme
+    if accessible_description is not None:
+        props["accessibleDescription"] = accessible_description
+    return build_surface("MermaidDiagram", props, surface_id=surface_id, origin=origin, metadata=metadata)
 
 
 def build_graph(

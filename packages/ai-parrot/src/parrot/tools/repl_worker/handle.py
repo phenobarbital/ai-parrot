@@ -25,6 +25,7 @@ import functools
 import json
 import logging
 import os
+import pickle
 import signal
 import subprocess
 import sys
@@ -1141,9 +1142,28 @@ class WorkerHandle:
         return self._config.namespace_timeout_ms / 1000
 
     async def get_var(self, name: str) -> Any:
-        """Read one namespace variable from the worker."""
+        """Read one namespace variable from the worker.
+
+        A value the insecure-deserialization guard refuses comes back as the
+        same inert placeholder string ``snapshot()`` uses, never as a raised
+        ``UnpicklingError``. One untransportable variable must not fail the
+        caller's whole turn: ``PandasAgent`` reads result variables through
+        this method, so a raise here surfaces to the end user as a failed
+        answer instead of a missing dataset.
+
+        Args:
+            name: The namespace variable to read.
+
+        Returns:
+            The decoded value, or a placeholder string when the guard
+            refused it.
+        """
         response: ValueResponse = await self._send(GetVarRequest(name=name), self._namespace_timeout_s)
-        return decode_value(response.value)
+        try:
+            return decode_value(response.value)
+        except pickle.UnpicklingError as exc:
+            logger.warning("repl_worker get_var: variable %r not transportable: %s", name, exc)
+            return f"<{name}: refused by insecure-deserialization guard (not transportable)>"
 
     async def set_var(self, name: str, value: Any) -> None:
         """Write one namespace variable in the worker."""

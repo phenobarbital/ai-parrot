@@ -1,0 +1,195 @@
+{
+  "feature": "adr-prefixed-aliases",
+  "feature_id": "FEAT-760",
+  "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T17:51:21.339054+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_alias_grammar.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_parser.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_evidence.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_ingest.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_models.py",
+          "packages/ai-parrot/tests/knowledge/graphindex/test_graphify_parity.py",
+          "packages/ai-parrot/tests/knowledge/graphindex/test_cli.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:db5dc46b86f7177835bb87d9fa255c70b9c8395e4aa57c0fcb01dca13217a029"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4817",
+      "slug": "adr-prefix-parser",
+      "title": "Prefix-aware ADR grammar and document identity",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent parser.py owner; consumes no new symbols from another task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4817-adr-prefix-parser.md"
+    },
+    {
+      "id": "TASK-4818",
+      "slug": "adr-prefix-config",
+      "title": "Validated ADR prefix configuration and PARROT default",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent models.py and repository config owner; no dependency on parser grammar implementation.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4818-adr-prefix-config.md"
+    },
+    {
+      "id": "TASK-4819",
+      "slug": "adr-prefix-graphindex",
+      "title": "GraphIndex prefix parity and configuration wiring",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4818"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes DecisionConfig.effective_prefixes() from TASK-4818 (wiki/decisions/models.py). Parser grammar is a spec contract, not an implementation dependency.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4819-adr-prefix-graphindex.md"
+    },
+    {
+      "id": "TASK-4820",
+      "slug": "adr-prefix-resolution",
+      "title": "Wiki prefix propagation and ambiguity-safe alias resolution",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4817",
+        "TASK-4818"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes normalize_adr_alias/parse_adr known_prefixes signatures from TASK-4817 (parser.py) and effective_prefixes/local_prefix from TASK-4818 (models.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4820-adr-prefix-resolution.md"
+    },
+    {
+      "id": "TASK-4821",
+      "slug": "adr-prefix-wiki-regressions",
+      "title": "Wiki prefix identity, configuration and sync regressions",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4820"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Tests configured refresh_decisions and extract_python_citations supplied by TASK-4820; parser and config dependencies are satisfied transitively. Owns four test files and does not mutate shared conftest.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4821-adr-prefix-wiki-regressions.md"
+    },
+    {
+      "id": "TASK-4822",
+      "slug": "adr-prefix-graphindex-regressions",
+      "title": "GraphIndex prefix labels, stable IDs and CLI regressions",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4819"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes CodeExtractor known_prefixes and build_code_graph config wiring from TASK-4819. GraphIndex test files are disjoint from the wiki regression suites.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4822-adr-prefix-graphindex-regressions.md"
+    },
+    {
+      "id": "TASK-4823",
+      "slug": "adr-prefix-cross-plane-parity",
+      "title": "Shared ADR corpus and cross-plane parity gate",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4817",
+        "TASK-4819"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes prefix-aware ADR_REFERENCE_RE/normalize_adr_alias from TASK-4817 and _CITATION_RE/CodeExtractor from TASK-4819. Exclusive because decisions/conftest.py is loaded by other tasks’ test suites.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4823-adr-prefix-cross-plane-parity.md"
+    },
+    {
+      "id": "TASK-4824",
+      "slug": "adr-prefix-guide",
+      "title": "Document ADR prefixes and exact/local resolution",
+      "feature_id": "FEAT-760",
+      "feature": "adr-prefixed-aliases",
+      "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent guide owner; consumes the approved spec only. Existing parser tests serve as a narrow documentation baseline; no dependency on unfinished implementation is required.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4824-adr-prefix-guide.md"
+    }
+  ]
+}

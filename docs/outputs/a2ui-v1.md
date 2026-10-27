@@ -75,7 +75,7 @@ it) guarantees this automatically.
 | Catalog | `catalogId` | Contents |
 |---|---|---|
 | **Basic** (official) | `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json` | 18 primitives + 14 functions, vendored verbatim under `catalog/basic/spec/*.json` (SHA-pinned: `catalog/basic.SPEC_COMMIT`) |
-| **Parrot** (this codebase's presentation layer) | `https://parrot.dev/catalogs/v1` | `InfoCard`, `Chart`, `DataTable`, `Map`, `KPICard`, `Timeline`, `Infographic`, `Report` |
+| **Parrot** (this codebase's presentation layer) | `https://parrot.dev/catalogs/v1` | `InfoCard`, `Chart`, `DataTable`, `Map`, `KPICard`, `Timeline`, `Infographic`, `Report`, `MermaidDiagram` |
 | **viz-core** (FEAT-529) | `https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json` | `Graph` today; a library-agnostic, "describe what, never how" visualization vocabulary shared with future components (charts, live surfaces) |
 
 `catalog.export_catalog_definition()` produces a catalog's own
@@ -149,7 +149,9 @@ is reserved for official extensions, so this codebase's own keys are always
 
 | Key | Meaning |
 |---|---|
-| `parrot_role` | Presentation role of a lowered `Text` (`"title"`, `"caption"`, `"label"`, `"value"`, `"delta"`, `"axis"`, `"series"`, `"event-title"`, `"notice"` (a degradation placeholder), ...) |
+| `parrot_role` | Presentation role of a lowered `Text` (`"title"`, `"caption"`, `"label"`, `"value"`, `"delta"`, `"axis"`, `"series"`, `"event-title"`, `"notice"` (a degradation placeholder), `"mermaid-source"` (the exact source of a lowered `MermaidDiagram`), ...) |
+| `parrot_diagram_type` | On the `mermaid-source` `Text`: the diagram type (`"sequence"`, `"class"`, `"er"`, …) |
+| `parrot_mermaid_theme` | On the `mermaid-source` `Text`: the renderer theme hint, only when set |
 | `parrot_variant` | Which Parrot component a lowered `Card` stands in for (`"chart"`, `"kpi"`, `"infocard"`, ...) |
 | `parrot_component_id` | The original (pre-lowering) Parrot component's own id, when a lowered subtree needs to remember it |
 | `parrot_optional` | A list of pointers (`baking.bake_envelope` reads this off a component's own metadata) that may fail to resolve at bake time WITHOUT raising `BakeError` — the key is simply omitted from the baked output |
@@ -516,6 +518,82 @@ Basic Catalog tree — it degrades to a titled placeholder
   degrade to a titled link (`<a href="{srcUrl}">{title}</a>`) when a
   `srcUrl` exists, else the placeholder text; always recorded in
   `metadata["degraded"]`.
+
+## MermaidDiagram — opaque Mermaid source (FEAT-753)
+
+`MermaidDiagram` (`catalog/parrot/mermaiddiagram.py`) carries **Mermaid source text** for diagram types that have no
+typed viz-core component: sequence, class, ER, state, journey, gantt, pie, quadrant, requirement, gitGraph, C4,
+mindmap, timeline, sankey, xychart, block, packet, kanban, architecture, radar, treemap. It is **opaque** —
+Python never parses the diagram, never draws it and never converts it to the typed `Graph` vocabulary unless a
+caller opts in (`graph_spec_from_mermaid_source`, flowchart / state / sequence subset only). Unlike `HtmlDocument`
+it is **LLM-authorable** (not `tool_only`): safety lives in the validation gate below, applied to every origin.
+
+### Wire shape
+
+| Prop | Type | Notes |
+|---|---|---|
+| `source` | string, required | 1 … 32 768 UTF-8 bytes. No `%%{init}%%` directives, no `click`/`link`/`callback` statements |
+| `diagramType` | enum | detected from the first statement; a mismatch fails validation (`unknown` allowed) |
+| `title`, `caption` | string | optional |
+| `theme` | `default` \| `neutral` \| `dark` \| `forest` \| `base` | renderer hint only |
+| `accessibleDescription` | string | screen-reader summary; first line of the lowered fallback |
+
+### Validation codes
+
+`validate_envelope` runs `check_mermaid_source` for every `MermaidDiagram` in `CreateSurface` **and**
+`UpdateComponents`, for every producer origin. One issue per finding, `path` = the component id.
+
+| Code | Raised when |
+|---|---|
+| `MERMAID_SOURCE_TOO_LARGE` | empty / missing source, or more than 32 768 UTF-8 bytes |
+| `MERMAID_UNSAFE_DIRECTIVE` | a `%%{ … }%%` directive line, or a front-matter `config:` key, survived |
+| `MERMAID_UNSAFE_INTERACTION` | a statement whose first token is `click`/`link`/`callback` (also after `;`), or `javascript:` / `<script` anywhere |
+| `MERMAID_DIAGRAM_TYPE_MISMATCH` | declared `diagramType` differs from the detected one |
+
+Trusted builders normalize first (`normalize_mermaid_source` strips directives and lifts their `theme`), so a model
+that emits `%%{init: {"theme": "dark"}}%%` through `build_mermaid_diagram` / `render_mermaid_diagram` still succeeds;
+the same text sent raw on the wire is rejected.
+
+### Lowered fallback
+
+`lower()` emits Basic primitives only: `Card` (`parrot_variant: "mermaid-diagram"`) → `Column` of
+
+| Order | Node | `metadata.extensions` |
+|---|---|---|
+| 1 | `Text` — `accessibleDescription`, else `"Mermaid <diagramType> diagram"` | `parrot_role: "description"` |
+| 2 | `Text` (if `title`) | `parrot_role: "title"` |
+| 3 | `Text` (if `caption`) | `parrot_role: "caption"` |
+| 4 | `Text` — the exact `source` | `parrot_role: "mermaid-source"`, `parrot_diagram_type`, `parrot_mermaid_theme` (only when set) |
+
+### Renderer matrix
+
+| Renderer | Behaviour |
+|---|---|
+| bundled UI (`A2UIMermaidDiagram.svelte`) | native: lazy `mermaid.js`, `securityLevel: "strict"`, sanitized SVG; source always available |
+| `ssr-html` / `pdf` | code block; degraded: `ssr-html has no Mermaid engine; source shown as a code block` |
+| `adaptive_cards` | monospace `TextBlock`; degraded: `adaptive_cards has no Mermaid engine; source shown as monospace text` |
+| `interactive-html` | code block; degraded: `interactive-html does not bundle mermaid.js (self-contained invariant); source shown as a code block` |
+| A2A / Telegram | the lowered text (description + source) |
+
+`MermaidDiagram` is deliberately absent from every renderer's `supported_components` and `_INTERCEPTED`: the
+renderers lower it and degrade on the `mermaid-source` role.
+
+### Relationship with `Graph`
+
+For a workflow, state machine or dependency graph that renderers should lay out and style from typed data, prefer the
+viz-core `Graph`. `MermaidDiagram` is for every other Mermaid diagram type. The opt-in bridge
+`graph_spec_from_mermaid_source(source)` normalizes and delegates to the `Graph` codec; outside its subset it raises
+`MermaidCodecError`.
+
+### Producer lanes
+
+- **Tool lane (deterministic)**: `build_mermaid_diagram(...)` and the `render_mermaid_diagram` tool
+  (`parrot_tools.mermaid_diagram.MermaidDiagramTool`, registry key `mermaid_diagram`). The tool returns
+  `{"a2ui_envelope", "artifacts": [{"type": "a2ui_surface", ...}], "diagram_type", "source"}`, which `BaseBot` lifts
+  into `response.a2ui_envelope` with the same precedence as linked surfaces (interactive > infographic > linked/surface).
+- **LLM lane**: the LLM writes the component directly using `MERMAIDDIAGRAM_INSTRUCTIONS`
+  (via `catalog_instructions()`); routing is owned by FEAT-755 (`MERMAID_DIAGRAM_ROUTE_KEY`,
+  `MERMAID_DIAGRAM_ROUTE_UTTERANCES` in `parrot.outputs.a2ui.graph`).
 
 ## Adaptive Cards and the Teams submit flow
 

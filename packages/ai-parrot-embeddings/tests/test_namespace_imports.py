@@ -116,6 +116,7 @@ class TestCorePublicSurfaceUnchanged:
             "huggingface": "SentenceTransformerModel",
             "google": "GoogleEmbeddingModel",
             "openai": "OpenAIEmbeddingModel",
+            "multimodal": "UFormEmbedding",
         }
 
     def test_supported_stores_unchanged(self):

@@ -12,6 +12,16 @@ from .layout import MAX_STATIC_NODES, GraphTooLargeError, LayoutResult, compute_
 from .layout_c4 import compute_c4_positions
 from .mermaid import MermaidCodecError, from_mermaid, to_mermaid
 from .mermaid_c4 import C4_LOSSY_FIELDS, from_mermaid_c4, to_mermaid_c4
+from .mermaid_source import (
+    MERMAID_DIAGRAM_ROUTE_KEY,
+    MERMAID_DIAGRAM_ROUTE_UTTERANCES,
+    MERMAID_DIAGRAM_TYPES,
+    MERMAID_SOURCE_MAX_BYTES,
+    check_mermaid_source,
+    detect_diagram_type,
+    graph_spec_from_mermaid_source,
+    normalize_mermaid_source,
+)
 from .models import (
     C4BoundaryType,
     C4ElementType,
@@ -39,6 +49,10 @@ __all__ = [
     "C4BoundaryType",
     "C4ElementType",
     "C4Level",
+    "MERMAID_DIAGRAM_ROUTE_KEY",
+    "MERMAID_DIAGRAM_ROUTE_UTTERANCES",
+    "MERMAID_DIAGRAM_TYPES",
+    "MERMAID_SOURCE_MAX_BYTES",
     "Direction",
     "EdgeKind",
     "GraphEdge",
@@ -57,10 +71,14 @@ __all__ = [
     "Position",
     "RelHint",
     "VizSize",
+    "check_mermaid_source",
     "compute_positions",
     "compute_c4_positions",
+    "detect_diagram_type",
     "from_mermaid",
     "from_mermaid_c4",
+    "graph_spec_from_mermaid_source",
+    "normalize_mermaid_source",
     "to_mermaid",
     "to_mermaid_c4",
 ]
