@@ -89,12 +89,16 @@ class MaterializeWidgetTool(AbstractTool):
         snapshot: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        result = await self._materialize(turn_id, envelope, session_id, title, pin, snapshot)
+        # Snapshot once: ``_current_pctx`` is shared, unlocked per-instance state and is cleared by
+        # ``execute``'s ``finally``; never re-read it after an await (concurrent users share this tool).
+        pctx = self._current_pctx
+        result = await self._materialize(pctx, turn_id, envelope, session_id, title, pin, snapshot)
         self.logger.info("materialize_widget turn=%s status=%s reason=%s", turn_id, result.status, result.reason)
         return result.model_dump(mode="json")
 
     async def _materialize(
         self,
+        pctx: Any,
         turn_id: str,
         envelope: dict[str, Any] | None,
         session_id: str | None,
@@ -103,7 +107,7 @@ class MaterializeWidgetTool(AbstractTool):
         snapshot: bool,
     ) -> MaterializeWidgetResult:
         """Run the spec pipeline; every early exit is a typed result except authorization errors."""
-        turn = await self._find_turn(turn_id, session_id or self._session_id)
+        turn = await self._find_turn(pctx, turn_id, session_id or self._session_id)
         if turn is None:
             return MaterializeWidgetResult(status="not_materializable", reason=REASON_TURN_NOT_FOUND)
         if not envelope:
@@ -135,7 +139,7 @@ class MaterializeWidgetTool(AbstractTool):
             request=origin.request or None,
             tenant=origin.tenant,
             snapshot=snapshot,
-            _permission_context=self._current_pctx,
+            _permission_context=pctx,
         )
         build_payload = getattr(build_result, "result", None)
         built_envelope = build_payload.get("a2ui_envelope") if isinstance(build_payload, dict) else None
@@ -163,7 +167,7 @@ class MaterializeWidgetTool(AbstractTool):
                     kind="widget",
                     title=title or turn.user_message[:80],
                     envelope=built_envelope,
-                    _permission_context=self._current_pctx,
+                    _permission_context=pctx,
                 )
                 publish_payload = getattr(publish_result, "result", None)
                 candidate_surface_id = publish_payload.get("surface_id") if isinstance(publish_payload, dict) else None
@@ -186,9 +190,8 @@ class MaterializeWidgetTool(AbstractTool):
             origin=origin,
         )
 
-    async def _find_turn(self, turn_id: str, session_id: str | None) -> Any:
+    async def _find_turn(self, pctx: Any, turn_id: str, session_id: str | None) -> Any:
         """Return the caller's conversation turn, or None when it cannot be resolved safely."""
-        pctx = self._current_pctx
         user_id = getattr(pctx, "user_id", None) if pctx is not None else None
         user_id = user_id or self._user_id
         memory = getattr(self._bot, "conversation_memory", None)

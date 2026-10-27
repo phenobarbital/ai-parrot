@@ -317,6 +317,37 @@ async def test_tool_identity_from_permission_context() -> None:
     assert builder.calls[0]["_permission_context"] is pctx
 
 
+@pytest.mark.asyncio
+async def test_tool_keeps_caller_identity_across_interleaved_calls() -> None:
+    """A concurrent call by another principal must not change the context forwarded to sibling tools."""
+    import asyncio
+
+    class SlowTool(FakeTool):
+        async def execute(self, **kwargs: Any) -> ToolResult:
+            await asyncio.sleep(0.05)
+            return await super().execute(**kwargs)
+
+    pctx_a = build_principal_context("u1", channel="a2ui")
+    pctx_b = build_principal_context("u2", channel="a2ui")
+    builder = SlowTool(_success({"a2ui_envelope": _linked_envelope(), "artifacts": []}))
+    publisher = FakeTool(_success({"surface_id": "surface-1"}))
+    tool = MaterializeWidgetTool(bot=_bot(builder=builder, publisher=publisher), session_id="s1")
+
+    async def other_user() -> Any:
+        await asyncio.sleep(0.01)
+        return await tool.execute(turn_id="t1", envelope=_source_envelope(), _permission_context=pctx_b)
+
+    result_a, result_b = await asyncio.gather(
+        tool.execute(turn_id="t1", envelope=_source_envelope(), pin=True, _permission_context=pctx_a),
+        other_user(),
+    )
+
+    assert result_a.result["status"] == "materialized"
+    assert result_b.result["reason"] == "turn_not_found"
+    assert builder.calls[0]["_permission_context"] is pctx_a
+    assert publisher.calls[0]["_permission_context"] is pctx_a
+
+
 def test_tool_is_renderer_callable() -> None:
     manager = ToolManager()
     manager.register_tool(MaterializeWidgetTool())

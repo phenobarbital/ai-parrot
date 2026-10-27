@@ -994,7 +994,9 @@ No prompt and no LLM turn: the agent rebuilds the same widget bound to the query
 
 | Status | Reason | Description |
 |---|---|---|
-| `materialized` | - | The widget was successfully materialized and is refreshable. |
+| `materialized` | - | The widget was materialized and is refreshable. |
+| `materialized` | `no_publish_surface` | Linked widget built, but `pin` was requested and the agent lacks the PublishSurface tool; `pinned` is false, the envelope is still usable. |
+| `materialized` | `pin_failed` | Linked widget built, but pinning failed; `pinned` is false, the envelope is still usable. |
 | `already_linked` | - | The turn already produced a linked surface; the same envelope is returned. |
 | `snapshot_only` | `no_slug_origin` | No query slug origin could be extracted from the turn. |
 | `snapshot_only` | `unsupported_component` | The envelope's root component is not supported for relinking. |
@@ -1003,8 +1005,6 @@ No prompt and no LLM turn: the agent rebuilds the same widget bound to the query
 | `not_materializable` | `multi_source_turn` | The turn used multiple distinct data origins. |
 | `not_materializable` | `no_querysource_toolkit` | The agent lacks the QuerySource toolkit. |
 | `not_materializable` | `build_failed` | Building the linked surface failed. |
-| `not_materializable` | `no_publish_surface` | The agent lacks the PublishSurface tool. |
-| `not_materializable` | `pin_failed` | Pinning the surface failed. |
 
 On `snapshot_only`, pin the bubble's envelope as-is with `POST /api/v1/ui/surfaces` (kind widget).
 
