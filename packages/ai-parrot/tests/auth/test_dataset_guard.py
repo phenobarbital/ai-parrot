@@ -63,7 +63,7 @@ def guard(stub_evaluator):
 def _make_filter_result(allowed: list[str]) -> MagicMock:
     """Build a mock filter_resources result with the given allowed list."""
     result = MagicMock()
-    result.allowed = allowed
+    result.allowed = [f"dataset:{name}" for name in allowed]
     return result
 
 
@@ -274,7 +274,7 @@ class TestFilterColumns:
             await guard.filter_columns(pctx_jleon, "sales", ["c1", "c2"])
 
         call_kwargs = guard._evaluator.filter_resources.call_args.kwargs
-        assert call_kwargs["resource_names"] == ["sales:c1", "sales:c2"]
+        assert call_kwargs["resource_names"] == ["dataset:sales:c1", "dataset:sales:c2"]
         assert call_kwargs["action"] == "dataset:column:read"
 
     @pytest.mark.asyncio

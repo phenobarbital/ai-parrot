@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T02:30:52+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-27T12:30:43+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -71,16 +71,17 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates graph/mermaid_source.py and the four MERMAID_* codes in catalog/base.py that every other code task consumes; also sole editor of graph/__init__.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4772-mermaid-source-utilities.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:13:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4772-mermaid-source-utilities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4773",
@@ -89,7 +90,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,9 +99,10 @@
       "parallel": true,
       "parallelism_notes": "imports check_mermaid_source, MERMAID_DIAGRAM_TYPES, MERMAID_SOURCE_MAX_BYTES, MERMAID_THEMES, detect_diagram_type from TASK-4772 (graph/mermaid_source.py); sole editor of catalog/__init__.py and catalog/parrot/__init__.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4773-mermaiddiagram-component-validation.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:16:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4773-mermaiddiagram-component-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4774",
@@ -109,7 +111,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -118,9 +120,10 @@
       "parallel": true,
       "parallelism_notes": "calls build_surface('MermaidDiagram', …) which needs the component registered by TASK-4773 (catalog/parrot/mermaiddiagram.py); imports normalize_mermaid_source/detect_diagram_type from TASK-4772",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4774-build-mermaid-diagram.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4774-build-mermaid-diagram.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4775",
@@ -129,7 +132,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -138,9 +141,10 @@
       "parallel": true,
       "parallelism_notes": "imports build_mermaid_diagram from TASK-4774 (parrot/outputs/a2ui/builders.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4775-mermaid-diagram-tool.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:18:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4775-mermaid-diagram-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4776",
@@ -149,16 +153,17 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: touches only bots/base.py + its lift test; the lift keys on a plain dict shape, not on any new symbol",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4776-bot-lift-a2ui-surface.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:18:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4776-bot-lift-a2ui-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4777",
@@ -167,7 +172,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -176,9 +181,10 @@
       "parallel": true,
       "parallelism_notes": "needs the MermaidDiagram component + 'mermaid-source' lowering role from TASK-4773 (catalog/parrot/mermaiddiagram.py); sole editor of ssr_html.py and test_pdf.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4777-ssr-html-mermaid-degradation.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:20:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4777-ssr-html-mermaid-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4778",
@@ -187,7 +193,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -196,9 +202,10 @@
       "parallel": true,
       "parallelism_notes": "needs the 'mermaid-source' lowering role from TASK-4773 (catalog/parrot/mermaiddiagram.py); sole editor of adaptive_cards.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4778-adaptive-cards-mermaid-degradation.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:20:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4778-adaptive-cards-mermaid-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4779",
@@ -207,7 +214,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -216,9 +223,10 @@
       "parallel": true,
       "parallelism_notes": "needs the 'mermaid-source' lowering role from TASK-4773 (catalog/parrot/mermaiddiagram.py); sole editor of interactive_html.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4779-interactive-html-mermaid-degradation.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:20:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4779-interactive-html-mermaid-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4780",
@@ -227,16 +235,17 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot-server/ui/package.json and regenerates pnpm-lock.yaml (shared dependency manifest/lockfile); no code dependency — consumes only the documented wire shape (spec §2)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4780-ui-mermaid-diagram-component.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:30:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4780-ui-mermaid-diagram-component.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4781",
@@ -245,7 +254,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -254,9 +263,10 @@
       "parallel": true,
       "parallelism_notes": "imports A2UIMermaidDiagram + MermaidDiagramProperties from TASK-4780 (canvas/a2ui/A2UIMermaidDiagram.svelte)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4781-a2uinode-mermaid-dispatch.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:30:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4781-a2uinode-mermaid-dispatch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4782",
@@ -265,7 +275,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -277,9 +287,10 @@
       "parallel": true,
       "parallelism_notes": "calls build_mermaid_diagram from TASK-4774 (builders.py); TestMermaidDiagramFallbackRenderers asserts the degradation branches added by TASK-4777 (ssr_html.py), TASK-4778 (adaptive_cards.py) and TASK-4779 (interactive_html.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4782-mermaid-conformance-suite.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:22:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4782-mermaid-conformance-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4783",
@@ -288,16 +299,17 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "docs-only: no code symbol consumed; content is fixed by the spec (§2 wire shape, §2 codes, §7 messages) so it can run in wave 1",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4783-mermaid-diagram-docs.md"
+      "started_at": "2026-10-27T02:39:35+00:00",
+      "completed_at": "2026-10-27T12:21:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4783-mermaid-diagram-docs.md",
+      "verification": "verified"
     }
   ]
 }

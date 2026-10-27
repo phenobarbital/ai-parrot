@@ -1,0 +1,115 @@
+{
+  "feature": "github-reviewer-sdd-spec-acceptance",
+  "feature_id": "FEAT-759",
+  "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27",
+  "completed_at": "2026-10-27T17:19:38+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/bots/test_github_reviewer.py",
+          "packages/ai-parrot-tools/tests/test_gittoolkit_pr_context.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6c3415adc784305dca9b766bd8c87100011f8df1f96339153b89b1873c1abe52"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4813",
+      "slug": "reviewer-sdd-foundations",
+      "title": "Add reviewer SDD settings and base-ref payloads",
+      "feature_id": "FEAT-759",
+      "feature": "github-reviewer-sdd-spec-acceptance",
+      "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: modifies reviewer.py, conf.py and the reviewer test fixture; consumes no new toolkit symbol. Runs alongside TASK-4814, which owns separate toolkit files.",
+      "assigned_to": null,
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:08:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4813-reviewer-sdd-foundations.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4814",
+      "slug": "gittoolkit-directory-listing",
+      "title": "Add ref-specific GitToolkit directory listing",
+      "feature_id": "FEAT-759",
+      "feature": "github-reviewer-sdd-spec-acceptance",
+      "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: owns gittoolkit.py and test_gittoolkit_pr_context.py; no reviewer files or shared configuration are modified. Can run alongside TASK-4813.",
+      "assigned_to": null,
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:08:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4814-gittoolkit-directory-listing.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4815",
+      "slug": "resolve-sdd-spec-requirements",
+      "title": "Resolve and parse bounded SDD spec requirements",
+      "feature_id": "FEAT-759",
+      "feature": "github-reviewer-sdd-spec-acceptance",
+      "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4813",
+        "TASK-4814"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-4813 for max_spec_scan_files and serialized writes to github_reviewer.py/test_github_reviewer.py; depends on TASK-4814 for GitToolkit.list_repo_directory and RepoDirectoryListing in gittoolkit.py.",
+      "assigned_to": null,
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:16:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4815-resolve-sdd-spec-requirements.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4816",
+      "slug": "integrate-sdd-review-fallback",
+      "title": "Integrate SDD fallback into both review entry points",
+      "feature_id": "FEAT-759",
+      "feature": "github-reviewer-sdd-spec-acceptance",
+      "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4815"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-4815 for _fetch_spec_requirement and serialized writes to github_reviewer.py/test_github_reviewer.py; TASK-4813 settings, result field and base_ref payload arrive transitively through TASK-4815.",
+      "assigned_to": null,
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:19:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4816-integrate-sdd-review-fallback.md",
+      "verification": "verified"
+    }
+  ]
+}

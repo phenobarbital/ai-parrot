@@ -195,7 +195,13 @@ def mcp_local(
     # Heavy import (pulls in toolkit_config + eventually toolkit classes)
     # deferred to here so `parrot --help` / module import stay fast and
     # cannot pollute stdout.
-    from parrot.mcp.toolkit_server import create_toolkit_mcp_server
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            from parrot.mcp.toolkit_server import create_toolkit_mcp_server
+        finally:
+            # Configuration imports can chdir to the installed application.
+            # Project-local toolkit modules must still resolve from the host's cwd.
+            os.chdir(root)
 
     overrides: dict[str, object] = {}
     if config_path is not None:

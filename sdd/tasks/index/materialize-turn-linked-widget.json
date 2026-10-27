@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T01:45:07+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-27T02:14:15+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -41,16 +41,17 @@
       "feature_id": "FEAT-757",
       "feature": "materialize-turn-linked-widget",
       "spec": "sdd/specs/materialize-turn-linked-widget.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/outputs/a2ui/linked/materialize.py, no in-feature dependency",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4753-materialize-origin-extraction.md"
+      "started_at": "2026-10-27T01:49:19+00:00",
+      "completed_at": "2026-10-27T01:54:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4753-materialize-origin-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4754",
@@ -59,7 +60,7 @@
       "feature_id": "FEAT-757",
       "feature": "materialize-turn-linked-widget",
       "spec": "sdd/specs/materialize-turn-linked-widget.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -68,9 +69,10 @@
       "parallel": true,
       "parallelism_notes": "imports extract_slug_origin, component_from_envelope, MaterializeWidgetResult and REASON_* from TASK-4753 (parrot/outputs/a2ui/linked/materialize.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4754-materialize-widget-tool.md"
+      "started_at": "2026-10-27T01:49:19+00:00",
+      "completed_at": "2026-10-27T02:08:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4754-materialize-widget-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4755",
@@ -79,7 +81,7 @@
       "feature_id": "FEAT-757",
       "feature": "materialize-turn-linked-widget",
       "spec": "sdd/specs/materialize-turn-linked-widget.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -88,9 +90,10 @@
       "parallel": true,
       "parallelism_notes": "imports MaterializeWidgetTool from TASK-4754 (parrot_tools/materialize_widget.py); runs concurrently with TASK-4756",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4755-materialize-widget-roundtrip-test.md"
+      "started_at": "2026-10-27T01:49:19+00:00",
+      "completed_at": "2026-10-27T02:14:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4755-materialize-widget-roundtrip-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4756",
@@ -99,7 +102,7 @@
       "feature_id": "FEAT-757",
       "feature": "materialize-turn-linked-widget",
       "spec": "sdd/specs/materialize-turn-linked-widget.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -108,9 +111,10 @@
       "parallel": true,
       "parallelism_notes": "documents args/statuses/registration of MaterializeWidgetTool as merged by TASK-4754 (parrot_tools/materialize_widget.py); docs only",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4756-materialize-widget-docs.md"
+      "started_at": "2026-10-27T01:49:19+00:00",
+      "completed_at": "2026-10-27T02:14:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4756-materialize-widget-docs.md",
+      "verification": "verified"
     }
   ]
 }

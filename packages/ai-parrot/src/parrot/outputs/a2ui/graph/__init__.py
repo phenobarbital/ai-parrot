@@ -10,6 +10,16 @@ from __future__ import annotations
 
 from .layout import MAX_STATIC_NODES, GraphTooLargeError, LayoutResult, compute_positions
 from .mermaid import MermaidCodecError, from_mermaid, to_mermaid
+from .mermaid_source import (
+    MERMAID_DIAGRAM_ROUTE_KEY,
+    MERMAID_DIAGRAM_ROUTE_UTTERANCES,
+    MERMAID_DIAGRAM_TYPES,
+    MERMAID_SOURCE_MAX_BYTES,
+    check_mermaid_source,
+    detect_diagram_type,
+    graph_spec_from_mermaid_source,
+    normalize_mermaid_source,
+)
 from .models import (
     Direction,
     EdgeKind,
@@ -29,6 +39,10 @@ from .models import (
 
 __all__ = [
     "MAX_STATIC_NODES",
+    "MERMAID_DIAGRAM_ROUTE_KEY",
+    "MERMAID_DIAGRAM_ROUTE_UTTERANCES",
+    "MERMAID_DIAGRAM_TYPES",
+    "MERMAID_SOURCE_MAX_BYTES",
     "Direction",
     "EdgeKind",
     "GraphEdge",
@@ -46,7 +60,11 @@ __all__ = [
     "NodeState",
     "Position",
     "VizSize",
+    "check_mermaid_source",
     "compute_positions",
+    "detect_diagram_type",
     "from_mermaid",
+    "graph_spec_from_mermaid_source",
+    "normalize_mermaid_source",
     "to_mermaid",
 ]
