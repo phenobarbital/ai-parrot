@@ -190,8 +190,8 @@ Standard FEAT-754 procedure; close with `scripts/sdd/close_task.sh TASK-4791 a2u
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: opus (native), attempt 1
+**Date**: 2026-10-27
+**Notes**: vitest A2UIGraph.test.ts 13/13 passed (coder and sdd-worker) + pytest wrapper. Engine task/merge-tier gate's vitest runner stayed red (`pnpm exec vitest`: "Command vitest not found" in the validation sandbox, exit 254) although the same command passes from a normal shell; merged on explicit user authorization (manual `git merge --no-ff`) with sdd-worker-run test evidence. finalize_task not used: it requires a green engine validation ref.
 
 **Deviations from spec**: none

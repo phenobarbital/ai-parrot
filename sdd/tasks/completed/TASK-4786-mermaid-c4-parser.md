@@ -218,8 +218,8 @@ Standard FEAT-754 procedure; close with `scripts/sdd/close_task.sh TASK-4786 a2u
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-27
+**Notes**: Engine merge-tier validation (wave 3: 4786/4788/4789) green: 163 passed, outcome=completed. Closed with close_task.sh (not finalize_task) because no formal review EvidenceRef was recorded for this delivery; sdd-worker read the merge result and relied on the green merge-tier run.
 
 **Deviations from spec**: none

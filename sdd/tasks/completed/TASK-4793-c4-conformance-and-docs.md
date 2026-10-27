@@ -178,8 +178,8 @@ close with `scripts/sdd/close_task.sh TASK-4793 a2ui-c4-diagrams verified`.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-27
+**Notes**: Engine merge-tier validation green (10 passed, outcome=completed). Closed with close_task.sh (not finalize_task) because no formal review EvidenceRef was recorded for this delivery.
 
 **Deviations from spec**: none

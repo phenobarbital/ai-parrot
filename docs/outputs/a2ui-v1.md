@@ -393,6 +393,52 @@ and degrade to a truncated, readable edge list. `layout.engine: "force"` is
 an interactive-renderer-only hint — every static lane degrades it to the
 deterministic layered layout instead, with a recorded `degraded` entry.
 
+### C4 architecture diagrams — kind="c4" (FEAT-754)
+
+`Graph.kind: "c4"` expresses a C4 context, container, component, or dynamic diagram. Its `level` is required,
+and each node has a `c4Type`: person/system, container, or component families, with `_ext`, `_db`, and `_queue`
+variants where supported. Container and component elements may provide `technology`; all elements may provide a
+description. Relationships may provide `technology`, `hint`, and `bidirectional`.
+
+C4 boundaries remain `groups`, rather than becoming nodes. A group has `c4Type` (`enterprise`, `system`,
+`container`, or `generic`) and may name a parent group; a node belongs only to its innermost boundary. This keeps
+relationships exclusively between elements while allowing nested boundary boxes.
+
+| Validator | C4 invariant |
+|---|---|
+| V1 | C4 graphs require `level` and a `c4Type` on every node. |
+| V2 | C4-only vocabulary is rejected on non-C4 graphs. |
+| V3 | Boundary ids are unique and parent references form an acyclic tree. |
+| V4 | `shapeInRow` and `boundaryInRow` are supplied together or neither is supplied. |
+| V5 | Dynamic diagrams do not carry relationship hints or bidirectionality. |
+| V6 | A bidirectional relationship does not carry a placement hint. |
+| V7 | Person and system families do not carry `technology`; container and component families may. |
+
+Lowering preserves C4 meaning in Basic primitives:
+
+| C4 role | Lowered representation |
+|---|---|
+| Diagram | `Card` with `parrot_variant: "graph"` and `parrot_c4_level` |
+| Description, title, caption | `Text` components; the caption identifies the C4 level |
+| Boundaries | A `boundary-list` `Column` with boundary text and depth metadata |
+| Elements and relationships | `element-list` and `edge-list` rows retaining C4 type, technology, description, hint, and bidirectionality |
+| Mermaid source | Canonical C4 Mermaid in the `graph-source` text |
+
+The Mermaid C4 subset supports `C4Context`, `C4Container`, `C4Component`, and `C4Dynamic`; the supported element
+and boundary macros; `Rel`, `BiRel`, directional relationships, `RelIndex`, and `UpdateLayoutConfig`. Export/import
+does not retain `accessibleDescription`, `size`, `direction`, `selection`, bound `data`, layout engine/separations/
+positions, node shape/state/icon/meta/group, or edge kind/condition. `groups[].nodes` remains authoritative for
+membership.
+
+C4 layout is deterministic and tier-based: persons occupy the first tier, internal elements the middle tiers within
+boundary boxes, and external elements the last tier. `shapeInRow` and `boundaryInRow` are semantic counts, not
+pixel measurements; C4 layout does not reverse edges.
+
+The bundled UI renders C4 natively with C4 symbols, technology lines, external styling, bidirectional arrows, and
+nested boundary frames when positions are complete. Satellite renderers continue to render C4 as generic graph
+nodes. In particular, their static SVG/ECharts paths do not render C4 glyphs, technology labels, or nested boundary
+frames; nested outer boundaries may therefore be absent or fail to expand around child boundaries.
+
 ### Renderer matrix
 
 | Renderer | viz-core? | Behaviour |
