@@ -9,6 +9,68 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.5] — 2026-10-27 — Semantic layer, Roost inter-agent protocol, MS Teams auth/forms hardening, ledger event sync
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.5`, `ai-parrot-server` to `1.3.4`,
+`parrot-formdesigner` to `1.3.1`, `ai-parrot-semantic` to `1.3.1`, the other core-line packages to `1.2.5`,
+satellites to `0.4.5`). Satellites are re-pinned to `ai-parrot>=1.2.5`.
+
+### Security
+
+- **Dependency CVE/GHSA bumps**: `dompurify` → 3.4.17 (GHSA-cg2g-xh64-v4q7, `SAFE_FOR_TEMPLATES` shadow-root
+  bypass), `Pillow` → >=13.0.0 (CVE-2026-112900), `pypdf` → 6.21.2 (CVE-2026-115572), `black` → 26.10.1
+  (CVE-2026-114134), `brotli`/`brotlicffi` → 1.2.1 (GHSA-9v8h-qqgm-4m35).
+- **Request-scoped RLS injection and non-shared dataset sources** (FEAT-738) — dataset-manager handlers no
+  longer leak row-level-security context or a shared source instance across requests.
+- **MS Teams submit-envelope fail-closed tenant isolation** (FEAT-733) — unsigned/mis-paired signing secrets
+  are refused rather than silently accepted; documents the escape hatch and tenant resolution.
+- **MS Teams user-auth lane hardening** (FEAT-729) — fail-closed exchange gate and Token Service user-id
+  fixes from code review.
+- **MS Teams FormDesigner mixin hardening** (FEAT-745) — wizard fall-through guard, fail-closed tenant map,
+  state cleanup.
+- **`repl_worker` unpickle allowlist widened** alongside the pandas-3 Arrow value fix (pre-existing allowlist
+  was too narrow for legitimate Arrow-backed DataFrame payloads).
+
+### Added
+
+- **Semantic Layer (FEAT-704)** — new `ai-parrot-semantic` package: governed metric queries for agents, with
+  security-gated raw SQL and guarded hand-off tools (M10b).
+- **Roost — local inter-agent sub-protocol over Squawk (FEAT-747)** — performatives, agent registry,
+  blackboard, Matrix/EventBus/working-memory integration for local inter-agent communication.
+- **A2UI dialect for `parrot-formdesigner` (FEAT-650)** — serve, export, and translate `FormSchema` ⇄ A2UI.
+- **Serve FormDesigner forms from a Teams agent (FEAT-734)** — `/getform` mixin + toolkit.
+- **FormDesigner validation audit trail (FEAT-732)** and **FormBuilder LLM-validation enforcement policy +
+  quota (FEAT-728)**.
+- **Materialize a chat turn as a linked widget (FEAT-757)** — A2UI linked-surface materialization for
+  agent-function/querysource-backed widgets.
+- **Parrot telemetry event fan-out (FEAT-710)** — lifecycle events now fan out to the EventBus.
+- **Shared Ledger Event Log (FEAT-694)** — cross-machine work-ledger sync via git hooks; retractable coder
+  feedback via `insight.superseded` tombstones (FEAT-723).
+- **`GitHubReviewer` — SDD spec as a second acceptance-criteria source (FEAT-759)**.
+- **Double-`configure()` is not a crash (FEAT-721)** and **worktree native artifact sync (FEAT-722)** —
+  `.so` artifacts now sync automatically into feature/attempt worktrees.
+- **Model deprecation follow-ups (FEAT-719)** — Veo → Omni, Computer Use 3.8, `gpt-transcribe`.
+
+### Fixed / Internal
+
+- **One importable identity per package test tree (FEAT-618/720)** — resolves wheel-layout test collection
+  collisions.
+- **Re-armed the observability auto-boot** (`set_bootstrap_hook`, FEAT-725).
+- **Configure-override idempotency & `speech_report` hardening** (FEAT-726); repaired
+  `test_configure_applies_tooling`, red since birth (FEAT-727).
+- **One owner for the Jira credential** (FEAT-735, vault token sync tech debt); `sdd_coder` MCP surface now
+  accepts every id/tier its engine already accepts (FEAT-736); plausibility coverage reporting and prompt
+  length caps (FEAT-737).
+- **Admin UI accepts every upload the backend stores, and reports what it stored** (FEAT-739); formdesigner
+  A2UI import/list membership + leak fixes (FEAT-743).
+- **`/sdd-fix` Fast lane now runs in its own worktree**, never the main checkout (FEAT-740).
+- **Reel unit tests**: repaired stale Veo fixtures and bounded per-test runtime (FEAT-744).
+- **`repl_worker` protocol fixes**: Arrow transport for DataFrame values (FEAT-750); snapshot survives
+  guard-refused values (FEAT-751).
+- Routine dependency bumps: `mkdocstrings`, `onnxruntime`, `aiounittest`.
+
+---
+
 ## [1.2.4] — 2026-10-22 — Per-tenant skills, Fireflies insights agent, Jira CLI, OTLP metrics fan-out
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.4`, `ai-parrot-server` to `1.3.3`,
