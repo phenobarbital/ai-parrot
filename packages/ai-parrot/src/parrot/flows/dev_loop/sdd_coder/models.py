@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
 from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
 
 SeatKind = Literal["mcp", "native"]
+SeatEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 TaskOutcome = Literal[
     "queued",
     "running",
@@ -164,6 +166,7 @@ class RosterSeat(BaseModel):
     backend: Optional[DevAgentBackend] = None
     model: str = ""
     fallback_model: str = ""
+    effort: Optional[SeatEffort] = None
 
     @model_validator(mode="after")
     def _backend_required_for_mcp(self) -> "RosterSeat":
@@ -178,6 +181,10 @@ class RosterSeat(BaseModel):
             raise ValueError(f"RosterSeat {self.label!r}: backend is required when kind='mcp'")
         if self.kind == "native" and self.backend is not None:
             raise ValueError(f"RosterSeat {self.label!r}: backend must be None when kind='native'")
+        if self.kind == "native" and self.effort is not None:
+            logging.getLogger(__name__).warning(
+                "RosterSeat %r: effort=%r is not applied to native seats yet", self.label, self.effort
+            )
         return self
 
 
