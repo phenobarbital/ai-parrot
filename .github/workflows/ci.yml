@@ -532,7 +532,7 @@ jobs:
 
       - name: Semantic-layer tests
         run: |
-          uv sync --all-packages --extra duckdb --package ai-parrot-semantic
+          uv sync --all-packages --extra duckdb
           uv run pytest packages/ai-parrot-semantic/tests -q --tb=short
 
   test-loaders:
