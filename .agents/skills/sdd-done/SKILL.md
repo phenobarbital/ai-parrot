@@ -173,6 +173,9 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - report `skipped`/`read-only`/`error` rows (read-only →
      `(NOT closed: shared ledger is read-only)`); never fails `$sdd-done`
 9. Push feature branch:
+   - First run `wikitoolkit ledger outbox status --repo-root <worktree> --json`; on exit 4 report the
+     `contaminated_paths` and point to `docs/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
+     drop them and do not block the code PR
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):
     - If `--merge` flag is set and not a hotfix, run `wikitoolkit ledger blockers <FEAT-ID>`
@@ -183,25 +186,17 @@ do not run task closure again on base_branch and do not clean worktrees with unk
       is how a human resolves one)
     - If `--force`, warn but proceed with merge
 
-11. Snapshot ledger issues (feature flows only):
-    - For features (not hotfixes), `git fetch origin <BASE_BRANCH>` then create a
-      throwaway detached worktree at `origin/<BASE_BRANCH>` (`git worktree add --detach`)
-    - Run `wikitoolkit ledger export`, `wikitoolkit ledger export-log` and
-      `wikitoolkit ledger rotate-log --older-than-days 30` there (this step is the only
-      place rotation may run); only when `export` reports `(changed)`, `export-log`
-      reports `(+N ...)` or `rotate-log` reports `Rotated`:
-      `git add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl` (plus `sdd/ledger/archive`
-      when it exists), commit `sdd: ledger snapshot for <FEAT-ID>`,
-      and `git push origin HEAD:<BASE_BRANCH>`
-    - On cleanup, restore and clean `sdd/ledger` in the throwaway worktree
-      (`git restore --staged --worktree -- sdd/ledger` + `git clean -fdq -- sdd/ledger`)
-      so a stale untracked archive never survives a rejected push
-    - On a rejected push, fetch and create a fresh throwaway worktree at the
-      updated remote base, re-export, commit and retry — up to 3 attempts,
-      then warn and continue without failing `$sdd-done`
-    - Remove only clean, owned, idle throwaway worktrees without force; report
-      any retained worktree requiring recovery instead of deleting its changes
-    - Skip the snapshot entirely for hotfixes
+11. Deliver ledger events (FEAT-758), for every flow type including hotfixes:
+    - Ledger events never travel in the feature PR; the destination is always `origin/dev`, never `main`,
+      regardless of `<BASE_BRANCH>`
+    - Run `wikitoolkit ledger outbox prepare --repo-root <worktree>` then
+      `wikitoolkit ledger outbox integrate --repo-root <worktree>`
+    - Exit 0: continue; report the receipt and any remaining pending events
+    - Exit 2/3/4: set `LEDGER_DELIVERY_PENDING=1`, print the batch location and the exact retry command
+      `wikitoolkit ledger outbox integrate --repo-root <worktree> --batch-id <id>`; an already-open code PR
+      stays open, nothing is rolled back
+    - The integrator works in its own temporary checkout of `origin/dev`, retries a rejected push on a fresh
+      base (max 3), never force-pushes and never rotates logs (rotation is an explicit maintenance command)
 
 12. Integrate:
     - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
@@ -225,6 +220,9 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - transition to Done, Resolved, Ready for UAT, Complete, or Close
     - report missing credentials or missing transitions without failing closeout
 15. Cleanup:
+    - first run one more `wikitoolkit ledger outbox prepare` + `integrate` pass (captures closures recorded
+      after step 11); remove the worktree ONLY when both passes exited 0 and `LEDGER_DELIVERY_PENDING` is
+      unset, otherwise retain it and report "closeout incomplete: ledger delivery pending"
     - remove the worktree only after successful push/PR or merge path
     - if running inside it, leave the feature worktree for an allowed directory
       before removing it; if host restrictions prevent this, report cleanup pending
