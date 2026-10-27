@@ -332,4 +332,4 @@ See the blueprint test file: `test_pg_store_sql_shapes`, `test_list_visible_pred
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Native seat opus, 1 attempt. Deviations: (1) group-visibility test dropped because MetricDefinition (TASK-4843) only allows private/tenant/public visibility, so that scope_grants branch via allowed_groups is untested; (2) save() fills created_at/updated_at when empty. Live Postgres round-trip test is skipped without NAVIGATOR_PG_DSN, so the SQL has not run against a real database. The ledger git hook had swept sdd/ledger/events.jsonl into the coder commit; reverted on the attempt branch before merge.

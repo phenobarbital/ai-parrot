@@ -66,7 +66,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -76,8 +76,9 @@
       "parallelism_notes": "imports MetricDefinition from TASK-4843 (parrot/metrics/models.py) and uses its conftest fixture worked_hours_def",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4844-metric-store-and-yaml-loader.md"
+      "completed_at": "2026-10-27T23:23:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4844-metric-store-and-yaml-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4845",
@@ -106,7 +107,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,8 +117,9 @@
       "parallelism_notes": "imports MetricMatch/DimensionSpec/PeriodPreset from TASK-4843 (parrot/metrics/models.py) and its stub_encoder conftest fixture",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4846-metric-context-and-matcher.md"
+      "completed_at": "2026-10-27T23:23:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4846-metric-context-and-matcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4847",
@@ -147,7 +149,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -157,8 +159,9 @@
       "parallelism_notes": "imports MetricDefinition from TASK-4843 (parrot/metrics/models.py) to build/validate rows in handlers/models/metric_definitions.py",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4848-pg-metric-definition-store.md"
+      "completed_at": "2026-10-27T23:23:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4848-pg-metric-definition-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4849",
@@ -167,7 +170,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -177,8 +180,9 @@
       "parallelism_notes": "imports ResolvedPeriod/ComparisonPolicy/PeriodPreset/Grain from TASK-4843 (parrot/metrics/models.py); owns parrot_tools/metrics/__init__.py lazy map so later tasks never edit it",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4849-metric-periods.md"
+      "completed_at": "2026-10-27T23:23:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4849-metric-periods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4850",
