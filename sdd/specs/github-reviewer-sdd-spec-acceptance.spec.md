@@ -53,9 +53,10 @@ that produced this very document. `GitHubReviewer` has GitHub API access
   comparison and submit the **same kind of real GitHub review vote**
   (`APPROVE`/`REQUEST_CHANGES`, or `COMMENT` for the deferred-CI case in the
   strict gate) that the Jira path already produces.
-- Keep the Jira path exactly as-is when a Jira key is present — the spec path
+- Keep Jira source selection and review behavior as-is when a Jira key is present — the spec path
   is a **fallback**, never a replacement, and never overrides a found Jira
-  ticket.
+  key, including on fetch failure. Reviewed outcome dictionaries gain only
+  additive `requirement_source` metadata.
 - Preserve today's `no_ticket` behavior (comment only, no vote) for a PR that
   has neither a usable Jira key nor a usable SDD spec.
 - Make the decided requirement source observable on the result (so logs/
@@ -231,7 +232,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
       jira_project: str = "NAV",                      # existing, unchanged
       sdd_feature_prefix: str = "FEAT",                # new — verified: conf.py:804 is the naming convention to mirror
       enable_sdd_spec_fallback: bool = True,           # new
-      max_spec_scan_files: int = 500,                  # new — bounds the directory-listing fallback (see §7 Known Risks)
+      max_spec_scan_files: int = 500,                  # new — positive cap across both lookup phases (see §7 Known Risks)
       ...,
   ):
       """<unchanged docstring + new Args entries for the three kwargs above>."""
@@ -275,8 +276,9 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 - **Responsibility**: Resolve a `FEAT-<NNN>` id to spec content, in the exact dict shape `_fetch_ticket` already returns, so `_ask_llm_for_review` needs no change.
 - **Depends on**: Module 1 (`feature_id`), Module 2 (`list_repo_directory`), `GitToolkit.search_repo_code` (existing, unchanged), `GitToolkit.get_file_content_at_ref` (existing, unchanged)
 - **Decided pattern — two-phase lookup** (not a free design choice for the implementer, fixed here because it is a real correctness-vs-cost tradeoff):
-  1. **Fast path**: `search_repo_code(f'"{feature_id}" path:sdd/specs extension:md', repository=repo)`. If `error is None` and exactly one `items` entry is returned, use its `path` directly.
-  2. **Fallback** (Code Search returned zero, `>1`, or `error="rate_limited"`, or raised): `list_repo_directory("sdd/specs", ref=base_ref, repository=repo)`; for each entry whose `name` ends in `.spec.md`, up to `self.max_spec_scan_files`, call `get_file_content_at_ref(path=entry.path, ref=base_ref, repository=repo)` and check whether its content contains the literal, word-bounded line `**Feature ID**: {feature_id}`; return the first match's path, else `None`.
+  1. **Fast path**: `search_repo_code(f'"{feature_id}" path:sdd/specs extension:md', repository=repo)`. A single hit with `error is None` is only a candidate. Require a direct child of `sdd/specs/` ending in `.spec.md`, read it with `get_file_content_at_ref` at the requested `ref`, and validate its exact `**Feature ID**: {feature_id}` metadata line outside fenced code. Match the entire line after trimming surrounding whitespace; an incidental mention or a prefix match such as `FEAT-81` versus `FEAT-811` is insufficient. Accept only an existing, readable, non-error, non-truncated text result with that header.
+  2. **Fallback**: Search errors, zero/multiple hits, or a missing, unreadable, invalid or mismatched candidate trigger `list_repo_directory("sdd/specs", ref=ref, repository=repo)`. Visit direct file entries ending in `.spec.md` in lexicographic path order, applying the same read/header validation. Return the first validated match, else `None`. This is a deterministic first-match policy, not a repository-wide uniqueness guarantee.
+  3. **Read budget and validation**: `max_spec_scan_files` is a positive integer and caps candidate file reads across both phases, including a rejected fast-path candidate. Reuse reads within the lookup rather than reading a rejected candidate twice. An empty `ref` returns `None` without GitHub calls. `_fetch_spec_requirement` must also validate the final content against the requested feature ID before parsing it; if a final reread fails validation, return `None`, never review against that content. A final reread adds at most one file-content call beyond the candidate budget.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/bots/github_reviewer.py (new, placed beside _fetch_ticket; anchor: github_reviewer.py:1712)
@@ -285,7 +287,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 
       Two-phase: a Code-Search fast path (default-branch only), falling back
       to a ref-exact directory listing + per-file match. Returns ``None``
-      when neither phase finds a unique match — never raises; a
+      when neither phase finds a validated match within the budget — never raises; a
       ``GitToolkitError`` from either GitHub call is logged and treated the
       same as "not found" (fail open to the existing no-op comment path).
       """
@@ -308,10 +310,9 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 
       ``None`` on: no spec located (:meth:`_locate_spec_file` returned
       ``None``), the spec's own "Acceptance Criteria" section is absent, or
-      it is still the unfilled template boilerplate (the literal
-      ``- [ ] Criterion N`` placeholder line and nothing else) — a
-      placeholder must never be fed to the LLM as if it were real
-      acceptance criteria.
+      it contains no substantive criteria after the boilerplate filtering
+      defined below. Missing, errored, truncated, or feature-ID-mismatched
+      final file content also returns ``None``.
 
       On success, returns
       ``{"fields": {"summary": <H1 title>, "description": <Motivation section
@@ -325,9 +326,24 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
       """
   ```
 
+  **Acceptance Criteria filtering contract**: Normalize whitespace and checkbox
+  state (`[ ]`, `[x]`, `[X]`) for comparison. Ignore blank lines, the template's
+  introductory blockquote, Markdown separators, and HTML comments. Remove the
+  template's generic bullets: ``All unit tests pass (`pytest tests/unit/ -v`)``,
+  ``All integration tests pass (`pytest tests/integration/ -v`)``,
+  ``Documentation updated in `docs/` ``, and `No breaking changes to existing public API`.
+  Also remove unresolved `Criterion N` and
+  `Performance benchmark: <metric> within <threshold>` placeholders. At least
+  one remaining criterion is required. If none remain, return `None`; otherwise
+  pass the remaining criteria (preserving their original text) as the AC field.
+  A real feature criterion mixed with generic bullets is usable; an untouched
+  template, a subset of its boilerplate, or the placeholder fixture below is not.
+  Keep these template strings in the implementation/tests; reviewing another
+  repository must not depend on reading this checkout's template at runtime.
+
 ### Module 4: Wire the fallback into the two review entry points
 - **Path**: `packages/ai-parrot/src/parrot/bots/github_reviewer.py`
-- **Responsibility**: In both `review_pull_request` and `strict_review_pull_request`, attempt the spec fallback when `_extract_ticket_key` returns `None`, before falling through to the unchanged `no_ticket` / `_notify_missing_ticket` path. Set `result.requirement_source = "sdd_spec"` on the `PRReviewResult` returned from the spec branch (the Jira branch leaves the model's own default, `"jira"`).
+- **Responsibility**: In both entry points, attempt the spec fallback only when `_extract_ticket_key` returns `None`. A present Jira key always selects Jira, even if the fetch fails; preserve each entry point's `ticket_not_found` return and wiki-refresh lifecycle. Set `result.requirement_source` explicitly from the selected source, overriding any LLM-supplied value. Both manually constructed public outcome dictionaries must include `"requirement_source": requirement_source` after an LLM review, including strict approved/deferred/blocked outcomes and submission errors. Early returns without a review (`no_ticket`, `ticket_not_found`, `already_reviewed`, validation errors) remain unchanged.
 - **Depends on**: Module 1, Module 3, Module 5 (needs `payload["base_ref"]`)
 - **Interface Skeleton**:
   ```python
@@ -338,7 +354,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
   #   if ticket_key:
   #       ticket = await self._fetch_ticket(ticket_key, ...)  # unchanged Jira path
   #   requirement_source = "jira"
-  #   if ticket is None and self.enable_sdd_spec_fallback:
+  #   if not ticket_key and self.enable_sdd_spec_fallback:
   #       feature_id = self._extract_feature_id(payload.get("pr_body") or "", payload.get("pr_title") or "")
   #       if feature_id:
   #           ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
@@ -348,6 +364,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
   #       <existing no_ticket / ticket_not_found branch — UNCHANGED>
   #   result = await self._ask_llm_for_review(..., ticket_key=ticket_key, ticket=ticket, ...)  # UNCHANGED call
   #   result.requirement_source = requirement_source
+  #   outcome["requirement_source"] = requirement_source  # in both public outcome builders
   ```
 
 ### Module 5: `_fetch_pr_payload` base_ref / base_sha
@@ -371,14 +388,14 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
       ...
   }
   ```
-  The **webhook-triggered** path (`review_pull_request`, fed by
-  `handle_hook_event`) builds its payload from the raw GitHub delivery JSON
-  somewhere outside this file — not read in this session, flagged
-  `(unverified — check before use)` in §6 Edit Sites — and needs the same two
-  keys threaded through there too, or the SDD fallback will only ever fire
-  for the manual `/review_pr` command, never for push-triggered reviews. This
-  is called out as both a Known Risk (§7) and an Open Question (§8); it is
-  very likely its own task once `/sdd-task` can re-verify the anchor.
+  The **webhook-triggered** path already receives `base_ref` from
+  `GitHubWebhookHook._build_event_payload` in
+  `packages/ai-parrot/src/parrot/core/hooks/github_webhook.py:191-205`
+  for opened/reopened/synchronize events. No webhook source change is needed:
+  this design reads at `base_ref`, not `base_sha`. The new manual payload's
+  `base_sha` is metadata only; neither path promises an immutable snapshot.
+  Cover the existing webhook builder in an integration regression so both
+  entry paths resolve specs at the supplied base branch.
 
 ---
 
@@ -389,22 +406,29 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 |---|---|---|
 | `test_extract_feature_id_matches_feat_prefix` | M1 | `FEAT-811` extracted from title/body; no match when absent |
 | `test_extract_feature_id_does_not_shadow_jira` | M1/M4 | a PR with both a Jira key and a FEAT-id resolves via Jira, never attempts the spec fallback |
+| `test_jira_fetch_failure_never_uses_spec` | M4 | Both IDs present; unavailable Jira toolkit, fetch error, or missing issue returns existing `ticket_not_found` in both entry points, with no spec lookup or review submission |
 | `test_list_repo_directory_returns_entries` | M2 | mocked GitHub `contents/sdd/specs` array response → `RepoDirectoryListing.entries` |
 | `test_list_repo_directory_404_is_not_exists` | M2 | 404 → `exists=False`, empty `entries`, no exception |
-| `test_locate_spec_file_fast_path_code_search_hit` | M3 | single Code Search hit used directly, no directory listing call made |
+| `test_locate_spec_file_fast_path_code_search_hit` | M3 | Single candidate read at requested ref and exact metadata header validated before acceptance; no directory listing call |
+| `test_locate_spec_file_rejects_invalid_search_candidate` | M3 | Incidental feature mention, prefix-only ID match, fenced example header, wrong extension/path, missing/renamed file, unreadable/error/truncated content all trigger bounded directory fallback |
+| `test_locate_spec_file_budget_and_order` | M3 | Positive cap enforced across both phases; rejected candidate consumes budget and is not read twice; deterministic first-match order; empty ref performs no calls |
+| `test_fetch_spec_requirement_revalidates_final_content` | M3 | Final read is missing, errored, truncated, or has a different feature header: return `None`, never submit a vote |
 | `test_locate_spec_file_falls_back_on_rate_limited_search` | M3 | `search_repo_code` returns `error="rate_limited"` → directory-listing fallback exercised |
 | `test_locate_spec_file_fallback_scans_and_matches` | M3 | directory listing + per-file `get_file_content_at_ref` finds the `**Feature ID**: FEAT-<NNN>` line |
-| `test_fetch_spec_requirement_rejects_placeholder_ac` | M3 | a spec whose AC section is still the literal template bullet → returns `None` |
+| `test_fetch_spec_requirement_rejects_placeholder_ac` | M3 | Full untouched template, its generic-bullet subsets, empty/comment-only section, and placeholder fixture return `None`, including checked/whitespace variants |
+| `test_fetch_spec_requirement_accepts_substantive_ac` | M3 | A real criterion mixed with template boilerplate is accepted; returned AC preserves real criterion text and excludes generic/placeholder bullets |
 | `test_fetch_spec_requirement_shape_matches_fetch_ticket` | M3 | returned dict has exactly `{"fields": {"summary", "description", <ac_field_id>}}` |
 | `test_review_pull_request_spec_fallback_approves` | M4 | no Jira key, resolvable spec, PR satisfies its AC → `submit_pr_review(event="APPROVE", ...)` called, `requirement_source="sdd_spec"` |
 | `test_review_pull_request_no_source_unchanged` | M4 | neither Jira nor spec resolves → identical to today: `_notify_missing_ticket` only, no review submitted |
 | `test_strict_review_pull_request_spec_fallback` | M4 | same as above through the strict/draft-on-block gate |
+| `test_review_outcomes_expose_requirement_source` | M4 | Assert public returned dictionaries for Jira/spec reviews and strict approved/deferred/blocked/submission-error outcomes; LLM-supplied source cannot override selected source; early no-review outcomes unchanged |
 | `test_fetch_pr_payload_includes_base_ref` | M5 | `_fetch_pr_payload` result carries `base_ref`/`base_sha` from a fixture `pr` dict |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
 | `test_review_pull_request_end_to_end_spec_sourced` | Full `review_pull_request` call with a fake `GitToolkit` (search miss → directory listing → file read) and a fake LLM client producing `approve=True`; asserts the real `submit_pr_review` call and its body. |
+| `test_webhook_spec_review_uses_base_ref` | Build opened/reopened/synchronize payloads through the existing `GitHubWebhookHook._build_event_payload`; pass to reviewer with fake GitToolkit/LLM and assert spec reads use the supplied base branch and returned source is `sdd_spec`. |
 
 ### Validation Contract
 
@@ -440,6 +464,10 @@ SPEC_FIXTURE_PLACEHOLDER_AC = """\
 > This feature is complete when ALL of the following are true:
 
 - [ ] All unit tests pass (`pytest tests/unit/ -v`)
+- [ ] All integration tests pass (`pytest tests/integration/ -v`)
+- [ ] Documentation updated in `docs/`
+- [ ] No breaking changes to existing public API
+- [ ] Performance benchmark: <metric> within <threshold>
 - [ ] Criterion N
 """
 ```
@@ -457,7 +485,9 @@ SPEC_FIXTURE_PLACEHOLDER_AC = """\
   (`APPROVE`/`REQUEST_CHANGES`/`COMMENT`) via `GitToolkit.submit_pr_review`
   — not merely an issue comment.
 - [ ] A PR referencing a `NAV-<number>` Jira ticket is completely unaffected:
-  same behavior, same code path, as today. Every existing test in
+  same source selection and failure behavior as today, with only additive
+  source metadata on reviewed outcomes. A Jira fetch failure never enables
+  SDD fallback, even if a FEAT-id is also present. Every existing test in
   `test_github_reviewer.py` passes unmodified.
 - [ ] A PR with neither a usable Jira key nor a usable SDD spec still falls
   through, byte-for-byte unchanged, to today's `no_ticket` /
@@ -468,16 +498,26 @@ SPEC_FIXTURE_PLACEHOLDER_AC = """\
   the `no_ticket` path — never a silent, ungrounded approval.
 - [ ] `PRReviewResult.requirement_source` is `"sdd_spec"` when the spec path
   decided the verdict and `"jira"` in every other case (including every
-  existing call site, via the field's default).
+  existing call site, via the field's default). Both entry points explicitly
+  stamp the selected source on the model and their returned reviewed outcome
+  dictionaries, including strict deferred/blocked results and submission
+  errors. Existing early returns without review remain unchanged.
+- [ ] Search candidates are validated against the exact feature metadata at
+  the requested ref; stale or mismatched hits trigger directory fallback.
+  Unfilled template criteria are rejected even when generic bullets coexist
+  with placeholders; substantive criteria mixed with boilerplate remain usable.
 - [ ] Both `review_pull_request` and `strict_review_pull_request` support the
   fallback identically.
 - [ ] `GitToolkit.list_repo_directory` correctly reports `exists=False` with
   empty `entries` on a 404 (directory absent at that ref), never raising.
 - [ ] All new behavior is bounded by `self.max_spec_scan_files` — a
   pathologically large `sdd/specs/` directory cannot turn one PR review into
-  an unbounded number of GitHub API calls.
-- [ ] `enable_sdd_spec_fallback=False` fully disables Module 3/4 — the two
-  entry points behave exactly as they do today.
+  an unbounded number of GitHub API calls. The cap covers candidate reads
+  across both phases; a final validation reread adds at most one file-content
+  call. File-content calls can internally make multiple HTTP requests.
+- [ ] `enable_sdd_spec_fallback=False` disables spec lookup and source switching
+  in both entry points. Existing Jira/no-ticket behavior is preserved, with
+  additive `requirement_source="jira"` metadata on Jira-reviewed outcomes.
 
 ---
 
@@ -564,7 +604,7 @@ class GitToolkit:                                                    # (Abstract
 | `packages/ai-parrot/src/parrot/bots/github_reviewer.py` | MODIFY | `class PRReviewResult(BaseModel):` | `github_reviewer.py:261` | 1 |
 | `packages/ai-parrot/src/parrot/bots/github_reviewer.py` | MODIFY | `from parrot_tools.gittoolkit import (` | `github_reviewer.py:79` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/gittoolkit.py` | MODIFY | `    def _compare_pr_versions_sync(` | `gittoolkit.py:2599` | 1 |
-| `(unverified — check before use)` — webhook delivery payload builder, likely `parrot/core/hooks/github_webhook.py` or similar (not read in this session; referenced only as "`:class:`~parrot.core.hooks.github_webhook.GitHubWebhookHook`" in this file's own module docstring, line 12) | MODIFY | — | — | — |
+| `packages/ai-parrot/src/parrot/core/hooks/github_webhook.py` | REUSE unchanged | `"base_ref": base.get("ref"),` | `github_webhook.py:205`, default pull-request event branch (also present in review-event branch at line 181) | 2; disambiguate by event branch |
 
 ---
 
@@ -612,18 +652,19 @@ class GitToolkit:                                                    # (Abstract
   identically to "no match", triggering the directory-listing fallback, not
   an error surfaced to the PR.
 - **Directory-listing fallback cost scales with `sdd/specs/` size** — one
-  `get_file_content_at_ref` call per candidate file until a match is found.
-  `max_spec_scan_files` bounds the worst case; a repository with more specs
+  `get_file_content_at_ref` call per candidate file until a match is found;
+  that helper can issue additional metadata/author HTTP requests internally.
+  `max_spec_scan_files` bounds candidate reads across both phases, with at
+  most one additional final validation read. It is not a wall-clock timeout.
+  A repository with more specs
   than that cap simply cannot be resolved via the fallback past that point
   (acceptable: the existing review pipeline already measures ~60s per PR
   end-to-end, so this adds bounded, not unbounded, latency).
-- **The webhook (push-triggered) path's payload construction was not
-  located in this session** (see §6 Edit Sites, the `(unverified)` row).
-  Module 5 only confirmed the fix for `_fetch_pr_payload` (used by the
-  on-demand `/review_pr` command). Until the webhook builder is found and
-  given the same two keys, the SDD fallback will silently never fire for
-  push-triggered reviews (`payload.get("base_ref")` stays `None`) — flagged
-  as Open Question below and very likely its own first task.
+- **Base refs are mutable**: both entry paths use `base_ref`; webhook
+  pull-request payloads already include it. `base_sha` added to the manual
+  payload is not used for lookup. Validate final file identity before parsing,
+  and return `None` on missing refs rather than falling back to the default
+  branch. Immutable snapshot selection is outside this change.
 - **Multi-tenant repos**: `GitHubReviewer` is subclassed one instance per
   repository. A repo that does not use the SDD workflow at all is
   unaffected as long as no PR title/body coincidentally matches
@@ -640,21 +681,18 @@ already called elsewhere in the same file (`contents/{path}`).
 
 ## 8. Open Questions
 
-- [ ] Where exactly does the **webhook-triggered** path build its PR payload
-  dict (as opposed to `_fetch_pr_payload`, used only by `/review_pr`), and
-  does the raw GitHub delivery JSON already carry `pull_request.base.ref` /
-  `.sha` for free? This must be confirmed before `/sdd-task` can write that
-  Edit Site's anchor — *Owner: implementer, first task*.
+- [x] Webhook payload construction verified at
+  `GitHubWebhookHook._build_event_payload` (`github_webhook.py:191-205`).
+  Pull-request events already forward `base_ref`; `base_sha` is absent but
+  not required by the chosen lookup contract. Reuse the builder unchanged.
 - [ ] Should `enable_sdd_spec_fallback` default to `True` (as this spec
   proposes — it is a strictly bounded fallback that only ever fires when
-  Jira resolution already failed) or `False` (opt-in per `GitHubReviewer`
+  no Jira key was found) or `False` (opt-in per `GitHubReviewer`
   subclass, so a repo owner must deliberately turn it on)? — *Owner: Jesus
   Lara*.
-- [ ] When a PR references **both** a Jira key and a `FEAT-<NNN>` id, this
-  spec's default assumption is that Jira always wins and the spec is never
-  even consulted (§1 Goals). Confirm this is the intended precedence, versus
-  e.g. preferring whichever source has a non-empty Acceptance Criteria
-  field. — *Owner: Jesus Lara*.
+- [x] Jira-key presence always wins, including unreadable/missing Jira
+  tickets. The approved review correction preserves `ticket_not_found`
+  rather than switching to SDD criteria on fetch failure.
 
 ---
 
@@ -702,3 +740,4 @@ design-research seat only runs over an **accepted** exploration doc, per
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft, scoped from a live diagnosis of `Trocdigital/fieldsync` PR #573 (no review vote cast because the PR referenced an SDD `FEAT-811` id instead of a Jira `NAV-<number>` key) |
+| 0.2 | 2026-10-27 | Codex | Address review: validate search candidates at target ref, preserve Jira precedence on fetch failure, expose source in public outcomes, reject complete template boilerplate, verify existing webhook base_ref contract, and specify regression coverage. |
