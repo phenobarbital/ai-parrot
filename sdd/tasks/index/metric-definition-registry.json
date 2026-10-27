@@ -128,7 +128,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,8 +139,9 @@
       "parallelism_notes": "imports MetricStore/InMemoryMetricStore from TASK-4844 (parrot/metrics/store.py) and MetricMatcher from TASK-4846 (parrot/metrics/matching.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4847-metric-registry-and-view.md"
+      "completed_at": "2026-10-27T23:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4847-metric-registry-and-view.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4848",
@@ -166,7 +167,7 @@
     {
       "id": "TASK-4849",
       "slug": "metric-periods",
-      "title": "Metric periods — preset resolution, comparison window, series buckets",
+      "title": "Metric periods \u2014 preset resolution, comparison window, series buckets",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -187,11 +188,11 @@
     {
       "id": "TASK-4850",
       "slug": "metric-shape-emitter",
-      "title": "Metric shape emitter — KPI figures, KPICard props, baked and linked envelopes",
+      "title": "Metric shape emitter \u2014 KPI figures, KPICard props, baked and linked envelopes",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -201,17 +202,18 @@
       "parallelism_notes": "needs the parrot_tools/metrics package __init__.py created by TASK-4849 (the shapes names are mapped there); uses MetricDefinition/shape models from TASK-4843 transitively",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4850-metric-shape-emitter.md"
+      "completed_at": "2026-10-27T23:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4850-metric-shape-emitter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4851",
       "slug": "metric-source-executors",
-      "title": "Metric source executors — query_slug, transformer, recipe",
+      "title": "Metric source executors \u2014 query_slug, transformer, recipe",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -221,13 +223,14 @@
       "parallelism_notes": "needs the parrot_tools/metrics package __init__.py from TASK-4849 (executors names mapped there) and ResolvedPeriod.udf_keywords semantics defined by TASK-4849 periods.py",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4851-metric-source-executors.md"
+      "completed_at": "2026-10-27T23:34:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4851-metric-source-executors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4852",
       "slug": "metrics-toolkit",
-      "title": "MetricsToolkit — list, describe, query and explain metrics",
+      "title": "MetricsToolkit \u2014 list, describe, query and explain metrics",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -249,7 +252,7 @@
     {
       "id": "TASK-4853",
       "slug": "metric-routing-mixin",
-      "title": "MetricRoutingMixin — metric default-shape slot in _resolve_output_mode",
+      "title": "MetricRoutingMixin \u2014 metric default-shape slot in _resolve_output_mode",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -274,7 +277,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -283,18 +286,18 @@
       "parallel": true,
       "parallelism_notes": "imports current_metric_match from TASK-4846 (parrot/metrics/context.py); cross-feature BLOCKED until FEAT-752 TASK-4794 (parrot/models/suggestions.py) and TASK-4797 (parrot/bots/suggestions/protocol.py) merge to dev",
       "assigned_to": null,
-      "started_at": "2026-10-27T23:12:09+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4854-metric-suggestion-provider.md"
     },
     {
       "id": "TASK-4855",
       "slug": "metric-definitions-handler",
-      "title": "MetricDefinitionsHandler — /api/v1/metrics REST lane",
+      "title": "MetricDefinitionsHandler \u2014 /api/v1/metrics REST lane",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -304,8 +307,9 @@
       "parallelism_notes": "imports PgMetricDefinitionStore (get/save/list_visible) from TASK-4848 (handlers/models/metric_definitions.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4855-metric-definitions-handler.md"
+      "completed_at": "2026-10-27T23:34:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4855-metric-definitions-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4856",
