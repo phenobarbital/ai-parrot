@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from parrot.knowledge.wiki.ledger.events import LedgerEvent, canonical_json_dumps
 from parrot.knowledge.wiki.ledger.integration import (
+    LedgerIntegrator,
     build_scratch_snapshot,
     find_transition_conflicts,
     merge_batch,
     read_logical_log,
 )
-from parrot.knowledge.wiki.ledger.outbox import StrictLedgerReadError
-
+from parrot.knowledge.wiki.ledger.outbox import LedgerOutbox, StrictLedgerReadError
 
 def _ev(kind: str, subject: str, payload: dict[str, object], n: int) -> LedgerEvent:
     """Build a deterministic event with a unique timestamp-derived identity."""
@@ -142,3 +143,178 @@ async def test_scratch_replay_remote_closed_wins_and_legacy_rows_survive(tmp_pat
     }
     assert rows[subject]["status"] == "closed"
     assert rows["issue:legacy"] == legacy
+
+
+def _run_git(cwd: Path, *args: str) -> str:
+    """Run one test-only git command and return its standard output."""
+    result = subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+@pytest.fixture
+def two_clones(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create a bare dev origin and two independently configured clone checkouts."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "--initial-branch=dev", str(origin)], check=True, capture_output=True)
+    seed = tmp_path / "seed"
+    _run_git(tmp_path, "clone", str(origin), str(seed))
+    for clone in (seed,):
+        _run_git(clone, "config", "user.name", "Ledger Test")
+        _run_git(clone, "config", "user.email", "ledger@example.test")
+    (seed / "README.md").write_text("seed\n", encoding="utf-8")
+    _run_git(seed, "add", "README.md")
+    _run_git(seed, "commit", "-m", "seed")
+    _run_git(seed, "push", "origin", "dev")
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    _run_git(tmp_path, "clone", str(origin), str(first))
+    _run_git(tmp_path, "clone", str(origin), str(second))
+    for clone in (first, second):
+        _run_git(clone, "config", "user.name", "Ledger Test")
+        _run_git(clone, "config", "user.email", "ledger@example.test")
+    return origin, first, second
+
+
+async def _batch_for(repo: Path, event: LedgerEvent):
+    """Write one isolated local journal event and seal it into a delivery batch."""
+    ledger_dir = repo / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True)
+    (ledger_dir / "events.jsonl").write_bytes(_line(event) + b"\n")
+    outbox = LedgerOutbox(ledger_dir)
+    batch = await outbox.prepare(repo_root=repo, source_ref="HEAD", source_head=_run_git(repo, "rev-parse", "HEAD"))
+    assert batch is not None
+    return outbox, batch
+
+
+async def test_delivers_batch_and_writes_receipt(two_clones: tuple[Path, Path, Path]) -> None:
+    """A sealed event is pushed and acknowledged only after remote verification."""
+    _, first, _ = two_clones
+    event = _ev("insight.recorded", "spec:delivery", {"fact": "x", "title": "x", "derived_from": "spec:FEAT-758"}, 10)
+    outbox, batch = await _batch_for(first, event)
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "delivered"
+    assert report.added == 1
+    assert await outbox.receipt_for(batch.batch_id) is not None
+    assert event.event_id in await LedgerIntegrator(first, outbox).remote_event_ids()
+
+
+async def test_two_clone_race_loser_retries_both_present_once(two_clones: tuple[Path, Path, Path]) -> None:
+    """A stale clone refreshes and delivers its independent event without duplication."""
+    _, first, second = two_clones
+    first_event = _ev(
+        "insight.recorded", "spec:first", {"fact": "one", "title": "one", "derived_from": "spec:FEAT-758"}, 11
+    )
+    second_event = _ev(
+        "insight.recorded", "spec:second", {"fact": "two", "title": "two", "derived_from": "spec:FEAT-758"}, 12
+    )
+    first_outbox, first_batch = await _batch_for(first, first_event)
+    second_outbox, second_batch = await _batch_for(second, second_event)
+
+    assert (await LedgerIntegrator(first, first_outbox).integrate(first_batch)).status == "delivered"
+    report = await LedgerIntegrator(second, second_outbox).integrate(second_batch)
+
+    assert report.status == "delivered"
+    ids = await LedgerIntegrator(second, second_outbox).remote_event_ids()
+    assert {first_event.event_id, second_event.event_id} <= ids
+
+
+async def test_lost_receipt_retry_is_already_delivered_no_duplicate_commit(two_clones: tuple[Path, Path, Path]) -> None:
+    """A retry after deleting a local receipt verifies remote content without another commit."""
+    _, first, _ = two_clones
+    event = _ev(
+        "insight.recorded", "spec:retry", {"fact": "retry", "title": "retry", "derived_from": "spec:FEAT-758"}, 13
+    )
+    outbox, batch = await _batch_for(first, event)
+    integrator = LedgerIntegrator(first, outbox)
+    assert (await integrator.integrate(batch)).status == "delivered"
+    outbox._receipt_path(batch.batch_id).unlink()
+    before = _run_git(first, "rev-parse", "origin/dev")
+
+    report = await integrator.integrate(batch)
+
+    assert report.status == "already_delivered"
+    assert _run_git(first, "rev-parse", "origin/dev") == before
+    assert await outbox.receipt_for(batch.batch_id) is not None
+
+
+async def test_conflict_blocks_push_and_receipt(two_clones: tuple[Path, Path, Path]) -> None:
+    """An invalid transition is reported before a commit or receipt is created."""
+    _, first, _ = two_clones
+    event = _ev("issue.claimed", "issue:missing", {"claimed_by": "agent:test"}, 14)
+    outbox, batch = await _batch_for(first, event)
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "conflict"
+    assert report.conflicts[0].reason == "missing-predecessor"
+    assert await outbox.receipt_for(batch.batch_id) is None
+
+
+async def test_hook_mutating_commit_blocks_push(two_clones: tuple[Path, Path, Path]) -> None:
+    """A commit hook that stages an unrelated file is retained for recovery and never pushed."""
+    _, first, _ = two_clones
+    hooks = first / "hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-commit"
+    hook.write_text("#!/bin/sh\necho changed > hook-output\ngit add hook-output\n", encoding="utf-8")
+    hook.chmod(0o755)
+    _run_git(first, "config", "core.hooksPath", str(hooks))
+    event = _ev("insight.recorded", "spec:hook", {"fact": "hook", "title": "hook", "derived_from": "spec:FEAT-758"}, 15)
+    outbox, batch = await _batch_for(first, event)
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "pending"
+    assert report.error_code == "hook-mutated-commit"
+    assert report.recovery_path is not None
+    assert await outbox.receipt_for(batch.batch_id) is None
+
+
+async def test_push_failure_is_pending_and_retains_batch(two_clones: tuple[Path, Path, Path]) -> None:
+    """A missing remote produces a typed pending result and leaves the batch unacknowledged."""
+    _, first, _ = two_clones
+    event = _ev(
+        "insight.recorded", "spec:missing", {"fact": "missing", "title": "missing", "derived_from": "spec:FEAT-758"}, 16
+    )
+    outbox, batch = await _batch_for(first, event)
+    _run_git(first, "remote", "set-url", "origin", str(first / "missing-origin.git"))
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "pending"
+    assert report.error_code == "push-failed"
+    assert await outbox.receipt_for(batch.batch_id) is None
+
+
+async def test_active_checkouts_untouched(two_clones: tuple[Path, Path, Path]) -> None:
+    """Delivery through an owned detached worktree leaves both active clone indexes unchanged."""
+    _, first, second = two_clones
+    event = _ev(
+        "insight.recorded", "spec:clean", {"fact": "clean", "title": "clean", "derived_from": "spec:FEAT-758"}, 17
+    )
+    outbox, batch = await _batch_for(first, event)
+    before = [
+        (_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)
+    ]
+
+    assert (await LedgerIntegrator(first, outbox).integrate(batch)).status == "delivered"
+
+    assert [
+        (_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)
+    ] == before
+
+
+async def test_check_feature_diff_reports_contamination(two_clones: tuple[Path, Path, Path]) -> None:
+    """The read-only contamination report identifies ledger paths changed on a feature ref."""
+    _, first, _ = two_clones
+    _run_git(first, "checkout", "-b", "feature-ledger")
+    path = first / "sdd" / "ledger" / "events.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("{}\n", encoding="utf-8")
+    _run_git(first, "add", "sdd/ledger/events.jsonl")
+    _run_git(first, "commit", "-m", "contaminate ledger")
+    outbox = LedgerOutbox(first / ".parrot" / "ledger")
+
+    assert await LedgerIntegrator(first, outbox).check_feature_diff("feature-ledger") == ["sdd/ledger/events.jsonl"]
