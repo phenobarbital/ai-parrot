@@ -239,8 +239,8 @@ See blueprint test; skipped unless both env flags are set.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (review and close of a delivery merged by an earlier run)
+**Date**: 2026-10-27
+**Notes**: Gate NOT met: the report is PENDING. No real-provider measurement was run (PARROT_TEST_REAL_LLM=1 not authorised); only the offline request-shape path ran. M7 keeps the premount-only planner path. Tracked in issue:60de633baac2.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.
