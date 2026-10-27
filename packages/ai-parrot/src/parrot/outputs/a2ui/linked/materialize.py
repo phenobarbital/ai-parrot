@@ -3,6 +3,7 @@
 No I/O and no LLM: the origin is read from the turn's recorded tool invocations, the component from the
 envelope the caller already holds.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -13,21 +14,47 @@ from pydantic import BaseModel, Field
 from parrot.memory.compaction.models import ToolInvocation, ToolStatus
 
 __all__ = [
-    "EXECUTE_TOOL", "LINKED_TOOLS", "NEUTRAL_TOOLS", "SUPPORTED_ROOTS", "REQUEST_KEYS",
-    "REASON_TURN_NOT_FOUND", "REASON_NO_SLUG_ORIGIN", "REASON_MULTI_SOURCE_TURN", "REASON_UNSUPPORTED_COMPONENT",
-    "REASON_NO_ENVELOPE", "REASON_NO_QUERYSOURCE_TOOLKIT", "REASON_BUILD_FAILED", "REASON_NO_PUBLISH_SURFACE",
+    "EXECUTE_TOOL",
+    "LINKED_TOOLS",
+    "NEUTRAL_TOOLS",
+    "SUPPORTED_ROOTS",
+    "REQUEST_KEYS",
+    "REASON_TURN_NOT_FOUND",
+    "REASON_NO_SLUG_ORIGIN",
+    "REASON_MULTI_SOURCE_TURN",
+    "REASON_UNSUPPORTED_COMPONENT",
+    "REASON_NO_ENVELOPE",
+    "REASON_NO_QUERYSOURCE_TOOLKIT",
+    "REASON_BUILD_FAILED",
+    "REASON_NO_PUBLISH_SURFACE",
     "REASON_PIN_FAILED",
-    "SlugOrigin", "OriginOutcome", "MaterializeWidgetResult", "extract_slug_origin", "component_from_envelope",
+    "SlugOrigin",
+    "OriginOutcome",
+    "MaterializeWidgetResult",
+    "extract_slug_origin",
+    "component_from_envelope",
 ]
 
 EXECUTE_TOOL = "qs_execute_slug"
 LINKED_TOOLS: frozenset[str] = frozenset({"qs_build_linked_surface", "qs_build_linked_dashboard"})
 #: Read-only tools tolerated between the query and the answer (spec §8 Q3). Anything else invalidates the origin.
-NEUTRAL_TOOLS: frozenset[str] = frozenset({
-    "qs_list_slugs", "qs_describe_slug", "qs_get_dialect_reference", "qs_list_components", "qs_validate_pipeline",
-    "read_omitted_content", "search_tools",
-    "list_skill_commands", "load_skill", "read_skill_asset", "search_skills", "read_skill", "list_skills",
-})
+NEUTRAL_TOOLS: frozenset[str] = frozenset(
+    {
+        "qs_list_slugs",
+        "qs_describe_slug",
+        "qs_get_dialect_reference",
+        "qs_list_components",
+        "qs_validate_pipeline",
+        "read_omitted_content",
+        "search_tools",
+        "list_skill_commands",
+        "load_skill",
+        "read_skill_asset",
+        "search_skills",
+        "read_skill",
+        "list_skills",
+    }
+)
 SUPPORTED_ROOTS: frozenset[str] = frozenset({"Chart", "DataTable", "KPICard"})
 #: qs_execute_slug args carried into build_linked_surface's ``request`` (offset/refresh are dropped on purpose).
 REQUEST_KEYS: tuple[str, ...] = ("placeholders", "filter", "fields", "ordering", "grouping", "limit")

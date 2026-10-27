@@ -1,4 +1,5 @@
 """Tests for pure linked-widget materialization helpers (FEAT-757)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -23,10 +24,12 @@ def test_extract_origin_last_completed_wins() -> None:
 
 def test_extract_origin_ignores_errored() -> None:
     """An errored invocation cannot replace a completed origin."""
-    outcome = extract_slug_origin([
-        _exec(),
-        ToolInvocation(tool_name="qs_execute_slug", input={"slug": "other"}, status=ToolStatus.ERROR),
-    ])
+    outcome = extract_slug_origin(
+        [
+            _exec(),
+            ToolInvocation(tool_name="qs_execute_slug", input={"slug": "other"}, status=ToolStatus.ERROR),
+        ]
+    )
 
     assert outcome.kind == "slug"
     assert outcome.origin is not None
@@ -57,11 +60,13 @@ def test_extract_origin_none() -> None:
 
 def test_extract_origin_neutral_tools_tolerated() -> None:
     """Read-only query and skill tools do not invalidate an origin."""
-    outcome = extract_slug_origin([
-        ToolInvocation(tool_name="qs_describe_slug", input={"slug": "flex_hours_query_pbi"}),
-        _exec(),
-        ToolInvocation(tool_name="load_skill", input={"name": "reporting"}),
-    ])
+    outcome = extract_slug_origin(
+        [
+            ToolInvocation(tool_name="qs_describe_slug", input={"slug": "flex_hours_query_pbi"}),
+            _exec(),
+            ToolInvocation(tool_name="load_skill", input={"name": "reporting"}),
+        ]
+    )
 
     assert outcome.kind == "slug"
 
@@ -92,15 +97,27 @@ def test_extract_origin_drops_offset_keeps_tenant() -> None:
 
 def test_component_strips_bindings_and_rows() -> None:
     """Supported root components keep display properties but lose baked bindings."""
-    chart = component_from_envelope({"components": [
-        {"id": "root", "component": "Chart", "data": {"path": "/hours/rows"}, "x": "month", "y": "total"}
-    ]})
-    table = component_from_envelope({"components": [
-        {"id": "root", "component": "DataTable", "data": {"path": "/hours/rows"}, "columns": ["total"]}
-    ]})
-    kpi = component_from_envelope({"components": [
-        {"id": "root", "component": "KPICard", "label": "Hours", "value": {"path": "/hours/rows/0/total"}}
-    ]})
+    chart = component_from_envelope(
+        {
+            "components": [
+                {"id": "root", "component": "Chart", "data": {"path": "/hours/rows"}, "x": "month", "y": "total"}
+            ]
+        }
+    )
+    table = component_from_envelope(
+        {
+            "components": [
+                {"id": "root", "component": "DataTable", "data": {"path": "/hours/rows"}, "columns": ["total"]}
+            ]
+        }
+    )
+    kpi = component_from_envelope(
+        {
+            "components": [
+                {"id": "root", "component": "KPICard", "label": "Hours", "value": {"path": "/hours/rows/0/total"}}
+            ]
+        }
+    )
 
     assert chart == {"id": "root", "component": "Chart", "x": "month", "y": "total"}
     assert table == {"id": "root", "component": "DataTable", "columns": ["total"]}
@@ -123,8 +140,12 @@ def test_component_unsupported_root() -> None:
 
 def test_component_wrapped_envelope() -> None:
     """A serialized createSurface wrapper is unwrapped before root selection."""
-    component = component_from_envelope({"createSurface": {
-        "components": [{"component": "DataTable", "data": {"path": "/hours/rows"}, "columns": ["date"]}]
-    }})
+    component = component_from_envelope(
+        {
+            "createSurface": {
+                "components": [{"component": "DataTable", "data": {"path": "/hours/rows"}, "columns": ["date"]}]
+            }
+        }
+    )
 
     assert component == {"component": "DataTable", "columns": ["date"]}
