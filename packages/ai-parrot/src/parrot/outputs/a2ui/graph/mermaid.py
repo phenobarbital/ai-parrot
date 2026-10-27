@@ -354,6 +354,11 @@ def from_mermaid(text: str) -> GraphSpec:
         return _parse_state(lines)
     if stripped_header.startswith("sequenceDiagram"):
         return _parse_sequence(lines)
+    if stripped_header.startswith("C4"):
+        # Function-local: mermaid_c4 imports this module's shared helpers.
+        from .mermaid_c4 import from_mermaid_c4
+
+        return from_mermaid_c4(text)
     raise MermaidCodecError(header_no, header, "unrecognized or unsupported diagram header")
 
 

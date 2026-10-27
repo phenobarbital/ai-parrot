@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from parrot.outputs.a2ui.graph.mermaid import to_mermaid
-from parrot.outputs.a2ui.graph.mermaid_c4 import to_mermaid_c4
+from parrot.outputs.a2ui.catalog.base import CatalogValidationError
+from parrot.outputs.a2ui.graph.mermaid import MermaidCodecError, from_mermaid, to_mermaid
+from parrot.outputs.a2ui.graph.mermaid_c4 import C4_LOSSY_FIELDS, from_mermaid_c4, to_mermaid_c4
 from parrot.outputs.a2ui.graph.models import GraphEdge, GraphGroup, GraphLayout, GraphNode, GraphSpec
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "c4_container_diagram.json"
@@ -168,3 +169,194 @@ def test_c4_quotes_escape() -> None:
 def test_to_mermaid_c4_rejects_non_c4() -> None:
     with pytest.raises(ValueError):
         to_mermaid_c4(GraphSpec(nodes=[], edges=[]))
+
+
+def _normalize(spec: GraphSpec) -> dict[str, object]:
+    """Apply the C4 round-trip comparison normalization from spec §3 M2."""
+    data = spec.model_dump(by_alias=True)
+    aliases = {
+        "accessible_description": "accessibleDescription",
+        "rank_sep": "rankSep",
+        "node_sep": "nodeSep",
+    }
+    for field in C4_LOSSY_FIELDS:
+        head, *tail = field.split(".")
+        head = aliases.get(head, head)
+        if not tail:
+            data.pop(head, None)
+        elif head == "nodes":
+            for node in data[head]:
+                node.pop(tail[0], None)
+        elif head == "edges":
+            for edge in data[head]:
+                edge.pop(tail[0], None)
+        elif head == "layout" and data[head] is not None:
+            data[head].pop(aliases.get(tail[0], tail[0]), None)
+
+    data["title"] = (data["title"] or "").rstrip() or None
+    original_groups = data["groups"] or []
+    ordered_groups: list[dict[str, object]] = []
+
+    def visit(parent: str | None) -> None:
+        for group in original_groups:
+            if group["parent"] == parent:
+                group["label"] = None if group["label"] in (None, "", group["id"]) else group["label"]
+                group["c4Type"] = group["c4Type"] or "generic"
+                ordered_groups.append(group)
+                visit(group["id"])
+
+    visit(None)
+    ordered_nodes: list[dict[str, object]] = []
+    node_by_id = {node["id"]: node for node in data["nodes"]}
+    grouped = {node_id for group in ordered_groups for node_id in group["nodes"]}
+    for node in data["nodes"]:
+        if node["id"] not in grouped:
+            ordered_nodes.append(node)
+    for group in ordered_groups:
+        ordered_nodes.extend(node_by_id[node_id] for node_id in group["nodes"])
+    for node in ordered_nodes:
+        node["label"] = None if node["label"] in (None, "", node["id"]) else node["label"]
+        node["technology"] = node["technology"] or None
+        node["description"] = node["description"] or None
+    for edge in data["edges"]:
+        edge["label"] = edge["label"] or None
+        edge["technology"] = edge["technology"] or None
+        edge["bidirectional"] = edge["bidirectional"] or None
+    data["groups"] = ordered_groups or None
+    data["nodes"] = ordered_nodes
+    if data["layout"] is not None and not data["layout"]:
+        data["layout"] = None
+    return data
+
+
+def test_c4_roundtrip_container_level_byte_stable() -> None:
+    emitted = to_mermaid_c4(_spec())
+    parsed = from_mermaid_c4(emitted)
+    assert to_mermaid_c4(parsed) == emitted
+    assert _normalize(parsed) == _normalize(_spec())
+
+
+def test_c4_roundtrip_each_level_header() -> None:
+    for level, header in (
+        ("context", "C4Context"),
+        ("container", "C4Container"),
+        ("component", "C4Component"),
+        ("dynamic", "C4Dynamic"),
+    ):
+        spec = _c4(level=level)
+        assert from_mermaid_c4(f"{header}\n").level == level
+        assert to_mermaid_c4(spec) == f"{header}\n"
+
+
+def test_c4_all_twenty_element_macros() -> None:
+    spec = _c4(
+        nodes=[
+            GraphNode(id=f"n{index}", c4Type=element_type) for index, element_type in enumerate(_ELEMENT_MACRO_TYPES)
+        ]
+    )
+    assert [node.c4_type for node in from_mermaid_c4(to_mermaid_c4(spec)).nodes] == list(_ELEMENT_MACRO_TYPES)
+
+
+_ELEMENT_MACRO_TYPES = (
+    "person",
+    "person_ext",
+    "system",
+    "system_ext",
+    "system_db",
+    "system_db_ext",
+    "system_queue",
+    "system_queue_ext",
+    "container",
+    "container_ext",
+    "container_db",
+    "container_db_ext",
+    "container_queue",
+    "container_queue_ext",
+    "component",
+    "component_ext",
+    "component_db",
+    "component_db_ext",
+    "component_queue",
+    "component_queue_ext",
+)
+
+
+def test_c4_roundtrip_normalization() -> None:
+    spec = _c4(
+        title="Architecture   ",
+        nodes=[
+            GraphNode(id="inner", label="", c4Type="container"),
+            GraphNode(id="outside", label="outside", c4Type="person"),
+        ],
+        groups=[
+            GraphGroup(id="child", parent="parent", c4Type="generic", nodes=["inner"]),
+            GraphGroup(id="parent", nodes=[]),
+        ],
+    )
+    parsed = from_mermaid_c4(to_mermaid_c4(spec))
+    assert to_mermaid_c4(parsed) == to_mermaid_c4(spec)
+    assert _normalize(parsed) == _normalize(spec)
+
+
+@pytest.mark.parametrize("macro", ["Rel_Neighbor", "Rel_Back_Neighbor"])
+def test_c4_rejects_neighbor_macros(macro: str) -> None:
+    with pytest.raises(MermaidCodecError, match="line 2"):
+        from_mermaid_c4(f'C4Context\n{macro}(a, b, "calls")\n')
+
+
+def test_c4_nested_boundaries() -> None:
+    text = 'C4Container\nEnterprise_Boundary(ent, "ent") {\n  System_Boundary(sys, "sys") {\n    Container(app, "app")\n  }\n}\n'
+    parsed = from_mermaid_c4(text)
+    assert [(group.id, group.parent, group.nodes) for group in parsed.groups or []] == [
+        ("ent", None, []),
+        ("sys", "ent", ["app"]),
+    ]
+
+
+def test_c4_rel_macros_and_birel() -> None:
+    text = 'C4Context\nPerson(a, "a")\nSystem(b, "b")\nRel_Up(a, b, "up")\nRel_Down(a, b, "down")\nRel_Left(a, b, "left")\nRel_Right(a, b, "right")\nRel_Back(a, b, "back")\nBiRel(a, b, "both")\n'
+    edges = from_mermaid_c4(text).edges
+    assert [edge.hint for edge in edges] == ["up", "down", "left", "right", "back", None]
+    assert edges[-1].bidirectional is True
+
+
+def test_c4_dynamic_relindex_ordering() -> None:
+    text = 'C4Dynamic\nPerson(a, "a")\nSystem(b, "b")\nRelIndex("2", a, b, "second")\nRelIndex("1", a, b, "first")\nRel(a, b, "plain")\n'
+    assert [edge.label for edge in from_mermaid_c4(text).edges] == ["first", "second", "plain"]
+    for invalid in ('RelIndex("1", a, b, "one")\nRelIndex("1", a, b, "two")', 'RelIndex("2", a, b, "two")'):
+        with pytest.raises(MermaidCodecError):
+            from_mermaid_c4(f'C4Dynamic\nPerson(a, "a")\nSystem(b, "b")\n{invalid}\n')
+
+
+def test_c4_update_layout_config() -> None:
+    parsed = from_mermaid_c4('C4Context\nUpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="3")\n')
+    assert parsed.layout == GraphLayout(shapeInRow=2, boundaryInRow=3)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'UpdateElementStyle(a, $bgColor="red")',
+        'UpdateRelStyle(a, b, $textColor="red")',
+        'Person(a, "a", $sprite="x")',
+        'Deployment_Node(a, "a")',
+    ],
+)
+def test_c4_rejects_styling_sprites_and_deployment(line: str) -> None:
+    with pytest.raises(MermaidCodecError, match="line 2"):
+        from_mermaid_c4(f"C4Context\n{line}\n")
+
+
+def test_c4_quotes_and_unescapes_labels() -> None:
+    parsed = from_mermaid_c4('C4Context\nPerson(a, "A #quot;person#quot;, inc", "Says #quot;hi#quot;")\n')
+    assert parsed.nodes[0].label == 'A "person", inc'
+    assert parsed.nodes[0].description == 'Says "hi"'
+
+
+def test_c4_error_is_catalog_validation_error() -> None:
+    assert isinstance(MermaidCodecError(1, "bad", "reason"), CatalogValidationError)
+
+
+def test_generic_dispatch_to_c4() -> None:
+    emitted = to_mermaid(_spec())
+    assert from_mermaid(emitted).kind == "c4"
