@@ -7,6 +7,7 @@ schema makes a legal config unauthorable, and the failure is invisible.
 
 The opposite direction lives in ``catalog/parrot/_derive.py`` (Pydantic -> schema).
 """
+
 from __future__ import annotations
 
 import keyword
