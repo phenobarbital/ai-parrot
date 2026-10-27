@@ -68,6 +68,7 @@ from parrot.flows.dev_loop.sdd_coder.fidelity import (
 )
 from parrot.flows.dev_loop.test_scope.context import write_attempt_context
 from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext, ValidationVerdict
+from parrot.flows.dev_loop.sdd_coder.effort import apply_effort_to_profile, resolve_seat_effort_with_source
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
 from parrot.flows.dev_loop.sdd_coder.lint import run_lint_pass
 from parrot.flows.dev_loop.sdd_coder.models import (
@@ -3543,6 +3544,18 @@ class SddCoderEngine:
                 stream_ttl_seconds=self._stream_ttl,
             )
             profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
+            effort, effort_source = resolve_seat_effort_with_source(
+                seat,
+                assessment.classification if assessment is not None else None,
+                self.roster.complexity.strong_models,
+            )
+            profile = apply_effort_to_profile(
+                profile, seat.backend or "", effort, seat_label=seat.label, logger=self.logger
+            )
+            if effort is not None:
+                self.logger.info(
+                    "seat %r backend %r effort=%r source=%s", seat.label, seat.backend, effort, effort_source
+                )
             profile = self._profile_with_runner_binaries(profile, path)
             profile = self._profile_with_scaled_turns(
                 profile, collector.declared_files if collector.declared_files_known else None
