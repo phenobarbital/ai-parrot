@@ -176,10 +176,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added `test_build_mermaid_diagram` (TOOL + LLM) and four new groups to conformance/test_all_emitters.py (35 passed in the file). The only removed line is the extended `build_linked_surface`/`graph` import tuple. Adaptive-card text is compared via a recursive `_card_texts` helper because `json.dumps` escapes the source's newlines/quotes. Round-trip fixtures use declared nodes/participants (codec requirement); `dag` normalized to `flowchart`.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

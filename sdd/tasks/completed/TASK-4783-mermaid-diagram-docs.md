@@ -171,10 +171,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Docs only. a2ui-v1.md: catalog row, `MermaidDiagram` section (wire, 4 codes, lowered table, renderer matrix, Graph relationship, producer lanes) and 3 extension keys. agentdashboard-a2ui-reference.md: 10→11 composites (2 sites), interactive-html row note, MermaidDiagram composite entry, new §5.5. The §5.5 frontend contract describes TASK-4780's component; re-check it once that task lands.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

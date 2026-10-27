@@ -183,6 +183,9 @@
   flex-direction: column;
   gap: calc(var(--spacing) * 2);
 }
+.a2ui-mermaid-source {
+  display: block;
+}
 .a2ui-metric-toggle {
   margin-top: calc(var(--spacing) * 2);
   display: flex;

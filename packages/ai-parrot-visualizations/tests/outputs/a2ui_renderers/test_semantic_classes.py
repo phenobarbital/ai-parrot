@@ -236,9 +236,15 @@ class TestGoldensUntouched:
             "golden/kpicard_lowered.json",
             "golden/infographic_lowered.json",
         )
+        # FEAT-753 (TASK-4773): a brand-new component, `MermaidDiagram` — same
+        # "new component, new golden" precedent as `filterbar`/`htmldocument`.
+        # Its catalog/base.py + catalog/__init__.py touches (the four MERMAID_*
+        # codes and the `_validate_mermaid_sources` pass) are already covered
+        # by the FEAT-527 tool-only-gate file list above.
         assert all(
             "filterbar" in c
             or "htmldocument" in c
+            or "mermaiddiagram" in c
             or "viz_core" in c
             or "graph_lowered" in c
             or c.endswith("catalog/parrot/__init__.py")

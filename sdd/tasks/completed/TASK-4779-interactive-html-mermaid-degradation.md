@@ -190,10 +190,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added the `mermaid-source` role branch to interactive_html.py `_render_prim_Text` (code block, one degraded record); `_INTERCEPTED`/`supported_components` untouched; test also checks no extra `<script src=`. Tests green. Black was NOT applied to these renderer files (it reflows unrelated code); only the inserted hunks were kept.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -494,7 +494,7 @@ The Parrot catalog adds **agent functions**: every tool on the agent's `ToolMana
 | `Slider` | `label`, `min` (default 0), **`max`**, **`value`**: DynamicNumber, `steps` (int ≥ 1) | | `Slider` |
 | `DateTimeInput` | **`value`**: DynamicString (ISO 8601), `enableDate`, `enableTime`, `min`, `max`, `label` | both flags default `false` | `AppDatePicker` / `Calendar` |
 
-### 5.2 Parrot presentation catalog — 10 composites (`catalog/parrot/*.py`)
+### 5.2 Parrot presentation catalog — 11 composites (`catalog/parrot/*.py`)
 
 All are display-only from the LLM's point of view (an LLM-origin envelope may never carry `action`, and may never inline rows — rows always arrive via a binding into `dataModel`). Each composite has a deterministic `lower()` to Basic primitives; the backend renderers **intercept** `Chart`, `DataTable`, `Infographic` (and FilterBar) before lowering and lower the rest. **Do the same**: render these natively, lower anything you do not support.
 
@@ -546,6 +546,14 @@ Lowering: `Card{Column[Text title (parrot_role: title), Text subtitle?, Tabs | C
 
 Lowers to `Row{parrot_variant: "filter-bar"}` of `ChoicePicker`s (`id = "<bar-id>-f<i>"`, `variant = multipleSelection | mutuallyExclusive`, `value = [only option]` when exactly one option else `[]` meaning "all"), each tagged `parrot_role: "filter"` + `parrot_filter_column`. Display-only on the wire; the **client-side filtering contract** is in §7.4.
 
+#### `MermaidDiagram` (`mermaiddiagram.py`, **FEAT-753**) — required `source`; LLM-authorable
+
+```json
+{"component": "MermaidDiagram", "source": "sequenceDiagram\n  participant A as Alice\n  A->>B: hello\n", "diagramType": "sequence", "accessibleDescription": "Alice greets Bob"}
+```
+
+Opaque Mermaid text — see §5.5 for the frontend contract.
+
 #### `HtmlDocument` (`htmldocument.py`, **FEAT-527**) — required `title`; `tool_only`
 
 ```json
@@ -579,7 +587,7 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 
 | id | interactive | actions | updates | output | supported components |
 |---|---|---|---|---|---|
-| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering) |
+| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering); `MermaidDiagram` (**FEAT-753**) is lowered to a code block + degraded record (no mermaid.js in the self-contained artifact) |
 | `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic + `Graph` (**FEAT-529**, viz-core) |
 | `pdf` | ✗ | ✗ | ✗ | `application/pdf` | SSR minus `Video`, `AudioPlayer` |
 | `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart`, `Graph` (**FEAT-529**, viz-core) |
@@ -613,7 +621,7 @@ The Svelte renderer will be the first one with `interactive: true, supports_acti
 ### 5.4 viz-core catalog (FEAT-529)
 
 A THIRD catalog, `catalogId: "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json"`,
-alongside Basic and Parrot (§5.1/§5.2, still 10 composites — viz-core is
+alongside Basic and Parrot (§5.1/§5.2, still 11 composites — viz-core is
 additive, nothing moved). Its rule: **describe what, never how** — no
 colour, font, pixel size, or renderer-library option on the wire; semantic
 colour roles/formats; `size` is layout intent (`inline`/`tile`/`hero`),
@@ -704,6 +712,49 @@ viz-core `catalogId` — exactly the shape `catalog.resolve_catalog`/
 `validate_envelope` are built to handle. Dropping `graph`'s `catalogId`
 here would make it resolve against the Basic surface default instead,
 where `Graph` does not exist — `UNKNOWN_COMPONENT`.
+
+---
+
+### 5.5 MermaidDiagram (FEAT-753)
+
+`MermaidDiagram` carries Mermaid source in `source` (≤ 32 KiB, validated server-side: no `%%{init}%%` directives, no
+`click`/`link`/`callback`, no `javascript:`/`<script`). The bundled UI renders it natively; every other client may use
+the lowered fallback (`Card → Column[description, title?, caption?, source]`, the last `Text` carrying
+`parrot_role: "mermaid-source"`, `parrot_diagram_type`, optional `parrot_mermaid_theme`).
+
+Frontend contract:
+
+- **Lazy import** — `(await import('mermaid')).default`, cached at module scope; mermaid must land in its own async
+  chunk, never the main bundle. mermaid cannot run in jsdom: unit tests mock it.
+- **Initialize** with `{startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: {htmlLabels: false},
+  class: {htmlLabels: false}}`. `theme` is a hint; the host theme may override it.
+- **Sanitize** the SVG with DOMPurify's SVG profile before inserting it; labels must stay visible after sanitization.
+- **Unique render ids** per instance (mermaid requires a fresh element id per `render` call).
+- **Fallback** — on any render error show the source as a code block and keep the description text; the source is
+  always reachable (collapsible), never lost.
+
+Example envelope:
+
+```json
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "mermaid-diagram",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "components": [
+      {
+        "id": "root",
+        "component": "MermaidDiagram",
+        "source": "sequenceDiagram\n    participant A as Alice\n    A->>B: hello\n",
+        "diagramType": "sequence",
+        "title": "Greeting",
+        "theme": "neutral",
+        "accessibleDescription": "Alice greets Bob"
+      }
+    ]
+  }
+}
+```
 
 ---
 
