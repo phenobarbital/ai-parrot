@@ -292,8 +292,8 @@ Standard FEAT-754 procedure; close with `scripts/sdd/close_task.sh TASK-4787 a2u
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-sol (codex), attempt 1
+**Date**: 2026-10-27
+**Notes**: wave-2 merge tier pytest: 136 passed (engine run). The engine gate's vitest runner stayed red (`pnpm exec vitest`: "Command vitest not found" in the validation sandbox, exit 254) while the same command passes from a normal shell; closed with close_task.sh because finalize_task needs a green engine validation ref (user authorized merging UI tasks on sdd-worker-run test evidence).
 
 **Deviations from spec**: none

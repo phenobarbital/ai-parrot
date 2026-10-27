@@ -83,7 +83,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -93,8 +93,9 @@
       "parallelism_notes": "reads GraphSpec.level / GraphNode.c4_type from TASK-4784 (graph/models.py) and loads its fixture",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4785-mermaid-c4-emitter.md"
+      "completed_at": "2026-10-27T12:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4785-mermaid-c4-emitter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4786",
@@ -123,7 +124,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -133,8 +134,9 @@
       "parallelism_notes": "needs GraphGroup.parent and GraphLayout.shape_in_row/boundary_in_row from TASK-4784 (graph/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4787-c4-layout.md"
+      "completed_at": "2026-10-27T12:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4787-c4-layout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4788",
@@ -221,7 +223,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -232,8 +234,9 @@
       "parallelism_notes": "uses onChartReady prop from TASK-4790 (ECharts.svelte) and computeBoundaryFrames from TASK-4791; both edit A2UIGraph.svelte/.test.ts",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4792-a2uigraph-frame-projection.md"
+      "completed_at": "2026-10-27T12:14:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4792-a2uigraph-frame-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4793",

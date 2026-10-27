@@ -176,8 +176,8 @@ Standard FEAT-754 procedure; close with `scripts/sdd/close_task.sh TASK-4792 a2u
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: opus (native), attempt 1
+**Date**: 2026-10-27
+**Notes**: vitest A2UIGraph+ECharts 21/21 and pnpm build (coder) re-run by sdd-worker 21/21; browser evidence in artifacts/logs/feat-754-c4-frames-browser.md. The engine gate's vitest runner stayed red (`pnpm exec vitest`: "Command vitest not found" in the validation sandbox, exit 254) while the same command passes from a normal shell; closed with close_task.sh because finalize_task needs a green engine validation ref (user authorized merging UI tasks on sdd-worker-run test evidence).
 
 **Deviations from spec**: none
