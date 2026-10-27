@@ -12,7 +12,7 @@ tags: [e2e, playwright, obscura, observability, exploration]
 **Author**: Jesus Lara
 **Status**: approved
 **Target version**: next minor
-**Implementation gate**: blocked pending a successful real-Obscura active-page recording spike (M0).
+**Implementation gate**: M0 PASSED for an in-connection recorder (Playwright `CDPSession` on the automation connection) — see `sdd/state/FEAT-762/screencast-spike.md`. The detached-process recorder is infeasible on Obscura 0.2.2 (per-connection page isolation). M2/M3 text below is superseded and must be revised (`/sdd-spec`) before `/sdd-task` decomposes M1–M3.
 
 ---
 
@@ -79,7 +79,16 @@ identified by the caller's `page_target_id`. It neither creates a replacement
 context nor changes browser ownership. `record_video_dir` and the driver's
 `_owns_context` flag are not the recording mechanism.
 
-M0 must select and prove a capture/encoding backend before M1–M3 proceed.
+> **Design revision (M0 outcome, decision (a), 2026-10-27).** Obscura 0.2.2 isolates
+> pages per CDP connection: a second connection sees no targets (`Target.getTargets`
+> is empty; `attachToTarget` → "Target not found"). A detached recorder process
+> (`parrot e2e screencast start/stop`, daemon, tickets, `page_target_id`) therefore
+> cannot work. The recorder must run **inside the process that owns the Playwright
+> connection**, using a `CDPSession` of the exact `Page` object. The Bash-only
+> `e2e-ui-tester` CLI-daemon flow (M2/M3 below) is superseded and needs a revised
+> design before decomposition.
+
+M0 had to select and prove a capture/encoding backend before M1–M3 proceed.
 The first candidate is page-scoped CDP `Page.startScreencast`, receiving
 `Page.screencastFrame` events, acknowledging frames with
 `Page.screencastFrameAck`, and stopping with `Page.stopScreencast`.
@@ -89,8 +98,8 @@ flush, and decoding of the resulting WebM with available dependencies.
 If this candidate fails, revise and validate the backend before continuing;
 never fall back to a different page or the rejected context-creation path.
 
-The detached daemon owns only its recording connection, bounded frame queue,
-encoder resources, and ticket. CPU-bound encoding runs in a process, with
+(Superseded by the revision above: in the in-process design the recorder owns only its recording connection, bounded frame queue,
+encoder resources, and ticket — read "ticket" as dropped.) CPU-bound encoding runs in a process, with
 async I/O and bounded startup/stop waits. Startup reports ready only after
 capture and the encoder are initialized. Stop ends capture, drains and flushes
 encoding, verifies a playable non-empty file, atomically publishes
@@ -383,10 +392,25 @@ frontmatter key is intentionally omitted (§1 Non-Goals).
 
 ### Backend Contract Gate
 
-The active-page backend is proposed, not verified against Obscura. M0 must
-replace this gate with tested imports, session resource types, transport
-calls, encoding APIs, and dependency declarations before M1 is actionable.
-A Chromium protocol reference alone is not evidence of Obscura support.
+**Frozen from M0 evidence** (`sdd/state/FEAT-762/screencast-spike.md`; real
+Obscura 0.2.2; test `TestObscuraScreencastRecording`):
+
+- **Target selection**: the caller's own Playwright `Page`; no target ID. A separate
+  CDP connection cannot see the page (verified), so cross-process attach is unsupported.
+- **Transport**: `cdp = await page.context.new_cdp_session(page)`; commands
+  `Page.startScreencast {format:"jpeg", quality, everyNthFrame:1}`,
+  `Page.screencastFrameAck {sessionId}` per frame, `Page.stopScreencast`, then `await cdp.detach()`.
+  Event `Page.screencastFrame`: `data` (base64 JPEG 1280x720), `metadata.timestamp` (s), `sessionId`.
+- **Frame cadence**: activity-driven (`obscuraFrameSource`); frames only on page change,
+  so place frames by timestamp (time base 1/1000), not a fixed frame index.
+- **Encoder**: PyAV `av` (libvpx VP8, `format="webm"`, yuv420p) run in a `ProcessPoolExecutor`;
+  flush with `stream.encode(None)`; verify by decoding with `av`. Bounded frame list (600 in the spike).
+- **Session resources**: `ScreencastSession` = {`CDPSession`, bounded `list[(ts_ms, jpeg)]`,
+  ack tasks, output path}. Cleanup order: stopScreencast → detach → await acks → encode/flush →
+  decode-validate → publish; never close page/context/browser.
+- **Dependency**: `av` and `Pillow` are importable in the shared venv, but `av` is only a root
+  override (`av>=13,<14`); declaring it for the hosting package REQUIRES user approval (open).
+- **Errors**: map missing/closed page, CDP command failure, empty frames, encode/decode failure to `E2EScreencastError`.
 
 The candidate CDP frame lifecycle is documented in the official
 [Page domain](https://chromedevtools.github.io/devtools-protocol/tot/Page/).
@@ -454,7 +478,8 @@ basis or introduce a new encoder dependency without approval.
 
 ### External Dependencies
 
-No dependency is added by this spec revision. The existing Playwright extra
+M0 identified `av` (libvpx VP8 WebM) and Pillow as the working encoder path; declaring `av`
+as a dependency of the hosting package needs user approval. No dependency is added by this spec revision. The existing Playwright extra
 is not proof of a frame-to-WebM encoder. M0 must identify usable installed
 capture/codec dependencies and their supported package install path. If a
 new dependency is required, approval and an updated dependency contract
@@ -467,9 +492,11 @@ are prerequisites to implementation.
 Requirements for triggering and evidence placement are settled. One
 technical gate remains unresolved:
 
-- [ ] Which active-page transport and WebM encoder work against Obscura
-  v0.2.2 using approved dependencies? M0 must provide successful evidence
-  and freeze this contract before M1–M3 are decomposed or implemented.
+- [x] Which active-page transport and WebM encoder work against Obscura
+  v0.2.2? — *Resolved by M0*: in-connection Playwright `CDPSession` screencast + PyAV VP8/WebM
+  (Backend Contract Gate). A detached process cannot attach.
+- [ ] Revise M2/M3: how does the exploration agent drive an in-process recorder (not a
+  Bash-only CLI daemon)? And is declaring `av` as a dependency approved?
 
 - [x] Should the implementation be gated behind a real-Obscura-binary
   spike before building the full feature? — *Resolved in proposal*: Yes
