@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4827 — engine chassis parity + generic resolver/warmup."""
+
 import asyncio
 import math
 import subprocess
@@ -79,7 +80,10 @@ def _model_dir(tmp_path, labels):
 
 def _spec(category="jailbreak", prefix="PARROT_TESTJB", model="org/model"):
     return chassis.EngineSpec(
-        category=category, env_prefix=prefix, default_model_id=model, positive_label_match=("jailbreak", "malicious"),
+        category=category,
+        env_prefix=prefix,
+        default_model_id=model,
+        positive_label_match=("jailbreak", "malicious"),
     )
 
 
@@ -108,8 +112,9 @@ def test_classifier_env_prefix(tmp_path, fake_ort, monkeypatch):
     monkeypatch.setenv("PARROT_TESTJB_ORT_INTRA_OP_THREADS", "3")
     monkeypatch.setenv("PARROT_TESTJB_ORT_INTER_OP_THREADS", "4")
     d = _model_dir(tmp_path, {"0": "SAFE", "1": "JAILBREAK"})
-    eng = chassis.ClassifierOnnxEngine(d, d / "model.onnx", "m", env_prefix="PARROT_TESTJB",
-                                       positive_label_match=("jailbreak",), max_length=128)
+    eng = chassis.ClassifierOnnxEngine(
+        d, d / "model.onnx", "m", env_prefix="PARROT_TESTJB", positive_label_match=("jailbreak",), max_length=128
+    )
     assert eng._session.sess_options.intra_op_num_threads == 3
     assert eng._session.sess_options.inter_op_num_threads == 4
     assert isinstance(eng, chassis.ScoringEngine)
@@ -157,8 +162,7 @@ def test_resolve_cache_probe(tmp_path, fake_ort, monkeypatch):
     (snap / "config.json").write_text('{"id2label": {"0": "SAFE", "1": "JAILBREAK"}}')
     import huggingface_hub
 
-    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache",
-                        lambda repo, path: str(snap / path))
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", lambda repo, path: str(snap / path))
     eng = chassis.resolve_engine(_spec())
     assert eng is not None and eng.model_id == "org/model"
 

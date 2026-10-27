@@ -9,6 +9,7 @@ place); only its stateless engine/helpers delegate here.
 Import discipline (FEAT-439): onnxruntime / transformers / huggingface_hub /
 numpy are imported inside functions only — importing this module is free.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +55,11 @@ class EngineSpec:
     positive_label_match: tuple[str, ...] = ("inject",)
     max_length: int = DEFAULT_MAX_LENGTH
     warmup_allow_patterns: tuple[str, ...] = (
-        "config.json", "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json", "*.model",
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "*.model",
     )
 
 
@@ -133,8 +138,9 @@ def load_tokenizer(tokenizer_dir: Path) -> Any:
         if not tokenizer_file.exists():
             raise
         logger.info(
-            "AutoTokenizer rejected %s (%s); loading tokenizer.json directly "
-            "via PreTrainedTokenizerFast.", tokenizer_dir, exc,
+            "AutoTokenizer rejected %s (%s); loading tokenizer.json directly " "via PreTrainedTokenizerFast.",
+            tokenizer_dir,
+            exc,
         )
         from transformers import PreTrainedTokenizerFast
 
@@ -146,8 +152,14 @@ def load_tokenizer(tokenizer_dir: Path) -> Any:
             except (OSError, ValueError):
                 cfg = {}
             for key in (
-                "pad_token", "cls_token", "sep_token", "unk_token", "mask_token",
-                "bos_token", "eos_token", "model_max_length",
+                "pad_token",
+                "cls_token",
+                "sep_token",
+                "unk_token",
+                "mask_token",
+                "bos_token",
+                "eos_token",
+                "model_max_length",
             ):
                 if key in cfg and not isinstance(cfg[key], dict):
                     special[key] = cfg[key]
@@ -171,16 +183,17 @@ def resolve_positive_index(tokenizer_dir: Path, positive_label_match: tuple[str,
     config_path = tokenizer_dir / "config.json"
     if not config_path.exists():
         logger.warning(
-            "No config.json in %s; defaulting injection-class index to 1 "
-            "(unverified).", tokenizer_dir,
+            "No config.json in %s; defaulting injection-class index to 1 " "(unverified).",
+            tokenizer_dir,
         )
         return 1
     try:
         config = json.loads(config_path.read_text())
     except (OSError, ValueError) as exc:
         logger.warning(
-            "Could not read id2label from %s (%s); defaulting injection-class "
-            "index to 1 (unverified).", config_path, exc,
+            "Could not read id2label from %s (%s); defaulting injection-class " "index to 1 (unverified).",
+            config_path,
+            exc,
         )
         return 1
     id2label = config.get("id2label") or {}
@@ -189,9 +202,9 @@ def resolve_positive_index(tokenizer_dir: Path, positive_label_match: tuple[str,
         if any(match in lowered for match in positive_label_match):
             return int(key)
     logger.warning(
-        "config.json at %s has no id2label entry containing %s; "
-        "defaulting injection-class index to 1 (unverified).",
-        config_path, " / ".join(repr(m) for m in positive_label_match),
+        "config.json at %s has no id2label entry containing %s; " "defaulting injection-class index to 1 (unverified).",
+        config_path,
+        " / ".join(repr(m) for m in positive_label_match),
     )
     return 1
 
@@ -245,7 +258,9 @@ class ClassifierOnnxEngine:
         opts.inter_op_num_threads = env_int(f"{env_prefix}_ORT_INTER_OP_THREADS", 1)
 
         self._session = ort.InferenceSession(
-            str(graph_path), sess_options=opts, providers=["CPUExecutionProvider"],
+            str(graph_path),
+            sess_options=opts,
+            providers=["CPUExecutionProvider"],
         )
         self._input_names = {inp.name for inp in self._session.get_inputs()}
         self._positive_index = resolve_positive_index(tokenizer_dir, positive_label_match)
@@ -253,7 +268,10 @@ class ClassifierOnnxEngine:
     def score(self, text: str) -> float:
         """Probability of the positive class for *text*."""
         encoded = self._tokenizer(
-            text, return_tensors="np", truncation=True, max_length=self._max_length,
+            text,
+            return_tensors="np",
+            truncation=True,
+            max_length=self._max_length,
         )
         feed = {name: value for name, value in encoded.items() if name in self._input_names}
         logits = self._session.run(None, feed)[0]
@@ -276,9 +294,8 @@ def _model_id(spec: EngineSpec) -> str:
 
 
 def _graph_repo_path(spec: EngineSpec) -> str:
-    return (
-        os.environ.get(f"{spec.env_prefix}_ONNX_GRAPH")
-        or spec.known_graph_paths.get(_model_id(spec), "onnx/model.onnx")
+    return os.environ.get(f"{spec.env_prefix}_ONNX_GRAPH") or spec.known_graph_paths.get(
+        _model_id(spec), "onnx/model.onnx"
     )
 
 
@@ -286,8 +303,11 @@ def _build_engine(spec: EngineSpec, tokenizer_dir: Path, graph_path: Path, model
     """Construct the engine for ``spec.kind`` (embedding kind added by TASK-4828)."""
     if spec.kind == "classifier":
         return ClassifierOnnxEngine(
-            tokenizer_dir, graph_path, model_id,
-            env_prefix=spec.env_prefix, positive_label_match=spec.positive_label_match,
+            tokenizer_dir,
+            graph_path,
+            model_id,
+            env_prefix=spec.env_prefix,
+            positive_label_match=spec.positive_label_match,
             max_length=spec.max_length,
         )
     raise ValueError(f"engine kind {spec.kind!r} not supported yet")
@@ -340,7 +360,8 @@ def _try_cache(spec: EngineSpec) -> ScoringEngine | None:
     if not isinstance(cached, str):
         logger.warning(
             "No cached ONNX snapshot found for %s (category=%s); call warmup_model() to download it.",
-            model_id, spec.category,
+            model_id,
+            spec.category,
         )
         return None
     root = Path(cached)
@@ -370,7 +391,11 @@ def _do_resolve(spec: EngineSpec) -> ScoringEngine | None:
         return None
     if engine is not None:
         logger.info(
-            "selected engine=%s model=%s category=%s (%s)", engine.engine_name, engine.model_id, spec.category, source,
+            "selected engine=%s model=%s category=%s (%s)",
+            engine.engine_name,
+            engine.model_id,
+            spec.category,
+            source,
         )
     else:
         logger.info("no ML engine available (category=%s)", spec.category)

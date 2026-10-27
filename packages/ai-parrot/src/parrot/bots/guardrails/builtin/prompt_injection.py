@@ -191,8 +191,12 @@ class _OnnxInjectionEngine(ClassifierOnnxEngine):
     def __init__(self, tokenizer_dir: Path, graph_path: Path, model_id: str) -> None:
         """Load the tokenizer and construct the capped ORT session (raises on failure)."""
         super().__init__(
-            tokenizer_dir, graph_path, model_id,
-            env_prefix="PARROT_INJECTION", positive_label_match=("inject",), max_length=_ONNX_MAX_LENGTH,
+            tokenizer_dir,
+            graph_path,
+            model_id,
+            env_prefix="PARROT_INJECTION",
+            positive_label_match=("inject",),
+            max_length=_ONNX_MAX_LENGTH,
         )
 
     @property
