@@ -366,7 +366,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
    AND, for each prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in
    worktree <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification:
-   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`.
+   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`. When `prepared.effort` is non-null, also
+   pass `effort=<prepared.effort>` — that value is the operator's roster configuration, so it is an explicit
+   instruction to set the effort; when it is null, omit `effort` entirely.
    Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
    `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
    automatically in their `TaskScopedBrief`, including retries. Propagate the same `execution_id` to every call.
