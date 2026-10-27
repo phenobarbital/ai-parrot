@@ -21,7 +21,19 @@ from .models import SkillDefinition
 _LOGGER = logging.getLogger(__name__)
 
 RESERVED_TENANT_NAMES: frozenset[str] = frozenset(
-    {"skills", "learned", "tenants", "prompts", "queries", "kb", "documents", "flows", "_drafts", "_shared"}
+    {
+        "skills",
+        "learned",
+        "tenants",
+        "prompts",
+        "queries",
+        "kb",
+        "documents",
+        "flows",
+        "routes",
+        "_drafts",
+        "_shared",
+    }
 )
 TENANTS_DIRNAME: Final[str] = "tenants"
 SKILLS_DIRNAME: Final[str] = "skills"

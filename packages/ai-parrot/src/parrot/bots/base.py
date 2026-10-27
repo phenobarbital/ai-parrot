@@ -87,6 +87,9 @@ from parrot.observability.context import (
 # GuardrailPipeline (SecretsGuardrail) now covers channel egress for ALL
 # output modes, superseding the 4-chat-mode-only scrub this singleton served.
 
+#: FEAT-611 linked-surface results and FEAT-753 ``render_mermaid_diagram`` results share the dict-lift shape.
+_LIFTABLE_SURFACE_ARTIFACT_TYPES = frozenset({"a2ui_linked_surface", "a2ui_surface"})
+
 
 class BaseBot(AbstractBot):
     """
@@ -1028,6 +1031,7 @@ class BaseBot(AbstractBot):
 
         Matches dict results shaped ``{"a2ui_envelope": {...}, "artifacts": [{"type": "a2ui_linked_surface", ...}]}``
         — the shape of ``qs_build_linked_surface`` (toolkit.py:410-413) and the FEAT-611 example TOOL (FEAT-611 M5).
+        Also lifts the FEAT-753 ``render_mermaid_diagram`` tool (``type: "a2ui_surface"``).
         """
         if not tool_calls:
             return None
@@ -1039,7 +1043,7 @@ class BaseBot(AbstractBot):
                 continue
             artifacts = result.get("artifacts")
             if isinstance(artifacts, list) and any(
-                isinstance(a, dict) and a.get("type") == "a2ui_linked_surface" for a in artifacts
+                isinstance(a, dict) and a.get("type") in _LIFTABLE_SURFACE_ARTIFACT_TYPES for a in artifacts
             ):
                 return _wrap_create_surface(result["a2ui_envelope"])
         return None

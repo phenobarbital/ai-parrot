@@ -127,7 +127,7 @@ def _break_cycles(
         adjacency[from_id].append(to_id)
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {node_id: WHITE for node_id in node_ids}
+    color = dict.fromkeys(node_ids, WHITE)
     back_edges: set[tuple[str, str]] = set()
 
     def _visit(start: str) -> None:
@@ -203,6 +203,12 @@ def _order_within_ranks(
         for index, node_id in enumerate(nodes):
             slot[node_id] = index
 
+    def _barycentre(node_id: str, neighbours_of: dict[str, list[str]]) -> float:
+        neighbours = neighbours_of.get(node_id, [])
+        if not neighbours:
+            return float(slot[node_id])
+        return sum(slot[n] for n in neighbours) / len(neighbours)
+
     for sweep in range(4):
         downward = sweep % 2 == 0
         rank_sequence = range(1, max_rank + 1) if downward else range(max_rank - 1, -1, -1)
@@ -212,13 +218,8 @@ def _order_within_ranks(
             if not nodes:
                 continue
 
-            def _barycentre(node_id: str) -> float:
-                neighbours = neighbours_of.get(node_id, [])
-                if not neighbours:
-                    return float(slot[node_id])
-                return sum(slot[n] for n in neighbours) / len(neighbours)
-
-            nodes.sort(key=lambda node_id: (_barycentre(node_id), slot[node_id]))
+            keys = {node_id: (_barycentre(node_id, neighbours_of), slot[node_id]) for node_id in nodes}
+            nodes.sort(key=keys.__getitem__)
             for index, node_id in enumerate(nodes):
                 slot[node_id] = index
 
@@ -254,6 +255,12 @@ def compute_positions(
 
     node_ids = [node.id for node in spec.nodes]
     edge_pairs = [(edge.from_, edge.to) for edge in spec.edges]
+
+    if spec.kind == "c4":
+        # Function-local: layout_c4 imports this module (LayoutResult, padding, _extent).
+        from .layout_c4 import compute_c4_positions
+
+        return compute_c4_positions(spec, rank_sep=rank_sep, node_sep=node_sep)
 
     dag_edges, reversed_edges = _break_cycles(node_ids, edge_pairs)
     rank = _assign_ranks(node_ids, dag_edges)
@@ -335,14 +342,48 @@ def _extent(
 
 
 def _group_boxes(spec: GraphSpec, positions: dict[str, Position]) -> dict[str, tuple[float, float, float, float]]:
+    """Build padded boxes from direct members and nested child groups."""
+    groups = spec.groups or []
+    groups_by_id = {group.id: group for group in groups}
+    children: dict[str, list[str]] = {}
+    for group in groups:
+        if group.parent is not None:
+            children.setdefault(group.parent, []).append(group.id)
+
     boxes: dict[str, tuple[float, float, float, float]] = {}
-    for group in spec.groups or []:
-        member_positions = [positions[member_id] for member_id in group.nodes]
-        if not member_positions:
-            continue
-        min_x = min(p.x for p in member_positions) - _GROUP_PADDING
-        min_y = min(p.y for p in member_positions) - _GROUP_PADDING
-        max_x = max(p.x for p in member_positions) + _GROUP_PADDING
-        max_y = max(p.y for p in member_positions) + _GROUP_PADDING
-        boxes[group.id] = (min_x, min_y, max_x - min_x, max_y - min_y)
+    remaining = set(groups_by_id)
+    while remaining:
+        resolved_any = False
+        for group in groups:
+            if group.id not in remaining:
+                continue
+            child_ids = children.get(group.id, [])
+            if any(child_id in remaining for child_id in child_ids):
+                continue
+
+            member_positions = [positions[member_id] for member_id in group.nodes]
+            child_boxes = [boxes[child_id] for child_id in child_ids if child_id in boxes]
+            remaining.remove(group.id)
+            resolved_any = True
+            if not member_positions and not child_boxes:
+                continue
+
+            min_x = (
+                min([position.x for position in member_positions] + [box[0] for box in child_boxes]) - _GROUP_PADDING
+            )
+            min_y = (
+                min([position.y for position in member_positions] + [box[1] for box in child_boxes]) - _GROUP_PADDING
+            )
+            max_x = (
+                max([position.x for position in member_positions] + [box[0] + box[2] for box in child_boxes])
+                + _GROUP_PADDING
+            )
+            max_y = (
+                max([position.y for position in member_positions] + [box[1] + box[3] for box in child_boxes])
+                + _GROUP_PADDING
+            )
+            boxes[group.id] = (min_x, min_y, max_x - min_x, max_y - min_y)
+
+        if not resolved_any:
+            break
     return boxes

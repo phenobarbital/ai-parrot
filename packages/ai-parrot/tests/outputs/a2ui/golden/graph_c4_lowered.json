@@ -1,0 +1,195 @@
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "description"
+          }
+        },
+        "text": "Customers use the web app, which calls the API; the API stores orders in Postgres and notifies the payment provider."
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Order platform \u2014 containers"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "caption"
+          }
+        },
+        "text": "C4 container diagram"
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "system",
+                "parrot_depth": 0,
+                "parrot_role": "boundary"
+              }
+            },
+            "text": "Order Platform (system boundary)"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "boundary-list"
+          }
+        }
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "person",
+                "parrot_role": "element"
+              }
+            },
+            "text": "Customer [person] \u2014 Places orders"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "system_ext",
+                "parrot_role": "element"
+              }
+            },
+            "text": "Payment Provider [system_ext] \u2014 Card processing"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "container",
+                "parrot_group": "platform",
+                "parrot_role": "element"
+              }
+            },
+            "text": "Web App [container] \u00b7 SvelteKit \u2014 Storefront UI"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "container",
+                "parrot_group": "platform",
+                "parrot_role": "element"
+              }
+            },
+            "text": "Order API [container] \u00b7 aiohttp \u2014 Order lifecycle"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_c4_type": "container_db",
+                "parrot_group": "platform",
+                "parrot_role": "element"
+              }
+            },
+            "text": "Orders DB [container_db] \u00b7 PostgreSQL"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "element-list"
+          }
+        }
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge",
+                "parrot_technology": "HTTPS"
+              }
+            },
+            "text": "customer \u2192 web (Uses) via HTTPS"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge",
+                "parrot_technology": "JSON/HTTPS"
+              }
+            },
+            "text": "web \u2192 api (Calls) via JSON/HTTPS"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge",
+                "parrot_technology": "asyncpg"
+              }
+            },
+            "text": "api \u2192 db (Reads/writes) via asyncpg"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge",
+                "parrot_technology": "REST"
+              }
+            },
+            "text": "api \u2192 payments (Charges) via REST"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "edge",
+                "parrot_technology": "HTTPS"
+              }
+            },
+            "text": "payments \u2192 api (Webhook) via HTTPS"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "edge-list"
+          }
+        }
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "graph-source"
+          }
+        },
+        "text": "C4Container\ntitle Order platform \u2014 containers\nPerson(customer, \"Customer\", \"Places orders\")\nSystem_Ext(payments, \"Payment Provider\", \"Card processing\")\nSystem_Boundary(platform, \"Order Platform\") {\n    Container(web, \"Web App\", \"SvelteKit\", \"Storefront UI\")\n    Container(api, \"Order API\", \"aiohttp\", \"Order lifecycle\")\n    ContainerDb(db, \"Orders DB\", \"PostgreSQL\")\n}\nRel(customer, web, \"Uses\", \"HTTPS\")\nRel(web, api, \"Calls\", \"JSON/HTTPS\")\nBiRel(api, db, \"Reads/writes\", \"asyncpg\")\nRel(api, payments, \"Charges\", \"REST\")\nRel_Back(payments, api, \"Webhook\", \"HTTPS\")\n"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "c4-graph",
+  "metadata": {
+    "extensions": {
+      "parrot_c4_level": "container",
+      "parrot_variant": "graph"
+    }
+  }
+}

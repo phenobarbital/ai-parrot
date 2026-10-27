@@ -42,6 +42,13 @@ from parrot.registry.routing.embedding_router import (  # FEAT-224
     EmbeddingIntentRouter,
     RouteScore,
 )
+from parrot.registry.routing.route_labels import (  # FEAT-755
+    OutputShape,
+    is_inline_component,
+    parse_route_label,
+    set_output_shape,
+)
+from parrot.skills.tenancy import current_skill_tenant  # FEAT-755
 
 # Lazy import guard — ContextEnvelope and EnrichedContext are only available when
 # the knowledge.ontology package is installed.  We do a try/except at module level
@@ -149,6 +156,9 @@ class IntentRouterMixin:
         self._capability_registry = None
         # FEAT-224: output-mode router (separate, optional second concern).
         self._output_router: Optional[EmbeddingIntentRouter] = None
+        # FEAT-755: one router per tenant, all sharing the global router's encoder.
+        self._tenant_output_routers: dict[str, EmbeddingIntentRouter] = {}
+        self._warned_output_router_tenants: set[str] = set()
         super().__init__(**kwargs)  # type: ignore[call-arg]
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -187,24 +197,84 @@ class IntentRouterMixin:
         logger = getattr(self, "logger", logging.getLogger(__name__))
         if not config.enable_output_mode_routing:
             return
-        router = EmbeddingIntentRouter(
-            config.embedding_model,
-            config.output_mode_threshold,
-            config.discrepancy_margin,
-        )
-        for mode_value, utterances in config.output_mode_routes.items():
-            try:
-                router.add_route(OutputMode(mode_value), utterances)
-            except ValueError:
-                logger.warning(
-                    "Unknown OutputMode in output_mode_routes: %s", mode_value
-                )
+        router = self._build_output_router(config, config.output_mode_routes)
         self._output_router = router
+        self._tenant_output_routers = {}
+        self._warned_output_router_tenants.clear()
+        # Share ONE encoder across tenant routers (no per-tenant model load).
+        # Only forced when tenant banks exist, so an empty config stays lazy.
+        # Each tenant router re-encodes its full merged bank, so configure()
+        # encode cost grows with the number of tenants.
+        encoder = router._ensure_encoder() if config.tenant_output_mode_routes else None
+        for tenant, bank in config.tenant_output_mode_routes.items():
+            self._tenant_output_routers[tenant] = self._build_output_router(config, bank, encoder=encoder)
         logger.info(
             "Output-mode router configured (%d routes, threshold=%.2f).",
             len(config.output_mode_routes),
             config.output_mode_threshold,
         )
+
+    def _build_output_router(
+        self,
+        config: IntentRouterConfig,
+        routes: "dict[str, list[str]]",
+        encoder: Any = None,
+    ) -> "EmbeddingIntentRouter":
+        """Build one embedding router from a route bank, skipping invalid labels.
+
+        Args:
+            config: Router configuration (model, threshold, margin).
+            routes: Mapping of route label to utterances.
+            encoder: Optional shared encoder to reuse instead of loading one.
+
+        Returns:
+            The populated router.
+        """
+        logger = getattr(self, "logger", logging.getLogger(__name__))
+        router = EmbeddingIntentRouter(
+            config.embedding_model,
+            config.output_mode_threshold,
+            config.discrepancy_margin,
+            encoder=encoder,
+        )
+        for label, utterances in routes.items():
+            try:
+                shape = parse_route_label(label)
+            except ValueError:
+                logger.warning("Invalid route label in output_mode_routes: %s", label)
+                continue
+            if shape.component is not None and not is_inline_component(shape.component):
+                logger.warning(
+                    "Route label %s names a component that is not registered or is action-bearing; skipping.",
+                    label,
+                )
+                continue
+            router.add_route(label, utterances)
+        return router
+
+    def _select_output_router(self, ctx: Any) -> Optional["EmbeddingIntentRouter"]:
+        """Pick the router for this request.
+
+        Order: ``current_skill_tenant()`` -> ``ctx.kwargs.get("tenant")`` -> the global
+        router. An unknown tenant falls back to the global router and warns once.
+        """
+        tenant = current_skill_tenant()
+        if tenant is None:
+            kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None
+            if isinstance(kwargs, dict):
+                tenant = kwargs.get("tenant")
+        if tenant is None:
+            return self._output_router
+
+        router = self._tenant_output_routers.get(tenant)
+        if router is not None:
+            return router
+
+        if tenant not in self._warned_output_router_tenants:
+            self._warned_output_router_tenants.add(tenant)
+            logger = getattr(self, "logger", logging.getLogger(__name__))
+            logger.warning("Unknown output-router tenant %r; falling back to global router", tenant)
+        return self._output_router
 
     async def _resolve_output_mode(
         self,
@@ -224,7 +294,7 @@ class IntentRouterMixin:
         call site mirrors ``ctx.output_mode``. The blocking ``route()`` runs off
         the event loop via :func:`asyncio.to_thread`.
         """
-        router = getattr(self, "_output_router", None)
+        router = self._select_output_router(ctx)
         if router is None:
             return await super()._resolve_output_mode(query, ctx)  # type: ignore[misc]
 
@@ -233,27 +303,27 @@ class IntentRouterMixin:
             # Below threshold -> abstain, cooperate with the rest of the MRO.
             return await super()._resolve_output_mode(query, ctx)  # type: ignore[misc]
 
-        chosen = rs.mode
+        chosen_shape = OutputShape(rs.mode, rs.component)
         if rs.ambiguous:
             # Assemble the close-candidate set off the event loop (re-uses the
             # warm encoder); only modes within ``margin`` of the winner.
-            scores = await asyncio.to_thread(router.route_scores, query)
-            candidates = [
-                m for m, sc in scores if (rs.score - sc) < router.margin
-            ]
+            scores = await asyncio.to_thread(router.route_label_scores, query)
+            candidates = [label for label, sc in scores if (rs.score - sc) < router.margin]
             llm_choice = await self._llm_disambiguate_output_mode(query, candidates)
             if llm_choice is not None:
-                chosen = llm_choice
+                chosen_shape = parse_route_label(llm_choice)
 
         if ctx is not None:
             ctx.intent_score = rs.score
-        return chosen
+        if chosen_shape.component is not None:
+            return set_output_shape(ctx, chosen_shape)
+        return chosen_shape.mode
 
     async def _llm_disambiguate_output_mode(
         self,
         query: str,
-        candidates: "list[OutputMode]",
-    ) -> "Optional[OutputMode]":
+        candidates: "list[str]",
+    ) -> "Optional[str]":
         """Bounded LLM tie-breaker over the close candidate modes (FEAT-224).
 
         Consulted ONLY on genuine ambiguity. Uses ``self.invoke()`` (FEAT-069)
@@ -262,22 +332,20 @@ class IntentRouterMixin:
 
         Args:
             query: The user query.
-            candidates: The close candidate modes (winner + any within margin).
+            candidates: The close candidate labels (winner + any within margin).
 
         Returns:
-            A candidate :class:`OutputMode`, or ``None`` to abstain to the
-            embedding winner.
+            A candidate route label, or ``None`` to abstain to the embedding winner.
         """
         invoke = getattr(self, "invoke", None)
         if invoke is None or not candidates:
             return None
 
         logger = getattr(self, "logger", logging.getLogger(__name__))
-        candidate_values = [m.value for m in candidates]
         prompt = (
             "You pick the single best OUTPUT MODE for rendering an answer.\n"
             f"User query: {query}\n"
-            f"Candidate output modes: {', '.join(candidate_values)}\n"
+            f"Candidate output modes: {', '.join(candidates)}\n"
             'Respond with JSON only: {"output_mode": "<one of the candidates>"}'
         )
         timeout = (
@@ -297,12 +365,9 @@ class IntentRouterMixin:
         parsed = extract_json_from_response(raw)
         if not parsed:
             return None
-        try:
-            mode = OutputMode(parsed.get("output_mode"))
-        except ValueError:
-            return None
         # Only accept a value that is one of the close candidates.
-        return mode if mode in candidates else None
+        choice = parsed.get("output_mode")
+        return choice if choice in candidates else None
 
     async def conversation(self, prompt: str, **kwargs: Any) -> Any:
         """Intercept conversation to route via intent router when active.
