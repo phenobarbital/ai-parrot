@@ -5,6 +5,7 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 
 from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
+import importlib.util
 from importlib import import_module
 from pathlib import Path
 import contextlib
@@ -2570,6 +2571,11 @@ class BotManager:
         # Dataset Manager for agents:
         router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)
         router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)
+        if importlib.util.find_spec("parrot.semantic") is not None:
+            from ..handlers.semantic import SemanticLayerHandler
+
+            router.add_view("/api/v1/agents/semantic/{agent_id}", SemanticLayerHandler)
+            router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
         # Infographic Recipes (FEAT-324): CRUD + on-demand replay. Unlike
         # DatasetManagerHandler, the recipe store/runner have no per-request
         # cloning path — configure them via
