@@ -802,6 +802,14 @@ GITHUB_REVIEW_STALE_AFTER_HOURS: int = config.getint("GITHUB_REVIEW_STALE_AFTER_
 # Jira project key whose tickets the watched repository references. Drives
 # the `<PROJECT>-\d+` regex that extracts ticket keys from PR titles/bodies.
 GITHUB_REVIEW_JIRA_PROJECT: str = config.get("GITHUB_REVIEW_JIRA_PROJECT", fallback="NAV")
+# SDD feature identifier prefix used when a PR has no Jira ticket key.
+GITHUB_REVIEW_SDD_FEATURE_PREFIX: str = config.get("GITHUB_REVIEW_SDD_FEATURE_PREFIX", fallback="FEAT")
+# Enables the SDD acceptance-criteria fallback for configured reviewers.
+GITHUB_REVIEW_ENABLE_SDD_SPEC_FALLBACK: bool = config.getboolean(
+    "GITHUB_REVIEW_ENABLE_SDD_SPEC_FALLBACK", fallback=True
+)
+# Maximum number of candidate specification files read during a lookup.
+GITHUB_REVIEW_MAX_SPEC_SCAN_FILES: int = config.getint("GITHUB_REVIEW_MAX_SPEC_SCAN_FILES", fallback=500)
 # Per-prompt clamp on the diff fed to the reviewer LLM. Larger diffs are
 # truncated and the prompt notes the truncation so the model accounts for it.
 GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint("GITHUB_REVIEW_MAX_DIFF_BYTES", fallback=50_000)

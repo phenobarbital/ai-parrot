@@ -1,0 +1,376 @@
+{
+  "feature": "inline-a2ui-component-routing",
+  "feature_id": "FEAT-755",
+  "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T02:36:13.179034+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/routing/test_embedding_router.py",
+          "packages/ai-parrot/tests/routing/test_route_labels.py",
+          "packages/ai-parrot/tests/routing/test_route_bank.py",
+          "packages/ai-parrot/tests/bots/test_intent_router_output_mode.py",
+          "packages/ai-parrot/tests/bots/test_intent_router_output_mode_integration.py",
+          "packages/ai-parrot/tests/bots/test_intent_router_component_routes.py",
+          "packages/ai-parrot/tests/bots/test_resolve_output_mode_noop.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_catalog_model.py",
+          "packages/ai-parrot/tests/outputs/a2ui/inline/test_prompt.py",
+          "packages/ai-parrot/tests/outputs/a2ui/inline/test_feasibility.py",
+          "packages/ai-parrot/tests/outputs/a2ui/inline/test_emitter.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_emission_wiring.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_builders.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_components_card_kpicard_timeline_form.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_components_graph.py",
+          "packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py",
+          "packages/ai-parrot/tests/outputs/formats/test_renderer_registry.py",
+          "packages/ai-parrot/tests/outputs/test_legacy_deprecation.py",
+          "packages/ai-parrot/tests/outputs/formats/test_structured_chart.py",
+          "packages/ai-parrot/tests/unit/test_skill_tenancy.py",
+          "packages/ai-parrot-visualizations/tests/formats/test_structured_envelope.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      },
+      {
+        "kind": "vitest",
+        "targets": [
+          "src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts",
+          "src/lib/components/agents/canvas/a2ui/a2ui-presentation.test.ts",
+          "src/lib/components/agents/canvas/a2ui/A2UISurface.test.ts",
+          "src/lib/components/agents/canvas/a2ui/A2UINode.test.ts",
+          "src/lib/components/agents/ChatBubble.test.ts"
+        ],
+        "settings": {
+          "cwd": "packages/ai-parrot-server/ui"
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:74a68fc9db18fb6ce40bd69e07d551bac6af5e97466b5eddc22b56b29d2f04e2"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4757",
+      "slug": "route-labels-hint-channel",
+      "title": "Route label grammar & component hint channel",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "foundation; no dependencies",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4757-route-labels-hint-channel.md"
+    },
+    {
+      "id": "TASK-4758",
+      "slug": "embedding-router-label-support",
+      "title": "EmbeddingIntentRouter: string labels + shared encoder",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4757"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports parse_route_label/OutputShape from TASK-4757 (registry/routing/route_labels.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4758-embedding-router-label-support.md"
+    },
+    {
+      "id": "TASK-4759",
+      "slug": "route-bank-loader",
+      "title": "routes.yaml loader, merge semantics & config field",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4757"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports parse_route_label from TASK-4757 (registry/routing/route_labels.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4759-route-bank-loader.md"
+    },
+    {
+      "id": "TASK-4760",
+      "slug": "mixin-labels-tenants-hint",
+      "title": "IntentRouterMixin: label validation, per-tenant routers, hint resolution",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4757",
+        "TASK-4758",
+        "TASK-4759"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs set_output_shape/is_inline_component from TASK-4757, route_label_scores + encoder kwarg from TASK-4758 (embedding_router.py), tenant_output_mode_routes field from TASK-4759 (capabilities/models.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4760-mixin-labels-tenants-hint.md"
+    },
+    {
+      "id": "TASK-4761",
+      "slug": "request-context-hint-attribute",
+      "title": "RequestContext.a2ui_component + base method docstrings",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: TASK-4757 duck-types the ctx on purpose; touches only utils/helpers.py and bots/abstract.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4761-request-context-hint-attribute.md"
+    },
+    {
+      "id": "TASK-4762",
+      "slug": "catalog-schema-to-pydantic",
+      "title": "catalog/_model.py — JSON Schema to Pydantic for structured_output",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: reads only the existing catalog (get_component, ComponentDefinition.schema_)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4762-catalog-schema-to-pydantic.md"
+    },
+    {
+      "id": "TASK-4763",
+      "slug": "inline-prompt-builder",
+      "title": "inline/prompt.py — allowlist & catalog-driven prompt addon",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: reads definition.instructions from the existing catalog; owns tests/outputs/a2ui/inline/__init__.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4763-inline-prompt-builder.md"
+    },
+    {
+      "id": "TASK-4764",
+      "slug": "inline-feasibility-rules",
+      "title": "inline/feasibility.py — per-component data-feasibility rules",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4763"
+      ],
+      "parallel": true,
+      "parallelism_notes": "shares the test package marker tests/outputs/a2ui/inline/__init__.py created by TASK-4763; the module itself is pure",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4764-inline-feasibility-rules.md"
+    },
+    {
+      "id": "TASK-4765",
+      "slug": "inline-emitter",
+      "title": "inline/emitter.py — config extraction, envelope build & presentation marker",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4762",
+        "TASK-4763",
+        "TASK-4764"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports check_feasibility from TASK-4764 (inline/feasibility.py) and INLINE_COMPONENTS from TASK-4763 (inline/prompt.py); TASK-4762 fixes the structured_output contract it extracts; creates inline/__init__.py naming all three",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4765-inline-emitter.md"
+    },
+    {
+      "id": "TASK-4766",
+      "slug": "pandasagent-configure-routes",
+      "title": "PandasAgent CONFIGURE: default utterances + route-bank loading",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4759",
+        "TASK-4760"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls resolve_route_banks from TASK-4759 (registry/routing/route_bank.py) and feeds configure_output_router reworked by TASK-4760 (bots/mixins/intent_router.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4766-pandasagent-configure-routes.md"
+    },
+    {
+      "id": "TASK-4767",
+      "slug": "pandasagent-ask-seams",
+      "title": "PandasAgent ask(): hint kwarg, prompt addon, structured forcing, emitter call",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4757",
+        "TASK-4762",
+        "TASK-4765",
+        "TASK-4766"
+      ],
+      "parallel": true,
+      "parallelism_notes": "shares bots/data.py with TASK-4766 (serialized, lower id first); calls get_component_hint from TASK-4757, component_model from TASK-4762 (catalog/_model.py), emit_inline_component from TASK-4765 (inline/emitter.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4767-pandasagent-ask-seams.md"
+    },
+    {
+      "id": "TASK-4768",
+      "slug": "ui-presentation-marker",
+      "title": "UI: parrot_presentation reader & kind precedence",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4765"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads the parrot_presentation payload shape fixed by TASK-4765 (inline/emitter.py presentation_extension)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4768-ui-presentation-marker.md"
+    },
+    {
+      "id": "TASK-4769",
+      "slug": "chatbubble-inline-a2ui",
+      "title": "ChatBubble: render inline A2UI surfaces",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4768"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports isInlinePresentation from TASK-4768 (canvas/a2ui/a2ui-presentation.ts)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4769-chatbubble-inline-a2ui.md"
+    },
+    {
+      "id": "TASK-4770",
+      "slug": "inline-emitter-conformance",
+      "title": "Conformance: sweep inline emitter envelopes",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4765"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls emit_inline_component from TASK-4765 (inline/emitter.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4770-inline-emitter-conformance.md"
+    },
+    {
+      "id": "TASK-4771",
+      "slug": "inline-routing-docs",
+      "title": "Docs: inline component routing guide + extension table row",
+      "feature_id": "FEAT-755",
+      "feature": "inline-a2ui-component-routing",
+      "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4759",
+        "TASK-4765",
+        "TASK-4767",
+        "TASK-4769"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents shipped behaviour of routes.yaml (TASK-4759), the marker (TASK-4765), the ask() seams (TASK-4767) and the bubble (TASK-4769)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4771-inline-routing-docs.md"
+    }
+  ]
+}
