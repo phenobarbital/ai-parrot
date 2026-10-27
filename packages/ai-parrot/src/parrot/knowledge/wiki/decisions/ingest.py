@@ -60,7 +60,7 @@ def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
 
 
 def _alias_index(inventory: list[DecisionRecord]) -> tuple[dict[str, str], set[str]]:
-    """Map ``ADR-42`` -> decision_id, plus the set of ambiguous aliases.
+    """Map full canonical aliases to decision ids, plus ambiguous aliases.
 
     Built per call: spec §2 forbids a persistent cache without an
     invalidation contract.
@@ -81,12 +81,38 @@ def _alias_index(inventory: list[DecisionRecord]) -> tuple[dict[str, str], set[s
     return mapping, ambiguous
 
 
+def _lookup_alias(
+    alias: str,
+    alias_map: dict[str, str],
+    ambiguous_aliases: set[str],
+    local_prefix: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve a canonical alias to a decision id or diagnostic code.
+
+    Ambiguity is terminal at each candidate. Only a missing bare alias may
+    fall back to the configured local namespace; a recognized prefixed alias
+    is never retried as bare.
+    """
+    candidates = [alias]
+    if local_prefix is not None and alias.startswith("ADR-"):
+        candidates.append(f"{local_prefix}-{alias}")
+
+    for candidate in candidates:
+        if candidate in ambiguous_aliases:
+            return None, ADR_REFERENCE_AMBIGUOUS
+        decision_id = alias_map.get(candidate)
+        if decision_id is not None:
+            return decision_id, None
+    return None, ADR_REFERENCE_MISSING
+
+
 async def _resolve_citations(
     root: Path,
     code_paths: list[str],
     inventory: list[DecisionRecord],
+    config: DecisionConfig | None = None,
 ) -> tuple[_ResolvedLinks, list[DecisionDiagnostic]]:
-    """Resolve Python ADR citations into per-decision ``explains`` links.
+    """Resolve Python citations using exact and optional local-prefix aliases.
 
     Args:
         code_paths: EVERY indexed Python target, not only changed files —
@@ -104,6 +130,7 @@ async def _resolve_citations(
         ``ADR_REFERENCE_MISSING``; a duplicated alias is
         ``ADR_REFERENCE_AMBIGUOUS``. Both stay unresolved.
     """
+    settings = config if config is not None else DecisionConfig()
     alias_map, ambiguous_aliases = _alias_index(inventory)
     # decision_id -> target_id -> evidence refs citing that target
     grouped: dict[str, dict[str, list[EvidenceRef]]] = {}
@@ -115,10 +142,16 @@ async def _resolve_citations(
         except OSError as exc:
             diagnostics.append(DecisionDiagnostic(code=ADR_SOURCE_UNAVAILABLE, message=str(exc), path=rel_path))
             continue
-        citations, cite_diagnostics = extract_python_citations(rel_path, text)
+        citations, cite_diagnostics = extract_python_citations(rel_path, text, settings.effective_prefixes())
         diagnostics.extend(cite_diagnostics)
         for citation in citations:
-            if citation.alias in ambiguous_aliases:
+            decision_id, diagnostic_code = _lookup_alias(
+                citation.alias,
+                alias_map,
+                ambiguous_aliases,
+                settings.local_prefix,
+            )
+            if diagnostic_code == ADR_REFERENCE_AMBIGUOUS:
                 diagnostics.append(
                     DecisionDiagnostic(
                         code=ADR_REFERENCE_AMBIGUOUS,
@@ -127,8 +160,7 @@ async def _resolve_citations(
                     )
                 )
                 continue
-            decision_id = alias_map.get(citation.alias)
-            if decision_id is None:
+            if diagnostic_code == ADR_REFERENCE_MISSING:
                 diagnostics.append(
                     DecisionDiagnostic(
                         code=ADR_REFERENCE_MISSING,
@@ -137,6 +169,8 @@ async def _resolve_citations(
                     )
                 )
                 continue
+            if decision_id is None:
+                raise AssertionError("successful alias lookup must return a decision id")
             ref = build_evidence(
                 citation.rel_path, text, citation.page_id, citation.start_line, citation.end_line, citation.kind
             )
@@ -248,7 +282,7 @@ async def refresh_decisions(
         except OSError as exc:
             result.diagnostics.append(DecisionDiagnostic(code=ADR_SOURCE_UNAVAILABLE, message=str(exc), path=source))
             continue
-        record, parse_diagnostics = parse_adr(source, text)
+        record, parse_diagnostics = parse_adr(source, text, config.effective_prefixes())
         result.diagnostics.extend(parse_diagnostics)
         if record is None:
             continue
@@ -274,7 +308,12 @@ async def refresh_decisions(
     if alias_map or ambiguous_aliases:
         python_files = await asyncio.to_thread(discover_python_files, root)
         code_paths = [p.relative_to(root).as_posix() for p in python_files]
-        resolved_links, link_diagnostics = await _resolve_citations(root, code_paths, combined_inventory)
+        resolved_links, link_diagnostics = await _resolve_citations(
+            root,
+            code_paths,
+            combined_inventory,
+            config=config,
+        )
         result.diagnostics.extend(link_diagnostics)
 
     for record in parsed_by_source.values():
