@@ -137,7 +137,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "needs set_output_shape/is_inline_component from TASK-4757, route_label_scores + encoder kwarg from TASK-4758 (embedding_router.py), tenant_output_mode_routes field from TASK-4759 (capabilities/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4760-mixin-labels-tenants-hint.md"
+      "completed_at": "2026-10-27T03:12:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4760-mixin-labels-tenants-hint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4761",
@@ -237,7 +238,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -249,8 +250,9 @@
       "parallelism_notes": "imports check_feasibility from TASK-4764 (inline/feasibility.py) and INLINE_COMPONENTS from TASK-4763 (inline/prompt.py); TASK-4762 fixes the structured_output contract it extracts; creates inline/__init__.py naming all three",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4765-inline-emitter.md"
+      "completed_at": "2026-10-27T03:12:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4765-inline-emitter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4766",
