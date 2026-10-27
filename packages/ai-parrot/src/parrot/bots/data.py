@@ -28,10 +28,14 @@ from .agent import BasicAgent
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..registry.routing.route_bank import resolve_route_banks
+from parrot.registry.routing.route_labels import OutputShape, get_component_hint, set_output_shape
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
+from parrot.outputs.a2ui.catalog._model import component_model
+from parrot.outputs.a2ui.inline.emitter import emit_inline_component
+from parrot.outputs.a2ui.inline.prompt import build_component_prompt
 from ..memory.abstract import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
@@ -1406,6 +1410,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             kwargs["temperature"] = 0.0
 
         try:
+            a2ui_component = kwargs.pop("a2ui_component", None)
+
             # Get conversation history (no vector search for PandasAgent)
             conversation_history = None
             rendered_history = []
@@ -1430,12 +1436,16 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # after the None->DEFAULT normalization above and only when the
             # caller did not specify a mode (precedence: explicit > router >
             # default). No-op unless a routing mixin (IntentRouterMixin) is present.
-            if output_mode == OutputMode.DEFAULT:
+            if a2ui_component:
+                output_mode = set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))
+            elif output_mode == OutputMode.DEFAULT:
                 _resolved_mode = await self._resolve_output_mode(question, ctx)
                 if _resolved_mode is not None:
                     output_mode = _resolved_mode
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
+
+            component_hint = get_component_hint(ctx) or a2ui_component
 
             # Apply agent-level default (e.g. output_mode=TEXT in constructor)
             # when neither the caller nor the router resolved a specific mode.
@@ -1501,6 +1511,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if output_mode != OutputMode.TABLE:
                     if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
                         system_prompt += system_prompt_addon
+
+                if output_mode == OutputMode.A2UI and component_hint:
+                    system_prompt += build_component_prompt(component_hint)
 
                 if output_mode == OutputMode.MSTEAMS:
                     system_prompt += (
@@ -1593,9 +1606,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # chart config; advertising StructuredChartConfig (incl. the
                     # fast-path JSON addendum below) makes it reliably emit the
                     # config + embedded data rows.
-                    _forced_output_type = (
-                        StructuredChartConfig if output_mode == OutputMode.STRUCTURED_CHART else PandasAgentResponse
-                    )
+                    if output_mode == OutputMode.A2UI and component_hint:
+                        _forced_output_type = component_model(component_hint)
+                    elif output_mode == OutputMode.STRUCTURED_CHART:
+                        _forced_output_type = StructuredChartConfig
+                    else:
+                        _forced_output_type = PandasAgentResponse
                     llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=_forced_output_type)
 
                 # Fast-path optimization for clients that split tools +
@@ -2035,6 +2051,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         len(explanation or ""),
                     )
                     return response  # skip formatter + structured reformat
+
+                if (
+                    output_mode == OutputMode.A2UI
+                    and component_hint
+                    and getattr(response, "a2ui_envelope", None) is None
+                ):
+                    outcome = emit_inline_component(
+                        response,
+                        component_hint,
+                        frame=response.data if isinstance(response.data, pd.DataFrame) else None,
+                    )
+                    if outcome.status == "degraded":
+                        self.logger.info("Inline A2UI emit degraded (%s): %s", component_hint, outcome.reason)
+                    else:
+                        return response
 
                 # A2UI was requested but nothing rendered a surface this turn
                 # (toolkit not registered, or the LLM answered in prose). There
