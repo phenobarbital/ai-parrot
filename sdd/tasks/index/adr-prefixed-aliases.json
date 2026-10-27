@@ -163,7 +163,7 @@
       "feature_id": "FEAT-760",
       "feature": "adr-prefixed-aliases",
       "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -174,8 +174,9 @@
       "parallelism_notes": "Consumes prefix-aware ADR_REFERENCE_RE/normalize_adr_alias from TASK-4817 and _CITATION_RE/CodeExtractor from TASK-4819. Exclusive because decisions/conftest.py is loaded by other tasks’ test suites.",
       "assigned_to": null,
       "started_at": "2026-10-27T18:10:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4823-adr-prefix-cross-plane-parity.md"
+      "completed_at": "2026-10-27T18:29:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4823-adr-prefix-cross-plane-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4824",
