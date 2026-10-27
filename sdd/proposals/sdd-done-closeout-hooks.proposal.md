@@ -4,7 +4,7 @@ id_status: provisional   # not reserved; /sdd-spec reserves via reserve_ids.py
 title: Configurable closeout hooks for /sdd-done (event → subscribed actions)
 type: feature
 mode: enrichment
-status: discussion
+status: review
 base_branch: dev
 source: inline
 confidence: medium
@@ -127,20 +127,17 @@ a later `builtin = "eventbus.emit"` target.
 - ✓ [high] The insertion points and the `.parrot/` config precedent exist (F001, F002).
 - ✓ [high] Both twins and the installer must be updated (F001, F004).
 - ◐ [medium] The record-back protocol for agent hooks is workable but adds a round trip.
-- ◌ [low] Exact artifact upload: a PR comment with links, or committed under `sdd/state`.
-  Screencasts are large, so we probably shouldn't commit them.
+- ✓ [high] Artifacts go to /tmp, never committed (U3).
 
-## 5. Open Questions
-- U1: Config location: only `.parrot/sdd_hooks.toml`, or also a `CLAUDE.md`
-  section as free-form agent guidance? (Recommendation: TOML only. CLAUDE.md can't be enforced.)
-- U2: Should `--resolve-jira` become a built-in `post_pr` hook (hard cut), or stay a flag?
-- U3: Where do screenshots and screencasts go: committed, a PR comment upload, or an external store?
-- U4: Should `pre_pr` hooks run in `--dry-run`?
-- U5: Should hooks also apply to `/sdd-brief` hotfix closeouts (base `main`)?
+## 5. Open Questions (resolved 2026-10-28)
+- [x] U1: Config lives ONLY in `.parrot/sdd_hooks.toml` (more control); no CLAUDE.md section.
+- [x] U2: Hard cut: remove `--resolve-jira`; Jira becomes an opt-in `post_pr` builtin (`jira.transition`) that checks whether the spec has a linked Jira key and skips with a note if not.
+- [x] U3: Artifacts are NEVER committed. They are written under `/tmp` (e.g. `/tmp/claude-<uid>/sdd-hooks/<FEAT>/`), the same way Claude/Codex handle other artifacts today, and their paths/URLs are listed in the PR `## Evidence` section and the Step 12 output. Keeping them is the operator's job.
+- [x] U4: `pre_pr` hooks DO run under `--dry-run` (side-effect `post_pr` hooks do not).
+- [x] U5: `/sdd-brief` hotfix closeouts are out of scope → follow-up.
 
 ## 6. Recommended Next Step
-`/sdd-spec FEAT-764` after resolving U1–U3. Locations are high-confidence. The
-open design choices are bounded.
+`/sdd-spec FEAT-764` All unknowns are resolved.
 
 ## 7. Research Audit
 State: `sdd/state/FEAT-764/` (findings F001–F004). Tight budget: sequential, not truncated.
