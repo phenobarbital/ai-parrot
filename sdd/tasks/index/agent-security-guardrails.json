@@ -150,7 +150,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -158,8 +158,9 @@
       "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml and regenerates the workspace lockfile uv.lock — shared state every other task's environment reads.",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4830-rapidfuzz-core-dependency.md"
+      "completed_at": "2026-10-27T21:38:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4830-rapidfuzz-core-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4831",
