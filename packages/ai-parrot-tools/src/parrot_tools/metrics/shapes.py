@@ -125,9 +125,7 @@ def kpicard_props(definition: MetricDefinition, fig: KPIFigures) -> dict[str, An
         props.pop("higherIsBetter")
     allowed = set(KPICARD_SCHEMA["properties"])
     return {
-        key: value
-        for key, value in props.items()
-        if key in allowed and (value is not None or key == "higherIsBetter")
+        key: value for key, value in props.items() if key in allowed and (value is not None or key == "higherIsBetter")
     }
 
 
@@ -154,7 +152,9 @@ def build_metric_envelope(
     if isinstance(shape, KPICardShape):
         if fig is None:
             raise ValueError("KPICard shape requires KPI figures")
-        return build_surface("KPICard", kpicard_props(definition, fig), surface_id=surface_id, origin=ProducerOrigin.TOOL)
+        return build_surface(
+            "KPICard", kpicard_props(definition, fig), surface_id=surface_id, origin=ProducerOrigin.TOOL
+        )
     if isinstance(shape, ChartShape):
         return build_chart(
             chart_type=shape.chart_type,
@@ -189,7 +189,9 @@ def build_metric_envelope(
             "data": {"path": "/rows"},
             "title": title,
         }
-        return build_surface("Map", props, surface_id=surface_id, data_model={"rows": row_data}, origin=ProducerOrigin.TOOL)
+        return build_surface(
+            "Map", props, surface_id=surface_id, data_model={"rows": row_data}, origin=ProducerOrigin.TOOL
+        )
     raise ValueError(f"unsupported shape {shape!r}")
 
 

@@ -113,12 +113,16 @@ async def test_linked_uses_tenant_manual_refresh_and_locks_comparison(worked_hou
     """Linked KPIs use the source tenant, manual default, and a locked previous source."""
     current = {
         "a2ui_envelope": {
-            "metadata": {"extensions": {"parrot_data_sources": {"flex_hours": {"locked": [], "params": {}, "conditions": {}}}}}
+            "metadata": {
+                "extensions": {"parrot_data_sources": {"flex_hours": {"locked": [], "params": {}, "conditions": {}}}}
+            }
         }
     }
     previous = {
         "a2ui_envelope": {
-            "metadata": {"extensions": {"parrot_data_sources": {"previous": {"locked": [], "params": {}, "conditions": {}}}}}
+            "metadata": {
+                "extensions": {"parrot_data_sources": {"previous": {"locked": [], "params": {}, "conditions": {}}}}
+            }
         }
     }
     querysource = AsyncMock()
@@ -135,7 +139,10 @@ async def test_linked_uses_tenant_manual_refresh_and_locks_comparison(worked_hou
     )
     assert querysource.build_linked_surface.call_count == 2
     assert querysource.build_linked_surface.call_args_list[0].kwargs["tenant"] == "acme"
-    assert querysource.build_linked_surface.call_args_list[0].kwargs["refresh"] == {"policy": "manual", "interval_seconds": None}
+    assert querysource.build_linked_surface.call_args_list[0].kwargs["refresh"] == {
+        "policy": "manual",
+        "interval_seconds": None,
+    }
     assert result["a2ui_envelope"]["metadata"]["extensions"]["parrot_data_sources"]["previous"]["locked"] == [
         "firstdate",
         "lastdate",
