@@ -10,7 +10,7 @@ tags: [github-reviewer, sdd, pr-review, jira, gittoolkit]
 **Feature ID**: FEAT-759
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 ---
