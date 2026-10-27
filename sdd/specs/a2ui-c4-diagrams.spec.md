@@ -17,7 +17,7 @@ tags: [a2ui, viz-core, graph, c4, mermaid, architecture-diagrams]
 **Feature ID**: FEAT-754
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 **Origin**: NAV-10382 review (2026-10-27) — "the inline renderable catalog should grow; C4 architecture diagrams were named explicitly". No brainstorm/proposal exists for this feature; the design decisions below were taken in that review and refined against the FEAT-529 code.
 **Parent component**: viz-core `Graph` (FEAT-529, `sdd/specs/a2ui-graph-component.spec.md`, merged). This spec EXTENDS that component; it introduces no new catalog component.
@@ -88,10 +88,10 @@ and renderer rules that understand it.
   official Mermaid C4 macros (`Person`, `System`, `Container`, `Component`,
   their `_Ext` / `Db` / `Queue` variants, `Boundary` / `Enterprise_Boundary` /
   `System_Boundary` / `Container_Boundary`, `Rel` / `BiRel` / `Rel_Back` /
-  `Rel_U|D|L|R` / `Rel_Neighbor` / `Rel_Back_Neighbor`, `RelIndex` for
+  `Rel_U|D|L|R`, `RelIndex` for
   Dynamic, `UpdateLayoutConfig`). `from_mermaid()` parses the same subset back.
   Round trip is **byte-stable** on canonical text and **object-equal modulo
-  the documented lossy fields** (§3 Module 2). No new dependency.
+  the documented lossy fields and normalization** (§3 Module 2). No new dependency.
 - **G4 — Deterministic C4 layout, no new dependency.** `compute_positions`
   lays a `kind="c4"` spec out with C4 rules: persons on the first tier,
   internal elements in the middle grouped inside nested boundary boxes,
@@ -229,8 +229,8 @@ branch, and the C4 vocabulary rides on the SAME models:
 7. **Bundled UI (`A2UIGraph.svelte` + test).** Types mirror the wire; the
    pure `buildGraphOption` gains a C4 path: per-`c4Type` ECharts symbol +
    caption, technology on a second label line, dashed border for `*_ext`,
-   two arrowheads for `bidirectional`, and `option.graphic` boundary frames
-   computed from positions when (and only when) positions are complete.
+   two arrowheads for `bidirectional`, and boundary frames computed in layout space when positions are complete,
+   projected to viewport pixels by the mounted chart lifecycle (§3 M6).
 
 8. **Satellite renderers unchanged (G10).** `render_graph_svg`,
    `EChartsRenderer._build_graph_option`, `InteractiveHTMLRenderer._render_graph`
@@ -300,12 +300,12 @@ C4ElementType = Literal[
 #: C4 boundary type — Enterprise_Boundary / System_Boundary / Container_Boundary / Boundary (generic).
 C4BoundaryType = Literal["enterprise", "system", "container", "generic"]
 
-#: Relationship placement hint — Mermaid Rel_U / Rel_D / Rel_L / Rel_R / Rel_Back / Rel_Neighbor / Rel_Back_Neighbor.
-RelHint = Literal["up", "down", "left", "right", "back", "neighbor", "back_neighbor"]
+#: Relationship placement hint — Mermaid Rel_U / Rel_D / Rel_L / Rel_R / Rel_Back.
+RelHint = Literal["up", "down", "left", "right", "back"]
 
 class GraphNode(BaseModel):              # existing fields unchanged (models.py:78-84)
     c4_type: Optional[C4ElementType] = Field(default=None, alias="c4Type")   # c4-only; REQUIRED on every node when kind == "c4"
-    technology: Optional[str] = None     # any kind (tooltip elsewhere); Mermaid: Container/Component 3rd arg
+    technology: Optional[str] = None     # non-C4: any node; C4: Container/Component families only (V7)
     description: Optional[str] = None    # any kind; Mermaid: Person/System 3rd arg, Container/Component 4th arg
 
 class GraphEdge(BaseModel):              # existing fields unchanged (models.py:103-107)
@@ -333,6 +333,9 @@ class GraphSpec(BaseModel):              # existing fields unchanged (models.py:
 #       parent chain is acyclic (iterative walk, same style as _has_cycle, models.py:283).
 #   V4  layout.shape_in_row and layout.boundary_in_row are both set or both None.
 #   V5  level == "dynamic" ⇒ no edge carries hint or bidirectional (emitted as RelIndex, ordered by edges[]).
+#   V6  kind == "c4" and edge.bidirectional is True ⇒ edge.hint is None (BiRel has no placement form).
+#   V7  kind == "c4" and node.c4_type is in the person/system families ⇒ node.technology is None.
+#       Container/Component families retain technology; non-C4 technology remains unrestricted.
 #   Existing invariants (unique node ids, edge endpoints exist, group members exist/at most one group,
 #   dag acyclic, manual positions complete) are untouched.
 # Forbidden-by-construction (G9): no new field name or enum value contains colour/color/palette/font,
@@ -413,7 +416,8 @@ export type C4BoundaryType = 'enterprise' | 'system' | 'container' | 'generic';
 export interface BoundaryFrame { id: string; label: string; depth: number; x: number; y: number; w: number; h: number }
 export function c4SymbolFor(c4Type: C4ElementType | undefined): { symbol: string; caption: string; external: boolean };
 export function computeBoundaryFrames(properties: GraphProperties): BoundaryFrame[];
-# buildGraphOption(properties, resolveColor) keeps its signature; its result gains `graphic` frames for kind === 'c4'.
+# buildGraphOption keeps its signature and emits no raw-coordinate graphic frames.
+# The mounted C4 renderer projects computeBoundaryFrames output through the live chart (§3 M6).
 ```
 
 ---
@@ -432,17 +436,17 @@ writing the code is mechanical".
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: C4 vocabulary (`graph/models.py`) | yes | field list, aliases, Literals and validators V1–V5 fixed in §2 Data Models; iterative parent-chain walk; `extra="forbid"` kept | — |
+| M1: C4 vocabulary (`graph/models.py`) | yes | field list, aliases, Literals and validators V1–V7 fixed in §2 Data Models; iterative parent-chain walk; `extra="forbid"` kept | — |
 | M2: Mermaid C4 codec (`graph/mermaid_c4.py` + dispatch) | yes | grammar, macro tables, canonical emission order, arity rules, lossy-field list and error reasons fixed below; reuses `MermaidCodecError`, `_escape_label`, `_unescape_label`, `_prepare_lines` | — |
 | M3: C4 layout (`graph/layout_c4.py` + `layout.py` dispatch/nested boxes) | yes | tier rules, grid wrap, defaults (4 / 2), padding-by-depth, integer slot arithmetic, `reversed_edges == []` fixed below | — |
 | M4: Catalog — lowering, instructions, authoring notes, utterances | yes | lowered tree fixed in §2 Data Models; golden `graph_c4_lowered.json` produced by the task and committed; utterance list fixed below | — |
 | M5: Builder (`build_graph(level=)`, `build_c4_diagram`) | yes | signature fixed in §2 New Public Interfaces; pure delegation | — |
-| M6: Bundled UI (`A2UIGraph.svelte` + vitest) | yes | type additions, symbol/caption table, frame algorithm (mirror of `_group_boxes`), dashed/bidirectional rules and test names fixed below | — |
+| M6: Bundled UI (`A2UIGraph.svelte` + vitest) | yes | type additions, symbol/caption table, frame algorithm plus viewport projection/lifecycle, dashed/bidirectional rules and test names fixed below | — |
 | M7: Docs + conformance + fixtures | yes | doc sections, insertion anchors, conformance test names and fixture path fixed below | — |
 
 ### Module 1: C4 vocabulary — `graph/models.py`
 - **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` (MODIFY) + `graph/__init__.py` (re-exports)
-- **Responsibility**: carry the C4 vocabulary on the existing models; enforce V1–V5 in `_validate_graph`; export the four new Literals.
+- **Responsibility**: carry the C4 vocabulary on the existing models; enforce V1–V7 in `_validate_graph`; export the four new Literals.
 - **Depends on**: nothing new (pydantic v2 already used).
 - **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
   ```python
@@ -455,7 +459,7 @@ writing the code is mechanical".
                           "component_ext", "component_db", "component_db_ext", "component_queue",
                           "component_queue_ext"]
   C4BoundaryType = Literal["enterprise", "system", "container", "generic"]
-  RelHint = Literal["up", "down", "left", "right", "back", "neighbor", "back_neighbor"]
+  RelHint = Literal["up", "down", "left", "right", "back"]
 
   class GraphNode(BaseModel):                                   # verified: models.py:57
       """… (existing docstring) … c4_type/technology/description: see spec §2 Data Models."""
@@ -480,10 +484,11 @@ writing the code is mechanical".
       level: Optional[C4Level] = None
 
       @model_validator(mode="after")
-      def _validate_graph(self) -> GraphSpec:                   # verified: models.py:229 — existing checks kept, V1–V5 appended before `return self` (:281)
+      def _validate_graph(self) -> GraphSpec:                   # verified: models.py:229 — existing checks kept, V1–V7 appended before `return self` (:281)
           """Existing invariants + V1 (c4 ⇒ level & c4_type), V2 (c4-only fields ⇒ kind c4),
           V3 (group ids unique, parent exists ≠ self, chain acyclic), V4 (shapeInRow/boundaryInRow together),
-          V5 (dynamic ⇒ no hint/bidirectional). All via ValueError."""
+          V5 (dynamic ⇒ no hint/bidirectional), V6 (bidirectional ⇒ no hint),
+          V7 (C4 person/system ⇒ no technology). All via ValueError."""
 
       def _group_parent_cycle(self) -> Optional[str]:
           """Return the first group id whose `parent` chain loops back on itself, else None (iterative)."""
@@ -498,13 +503,16 @@ writing the code is mechanical".
 - **Decided grammar** (canonical emission; parser accepts the same plus free whitespace and `%%` comments):
   - Header by `level`: `C4Context` | `C4Container` | `C4Component` | `C4Dynamic`. `direction` has no C4 form (parsed specs get `"TB"`).
   - `title <text>` — second line, only when `spec.title` is set (raw text, trailing-stripped).
-  - Elements: nodes with no group first (input order), then boundaries in `groups[]` order; inside a boundary: its direct member nodes (`group.nodes` order), then its child boundaries (`groups[]` order), 4-space indent per depth. Macro by `c4_type` (table: `person→Person`, `person_ext→Person_Ext`, `system→System`, `system_ext→System_Ext`, `system_db→SystemDb`, `system_db_ext→SystemDb_Ext`, `system_queue→SystemQueue`, `system_queue_ext→SystemQueue_Ext`, `container→Container`, `container_ext→Container_Ext`, `container_db→ContainerDb`, `container_db_ext→ContainerDb_Ext`, `container_queue→ContainerQueue`, `container_queue_ext→ContainerQueue_Ext`, `component→Component`, `component_ext→Component_Ext`, `component_db→ComponentDb`, `component_db_ext→ComponentDb_Ext`, `component_queue→ComponentQueue`, `component_queue_ext→ComponentQueue_Ext`). Person/System family args: `(id, "label", "description")`; Container/Component family: `(id, "label", "technology", "description")`. Trailing unset args are omitted; an unset `technology` before a set `description` is emitted as `""`. Label defaults to `id` (and is re-inferred as `None` on parse when equal to the id, same collapsing rule as `mermaid.py:38-40`). All string args double-quoted; `"` inside → `#quot;` (`_escape_label` convention).
+  - Elements: nodes with no group first (input order), then top-level boundaries in `groups[]` order; inside a boundary: its direct member nodes (`group.nodes` order), then its child boundaries (`groups[]` order), 4-space indent per depth. Macro by `c4_type` (table: `person→Person`, `person_ext→Person_Ext`, `system→System`, `system_ext→System_Ext`, `system_db→SystemDb`, `system_db_ext→SystemDb_Ext`, `system_queue→SystemQueue`, `system_queue_ext→SystemQueue_Ext`, `container→Container`, `container_ext→Container_Ext`, `container_db→ContainerDb`, `container_db_ext→ContainerDb_Ext`, `container_queue→ContainerQueue`, `container_queue_ext→ContainerQueue_Ext`, `component→Component`, `component_ext→Component_Ext`, `component_db→ComponentDb`, `component_db_ext→ComponentDb_Ext`, `component_queue→ComponentQueue`, `component_queue_ext→ComponentQueue_Ext`). Person/System family args: `(id, "label", "description")`; Container/Component family: `(id, "label", "technology", "description")`. Trailing unset args are omitted; an unset `technology` before a set `description` is emitted as `""`. Label defaults to `id` (and is re-inferred as `None` on parse when equal to the id, same collapsing rule as `mermaid.py:38-40`). All string args double-quoted; `"` inside → `#quot;` (`_escape_label` convention).
   - Boundaries: `Enterprise_Boundary(id, "label") {`, `System_Boundary(id, "label") {`, `Container_Boundary(id, "label") {`, generic/None → `Boundary(id, "label") {`; closed by `}` on its own line.
-  - Relationships after all elements, in `edges[]` order. `level != "dynamic"`: macro by (`bidirectional`, `hint`): `BiRel` if bidirectional, else `Rel` / `Rel_Back` / `Rel_U` / `Rel_D` / `Rel_L` / `Rel_R` / `Rel_Neighbor` / `Rel_Back_Neighbor`; args `(from, to, "label", "technology")` — label is positional-required in Mermaid, emitted as `""` when `None` (parsed back to `None`). `level == "dynamic"`: `RelIndex("<n>", from, to, "label", "technology")` with `n` = 1-based position in `edges[]`; the parser orders edges by the index (ties/gaps → `MermaidCodecError`).
+  - Relationships after all elements, in `edges[]` order. `level != "dynamic"`: macro by (`bidirectional`, `hint`): `BiRel` if bidirectional, else `Rel` / `Rel_Back` / `Rel_U` / `Rel_D` / `Rel_L` / `Rel_R`; args `(from, to, "label", "technology")` — label is positional-required in Mermaid, emitted as `""` when `None` (parsed back to `None`). `level == "dynamic"`: `RelIndex("<n>", from, to, "label", "technology")` with `n` = 1-based position in `edges[]`; the parser orders edges by the index (ties/gaps → `MermaidCodecError`).
   - `UpdateLayoutConfig($c4ShapeInRow="<shapeInRow>", $c4BoundaryInRow="<boundaryInRow>")` — last line, only when both are set (V4).
   - Parser also accepts Mermaid's spelled aliases `Rel_Up`/`Rel_Down`/`Rel_Left`/`Rel_Right` (canonical emit is the short form).
   - **Rejected** (`MermaidCodecError`, line-addressed, reason text fixed): `UpdateElementStyle` / `UpdateRelStyle` ("styling is not in the supported subset"); any `$sprite=` / `$tags=` / `$link=` argument ("sprite/tags/link arguments are not in the supported subset"); more positional args than the macro's arity; an unknown macro; an id not matching `_IDENT`; an unbalanced `}`; `Deployment_Node` / `Node` (C4Deployment — non-goal); `%%{init}` (already rejected by `_prepare_lines`, `mermaid.py:191`).
-  - **Documented loss** (fields with no C4 Mermaid form, dropped on export, defaults on import): `accessible_description`, `size`, `direction`, `selection`, `data`, `layout.engine`/`rank_sep`/`node_sep`/`positions`, node `shape`/`state`/`icon`/`meta`/`group`-less ordering nuance below, edge `kind`/`condition`. **Round-trip contract**: (a) byte-stable — `to_mermaid(from_mermaid(text)) == text` for any text `to_mermaid` produced; (b) object-equal modulo the lossy fields — `from_mermaid(to_mermaid(spec)).model_dump(exclude=LOSSY) == spec.model_dump(exclude=LOSSY)` when `spec.nodes` is already in canonical declaration order (ungrouped first, then per boundary). A spec whose `nodes[]` interleaves grouped and ungrouped nodes round-trips to the canonical order (edges/groups unchanged) — this is inherent to C4 syntax (an element must be declared inside its boundary block) and is stated in the module docstring.
+  - **Documented loss** (dropped on export, defaults on import): `accessible_description`, `size`, `direction`, `selection`, `data`, `layout.engine`/`rank_sep`/`node_sep`/`positions`, node `shape`/`state`/`icon`/`meta`/`group`, edge `kind`/`condition`. `groups[].nodes` is authoritative for membership; the redundant `node.group` is excluded from comparison. V6 rejects bidirectional edges with hints; V7 rejects technology on C4 Person/System families, so neither semantic field is silently lost.
+  - **Round-trip normalization**: compare parsed and input models after applying the same normalization: groups become parent-before-child depth-first preorder (roots and siblings retain their input order); nodes become ungrouped-first then direct members and descendants in that group traversal; edge order and group member order stay unchanged. Normalize explicit node/group labels equal to their id to `None`, empty optional labels/technology/descriptions to `None`, `bidirectional=False` to `None`, group `c4Type=None` to `"generic"`, and trailing title whitespace away (empty title becomes `None`). Normalize an empty groups list to `None`; remove lossy layout fields and normalize an empty remaining layout to `None`. The emitter uses these same optional-string rules, omitting trailing unset arguments and using `""` only for a required positional placeholder. Neither export nor comparison mutates the caller's model.
+  - **Round-trip contract**: (a) emitted text is byte-stable: `to_mermaid(from_mermaid(to_mermaid(spec))) == to_mermaid(spec)`; (b) parsed and input models are equal after the normalization above and removal of `C4_LOSSY_FIELDS`. That constant is a documented set of dotted paths, **not** a directly usable Pydantic `exclude` argument: tests must apply nested exclusions to every node/edge and layout before comparing. Test both canonical and noncanonical node/group order, including child-before-parent groups. The shared fixture is reordered with `customer`, `payments` first, then `web`, `api`, `db`, but noncanonical tests remain mandatory.
+  - **Upstream compatibility**: supported relationship macros are `Rel`, `BiRel`, `Rel_Back`, and the four short/spelled directional forms listed above. Reject `Rel_Neighbor` and `Rel_Back_Neighbor` as unknown macros; `neighbor`/`back_neighbor` are not model values. The [Mermaid C4 grammar](https://github.com/mermaid-js/mermaid/blob/develop/packages/mermaid/src/diagrams/c4/parser/c4Diagram.jison) is the authority. Before M2 acceptance, record the exact upstream Mermaid version used and parse canonical examples covering every emitted macro with that version (an external verification environment; no project dependency added). Record results under `artifacts/logs/`; self-round-trips alone are insufficient evidence.
 - **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
   ```python
   # packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid_c4.py  (new)
@@ -607,7 +615,7 @@ writing the code is mechanical".
 - **Responsibility**: C4 branch of `lower()` (tree fixed in §2 Data Models), one added sentence in `GRAPH_INSTRUCTIONS`, the two FEAT-755 hand-off constants. `GRAPH_SCHEMA` needs no edit (derived).
 - **Depends on**: Modules 1, 2 (`to_mermaid` for the `graph-source` node).
 - **Decided content**:
-  - `GRAPH_INSTRUCTIONS` += `" For a software-architecture diagram set kind=\"c4\" with level (context/container/component/dynamic), give every node a c4Type (person, system, container, component, *_ext, *_db, *_queue) plus technology/description, and model boundaries as groups (c4Type enterprise/system/container, nested via parent)."`
+  - `GRAPH_INSTRUCTIONS` += `" For a software-architecture diagram set kind=\"c4\" with level (context/container/component/dynamic), give every node a c4Type (person, system, container, component, *_ext, *_db, *_queue) plus description (technology only on containers/components), and model boundaries as groups (c4Type enterprise/system/container, nested via parent)."`
   - `GRAPH_C4_AUTHORING_NOTES`: a short, numbered authoring guide (one element per real system/container, externals as `*_ext`, persons first, every relationship labelled with a verb phrase, technology on containers/components, ≤ 15 elements per diagram, boundaries only when ≥ 2 members, never positions/`action`). Plain text, no colour vocabulary.
   - `GRAPH_C4_UTTERANCES` (EN/ES, mirrors the `DEFAULT_OUTPUT_MODE_ROUTES` style, `bots/data.py:297`): `"C4 context diagram of the platform"`, `"draw a C4 container diagram of this system"`, `"show the architecture as a C4 diagram"`, `"component diagram of the API service"`, `"system context diagram with external systems"`, `"diagrama de contexto C4 de la plataforma"`, `"diagrama de contenedores de la aplicación"`, `"dibuja la arquitectura del sistema como C4"`, `"diagrama de componentes del servicio"`, `"diagrama de contexto con los sistemas externos"`.
   - `lower()` for `kind == "c4"`: as fixed in §2 Data Models; the `edge-list` node keeps today's `_edge_extensions` plus `parrot_technology` when set; every non-C4 kind takes exactly today's code path.
@@ -658,10 +666,16 @@ writing the code is mechanical".
   ```
 
 ### Module 6: Bundled UI — `A2UIGraph.svelte` + `A2UIGraph.test.ts`
-- **Path**: `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.svelte` (MODIFY), `A2UIGraph.test.ts` (MODIFY)
-- **Responsibility**: wire types for the new fields; C4 path in the pure `buildGraphOption`; boundary frames; vitest coverage. `A2UINode.svelte` dispatch (`:167`, `:243-249`) is untouched.
+- **Path**: `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.svelte` (MODIFY), `A2UIGraph.test.ts` (MODIFY); `packages/ai-parrot-server/ui/src/lib/components/visualizations/ECharts.svelte` (MODIFY: optional chart lifecycle callback only); sibling `ECharts.test.ts` (CREATE: callback lifecycle tests).
+- **Responsibility**: wire types for the new fields; C4 path in the pure `buildGraphOption`; projected boundary frames and chart lifecycle; vitest and rendered coverage. `A2UINode.svelte` dispatch (`:167`, `:243-249`) is untouched.
 - **Depends on**: Module 1 (wire shape only — can start as soon as §2 Data Models is frozen).
-- **Decided rules**: `kind === 'c4'` ⇒ (a) node `symbol` from `c4SymbolFor`: `person*` → `'circle'` with caption `Person`; `*_db` → `'roundRect'` caption `[DB]`; `*_queue` → `'rect'` caption `[Queue]`; other → `'rect'` caption `''`; `external === c4Type.endsWith('_ext')` ⇒ `itemStyle.borderType: 'dashed'`; (b) `label.formatter` = `label` + `\n[technology]` when set; tooltip = label, `c4Type`, technology, description, then `meta` lines (reusing `tooltipText`, `:116`); (c) edges: `bidirectional` ⇒ `symbol: ['arrow', 'arrow']`, label `"<label> [<technology>]"`; `hint` ignored; (d) frames: `computeBoundaryFrames` mirrors `_group_boxes` (member positions ∪ child frames, padding 20 × depth, nested via `parent`), emitted as `option.graphic` rect + text elements ONLY when `hasCompletePositions` (`:106`) is true — the circular fallback shows no frames; (e) status role / `STATE_TO_STATUS` (`:80`) and `onNodeClick` (`:206`) unchanged; (f) non-C4 output of `buildGraphOption` byte-identical to today (existing five tests, `A2UIGraph.test.ts:11,53,69,81,93`, keep passing unchanged).
+- **Decided rules**: `kind === 'c4'` ⇒ (a) node `symbol` from `c4SymbolFor`: `person*` → `'circle'` with caption `Person`; `*_db` → `'roundRect'` caption `[DB]`; `*_queue` → `'rect'` caption `[Queue]`; other → `'rect'` caption `''`; `external === c4Type.endsWith('_ext')` ⇒ `itemStyle.borderType: 'dashed'`; (b) `label.formatter` = `label` + `\n[technology]` when set; tooltip = label, `c4Type`, technology, description, then `meta` lines (reusing `tooltipText`, `:116`); (c) edges: `bidirectional` ⇒ `symbol: ['arrow', 'arrow']`, label `"<label> [<technology>]"`; `hint` ignored; (d) frames: `computeBoundaryFrames` mirrors `_group_boxes` (member positions ∪ child frames, padding 20 × depth, nested via `parent`), returned in abstract layout coordinates ONLY when `hasCompletePositions` (`:106`) is true; the mounted lifecycle below projects them into `graphic` rect/text elements — never place raw coordinates directly in `option.graphic`; the circular fallback shows no frames; (e) status role / `STATE_TO_STATUS` (`:80`) and `onNodeClick` (`:206`) unchanged; (f) non-C4 output of `buildGraphOption` byte-identical to today (existing five tests, `A2UIGraph.test.ts:11,53,69,81,93`, keep passing unchanged).
+- **Chart-instance lifecycle (required M6 scope)**:
+  - Add optional `onChartReady?: (chart: echarts.EChartsType) => (() => void) | void` to the shared `ECharts.svelte` props. Call it once per live chart instance after the first `setOption`; retain and call its cleanup before disposing/replacing that instance or unmounting. Callers without the prop retain existing behavior. If the callback identity changes, clean up the old subscription and attach the new one to the live instance. Cover recreation after lazy full-build loading in the lifecycle test.
+  - `A2UIGraph.svelte` uses that hook to subscribe to `rendered` and `graphRoam` and schedules one initial update plus coalesced `requestAnimationFrame` updates on those events. Each update reads the latest properties and projects both corners of every abstract frame with `chart.convertToPixel({seriesIndex: 0}, [x, y])`. Rectangles use the min/max of those projected corners; captions use the projected top-left. Frames are `silent: true`, unfilled and behind the graph, with stable C4-prefixed ids so they never intercept node or roam interaction.
+  - Only update `graphic` when the projected geometry/labels differ, or after the base options replaced the frame elements. Guard against recursive `rendered` events: write graphics from the scheduled frame, cache the result, and do not issue another identical `setOption`. Detect missing owned graphic ids after a base option replacement so unchanged geometry is still reinstalled. Remove stale owned ids with `$action: 'remove'` when groups disappear, positions become incomplete or kind changes. Skip non-finite projected coordinates. Never replace unrelated graphics.
+  - Resizing already calls `chart.resize()` in `ECharts.svelte`; its `rendered` event triggers reprojection. Cleanup unregisters both chart events and cancels the scheduled frame before disposal. The mounted callback reads current properties rather than a captured initial graph. `buildGraphOption` and `computeBoundaryFrames` remain pure; lifecycle tests cover projection and subscription behavior separately.
+  - Required rendered validation uses the installed ECharts build with a nested-boundary fixture: compare projected member centers and child frames with parent rectangles at two container sizes, after pan and zoom, and after a same-geometry option replacement. Verify frame removal when switching to circular/non-C4 output and no render loop or leaked callbacks on remount. Record actual browser evidence under `artifacts/logs/`; pure option snapshots or mocked conversion alone do not satisfy this gate. No new npm dependency is required.
 - **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
   ```ts
   // packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.svelte  (<script module>, modifies :14-76 types, :131-194 buildGraphOption)
@@ -671,7 +685,7 @@ writing the code is mechanical".
     | 'container_queue' | 'container_queue_ext' | 'component' | 'component_ext' | 'component_db'
     | 'component_db_ext' | 'component_queue' | 'component_queue_ext';
   export type C4BoundaryType = 'enterprise' | 'system' | 'container' | 'generic';
-  export type RelHint = 'up' | 'down' | 'left' | 'right' | 'back' | 'neighbor' | 'back_neighbor';
+  export type RelHint = 'up' | 'down' | 'left' | 'right' | 'back';
 
   export interface GraphNodeProps { /* existing */ c4Type?: C4ElementType; technology?: string; description?: string }      // verified: :22
   export interface GraphEdgeProps { /* existing */ technology?: string; hint?: RelHint; bidirectional?: boolean }           // verified: :32
@@ -684,17 +698,17 @@ writing the code is mechanical".
   export function c4SymbolFor(c4Type: C4ElementType | undefined): { symbol: string; caption: string; external: boolean };
   /** Nested boundary frames from member positions (mirror of the backend's `_group_boxes`); [] unless positions are complete. */
   export function computeBoundaryFrames(properties: GraphProperties): BoundaryFrame[];
-  /** Unchanged signature; `kind === 'c4'` adds symbols, captions, dashed externals, bidirectional arrows and `graphic` frames. */
+  /** Unchanged signature; C4 adds symbols/captions/edges; mounted lifecycle adds projected graphics. */
   export function buildGraphOption(properties: GraphProperties, resolveColor?: (token: string) => string): Record<string, unknown>;  // verified: :131
   ```
-  Vitest additions (`A2UIGraph.test.ts`, appended after `:93`): `renders c4 boundary frames from complete positions`, `nests child boundary frames inside their parent`, `maps c4 element types to symbols and captions`, `dashes external elements`, `adds technology as a second label line`, `draws bidirectional edges with two arrowheads`, `c4 without positions falls back to circular with no frames`, `non-c4 option is unchanged by the c4 path`.
+  Vitest additions (`A2UIGraph.test.ts`, appended after `:93`): `renders c4 boundary frames from complete positions`, `nests child boundary frames inside their parent`, `maps c4 element types to symbols and captions`, `dashes external elements`, `adds technology as a second label line`, `draws bidirectional edges with two arrowheads`, `c4 without positions falls back to circular with no frames`, `non-c4 option is unchanged by the c4 path`, `projects boundary frames through chart coordinates`, `reprojects on resize and roam without a render loop`, `restores frames after base option replacement`, `removes obsolete frames and cleans up subscriptions`. `ECharts.test.ts` covers the optional callback at initialization, callback replacement, instance recreation and disposal.
 
 ### Module 7: Docs + conformance + fixtures
 - **Path**: `docs/outputs/a2ui-v1.md` (MODIFY), `docs/frontend/agentdashboard-a2ui-reference.md` (MODIFY), `packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py` (MODIFY), `packages/ai-parrot/tests/outputs/a2ui/fixtures/c4_container_diagram.json` (CREATE)
 - **Responsibility**: document the C4 kind next to the Graph section; prove a C4 envelope is conformant, round-trips through Mermaid and renders (or degrades with one recorded entry) on every registered satellite renderer — without changing those renderers.
 - **Depends on**: Modules 1–5.
 - **Decided content**:
-  - `a2ui-v1.md`: new `### C4 architecture diagrams — kind="c4" (FEAT-754)` inserted immediately BEFORE `### Renderer matrix` (`:393`): vocabulary block, boundaries-as-groups rule, validator table V1–V5, lowering-role table (C4 rows), Mermaid C4 subset + lossy list, layout rules, renderer notes (bundled UI native; satellites draw generic nodes).
+  - `a2ui-v1.md`: new `### C4 architecture diagrams — kind="c4" (FEAT-754)` inserted immediately BEFORE `### Renderer matrix` (`:393`): vocabulary block, boundaries-as-groups rule, validator table V1–V7, lowering-role table (C4 rows), Mermaid C4 subset + lossy list, layout rules, renderer notes (bundled UI native; satellites draw generic nodes, with the explicit nested-boundary degradation described in §7).
   - `agentdashboard-a2ui-reference.md` §5.4: C4 rows appended to the `Graph` prop table (`:628-638`) and one paragraph after the lowering note describing the bundled renderer's C4 behaviour.
   - Fixture `c4_container_diagram.json`: a `GraphSpec` dict (container level; 1 person, 1 `system_ext`, 1 `system_boundary` holding 3 containers incl. a `container_db`, 5 relationships, one `bidirectional`) used by M2/M3/M4 tests and by the conformance twin.
   - `test_all_emitters.py`: `class TestC4GraphConformance` (after `TestCatalogDefinitionIncludesGraph`, `:555`) with `test_build_c4_diagram_conformant` (`_assert_conformant` on the builder output), `test_c4_mermaid_roundtrip_byte_stable`, `test_c4_graph_renders_on_every_registered_renderer` (same loop/degradation assertions as `:501-553`).
@@ -723,13 +737,17 @@ writing the code is mechanical".
 | `test_group_parent_must_exist_and_be_acyclic` | M1 | unknown parent, self-parent, and an A→B→A chain raise (V3); duplicate group ids raise |
 | `test_shape_in_row_and_boundary_in_row_together` | M1 | one without the other raises (V4); `ge=1` enforced |
 | `test_dynamic_rejects_hint_and_bidirectional` | M1 | V5 |
+| `test_c4_rejects_bidirectional_hint_and_person_system_technology` | M1 | V6 and V7 reject unrepresentable combinations; Container/Component technology and non-C4 technology remain valid |
+| `test_c4_rejects_neighbor_hints` | M1 | unsupported `neighbor` and `back_neighbor` values raise `ValidationError` |
 | `test_c4_node_state_and_action_still_work` | M1 | a C4 node with `state="failed"` validates; `build_c4_diagram(action=...)` with TOOL origin validates, LLM origin is rejected by `ACTION_NOT_ALLOWED_FOR_LLM` |
 | `test_no_forbidden_field_names_on_any_graph_model` (existing, `graph/test_models.py:155`) | M1 | still passes with the new fields |
-| `test_c4_roundtrip_container_level_byte_stable` | M2 (`graph/test_mermaid_c4.py`) | fixture → `to_mermaid` → `from_mermaid` → `to_mermaid` is byte-identical; object-equal modulo `C4_LOSSY_FIELDS` |
+| `test_c4_roundtrip_container_level_byte_stable` | M2 (`graph/test_mermaid_c4.py`) | fixture → `to_mermaid` → `from_mermaid` → `to_mermaid` is byte-identical; object-equal after the §3 M2 normalization and removal of `C4_LOSSY_FIELDS` |
 | `test_c4_roundtrip_each_level_header` | M2 | context/container/component/dynamic headers map both ways |
 | `test_c4_all_twenty_element_macros` | M2 | each `C4ElementType` emits its macro and parses back |
+| `test_c4_roundtrip_normalization` | M2 | child-before-parent groups, interleaved nodes, empty/default optional values and id-equal labels compare equal after the specified normalization; byte-stability holds |
+| `test_c4_rejects_neighbor_macros` | M2 | `Rel_Neighbor` and `Rel_Back_Neighbor` raise line-addressed `MermaidCodecError` |
 | `test_c4_nested_boundaries` | M2 | enterprise ⊃ system ⊃ container boundaries emit nested blocks with 4-space indents and parse back with `parent` set |
-| `test_c4_rel_macros_and_birel` | M2 | every `(bidirectional, hint)` combination emits the right macro; spelled aliases parse |
+| `test_c4_rel_macros_and_birel` | M2 | every valid `(bidirectional, hint)` combination emits the right macro; spelled aliases parse; bidirectional + hint is rejected by V6 |
 | `test_c4_dynamic_relindex_ordering` | M2 | `RelIndex` emitted 1-based in `edges[]` order; out-of-order text parses back sorted; gaps/duplicates raise |
 | `test_c4_update_layout_config` | M2 | emitted only when both counts set; parsed into `shapeInRow`/`boundaryInRow` |
 | `test_c4_rejects_styling_sprites_and_deployment` | M2 | `UpdateElementStyle`, `UpdateRelStyle`, `$sprite=`, `$tags=`, `$link=`, `Deployment_Node` raise `MermaidCodecError` naming the line |
@@ -760,7 +778,7 @@ writing the code is mechanical".
 |---|---|
 | `TestC4GraphConformance::test_build_c4_diagram_conformant` | builder output validates against the catalog allowlist and the lowered Basic wire schema (`_assert_conformant`) |
 | `TestC4GraphConformance::test_c4_mermaid_roundtrip_byte_stable` | fixture envelope props → `GraphSpec` → Mermaid → `GraphSpec` → Mermaid, byte-stable |
-| `TestC4GraphConformance::test_c4_graph_renders_on_every_registered_renderer` | SSR-HTML, interactive-HTML and ECharts render a C4 envelope natively (no exception, nodes present); adaptive-cards and folium record exactly one `degraded` entry — satellite renderers UNMODIFIED |
+| `TestC4GraphConformance::test_c4_graph_renders_on_every_registered_renderer` | SSR-HTML, interactive-HTML and ECharts render a C4 envelope natively (no exception, nodes present); adaptive-cards and folium record exactly one `degraded` entry — satellite renderers UNMODIFIED; no assertion of nested satellite frames |
 | `TestGraphRendersOnEveryRegisteredRenderer` / `TestFlowToGraphToMermaidRoundtrip` (existing, `test_all_emitters.py:501,466`) | unchanged behaviour for non-C4 graphs |
 | `test_graph_svg_*` (existing, ai-parrot-visualizations `test_graph_svg.py`) | the static SVG lane still renders every existing fixture; regression gate for the shared `_group_boxes`/`compute_positions` changes |
 
@@ -795,10 +813,13 @@ runners:
   cwd: packages/ai-parrot-server/ui
   tests:
   - src/lib/components/agents/canvas/a2ui/A2UIGraph.test.ts
+  - src/lib/components/visualizations/ECharts.test.ts
 
 > The five `*_c4.py` files are CREATED by M1–M5; the rest exist today (paths verified at `b9417f4a0`).
 > The two `ai-parrot-visualizations` files are regression gates only — this feature edits nothing in that package;
 > run them with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-visualizations/src` inside the worktree.
+
+The M2 upstream Mermaid parse check and M6 rendered resize/roam check are additional acceptance gates, with versioned evidence in `artifacts/logs/`; the automated runner list does not replace them.
 
 ### Test Data / Fixtures
 ```python
@@ -808,10 +829,10 @@ runners:
   "accessibleDescription": "Customers use the web app, which calls the API; the API stores orders in Postgres and notifies the payment provider.",
   "nodes": [
     {"id": "customer", "label": "Customer", "c4Type": "person", "description": "Places orders"},
+    {"id": "payments", "label": "Payment Provider", "c4Type": "system_ext", "description": "Card processing"},
     {"id": "web", "label": "Web App", "c4Type": "container", "technology": "SvelteKit", "description": "Storefront UI"},
     {"id": "api", "label": "Order API", "c4Type": "container", "technology": "aiohttp", "description": "Order lifecycle", "state": "running"},
-    {"id": "db", "label": "Orders DB", "c4Type": "container_db", "technology": "PostgreSQL"},
-    {"id": "payments", "label": "Payment Provider", "c4Type": "system_ext", "description": "Card processing"}
+    {"id": "db", "label": "Orders DB", "c4Type": "container_db", "technology": "PostgreSQL"}
   ],
   "edges": [
     {"from": "customer", "to": "web", "label": "Uses", "technology": "HTTPS"},
@@ -836,8 +857,9 @@ runners:
 > subsection, and the frontmatter `e2e` key above, for a feature with no E2E
 > surface; an absent policy defaults to `optional` once a plan is loaded.
 
-Not applicable — this feature has no E2E surface (pure models, codec, layout, builder, lowering and a
-unit-tested Svelte option builder). No `e2e` frontmatter key is declared.
+No deterministic E2E gate scenario is declared. M6 does require rendered browser validation of the
+chart lifecycle, resize and roaming, with evidence under `artifacts/logs/`; this is separate from the
+FEAT-581 gate. No `e2e` frontmatter key is declared.
 
 ---
 
@@ -845,15 +867,15 @@ unit-tested Svelte option builder). No `e2e` frontmatter key is declared.
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] `GraphKind` accepts `"c4"`; `GraphSpec`/`GraphNode`/`GraphEdge`/`GraphGroup`/`GraphLayout` carry exactly the fields of §2 Data Models with the aliases `c4Type`, `shapeInRow`, `boundaryInRow`; validators V1–V5 raise `ValidationError` with the documented messages.
+- [ ] `GraphKind` accepts `"c4"`; `GraphSpec`/`GraphNode`/`GraphEdge`/`GraphGroup`/`GraphLayout` carry exactly the fields of §2 Data Models with the aliases `c4Type`, `shapeInRow`, `boundaryInRow`; validators V1–V7 raise `ValidationError` with the documented messages.
 - [ ] `GRAPH_SCHEMA` contains `level`, `shapeInRow`, `boundaryInRow` and the nested `c4Type`/`technology`/`description`/`hint`/`bidirectional`/`parent` properties WITHOUT any edit to `GRAPH_SCHEMA` itself (derived); `test_graph_schema_has_all_spec_fields` and `test_graph_schema_has_no_colour_vocabulary` pass.
-- [ ] `to_mermaid(spec)` for the shared fixture emits `C4Container` source using only the macros listed in §3 M2; `from_mermaid` parses it back; the round trip is byte-stable and object-equal modulo `C4_LOSSY_FIELDS`; every rejected construct raises `MermaidCodecError` naming its line.
+- [ ] `to_mermaid(spec)` for the shared fixture emits `C4Container` source using only the macros listed in §3 M2; `from_mermaid` parses it back; the round trip is byte-stable and object-equal after the §3 M2 normalization and removal of `C4_LOSSY_FIELDS`; every rejected construct raises `MermaidCodecError` naming its line.
 - [ ] `compute_positions(c4 spec)` is deterministic, places persons on the first tier and `*_ext` elements on the last, returns a `group_boxes` entry for every boundary (nested boxes contain their children), `reversed_edges == []`, and honours `MAX_STATIC_NODES`; `_group_boxes` for flowchart groups is unchanged (`graph/test_layout.py` passes untouched).
 - [ ] `build_c4_diagram(...)` returns a validated `CreateSurface` whose root `Graph` carries `catalogId == VIZ_CORE_CATALOG_ID`, `kind == "c4"`, `level`, and complete `layout.positions`; `build_graph(level=...)` is equivalent; `"build_c4_diagram" in builders.__all__`.
 - [ ] `GraphComponent.lower()` of a C4 graph yields the tree of §2 Data Models (golden `graph_c4_lowered.json`); `golden/graph_lowered.json` is byte-identical to today.
 - [ ] `GRAPH_INSTRUCTIONS` mentions `kind="c4"`; `GRAPH_C4_AUTHORING_NOTES` and `GRAPH_C4_UTTERANCES` (EN + ES) are exported from `catalog/viz_core/graph.py`; no router, emitter or `DEFAULT_OUTPUT_MODE_ROUTES` change.
-- [ ] `A2UIGraph.svelte` renders `kind="c4"` with boundary frames (when positions are complete), per-type symbols/captions, technology label lines, dashed externals and bidirectional arrows; the eight new vitest cases pass and the five existing ones are unchanged; `pnpm build` succeeds.
-- [ ] `TestC4GraphConformance` passes: the C4 envelope is conformant, round-trips, and renders/degrades on every registered satellite renderer with ZERO changes under `packages/ai-parrot-visualizations/`.
+- [ ] `A2UIGraph.svelte` renders `kind="c4"` with boundary frames (when positions are complete), per-type symbols/captions, technology label lines, dashed externals and bidirectional arrows; the M6 pure and lifecycle vitest cases pass, rendered resize/pan/zoom evidence is recorded, and the five existing cases are unchanged; `pnpm build` succeeds.
+- [ ] `TestC4GraphConformance` passes: the C4 envelope is conformant, round-trips, and renders/degrades on every registered satellite renderer with ZERO changes under `packages/ai-parrot-visualizations/`; docs explicitly state the loss of nested satellite boundary frames.
 - [ ] Every operand in the Validation Contract passes in the feature worktree; `ruff check` and `black --check` clean on touched Python files.
 - [ ] `docs/outputs/a2ui-v1.md` and `docs/frontend/agentdashboard-a2ui-reference.md` document the C4 kind (sections of §3 M7); no new dependency in any `pyproject.toml` or `package.json`.
 - [ ] No breaking change: every existing `GraphSpec`, envelope, Mermaid text and renderer test passes unchanged; new fields are optional with `None` defaults.
@@ -1049,7 +1071,7 @@ Verified against: `b9417f4a0` (2026-10-27). `/sdd-task` MUST re-run the `grep -c
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` | MODIFY | `    nodes: list[str]` (last `GraphGroup` field) | `models.py:124` | 1 |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` | MODIFY | `    positions: Optional[dict[str, Position]] = None` (last `GraphLayout` field) | `models.py:162` | 1 |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` | MODIFY | `    data: Optional[dict[str, dict[str, Any]]] = None` (last `GraphSpec` field) | `models.py:226` | 1 |
-| `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` | MODIFY | `        if self.kind == "dag" and self._has_cycle():` (V1–V5 inserted after the manual-positions block that follows it) | `models.py:270` | 1 |
+| `packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py` | MODIFY | `        if self.kind == "dag" and self._has_cycle():` (V1–V7 inserted after the manual-positions block that follows it) | `models.py:270` | 1 |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/__init__.py` | MODIFY | `from .mermaid import MermaidCodecError, from_mermaid, to_mermaid` | `__init__.py:12` | 1 |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid_c4.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid.py` | MODIFY | `    if spec.kind == "sequence":` (C4 branch inserted before it) | `mermaid.py:218` | 1 |
@@ -1065,6 +1087,8 @@ Verified against: `b9417f4a0` (2026-10-27). `/sdd-task` MUST re-run the `grep -c
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.svelte` | MODIFY | `  export interface GraphNodeProps {` | `A2UIGraph.svelte:22` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.svelte` | MODIFY | `    const usePositions = hasCompletePositions(properties);` | `A2UIGraph.svelte:135` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UIGraph.test.ts` | MODIFY | `  it('represents node group membership', () => {` (new cases appended after this test) | `A2UIGraph.test.ts:93` | 1 |
+| `packages/ai-parrot-server/ui/src/lib/components/visualizations/ECharts.svelte` | MODIFY | `  interface Props {` (optional `onChartReady`; pair with instance lifecycle) | verified during review fix, current checkout | 1 |
+| `packages/ai-parrot-server/ui/src/lib/components/visualizations/ECharts.test.ts` | CREATE | — | callback lifecycle tests | — |
 | `packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py` | MODIFY | `class TestCatalogDefinitionIncludesGraph:` (new class inserted after it) | `test_all_emitters.py:555` | 1 |
 | `packages/ai-parrot/tests/outputs/a2ui/fixtures/c4_container_diagram.json` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/outputs/a2ui/golden/graph_c4_lowered.json` | CREATE | — | — | — |
@@ -1094,27 +1118,27 @@ Verified against: `b9417f4a0` (2026-10-27). `/sdd-task` MUST re-run the `grep -c
 ### Patterns to Follow
 - **`GraphSpec` stays the single vocabulary** (`models.py:1-22` docstring). No module introduces a parallel C4 shape — the codec, layout, lowering and UI all read the same fields. `GRAPH_SCHEMA` is never hand-edited (`graph.py:11`).
 - **What, never how** (viz-core principle). `shapeInRow`/`boundaryInRow` are counts; `c4Type` is semantics; the glyph/caption/dash mapping lives in the renderers (M6) and is DOCUMENTED (`docs/outputs/a2ui-v1.md`), never modelled. Add no `Field(description=...)` whose text contains colour/font words — the parity regex scans the whole schema blob (`test_catalog_parity.py:81-86`).
-- **Fail closed on vocabulary mismatch** (V2, V5). A C4-only field on a flowchart is a validation error, not a silently dropped field — the same philosophy as `MermaidCodecError` for unsupported constructs.
+- **Fail closed on vocabulary mismatch** (V2, V5–V7). A C4-only field on a flowchart is a validation error, not a silently dropped field — the same philosophy as `MermaidCodecError` for unsupported constructs.
 - **Function-local imports for the two dispatches** (`mermaid.py` → `mermaid_c4.py`, `layout.py` → `layout_c4.py`) with a one-line comment explaining the import direction. Everything else is a top-level import.
-- **Codec conventions reused verbatim**: `_escape_label`/`_unescape_label` (`#quot;`), label collapsing when equal to `id` (`mermaid.py:38-40`), `%%` comment handling via `_prepare_lines`, line-addressed `MermaidCodecError`s, trailing newline on emission, input-preserving order.
+- **Codec conventions reused verbatim**: `_escape_label`/`_unescape_label` (`#quot;`), label collapsing when equal to `id` (`mermaid.py:38-40`), `%%` comment handling via `_prepare_lines`, line-addressed `MermaidCodecError`s, trailing newline on emission, canonical node/group traversal with input-preserving sibling and edge order.
 - **Layout conventions reused verbatim**: integer slot arithmetic scaled at the end, `_GROUP_PADDING`/`_LAYOUT_PADDING`, `_extent` for BT/RL mirroring, `logger.debug` summary line (`layout.py:277-282`), the cap check first.
 - **Lowering conventions reused verbatim**: `parrot_role` extensions, `Card{Column[...]}` root with `parrot_variant: "graph"`, `parrot_graph_data` pass-through (`graph.py:129-131`), `to_mermaid(spec)` as the last child. New golden produced with the `_dump` helper (`test_components_graph.py:18-19`, `sort_keys=True, indent=2`).
 - **Builder conventions**: keyword-only, `_model()` coercion (`builders.py:403-406`), `catalogId` override (`:441`), TOOL origin default with the D10b gate untouched.
-- **Svelte 5 runes only**, pure logic in `<script module>` so vitest needs no DOM (`A2UIGraph.svelte:1-12` comment), no new npm dependency (no mermaid/dagre/elkjs), match surrounding formatting (no prettier step).
-- **Tests**: run with `PYTHONPATH=packages/ai-parrot/src` (plus `packages/ai-parrot-visualizations/src` for the two regression files) inside the worktree; `ruff check --fix` + `black` (line length 120) on touched Python files; `pnpm vitest run src/lib/components/agents/canvas/a2ui/A2UIGraph.test.ts` in `packages/ai-parrot-server/ui`.
+- **Svelte 5 runes only**, pure option/frame logic in `<script module>` for unit tests, plus separate lifecycle tests and the M6 rendered browser gate (`A2UIGraph.svelte:1-12` comment), no new npm dependency (no mermaid/dagre/elkjs), match surrounding formatting (no prettier step).
+- **Tests**: run with `PYTHONPATH=packages/ai-parrot/src` (plus `packages/ai-parrot-visualizations/src` for the two regression files) inside the worktree; `ruff check --fix` + `black` (line length 120) on touched Python files; `pnpm vitest run src/lib/components/agents/canvas/a2ui/A2UIGraph.test.ts src/lib/components/visualizations/ECharts.test.ts` in `packages/ai-parrot-server/ui`.
 
 ### Known Risks / Gotchas
-- **Node-order canonicalisation on C4 round trip.** C4 syntax declares elements inside their boundary block, so `from_mermaid(to_mermaid(spec))` returns nodes in canonical order (ungrouped first, then per boundary). Mitigation: the fixture and all round-trip tests use canonical order; the module docstring states the rule; `C4_LOSSY_FIELDS` + the order rule define the "modulo" set explicitly. Byte-stability of the TEXT holds regardless.
-- **`_group_boxes` becomes nested-aware for every kind.** A flowchart with `groups` is unaffected (no `parent` ⇒ identical arithmetic), but the function is shared with `_graph_svg._compute_group_boxes`'s caller path through `compute_positions`. Mitigation: `graph/test_layout.py::TestLayoutGroupBoxesContainMembers` and `test_graph_svg.py::TestGraphSvgGroupBoxes` are in the Validation Contract.
+- **Node/group canonicalisation on C4 round trip.** Nested syntax canonicalizes both arrays, including child-before-parent input. Apply §3 M2 normalization and nested lossy-field exclusions in comparison tests; retain explicit noncanonical fixtures. Byte-stability of emitted text holds independently of original array order. V6/V7 prevent silent loss of relationship hints and Person/System technology.
+- **`_group_boxes` becomes nested-aware for every kind.** A flowchart with `groups` is unaffected (no `parent` ⇒ identical arithmetic), but SVG keeps only `compute_positions(spec).positions` and uses its own direct-member `_compute_group_boxes`; core box changes do not propagate into SVG. Mitigation: `graph/test_layout.py::TestLayoutGroupBoxesContainMembers` and `test_graph_svg.py::TestGraphSvgGroupBoxes` are in the Validation Contract.
 - **Duplicate group ids now rejected (V3).** Previously unvalidated and nonsensical (two `subgraph` blocks with one id); no fixture or golden in the repo has duplicates (checked: `dev_loop_flow.json` has no groups; `graph_lowered.json` has none). Recorded as a deliberate tightening.
 - **`GraphGroup` gains `populate_by_name=True`.** Needed for the `c4Type` alias; harmless for existing constructors (`GraphGroup(id=…, nodes=…)` and `GraphGroup(**wire_dict)` both keep working).
-- **Satellite renderers draw C4 as generic nodes.** `render_graph_svg` and the ECharts renderer show labels/positions/status roles only — no glyphs, no technology, no frames beyond the existing group boxes (which DO now include nested boundaries via `_group_boxes`). Documented in the renderer matrix; a follow-up spec may add glyphs there.
+- **Satellite renderers draw C4 as generic nodes.** `render_graph_svg` and the ECharts renderer show labels/positions/status roles only — no glyphs, no technology, no nested boundary frames. Static SVG retains its existing direct-member boxes: an outer group with no direct members is omitted, and a parent with direct members does not expand to contain child boxes. The ECharts satellite does not gain boundary frames. Documented in the renderer matrix; a follow-up spec may add glyphs there.
 - **Mermaid C4 is marked experimental upstream.** Macro names/arities here follow the Mermaid C4 syntax reference as of the spec date; the parser is strict on arity to surface drift as `MermaidCodecError` rather than mis-parse. If Mermaid adds args, extend the arity table (one dict) — §8 Q4.
 - **`UpdateLayoutConfig` takes both counts.** Modelled as "both or none" (V4) to keep the round trip exact; a caller wanting only `shapeInRow` sets `boundaryInRow` to the default `2` explicitly.
 - **`RelIndex` for Dynamic diagrams.** Mermaid `C4Dynamic` also accepts plain `Rel`; the codec EMITS `RelIndex` only (sequence is the point of a dynamic diagram) and PARSES both (plain `Rel` lines in a `C4Dynamic` keep text order and are numbered after any indexed ones). V5 forbids hints/bidirectional there so nothing is silently lost.
-- **UI frames need complete positions.** With the ECharts circular fallback there is nowhere to put a frame; `computeBoundaryFrames` returns `[]` and the diagram still shows nodes, captions and dashed externals — degradation is visible but not broken. `build_c4_diagram` always fills positions, so the normal path has frames.
+- **UI frames need complete positions.** With the ECharts circular fallback there is nowhere to put a frame; `computeBoundaryFrames` returns `[]` and the diagram still shows nodes, captions and dashed externals — degradation is visible but not broken. `build_c4_diagram` always fills positions, so the default path has frames. Frames must be projected through the live graph viewport and refreshed on render/resize/roam; complete positions alone do not make raw `graphic` coordinates correct.
 - **FEAT-755 contract is not frozen.** `GRAPH_C4_AUTHORING_NOTES`/`GRAPH_C4_UTTERANCES` are module constants with no registry slot; if FEAT-755 standardises a class attribute (e.g. on the component class) the M4 task adds a one-line alias — no other module depends on the name (§8 Q1).
-- **Parallel sessions on this repo.** FEAT-753/755/752/756 are being specified in the same window; this spec touches `graph/`, `catalog/viz_core/graph.py`, `builders.py` and `A2UIGraph.svelte` — FEAT-755 is expected to touch `builders.py`/`catalog/*` for the emitter. Keep the `builders.py` diff to the three anchored lines + one new function so the merge is mechanical.
+- **Parallel sessions on this repo.** FEAT-753/755/752/756 are being specified in the same window; this spec touches `graph/`, `catalog/viz_core/graph.py`, `builders.py` and `A2UIGraph.svelte` plus the shared `ECharts.svelte` lifecycle hook — FEAT-755 is expected to touch `builders.py`/`catalog/*` for the emitter. Keep the `builders.py` diff to the three anchored lines + one new function so the merge is mechanical.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -1160,4 +1184,5 @@ Status: skipped (no accepted exploration document — spec authored from the NAV
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-10-27 | Codex | Resolve review findings: supported Mermaid macros, V6/V7 and explicit round-trip normalization, projected UI frame lifecycle and rendered gate, documented satellite nesting degradation. |
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 review (FEAT-754 reserved); verified against `b9417f4a0` |

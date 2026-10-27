@@ -28,7 +28,7 @@ tags: [a2ui, mermaid, diagrams, parrot-catalog, inline-widgets, renderers]
 **Feature ID**: FEAT-753
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 **Origin**: NAV-10382 review (2026-10-27) — "mermaid" is on the follow-up list of inline-renderable artifacts; no accepted brainstorm/proposal (spec authored from the ticket review + codebase research)
 **Sibling specs (same NAV-10382 follow-up batch)**: FEAT-755 `inline-a2ui-component-routing` (LLM authoring route, **not yet written**; its source is `sdd/proposals/output-mode-intent-router.brainstorm.md` rev 2), FEAT-754 `a2ui-c4-diagrams` (typed C4, not yet written), FEAT-752 `followup-suggestion-chips`, FEAT-756 `metric-definition-registry`
@@ -124,7 +124,8 @@ which needs a registered component + schema + authoring notes to route to.
 - **G7 — Reference renderer.** The bundled `ai-parrot-server/ui` SPA renders
   `MermaidDiagram` inline with mermaid.js **lazily imported** (same `await import(...)`
   idiom as `ECharts.svelte:110` / `DataMap.svelte:124`), `securityLevel: "strict"`,
-  `startOnLoad: false`, SVG sanitized with the already-installed `dompurify` before
+  `startOnLoad: false`, HTML labels disabled globally and for flowchart/class, SVG sanitized
+  with the already-installed `dompurify` before
   `{@html}`, and a code-block fallback on parse/render error. The server-side
   interactive-HTML lane does **not** embed mermaid.js (see §2 Overview, decision D5).
 
@@ -158,7 +159,8 @@ which needs a registered component + schema + authoring notes to route to.
 `MermaidDiagram` is the second *opaque* Parrot-catalog component after `HtmlDocument`,
 but with the opposite trust posture: Mermaid source is a declarative text DSL, so the
 component is **LLM-authorable** (not `tool_only`) and the safety work moves into a
-**pure, line-based source check** that runs inside `validate_envelope` for every origin.
+**pure, statement-aware source check** that runs inside `validate_envelope` for every origin
+and for both `CreateSurface` and `UpdateComponents`.
 Rendering is a renderer concern, exactly as for `HtmlDocument`/`Graph`: Python never
 draws; it validates, normalizes, lowers and documents.
 
@@ -185,6 +187,8 @@ Decisions carried from the NAV-10382 review and refined by the research:
   fragment fail validation with `MERMAID_UNSAFE_INTERACTION`. The LLM producer's existing
   validate-retry-degrade loop handles the re-prompt (same plumbing `MermaidCodecError`
   relies on, `graph/mermaid.py:126-131`).
+  Statement boundaries include semicolons outside quoted text and label delimiters,
+  not just physical newlines; compact input cannot hide an interaction after a safe statement.
 - **D5 — The interactive-HTML lane falls back to the code block.** Embedding mermaid.js
   would break the renderer's self-contained invariant and require a CSP `script-src`
   CDN entry outside the infographic `JSBundle` mechanism. `SurfaceNegotiationService._respond_html`
@@ -237,7 +241,7 @@ Decisions carried from the NAV-10382 review and refined by the research:
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `catalog.register_component` (`catalog/__init__.py:114`) | uses | `@register_component("MermaidDiagram", allowed_parents=["root", "Column"])` — defaults `requires_actions=False`, `tool_only=False`, `catalog_id=DEFAULT_CATALOG_ID` |
-| `catalog.validate_envelope` (`catalog/__init__.py:743`) | extends | new pass `_validate_mermaid_sources(envelope, issues)` appended next to the linked-sources pass (`:964`); runs for BOTH origins |
+| `catalog.validate_envelope` (`catalog/__init__.py:743`) | extends | new pass `_validate_mermaid_sources(envelope, issues)` after the linked-sources block (`:963-964`), outside its CreateSurface condition; runs for BOTH origins and CreateSurface/UpdateComponents |
 | `catalog.base` error codes (`catalog/base.py:61-96`) | extends | four new codes after `TRANSFORM_REF_UNKNOWN` (`:96`) |
 | `catalog/parrot/__init__.py:13-24` | extends | import `mermaiddiagram` for its registration side effect |
 | `builders.build_surface` (`builders.py:79`) | uses | `build_mermaid_diagram` is a thin, validated wrapper like `build_html_document` (`:278`) |
@@ -394,8 +398,8 @@ writing the code is mechanical".
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: Mermaid source utilities + error codes | yes | pure functions, signatures below; header table, directive/interaction regexes, byte cap, four codes in `base.py`; no catalog import beyond `catalog.base` (same as `graph/mermaid.py:56`) | — |
-| M2: `MermaidDiagram` catalog component + validation pass | yes | `HtmlDocument` file layout (`htmldocument.py`), schema/instructions text fixed in §2/§7, lowered tree fixed in §2, `_validate_mermaid_sources` placement fixed (`catalog/__init__.py:964`) | — |
+| M1: Mermaid source utilities + error codes | yes | pure functions, signatures below; header table, statement scanner, directive/interaction checks, byte cap, four codes in `base.py`; no catalog import beyond `catalog.base` (same as `graph/mermaid.py:56`) | — |
+| M2: `MermaidDiagram` catalog component + validation pass | yes | `HtmlDocument` file layout (`htmldocument.py`), schema/instructions text fixed in §2/§7, lowered tree fixed in §2, `_validate_mermaid_sources` after the CreateSurface-only block (`catalog/__init__.py:963-964`), before `if issues:` | — |
 | M3: Builder + `__all__` exports | yes | `build_html_document` shape (`builders.py:278-327`); normalization-then-validate order fixed | — |
 | M4: Tool + registry mapping + bot lift | yes | `PublishSurfaceTool` shape (`ui_surfaces.py:35-168`); result dict fixed in §2; lift change is one membership test (`bots/base.py:1042`) | — |
 | M5: Satellite renderer degradations | yes | one role branch per renderer at the anchors in §6; degradation messages fixed in §7 | — |
@@ -435,9 +439,13 @@ writing the code is mechanical".
       """One validation finding: ``code`` (a ``catalog.base`` constant), ``message``, ``line_no`` (1-based or None)."""
 
   def iter_statements(source: str) -> Iterator[tuple[int, str]]:
-      """Yield ``(line_no, stripped_line)`` for every statement line.
+      """Yield ``(line_no, stripped_statement)`` for every logical statement.
 
-      Skips blank lines, ``%%`` comments, ``%%{ … }%%`` directive lines and a leading
+      Split on newlines and semicolons outside quoted text and label delimiters;
+      retain the original 1-based starting line number, including when several
+      statements share a line. Track quoted strings, escapes and label delimiters
+      so a quoted or bracketed label containing a semicolon is not split into code.
+      Skips blank statements, ``%%`` comments, ``%%{ … }%%`` directives and a leading
       YAML front-matter block (``---`` … ``---`` at the very top, which Mermaid allows
       for ``title:``/``config:``). Never raises.
       """
@@ -454,8 +462,9 @@ writing the code is mechanical".
 
       Returns ``(normalized_source, theme)``; ``theme`` is the directive's ``theme`` value
       when it is one of ``MERMAID_THEMES`` (else ``None``). Line endings are normalized to
-      ``\\n`` and a single trailing newline is guaranteed. Everything else is preserved
-      byte-for-byte. Never raises.
+      ``\\n`` and a single trailing newline is guaranteed. Remove front-matter
+      ``config:`` and its value as required by §7, preserving title-only front-matter.
+      Everything else is preserved byte-for-byte. Never raises.
       """
 
   def check_mermaid_source(source: str, *, declared_type: str | None = None) -> list[MermaidSourceIssue]:
@@ -464,8 +473,9 @@ writing the code is mechanical".
       Checks, in order: empty or ``> MERMAID_SOURCE_MAX_BYTES`` UTF-8 bytes
       (``MERMAID_SOURCE_TOO_LARGE``); any line whose stripped form starts with ``%%{``
       (``MERMAID_UNSAFE_DIRECTIVE`` — directives are a builder-side normalization, never
-      a wire feature); any statement whose first token is ``click``/``link``/``callback``,
-      or that contains ``javascript:`` or ``<script`` case-insensitively
+      a wire feature; also reject front-matter ``config:``); any logical statement
+      yielded by ``iter_statements`` whose first token is ``click``/``link``/``callback``;
+      scan the entire source for ``javascript:`` or ``<script`` case-insensitively
       (``MERMAID_UNSAFE_INTERACTION``); ``declared_type`` set and different from
       ``detect_diagram_type(source)`` (``MERMAID_DIAGRAM_TYPE_MISMATCH``). Pure; never raises.
       """
@@ -536,12 +546,15 @@ writing the code is mechanical".
   def _validate_mermaid_sources(envelope: CreateSurface | UpdateComponents, issues: list[dict[str, Any]]) -> None:
       """Append one issue per :func:`check_mermaid_source` finding for every ``MermaidDiagram`` component.
 
-      Runs for EVERY origin (the gate is about renderer safety, not authorship). Each
+      Runs for EVERY origin and for BOTH CreateSurface and UpdateComponents
+      (the gate is about renderer safety, not authorship). Each
       issue is ``{"code", "message", "path": <component id>}`` so the aggregate
       ``CatalogValidationError`` shape is unchanged. A missing/non-string ``source`` is
       reported as ``MERMAID_SOURCE_TOO_LARGE`` with an "empty source" message.
       """
-  # call site: immediately after `_validate_linked_sources(envelope, origin=origin, issues=issues)` (catalog/__init__.py:964)
+  # call site: AFTER the CreateSurface-only linked-sources block (catalog/__init__.py:963-964),
+  # at function-body indentation and BEFORE `if issues:`. Never nest this pass under
+  # `if isinstance(envelope, CreateSurface)`; UpdateComponents must be checked too.
   ```
   ```python
   # packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/__init__.py  (modifies :17 — add `mermaiddiagram,  # noqa: F401` after `map,` keeping alphabetical order)
@@ -690,10 +703,12 @@ writing the code is mechanical".
   <script lang="ts">
     // let { properties }: { properties: MermaidDiagramProperties } = $props();
     // $effect: const mermaid = (await import('mermaid')).default;  — lazy, once per module (same idiom as ECharts.svelte:110)
-    //   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme });
+    //   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme,
+    //                        htmlLabels: false, flowchart: { htmlLabels: false }, class: { htmlLabels: false } });
     //   await mermaid.parse(source)  → on error: status = 'error' (code-block fallback + short notice, never throws)
     //   const { svg } = await mermaid.render(`a2ui-mermaid-${uid}`, source);
     //   svgHtml = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });   // then {@html svgHtml}
+    //   Keep labels as SVG text/tspan: do not enable foreignObject/HTML in the sanitizer.
     // Markup: optional <h3> title · <figure role="img" aria-label={accessibleDescription}> · optional <figcaption>
     //   · <details><summary>Mermaid source</summary><pre><code>{source}</code></pre></details> (always present — copyable)
   </script>
@@ -742,6 +757,7 @@ writing the code is mechanical".
 | `test_check_rejects_oversize_and_empty` | M1 | `MERMAID_SOURCE_TOO_LARGE` for `""` and for `MERMAID_SOURCE_MAX_BYTES + 1` bytes (multi-byte chars counted as bytes) |
 | `test_check_rejects_surviving_directive` | M1 | `MERMAID_UNSAFE_DIRECTIVE` with `line_no` |
 | `test_check_rejects_click_link_callback_javascript_script` (parametrized) | M1 | each vector → `MERMAID_UNSAFE_INTERACTION`; `clickable` as a node label is NOT rejected (first-token match) |
+| `test_statement_boundaries_and_interactions` | M1 | reject `flowchart TD; A-->B; click A href "https://example.org"`; preserve original line numbers; quoted/bracketed labels containing semicolons or the word `click` stay data; cover escaped quotes and comments |
 | `test_check_reports_all_issues_not_first` | M1 | a source with 3 problems yields 3 issues |
 | `test_check_type_mismatch` | M1 | `declared_type="sequence"` on a flowchart → `MERMAID_DIAGRAM_TYPE_MISMATCH`; `declared_type=None` never raises it |
 | `test_graph_spec_from_mermaid_source_subset_and_rejection` | M1 | flowchart/state/sequence samples → `GraphSpec`; `classDiagram` → `MermaidCodecError` |
@@ -752,6 +768,7 @@ writing the code is mechanical".
 | `test_lowering_emits_only_basic_primitives` | M2 | every node is a registered `is_primitive` component (pattern: `test_components_graph.py:76`) |
 | `test_validate_envelope_llm_origin_accepts_clean_source` | M2 | `origin=LLM` passes (NOT tool-only — the inverse of `test_components_htmldocument.py:81`) |
 | `test_validate_envelope_rejects_unsafe_for_both_origins` (parametrized over TOOL/LLM × 4 codes) | M2 | issues carry `path == component id`; aggregate error lists all |
+| `test_validate_mermaid_create_and_update` (TOOL/LLM × CreateSurface/UpdateComponents) | M2 | clean source passes; newline and semicolon interaction vectors, directives, front-matter config, oversize source and type mismatch fail with the same issue codes and component-id paths on creation and update |
 | `test_build_mermaid_diagram_normalizes_and_detects` | M3 | directive stripped from the wire `source`; `theme` lifted; `diagramType` filled; `origin` default TOOL; explicit `theme=` wins |
 | `test_build_mermaid_diagram_rejects_declared_mismatch` | M3 | `diagram_type="er"` on a sequence → `CatalogValidationError` |
 | `test_build_mermaid_diagram_in_all` | M3 | `"build_mermaid_diagram" in builders.__all__` (pattern: `test_builders_graph.py:53`) |
@@ -765,6 +782,7 @@ writing the code is mechanical".
 | `A2UINode dispatches MermaidDiagram` (vitest) | M6 | `vi.mock('mermaid')` — the stub's `render` resolves `{svg: '<svg data-testid="mermaid-svg"/>'}`; the SVG and the `<details>` source appear |
 | `A2UIMermaidDiagram falls back on parse error` (vitest) | M6 | stub `parse` rejects → `<pre><code>` fallback + notice; no throw |
 | `resolveMermaidTheme` (vitest) | M6 | hint wins; dark host → `dark`; default otherwise |
+| `A2UIMermaidDiagram preserves SVG labels through sanitization` (vitest) | M6 | assert initialize disables global/flowchart/class HTML labels; mock Mermaid with a representative SVG containing node/edge text and tspan labels, run real DOMPurify, and assert visible labels survive while script/event-handler content and foreignObject are removed |
 | `A2UINode leaves unknown components on the placeholder` (vitest, existing row `A2UINode.test.ts:239` kept green) | M6 | regression |
 
 ### Integration Tests
@@ -773,7 +791,8 @@ writing the code is mechanical".
 | `TestBuildersConformance.test_build_mermaid_diagram` (`test_all_emitters.py`) | `_assert_conformant(build_mermaid_diagram(...))` for TOOL **and** LLM origins — catalog allowlist + lowered Basic wire schema (`:116-131`) |
 | `TestGraphToMermaidDiagramRoundtrip` (`test_all_emitters.py`) | for the flow fixture (`:466-500`) and the three codec dialects: `build_mermaid_diagram(source=to_mermaid(spec))` validates, `diagramType ∈ {flowchart, state, sequence}`, `graph_spec_from_mermaid_source(...) == spec` modulo `accessible_description`/`size` (`test_mermaid.py:23-29` helper semantics) |
 | `TestCatalogDefinitionIncludesMermaidDiagram` (`test_all_emitters.py`) | `export_catalog_definition()["components"]` contains `MermaidDiagram`; viz-core export does not |
-| `TestMermaidDiagramRendersOnEveryRegisteredRenderer` (`test_all_emitters.py`) | every registered renderer's `render()` returns an artifact, never raises; non-UI lanes record exactly one `degraded` entry for the diagram |
+| `TestMermaidDiagramFallbackRenderers` (`test_all_emitters.py`) | parameterize only `ssr_html`, `pdf`, `adaptive_cards`, `interactive-html`: each renders a Mermaid-only envelope, retains readable source and records exactly one `degraded` entry; use the existing optional-dependency skip rules |
+| `TestMermaidDiagramFocalRendererCompatibility` (`test_all_emitters.py`) | `echarts` and `folium_map` retain their existing missing-Chart/Graph and missing-Map errors for a Mermaid-only envelope; companion Chart/Map fixtures retain existing non-focal degradation behavior, without requiring source-code blocks from these renderers |
 | `test_ask_lifts_mermaid_tool_result` (`tests/bots/test_linked_surface_lifting.py`) | source-level/`_base_bot()` style: a `render_mermaid_diagram` tool call result is lifted with the same precedence as the linked lift |
 
 ### Validation Contract
@@ -797,9 +816,13 @@ runners:
   - packages/ai-parrot/tests/outputs/a2ui/test_lazy_imports.py
   - packages/ai-parrot/tests/outputs/a2ui/test_no_exec.py
   - packages/ai-parrot/tests/outputs/a2ui/graph/test_mermaid.py
+  - packages/ai-parrot/tests/outputs/a2ui/graph/test_mermaid_source.py
+  - packages/ai-parrot/tests/outputs/a2ui/test_components_mermaiddiagram.py
+  - packages/ai-parrot/tests/outputs/a2ui/test_builders_mermaid.py
   - packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py
   - packages/ai-parrot/tests/bots/test_linked_surface_lifting.py
   - packages/ai-parrot-tools/tests/test_publish_surface_tool.py
+  - packages/ai-parrot-tools/tests/test_mermaid_diagram_tool.py
   - packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_ssr_html.py
   - packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_interactive_html.py
   - packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_adaptive_cards.py
@@ -809,12 +832,12 @@ runners:
   cwd: packages/ai-parrot-server/ui
   tests:
   - src/lib/components/agents/canvas/a2ui/A2UINode.test.ts
+  - src/lib/components/agents/canvas/a2ui/A2UIMermaidDiagram.test.ts
   - src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts
 
-> The new test files this feature CREATES (`graph/test_mermaid_source.py`,
-> `test_components_mermaiddiagram.py`, `test_builders_mermaid.py`,
-> `packages/ai-parrot-tools/tests/test_mermaid_diagram_tool.py`,
-> `A2UIMermaidDiagram.test.ts`) are added to this list by `/sdd-task` once they exist;
+> Planned test files are explicit operands now, before implementation. `/sdd-task`
+> caches this complete list; it must not defer or remove new paths because they do not
+> exist yet. The implementation must create them before the corresponding gate can pass.
 > `test_lazy_imports.py` guards that `parrot.bots.data` (a probed entry point, `:8`) never
 > ends up importing `catalog.parrot` through the FEAT-755 phrase-bank constant — that is
 > why the constant lives in `graph/mermaid_source.py`, not in the component module.
@@ -848,6 +871,7 @@ vi.mock('$lib/features', () => ({ features: { a2ui: true, charts: true, maps: fa
 > Optional (FEAT-581) — omitted: this feature has no deterministic E2E surface
 > (no fixture target renders mermaid.js; the bundled UI is covered by vitest with a
 > mocked `mermaid`, the server lanes by pytest). The frontmatter carries no `e2e` key.
+> This does not waive the manual real-browser label smoke check required by AC-8.
 
 ---
 
@@ -856,13 +880,13 @@ vi.mock('$lib/features', () => ({ features: { a2ui: true, charts: true, maps: fa
 > This feature is complete when ALL of the following are true:
 
 - [ ] **AC-1** `get_component("MermaidDiagram")` resolves under `DEFAULT_CATALOG_ID` with `tool_only=False`, `requires_actions=False`, `allowed_parents=["root","Column"]`; `export_catalog_definition()` lists it; the viz-core export does not.
-- [ ] **AC-2** `validate_envelope` rejects — for BOTH origins — an empty/oversize source, any surviving `%%{` directive, any `click`/`link`/`callback`/`javascript:`/`<script` vector and a declared `diagramType` mismatch, reporting every issue with the component id as `path`; a clean LLM-origin envelope passes.
+- [ ] **AC-2** `validate_envelope` rejects — for BOTH origins and BOTH `CreateSurface`/`UpdateComponents` — an empty/oversize source, any surviving `%%{` directive, any `click`/`link`/`callback`/`javascript:`/`<script` vector (including semicolon-separated interactions), front-matter `config:`, and a declared `diagramType` mismatch, reporting every issue with the component id as `path`; a clean LLM-origin envelope passes.
 - [ ] **AC-3** `build_mermaid_diagram(source=DIRECTIVE_SRC)` emits a wire `source` with no directive, `theme="dark"`, `diagramType="flowchart"`; identical inputs give byte-identical envelopes.
 - [ ] **AC-4** Lowering is golden-stable, Basic-only, and never drops the source; the lowered envelope validates against the vendored `agent_to_renderer.json` (`_assert_conformant`).
 - [ ] **AC-5** For every `GraphSpec` fixture in the conformance suite: `to_mermaid(spec)` is a valid `MermaidDiagram.source`, detects as `flowchart`/`state`/`sequence`, and `graph_spec_from_mermaid_source` round-trips it modulo `accessible_description`/`size`. `from_mermaid`/`to_mermaid` are byte-unchanged.
 - [ ] **AC-6** `render_mermaid_diagram` is resolvable from the `parrot_tools` mapping, returns the §2 result shape, and `AbstractBot.ask()` lifts it into `response.a2ui_envelope` (wrapped `{"version": "v1.0", "createSurface": …}`) with the existing precedence (interactive > infographic > dict lift); every existing lift test stays green.
-- [ ] **AC-7** `ssr_html`, `pdf`, `adaptive_cards`, `interactive-html` render a `MermaidDiagram` envelope without raising, show the source as a monospace block (HTML-escaped where applicable), record exactly ONE `degraded` entry per diagram, and never add a `<script src=…>`; `echarts`/`folium_map` behave as for any other non-focal Parrot composite (no new code).
-- [ ] **AC-8** The bundled UI renders `MermaidDiagram` inline via a lazy-imported mermaid.js with `securityLevel: "strict"`, `startOnLoad: false`, DOMPurify-sanitized SVG, an always-present collapsible source block, and a code-block fallback on parse/render failure; `pnpm build` ships mermaid in its own async chunk (verified with `ls dist/assets | grep -i mermaid`), and `pnpm test` passes with `mermaid` mocked.
+- [ ] **AC-7** `ssr_html`, `pdf`, `adaptive_cards`, `interactive-html` render a `MermaidDiagram` envelope without raising, show the source as a monospace block (HTML-escaped where applicable), record exactly ONE `degraded` entry per diagram, and never add a `<script src=…>`; `echarts`/`folium_map` retain their existing missing-focal-component errors on Mermaid-only envelopes and existing degradation with companion Chart/Map components (no new renderer code).
+- [ ] **AC-8** The bundled UI renders `MermaidDiagram` inline via a lazy-imported mermaid.js with `securityLevel: "strict"`, `startOnLoad: false`, global/flowchart/class `htmlLabels: false`, DOMPurify-sanitized SVG with visible SVG text labels preserved, an always-present collapsible source block, and a code-block fallback on parse/render failure; `pnpm build` ships mermaid in its own async chunk (verified with `ls dist/assets | grep -i mermaid`), and `pnpm test` passes with `mermaid` mocked and real DOMPurify exercised against representative labeled SVG. A real-browser smoke check with the pinned Mermaid version confirms flowchart/class labels remain visible after sanitization, with evidence in `artifacts/logs/`.
 - [ ] **AC-9** `MERMAID_DIAGRAM_ROUTE_KEY`/`MERMAID_DIAGRAM_ROUTE_UTTERANCES` are importable from `parrot.outputs.a2ui.graph` without importing `catalog.parrot` (`test_lazy_imports.py` green); `MERMAIDDIAGRAM_INSTRUCTIONS` appears in `catalog_instructions()`.
 - [ ] **AC-10** `docs/outputs/a2ui-v1.md` and `docs/frontend/agentdashboard-a2ui-reference.md` document the component (wire shape, codes, lowering, renderer matrix, frontend contract, Graph relationship) and the composite count reads 11.
 - [ ] **AC-11** No breaking change: every pre-existing test in the Validation Contract passes unmodified except the two rows this spec extends (`A2UINode.test.ts`, `test_linked_surface_lifting.py`), which only GAIN cases.
@@ -1022,7 +1046,7 @@ let resolved = $derived(resolveProps(properties, dataModel));  // line 38
 |---|---|---|---|
 | `MermaidDiagramComponent` | `register_component("MermaidDiagram", allowed_parents=["root","Column"])` | decorator | `catalog/__init__.py:114` |
 | `catalog/parrot/__init__.py` | `mermaiddiagram` module | import side effect | `catalog/parrot/__init__.py:13-24` |
-| `_validate_mermaid_sources` | `validate_envelope` issue list | appended pass after `_validate_linked_sources(...)` | `catalog/__init__.py:964` |
+| `_validate_mermaid_sources` | `validate_envelope` issue list | pass after the linked-sources block, outside its CreateSurface condition and before `if issues:` | `catalog/__init__.py:964` |
 | `check_mermaid_source` | `catalog.base` error codes | import | `catalog/base.py:96` (append point) |
 | `graph_spec_from_mermaid_source` | `from_mermaid` | function call | `graph/mermaid.py:323` |
 | `build_mermaid_diagram` | `build_surface("MermaidDiagram", props, surface_id=…, origin=…, metadata=…)` | function call | `builders.py:79` |
@@ -1187,7 +1211,10 @@ included: "graph", "show this as a graph" — already a `STRUCTURED_CHART` utter
   `config:` key inside it is treated like a directive — stripped by `normalize_mermaid_source`
   and rejected by `check_mermaid_source` (`MERMAID_UNSAFE_DIRECTIVE`).
 - **False positives in the interaction check**: `click` is matched as the FIRST TOKEN of a
-  statement only, so a node labelled `clickable[Clickable button]` passes; `javascript:` and
+  logical statement, including after a semicolon outside quoted text and label delimiters,
+  so `flowchart TD; A-->B; click A href "https://example.org"` fails while a node labelled
+  `clickable[Clickable button]` or `A["first; click is label text"]` passes. Preserve source
+  line numbers and test escaped quotes, bracketed labels and comments. `javascript:` and
   `<script` are matched anywhere, case-insensitively — a label containing them is rejected
   on purpose (there is no legitimate diagram use).
 - **Byte cap vs. `maxLength`**: the JSON-Schema `maxLength` counts code points, the Python
@@ -1203,10 +1230,15 @@ included: "graph", "show this as a graph" — already a `STRUCTURED_CHART` utter
 - **`test_no_exec.py` file-count floor** (`:85`, `>= 40`) only rises with new files — safe.
 - **mermaid.js in the bundled UI**: mermaid 11 is ~2–3 MB; it MUST stay out of the main
   chunk (dynamic `import('mermaid')` — Vite splits it automatically; AC-8 verifies). jsdom
-  cannot run it: every vitest MUST mock `mermaid`. `securityLevel: "strict"` sanitizes
-  HTML labels through mermaid's own DOMPurify, and the rendered SVG is sanitized AGAIN with
-  the app's `dompurify` (svg profile) before `{@html}` — belt and braces, because `{@html}`
-  bypasses Svelte escaping.
+  cannot run it: every vitest MUST mock `mermaid`, but MUST use real DOMPurify for the
+  label-preservation test. Disable `htmlLabels` globally and in flowchart/class config:
+  Mermaid's default flowchart HTML labels use `foreignObject`, which the SVG-only profile
+  removes silently. Keep the SVG-only sanitizer and render labels as SVG `text`/`tspan`;
+  do not widen the allowlist to retain HTML. The representative SVG fixture must include
+  visible node/edge labels and unsafe content, rather than only an empty `<svg>` stub.
+  Before accepting M6, smoke-test a real labeled flowchart and class diagram in a browser
+  with the pinned Mermaid version, checking visible labels after sanitization; record
+  evidence under `artifacts/logs/`. Mock-only success is insufficient for AC-8.
 - **Dark theme**: the SPA has no `--accent-*` tokens (`A2UIGraph.svelte:7-12`); mermaid's
   `dark`/`default` built-in themes are used instead of `themeVariables` (which would be a
   "how" leak and a CSS-injection surface).
@@ -1296,3 +1328,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 review; codebase contract verified against `b9417f4a0` |
+| 0.2 | 2026-10-27 | Codex | Address review: statement-boundary validation, update-envelope coverage, SVG label preservation, explicit new test operands, and renderer-specific conformance scope. |
