@@ -237,29 +237,61 @@ def test_c4_roundtrip_container_level_byte_stable() -> None:
 
 
 def test_c4_roundtrip_each_level_header() -> None:
-    for level, header in (("context", "C4Context"), ("container", "C4Container"), ("component", "C4Component"), ("dynamic", "C4Dynamic")):
+    for level, header in (
+        ("context", "C4Context"),
+        ("container", "C4Container"),
+        ("component", "C4Component"),
+        ("dynamic", "C4Dynamic"),
+    ):
         spec = _c4(level=level)
         assert from_mermaid_c4(f"{header}\n").level == level
         assert to_mermaid_c4(spec) == f"{header}\n"
 
 
 def test_c4_all_twenty_element_macros() -> None:
-    spec = _c4(nodes=[GraphNode(id=f"n{index}", c4Type=element_type) for index, element_type in enumerate(_ELEMENT_MACRO_TYPES)])
+    spec = _c4(
+        nodes=[
+            GraphNode(id=f"n{index}", c4Type=element_type) for index, element_type in enumerate(_ELEMENT_MACRO_TYPES)
+        ]
+    )
     assert [node.c4_type for node in from_mermaid_c4(to_mermaid_c4(spec)).nodes] == list(_ELEMENT_MACRO_TYPES)
 
 
 _ELEMENT_MACRO_TYPES = (
-    "person", "person_ext", "system", "system_ext", "system_db", "system_db_ext", "system_queue", "system_queue_ext",
-    "container", "container_ext", "container_db", "container_db_ext", "container_queue", "container_queue_ext",
-    "component", "component_ext", "component_db", "component_db_ext", "component_queue", "component_queue_ext",
+    "person",
+    "person_ext",
+    "system",
+    "system_ext",
+    "system_db",
+    "system_db_ext",
+    "system_queue",
+    "system_queue_ext",
+    "container",
+    "container_ext",
+    "container_db",
+    "container_db_ext",
+    "container_queue",
+    "container_queue_ext",
+    "component",
+    "component_ext",
+    "component_db",
+    "component_db_ext",
+    "component_queue",
+    "component_queue_ext",
 )
 
 
 def test_c4_roundtrip_normalization() -> None:
     spec = _c4(
         title="Architecture   ",
-        nodes=[GraphNode(id="inner", label="", c4Type="container"), GraphNode(id="outside", label="outside", c4Type="person")],
-        groups=[GraphGroup(id="child", parent="parent", c4Type="generic", nodes=["inner"]), GraphGroup(id="parent", nodes=[])],
+        nodes=[
+            GraphNode(id="inner", label="", c4Type="container"),
+            GraphNode(id="outside", label="outside", c4Type="person"),
+        ],
+        groups=[
+            GraphGroup(id="child", parent="parent", c4Type="generic", nodes=["inner"]),
+            GraphGroup(id="parent", nodes=[]),
+        ],
     )
     parsed = from_mermaid_c4(to_mermaid_c4(spec))
     assert to_mermaid_c4(parsed) == to_mermaid_c4(spec)
@@ -275,7 +307,10 @@ def test_c4_rejects_neighbor_macros(macro: str) -> None:
 def test_c4_nested_boundaries() -> None:
     text = 'C4Container\nEnterprise_Boundary(ent, "ent") {\n  System_Boundary(sys, "sys") {\n    Container(app, "app")\n  }\n}\n'
     parsed = from_mermaid_c4(text)
-    assert [(group.id, group.parent, group.nodes) for group in parsed.groups or []] == [("ent", None, []), ("sys", "ent", ["app"])]
+    assert [(group.id, group.parent, group.nodes) for group in parsed.groups or []] == [
+        ("ent", None, []),
+        ("sys", "ent", ["app"]),
+    ]
 
 
 def test_c4_rel_macros_and_birel() -> None:
@@ -298,7 +333,15 @@ def test_c4_update_layout_config() -> None:
     assert parsed.layout == GraphLayout(shapeInRow=2, boundaryInRow=3)
 
 
-@pytest.mark.parametrize("line", ['UpdateElementStyle(a, $bgColor="red")', 'UpdateRelStyle(a, b, $textColor="red")', 'Person(a, "a", $sprite="x")', 'Deployment_Node(a, "a")'])
+@pytest.mark.parametrize(
+    "line",
+    [
+        'UpdateElementStyle(a, $bgColor="red")',
+        'UpdateRelStyle(a, b, $textColor="red")',
+        'Person(a, "a", $sprite="x")',
+        'Deployment_Node(a, "a")',
+    ],
+)
 def test_c4_rejects_styling_sprites_and_deployment(line: str) -> None:
     with pytest.raises(MermaidCodecError, match="line 2"):
         from_mermaid_c4(f"C4Context\n{line}\n")

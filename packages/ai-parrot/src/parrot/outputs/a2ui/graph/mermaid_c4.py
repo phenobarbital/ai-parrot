@@ -388,4 +388,13 @@ def from_mermaid_c4(text: str) -> GraphSpec:
             error_line = indexed_edges[-1][1] if indexed_edges else lines[0][0]
             raise MermaidCodecError(error_line, "", "RelIndex values must be unique and contiguous from 1")
         edges = [edge for _, _, edge in indexed_edges] + plain_dynamic_edges
-    return GraphSpec(kind="c4", level=level, direction="TB", title=title, nodes=nodes, edges=edges, groups=groups or None, layout=layout)
+    return GraphSpec(
+        kind="c4",
+        level=level,
+        direction="TB",
+        title=title,
+        nodes=nodes,
+        edges=edges,
+        groups=groups or None,
+        layout=layout,
+    )
