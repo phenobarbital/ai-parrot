@@ -121,7 +121,7 @@ def test_pyproject_declares_extra_and_direct_deps():
     project = tomllib.loads(_PYPROJECT.read_text())["project"]
     deps = project["dependencies"]
     assert any(dep.startswith("ai-parrot>=") for dep in deps)
-    for dep in ("opencv-python-headless>=4.8", "numpy", "pillow", "rapidfuzz>=3.0"):
+    for dep in ("opencv-python-headless>=4.8", "numpy", "pillow>=13.0.0", "rapidfuzz>=3.0"):
         assert dep in deps
     assert all(
         dep.split("[")[0].split(";")[0].split("<")[0].split(">")[0].split("=")[0].split(" ")[0].lower() != "pytesseract"

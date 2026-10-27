@@ -1,6 +1,6 @@
 {
-  "next_task_id": 4753,
-  "next_feature_id": 752,
-  "updated_at": "2026-10-26T23:39:30+00:00",
-  "updated_by": "repl-worker-protocol-fixes"
+  "next_task_id": 4864,
+  "next_feature_id": 764,
+  "updated_at": "2026-10-27T22:27:31+00:00",
+  "updated_by": "ledger-outbox-integration"
 }

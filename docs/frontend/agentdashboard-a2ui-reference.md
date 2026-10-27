@@ -494,7 +494,7 @@ The Parrot catalog adds **agent functions**: every tool on the agent's `ToolMana
 | `Slider` | `label`, `min` (default 0), **`max`**, **`value`**: DynamicNumber, `steps` (int ≥ 1) | | `Slider` |
 | `DateTimeInput` | **`value`**: DynamicString (ISO 8601), `enableDate`, `enableTime`, `min`, `max`, `label` | both flags default `false` | `AppDatePicker` / `Calendar` |
 
-### 5.2 Parrot presentation catalog — 10 composites (`catalog/parrot/*.py`)
+### 5.2 Parrot presentation catalog — 11 composites (`catalog/parrot/*.py`)
 
 All are display-only from the LLM's point of view (an LLM-origin envelope may never carry `action`, and may never inline rows — rows always arrive via a binding into `dataModel`). Each composite has a deterministic `lower()` to Basic primitives; the backend renderers **intercept** `Chart`, `DataTable`, `Infographic` (and FilterBar) before lowering and lower the rest. **Do the same**: render these natively, lower anything you do not support.
 
@@ -546,6 +546,14 @@ Lowering: `Card{Column[Text title (parrot_role: title), Text subtitle?, Tabs | C
 
 Lowers to `Row{parrot_variant: "filter-bar"}` of `ChoicePicker`s (`id = "<bar-id>-f<i>"`, `variant = multipleSelection | mutuallyExclusive`, `value = [only option]` when exactly one option else `[]` meaning "all"), each tagged `parrot_role: "filter"` + `parrot_filter_column`. Display-only on the wire; the **client-side filtering contract** is in §7.4.
 
+#### `MermaidDiagram` (`mermaiddiagram.py`, **FEAT-753**) — required `source`; LLM-authorable
+
+```json
+{"component": "MermaidDiagram", "source": "sequenceDiagram\n  participant A as Alice\n  A->>B: hello\n", "diagramType": "sequence", "accessibleDescription": "Alice greets Bob"}
+```
+
+Opaque Mermaid text — see §5.5 for the frontend contract.
+
 #### `HtmlDocument` (`htmldocument.py`, **FEAT-527**) — required `title`; `tool_only`
 
 ```json
@@ -579,7 +587,7 @@ Core defines `RendererCapabilities{interactive, supports_actions, supports_updat
 
 | id | interactive | actions | updates | output | supported components |
 |---|---|---|---|---|---|
-| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering) |
+| `interactive-html` | ✓ | ✗ | ✗ | `text/html` | 18 Basic + `Chart`, `DataTable`, `Infographic`, `HtmlDocument` (**FEAT-527**, sandboxed iframe), `Graph` (**FEAT-529**, viz-core) (+ FilterBar handled via lowering); `MermaidDiagram` (**FEAT-753**) is lowered to a code block + degraded record (no mermaid.js in the self-contained artifact) |
 | `ssr_html` | ✗ | ✗ | ✗ | `text/html` | 18 Basic + `Graph` (**FEAT-529**, viz-core) |
 | `pdf` | ✗ | ✗ | ✗ | `application/pdf` | SSR minus `Video`, `AudioPlayer` |
 | `echarts` | ✗ | ✗ | ✗ | `application/json` | `Chart`, `Graph` (**FEAT-529**, viz-core) |
@@ -613,7 +621,7 @@ The Svelte renderer will be the first one with `interactive: true, supports_acti
 ### 5.4 viz-core catalog (FEAT-529)
 
 A THIRD catalog, `catalogId: "https://ai-parrot.dev/a2ui/catalogs/viz-core/1.0/catalog.json"`,
-alongside Basic and Parrot (§5.1/§5.2, still 10 composites — viz-core is
+alongside Basic and Parrot (§5.1/§5.2, still 11 composites — viz-core is
 additive, nothing moved). Its rule: **describe what, never how** — no
 colour, font, pixel size, or renderer-library option on the wire; semantic
 colour roles/formats; `size` is layout intent (`inline`/`tile`/`hero`),
@@ -627,7 +635,7 @@ Parrot's; resolve a component's effective catalog as `component.catalogId
 
 | Prop | Type | Notes |
 |---|---|---|
-| `kind` | `flowchart, state, sequence, dag` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop) |
+| `kind` | `flowchart, state, sequence, dag, c4` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop); `c4` requires `level` and C4 node types |
 | `direction` | `TB, LR, BT, RL` | default `TB` |
 | `nodes` | `[{id, label?, shape?, group?, state?, icon?, meta?}]` | `shape ∈ rect (default), rounded, diamond, circle, hexagon, subroutine`; `state ∈ pending, running, completed, failed, skipped, waiting` — DATA, see the status-role table below |
 | `edges` | `[{from, to, label?, kind?, condition?}]` | `kind ∈ solid (default), dashed, thick` |
@@ -637,6 +645,11 @@ Parrot's; resolve a component's effective catalog as `component.catalogId
 | `data` | `{"path": …}` | binding to `{node_id: {state?, label?, meta?}}` — overlays per-node state at render time |
 | `accessibleDescription`, `size` (`inline, tile (default), hero`) | | viz-core common props, same meaning everywhere |
 | `action` | the standard v1.0 `Action` | TOOL origin only (D10b gate, same as everywhere else) — dispatched on node click with `context.nodeId`/`context.nodeLabel` added |
+| `level` | `context, container, component, dynamic` | required when `kind: "c4"`; forbidden otherwise |
+| C4 node fields | `c4Type, technology?, description?` | `c4Type` is required for C4 nodes; technology is valid for container/component families, and descriptions feed the C4 tooltip |
+| C4 edge fields | `technology?, hint?, bidirectional?` | Mermaid relationship technology, placement hint, and two-ended relationship; hints/bidirectionality are forbidden for `dynamic` |
+| C4 boundary fields | `parent?, c4Type?` | boundaries are nested groups; `c4Type ∈ enterprise, system, container, generic` |
+| C4 layout fields | `shapeInRow?, boundaryInRow?` | supplied together as semantic layout counts; C4 uses deterministic tier placement |
 
 Node `state` → semantic status role → theme token (the SAME five roles
 this app's own `A2UIGraph.svelte` and the backend's `_graph_svg`/`echarts`
@@ -658,6 +671,11 @@ edge-list, Text graph-source]}`, `parrot_variant: "graph"` — see
 for the exhaustive lowering-role table, the mermaid codec subset, and the
 layout/degradation contract (force → layered, oversize → truncated edge
 list, both recorded).
+
+For `kind: "c4"`, the bundled renderer uses C4-specific symbols and captions, places `technology` on a second
+label line, gives external elements dashed styling, draws bidirectional relationships with two arrowheads, and
+projects nested boundary frames when positions are complete. It retains the existing graph interaction contract;
+satellite SVG and ECharts renderers remain generic-node fallbacks and do not preserve nested boundary frames.
 
 **Frontend**: dispatch `Graph` via ECharts' native `graph` series
 (`layout: "none"` from `layout.positions` when present, else `"circular"`)
@@ -704,6 +722,49 @@ viz-core `catalogId` — exactly the shape `catalog.resolve_catalog`/
 `validate_envelope` are built to handle. Dropping `graph`'s `catalogId`
 here would make it resolve against the Basic surface default instead,
 where `Graph` does not exist — `UNKNOWN_COMPONENT`.
+
+---
+
+### 5.5 MermaidDiagram (FEAT-753)
+
+`MermaidDiagram` carries Mermaid source in `source` (≤ 32 KiB, validated server-side: no `%%{init}%%` directives, no
+`click`/`link`/`callback`, no `javascript:`/`<script`). The bundled UI renders it natively; every other client may use
+the lowered fallback (`Card → Column[description, title?, caption?, source]`, the last `Text` carrying
+`parrot_role: "mermaid-source"`, `parrot_diagram_type`, optional `parrot_mermaid_theme`).
+
+Frontend contract:
+
+- **Lazy import** — `(await import('mermaid')).default`, cached at module scope; mermaid must land in its own async
+  chunk, never the main bundle. mermaid cannot run in jsdom: unit tests mock it.
+- **Initialize** with `{startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: {htmlLabels: false},
+  class: {htmlLabels: false}}`. `theme` is a hint; the host theme may override it.
+- **Sanitize** the SVG with DOMPurify's SVG profile before inserting it; labels must stay visible after sanitization.
+- **Unique render ids** per instance (mermaid requires a fresh element id per `render` call).
+- **Fallback** — on any render error show the source as a code block and keep the description text; the source is
+  always reachable (collapsible), never lost.
+
+Example envelope:
+
+```json
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "mermaid-diagram",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "components": [
+      {
+        "id": "root",
+        "component": "MermaidDiagram",
+        "source": "sequenceDiagram\n    participant A as Alice\n    A->>B: hello\n",
+        "diagramType": "sequence",
+        "title": "Greeting",
+        "theme": "neutral",
+        "accessibleDescription": "Alice greets Bob"
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -976,6 +1037,37 @@ Use the shared Axios singleton (`$lib/api/http.ts`) so the bearer interceptor an
 - `callAgentFunction` responses: `agentFunctionResponse.value` (JSON-safe) or an `error` envelope. For `refresh_dashboard` the value is an artifact reference — follow up with `getSurface` / `refresh` to obtain the new envelope.
 - Keep one SSE connection per `(agent, session)` while a surface is mounted; on `callRendererFunction` evaluate the named function (Basic functions, or your own renderer functions) and answer with `rendererFunctionResponse` echoing `functionCallId`.
 - Surface state: before calling `refresh_dashboard` with no explicit args, push the current filters with an `action` whose `dataModel` is `{filters: {...}}` so the tool reports `filter_source: "surface_state"`.
+
+#### Materializing an inline answer (`materialize_widget`, FEAT-757)
+
+"Keep this fresh" on an inline chart/table/KPI: send a `callAgentFunction` for `materialize_widget` (catalogId set to
+the surface catalog) with `{turn_id, session_id, envelope, pin}`, where `envelope` is the bubble's `a2ui_envelope`.
+No prompt and no LLM turn: the agent rebuilds the same widget bound to the query that produced the turn.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `turn_id` | string | yes | The chat turn whose answer should become a refreshable widget. |
+| `envelope` | object | yes | The a2ui_envelope that turn displayed (the chat bubble already holds it). |
+| `session_id` | string | no | Session of the turn; defaults to the bound session. |
+| `title` | string | no | Title for the pinned widget; defaults to the turn question. |
+| `pin` | boolean | no | Also persist the linked widget as a refreshable pinned surface. |
+| `snapshot` | boolean | no | Embed current rows (share links / offline export only); default definition-only. |
+
+| Status | Reason | Description |
+|---|---|---|
+| `materialized` | - | The widget was materialized and is refreshable. |
+| `materialized` | `no_publish_surface` | Linked widget built, but `pin` was requested and the agent lacks the PublishSurface tool; `pinned` is false, the envelope is still usable. |
+| `materialized` | `pin_failed` | Linked widget built, but pinning failed; `pinned` is false, the envelope is still usable. |
+| `already_linked` | - | The turn already produced a linked surface; the same envelope is returned. |
+| `snapshot_only` | `no_slug_origin` | No query slug origin could be extracted from the turn. |
+| `snapshot_only` | `unsupported_component` | The envelope's root component is not supported for relinking. |
+| `not_materializable` | `turn_not_found` | The specified turn could not be found. |
+| `not_materializable` | `no_envelope` | No envelope was provided. |
+| `not_materializable` | `multi_source_turn` | The turn used multiple distinct data origins. |
+| `not_materializable` | `no_querysource_toolkit` | The agent lacks the QuerySource toolkit. |
+| `not_materializable` | `build_failed` | Building the linked surface failed. |
+
+On `snapshot_only`, pin the bubble's envelope as-is with `POST /api/v1/ui/surfaces` (kind widget).
 
 ### 8.7 Pinned-surfaces sidebar and sharing
 

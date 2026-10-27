@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Component } from "svelte";
   import { markdownToHtml } from "$lib/utils/markdown";
   import { slide } from "svelte/transition";
   import { highlightElement } from "$lib/utils/highlight";
@@ -11,6 +12,7 @@
   import DataTable from "./DataTable.svelte";
   import SqlArtifactCard from "./SqlArtifactCard.svelte";
   import type { AppChartConfig } from "$lib/components/charts/chart-contract";
+  import { isInlinePresentation } from "$lib/components/agents/canvas/a2ui/a2ui-presentation";
   import { features } from "$lib/features";
 
   // Heavy visualization components are lazy-loaded only when a message needs
@@ -35,10 +37,21 @@
   let VoiceNotePlayerComp = $state<
     typeof import("./VoiceNotePlayer.svelte").default | null
   >(null);
+  let A2UISurfaceComp = $state<Component | null>(null);
 
   $effect(() => {
     if (isUser) return;
     const mode = message.output_mode;
+    if (
+      features.a2ui &&
+      mode === "a2ui" &&
+      isInlinePresentation(message.a2ui_envelope) &&
+      !A2UISurfaceComp
+    ) {
+      import("$lib/components/agents/canvas/a2ui/A2UISurface.svelte").then(
+        (m) => (A2UISurfaceComp = m.default),
+      );
+    }
     if (features.charts && mode === "echarts" && message.output && !EChartsComp) {
       import("$lib/components/visualizations/ECharts.svelte").then(
         (m) => (EChartsComp = m.default),
@@ -1144,6 +1157,10 @@
               </div>
             {/if}
           </div>
+
+          <!-- Inline A2UI surface -->
+        {:else if features.a2ui && message.output_mode === "a2ui" && isInlinePresentation(message.a2ui_envelope) && A2UISurfaceComp}
+          <A2UISurfaceComp envelope={message.a2ui_envelope} />
 
           <!-- Structured Chart (LayerChart / AppChart) — agnostic config from backend -->
         {:else if message.output_mode === "structured_chart" && message.output}

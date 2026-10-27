@@ -1,0 +1,7 @@
+- Follow the existing pattern: each category is a pluggable Guardrail (FEAT-396) registered by name, configured via guardrails=[...], with the PromptInjectionGuardrail policy shape (strict_mode, block_on_threat, probability threshold) and verdict semantics (default TRANSFORM/FLAG, BLOCK opt-in via block_on_threat).
+- No network on the request path: ML engines are local ONNX classifiers with the FEAT-439 resolution chain (env dir -> cached HF snapshot -> fallback -> heuristic floor) and an explicit warmup_* download function.
+- ES/EN mandatory with a false-positive gate: every candidate model runs through the benchmarks/injection_guardrail_latency/ harness (extended with jailbreak/leakage corpora) and must pass a Spanish-benign FP gate before becoming a default — the Wolf Defender precedent (DeBERTa produced 7-8/10 Spanish FPs; wolf-defender 0/10).
+- Hybrid engines: ML classifiers for jailbreak/injection; deterministic matching (n-grams + fuzzy) against the real system prompt for OUTPUT-side leakage — no classifier can know our prompt.
+- Zero behavior change by default: bots that don't register the new guardrails behave bit-identically; TOOL_OUTPUT injection scanning is opt-in on the existing guardrail.
+- Telemetry never carries content (FEAT-396 invariant): reports carry categories, scores, counts — never the offending text or the system prompt.
+- Lazy imports: no ONNX/transformers import at module import time (FEAT-439 discipline); registry factories stay lazy.

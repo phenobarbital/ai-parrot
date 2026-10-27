@@ -3,6 +3,7 @@
 Tests all enums and Pydantic models defined in
 parrot.registry.capabilities.models.
 """
+
 import pytest
 
 from parrot.registry.capabilities.models import (
@@ -19,13 +20,13 @@ from parrot.registry.capabilities.models import (
 class TestResourceType:
     """Tests for ResourceType enum."""
 
-    def test_has_five_members(self):
-        """ResourceType must have exactly 5 members."""
-        assert len(ResourceType) == 5
+    def test_has_six_members(self):
+        """ResourceType must have exactly 6 members (AGENT added by FEAT-747)."""
+        assert len(ResourceType) == 6
 
     def test_values(self):
         """ResourceType values must match spec."""
-        expected = {"dataset", "tool", "graph_node", "pageindex", "vector_collection"}
+        expected = {"dataset", "tool", "graph_node", "pageindex", "vector_collection", "agent"}
         assert {e.value for e in ResourceType} == expected
 
 

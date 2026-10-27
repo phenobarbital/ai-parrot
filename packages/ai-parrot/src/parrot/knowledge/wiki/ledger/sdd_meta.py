@@ -74,6 +74,7 @@ KNOWN_PROJECTS: frozenset[str] = frozenset(
         "ai-parrot-loaders",
         "ai-parrot-openlit-bridge",
         "ai-parrot-pipelines",
+        "ai-parrot-semantic",
         "ai-parrot-server",
         "ai-parrot-tools",
         "ai-parrot-visualizations",
