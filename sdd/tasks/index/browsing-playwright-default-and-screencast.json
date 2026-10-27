@@ -1,0 +1,95 @@
+{
+  "feature": "browsing-playwright-default-and-screencast",
+  "feature_id": "FEAT-763",
+  "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T19:44:32Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-tools/tests/scraping/test_toolkit_models.py",
+          "packages/ai-parrot-tools/tests/scraping/test_toolkit.py",
+          "packages/ai-parrot-tools/tests/scraping/test_driver_factory.py",
+          "packages/ai-parrot-tools/tests/scraping/test_playwright_driver.py",
+          "packages/ai-parrot-tools/tests/scraping/test_browsing_screencast.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f07a537f94f01c3fa5b67ccb1dd6418b49b4b5bc11bb0c77c3fc142bf53747f6"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4839",
+      "slug": "browsing-playwright-default-driver",
+      "title": "Default driver → Playwright",
+      "feature_id": "FEAT-763",
+      "feature": "browsing-playwright-default-and-screencast",
+      "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies; first task in the chain",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4839-browsing-playwright-default-driver.md"
+    },
+    {
+      "id": "TASK-4840",
+      "slug": "browsing-screencast-config-plumbing",
+      "title": "Screencast config plumbing",
+      "feature_id": "FEAT-763",
+      "feature": "browsing-playwright-default-and-screencast",
+      "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4839"
+      ],
+      "parallel": true,
+      "parallelism_notes": "file overlap with TASK-4839: both modify toolkit_models.py, scraping/toolkit.py, driver_factory.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4840-browsing-screencast-config-plumbing.md"
+    },
+    {
+      "id": "TASK-4841",
+      "slug": "browsing-recording-capture-mcp-exposure",
+      "title": "Recording capture + MCP exposure",
+      "feature_id": "FEAT-763",
+      "feature": "browsing-playwright-default-and-screencast",
+      "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4840"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs DriverConfig.record_video_dir from TASK-4840 to reach PlaywrightConfig before recording_path capture is meaningful",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4841-browsing-recording-capture-mcp-exposure.md"
+    }
+  ]
+}
