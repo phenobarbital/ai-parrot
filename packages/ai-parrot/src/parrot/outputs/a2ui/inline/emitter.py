@@ -215,9 +215,7 @@ def emit_inline_component(
                 surface_id=sid,
                 origin=ProducerOrigin.LLM,
                 surface_metadata=SurfaceMetadata(
-                    extensions=Extensions(
-                        root={PRESENTATION_EXTENSION: presentation_extension(component)}
-                    )
+                    extensions=Extensions(root={PRESENTATION_EXTENSION: presentation_extension(component)})
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - validation failures degrade by contract

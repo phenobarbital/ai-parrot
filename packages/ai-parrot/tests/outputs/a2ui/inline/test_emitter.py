@@ -22,8 +22,7 @@ def kpi_response() -> SimpleNamespace:
     """Return an AIMessage-like response carrying a fenced KPICard config."""
     return SimpleNamespace(
         output=(
-            '```json\n{"label": "Worked hours", "value": 1234.5, "unit": "h", '
-            '"delta": 0.12, "trend": "up"}\n```'
+            '```json\n{"label": "Worked hours", "value": 1234.5, "unit": "h", ' '"delta": 0.12, "trend": "up"}\n```'
         ),
         content=None,
         structured_output=None,
