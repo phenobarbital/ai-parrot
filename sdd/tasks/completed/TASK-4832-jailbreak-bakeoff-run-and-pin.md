@@ -163,11 +163,10 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: operator (Jesus) with sdd-worker assistance
+**Date**: 2026-10-28
+**Winner / threshold / graph**: madhurjindal/Jailbreak-Detector-Large (MIT) · threshold 0.0448 · `onnx/model.onnx` (fp32), revision d6e5232b642c5b94540bf2d892eafb00748a2f63, sha256 c3762562cdd923c4c1dae5d105be179d842f1dfb7f6da03a3654c6c8679d09fa
+**Notes**: Measured on i7-9850H, threads pinned to 1, max_length 512. p50 44.81 ms (limit 45.0, 0.19 ms margin), p95 52.7 ms; ES-benign FP 0; F1 combined 0.641; ES jailbreak recall 0.44. No llama4 attribution needed.
+Caveats: (1) the p50 budget was relaxed 30 -> 45 ms by the operator AFTER seeing the first run (spec §5/§8 and P50_BUDGET_MS amended); under 30 ms no eligible candidate with a real operating point passed. (2) threshold fitted to a 25-item ES-benign bucket. (3) the gate allows degenerate no-detection passes (enguard, int8 graph: F1 0) — a minimum-F1 guard is recommended follow-up; the manifest test enforces F1>0 and recall>0 for the winner. (4) int8 graph of the winner was measured (29.6 ms) but its scores collapse to ~0.1 for all inputs; documented in the README, raw output not committed.
 
-**Completed by**:
-**Date**:
-**Winner / threshold / graph**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: (a) compare_jailbreak.py (TASK-4831 file) gained `measure_all` + manifest `skipped` so ineligible candidates that cannot load (0din, protectai) no longer abort the run — separate commit 0e3c52289 with tests; (b) spec p50 budget amended 30 -> 45 ms (commit 73eebddf6); (c) harness test updated to derive over-budget p50 from the constant (194e56f28). Not closed via finalize_task: no durable review-evidence artifact is writable.
