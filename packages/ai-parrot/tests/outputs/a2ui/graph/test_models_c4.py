@@ -1,4 +1,5 @@
 """FEAT-754 M1 — C4 vocabulary and validators V1–V7 on GraphSpec."""
+
 from __future__ import annotations
 
 import json
