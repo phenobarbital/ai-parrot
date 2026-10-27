@@ -490,6 +490,32 @@ class SearchRepoCodeInput(BaseModel):
     )
 
 
+class RepoDirectoryEntry(BaseModel):
+    """One file or directory in a repository directory listing."""
+
+    name: str
+    path: str
+    type: Literal["file", "dir"]
+
+
+class RepoDirectoryListing(BaseModel):
+    """Directory listing at an explicitly selected repository ref."""
+
+    exists: bool
+    path: str
+    ref: str
+    repository: str
+    entries: List[RepoDirectoryEntry] = Field(default_factory=list)
+
+
+class ListRepoDirectoryInput(BaseModel):
+    """Input for a ref-specific repository directory listing."""
+
+    path: str
+    ref: str
+    repository: Optional[str] = None
+
+
 class FileContentResult(BaseModel):
     """Return payload for ``get_file_content_at_ref``."""
 
@@ -2596,6 +2622,59 @@ class GitToolkit(AbstractToolkit):
                 pass
         return result
 
+    def _list_repo_directory_sync(
+        self,
+        repository: Optional[str],
+        path: str,
+        ref: str,
+    ) -> "RepoDirectoryListing":
+        """Read directory entries; report ``exists=False`` on a missing directory."""
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+        try:
+            response = self._request("GET", url, token, expected=200, params={"ref": ref})
+        except GitToolkitError as exc:
+            msg = str(exc)
+            if " 404" in msg or "404" in msg:
+                return RepoDirectoryListing(
+                    exists=False,
+                    path=path,
+                    ref=ref,
+                    repository=repo,
+                )
+            raise
+
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise GitToolkitError(
+                f"GitHub Contents API returned a non-directory response for {path!r} at ref {ref!r}."
+            )
+
+        entries = [
+            RepoDirectoryEntry(name=entry["name"], path=entry["path"], type=entry["type"])
+            for entry in payload
+            if isinstance(entry, dict) and entry.get("type") in {"file", "dir"}
+        ]
+        return RepoDirectoryListing(
+            exists=True,
+            path=path,
+            ref=ref,
+            repository=repo,
+            entries=entries,
+        )
+
+    @tool_schema(ListRepoDirectoryInput)
+    async def list_repo_directory(
+        self,
+        path: str,
+        ref: str,
+        repository: Optional[str] = None,
+    ) -> "RepoDirectoryListing":
+        """List files and subdirectories at path for an explicit git ref."""
+        return await asyncio.to_thread(self._list_repo_directory_sync, repository, path, ref)
+
     def _compare_pr_versions_sync(
         self,
         repository: Optional[str],
@@ -2951,9 +3030,12 @@ __all__ = [
     "GetCodeFrequencyInput",
     # FEAT-182 PR context retrieval models
     "GetFileContentInput",
+    "ListRepoDirectoryInput",
     "ComparePRVersionsInput",
     "SearchRepoCodeInput",
     "FileContentResult",
+    "RepoDirectoryEntry",
+    "RepoDirectoryListing",
     "CompareVersionsResult",
     "SearchCodeResult",
     "_FileBlobCache",
