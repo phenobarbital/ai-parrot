@@ -9,7 +9,6 @@ from datetime import date
 from typing import Any, Literal
 
 from parrot.metrics.context import resolve_metric_tenant
-from parrot.metrics.errors import MetricNotFound
 from parrot.metrics.models import (
     ChartShape,
     DataTableShape,
@@ -112,9 +111,7 @@ class MetricsToolkit(AbstractToolkit):
         del tenant
         return await self.registry.describe(metric_id, tenant=self._call_tenant)
 
-    def _shape_for_query(
-        self, definition: MetricDefinition, requested: str | None, dimension: Any | None
-    ) -> ShapeSpec:
+    def _shape_for_query(self, definition: MetricDefinition, requested: str | None, dimension: Any | None) -> ShapeSpec:
         """Return the declared or safely derived display shape for this request."""
         default = definition.default_shape
         value_column = default.value_column if isinstance(default, KPICardShape) else "value"
@@ -138,7 +135,9 @@ class MetricsToolkit(AbstractToolkit):
         return bool(binding.start_placeholder and binding.start_placeholder == binding.end_placeholder)
 
     @staticmethod
-    def _series(definition: MetricDefinition, period: ResolvedPeriod, rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    def _series(
+        definition: MetricDefinition, period: ResolvedPeriod, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
         """Build a KPI series when a declared date column and grain are available."""
         date_column = definition.time.binding.date_column
         shape = definition.default_shape
@@ -207,7 +206,11 @@ class MetricsToolkit(AbstractToolkit):
             filters=filters or {},
             tenant=self._call_tenant,
         )
-        do_compare = compare if compare is not None else definition.comparison.mode != "none" and isinstance(selected_shape, KPICardShape)
+        do_compare = (
+            compare
+            if compare is not None
+            else definition.comparison.mode != "none" and isinstance(selected_shape, KPICardShape)
+        )
         previous_period = comparison_period(resolved_period, definition.comparison) if do_compare else None
         previous_frame = None
         if previous_period is not None:

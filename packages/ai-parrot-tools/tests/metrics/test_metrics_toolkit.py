@@ -84,7 +84,9 @@ async def test_query_metric_linked_only_for_query_slug(
     recipe_payload = worked_hours.model_dump(mode="json")
     recipe_payload["source"] = {"kind": "recipe", "recipe_name": "r", "data_model_path": "/rows"}
     recipe = MetricDefinition.model_validate(recipe_payload)
-    recipe_toolkit = MetricsToolkit(store=InMemoryMetricStore([recipe]), recipe_runner=AsyncMock(), pctx_provider=object)
+    recipe_toolkit = MetricsToolkit(
+        store=InMemoryMetricStore([recipe]), recipe_runner=AsyncMock(), pctx_provider=object
+    )
     with pytest.raises(ValueError, match="only query_slug/transformer metrics can be linked"):
         await recipe_toolkit.query_metric("worked_hours", linked=True)
 
@@ -104,7 +106,9 @@ async def test_list_metrics_uses_request_tenant_and_rejects_invalid(
     """The execution hook validates explicit tenants and uses the request tenant by default."""
     scoped = worked_hours.model_copy(update={"tenant": "acme"})
     toolkit = MetricsToolkit(store=InMemoryMetricStore([scoped]))
-    monkeypatch.setattr("parrot_tools.metrics.toolkit.current_context", lambda: SimpleNamespace(kwargs={"tenant": "acme"}))
+    monkeypatch.setattr(
+        "parrot_tools.metrics.toolkit.current_context", lambda: SimpleNamespace(kwargs={"tenant": "acme"})
+    )
     await toolkit._pre_execute("list_metrics")
     assert [metric.id for metric in await toolkit.list_metrics()] == ["worked_hours"]
     with pytest.raises(ValueError):
