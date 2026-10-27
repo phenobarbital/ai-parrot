@@ -127,7 +127,7 @@ def _break_cycles(
         adjacency[from_id].append(to_id)
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {node_id: WHITE for node_id in node_ids}
+    color = dict.fromkeys(node_ids, WHITE)
     back_edges: set[tuple[str, str]] = set()
 
     def _visit(start: str) -> None:
@@ -203,6 +203,12 @@ def _order_within_ranks(
         for index, node_id in enumerate(nodes):
             slot[node_id] = index
 
+    def _barycentre(node_id: str, neighbours_of: dict[str, list[str]]) -> float:
+        neighbours = neighbours_of.get(node_id, [])
+        if not neighbours:
+            return float(slot[node_id])
+        return sum(slot[n] for n in neighbours) / len(neighbours)
+
     for sweep in range(4):
         downward = sweep % 2 == 0
         rank_sequence = range(1, max_rank + 1) if downward else range(max_rank - 1, -1, -1)
@@ -212,13 +218,8 @@ def _order_within_ranks(
             if not nodes:
                 continue
 
-            def _barycentre(node_id: str) -> float:
-                neighbours = neighbours_of.get(node_id, [])
-                if not neighbours:
-                    return float(slot[node_id])
-                return sum(slot[n] for n in neighbours) / len(neighbours)
-
-            nodes.sort(key=lambda node_id: (_barycentre(node_id), slot[node_id]))
+            keys = {node_id: (_barycentre(node_id, neighbours_of), slot[node_id]) for node_id in nodes}
+            nodes.sort(key=keys.__getitem__)
             for index, node_id in enumerate(nodes):
                 slot[node_id] = index
 
