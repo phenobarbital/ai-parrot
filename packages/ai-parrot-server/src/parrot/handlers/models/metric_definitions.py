@@ -82,7 +82,9 @@ _LIST_GLOBAL_SQL = f"{_SELECT} WHERE tenant IS NULL ORDER BY metric_id"
 _LIST_GLOBAL_PROGRAM_SQL = f"{_SELECT} WHERE tenant IS NULL AND program = $1 ORDER BY metric_id"
 
 _DELETE_TENANT_SQL = "DELETE FROM navigator.metric_definitions WHERE metric_id = $1 AND tenant = $2 RETURNING metric_id"
-_DELETE_GLOBAL_SQL = "DELETE FROM navigator.metric_definitions WHERE metric_id = $1 AND tenant IS NULL RETURNING metric_id"
+_DELETE_GLOBAL_SQL = (
+    "DELETE FROM navigator.metric_definitions WHERE metric_id = $1 AND tenant IS NULL RETURNING metric_id"
+)
 
 _LIST_VISIBLE_SQL = (
     f"{_SELECT} WHERE ((tenant IS NULL AND visibility = 'public') OR tenant = $1) "
