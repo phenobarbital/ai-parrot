@@ -36,177 +36,203 @@ _WORKTREE = Path(__file__).resolve().parent.parent  # packages/ai-parrot
 _JIRA_SPEC_PY = _WORKTREE / "src/parrot/bots/jira_specialist.py"
 
 _log = logging.getLogger(__name__)
+_original_modules = {
+    name: module
+    for name, module in sys.modules.items()
+    if name == "parrot" or name.startswith(("parrot.", "parrot_tools"))
+}
+_stub_modules: dict[str, types.ModuleType] = {}
 
 
 def _mk(name: str, **attrs):
     """Register a stub module in sys.modules and return it."""
-    m = sys.modules.get(name)
+    m = _stub_modules.get(name)
     if m is None:
         m = types.ModuleType(name)
+        if original := sys.modules.get(name):
+            m.__dict__.update(vars(original))
         m.__path__ = []  # mark as package so sub-imports work
         sys.modules[name] = m
+        _stub_modules[name] = m
     for k, v in attrs.items():
         setattr(m, k, v)
     return m
 
 
-# ── parrot.utils (Cython modules) ────────────────────────────────────────
-_mk("parrot.utils.types", SafeDict=dict, SafeList=list)
-_mk("parrot.utils.parsers", TOMLParser=MagicMock())
-_mk("parrot.utils.parsers.toml", TOMLParser=MagicMock())
-# parrot.utils itself — provide only the attributes that jira_specialist
-# transitively needs; keep __path__ so sub-imports keep working.
-if "parrot.utils" not in sys.modules:
-    _utils = types.ModuleType("parrot.utils")
-    _utils.__path__ = [str(_WORKTREE / "src/parrot/utils")]
-    _utils.SafeDict = dict
-    _utils.SafeList = list
-    sys.modules["parrot.utils"] = _utils
+try:
+    # ── parrot.utils (Cython modules) ────────────────────────────────────────
+    _mk("parrot.utils.types", SafeDict=dict, SafeList=list)
+    _mk("parrot.utils.parsers", TOMLParser=MagicMock())
+    _mk("parrot.utils.parsers.toml", TOMLParser=MagicMock())
+    # parrot.utils itself — provide only the attributes that jira_specialist
+    # transitively needs; keep __path__ so sub-imports keep working.
+    if "parrot.utils" not in sys.modules:
+        _utils = types.ModuleType("parrot.utils")
+        _utils.__path__ = [str(_WORKTREE / "src/parrot/utils")]
+        _utils.SafeDict = dict
+        _utils.SafeList = list
+        sys.modules["parrot.utils"] = _utils
 
-# ── parrot.bots.* stubs (prevent base.py / chatbot.py from loading) ──────
+    # ── parrot.bots.* stubs (prevent base.py / chatbot.py from loading) ──────
 
+    class _AgentBase:
+        """Minimal Agent stand-in so JiraSpecialist.__init__ can call super()."""
 
-class _AgentBase:
-    """Minimal Agent stand-in so JiraSpecialist.__init__ can call super()."""
+        model = None
+        injection_probability_threshold = 0.9
 
-    model = None
-    injection_probability_threshold = 0.9
+        def __init__(self, *args, **kwargs):
+            self.name = kwargs.get("name", "TestAgent")
+            self.logger = logging.getLogger(self.name)
+            self._prompt_builder = None
+            self.prompt_builder = None
+            self.jira_toolkit = None
+            # absorb all kwargs silently
+            for k, v in kwargs.items():
+                if not hasattr(self, k):
+                    setattr(self, k, v)
 
-    def __init__(self, *args, **kwargs):
-        self.name = kwargs.get("name", "TestAgent")
-        self.logger = logging.getLogger(self.name)
-        self._prompt_builder = None
-        self.prompt_builder = None
-        self.jira_toolkit = None
-        # absorb all kwargs silently
-        for k, v in kwargs.items():
-            if not hasattr(self, k):
-                setattr(self, k, v)
+    _bots_pkg = _mk(
+        "parrot.bots",
+        Agent=_AgentBase,
+        BasicAgent=_AgentBase,
+        AbstractBot=_AgentBase,
+        BaseBot=_AgentBase,
+        BasicBot=_AgentBase,
+        Chatbot=_AgentBase,
+        WebSearchAgent=_AgentBase,
+    )
+    _mk("parrot.bots.abstract", AbstractBot=_AgentBase)
+    _mk("parrot.bots.base", BaseBot=_AgentBase)
+    _mk("parrot.bots.basic", BasicBot=_AgentBase)
+    _mk("parrot.bots.chatbot", Chatbot=_AgentBase)
+    _mk("parrot.bots.agent", Agent=_AgentBase, BasicAgent=_AgentBase)
+    _mk("parrot.bots.search", WebSearchAgent=_AgentBase)
 
+    # ── parrot.bots.prompts — load REAL domain layers from worktree ───────────
+    # Use spec_from_file_location so we get the actual TASK-947 layer definitions.
+    def _load_prompts_module():
+        """Load real parrot.bots.prompts.* from worktree without the bots chain."""
+        _prompts_root = _WORKTREE / "src/parrot/bots/prompts"
 
-_bots_pkg = _mk(
-    "parrot.bots",
-    Agent=_AgentBase,
-    BasicAgent=_AgentBase,
-    AbstractBot=_AgentBase,
-    BaseBot=_AgentBase,
-    BasicBot=_AgentBase,
-    Chatbot=_AgentBase,
-    WebSearchAgent=_AgentBase,
-)
-_mk("parrot.bots.abstract", AbstractBot=_AgentBase)
-_mk("parrot.bots.base", BaseBot=_AgentBase)
-_mk("parrot.bots.basic", BasicBot=_AgentBase)
-_mk("parrot.bots.chatbot", Chatbot=_AgentBase)
-_mk("parrot.bots.agent", Agent=_AgentBase, BasicAgent=_AgentBase)
-_mk("parrot.bots.search", WebSearchAgent=_AgentBase)
+        def _load_direct(mod_name, path):
+            if mod_name in sys.modules:
+                return sys.modules[mod_name]
+            spec = importlib.util.spec_from_file_location(mod_name, str(path))
+            m = importlib.util.module_from_spec(spec)
+            sys.modules[mod_name] = m
+            try:
+                spec.loader.exec_module(m)
+            except Exception:  # noqa: BLE001 — fall back to stub on failure
+                pass
+            return m
 
+        layers_mod = _load_direct("parrot.bots.prompts.layers", _prompts_root / "layers.py")
+        domain_mod = _load_direct("parrot.bots.prompts.domain_layers", _prompts_root / "domain_layers.py")
 
-# ── parrot.bots.prompts — load REAL domain layers from worktree ───────────
-# Use spec_from_file_location so we get the actual TASK-947 layer definitions.
-def _load_prompts_module():
-    """Load real parrot.bots.prompts.* from worktree without the bots chain."""
-    _prompts_root = _WORKTREE / "src/parrot/bots/prompts"
-
-    def _load_direct(mod_name, path):
-        if mod_name in sys.modules:
-            return sys.modules[mod_name]
-        spec = importlib.util.spec_from_file_location(mod_name, str(path))
-        m = importlib.util.module_from_spec(spec)
-        sys.modules[mod_name] = m
-        try:
-            spec.loader.exec_module(m)
-        except Exception:  # noqa: BLE001 — fall back to stub on failure
-            pass
-        return m
-
-    layers_mod = _load_direct("parrot.bots.prompts.layers", _prompts_root / "layers.py")
-    domain_mod = _load_direct("parrot.bots.prompts.domain_layers", _prompts_root / "domain_layers.py")
-
-    prompts_pkg = _mk("parrot.bots.prompts")
-    # FEAT-638: jira_specialist imports parrot.bots.jira_messages, which imports
-    # parrot.bots.prompts.language. Register both real modules after the synthetic
-    # package exists — language first, because jira_messages imports it.
-    _load_direct("parrot.bots.prompts.language", _prompts_root / "language.py")
-    _load_direct("parrot.bots.jira_messages", _prompts_root.parent / "jira_messages.py")
-    # Expose names that jira_specialist._build_jira_prompt_builder needs
-    for attr in ("PromptBuilder", "PromptLayer", "LayerPriority", "RenderPhase"):
-        val = getattr(layers_mod, attr, None) or MagicMock()
-        setattr(prompts_pkg, attr, val)
-
-    for attr in ("get_domain_layer", "JIRA_WORKFLOW_LAYER", "JIRA_GROUNDING_LAYER", "_DOMAIN_LAYERS"):
-        val = getattr(domain_mod, attr, None)
-        if val is not None:
+        prompts_pkg = _mk("parrot.bots.prompts")
+        # FEAT-638: jira_specialist imports parrot.bots.jira_messages, which imports
+        # parrot.bots.prompts.language. Register both real modules after the synthetic
+        # package exists — language first, because jira_messages imports it.
+        _load_direct("parrot.bots.prompts.language", _prompts_root / "language.py")
+        _load_direct("parrot.bots.jira_messages", _prompts_root.parent / "jira_messages.py")
+        # Expose names that jira_specialist._build_jira_prompt_builder needs
+        for attr in ("PromptBuilder", "PromptLayer", "LayerPriority", "RenderPhase"):
+            val = getattr(layers_mod, attr, None) or MagicMock()
             setattr(prompts_pkg, attr, val)
 
-    return prompts_pkg
+        for attr in ("get_domain_layer", "JIRA_WORKFLOW_LAYER", "JIRA_GROUNDING_LAYER", "_DOMAIN_LAYERS"):
+            val = getattr(domain_mod, attr, None)
+            if val is not None:
+                setattr(prompts_pkg, attr, val)
 
+        return prompts_pkg
 
-_load_prompts_module()
+    _load_prompts_module()
 
-# ── other parrot.* stubs ─────────────────────────────────────────────────
-_mk(
-    "parrot.conf",
-    JIRA_USERS=[],
-    JIRA_ALLOWED_REPORTERS=[],
-    JIRA_DEFAULT_REPORTER=None,
-    REDIS_URL="redis://localhost:6379/0",
-)
-_mk("parrot.integrations", telegram=MagicMock())
-_mk("parrot.integrations.telegram", TelegramHumanTool=MagicMock(), telegram_chat_scope=MagicMock())
+    # ── other parrot.* stubs ─────────────────────────────────────────────────
+    _mk(
+        "parrot.conf",
+        JIRA_USERS=[],
+        JIRA_ALLOWED_REPORTERS=[],
+        JIRA_DEFAULT_REPORTER=None,
+        JIRA_TELEGRAM_PUBLIC_CHANNEL_ID=None,
+        REDIS_URL="redis://localhost:6379/0",
+    )
+    _mk("parrot.integrations", telegram=MagicMock())
+    _mk(
+        "parrot.integrations.telegram",
+        TelegramHumanTool=MagicMock(),
+        telegram_chat_scope=MagicMock(),
+        get_current_telegram_chat_id=MagicMock(return_value=None),
+        telegram_command=lambda *args, **kwargs: lambda function: function,
+    )
 
+    def _telegram_callback_stub(*args, **kwargs):
+        """Accept @telegram_callback and @telegram_callback(prefix=...) forms."""
+        if args and callable(args[0]) and not kwargs:
+            return args[0]  # bare @telegram_callback
+        return lambda f: f  # @telegram_callback(prefix=...) → returns decorator
 
-def _telegram_callback_stub(*args, **kwargs):
-    """Accept @telegram_callback and @telegram_callback(prefix=...) forms."""
-    if args and callable(args[0]) and not kwargs:
-        return args[0]  # bare @telegram_callback
-    return lambda f: f  # @telegram_callback(prefix=...) → returns decorator
+    _mk(
+        "parrot.integrations.telegram.callbacks",
+        telegram_callback=_telegram_callback_stub,
+        CallbackContext=MagicMock,
+        CallbackResult=MagicMock,
+        build_inline_keyboard=MagicMock(),
+    )
+    _mk("parrot.tools.reminder", ReminderToolkit=MagicMock())
+    _mk("parrot.clients.google.models", GoogleModel=MagicMock())
+    _mk("parrot.auth.credentials", OAuthCredentialResolver=MagicMock())
+    _mk("parrot.auth.context", UserContext=MagicMock())
+    _mk(
+        "parrot.core.hooks.models",
+        HookEvent=MagicMock(),
+        TransitionAction=MagicMock(),
+        TransitionActionType=MagicMock(),
+    )
+    # parrot_tools.jiratoolkit is the satellite-package home of JiraToolkit; the
+    # real module drags in parrot.tools.manager → parrot.auth, which the stubs
+    # above deliberately break. Tests patch JiraToolkit on the loaded module
+    # anyway, so a stub class is enough.
+    _mk("parrot_tools.jiratoolkit", JiraToolkit=MagicMock())
 
+    # ── parrot.bots._types — load the REAL module (stdlib-only by design) ─────
+    # TASK-1678 added `from parrot.bots._types import AgentDispatcher` to
+    # jira_specialist; the stubbed parrot.bots package (__path__=[]) would make
+    # that import fail, so register the real module explicitly.
+    _types_spec = importlib.util.spec_from_file_location(
+        "parrot.bots._types", str(_WORKTREE / "src/parrot/bots/_types.py")
+    )
+    _types_mod = importlib.util.module_from_spec(_types_spec)
+    sys.modules["parrot.bots._types"] = _types_mod
+    _types_spec.loader.exec_module(_types_mod)
 
-_mk(
-    "parrot.integrations.telegram.callbacks",
-    telegram_callback=_telegram_callback_stub,
-    CallbackContext=MagicMock,
-    CallbackResult=MagicMock,
-    build_inline_keyboard=MagicMock(),
-)
-_mk("parrot.tools.reminder", ReminderToolkit=MagicMock())
-_mk("parrot.clients.google.models", GoogleModel=MagicMock())
-_mk("parrot.auth.credentials", OAuthCredentialResolver=MagicMock())
-_mk("parrot.auth.context", UserContext=MagicMock())
-_mk("parrot.core.hooks.models", HookEvent=MagicMock(), TransitionAction=MagicMock(), TransitionActionType=MagicMock())
-# parrot_tools.jiratoolkit is the satellite-package home of JiraToolkit; the
-# real module drags in parrot.tools.manager → parrot.auth, which the stubs
-# above deliberately break. Tests patch JiraToolkit on the loaded module
-# anyway, so a stub class is enough.
-_mk("parrot_tools.jiratoolkit", JiraToolkit=MagicMock())
+    # ── load jira_specialist.py directly from worktree ────────────────────────
+    _js_spec = importlib.util.spec_from_file_location("parrot.bots.jira_specialist", str(_JIRA_SPEC_PY))
+    _js_mod = importlib.util.module_from_spec(_js_spec)
+    sys.modules["parrot.bots.jira_specialist"] = _js_mod
+    _js_spec.loader.exec_module(_js_mod)
 
-# ── parrot.bots._types — load the REAL module (stdlib-only by design) ─────
-# TASK-1678 added `from parrot.bots._types import AgentDispatcher` to
-# jira_specialist; the stubbed parrot.bots package (__path__=[]) would make
-# that import fail, so register the real module explicitly.
-_types_spec = importlib.util.spec_from_file_location("parrot.bots._types", str(_WORKTREE / "src/parrot/bots/_types.py"))
-_types_mod = importlib.util.module_from_spec(_types_spec)
-sys.modules["parrot.bots._types"] = _types_mod
-_types_spec.loader.exec_module(_types_mod)
+    JiraSpecialist = _js_mod.JiraSpecialist  # type: ignore[attr-defined]
 
-# ── load jira_specialist.py directly from worktree ────────────────────────
-_js_spec = importlib.util.spec_from_file_location("parrot.bots.jira_specialist", str(_JIRA_SPEC_PY))
-_js_mod = importlib.util.module_from_spec(_js_spec)
-sys.modules["parrot.bots.jira_specialist"] = _js_mod
-_js_spec.loader.exec_module(_js_mod)
-
-JiraSpecialist = _js_mod.JiraSpecialist  # type: ignore[attr-defined]
-
-
-# ---------------------------------------------------------------------------
-# Sentinel phrases guaranteed by JIRA_GROUNDING_LAYER (TASK-945)
-# ---------------------------------------------------------------------------
-# FEAT-638: single source of truth; the REAL domain_layers module was registered in
-# sys.modules by _load_prompts_module() above (the parrot.bots.prompts package is synthetic).
-GROUNDING_SENTINELS = sys.modules["parrot.bots.prompts.domain_layers"].GROUNDING_SENTINELS
-SENTINEL_NOT_FOUND = GROUNDING_SENTINELS["en"]["not_found"]
-SENTINEL_ERROR = GROUNDING_SENTINELS["en"]["error"]
+    # ---------------------------------------------------------------------------
+    # Sentinel phrases guaranteed by JIRA_GROUNDING_LAYER (TASK-945)
+    # ---------------------------------------------------------------------------
+    # FEAT-638: single source of truth; the REAL domain_layers module was registered in
+    # sys.modules by _load_prompts_module() above (the parrot.bots.prompts package is synthetic).
+    GROUNDING_SENTINELS = sys.modules["parrot.bots.prompts.domain_layers"].GROUNDING_SENTINELS
+    SENTINEL_NOT_FOUND = GROUNDING_SENTINELS["en"]["not_found"]
+    SENTINEL_ERROR = GROUNDING_SENTINELS["en"]["error"]
+finally:
+    # The private JiraSpecialist keeps its imported stand-ins. Other test modules
+    # must see the original packages and classes, regardless of collection order.
+    for _module_name in list(sys.modules):
+        if _module_name == "parrot" or _module_name.startswith(("parrot.", "parrot_tools")):
+            if _module_name in _original_modules:
+                sys.modules[_module_name] = _original_modules[_module_name]
+            else:
+                del sys.modules[_module_name]
 
 # Values a grounding-compliant agent must never invent when toolkit returns
 # not_found or empty.
