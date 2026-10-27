@@ -374,8 +374,8 @@ async def test_claim_same_code_for_every_mismatch():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (review and close of a delivery merged by an earlier run)
+**Date**: 2026-10-27
+**Notes**: Reviewed against the blueprint: matches exactly. Tests: tests/interagent/test_handles.py passes. Finding filed: issue:1d083e68838a (put() overwrites an existing key regardless of owner). Engine merge-tier validation could not run in the sandbox (parrot.conf mkdir of ONTOLOGY_DIR on the read-only primary checkout, exit 4); tests were run by hand with ONTOLOGY_DIR set to a scratch dir. finalize_task not used (no review EvidenceRef artifact exists); closed via close_task.sh. Per-attempt seat/model attribution is not recorded here: the attempt_uid of this pre-existing delivery was not available, so coder_record_review/coder_record_feedback were NOT recorded.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.

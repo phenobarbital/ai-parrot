@@ -236,7 +236,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -244,8 +244,9 @@
       "parallelism_notes": "creates parrot/interagent/ (new package); parrot.squawk (TASK-4737's package) appears only in the 'never imports' rule, not a use",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4739-interagent-errors-handles.md"
+      "completed_at": "2026-10-27T02:03:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4739-interagent-errors-handles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4740",
