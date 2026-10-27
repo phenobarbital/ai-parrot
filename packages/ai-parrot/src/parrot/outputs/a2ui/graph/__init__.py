@@ -11,6 +11,9 @@ from __future__ import annotations
 from .layout import MAX_STATIC_NODES, GraphTooLargeError, LayoutResult, compute_positions
 from .mermaid import MermaidCodecError, from_mermaid, to_mermaid
 from .models import (
+    C4BoundaryType,
+    C4ElementType,
+    C4Level,
     Direction,
     EdgeKind,
     GraphEdge,
@@ -24,11 +27,15 @@ from .models import (
     NodeShape,
     NodeState,
     Position,
+    RelHint,
     VizSize,
 )
 
 __all__ = [
     "MAX_STATIC_NODES",
+    "C4BoundaryType",
+    "C4ElementType",
+    "C4Level",
     "Direction",
     "EdgeKind",
     "GraphEdge",
@@ -45,6 +52,7 @@ __all__ = [
     "NodeShape",
     "NodeState",
     "Position",
+    "RelHint",
     "VizSize",
     "compute_positions",
     "from_mermaid",
