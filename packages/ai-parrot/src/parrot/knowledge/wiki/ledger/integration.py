@@ -299,15 +299,27 @@ class LedgerIntegrator:
         fetched = await _git("fetch", self.remote, self.branch, cwd=self.repo_root)
         if fetched.returncode != 0:
             return LedgerDeliveryReport(
-                status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                added=0, remaining=len(batch.event_ids), error_code="push-failed"
+                status="pending",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="push-failed",
             )
         remote_ref = f"refs/remotes/{self.remote}/{self.branch}"
         base = await _git("rev-parse", remote_ref, cwd=self.repo_root)
         if base.returncode != 0:
             return LedgerDeliveryReport(
-                status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                added=0, remaining=len(batch.event_ids), error_code="push-failed"
+                status="pending",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="push-failed",
             )
         base_sha = base.stdout.strip()
         primary = await self._primary_root()
@@ -316,8 +328,14 @@ class LedgerIntegrator:
         added = await _git("worktree", "add", "--detach", str(tmp), base_sha, cwd=self.repo_root)
         if added.returncode != 0:
             return LedgerDeliveryReport(
-                status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                added=0, remaining=len(batch.event_ids), error_code="push-failed"
+                status="pending",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="push-failed",
             )
         try:
             try:
@@ -327,15 +345,29 @@ class LedgerIntegrator:
             except StrictLedgerReadError:
                 recovery = await self._remove_if_clean(tmp)
                 return LedgerDeliveryReport(
-                    status="conflict", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                    added=0, remaining=len(batch.event_ids), error_code="invalid-content", recovery_path=recovery
+                    status="conflict",
+                    batch_id=batch.batch_id,
+                    attempts=attempt,
+                    remote_head=None,
+                    commit_sha=None,
+                    added=0,
+                    remaining=len(batch.event_ids),
+                    error_code="invalid-content",
+                    recovery_path=recovery,
                 )
             conflicts = find_transition_conflicts([event for _, event in remote_log], plan.new_events)
             if conflicts:
                 recovery = await self._remove_if_clean(tmp)
                 return LedgerDeliveryReport(
-                    status="conflict", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                    added=0, remaining=len(batch.event_ids), conflicts=conflicts, recovery_path=recovery
+                    status="conflict",
+                    batch_id=batch.batch_id,
+                    attempts=attempt,
+                    remote_head=None,
+                    commit_sha=None,
+                    added=0,
+                    remaining=len(batch.event_ids),
+                    conflicts=conflicts,
+                    recovery_path=recovery,
                 )
             commit_sha: str | None = None
             delivery_status = "already_delivered" if not plan.new_lines else "delivered"
@@ -356,22 +388,43 @@ class LedgerIntegrator:
                 except WikiStoreBusy:
                     recovery = await self._remove_if_clean(tmp)
                     return LedgerDeliveryReport(
-                        status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                        added=0, remaining=len(batch.event_ids), error_code="index-busy", recovery_path=recovery
+                        status="pending",
+                        batch_id=batch.batch_id,
+                        attempts=attempt,
+                        remote_head=None,
+                        commit_sha=None,
+                        added=0,
+                        remaining=len(batch.event_ids),
+                        error_code="index-busy",
+                        recovery_path=recovery,
                     )
                 committed = await _git("add", "--", *ALLOWLIST, cwd=tmp)
                 if committed.returncode != 0:
                     recovery = await self._remove_if_clean(tmp)
                     return LedgerDeliveryReport(
-                        status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                        added=0, remaining=len(batch.event_ids), error_code="push-failed", recovery_path=recovery
+                        status="pending",
+                        batch_id=batch.batch_id,
+                        attempts=attempt,
+                        remote_head=None,
+                        commit_sha=None,
+                        added=0,
+                        remaining=len(batch.event_ids),
+                        error_code="push-failed",
+                        recovery_path=recovery,
                     )
                 committed = await _git("commit", "-m", f"sdd: ledger delivery {batch.batch_id}", cwd=tmp)
                 if committed.returncode != 0:
                     recovery = await self._remove_if_clean(tmp)
                     return LedgerDeliveryReport(
-                        status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                        added=0, remaining=len(batch.event_ids), error_code="push-failed", recovery_path=recovery
+                        status="pending",
+                        batch_id=batch.batch_id,
+                        attempts=attempt,
+                        remote_head=None,
+                        commit_sha=None,
+                        added=0,
+                        remaining=len(batch.event_ids),
+                        error_code="push-failed",
+                        recovery_path=recovery,
                     )
                 head = await _git("rev-parse", "HEAD", cwd=tmp)
                 parent = await _git("rev-parse", "HEAD^", cwd=tmp)
@@ -381,7 +434,12 @@ class LedgerIntegrator:
                 for path in ALLOWLIST:
                     tree_hash = await _git("rev-parse", f"HEAD:{path}", cwd=tmp)
                     disk_hash = await _git("hash-object", str(tmp / path), cwd=tmp)
-                    hashes_match = hashes_match and tree_hash.returncode == 0 and disk_hash.returncode == 0 and tree_hash.stdout.strip() == disk_hash.stdout.strip()
+                    hashes_match = (
+                        hashes_match
+                        and tree_hash.returncode == 0
+                        and disk_hash.returncode == 0
+                        and tree_hash.stdout.strip() == disk_hash.stdout.strip()
+                    )
                 changed_paths = {path for path in changed.stdout.splitlines() if path}
                 if (
                     head.returncode != 0
@@ -392,9 +450,15 @@ class LedgerIntegrator:
                     or not hashes_match
                 ):
                     return LedgerDeliveryReport(
-                        status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None,
-                        commit_sha=head.stdout.strip() if head.returncode == 0 else None, added=0,
-                        remaining=len(batch.event_ids), error_code="hook-mutated-commit", recovery_path=str(tmp)
+                        status="pending",
+                        batch_id=batch.batch_id,
+                        attempts=attempt,
+                        remote_head=None,
+                        commit_sha=head.stdout.strip() if head.returncode == 0 else None,
+                        added=0,
+                        remaining=len(batch.event_ids),
+                        error_code="hook-mutated-commit",
+                        recovery_path=str(tmp),
                     )
                 commit_sha = head.stdout.strip()
                 pushed = await _git("push", self.remote, "HEAD:refs/heads/dev", cwd=tmp)
@@ -403,23 +467,44 @@ class LedgerIntegrator:
                         await self._remove_if_clean(tmp)
                         return None
                     return LedgerDeliveryReport(
-                        status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=commit_sha,
-                        added=len(plan.new_lines), remaining=len(batch.event_ids), error_code="push-failed", recovery_path=str(tmp)
+                        status="pending",
+                        batch_id=batch.batch_id,
+                        attempts=attempt,
+                        remote_head=None,
+                        commit_sha=commit_sha,
+                        added=len(plan.new_lines),
+                        remaining=len(batch.event_ids),
+                        error_code="push-failed",
+                        recovery_path=str(tmp),
                     )
             refreshed = await _git("fetch", self.remote, self.branch, cwd=tmp)
             checked_out = await _git("checkout", "--detach", f"{self.remote}/{self.branch}", cwd=tmp)
             if refreshed.returncode != 0 or checked_out.returncode != 0:
                 return LedgerDeliveryReport(
-                    status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=commit_sha,
-                    added=len(plan.new_lines), remaining=len(batch.event_ids), error_code="push-failed", recovery_path=str(tmp)
+                    status="pending",
+                    batch_id=batch.batch_id,
+                    attempts=attempt,
+                    remote_head=None,
+                    commit_sha=commit_sha,
+                    added=len(plan.new_lines),
+                    remaining=len(batch.event_ids),
+                    error_code="push-failed",
+                    recovery_path=str(tmp),
                 )
             verified_log = read_logical_log(tmp)
             verified_by_id = {event.event_id: _canonical(event) for _, event in verified_log}
             expected = {event.event_id: _canonical(event) for event in sealed.events}
             if any(verified_by_id.get(event_id) != canonical for event_id, canonical in expected.items()):
                 return LedgerDeliveryReport(
-                    status="pending", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=commit_sha,
-                    added=len(plan.new_lines), remaining=len(batch.event_ids), error_code="push-failed", recovery_path=str(tmp)
+                    status="pending",
+                    batch_id=batch.batch_id,
+                    attempts=attempt,
+                    remote_head=None,
+                    commit_sha=commit_sha,
+                    added=len(plan.new_lines),
+                    remaining=len(batch.event_ids),
+                    error_code="push-failed",
+                    recovery_path=str(tmp),
                 )
             remote_head_result = await _git("rev-parse", "HEAD", cwd=tmp)
             remote_head = remote_head_result.stdout.strip()
@@ -428,17 +513,35 @@ class LedgerIntegrator:
             ).hexdigest()
             await self.outbox.acknowledge(batch, remote_head=remote_head, verified_digest=verified_digest)
             remaining_status = await self.outbox.status(known_ids=set(verified_by_id))
-            remaining = max(0, int(remaining_status["pending_events"]) + int(remaining_status["unsealed_events"]) - len(batch.event_ids))
+            remaining = max(
+                0,
+                int(remaining_status["pending_events"])
+                + int(remaining_status["unsealed_events"])
+                - len(batch.event_ids),
+            )
             self.logger.info("ledger delivery attempt=%d base=%s added=%d", attempt, base_sha, len(plan.new_lines))
             recovery = await self._remove_if_clean(tmp)
             return LedgerDeliveryReport(
-                status=delivery_status, batch_id=batch.batch_id, attempts=attempt, remote_head=remote_head,
-                commit_sha=commit_sha, added=len(plan.new_lines), remaining=remaining, recovery_path=recovery
+                status=delivery_status,
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=remote_head,
+                commit_sha=commit_sha,
+                added=len(plan.new_lines),
+                remaining=remaining,
+                recovery_path=recovery,
             )
         except StrictLedgerReadError:
             return LedgerDeliveryReport(
-                status="conflict", batch_id=batch.batch_id, attempts=attempt, remote_head=None, commit_sha=None,
-                added=0, remaining=len(batch.event_ids), error_code="invalid-content", recovery_path=str(tmp)
+                status="conflict",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="invalid-content",
+                recovery_path=str(tmp),
             )
 
     async def check_feature_diff(self, feature_ref: str) -> list[str]:

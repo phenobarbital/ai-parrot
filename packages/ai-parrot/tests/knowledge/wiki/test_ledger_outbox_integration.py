@@ -18,7 +18,6 @@ from parrot.knowledge.wiki.ledger.integration import (
 )
 from parrot.knowledge.wiki.ledger.outbox import LedgerOutbox, StrictLedgerReadError
 
-
 def _ev(kind: str, subject: str, payload: dict[str, object], n: int) -> LedgerEvent:
     """Build a deterministic event with a unique timestamp-derived identity."""
     return LedgerEvent(
@@ -204,8 +203,12 @@ async def test_delivers_batch_and_writes_receipt(two_clones: tuple[Path, Path, P
 async def test_two_clone_race_loser_retries_both_present_once(two_clones: tuple[Path, Path, Path]) -> None:
     """A stale clone refreshes and delivers its independent event without duplication."""
     _, first, second = two_clones
-    first_event = _ev("insight.recorded", "spec:first", {"fact": "one", "title": "one", "derived_from": "spec:FEAT-758"}, 11)
-    second_event = _ev("insight.recorded", "spec:second", {"fact": "two", "title": "two", "derived_from": "spec:FEAT-758"}, 12)
+    first_event = _ev(
+        "insight.recorded", "spec:first", {"fact": "one", "title": "one", "derived_from": "spec:FEAT-758"}, 11
+    )
+    second_event = _ev(
+        "insight.recorded", "spec:second", {"fact": "two", "title": "two", "derived_from": "spec:FEAT-758"}, 12
+    )
     first_outbox, first_batch = await _batch_for(first, first_event)
     second_outbox, second_batch = await _batch_for(second, second_event)
 
@@ -220,7 +223,9 @@ async def test_two_clone_race_loser_retries_both_present_once(two_clones: tuple[
 async def test_lost_receipt_retry_is_already_delivered_no_duplicate_commit(two_clones: tuple[Path, Path, Path]) -> None:
     """A retry after deleting a local receipt verifies remote content without another commit."""
     _, first, _ = two_clones
-    event = _ev("insight.recorded", "spec:retry", {"fact": "retry", "title": "retry", "derived_from": "spec:FEAT-758"}, 13)
+    event = _ev(
+        "insight.recorded", "spec:retry", {"fact": "retry", "title": "retry", "derived_from": "spec:FEAT-758"}, 13
+    )
     outbox, batch = await _batch_for(first, event)
     integrator = LedgerIntegrator(first, outbox)
     assert (await integrator.integrate(batch)).status == "delivered"
@@ -270,7 +275,9 @@ async def test_hook_mutating_commit_blocks_push(two_clones: tuple[Path, Path, Pa
 async def test_push_failure_is_pending_and_retains_batch(two_clones: tuple[Path, Path, Path]) -> None:
     """A missing remote produces a typed pending result and leaves the batch unacknowledged."""
     _, first, _ = two_clones
-    event = _ev("insight.recorded", "spec:missing", {"fact": "missing", "title": "missing", "derived_from": "spec:FEAT-758"}, 16)
+    event = _ev(
+        "insight.recorded", "spec:missing", {"fact": "missing", "title": "missing", "derived_from": "spec:FEAT-758"}, 16
+    )
     outbox, batch = await _batch_for(first, event)
     _run_git(first, "remote", "set-url", "origin", str(first / "missing-origin.git"))
 
@@ -284,13 +291,19 @@ async def test_push_failure_is_pending_and_retains_batch(two_clones: tuple[Path,
 async def test_active_checkouts_untouched(two_clones: tuple[Path, Path, Path]) -> None:
     """Delivery through an owned detached worktree leaves both active clone indexes unchanged."""
     _, first, second = two_clones
-    event = _ev("insight.recorded", "spec:clean", {"fact": "clean", "title": "clean", "derived_from": "spec:FEAT-758"}, 17)
+    event = _ev(
+        "insight.recorded", "spec:clean", {"fact": "clean", "title": "clean", "derived_from": "spec:FEAT-758"}, 17
+    )
     outbox, batch = await _batch_for(first, event)
-    before = [(_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)]
+    before = [
+        (_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)
+    ]
 
     assert (await LedgerIntegrator(first, outbox).integrate(batch)).status == "delivered"
 
-    assert [(_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)] == before
+    assert [
+        (_run_git(clone, "rev-parse", "HEAD"), _run_git(clone, "status", "--porcelain")) for clone in (first, second)
+    ] == before
 
 
 async def test_check_feature_diff_reports_contamination(two_clones: tuple[Path, Path, Path]) -> None:
