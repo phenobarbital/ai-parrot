@@ -46,7 +46,7 @@ class _FakeConn:
             if key in self.rows and sql in (m._INSERT_TENANT_SQL, m._INSERT_GLOBAL_SQL):
                 return None
             cols = [c.strip() for c in m._COLUMNS.split(",")]
-            self.rows[key] = dict(zip(cols, args))
+            self.rows[key] = dict(zip(cols, args, strict=True))
             return args[0]
         if sql == m._DELETE_TENANT_SQL:
             return args[0] if self.rows.pop((args[1], args[0]), None) else None
