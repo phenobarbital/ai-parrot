@@ -16,7 +16,7 @@ below were checked at `4e3ba6289`. No ADR publication, migration, or new depende
 
 ## Scope
 
-Implement M2 and resolved Q3: add strict prefix settings, expose effective_prefixes(), and opt this repository into PARROT without changing global defaults.
+Implement M2 and resolved Q3: add strict prefix settings, expose effective_prefixes(), and do NOT bake PARROT into the model default. (Amended by sdd-worker: `.parrot/wiki.json` is gitignored and absent from worktrees, so the PARROT opt-in is a manual local-config edit by the operator, not a committed deliverable.)
 
 **NOT in scope**: files outside the table, ADR publish/pull, rewriting bare record identity,
 or adding multiple wiki citations per comment/docstring. Tests assigned to another task
@@ -27,7 +27,6 @@ remain read-only here. Do not alter existing public defaults beyond this task's 
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py` | MODIFY | Add validated config fields and effective prefix set |
-| `.parrot/wiki.json` | MODIFY | Set local_prefix to PARROT for this repository only |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -59,10 +58,6 @@ from pydantic import Field, field_validator  # existing models.py:13
   "targets": [
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
-      "action": "MODIFY"
-    },
-    {
-      "path": ".parrot/wiki.json",
       "action": "MODIFY"
     }
   ],
