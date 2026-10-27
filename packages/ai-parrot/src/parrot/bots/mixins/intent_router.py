@@ -210,8 +210,7 @@ class IntentRouterMixin:
                 continue
             if shape.component is not None and not is_inline_component(shape.component):
                 logger.warning(
-                    "Route label %s names a component that is not registered or is "
-                    "action-bearing; skipping.",
+                    "Route label %s names a component that is not registered or is " "action-bearing; skipping.",
                     label,
                 )
                 continue
@@ -235,8 +234,7 @@ class IntentRouterMixin:
                     continue
                 if shape.component is not None and not is_inline_component(shape.component):
                     logger.warning(
-                        "Route label %s names a component that is not registered or is "
-                        "action-bearing; skipping.",
+                        "Route label %s names a component that is not registered or is " "action-bearing; skipping.",
                         label,
                     )
                     continue
@@ -304,9 +302,7 @@ class IntentRouterMixin:
             # Assemble the close-candidate set off the event loop (re-uses the
             # warm encoder); only modes within ``margin`` of the winner.
             scores = await asyncio.to_thread(router.route_label_scores, query)
-            candidates = [
-                label for label, sc in scores if (rs.score - sc) < router.margin
-            ]
+            candidates = [label for label, sc in scores if (rs.score - sc) < router.margin]
             llm_choice = await self._llm_disambiguate_output_mode(query, candidates)
             if llm_choice is not None:
                 chosen_shape = parse_route_label(llm_choice)

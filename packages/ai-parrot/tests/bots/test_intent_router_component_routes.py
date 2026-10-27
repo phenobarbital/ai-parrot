@@ -1,4 +1,5 @@
 """Composite-route wiring in IntentRouterMixin (FEAT-755 TASK-4760)."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -169,9 +170,10 @@ class TestTieBreaker:
             return '{"output_mode": "structured_table"}'
 
         agent.invoke = invoke
-        assert await agent._llm_disambiguate_output_mode(
-            "table", ["structured_chart", "structured_table"]
-        ) == "structured_table"
+        assert (
+            await agent._llm_disambiguate_output_mode("table", ["structured_chart", "structured_table"])
+            == "structured_table"
+        )
 
         async def off_list(prompt):
             return '{"output_mode": "default"}'
@@ -182,9 +184,7 @@ class TestTieBreaker:
     async def test_ambiguous_off_list_answer_abstains_to_embedding_winner(self, fake_router):
         agent = _Agent()
         agent.configure_output_router(_config())
-        agent._output_router.score = RouteScore(
-            OutputMode.STRUCTURED_CHART, 0.9, 0.89, True, "structured_chart"
-        )
+        agent._output_router.score = RouteScore(OutputMode.STRUCTURED_CHART, 0.9, 0.89, True, "structured_chart")
         agent._output_router.scores = [("structured_chart", 0.9), ("structured_table", 0.89)]
 
         async def invoke(prompt):
