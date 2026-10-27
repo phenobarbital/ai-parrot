@@ -568,10 +568,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4841
+- Feature: browsing-playwright-default-and-screencast
+- Implementation SHA: b1a3bf1919fd1161d33eb4dcdd7e3e167837079c
+- Closed at (UTC): 2026-10-27T21:43:00+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 3 |
+| fix_commits | 0 |
+| summary | Recording path captured after close; real WebM verified; 210 combined tests passed. Local-only MCP YAML updated in main checkout. |

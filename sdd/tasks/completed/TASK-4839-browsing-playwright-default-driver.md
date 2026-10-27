@@ -426,10 +426,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4839
+- Feature: browsing-playwright-default-and-screencast
+- Implementation SHA: d37c27482b1dc48fb19daed35ab040c22e042dec
+- Closed at (UTC): 2026-10-27T21:37:20+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| summary | Playwright defaults with explicit backends preserved; 87 tests passed. |

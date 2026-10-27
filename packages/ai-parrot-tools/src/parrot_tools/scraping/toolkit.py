@@ -20,7 +20,7 @@ from .models import ScrapingResult
 from .page_snapshot import PageSnapshot, snapshot_from_driver
 from .plan import ScrapingPlan
 from .plan_generator import PlanGenerator
-from .confine import confine_to_files_root
+from .confine import PathConfinementError, confine_to_files_root
 from .plan_io import is_within, load_plan_from_disk, save_plan_to_disk
 from .registry import PlanRegistry
 from .toolkit_models import DriverConfig, PlanSaveResult, PlanSummary
@@ -298,6 +298,7 @@ class WebScrapingToolkit(AbstractToolkit):
         obscura_stealth: Obscura stealth-mode flag.
         obscura_allow_private_network: Obscura
             ``--allow-private-network`` flag.
+        record_video: Record Playwright sessions under ``files_root/recordings``.
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
@@ -305,7 +306,7 @@ class WebScrapingToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        driver_type: Literal["selenium", "playwright", "obscura"] = "selenium",
+        driver_type: Literal["selenium", "playwright", "obscura"] = "playwright",
         browser: Literal["chrome", "firefox", "edge", "safari", "undetected", "webkit"] = "chrome",
         headless: bool = True,
         session_based: bool = False,
@@ -327,6 +328,7 @@ class WebScrapingToolkit(AbstractToolkit):
         obscura_stealth: bool = False,
         obscura_allow_private_network: bool = False,
         confine_paths: bool = False,
+        record_video: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -356,6 +358,8 @@ class WebScrapingToolkit(AbstractToolkit):
         self._registry: PlanRegistry | None = None
         self._llm_client = llm_client
         self._plans_dir = Path(plans_dir) if plans_dir else Path("scraping_plans")
+        if record_video:
+            self._config = self._config.merge({"record_video_dir": str(self.files_root / "recordings")})
         self.confine_paths = bool(confine_paths)
         self.logger = logging.getLogger(__name__)
 
@@ -371,6 +375,15 @@ class WebScrapingToolkit(AbstractToolkit):
         """Where the actions of a confined toolkit may read and write files: ``<plans_dir>/files``."""
         return self._plans_dir / "files"
 
+    def _recording_config(self, config: DriverConfig) -> DriverConfig:
+        """Confine recording writes, including per-call overrides and symlinks."""
+        if config.driver_type != "playwright" or not config.record_video_dir:
+            return config
+        path = Path(config.record_video_dir)
+        if not is_within(path, self.files_root):
+            raise PathConfinementError("recording path outside the permitted directory")
+        return config.merge({"record_video_dir": str(path.resolve())})
+
     # ── Lifecycle ─────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -385,7 +398,7 @@ class WebScrapingToolkit(AbstractToolkit):
         """
         if self._session_based and self._session_driver is None:
             factory = DriverRegistry.get(self._config.driver_type)
-            setup = factory(self._config)
+            setup = factory(self._recording_config(self._config))
             self._session_driver = await setup.get_driver()
             self.logger.info("Session driver started (%s)", self._config.driver_type)
 
@@ -776,7 +789,7 @@ class WebScrapingToolkit(AbstractToolkit):
             refinement ran, returns the result of the FINAL pass (not
             the initial one), regardless of whether it scored higher.
         """
-        config = self._config.merge(browser_config_override)
+        config = self._recording_config(self._config.merge(browser_config_override))
 
         # Raw steps mode — bypass plan resolution
         if steps is not None:
@@ -930,7 +943,7 @@ class WebScrapingToolkit(AbstractToolkit):
         try:
             from .crawl_engine import CrawlEngine
         except ImportError:
-            raise NotImplementedError("CrawlEngine is not available. Install FEAT-013 to enable crawling.")
+            raise NotImplementedError("CrawlEngine is not available. Install FEAT-013 to enable crawling.") from None
 
         # Resolve the per-page plan
         resolved = await self._resolve_plan(start_url, plan, objective)
@@ -943,7 +956,7 @@ class WebScrapingToolkit(AbstractToolkit):
             follow_selector=follow_selector,
             follow_pattern=follow_pattern,
             concurrency=concurrency,
-            driver_config=self._config,
+            driver_config=self._recording_config(self._config),
         )
 
         result = await engine.run()
