@@ -28,7 +28,7 @@ tags: [suggestions, followup-chips, chat-response, skills, output-mode, admin-ui
 **Feature ID**: FEAT-752
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor — ai-parrot / ai-parrot-server)
 **Source**: Jira NAV-10382 ("metrics copilot" follow-up chips) — ticket review of 2026-10-27 moved suggestion
 production from the frontend to the agent; this spec carries that decision. No brainstorm/proposal document exists.
@@ -1032,7 +1032,13 @@ export interface AgentMessage { id; role; content; timestamp; metadata?; data?; 
   explain flow must hide `kind=action` chips (documented in M7).
 
 ### Skill rule (M3; binding)
-- `SkillSuggestionProvider` emits `current_active_skill().suggestions` mapped 1:1 (`source=skill`;
+- **Rev 0.2 — turn skill, not active skill.** `current_active_skill()` is cleared by `create_system_prompt()`
+  (`set_active_skill(None)`, `bots/abstract.py:3726`) *before* the LLM call, so it is always `None` when suggestions
+  attach after the answer. A second request-local ContextVar records the turn's skill: `set_active_skill(skill)` with a
+  non-`None` skill also sets it, `enter_active_skill_scope()` / `exit_active_skill_scope()` snapshot/reset it with the
+  active skill, and `current_turn_skill()` (new, `skills/tenancy.py`) reads it. The provider reads
+  `current_turn_skill()`; `current_active_skill()` semantics are unchanged.
+- `SkillSuggestionProvider` emits `current_turn_skill().suggestions` mapped 1:1 (`source=skill`;
   `kind=presentation` iff `output_mode` set, else `followup`); an `output_mode` string that is not an `OutputMode`
   value is dropped with a warning (never raises); the engine's renderer check applies afterwards.
 - Tenant shadowing, `global_only` and request-local activation are untouched — the provider only reads the already
@@ -1094,14 +1100,16 @@ with chips): `{"enabled_lanes": [...], "count": n, "providers": {name: {"status"
 - [ ] **Q1 — Trailing stream event?** v1 puts suggestions in the final envelope (blocks the stream tail by the LLM lane's
       latency). Should a later revision emit the final envelope first and a separate `suggestions` trailer so the UI
       can finish the bubble immediately? Needs a stream-format change on both server and `stream.ts`. — *Owner: Jesus Lara*
-- [ ] **Q2 — Lightweight model override.** `AbstractClient.invoke()` uses `self.model` when the agent was built with an
+- [x] **Q2 — Lightweight model override.** *Resolved (rev 0.2): yes — `suggestion_model: Optional[str] = None` bot
+      kwarg, forwarded as `invoke(model=...)` by `LLMSuggestionProvider(model=...)`; `None` keeps `_resolve_invoke_model`.* `AbstractClient.invoke()` uses `self.model` when the agent was built with an
       explicit model (`_resolve_invoke_model`, `clients/base.py:2054-2088`), so an agent on `gemini-2.5-pro` runs the
       suggestion call on that model. Should `LLMSuggestionProvider` accept a `model=` override kwarg
       (`suggestion_model`) to force the cheap tier? Proposed: yes, additive, default `None`. — *Owner: Jesus Lara*
 - [ ] **Q3 — Telegram quick replies.** Map chips to `build_inline_keyboard` (`telegram/callbacks.py:318`) with a
       turn-scoped store so the callback can recover the prompt? Separate feature (needs a `callbacks.py` prefix handler
       and TTL store). — *Owner: Jesus Lara*
-- [ ] **Q4 — Agent YAML config.** Do `AGENTS_DIR` agent definitions forward arbitrary constructor kwargs so
+- [x] **Q4 — Agent YAML config.** *Resolved (rev 0.2): no whitelist — `BotMetadata.get_instance()` merges
+      `startup_config` with runtime kwargs and passes them to the factory verbatim (`registry/registry.py:108,155`).* Do `AGENTS_DIR` agent definitions forward arbitrary constructor kwargs so
       `suggest_followups: true` can be set declaratively, or does the loader whitelist keys? Verify at task time;
       if whitelisted, add the four kwargs to the whitelist in the M2 task. — *Owner: implementer of M2*
 - [ ] **Q5 — Opt-in default for the admin "Agent Studio".** Should the studio expose the toggles in the agent form
@@ -1142,4 +1150,5 @@ Status: skipped (no accepted exploration document — spec authored from the NAV
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-10-27 | Jesus Lara | Approved for `/sdd-task`. Skill lane reads a new `current_turn_skill()` (active skill is consumed before the answer); Q2 resolved (`suggestion_model` kwarg); Q4 resolved (YAML kwargs forwarded) |
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 ticket review (server-side suggestions decision); anchors verified against `b7e78ccec` |
