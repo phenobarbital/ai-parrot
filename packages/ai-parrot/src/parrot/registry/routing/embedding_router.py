@@ -27,12 +27,12 @@ because of embedding-space drift.
 """
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import Any, NamedTuple, Optional
 
 import numpy as np
 
 from parrot.models.outputs import OutputMode
-
+from parrot.registry.routing.route_labels import OutputShape, parse_route_label
 
 class RouteScore(NamedTuple):
     """Result of :meth:`EmbeddingIntentRouter.route`.
@@ -46,18 +46,22 @@ class RouteScore(NamedTuple):
         ambiguous: ``True`` when ``score >= threshold`` and
             ``(score - runner_up) < margin`` — i.e. the winner is not clearly
             ahead and a caller may wish to consult an LLM tie-breaker.
+        label: Raw winning route label, or ``None`` when the router abstains.
+        component: A2UI component parsed from ``label``, or ``None``.
     """
 
     mode: Optional[OutputMode]
     score: float
     runner_up: float
     ambiguous: bool
+    label: Optional[str] = None
+    component: Optional[str] = None
 
 
 class EmbeddingIntentRouter:
     """Deterministic, embedding-based output-mode router. No cloud LLM.
 
-    Encodes a phrase bank (``dict[OutputMode, list[str]]``) once and scores
+    Encodes a phrase bank (``dict[str, list[str]]``) once and scores
     queries by max-cosine similarity per mode. The encoder is lazy-loaded at
     most once and reused across all routes/queries.
     """
@@ -67,6 +71,8 @@ class EmbeddingIntentRouter:
         model: str = "intfloat/multilingual-e5-small",
         threshold: float = 0.85,
         margin: float = 0.05,
+        *,
+        encoder: Any | None = None,
     ) -> None:
         """Initialize the router.
 
@@ -80,12 +86,13 @@ class EmbeddingIntentRouter:
                 requires a re-sweep (embedding-space drift).
             margin: If ``(best - second) < margin`` the result is flagged
                 ``ambiguous`` for an optional caller-side tie-breaker.
+            encoder: An optional shared SentenceTransformer-compatible encoder.
         """
         self._model_name = model
         self.threshold = threshold
         self.margin = margin
-        self._encoder = None  # lazy — loaded at most once
-        self._routes: dict[OutputMode, np.ndarray] = {}
+        self._encoder = encoder  # lazy — loaded at most once when not supplied
+        self._routes: dict[str, np.ndarray] = {}
 
     def _ensure_encoder(self):
         """Lazily load the SentenceTransformer encoder (once).
@@ -105,25 +112,49 @@ class EmbeddingIntentRouter:
             self._encoder = _st.SentenceTransformer(self._model_name)
         return self._encoder
 
-    def add_route(self, mode: OutputMode, utterances: list[str]) -> None:
-        """Encode and store reference utterances for an output mode.
+    def add_route(self, label: OutputMode | str, utterances: list[str]) -> None:
+        """Encode and store reference utterances under ``label``.
 
         Encoding happens at configuration time (once per route); ``route()``
         never re-encodes the bank.
 
         Args:
-            mode: The :class:`OutputMode` these utterances map to.
+            label: An :class:`OutputMode` or a composite route label.
             utterances: Reference phrases for the mode (ES/EN supported).
         """
         if not utterances:
             return
+        key = label.value if isinstance(label, OutputMode) else str(label)
         enc = self._ensure_encoder()
         texts = [f"query: {u}" for u in utterances]  # e5 prefix convention
         emb = enc.encode(texts, normalize_embeddings=True)
-        self._routes[mode] = np.asarray(emb)
+        self._routes[key] = np.asarray(emb)
+
+    def route_label_scores(self, query: str) -> list[tuple[str, float]]:
+        """Return every label's max-cosine score, sorted descending.
+
+        CPU-bound and synchronous — dispatch via ``asyncio.to_thread`` from
+        async callers. Unlike :meth:`route`, no thresholding is applied.
+
+        Args:
+            query: The raw user query (the ``"query: "`` prefix is added here).
+
+        Returns:
+            A list of ``(label, score)`` pairs sorted by score desc; empty when
+            no routes are configured.
+        """
+        if not self._routes:
+            return []
+        enc = self._ensure_encoder()
+        q = np.asarray(enc.encode([f"query: {query}"], normalize_embeddings=True))[0]
+        return sorted(
+            ((label, float(np.max(emb @ q))) for label, emb in self._routes.items()),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
 
     def route_scores(self, query: str) -> list[tuple[OutputMode, float]]:
-        """Return every mode's max-cosine score, sorted descending.
+        """Return every parseable mode's max-cosine score, sorted descending.
 
         CPU-bound and synchronous — dispatch via ``asyncio.to_thread`` from
         async callers. Unlike :meth:`route`, no thresholding is applied; this is
@@ -136,18 +167,14 @@ class EmbeddingIntentRouter:
             A list of ``(OutputMode, score)`` pairs sorted by score desc; empty
             when no routes are configured.
         """
-        if not self._routes:
-            return []
-        enc = self._ensure_encoder()
-        q = np.asarray(
-            enc.encode([f"query: {query}"], normalize_embeddings=True)
-        )[0]
-        # Cosine == dot product on normalized vectors; max over each mode's bank.
-        return sorted(
-            ((m, float(np.max(emb @ q))) for m, emb in self._routes.items()),
-            key=lambda kv: kv[1],
-            reverse=True,
-        )
+        scores: list[tuple[OutputMode, float]] = []
+        for label, score in self.route_label_scores(query):
+            try:
+                shape = parse_route_label(label)
+            except ValueError:
+                continue
+            scores.append((shape.mode, score))
+        return scores
 
     def route(self, query: str) -> RouteScore:
         """Score ``query`` against the phrase bank and return a RouteScore.
@@ -162,12 +189,13 @@ class EmbeddingIntentRouter:
             A :class:`RouteScore`. ``mode is None`` when the best score is below
             ``threshold`` (abstain) or when no routes are configured.
         """
-        scored = self.route_scores(query)
+        scored = self.route_label_scores(query)
         if not scored:
             return RouteScore(None, -1.0, -1.0, False)
-        best_mode, best = scored[0]
+        best_label, best = scored[0]
         runner_up = scored[1][1] if len(scored) > 1 else -1.0
         if best < self.threshold:
             return RouteScore(None, best, runner_up, False)
         ambiguous = (best - runner_up) < self.margin
-        return RouteScore(best_mode, best, runner_up, ambiguous)
+        shape: OutputShape = parse_route_label(best_label)
+        return RouteScore(shape.mode, best, runner_up, ambiguous, best_label, shape.component)
