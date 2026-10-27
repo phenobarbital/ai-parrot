@@ -93,9 +93,7 @@ async def test_blob_acl_grant_and_expiry(tmp_path: Path, blob_key: str) -> None:
     store = LocalDiskBlobStore(tmp_path)
     owner = _owner()
     stranger = _owner("stranger")
-    metadata = await store.put_stream(
-        _frames(b"private"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60
-    )
+    metadata = await store.put_stream(_frames(b"private"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
 
     with pytest.raises(HandleClaimError, match="handle_unavailable"):
         await _read_all(store, metadata.key, owner=stranger)
@@ -104,9 +102,7 @@ async def test_blob_acl_grant_and_expiry(tmp_path: Path, blob_key: str) -> None:
     assert granted.grants == ("reader",)
     assert await _read_all(store, metadata.key, owner=stranger, grantee="reader") == b"private"
 
-    expired = await store.put_stream(
-        _frames(b"already expired"), media_type=MediaType.GENERIC, owner=owner, ttl_s=-1
-    )
+    expired = await store.put_stream(_frames(b"already expired"), media_type=MediaType.GENERIC, owner=owner, ttl_s=-1)
     with pytest.raises(HandleClaimError, match="handle_unavailable"):
         await _read_all(store, expired.key, owner=owner)
 
@@ -137,12 +133,8 @@ async def test_sweep_removes_only_expired_objects(tmp_path: Path, blob_key: str)
     """Sweep expired pairs while preserving unexpired objects."""
     store = LocalDiskBlobStore(tmp_path)
     owner = _owner()
-    expired = await store.put_stream(
-        _frames(b"expired"), media_type=MediaType.GENERIC, owner=owner, ttl_s=1
-    )
-    current = await store.put_stream(
-        _frames(b"current"), media_type=MediaType.GENERIC, owner=owner, ttl_s=3600
-    )
+    expired = await store.put_stream(_frames(b"expired"), media_type=MediaType.GENERIC, owner=owner, ttl_s=1)
+    current = await store.put_stream(_frames(b"current"), media_type=MediaType.GENERIC, owner=owner, ttl_s=3600)
     cutoff = datetime.now(timezone.utc) + timedelta(seconds=2)
 
     assert await store.sweep(cutoff) == 1

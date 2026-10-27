@@ -40,9 +40,7 @@ def _authorize(meta: BlobMeta, owner: HandleOwner, grantee: str | None, *, now: 
         HandleClaimError: If the blob is expired or the caller is unauthorized.
     """
     current_time = now or datetime.now(timezone.utc)
-    if meta.expires_at <= current_time or (
-        meta.owner != owner and (grantee is None or grantee not in meta.grants)
-    ):
+    if meta.expires_at <= current_time or (meta.owner != owner and (grantee is None or grantee not in meta.grants)):
         raise HandleClaimError()
 
 
