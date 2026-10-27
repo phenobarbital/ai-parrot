@@ -8,8 +8,11 @@ pandas/numpy/matplotlib), so they need a generous `RLIMIT_AS` to boot — see
 from __future__ import annotations
 
 import asyncio
+import base64
 import concurrent.futures
 import importlib
+import io
+import pickle
 import sys
 import time
 
@@ -20,7 +23,23 @@ from parrot.tools.repl_worker.handle import (
     WorkerBootstrapError,
     WorkerHandle,
 )
-from parrot.tools.repl_worker.protocol import ReadyResponse, WorkerConfig
+from parrot.tools.repl_worker.protocol import (
+    ReadyResponse,
+    SnapshotResponse,
+    ValueResponse,
+    WorkerConfig,
+)
+
+
+def _guard_refused_payload() -> dict:
+    """An encoded value the insecure-deserialization guard refuses.
+
+    ``_io.StringIO`` is not on any allowlist tier, so this stands in for
+    whatever untransportable object a namespace happens to hold — without
+    tying the test to a library whose allow status may change.
+    """
+    return {"__repl_worker_pickle_b64__": base64.b64encode(pickle.dumps(io.StringIO("x"))).decode("ascii")}
+
 
 abstract_module = importlib.import_module("parrot.tools.abstract")
 
@@ -213,19 +232,64 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_snapshot_survives_unpicklable_value(self, real_worker_config, report_dir):
-        """An altair Chart in the namespace no longer costs the whole snapshot (FEAT-751)."""
+    async def test_snapshot_survives_unpicklable_value(self, real_worker_config, report_dir, monkeypatch):
+        """An untransportable value no longer costs the whole snapshot (FEAT-751).
+
+        The example used to be an altair ``Chart``, which the guard now
+        allows on purpose (altair is one of the libraries the sandbox can
+        import, so its values must be able to come back — see
+        `test_snapshot_keeps_an_altair_chart`). The sandbox's import gate
+        will not let worker code build a still-refused value either, so the
+        refusal is injected at the transport instead: what is under test
+        here is the per-variable tolerance, not which modules are allowed.
+        """
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
+
+        async def fake_send(request, timeout):
+            return SnapshotResponse(data={"greeting": "hi", "buffer": _guard_refused_payload()})
+
+        monkeypatch.setattr(handle, "_send", fake_send)
+        data = await handle.snapshot()
+        assert data["greeting"] == "hi"
+        assert data["buffer"] == "<buffer: refused by insecure-deserialization guard (not transportable)>"
+
+    async def test_snapshot_keeps_an_altair_chart(self, real_worker_config, report_dir):
+        """A chart is data the agent legitimately produces — it must survive
+        the round trip now that altair's schema modules are allowlisted."""
         handle = WorkerHandle(real_worker_config, output_dir=report_dir)
         await handle.start()
         try:
-            await handle.execute("greeting = 'hi'")
             await handle.execute(
                 "chart = altair.Chart(pd.DataFrame({'a': [1, 2]}).reset_index())"
                 ".mark_line().encode(x='index', y='a')"
             )
             data = await handle.snapshot()
-            assert data.get("greeting") == "hi"
-            assert data["chart"] == "<chart: refused by insecure-deserialization guard (not transportable)>"
+            assert type(data["chart"]).__name__ == "Chart"
+        finally:
+            await handle.kill()
+
+    async def test_get_var_degrades_instead_of_raising(self, real_worker_config, report_dir, monkeypatch):
+        """`PandasAgent` reads result variables through `get_var()`; a value
+        the guard refuses must come back as a placeholder, not raise — a
+        raise there surfaces to the end user as a failed answer."""
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
+
+        async def fake_send(request, timeout):
+            return ValueResponse(name="buffer", value=_guard_refused_payload())
+
+        monkeypatch.setattr(handle, "_send", fake_send)
+        assert await handle.get_var("buffer") == (
+            "<buffer: refused by insecure-deserialization guard (not transportable)>"
+        )
+
+    async def test_get_var_returns_a_string_index(self, real_worker_config, report_dir):
+        """The reported PandasAgent failure, end to end: under pandas 3 a
+        string Index is pyarrow-backed and used to raise out of `get_var()`."""
+        handle = WorkerHandle(real_worker_config, output_dir=report_dir)
+        await handle.start()
+        try:
+            await handle.execute("frame = pd.DataFrame({'s': ['a', 'b'], 'n': [1, 2]})\ncols = frame.columns")
+            assert list(await handle.get_var("cols")) == ["s", "n"]
         finally:
             await handle.kill()
 

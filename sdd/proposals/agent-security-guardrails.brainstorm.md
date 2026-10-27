@@ -10,7 +10,7 @@ tags: [guardrails, security, jailbreak, prompt-injection, prompt-leakage, onnx]
 
 **Date**: 2026-10-27
 **Author**: Jesús Lara (brainstorm drafted with Claude Code)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
