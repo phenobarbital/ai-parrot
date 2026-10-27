@@ -46,6 +46,7 @@ from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.infographic_recipes import RecipeHandler
 from ..handlers.ui_surfaces import UISurfacesHandler
+from ..handlers.metric_definitions import MetricDefinitionsHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -2425,6 +2426,10 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
+        # FEAT-756: metric definition registry REST lane — /schema before /{metric_id}.
+        router.add_view("/api/v1/metrics", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/schema", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/{metric_id}", MetricDefinitionsHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
