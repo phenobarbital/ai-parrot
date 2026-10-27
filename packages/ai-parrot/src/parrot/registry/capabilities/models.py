@@ -9,6 +9,7 @@ FEAT-111 addition: ``TraceEntry`` gains an optional ``store_rankings`` field
 store-level detail when the ``StoreRouter`` is active.  The field defaults to
 ``None`` so all existing code that builds ``TraceEntry`` objects is unaffected.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -59,13 +60,9 @@ class CapabilityEntry(BaseModel):
     """
 
     name: str = Field(..., description="Unique name of the capability")
-    description: str = Field(
-        ..., description="Human-readable description (used for embedding)"
-    )
+    description: str = Field(..., description="Human-readable description (used for embedding)")
     resource_type: ResourceType
-    embedding: Optional[list[float]] = Field(
-        default=None, description="Pre-computed embedding vector"
-    )
+    embedding: Optional[list[float]] = Field(default=None, description="Pre-computed embedding vector")
     metadata: dict[str, Any] = Field(default_factory=dict)
     not_for: list[str] = Field(
         default_factory=list,

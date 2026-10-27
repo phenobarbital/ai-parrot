@@ -1,4 +1,5 @@
 """Tests for the AGENT exact-match index in CapabilityRegistry (FEAT-747 M3a)."""
+
 import time
 
 import pytest

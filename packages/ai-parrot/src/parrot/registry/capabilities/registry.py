@@ -4,6 +4,7 @@ Provides embedding-based similarity search over registered capability entries
 (datasets, tools, graph nodes, etc.) to identify the best routing strategy
 for a given user query.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -216,8 +217,14 @@ class CapabilityRegistry:
         kws = list(keywords)
         meta: dict[str, Any] = dict(metadata or {})
         meta.update(
-            agent_name=agent_name, cap_id=cap_id, category=category, keywords=kws,
-            locality=locality, cost=cost, backing=backing, kind=kind,
+            agent_name=agent_name,
+            cap_id=cap_id,
+            category=category,
+            keywords=kws,
+            locality=locality,
+            cost=cost,
+            backing=backing,
+            kind=kind,
         )
         entry = CapabilityEntry(
             name=name,
@@ -281,9 +288,11 @@ class CapabilityRegistry:
             if candidates is None:
                 candidates = set(self._by_name)
             names = {
-                n for n in candidates
+                n
+                for n in candidates
                 if fnmatch.fnmatchcase(str(self._by_name[n].metadata["cap_id"]).lower(), q)
-                or q.endswith(".*") and str(self._by_name[n].metadata["cap_id"]).lower().startswith(prefix + ".")
+                or q.endswith(".*")
+                and str(self._by_name[n].metadata["cap_id"]).lower().startswith(prefix + ".")
             }
         else:
             names = set(self._exact_index.get(q, ()))
@@ -316,11 +325,7 @@ class CapabilityRegistry:
         if self._index_dirty and self._embedding_fn:
             await self.build_index(self._embedding_fn)
 
-        if (
-            self._embedding_matrix is None
-            or self._embedding_matrix.size == 0
-            or not self._entries
-        ):
+        if self._embedding_matrix is None or self._embedding_matrix.size == 0 or not self._entries:
             return []
 
         # Embed the query
@@ -338,9 +343,7 @@ class CapabilityRegistry:
         # Apply not_for penalty
         query_lower = query.lower()
         for i, entry in enumerate(self._entries):
-            if entry.not_for and any(
-                pattern.lower() in query_lower for pattern in entry.not_for
-            ):
+            if entry.not_for and any(pattern.lower() in query_lower for pattern in entry.not_for):
                 scores[i] *= self._not_for_penalty
 
         # Build candidate list (with optional resource_type filter)

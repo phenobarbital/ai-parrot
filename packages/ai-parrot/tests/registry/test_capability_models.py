@@ -3,6 +3,7 @@
 Tests all enums and Pydantic models defined in
 parrot.registry.capabilities.models.
 """
+
 import pytest
 
 from parrot.registry.capabilities.models import (

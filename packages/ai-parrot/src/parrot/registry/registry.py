@@ -44,6 +44,7 @@ from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: 
 from ..tools.spec import AgentMCPServerSpec, ToolkitSpec, normalize_tooling
 from ..roost.directory import CapabilityMatch, Locality, RoostAgentConfig, locality_of, rank
 
+
 class AgentFactory(Protocol):
     """Protocol for agent factory callable."""
 
