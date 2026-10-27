@@ -112,7 +112,10 @@ def test_two_linked_worktrees_findings_never_enter_feature_diffs(
         (worktree / filename).write_text(filename, encoding="utf-8")
         _git(worktree, "add", filename)
         _git(worktree, "commit", "-m", f"add {filename}")
-        assert not any(path.startswith("sdd/ledger/") for path in _git(worktree, "diff", "--name-only", "origin/dev...HEAD").splitlines())
+        assert not any(
+            path.startswith("sdd/ledger/")
+            for path in _git(worktree, "diff", "--name-only", "origin/dev...HEAD").splitlines()
+        )
     _prepare(primary, ledger_dir)
     reports = _integrate(primary, ledger_dir)
     assert reports[0]["status"] == "delivered"
@@ -127,7 +130,9 @@ def test_new_event_after_seal_waits_for_next_pass(origin_and_clone: tuple[Path, 
     first_batch = _prepare(primary, ledger_dir)["batch"]
     second_issue = _open_issue(ledger_dir, "later finding")
     first_reports = _integrate(primary, ledger_dir)
-    status = _result_json(_cli("outbox", "status", "--repo-root", str(primary), "--ledger-dir", str(ledger_dir), "--json"))
+    status = _result_json(
+        _cli("outbox", "status", "--repo-root", str(primary), "--ledger-dir", str(ledger_dir), "--json")
+    )
     assert first_reports[0]["batch_id"] == first_batch["batch_id"]
     assert status["unsealed_events"] == 1
     assert {event["subject"] for event in _remote_events(primary)} >= {first_issue}
@@ -194,7 +199,10 @@ def test_mixed_archive_and_current_log_no_rotation(origin_and_clone: tuple[Path,
     """Archive bytes survive delivery when its event is duplicated in the current log."""
     _, primary = origin_and_clone
     archive_event = LedgerEvent(
-        kind="insight.recorded", subject="spec:archive", actor="agent:acceptance", ts="2026-10-27T00:00:01+00:00",
+        kind="insight.recorded",
+        subject="spec:archive",
+        actor="agent:acceptance",
+        ts="2026-10-27T00:00:01+00:00",
         payload={"fact": "archive", "title": "archive", "derived_from": "spec:FEAT-758"},
     )
     line = json.dumps(archive_event.model_dump(), sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
