@@ -34,10 +34,18 @@ class in this module.
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import io
 import os
 import shutil
+from concurrent.futures import ProcessPoolExecutor
+from fractions import Fraction
+from pathlib import Path
 
+import aiohttp
 import pytest
+from aiohttp.test_utils import TestServer
 from parrot_tools.browsing.toolkit import WebBrowsingToolkit
 from parrot_tools.business_automation.toolkit import _credential_resolver_from_broker
 from parrot_tools.scraping import session_actions
@@ -128,6 +136,133 @@ async def real_obscura_driver(unused_tcp_port):
     finally:
         await driver.quit()
         await manager.stop()
+
+
+def _encode_webm(frames: list[tuple[int, bytes]], out_path: str) -> int:
+    """Encode ``(timestamp_ms, jpeg_bytes)`` frames to VP8 WebM (runs in a process)."""
+    import av
+    from PIL import Image
+
+    with av.open(out_path, "w", format="webm") as container:
+        stream = container.add_stream("libvpx", rate=10)
+        stream.pix_fmt = "yuv420p"
+        stream.time_base = Fraction(1, 1000)
+        stream.width, stream.height = 1280, 720
+        last = -1
+        for ts, data in frames:
+            image = Image.open(io.BytesIO(data)).convert("RGB").resize((1280, 720))
+            frame = av.VideoFrame.from_image(image)
+            frame.pts = max(ts, last + 1)
+            frame.time_base = stream.time_base
+            last = frame.pts
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    return len(frames)
+
+
+def _decode_webm(path: str) -> list[tuple[int, int, int]]:
+    """Return one corner-ish RGB sample per decoded frame."""
+    import av
+
+    samples = []
+    with av.open(path) as container:
+        for frame in container.decode(video=0):
+            rgb = frame.to_image().convert("RGB")
+            samples.append(rgb.getpixel((rgb.width - 10, rgb.height - 10)))
+    return samples
+
+
+class TestObscuraScreencastRecording:
+    """Prove active-page recording against real Obscura before FEAT-762 M1."""
+
+    async def test_existing_page_produces_playable_webm(
+        self,
+        unused_tcp_port: int,
+        tmp_path: Path,
+        local_fixture_site: TestServer,
+    ) -> None:
+        """Capture the selected existing page and decode its post-start change."""
+        from parrot.mcp.obscura import ObscuraProcessConfig, ObscuraProcessManager
+        from playwright.async_api import async_playwright
+
+        binary = os.environ.get("OBSCURA_BINARY") or shutil.which("obscura")
+        if not binary:
+            pytest.skip("No Obscura binary configured (set OBSCURA_BINARY or install 'obscura').")
+
+        manager = ObscuraProcessManager(
+            ObscuraProcessConfig(binary_path=binary, port=unused_tcp_port, allow_private_network=True)
+        )
+        base = f"http://{local_fixture_site.host}:{local_fixture_site.port}"
+        try:
+            endpoint = await manager.start()
+            async with async_playwright() as pw:
+                browser = await pw.chromium.connect_over_cdp(endpoint)
+                try:
+                    context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                    decoy = await context.new_page()
+                    await decoy.goto(f"{base}/login", wait_until="commit")
+                    await decoy.evaluate("document.body.style.background = 'blue'")
+                    page = await context.new_page()
+                    await page.goto(f"{base}/login", wait_until="commit")
+                    await page.evaluate("document.body.style.background = 'white'")  # controlled anomaly
+                    url_before = page.url
+
+                    # Finding 1: a SEPARATE CDP connection cannot see the page.
+                    async with aiohttp.ClientSession() as http:
+                        ver = await (await http.get(f"{endpoint}/json/version")).json()
+                        ws = await http.ws_connect(ver["webSocketDebuggerUrl"])
+                        await ws.send_json({"id": 1, "method": "Target.getTargets"})
+                        reply = await asyncio.wait_for(ws.receive_json(), 5)
+                        await ws.close()
+                    assert reply["result"]["targetInfos"] == [], "separate connection unexpectedly sees pages"
+
+                    # Finding 2: a CDPSession on the ORIGINAL connection records the exact page.
+                    cdp = await context.new_cdp_session(page)
+                    frames: list[tuple[int, bytes]] = []
+                    tasks: list[asyncio.Task] = []
+
+                    def on_frame(event: dict) -> None:
+                        ts = int(event["metadata"]["timestamp"] * 1000)
+                        if len(frames) < 600:  # bounded
+                            frames.append((ts, base64.b64decode(event["data"])))
+                        tasks.append(
+                            asyncio.ensure_future(
+                                cdp.send("Page.screencastFrameAck", {"sessionId": event["sessionId"]})
+                            )
+                        )
+
+                    cdp.on("Page.screencastFrame", on_frame)
+                    await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 70, "everyNthFrame": 1})
+                    await asyncio.sleep(1)
+                    await page.evaluate("document.body.style.background = 'red'")  # post-start change
+                    await asyncio.sleep(2)
+                    await cdp.send("Page.stopScreencast")
+                    await cdp.detach()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    assert len(frames) >= 2
+
+                    out = str(tmp_path / "screencast.webm")
+                    loop = asyncio.get_running_loop()
+                    with ProcessPoolExecutor(max_workers=1) as pool:
+                        await loop.run_in_executor(pool, _encode_webm, [(t - frames[0][0], d) for t, d in frames], out)
+                    samples = await asyncio.to_thread(_decode_webm, out)
+                    assert samples, "no decodable frames"
+                    first, last = samples[0], samples[-1]
+                    assert first[0] > 200 and first[1] > 200 and first[2] > 200, first  # white
+                    assert last[0] > 200 and last[1] < 80 and last[2] < 80, last  # red, not decoy blue
+                    assert not any(s[2] > 200 and s[0] < 80 for s in samples), "decoy page recorded"
+
+                    # Preservation: original page/context/state intact after recorder stop.
+                    assert page.url == url_before
+                    assert page in context.pages and decoy in context.pages
+                    assert await page.evaluate("document.body.style.background") == "red"
+                    assert browser.is_connected()
+                finally:
+                    await browser.close()
+        finally:
+            await manager.stop()
 
 
 class TestFakeBroker:
