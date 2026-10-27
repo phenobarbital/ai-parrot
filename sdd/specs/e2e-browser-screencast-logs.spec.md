@@ -409,7 +409,7 @@ Obscura 0.2.2; test `TestObscuraScreencastRecording`):
   ack tasks, output path}. Cleanup order: stopScreencast → detach → await acks → encode/flush →
   decode-validate → publish; never close page/context/browser.
 - **Dependency**: `av` and `Pillow` are importable in the shared venv, but `av` is only a root
-  override (`av>=13,<14`); declaring it for the hosting package REQUIRES user approval (open).
+  override (`av>=13,<14`); declared 2026-10-28 (user-approved) as the `screencast` extra of `ai-parrot-server` (`av>=13,<14`, `pillow>=13`).
 - **Errors**: map missing/closed page, CDP command failure, empty frames, encode/decode failure to `E2EScreencastError`.
 
 The candidate CDP frame lifecycle is documented in the official
