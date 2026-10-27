@@ -376,10 +376,15 @@ def test_tool_is_renderer_callable(): ...                    # ToolManager().reg
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4754
+- Feature: materialize-turn-linked-widget
+- Implementation SHA: 60f6bf3136df07adc615015f6923ec31044ca865
+- Closed at (UTC): 2026-10-27T02:08:00+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 3 (terra x2 failed validation, then sol) · Duration: 614.7s · Tokens: n/a |
