@@ -254,8 +254,8 @@ async def test_register_remote_and_refuse_instance(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (review and close of a delivery merged by an earlier run)
+**Date**: 2026-10-27
+**Notes**: Reviewed: AgentKind, remote BotConfig/BotMetadata, find_by_kind/find_serving/register_remote, get_instance refusal. Review fix 6aa4e52d409c614eba1a6a328df79df2c165407e: the existing get_instance PBAC test fixture used a bare MagicMock so the new kind guard refused it (4 regressions vs origin/dev); fixture now sets kind=AgentKind.LOCAL. Tests: registry suite matches the origin/dev baseline (only pre-existing test_vector_store_propagation failures). Finding filed: issue:62b48021d9ff (YAML writer drops kind/endpoint/contract_categories). Engine merge-tier validation could not run in the sandbox (parrot.conf mkdir of ONTOLOGY_DIR on the read-only primary checkout, exit 4); tests were run by hand with ONTOLOGY_DIR set to a scratch dir. finalize_task not used (no review EvidenceRef artifact exists); closed via close_task.sh. Per-attempt seat/model attribution is not recorded here: the attempt_uid of this pre-existing delivery was not available, so coder_record_review/coder_record_feedback were NOT recorded.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.
