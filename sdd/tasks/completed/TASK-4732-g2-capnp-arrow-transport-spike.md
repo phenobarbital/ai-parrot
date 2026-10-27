@@ -283,8 +283,8 @@ See the blueprint test; skipped by default, `importorskip("capnp")` guards envir
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (review and close of a delivery merged by an earlier run)
+**Date**: 2026-10-27
+**Notes**: Gate NOT met: the report marks all four criteria FAIL because the loopback bind was denied in the sandbox, and prescribes the gRPC fallback for M3/M4 until an operator reruns outside the sandbox. The spike code, schema, opt-in test and report exist and are as specified; the 100 MB / cancel / SAN evidence does not. Tracked in issue:60de633baac2. Do not treat the transport choice as settled.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.

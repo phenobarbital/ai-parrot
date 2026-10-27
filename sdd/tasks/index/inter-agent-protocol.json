@@ -95,7 +95,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "needs pycapnp declared by TASK-4737 (packages/ai-parrot-squawk/pyproject.toml) and the tests/spikes package; exclusive: opens loopback TLS ports",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4732-g2-capnp-arrow-transport-spike.md"
+      "completed_at": "2026-10-27T02:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4732-g2-capnp-arrow-transport-spike.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4733",
