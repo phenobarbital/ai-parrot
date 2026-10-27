@@ -161,9 +161,7 @@ New in rev 2:
 the single source of truth; reuses FEAT-224 end to end; per-tenant config
 mirrors skills; gives FEAT-753/754/756 a ready channel.
 ❌ **Cons:** `RouteScore`/`_resolve_output_mode` signatures grow a label/hint
-(additive, but touches the FEAT-224 core); `register_renderer` needs a
-per-request prompt hook, since it takes a static `system_prompt` today
-(Recon Finding 4). *The rev-2 worry that the generic prompt might not serve
+(additive, but touches the FEAT-224 core). *The rev-2 worry that the generic prompt might not serve
 four very different components — "Graph is the hard one, may need a
 per-component authoring notes asset" — is largely void: every component
 already ships `INSTRUCTIONS`, `GRAPH_INSTRUCTIONS` included (Recon
@@ -485,10 +483,19 @@ section over the body where they disagree.
 4. **`OutputMode.A2UI` has no registered renderer, and `register_renderer` takes
    a *static* `system_prompt`.** Every other mode registers a fixed string
    (`register_renderer(OutputMode.STRUCTURED_CHART, system_prompt=…)`,
-   `formats/__init__.py:76`); the catalog emitter's prompt varies per component
-   hint, so the registration mechanism needs a per-request prompt hook — the one
-   piece of FEAT-224-adjacent machinery this feature genuinely adds. Flagged
-   here because it is not visible in the Impact table.
+   `formats/__init__.py:76`), while the catalog emitter's prompt varies per
+   component hint.
+   **Correction (2026-10-27, after the FEAT-755 spec review):** this is NOT a
+   requirement — the renderer-registration path is simply not used. The spec
+   appends the component prompt directly at the `ask()` seam
+   (`data.py:1417-1419`, `if system_prompt_addon := self.formatter.get_system_prompt(...)`),
+   so `register_renderer` needs no per-request hook and `OutputMode.A2UI` needs
+   no registered renderer at all. An earlier revision of this finding listed a
+   "per-request prompt hook" as new machinery; that was wrong and is withdrawn.
+   What remains true: `OutputMode.A2UI` has no renderer, and `PandasAgent.ask()`
+   degrades it to `DEFAULT` when no tool produced a surface
+   (`data.py:1955-1966`) — which is exactly the fallback the emitter slots in
+   front of.
 
 ### Additional "Does NOT Exist" entries (rev 2 recon)
 - ~~`model_from_schema()` / any JSON-Schema → Pydantic generator~~ — `_derive.py`
