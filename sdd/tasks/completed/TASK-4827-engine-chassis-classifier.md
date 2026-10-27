@@ -457,10 +457,8 @@ See CREATE block; parity is the load-bearing test.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Seat: opus · Backend: native · Attempts: 1)
+**Date**: 2026-10-27
+**Notes**: Delivered and merged; merge-tier validation green. Closed via close_task.sh (no durable review-evidence artifact writable). Deliverable reviewed by worker at merge.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: chassis does not absorb injection's stateful resolution chain (see Context) — record final state here.
+**Deviations from spec**: none

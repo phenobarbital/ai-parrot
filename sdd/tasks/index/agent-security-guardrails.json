@@ -58,7 +58,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -66,8 +66,9 @@
       "parallelism_notes": "Root task: only modifies bots/guardrails/base.py and pipeline.py, which no other task touches.",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4825-pipeline-core-extensions.md"
+      "completed_at": "2026-10-27T21:45:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4825-pipeline-core-extensions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4826",
@@ -76,7 +77,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -84,8 +85,9 @@
       "parallelism_notes": "Root task: lazy factories reference jailbreak/prompt_leakage modules by dotted path only (never imported until built); tests stub the factories. Sole owner of registry.py and config.py.",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4826-registry-security-preset.md"
+      "completed_at": "2026-10-27T21:45:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4826-registry-security-preset.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4827",
@@ -94,7 +96,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -102,8 +104,9 @@
       "parallelism_notes": "Root task: creates builtin/_engine_chassis.py; first of the prompt_injection.py edit chain (4827 -> 4828 -> 4833).",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4827-engine-chassis-classifier.md"
+      "completed_at": "2026-10-27T21:45:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4827-engine-chassis-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4828",
