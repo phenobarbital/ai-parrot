@@ -80,6 +80,11 @@ two gaps:
   "recording_path", None)` by the one caller that needs it
   (`close_browser()`), exactly the same duck-typed pattern already used
   for driver-specific capabilities elsewhere in this toolkit family.
+- No retention, rotation, or size cap for `<plans_dir>/files/recordings/`.
+  Recordings accumulate indefinitely, same as FEAT-762's own, independently
+  reached decision to defer retention for `artifacts/logs/e2e/` — this
+  feature documents the disk-growth risk (§7) but does not solve it; a
+  separate housekeeping feature or manual cleanup is the follow-up.
 - Changing `driver_type` default does not change `browser` (still
   `"chrome"`, mapped to Playwright's `chromium` via
   `DriverFactory._map_browser_to_playwright`) or `headless` defaults.
@@ -545,10 +550,14 @@ Verified against: `3816b03d6` (origin/dev, 2026-10-27)
 - [x] Should recording be always-on for every Playwright session, or
   opt-in? — *Resolved by user*: opt-in (`record_video: bool = False`
   default).
-- [ ] Should `record_video_dir`'s recordings ever be pruned/rotated (they
+- [x] Should `record_video_dir`'s recordings ever be pruned/rotated (they
   accumulate under `<plans_dir>/files/recordings/` indefinitely)? —
-  *Owner: Jesus Lara* — deferred; not blocking this feature, worth a
-  follow-up ledger issue if recordings turn out to need cleanup.
+  *Resolved by user*: out of scope for this feature, matching FEAT-762's
+  independently-reached decision to defer the same question for
+  `artifacts/logs/e2e/`. Documented as a Non-Goal (§1); a follow-up
+  housekeeping feature or manual cleanup handles it later.
+
+No unresolved open questions remain.
 
 ---
 
