@@ -145,7 +145,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -156,8 +156,9 @@
       "parallelism_notes": "documents the `ledger outbox` CLI and exit codes from TASK-4860 (cli.py) and the no-op pre-commit hook from TASK-4861 (assets.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4862-sdd-done-outbox-workflows.md"
+      "completed_at": "2026-10-27T23:43:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4862-sdd-done-outbox-workflows.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4863",
