@@ -36,6 +36,7 @@ __all__ = [
     "E2ETargetError",
     "E2EBudgetError",
     "E2EEvidenceError",
+    "E2EScreencastError",
 ]
 
 # Exact §2 exit-code mapping.
@@ -124,3 +125,17 @@ class E2EEvidenceError(E2EError):
     """
 
     exit_code = EXIT_EVIDENCE
+
+
+class E2EScreencastError(E2EError):
+    """Operational screencast recording failed (FEAT-762).
+
+    Maps to exit code 1. Never gate evidence: raised for a closed page, an
+    unsupported/failed CDP capture, a missing encoder extra
+    (``ai-parrot-server[screencast]``), a frame-buffer overflow, or an
+    empty/invalid output file. ``reason_code`` carries a short slug such as
+    ``page_closed``, ``capture_failed``, ``encoder_unavailable``,
+    ``frame_overflow``, ``invalid_output`` or ``output_exists``.
+    """
+
+    exit_code = EXIT_FAILURE
