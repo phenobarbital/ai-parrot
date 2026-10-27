@@ -10,7 +10,7 @@ tags: [wiki, decisions, adr, graphindex, namespaces]
 **Feature ID**: FEAT-760
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.x
 
 ---
