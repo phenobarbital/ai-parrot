@@ -253,7 +253,10 @@
   });
 
   $effect(() => {
-    if (chartInstance && onChartReady !== readyCallback) {
+    // Read the prop first: chartInstance is not reactive, so short-circuiting on it
+    // would leave this effect with no tracked dependency.
+    const callback = onChartReady;
+    if (chartInstance && callback !== readyCallback) {
       detachReady();
       attachReady();
     }
