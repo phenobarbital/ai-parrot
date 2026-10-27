@@ -12,6 +12,7 @@ tags: [e2e, playwright, obscura, observability, exploration]
 **Author**: Jesus Lara
 **Status**: approved
 **Target version**: next minor
+**Implementation gate**: blocked pending a successful real-Obscura active-page recording spike (M0).
 
 ---
 
@@ -24,34 +25,29 @@ tags: [e2e, playwright, obscura, observability, exploration]
 endpoint and today only captures a single PNG screenshot "on any
 unexpected finding." When an exploration run surfaces a real anomaly
 (an unexpected console error, a 5xx network response), that one still
-frame is the only visual evidence available; there is no way to see the
-sequence of navigation/interaction steps that led up to it. Separately,
-`PlaywrightDriver` (the project's own Playwright backend,
-`parrot_tools.scraping.drivers`) already has a `record_video_dir` config
-field and an `engine="obscura"` CDP-attach mode — the mechanism this
-proposal needs already exists one layer away, but nothing in the E2E
-module connects to it, and the mechanism itself has a documented trap:
-it only engages when the CDP endpoint has zero pre-existing browser
-contexts, silently doing nothing otherwise.
+frame is the only visual evidence available. Recording after detection can
+capture follow-up investigation or an explicit reproduction, not recover the
+interaction history before recording began.
+
+The existing `PlaywrightConfig.record_video_dir` path cannot satisfy this
+trigger: `_start_obscura_cdp()` reuses an existing context and does not apply
+context-creation options to it. By the time an anomaly is observed, a page
+and context already exist. The recorder must attach to that exact existing
+page without replacing or closing it. This revision supersedes the proposal's
+fresh-context mechanism; its on-anomaly trigger and operational-log scope remain.
 
 ### Goals
 
-- Give `e2e-ui-tester` the ability to record a Playwright-backed
-  screencast (`.webm`) of its browser session against the Obscura CDP
-  endpoint the `browser` e2e target hands it, saved as an **operational
-  log artifact** under `artifacts/logs/e2e/<run-id>/` — never as
-  deterministic gate evidence.
-- Trigger: **on-anomaly-only** for `e2e-ui-tester`'s ad hoc exploration
-  runs — start recording the first time an anomaly (console error / 5xx
-  response) is observed, mirroring the existing screenshot trigger;
-  never recorded for a clean run.
-- Verify, with a real Obscura v0.2.2 binary (opt-in, cleanly-skipping
-  test), that `record_video_dir` actually produces a usable `.webm`
-  before trusting the mechanism in the exploration flow — **this
-  verification is this spec's first module/task and gates the rest.**
-- Fail loudly (never silently record nothing) when the CDP endpoint
-  already has a pre-existing browser context, so the fresh-context
-  precondition `record_video_dir` depends on is never silently violated.
+- Record the existing exploration page after its first anomaly, producing
+  `artifacts/logs/e2e/<run-id>/screencast.webm` as an operational log.
+- Start capture only on anomaly. A clean run creates no recording session
+  or video. Label the video as post-detection evidence; reproduce the issue
+  while recording when practical, without claiming retrospective capture.
+- Prove the complete active-page capture and WebM encoding path against
+  real Obscura v0.2.2 before implementing M1–M3.
+- Fail with a typed error for an unavailable page, unsupported capture,
+  missing encoder, or empty/invalid output. Existing contexts are expected
+  and must not themselves cause rejection.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -69,8 +65,7 @@ contexts, silently doing nothing otherwise.
   before/after source-identity hash are untouched. A screencast is never
   wired into `sdd/state/<FEAT-ID>/e2e/runs/<run-id>/`.
 - **Any change to `parrot.e2e.targets.browser._BrowserAdapter`.** It
-  keeps only spawning `obscura serve` and handing back a raw CDP
-  endpoint; it never becomes Playwright-aware itself.
+  keeps spawning `obscura serve` and checking readiness; it never becomes Playwright-aware itself.
 - **`e2e-api-tester`** — no browser surface, out of scope.
 
 ---
@@ -79,79 +74,79 @@ contexts, silently doing nothing otherwise.
 
 ### Overview
 
-A new, small module (`parrot.e2e.screencast`) wraps a
-`PlaywrightDriver` connected to the `browser` target's existing Obscura
-CDP endpoint in `engine="obscura"` mode, with `record_video_dir` set to
-the run's own `artifacts/logs/e2e/<run-id>/` directory. Because
-`record_video_dir` only takes effect when Playwright creates a *fresh*
-context (never when it reuses an existing one), `start_screencast()`
-asserts the connection resulted in a freshly created context and raises
-a typed error otherwise — it never degrades to "recording silently did
-nothing."
+`parrot.e2e.screencast` attaches to the exact existing CDP page target
+identified by the caller's `page_target_id`. It neither creates a replacement
+context nor changes browser ownership. `record_video_dir` and the driver's
+`_owns_context` flag are not the recording mechanism.
 
-Because `e2e-ui-tester` only has `Bash`/`Read`/`Glob`/`Grep`/`Write` as
-tools — no persistent Python state across tool calls — the recording
-session itself must outlive any single Bash invocation. `parrot e2e
-screencast start`/`stop` CLI subcommands (added to the existing `parrot
-e2e` Click group) follow the exact detached-daemon pattern `up`/`down`
-already use: `start` spawns a detached child that holds the
-`PlaywrightDriver` connection open and writes a ticket once ready;
-`stop` signals that child, which closes the context (finalizing
-Playwright's `.webm` write) and reports the final path.
+M0 must select and prove a capture/encoding backend before M1–M3 proceed.
+The first candidate is page-scoped CDP `Page.startScreencast`, receiving
+`Page.screencastFrame` events, acknowledging frames with
+`Page.screencastFrameAck`, and stopping with `Page.stopScreencast`.
+These protocol commands describe a candidate, not verified Obscura support.
+They deliver image frames, not a WebM file; M0 must also prove encoding,
+flush, and decoding of the resulting WebM with available dependencies.
+If this candidate fails, revise and validate the backend before continuing;
+never fall back to a different page or the rejected context-creation path.
 
-`e2e-ui-tester`'s own exploration protocol gains one new step: the first
-time it observes a console error or 5xx response, it shells out to
-`parrot e2e screencast start`; at the end of exploration (success or
-failure) it always calls `parrot e2e screencast stop` if a screencast was
-started, and adds the resulting path to its existing `evidence_refs`
-array — no new top-level field in `e2e-exploration.json`.
+The detached daemon owns only its recording connection, bounded frame queue,
+encoder resources, and ticket. CPU-bound encoding runs in a process, with
+async I/O and bounded startup/stop waits. Startup reports ready only after
+capture and the encoder are initialized. Stop ends capture, drains and flushes
+encoding, verifies a playable non-empty file, atomically publishes
+`screencast.webm`, and releases recorder-owned resources. Failure and signal
+paths release those resources without closing the page, context, or browser.
+No success path is reported for a partial or invalid artifact.
+
+The agent supplies both the endpoint and exact page target ID from its
+exploration configuration/automation session. `up` currently does not
+populate `RunState.endpoint`; do not infer it from the returned state or use
+the adapter's in-memory table across processes. Configure a known browser
+port and pass its endpoint explicitly. If the endpoint or page identity is
+unavailable, report recording unavailable rather than guess. Multiple tabs
+must never cause selection of the first page or a match by ambiguous URL.
+
+On the first anomaly the agent starts recording, continues investigation,
+then stops recording on every exit path **before** `parrot e2e down`.
+Only a successful stop adds the returned path to `evidence_refs`.
+Capture failure must not prevent target teardown or the exploration report.
 
 ### Component Diagram
 
-```
-e2e-ui-tester (agent, Bash tool calls)
-   │ parrot e2e screencast start/stop (CLI)
-   ▼
-parrot.e2e.cli (screencast_start_command / screencast_stop_command)
-   │ detached daemon, ticket file   (pattern: up_command / _spawn_detached_target)
-   ▼
-parrot.e2e.screencast (start_screencast / stop_screencast)
-   │ PlaywrightDriver(engine="obscura", cdp_endpoint_url=..., record_video_dir=...)
-   ▼
-parrot_tools.scraping.drivers.playwright_driver.PlaywrightDriver
-   │ chromium.connect_over_cdp(endpoint)
-   ▼
-Obscura CDP endpoint  (owned by the `browser` e2e target, parrot.e2e.targets.browser)
+```text
+e2e-ui-tester (existing page + CDP endpoint + page target ID)
+  → parrot e2e screencast start/stop
+  → detached recorder daemon and ticket
+  → M0-verified page capture backend → encoder → screencast.webm
 ```
 
 ### Integration Points
 
-| Existing Component | Integration Type | Notes |
-|---|---|---|
-| `parrot_tools.scraping.drivers.playwright_driver.PlaywrightDriver` | uses | connects in `engine="obscura"` mode against the endpoint the `browser` target already allocates |
-| `parrot_tools.scraping.drivers.playwright_config.PlaywrightConfig` | uses | sets `engine`, `cdp_endpoint_url`, `record_video_dir`, `obscura_port`/`browser_type="chromium"` |
-| `parrot.e2e.cli` (`e2e` Click group) | extends | adds `screencast start`/`screencast stop` subcommands, reusing `_daemon_log_path`/ticket-file/detached-daemon conventions already used by `up` |
-| `parrot.e2e.targets.browser._BrowserAdapter` | reads only | never modified; its `ready()`-reported CDP endpoint is the input to `start_screencast()` |
-| `.claude/agents/e2e-ui-tester.md` | extends | adds the on-anomaly screencast step and an `evidence_refs` entry |
+| Existing component | Contract |
+|---|---|
+| `parrot.e2e.cli` | Add detached start/stop commands using the existing ticket lifecycle pattern. |
+| `parrot.e2e.targets.browser` | Read-only; continue supervising the browser independently. |
+| `.claude/agents/e2e-ui-tester.md` | Supply exact page identity, start on anomaly, stop before browser teardown. |
+| `PlaywrightDriver` / `PlaywrightConfig` | Existing code explains why `record_video_dir` is unsuitable; no production modifications. |
 
-### Data Models
-
-```python
-# No new Pydantic model. parrot.e2e.screencast works with plain values
-# (endpoint URL, Path) and raises typed errors from parrot.e2e.errors
-# (new error subclass — see Module 1).
-```
-
-### New Public Interfaces
+### Public contract
 
 ```python
-# parrot/e2e/screencast.py (new)
-async def start_screencast(cdp_endpoint: str, out_dir: Path) -> "ScreencastSession":
-    """Connect over CDP and begin recording; raises if the context is not fresh."""
+async def start_screencast(
+    cdp_endpoint: str, out_dir: Path, *, page_target_id: str
+) -> ScreencastSession:
+    """Begin capture of the selected existing page; retain its context and state."""
 
-async def stop_screencast(session: "ScreencastSession") -> Path:
-    """Close the context (finalizing the .webm) and return its stable final path."""
+async def stop_screencast(session: ScreencastSession) -> Path:
+    """Finalize recorder-owned resources and return a validated WebM path."""
 ```
+
+`ScreencastSession` is a new internal runtime handle. M0 must document its
+concrete resource types and ownership before M1 task decomposition; it is
+not persisted or added to gate evidence. Serializable ticket data uses
+Pydantic v2. Capture/setup/finalization failures use a new
+`E2EScreencastError(E2EError)` with actionable reasons. Existing contexts
+are valid; `E2EScreencastContextReusedError` is removed from the design.
 
 ---
 
@@ -159,107 +154,56 @@ async def stop_screencast(session: "ScreencastSession") -> Path:
 
 #### Delegation-eligible modules
 
-| Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
-|---|---|---|---|
-| M0: Real-Obscura screencast spike | no | — | outcome decides whether M1's fresh-context assumption holds at all; a thinking model must read the real result and adjust M1 if it fails |
-| M1: `parrot.e2e.screencast` | no | — | the fresh-context loud-failure behavior (C4/Integration Risk #2) is a safety-critical judgment call, not mechanical |
-| M2: `parrot.e2e.cli` screencast subcommands | no | — | replicating the detached-daemon/signal/ticket-file lifecycle correctly (matching `up`'s own subtlety around launcher-exit survival) needs careful attention, not a template fill |
-| M3: `.claude/agents/e2e-ui-tester.md` protocol edit | yes | insertion point, exact CLI invocations, and JSON shape are all fixed by M1/M2's finished interfaces; the edit is mechanical prose once those exist | — |
+| Module | Eligible? | Reason |
+|---|---|---|
+| M0: Active-page recording spike | no | Must prove Obscura capture and encoding, then freeze the backend contract. |
+| M1: Recorder | no | Resource ownership and error cleanup need judgment. |
+| M2: CLI | no | Detached process lifecycle and finalization need judgment. |
+| M3: Agent protocol | yes, after M2 | Uses the verified CLI and lifecycle contract. |
 
-### Module 0: Real-Obscura screencast verification spike (gate)
+### Module 0: Real-Obscura active-page recording spike (gate)
 
-- **Path**: `packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py`
-- **Responsibility**: Prove, against a real Obscura v0.2.2 binary, that
-  `PlaywrightConfig(engine="obscura", record_video_dir=...)` produces a
-  real, non-empty `.webm` once `driver.quit()` closes the context.
-  Skips cleanly (never fails the suite) when no Obscura binary is
-  configured, mirroring the existing `real_obscura_driver` fixture's own
-  skip behavior exactly.
-- **Depends on**: none — gates Modules 1-3 (if this fails, M1's design
-  must change before any other work proceeds, per the proposal's
-  resolved U1).
-- **Interface Skeleton**:
-  ```python
-  # packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py
-  # (modifies test_fixture_site_integration.py:133 — inserted immediately
-  #  before `class TestFakeBroker:`, verified: test_fixture_site_integration.py:133)
-
-  class TestObscuraScreencastRecording:
-      """Verifies PlaywrightConfig.record_video_dir against a real,
-      fresh-context Obscura CDP connection (spike gating FEAT-762)."""
-
-      async def test_record_video_dir_produces_nonempty_webm(
-          self, unused_tcp_port: int, tmp_path: "Path"
-      ) -> None:
-          """Starts its own Obscura process (never reusing `real_obscura_driver`,
-          since record_video_dir must be set before PlaywrightDriver.start()),
-          connects with engine="obscura" + record_video_dir=tmp_path, navigates
-          the local fixture site, calls quit(), and asserts a .webm file exists
-          under tmp_path with size > 0. Skips via pytest.skip (never fails) when
-          no Obscura binary is configured — same convention as
-          `real_obscura_driver` (test_fixture_site_integration.py:79-130),
-          verified: test_fixture_site_integration.py:93-95.
-          """
-  ```
+- **Path**: `packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py`.
+- **Test**: `TestObscuraScreencastRecording.test_existing_page_produces_playable_webm`.
+- Start an isolated real Obscura process and use `local_fixture_site` to
+  create/navigate a page before capture. Observe a controlled anomaly, then
+  attach a separate recorder to that same page target ID. Make a visible,
+  deterministic post-start change, stop capture, encode, and decode WebM
+  frames to verify that change is present. Size alone is insufficient.
+- Assert page target identity, context, and navigated state survive recorder
+  start and stop. Include another page with distinguishable content so
+  recording the wrong page cannot pass.
+- Use a test-local capture/encoding prototype. M1 may extract the proven
+  logic later; M0 must not import the not-yet-implemented server recorder.
+- If no binary is configured or discoverable, skip in ordinary suites.
+  An explicitly configured but invalid binary, startup/connection failure,
+  unsupported protocol command, absent codec, or invalid video is a failure,
+  never a skip. Always clean up owned resources.
+- **Gate evidence**: save command, tested commit, binary version, dependency
+  and codec versions, test result, and decoded-video assertions under
+  `artifacts/logs/`; persist an evidence summary and selected backend contract
+  in `sdd/state/FEAT-762/`. A skip, xfail, unavailable environment, or mocked
+  success does not unblock M1–M3 or satisfy feature completion.
+- Before M1 task decomposition, update this spec with the proven transport,
+  page-selection API, encoder dependency availability, concrete session
+  resource types, error mapping, and cleanup ordering. If a new dependency
+  is needed, obtain approval before adding it. Until this real pass and
+  contract update exist, only M0 may proceed.
 
 ### Module 1: `parrot.e2e.screencast`
 
-- **Path**: `packages/ai-parrot-server/src/parrot/e2e/screencast.py` (new)
-- **Responsibility**: Start/stop a Playwright-backed screencast against
-  a given Obscura CDP endpoint; enforce the fresh-context precondition
-  loudly; finalize and rename the resulting `.webm` to a stable,
-  predictable path.
-- **Depends on**: Module 0 passing (gate); `PlaywrightDriver`/
-  `PlaywrightConfig` from `ai-parrot-tools` — already a declared
-  workspace dependency of `ai-parrot-server`
-  (`ai-parrot-server/pyproject.toml:34,145`, verified), so this is the
-  module's first actual use of that dependency, not a new one.
-- **Interface Skeleton**:
-  ```python
-  # parrot/e2e/screencast.py (new)
-  from __future__ import annotations
-
-  from dataclasses import dataclass
-  from pathlib import Path
-
-  from parrot_tools.scraping.drivers.playwright_config import PlaywrightConfig  # verified: playwright_config.py:95,101-102
-  from parrot_tools.scraping.drivers.playwright_driver import PlaywrightDriver  # verified: playwright_driver.py:107-112,586-618
-
-  from parrot.e2e.errors import E2EError  # verified: parrot/e2e/errors.py (existing typed-error hierarchy)
-
-
-  class E2EScreencastContextReusedError(E2EError):
-      """Raised when the Obscura CDP endpoint already had a browser context.
-
-      record_video_dir only takes effect in engine="obscura" mode when
-      PlaywrightDriver._start_obscura_cdp creates a fresh context
-      (verified: playwright_driver.py:605-612) — this error makes a reused,
-      silently-ignored context a loud failure instead of a no-op recording.
-      """
-
-
-  @dataclass
-  class ScreencastSession:
-      """A started PlaywrightDriver recording session, not yet finalized."""
-      driver: PlaywrightDriver
-      out_dir: Path
-
-
-  async def start_screencast(cdp_endpoint: str, out_dir: Path) -> ScreencastSession:
-      """Connect over CDP in a fresh context and begin recording to out_dir.
-
-      Raises:
-          E2EScreencastContextReusedError: the endpoint already had a
-              browser context (record_video_dir would be silently ignored).
-      """
-
-  async def stop_screencast(session: ScreencastSession) -> Path:
-      """Close the context (Playwright finalizes the .webm on context.close()
-      only — verified against FEAT-763's design-research note on
-      WebBrowsingToolkit.close_browser(), same PlaywrightDriver mechanism)
-      and rename the resulting file to `<out_dir>/screencast.webm`.
-      """
-  ```
+- **Path**: `packages/ai-parrot-server/src/parrot/e2e/screencast.py` (new).
+- **Depends on**: successful M0 evidence and its finalized backend contract.
+- Implement the public start/stop contract from §2 using the proven backend.
+  Reject missing/closed page targets without creating or selecting another
+  page. Do not reject an existing context.
+- Bound frame buffering and make overflow an explicit recording failure;
+  never silently publish an incomplete capture as success. Timestamp frames
+  consistently with the M0-proven encoder. Flush and validate before final
+  publication; refuse to overwrite an existing final artifact.
+- Stop and startup-failure cleanup must preserve the selected page/context
+  and remote browser. Repeated stop must return the previously finalized
+  path or recorded error without signaling unrelated processes.
 
 ### Module 2: `parrot.e2e.cli` screencast subcommands
 
@@ -280,18 +224,25 @@ async def stop_screencast(session: "ScreencastSession") -> Path:
       """Operational screencast recording for exploration (FEAT-762) — never gate evidence."""
 
   @screencast_group.command("start")
-  @click.option("--cdp-endpoint", required=True, help="The browser target's CDP endpoint (e.g. from `parrot e2e up browser`).")
+  @click.option("--cdp-endpoint", required=True, help="Explicit CDP endpoint from the exploration configuration.")
+  @click.option("--page-target-id", required=True, help="Exact existing CDP page target ID.")
   @click.option("--out", "out_dir", required=True, type=click.Path(path_type=Path))
   @click.option("--owner-id", default=None)
   @click.option("--run-id", "invocation_id", default=None, help="Ticket id, same convention as `up --run-id` (cli.py's own reinterpretation, verified: cli.py:21-35).")
-  def screencast_start_command(cdp_endpoint: str, out_dir: Path, owner_id: Optional[str], invocation_id: Optional[str]) -> None:
+  def screencast_start_command(cdp_endpoint: str, page_target_id: str, out_dir: Path, owner_id: Optional[str], invocation_id: Optional[str]) -> None:
       """Spawn a detached daemon holding the recording session open; prints a ticket JSON line once ready."""
 
   @screencast_group.command("stop")
-  @click.argument("run_id")
+  @click.option("--run-id", required=True)
   def screencast_stop_command(run_id: str) -> None:
-      """Signal the daemon to close the context and print the finalized .webm path."""
+      """Signal the daemon to finalize capture and print the validated .webm path."""
   ```
+
+Tickets must include validated owner/run IDs, endpoint/page identity, daemon
+identity, readiness/finalization state, and terminal error or artifact path.
+Use recorder-specific ticket/log paths; reject duplicate live run IDs and
+verify daemon identity before signaling. Wait for terminal finalization,
+not just signal delivery. Bound waits and preserve typed failure output.
 
 ### Module 3: `.claude/agents/e2e-ui-tester.md` protocol edit
 
@@ -305,11 +256,12 @@ async def stop_screencast(session: "ScreencastSession") -> Path:
   # .claude/agents/e2e-ui-tester.md (modifies e2e-ui-tester.md:116 —
   # "Capture a screenshot on any unexpected finding." gains a sibling
   # sentence: "The first time this happens in a run, also run `parrot e2e
-  # screencast start --cdp-endpoint <endpoint> --out artifacts/logs/e2e/<run-id>/
+  # screencast start --cdp-endpoint <endpoint> --page-target-id <page-target-id>
+  # --out artifacts/logs/e2e/<run-id>/
   # --owner-id explore-e2e-ui-tester --run-id <run-id>-screencast`; at the
-  # end of exploration, always run `parrot e2e screencast stop
+  # end of exploration, before browser teardown, always run `parrot e2e screencast stop
   # --run-id <run-id>-screencast` if one was started, and add its reported
-  # path to this observation's evidence_refs."
+  # path to this observation's evidence_refs only on success."
   # verified: e2e-ui-tester.md:116)
   #
   # (modifies e2e-ui-tester.md:148 — the example `evidence_refs` array
@@ -320,50 +272,60 @@ async def stop_screencast(session: "ScreencastSession") -> Path:
 
 ---
 
+M3 also corrects the existing instruction to read `RunState.endpoint`:
+require an explicitly configured endpoint and obtain the exact page target
+ID from the automation session. Record an unavailable observation if these
+are missing. Keep screenshot evidence, label recordings as post-detection,
+and finalize the recorder before stopping browser targets on every path.
+
 ## 4. Test Specification
 
 ### Unit Tests
 
-| Test | Module | Description |
+| Test | Module | Required assertion |
 |---|---|---|
-| `test_start_screencast_fresh_context_succeeds` | Module 1 | mocked `PlaywrightDriver`: fresh context → `ScreencastSession` returned, `record_video_dir` passed through |
-| `test_start_screencast_reused_context_raises` | Module 1 | mocked driver reports an existing context → `E2EScreencastContextReusedError`, never a silent no-op |
-| `test_stop_screencast_finalizes_and_renames` | Module 1 | mocked `driver.quit()` + a fake Playwright-written video file → renamed to `<out_dir>/screencast.webm`, path returned |
-| `test_screencast_start_command_spawns_ticketed_daemon` | Module 2 | mirrors `test_up_command_*` in the existing `test_cli.py` (verified pattern: `test_cli.py:740`) |
-| `test_screencast_stop_command_signals_and_reports_path` | Module 2 | same mirrored pattern |
+| `test_start_screencast_existing_page_succeeds` | M1 | Attach to the exact existing page without replacing its context. |
+| `test_start_screencast_missing_page_raises` | M1 | Typed failure; no fallback to another page. |
+| `test_start_screencast_failure_releases_resources` | M1 | Capture/encoder failure cleans owned resources and preserves the browser. |
+| `test_stop_screencast_finalizes_and_preserves_page` | M1 | Flush/validate/publish then detach; do not close page or context. |
+| `test_stop_screencast_invalid_output_raises` | M1 | Empty/corrupt output never yields a success path. |
+| `test_screencast_start_command_spawns_ticketed_daemon` | M2 | Exact documented flags, including page target ID, reach the daemon. |
+| `test_screencast_stop_command_signals_and_reports_path` | M2 | Invoke `screencast stop --run-id ID`; wait for successful finalization. |
+| `test_screencast_daemon_lifecycle` | M2 | Duplicate run, stale PID, timeout, error, repeated stop, and signal cleanup. |
+| `test_exploration_screencast_protocol` | M3 | Zero anomalies means no recording; first anomaly starts once; stop precedes browser teardown even on error. |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_record_video_dir_produces_nonempty_webm` | Module 0 — real Obscura binary, opt-in, skips cleanly without one |
+| `test_existing_page_produces_playable_webm` | M0: real existing-page capture with visible post-start changes, decoded output, and ownership checks. |
+| `test_screencast_cli_round_trip` | M2: real detached start/stop across separate invocations, launcher-exit survival, playable artifact, and preserved page. |
 
 ### Validation Contract
 
 tests:
-- packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_record_video_dir_produces_nonempty_webm
+- packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_existing_page_produces_playable_webm
 - packages/ai-parrot-server/tests/unit/e2e/test_screencast.py
 - packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_start_command_spawns_ticketed_daemon
 - packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_stop_command_signals_and_reports_path
+- packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_daemon_lifecycle
+- packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_exploration_screencast_protocol
+- packages/ai-parrot-server/tests/integration/e2e/test_screencast_cli.py::test_screencast_cli_round_trip
 markers: none
 
 ### Test Data / Fixtures
 
-```python
-# Module 0 reuses the existing local_fixture_site fixture
-# (test_fixture_site_integration.py) and builds its own ObscuraProcessManager
-# bootstrap inline, following real_obscura_driver's exact pattern
-# (verified: test_fixture_site_integration.py:79-130) but WITHOUT reusing
-# that fixture directly, since record_video_dir must be set on
-# PlaywrightConfig before driver.start() is called and the shared fixture
-# does not parameterize it.
-```
+Reuse `local_fixture_site` and an isolated `ObscuraProcessManager` bootstrap.
+Do not reuse `real_obscura_driver`'s broad connection-error skip behavior.
+M0 uses a test-local prototype; M2 integration tests use production CLI code.
+Ordinary-suite skips without a binary are allowed for both real-browser
+tests, but neither skip counts as acceptance evidence.
 
 ### E2E Scenarios
 
 Not applicable — this feature adds no deterministic `parrot e2e run`
-scenario of its own; its tests run as plain `pytest` (one opt-in
-real-binary integration test, the rest mocked unit tests). The `e2e:`
+scenario of its own; its tests run as plain `pytest` (opt-in
+real-binary integration tests and mocked unit tests). The `e2e:`
 frontmatter key is intentionally omitted (§1 Non-Goals).
 
 ---
@@ -372,15 +334,19 @@ frontmatter key is intentionally omitted (§1 Non-Goals).
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] Module 0's spike test exists and either (a) passes against a real
-  Obscura binary when run manually with one configured, producing a
-  non-empty `.webm`, or (b) skips cleanly (never fails) without one.
-- [ ] `start_screencast()` raises `E2EScreencastContextReusedError` —
-  never silently records nothing — when the CDP endpoint already has a
-  pre-existing browser context.
+- [ ] M0 has a successful real-Obscura run, decoded-video assertions, and
+  persisted evidence; its proven backend contract is recorded before M1–M3.
+  A skip never satisfies this gate.
+- [ ] Ordinary suites skip only when no binary is available; configured
+  startup/connection/capture/encoding failures fail the real tests.
+- [ ] Recording starts on the exact existing page after navigation and
+  anomaly detection, preserving context, state, and browser ownership.
+- [ ] Missing target, unsupported capture, encoder failure, and invalid
+  output produce typed errors without claiming a finalized artifact.
+
 - [ ] `parrot e2e screencast start` + `parrot e2e screencast stop`
   round-trip produces a `.webm` at a stable, predictable path under
-  `artifacts/logs/e2e/<run-id>/`.
+  `artifacts/logs/e2e/<run-id>/`; the real CLI round-trip test passes.
 - [ ] `e2e-ui-tester` starts a screencast only after the first observed
   anomaly in a run — a clean run (zero anomalies) never produces a
   `.webm`.
@@ -396,72 +362,39 @@ frontmatter key is intentionally omitted (§1 Non-Goals).
 
 ## 6. Codebase Contract
 
-### Verified Imports
+### Verified Existing Contracts
 
-```python
-from parrot_tools.scraping.drivers.playwright_config import PlaywrightConfig  # verified: packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py:95,101-102
-from parrot_tools.scraping.drivers.playwright_driver import PlaywrightDriver  # verified: packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py (module exists, class defined)
-from parrot.e2e.errors import E2EError, E2EConfigError, E2EPrerequisiteError  # verified: packages/ai-parrot-server/src/parrot/e2e/errors.py (existing typed-error hierarchy, used throughout cli.py/runner.py)
-from parrot.e2e.targets.browser import build_browser_adapter  # verified: packages/ai-parrot-server/src/parrot/e2e/targets/browser.py (factory, existing — read only, never modified)
-```
+- `PlaywrightDriver._start_obscura_cdp()` in
+  `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py`
+  reuses `browser.contexts[0]` when present; only new contexts receive
+  `_build_context_kwargs()` including `record_video_dir`. This is the reason
+  the old recording approach is excluded, not an integration to copy.
+- `parrot.e2e.errors` supplies `E2EError`, `E2EConfigError`, and
+  `E2EPrerequisiteError`. New recording errors follow this hierarchy.
+- `cli.py` supplies `_daemon_log_path`, `_spawn_detached_target`, safe ID
+  validation, JSON output, and ticket lifecycle patterns. Mirror the pattern,
+  but use a distinct recorder daemon and ticket namespace.
+- `_BrowserAdapter.ready()` returns a boolean. Its endpoint table is private
+  process-local state; persisted `RunState.endpoint` is not populated.
+  The caller must supply an endpoint from explicit exploration configuration.
+- `E2ESupervisor._log_path()` uses `artifacts/logs/e2e/<run-id>/`.
+- No existing `PlaywrightDriver.start_screencast()` or `.record_video()`
+  method exists. No recording field is added to `E2EVerdict`.
 
-### Existing Class Signatures
+### Backend Contract Gate
 
-```python
-# packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py
-class PlaywrightDriver(AbstractDriver):
-    async def start(self) -> None: ...          # line 107 (engine=="obscura" branch returns after _start_obscura_cdp)
-    async def quit(self) -> None: ...            # line 157
-    def _is_obscura(self) -> bool: ...            # line 521 (property)
-    def _cdp_endpoint(self) -> str: ...           # line 577 — returns config.cdp_endpoint_url or f"http://127.0.0.1:{config.obscura_port}"
-    async def _start_obscura_cdp(self, browser_launcher) -> None: ...  # line 586
-    def _build_context_kwargs(self) -> dict: ...  # line 636 — includes record_video_dir (line 655-656) and record_har_path (657-658) when set
+The active-page backend is proposed, not verified against Obscura. M0 must
+replace this gate with tested imports, session resource types, transport
+calls, encoding APIs, and dependency declarations before M1 is actionable.
+A Chromium protocol reference alone is not evidence of Obscura support.
 
-# packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py
-@dataclass
-class PlaywrightConfig:
-    record_video_dir: Optional[str] = None   # line 95
-    engine: str = "playwright"               # line 101
-    cdp_endpoint_url: Optional[str] = None   # line 102
-    # __post_init__ (existing) requires engine="obscura" => browser_type="chromium"
-
-# packages/ai-parrot-server/src/parrot/e2e/supervisor.py
-class E2ESupervisor:
-    def _log_path(self, run_id: str, target_id: str) -> Path: ...  # line 889
-    # Returns <worktree>/artifacts/logs/e2e/<run_id>/<target_id>.log — the
-    # convention a sibling screencast.webm follows (NOT the private
-    # sdd/state/e2e/<run_id>/ run_dir from parrot.e2e.state).
-
-# packages/ai-parrot-server/src/parrot/e2e/cli.py
-def _daemon_log_path(worktree: Path, invocation_id: str) -> Path: ...  # line 460
-async def _spawn_detached_target(...) -> ...: ...                       # line 485 — pattern to mirror for screencast start
-```
-
-### Integration Points
-
-| New Component | Connects To | Via | Verified At |
-|---|---|---|---|
-| `parrot.e2e.screencast.start_screencast` | `PlaywrightDriver(PlaywrightConfig(engine="obscura", ...))` | direct construction + `await driver.start()` | `playwright_driver.py:107-112,586-618` |
-| `parrot.e2e.screencast.start_screencast` | `driver._owns_context` (post-`start()` state) | read, to detect reused vs. fresh context | `playwright_driver.py:81` (`self._owns_context` attribute, set in `_start_obscura_cdp`) |
-| `parrot.e2e.cli.screencast_start_command` | `_spawn_detached_target` pattern | mirrors, not calls directly (new daemon entry point for the screencast process) | `cli.py:485` |
-| `.claude/agents/e2e-ui-tester.md` | `parrot e2e screencast start`/`stop` | `Bash` tool invocation | `cli.py` (new, Module 2) |
-
-### Does NOT Exist (Anti-Hallucination)
-
-- ~~`parrot.e2e.targets.browser._BrowserAdapter.record_video`~~ — the
-  `browser` target adapter has no video-related option; it only spawns
-  `obscura serve` (verified absent: `browser.py` `_OWNED_SUPPORTED_OPTIONS
-  = frozenset({"port", "stealth", "allow_private_network"})`).
-- ~~`RunState.endpoint`~~ — never populated by the supervisor for any
-  target kind (per `browser.py`'s own docstring); the CDP endpoint must
-  come from `_BrowserAdapter`'s own per-run table or be passed explicitly
-  by the caller, never read off a persisted `RunState`.
-- ~~`PlaywrightDriver.start_screencast()` / `.record_video()`~~ — no such
-  method exists on `PlaywrightDriver` itself; recording is entirely a
-  `PlaywrightConfig`-time option plus this feature's own
-  `parrot.e2e.screencast` wrapper, never a driver method.
-- ~~A `screencast` field in `E2EVerdict` or `VerificationResult`~~ — does
-  not exist and this feature does not add one (§1 Non-Goals).
+The candidate CDP frame lifecycle is documented in the official
+[Page domain](https://chromedevtools.github.io/devtools-protocol/tot/Page/).
+Frames require a separate encoder; [PyAV's encoding example](https://pyav.org/docs/stable/cookbook/numpy.html)
+illustrates encoding and flushing, not proof of WebM codec availability here.
+The root `pyproject.toml` has an `av` override, which is not an installation
+or a server runtime dependency declaration. Do not import it solely on that
+basis or introduce a new encoder dependency without approval.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -475,6 +408,7 @@ async def _spawn_detached_target(...) -> ...: ...                       # line 4
 | `.claude/agents/e2e-ui-tester.md` | MODIFY | `Capture a screenshot on any unexpected finding.` | `e2e-ui-tester.md:116` | 1 |
 | `.claude/agents/e2e-ui-tester.md` | MODIFY | `"evidence_refs": ["artifacts/logs/e2e/browser-explore/screenshot.png"]` | `e2e-ui-tester.md:148` | 1 |
 | `packages/ai-parrot-server/tests/unit/e2e/test_screencast.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/tests/integration/e2e/test_screencast_cli.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/tests/unit/e2e/test_cli.py` | MODIFY | `def test_resolve_worktree_falls_back_to_start_without_a_git_ancestor(tmp_path: Path) -> None:` | `test_cli.py:740` | 1 |
 
 ---
@@ -483,9 +417,10 @@ async def _spawn_detached_target(...) -> ...: ...                       # line 4
 
 ### Patterns to Follow
 
-- The opt-in, cleanly-skipping real-binary test pattern already used by
-  `real_obscura_driver`/`real_playwright_driver` (`pytest.skip`, never
-  `pytest.fail`, on a missing binary or failed connection).
+- Use the real fixture's isolated bootstrap/cleanup pattern, but skip only
+  when no binary is available. Configured failures are failures. A skip is
+  never feasibility evidence or authorization to implement M1–M3.
+
 - The `up`/`down` detached-daemon/ticket-file lifecycle already in
   `cli.py` (`_spawn_detached_target`, `_daemon_log_path`,
   `artifacts/logs/e2e/_up_tickets/` convention) — Module 2 mirrors this
@@ -496,17 +431,14 @@ async def _spawn_detached_target(...) -> ...: ...                       # line 4
 
 ### Known Risks / Gotchas
 
-- **Obscura may not support Playwright's video mechanism at all** (no
-  row in `docs/obscura-headless-browser.md`'s compatibility matrix for
-  video/screencast, and a sibling CDP feature — `get_page_source` — has
-  a documented real-binary gap). *Mitigation*: Module 0's gated spike
-  runs first; if it fails, Module 1's design must change (e.g. raw CDP
-  frame capture) before any further work.
-- **A reused CDP context silently drops the recording** even when
-  Obscura itself supports the mechanism. *Mitigation*: Module 1 asserts
-  `driver._owns_context` after `start()` and raises
-  `E2EScreencastContextReusedError` rather than returning a session that
-  silently records nothing.
+- **Active-page capture and encoding are unproven.** M0 must prove both
+  against real Obscura; absent/failed evidence blocks dependent modules.
+- **Existing page ownership.** Do not create/close a context, navigate away,
+  clear cookies, or close the remote browser as a recording side effect.
+  Verify cleanup with the original automation client still attached.
+- **No pre-anomaly footage.** Capture begins after detection. Reports must
+  distinguish subsequent investigation/reproduction from the original event.
+
 - **No retention policy for `artifacts/logs/e2e/`.** Accepted, deferred
   risk (§1 Non-Goals, proposal U3) — the on-anomaly-only trigger bounds
   how often a `.webm` is produced, but no automatic cleanup exists.
@@ -522,17 +454,22 @@ async def _spawn_detached_target(...) -> ...: ...                       # line 4
 
 ### External Dependencies
 
-None new. `playwright` and `ai-parrot-tools` are already transitive
-dependencies of `ai-parrot-server` (verified:
-`packages/ai-parrot-server/pyproject.toml:34,145`).
+No dependency is added by this spec revision. The existing Playwright extra
+is not proof of a frame-to-WebM encoder. M0 must identify usable installed
+capture/codec dependencies and their supported package install path. If a
+new dependency is required, approval and an updated dependency contract
+are prerequisites to implementation.
 
 ---
 
 ## 8. Open Questions
 
-> All open questions raised during the proposal phase were resolved
-> there (`sdd/proposals/e2e-browser-screencast-logs.proposal.md` §5);
-> none remain blocking at spec time.
+Requirements for triggering and evidence placement are settled. One
+technical gate remains unresolved:
+
+- [ ] Which active-page transport and WebM encoder work against Obscura
+  v0.2.2 using approved dependencies? M0 must provide successful evidence
+  and freeze this contract before M1–M3 are decomposed or implemented.
 
 - [x] Should the implementation be gated behind a real-Obscura-binary
   spike before building the full feature? — *Resolved in proposal*: Yes
@@ -549,9 +486,12 @@ dependencies of `ai-parrot-server` (verified:
 
 ## 9. Design Research Cross-Check
 
-Status: skipped (the exploration document's status is `discussion`, not
-`accepted` — the §3b precondition for an independent `codex` design
-review was never met, regardless of `codex` CLI availability).
+The independent review on 2026-10-27 confirmed three findings: incompatible
+fresh-context lifecycle (`issue:4953fd5ba7a1`), inconsistent stop syntax
+(`issue:65ed88622c76`), and a skippable feasibility gate (`issue:f94f346dad94`).
+This revision replaces the lifecycle with an active-page contract, uses
+`stop --run-id` consistently, and requires successful real-binary evidence.
+These are specification corrections, not proof that recording works.
 
 ---
 
@@ -563,17 +503,18 @@ review was never met, regardless of `codex` CLI availability).
   task inside it.
 - **Module dependency graph**:
   - M0 (spike test) → no dependencies; gates M1.
-  - M1 (`screencast.py`) depends on M0 passing.
+  - M1 (`screencast.py`) depends on M0 passing and its backend contract update.
   - M2 (`cli.py` subcommands) depends on M1 (imports `start_screencast`/`stop_screencast`).
   - M3 (`e2e-ui-tester.md` prose edit) depends on M2 (needs the final CLI invocation shape).
   - This is a strictly linear chain (M0 → M1 → M2 → M3) — no two modules
     are independent enough to run concurrently; task decomposition
     should reflect that with `depends_on`, not parallel lanes.
-- **Shared files**: none touched by more than one module.
-- **Exclusive resources**: none — no lockfile, migration, or extension
-  rebuild involved.
+- **Shared files**: M2 and M3 add tests to `test_cli.py`; keep their tasks sequential.
+- **Exclusive resources**: no migration or extension rebuild is planned.
+  Any dependency/lockfile changes discovered by M0 require approval and
+  an updated task scope before proceeding.
 - **Cross-feature dependencies**: none. (FEAT-763,
   `browsing-playwright-default-and-screencast`, is a related but
-  separate feature touching the same `PlaywrightConfig.record_video_dir`
-  mechanism from the `WebScrapingToolkit`/browsing-DSL side — no file
+  separate feature using `PlaywrightConfig.record_video_dir`
+  from the `WebScrapingToolkit`/browsing-DSL side — no file
   overlap with this spec's Edit Sites, no merge-order dependency.)
