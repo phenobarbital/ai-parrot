@@ -307,7 +307,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -317,8 +317,9 @@
       "parallelism_notes": "reads the parrot_presentation payload shape fixed by TASK-4765 (inline/emitter.py presentation_extension)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4768-ui-presentation-marker.md"
+      "completed_at": "2026-10-27T11:58:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4768-ui-presentation-marker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4769",
