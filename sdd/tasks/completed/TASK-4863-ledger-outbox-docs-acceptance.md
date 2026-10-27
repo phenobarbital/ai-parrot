@@ -272,4 +272,4 @@ See the blueprint above. Save the run log under `artifacts/logs/`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 146s. docs/sdd/ledger-outbox.md, cheatsheet correction, end-to-end acceptance tests; merge-tier green (60 passed, 1 skipped). No corrections.
