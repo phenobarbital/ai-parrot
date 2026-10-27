@@ -55,10 +55,10 @@
       "feature_id": "FEAT-762",
       "feature": "e2e-browser-screencast-logs",
       "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-10-27T23:53:58+00:00",
       "parallel": true,
       "id": "TASK-4864",
       "slug": "e2e-screencast-recorder",
@@ -67,7 +67,8 @@
       "effort": "L",
       "depends_on": [],
       "parallelism_notes": "Root of M1-M3; creates screencast.py + E2EScreencastError; M0 contract already frozen in the spec (TASK-4842 spike evidence), no code dependency on it.",
-      "file": "sdd/tasks/active/TASK-4864-e2e-screencast-recorder.md"
+      "file": "sdd/tasks/completed/TASK-4864-e2e-screencast-recorder.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-762",

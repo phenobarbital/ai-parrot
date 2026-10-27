@@ -325,4 +325,6 @@ existing M0 integration test and TASK-4865's real-Obscura test.
 
 ## Completion Note
 
-Owned by the finalization tool after verified acceptance.
+**Completed**: 2026-10-27 — delivered by seat gpt-5.6-sol (attempt 3; attempts 1-2 on gpt-5.6-terra, task-tier validation reported `validation_failed: 0 failure(s)` — an engine attribution glitch: attempt had no execution_id). Branch merged manually (`a67723f6e`).
+**Verification**: 8/8 unit tests in `test_screencast.py` pass; merge-tier validation `completed` (M0 real-Obscura node `1 passed`); ruff residual only `ASYNC240` (blocking `Path.exists()` in async fn) — style debt left for /sdd-done.
+**Notes**: `E2EScreencastError` appended to `errors.py`; `av`/`PIL` imported lazily in worker helpers; `_run_in_worker` is the patch point for tests. No deviations from the task's file list.
