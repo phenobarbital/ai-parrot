@@ -819,7 +819,7 @@ runners:
 > The two `ai-parrot-visualizations` files are regression gates only — this feature edits nothing in that package;
 > run them with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-visualizations/src` inside the worktree.
 
-The M2 upstream Mermaid parse check and M6 rendered resize/roam check are additional acceptance gates, with versioned evidence in `artifacts/logs/`; the automated runner list does not replace them.
+> The M2 upstream Mermaid parse check and M6 rendered resize/roam check are additional acceptance gates, with versioned evidence in `artifacts/logs/`; the automated runner list does not replace them.
 
 ### Test Data / Fixtures
 ```python
