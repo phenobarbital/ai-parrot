@@ -56,17 +56,30 @@ class _MinimalReviewer:
         self,
         repository: str = "owner/repo",
         jira_project: str = "NAV",
+        sdd_feature_prefix: str = "FEAT",
+        enable_sdd_spec_fallback: bool = True,
+        max_spec_scan_files: int = 500,
         max_ticket_bytes: int = 20_000,
         ac_field_id: str = "customfield_10100",
     ) -> None:
         self.repository = repository
         self._repository_lc = repository.lower()
         self.jira_project = jira_project
+        self.sdd_feature_prefix = sdd_feature_prefix
+        self.enable_sdd_spec_fallback = enable_sdd_spec_fallback
+        if (
+            isinstance(max_spec_scan_files, bool)
+            or not isinstance(max_spec_scan_files, int)
+            or max_spec_scan_files <= 0
+        ):
+            raise ValueError("max_spec_scan_files must be a positive integer")
+        self.max_spec_scan_files = max_spec_scan_files
         self.max_ticket_bytes = max_ticket_bytes
         self._ac_field_id = ac_field_id
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
         self._jira_strict_fields = ",".join(sorted({"summary", "description", "status", "assignee", ac_field_id}))
         self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
+        self._feature_id_regex = re.compile(rf"\b{re.escape(sdd_feature_prefix)}-\d+\b")
         # /review_pr gate knobs — mirror GitHubReviewer.__init__ defaults.
         self.min_check_pass_ratio = 0.8
         self.require_checks = False
@@ -103,6 +116,7 @@ class _MinimalReviewer:
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
+    _extract_feature_id = GitHubReviewer._extract_feature_id
     _format_review_body = GitHubReviewer._format_review_body
     _format_alert_message = GitHubReviewer._format_alert_message
     _format_no_ticket_comment = GitHubReviewer._format_no_ticket_comment
@@ -683,6 +697,77 @@ class TestExtractTicketKey:
         r = _MinimalReviewer()
         # XNAV-1 must NOT match — guards against false positives.
         assert r._extract_ticket_key("backport XNAV-1", "") is None
+
+
+class TestSDDReviewerFoundations:
+    def test_extract_feature_id_matches_feat_prefix(self) -> None:
+        """Recognize the configured prefix, respecting word boundaries and text order."""
+        reviewer = _MinimalReviewer()
+
+        assert reviewer._extract_feature_id("Implements FEAT-811", "") == "FEAT-811"
+        assert reviewer._extract_feature_id("", "No feature here") is None
+        assert reviewer._extract_feature_id("XFEAT-811", "") is None
+        assert reviewer._extract_feature_id("FEAT-811 then FEAT-900", "FEAT-901") == "FEAT-811"
+
+        custom = _MinimalReviewer(sdd_feature_prefix="SDD+")
+        assert custom._extract_feature_id("first SDD+-42", "SDD+-43") == "SDD+-42"
+        assert custom._extract_feature_id("", "") is None
+
+    def test_source_defaults_and_scan_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Default to Jira on results and enabled bounded SDD lookup on reviewers."""
+        monkeypatch.setattr(github_reviewer.Agent, "__init__", lambda self, **kwargs: None)
+        monkeypatch.setattr(GitHubReviewer, "_apply_google_api_key", lambda self, explicit=None: False)
+
+        reviewer = GitHubReviewer("owner/repo")
+        assert reviewer.sdd_feature_prefix == "FEAT"
+        assert reviewer.enable_sdd_spec_fallback is True
+        assert reviewer.max_spec_scan_files == 500
+
+        disabled = GitHubReviewer(
+            "owner/repo",
+            sdd_feature_prefix="FEATURE",
+            enable_sdd_spec_fallback=False,
+            max_spec_scan_files=17,
+        )
+        assert disabled.sdd_feature_prefix == "FEATURE"
+        assert disabled.enable_sdd_spec_fallback is False
+        assert disabled.max_spec_scan_files == 17
+
+        for invalid_cap in (True, False, 0, -1, 1.5, "10", None):
+            with pytest.raises(ValueError, match="positive integer"):
+                GitHubReviewer("owner/repo", max_spec_scan_files=invalid_cap)
+
+        assert PRReviewResult(summary="ok", approve=True).requirement_source == "jira"
+        assert PRReviewResult(summary="ok", approve=True, requirement_source="sdd_spec").requirement_source == "sdd_spec"
+        with pytest.raises(ValueError):
+            PRReviewResult(summary="ok", approve=True, requirement_source="other")
+
+    @pytest.mark.asyncio
+    async def test_fetch_pr_payload_includes_base_ref(self) -> None:
+        """Copy the base branch and SHA without an additional GitHub request."""
+        cases = (
+            ({"base": {"ref": "dev", "sha": "base123"}}, "dev", "base123"),
+            ({"base": None}, "", ""),
+            ({"base": {}}, "", ""),
+            ({}, "", ""),
+        )
+
+        for pr_fields, expected_ref, expected_sha in cases:
+            reviewer = _MinimalReviewer()
+            reviewer.git_toolkit = MagicMock()
+            reviewer.git_toolkit.get_pull_request = AsyncMock(
+                return_value={"title": "PR", "head": {"sha": "head123"}, **pr_fields}
+            )
+
+            payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+
+            assert payload is not None
+            assert payload["base_ref"] == expected_ref
+            assert payload["base_sha"] == expected_sha
+            reviewer.git_toolkit.get_pull_request.assert_awaited_once_with(
+                pr_number=42,
+                repository="owner/repo",
+            )
 
 
 class TestFormatReviewBody:

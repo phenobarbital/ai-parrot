@@ -265,6 +265,7 @@ class PRReviewResult(BaseModel):
         default=None,
         description="The Jira issue key referenced by the PR, if any.",
     )
+    requirement_source: Literal["jira", "sdd_spec"] = "jira"
     discrepancies: List[Discrepancy] = Field(
         default_factory=list,
         description="Discrepancies found between the PR and the ticket.",
@@ -504,6 +505,13 @@ class GitHubReviewer(Agent):
         jira_project: Jira project key whose tickets the PRs reference
             (default ``"NAV"``). Used to build the regex that extracts the
             ticket key from the PR body / title.
+        sdd_feature_prefix: Prefix used to extract SDD feature identifiers
+            from PR titles and bodies. Defaults to ``"FEAT"``.
+        enable_sdd_spec_fallback: Whether later review integration may use
+            an SDD specification when no Jira key is present. Defaults to
+            ``True``.
+        max_spec_scan_files: Positive upper bound on specification candidate
+            files inspected during a lookup. Defaults to ``500``.
         alert_chat_ids: Telegram chat IDs that should receive a private
             alert when a discrepancy is found.
         public_channel_id: Telegram chat / channel ID that receives the
@@ -740,6 +748,9 @@ class GitHubReviewer(Agent):
         repository: str,
         *,
         jira_project: str = "NAV",
+        sdd_feature_prefix: str = "FEAT",
+        enable_sdd_spec_fallback: bool = True,
+        max_spec_scan_files: int = 500,
         alert_chat_ids: Optional[List[ChatId]] = None,
         public_channel_id: Optional[ChatId] = None,
         management_chat_id: Optional[ChatId] = None,
@@ -771,6 +782,15 @@ class GitHubReviewer(Agent):
         self.repository = repository
         self._repository_lc = repository.lower()
         self.jira_project = jira_project
+        self.sdd_feature_prefix = sdd_feature_prefix
+        self.enable_sdd_spec_fallback = enable_sdd_spec_fallback
+        if (
+            isinstance(max_spec_scan_files, bool)
+            or not isinstance(max_spec_scan_files, int)
+            or max_spec_scan_files <= 0
+        ):
+            raise ValueError("max_spec_scan_files must be a positive integer")
+        self.max_spec_scan_files = max_spec_scan_files
         self.alert_chat_ids: List[ChatId] = list(alert_chat_ids or [])
         self.public_channel_id = public_channel_id
         # Management reports (today's PRs, weekly activity, Jira tickets) go
@@ -824,6 +844,7 @@ class GitHubReviewer(Agent):
         )
 
         self._ticket_key_regex = re.compile(rf"\b{re.escape(self.jira_project)}-\d+\b")
+        self._feature_id_regex = re.compile(rf"\b{re.escape(self.sdd_feature_prefix)}-\d+\b")
 
         self.git_toolkit: Optional[GitToolkit] = None
         self.jira_toolkit: Optional[JiraToolkit] = None
@@ -1516,6 +1537,16 @@ class GitHubReviewer(Agent):
             if not text:
                 continue
             match = self._ticket_key_regex.search(text)
+            if match:
+                return match.group(0)
+        return None
+
+    def _extract_feature_id(self, *texts: str) -> Optional[str]:
+        """Return the first configured SDD feature identifier in the supplied texts."""
+        for text in texts:
+            if not text:
+                continue
+            match = self._feature_id_regex.search(text)
             if match:
                 return match.group(0)
         return None
@@ -2324,6 +2355,8 @@ class GitHubReviewer(Agent):
             "pr_body": pr.get("body") or "",
             "pr_url": pr.get("html_url") or "",
             "head_sha": ((pr.get("head") or {}).get("sha")) or "",
+            "base_ref": ((pr.get("base") or {}).get("ref")) or "",
+            "base_sha": ((pr.get("base") or {}).get("sha")) or "",
             "author": ((pr.get("user") or {}).get("login")) or "",
             "draft": bool(pr.get("draft")),
             "state": pr.get("state") or "",
