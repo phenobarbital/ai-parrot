@@ -76,7 +76,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -84,8 +84,9 @@
       "parallelism_notes": "foundation; no dependencies",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4757-route-labels-hint-channel.md"
+      "completed_at": "2026-10-27T02:56:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4757-route-labels-hint-channel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4758",
@@ -156,7 +157,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -164,8 +165,9 @@
       "parallelism_notes": "no dependencies: TASK-4757 duck-types the ctx on purpose; touches only utils/helpers.py and bots/abstract.py",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4761-request-context-hint-attribute.md"
+      "completed_at": "2026-10-27T02:56:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4761-request-context-hint-attribute.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4762",
@@ -174,7 +176,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -182,8 +184,9 @@
       "parallelism_notes": "no dependencies: reads only the existing catalog (get_component, ComponentDefinition.schema_)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4762-catalog-schema-to-pydantic.md"
+      "completed_at": "2026-10-27T02:56:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4762-catalog-schema-to-pydantic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4763",
@@ -192,7 +195,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -200,8 +203,9 @@
       "parallelism_notes": "no dependencies: reads definition.instructions from the existing catalog; owns tests/outputs/a2ui/inline/__init__.py",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4763-inline-prompt-builder.md"
+      "completed_at": "2026-10-27T02:56:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4763-inline-prompt-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4764",
