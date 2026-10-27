@@ -64,7 +64,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -72,8 +72,9 @@
       "parallelism_notes": "root: creates C4 fields/Literals in graph/models.py and the shared fixture every Python task loads",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4784-c4-graph-vocabulary.md"
+      "completed_at": "2026-10-27T12:07:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4784-c4-graph-vocabulary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4785",
@@ -182,7 +183,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -190,8 +191,9 @@
       "parallelism_notes": "independent: only ECharts.svelte and its new test file",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4790-echarts-chart-ready-hook.md"
+      "completed_at": "2026-10-27T12:07:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4790-echarts-chart-ready-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4791",
@@ -200,7 +202,7 @@
       "feature_id": "FEAT-754",
       "feature": "a2ui-c4-diagrams",
       "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -208,8 +210,9 @@
       "parallelism_notes": "independent: frozen wire shape from spec §2; touches only A2UIGraph.svelte/.test.ts",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4791-a2uigraph-c4-option.md"
+      "completed_at": "2026-10-27T12:07:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4791-a2uigraph-c4-option.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4792",

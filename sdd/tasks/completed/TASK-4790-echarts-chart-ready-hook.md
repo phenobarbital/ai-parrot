@@ -197,8 +197,8 @@ Standard FEAT-754 procedure (vitest in `packages/ai-parrot-server/ui`); close wi
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), attempt 3; review fix 7e99bc579 by sdd-worker (feedback coder-feedback:630d847533559c4a8242574f)
+**Date**: 2026-10-27
+**Notes**: vitest ECharts.test.ts 4/4 + pytest wrapper passed (run by sdd-worker). Engine task/merge-tier gate's vitest runner stayed red (`pnpm exec vitest`: "Command vitest not found" in the validation sandbox, exit 254) although the same command passes from a normal shell; merged on explicit user authorization (manual `git merge --no-ff`) with sdd-worker-run test evidence. finalize_task not used: it requires a green engine validation ref.
 
 **Deviations from spec**: none

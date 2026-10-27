@@ -313,8 +313,8 @@ See the blueprint block for `test_models_c4.py`; spec §4 rows tagged M1.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-27
+**Notes**: pytest wave-1 merge tier: 17 passed (engine run); vitest A2UIGraph+ECharts 17/17 passed (run by sdd-worker). Engine task/merge-tier gate's vitest runner stayed red (`pnpm exec vitest`: "Command vitest not found" in the validation sandbox, exit 254) although the same command passes from a normal shell; merged on explicit user authorization (manual `git merge --no-ff`) with sdd-worker-run test evidence. finalize_task not used: it requires a green engine validation ref.
 
 **Deviations from spec**: none
