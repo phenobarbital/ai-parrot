@@ -39,7 +39,6 @@ and wired into exactly one call site) — long-lived hosts call
 """
 import asyncio
 import importlib.util
-import json
 import logging
 import os
 import threading
@@ -60,6 +59,7 @@ from ..base import (
     GuardrailResult,
     GuardrailStage,
 )
+from ._engine_chassis import ClassifierOnnxEngine, env_int, load_tokenizer, resolve_positive_index, softmax
 
 logger = logging.getLogger(__name__)
 
@@ -160,13 +160,7 @@ def _env_int(name: str, default: int) -> int:
     Returns:
         The parsed integer, or ``default``.
     """
-    raw = os.environ.get(name, "")
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
+    return env_int(name, default)
 
 
 @runtime_checkable
@@ -185,74 +179,26 @@ class _InjectionScoringEngine(Protocol):
         ...
 
 
-class _OnnxInjectionEngine:
+class _OnnxInjectionEngine(ClassifierOnnxEngine):
     """ONNX Runtime scoring engine for the prompt-injection classifier.
 
-    Tokenizes with ``truncation=True, max_length=512`` and resolves the
-    injection-class logit index from the model config's ``id2label``
-    mapping — never assumed to be index 1. ORT thread pools are capped
-    BEFORE session construction (mirrors
-    ``supertonic_inference.py:462-475``) so this session can never starve
-    the event loop.
-
-    Attributes:
-        engine_name: Always ``"onnx"``.
-        model_id: The resolved model id or local directory path.
+    FEAT-761: implementation lives in the shared chassis
+    (`_engine_chassis.ClassifierOnnxEngine`); this subclass pins the
+    injection category's env prefix and positive label, and keeps the
+    `_injection_index` attribute existing callers/tests read.
     """
-    engine_name = "onnx"
 
     def __init__(self, tokenizer_dir: Path, graph_path: Path, model_id: str) -> None:
-        """Load the tokenizer and construct the capped ORT session.
-
-        Args:
-            tokenizer_dir: Directory containing the tokenizer + config
-                files (may be the same directory as *graph_path*'s parent,
-                or a repo root when the graph lives in a nested ``onnx/``
-                subdirectory of a cached HF snapshot).
-            graph_path: Exact path to ``model.onnx``.
-            model_id: Identifier logged/reported as this engine's model
-                (a repo id or a local directory path).
-
-        Raises:
-            Exception: Any tokenizer/session construction failure —
-                callers MUST catch and fall through; this constructor
-                never swallows errors itself.
-        """
-        import onnxruntime as ort
-
-        self.model_id = model_id
-        # `tokenizer_dir` is always a local directory in this module's usage
-        # (an env dir or an already-resolved cached-snapshot path) — never a
-        # bare HF repo id. `local_files_only=True` makes the "construction
-        # never downloads" guarantee mechanical rather than incidental.
-        self._tokenizer = _load_tokenizer(tokenizer_dir)
-
-        opts = ort.SessionOptions()
-        # Cap ORT's CPU parallelism BEFORE session construction. Uncapped,
-        # the intra-op pool is sized to every physical core PER SESSION —
-        # the exact failure mode documented in
-        # supertonic_inference.py:462-472, where it starved the event loop.
-        intra = _env_int("PARROT_INJECTION_ORT_INTRA_OP_THREADS", 2)
-        if intra > 0:
-            opts.intra_op_num_threads = intra
-        opts.inter_op_num_threads = _env_int("PARROT_INJECTION_ORT_INTER_OP_THREADS", 1)
-
-        self._session = ort.InferenceSession(
-            str(graph_path), sess_options=opts, providers=["CPUExecutionProvider"],
+        """Load the tokenizer and construct the capped ORT session (raises on failure)."""
+        super().__init__(
+            tokenizer_dir, graph_path, model_id,
+            env_prefix="PARROT_INJECTION", positive_label_match=("inject",), max_length=_ONNX_MAX_LENGTH,
         )
-        self._input_names = {inp.name for inp in self._session.get_inputs()}
-        self._injection_index = _resolve_injection_index(tokenizer_dir)
 
-    def score(self, text: str) -> float:
-        """Return the injection probability ORT computes for *text*."""
-        encoded = self._tokenizer(
-            text, return_tensors="np", truncation=True, max_length=_ONNX_MAX_LENGTH,
-        )
-        feed = {
-            name: value for name, value in encoded.items() if name in self._input_names
-        }
-        logits = self._session.run(None, feed)[0]
-        return float(_softmax(logits[0])[self._injection_index])
+    @property
+    def _injection_index(self) -> int:
+        """Injection-class logit index (alias of the chassis positive index)."""
+        return self._positive_index
 
 
 class _PytectorInjectionEngine:
@@ -305,11 +251,7 @@ def _softmax(logits: Any) -> Any:
     Returns:
         A ``numpy.ndarray`` of probabilities summing to 1.
     """
-    import numpy as np
-
-    shifted = logits - np.max(logits)
-    exps = np.exp(shifted)
-    return exps / np.sum(exps)
+    return softmax(logits)
 
 
 def _load_tokenizer(tokenizer_dir: Path) -> Any:
@@ -332,34 +274,7 @@ def _load_tokenizer(tokenizer_dir: Path) -> Any:
         Exception: Whatever ``AutoTokenizer`` raised when no
             ``tokenizer.json`` fallback is available.
     """
-    from transformers import AutoTokenizer
-
-    try:
-        return AutoTokenizer.from_pretrained(str(tokenizer_dir), local_files_only=True)
-    except ValueError as exc:
-        tokenizer_file = tokenizer_dir / "tokenizer.json"
-        if not tokenizer_file.exists():
-            raise
-        logger.info(
-            "AutoTokenizer rejected %s (%s); loading tokenizer.json directly "
-            "via PreTrainedTokenizerFast.", tokenizer_dir, exc,
-        )
-        from transformers import PreTrainedTokenizerFast
-
-        special: dict[str, Any] = {}
-        config_file = tokenizer_dir / "tokenizer_config.json"
-        if config_file.exists():
-            try:
-                cfg = json.loads(config_file.read_text())
-            except (OSError, ValueError):
-                cfg = {}
-            for key in (
-                "pad_token", "cls_token", "sep_token", "unk_token", "mask_token",
-                "bos_token", "eos_token", "model_max_length",
-            ):
-                if key in cfg and not isinstance(cfg[key], dict):
-                    special[key] = cfg[key]
-        return PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_file), **special)
+    return load_tokenizer(tokenizer_dir)
 
 
 def _resolve_injection_index(tokenizer_dir: Path) -> int:
@@ -375,30 +290,7 @@ def _resolve_injection_index(tokenizer_dir: Path) -> int:
         The injection-class index, defaulting to ``1`` when the config is
         missing, unreadable, or has no matching label.
     """
-    config_path = tokenizer_dir / "config.json"
-    if not config_path.exists():
-        logger.warning(
-            "No config.json in %s; defaulting injection-class index to 1 "
-            "(unverified).", tokenizer_dir,
-        )
-        return 1
-    try:
-        config = json.loads(config_path.read_text())
-    except (OSError, ValueError) as exc:
-        logger.warning(
-            "Could not read id2label from %s (%s); defaulting injection-class "
-            "index to 1 (unverified).", config_path, exc,
-        )
-        return 1
-    id2label = config.get("id2label") or {}
-    for key, label in id2label.items():
-        if "inject" in str(label).lower():
-            return int(key)
-    logger.warning(
-        "config.json at %s has no id2label entry containing 'inject'; "
-        "defaulting injection-class index to 1 (unverified).", config_path,
-    )
-    return 1
+    return resolve_positive_index(tokenizer_dir, ("inject",))
 
 
 def _probe_cached_onnx_snapshot() -> Path | None:
