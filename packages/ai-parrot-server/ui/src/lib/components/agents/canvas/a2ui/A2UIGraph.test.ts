@@ -4,10 +4,13 @@
 // it is directly unit-testable this way).
 import { describe, expect, it } from 'vitest';
 import {
+  attachFrameProjection,
   buildGraphOption,
+  C4_FRAME_ID_PREFIX,
   c4SymbolFor,
   computeBoundaryFrames,
   hasCompletePositions,
+  projectFrames,
   type GraphProperties,
 } from './A2UIGraph.svelte';
 
@@ -211,5 +214,100 @@ describe('A2UIGraph option building', () => {
     expect(Object.keys(a)).toEqual(['id', 'name', 'category', 'tooltip', 'itemStyle']);
     const link = (series.links as Record<string, unknown>[])[0];
     expect(link).toEqual({ source: 'a', target: 'b', lineStyle: {}, label: { show: true, formatter: 'go' } });
+  });
+
+  // ---- mounted lifecycle (fake chart) ----
+  const makeChart = () => {
+    const handlers = new Map<string, Set<() => void>>();
+    let scale = 1;
+    let graphic: Record<string, unknown>[] = [];
+    const calls: Record<string, unknown>[] = [];
+    const chart = {
+      on: (e: string, h: () => void) => { if (!handlers.has(e)) handlers.set(e, new Set()); handlers.get(e)!.add(h); },
+      off: (e: string, h: () => void) => { handlers.get(e)?.delete(h); },
+      convertToPixel: (_f: { seriesIndex: number }, [x, y]: [number, number]) => [x * scale, y * scale],
+      setOption: (opt: Record<string, unknown>) => {
+        calls.push(opt);
+        for (const el of opt.graphic as Record<string, unknown>[]) {
+          graphic = graphic.filter((g) => g.id !== el.id);
+          if (el.$action !== 'remove') graphic.push(el);
+        }
+        emit('rendered'); // a real setOption re-renders
+      },
+      getOption: () => ({ graphic: [{ elements: graphic }] }),
+    };
+    const emit = (e: string) => [...(handlers.get(e) ?? [])].forEach((h) => h());
+    const queue: (() => void)[] = [];
+    const raf = (cb: () => void) => { queue.push(cb); return queue.length; };
+    const flush = () => { let n = 0; while (queue.length && n++ < 50) queue.shift()!(); return n; };
+    return {
+      chart, calls, emit, raf, flush, handlers,
+      setScale: (s: number) => { scale = s; },
+      wipe: () => { graphic = []; },
+      ids: () => graphic.map((g) => g.id),
+    };
+  };
+
+  it('projects boundary frames through chart coordinates', () => {
+    const frames = computeBoundaryFrames(c4Props(true));
+    const els = projectFrames(([x, y]) => [x * 2, y * 2], frames);
+    expect(els).toHaveLength(frames.length * 2);
+    const rect = els[0] as { id: string; silent: boolean; shape: Record<string, number>; style: Record<string, unknown> };
+    expect(rect.id).toBe(`${C4_FRAME_ID_PREFIX}${frames[0].id}`);
+    expect(rect.silent).toBe(true);
+    expect(rect.style.fill).toBe('none');
+    expect(rect.shape).toEqual({ x: frames[0].x * 2, y: frames[0].y * 2, width: frames[0].w * 2, height: frames[0].h * 2 });
+    expect(els[1].id).toBe(`${C4_FRAME_ID_PREFIX}${frames[0].id}-label`);
+    expect(projectFrames(() => [NaN, 0], frames)).toEqual([]);
+    // flipped axes still produce a positive rect from min/max corners
+    const flipped = projectFrames(([x, y]) => [-x, -y], frames)[0] as { shape: Record<string, number> };
+    expect(flipped.shape.width).toBeGreaterThan(0);
+  });
+
+  it('reprojects on resize and roam without a render loop', () => {
+    const f = makeChart();
+    attachFrameProjection(f.chart, () => c4Props(true), f.raf, () => {});
+    expect(f.flush()).toBeLessThan(5);
+    expect(f.calls).toHaveLength(1);
+    f.emit('rendered');
+    f.emit('rendered'); // coalesced
+    f.flush();
+    expect(f.calls).toHaveLength(1); // identical geometry => no setOption
+    f.setScale(2);
+    f.emit('graphRoam');
+    expect(f.flush()).toBeLessThan(5);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it('restores frames after base option replacement', () => {
+    const f = makeChart();
+    attachFrameProjection(f.chart, () => c4Props(true), f.raf, () => {});
+    f.flush();
+    const before = f.ids();
+    f.wipe(); // base options replaced graphic
+    f.emit('rendered');
+    f.flush();
+    expect(f.calls).toHaveLength(2);
+    expect(f.ids().sort()).toEqual([...before].sort());
+  });
+
+  it('removes obsolete frames and cleans up subscriptions', () => {
+    const f = makeChart();
+    let props = c4Props(true);
+    const cancelled: number[] = [];
+    const cleanup = attachFrameProjection(f.chart, () => props, f.raf, (h) => cancelled.push(h));
+    f.flush();
+    expect(f.ids().length).toBeGreaterThan(0);
+    props = { ...c4Props(true), kind: 'flowchart' };
+    f.emit('rendered');
+    f.flush();
+    const last = f.calls[f.calls.length - 1].graphic as Record<string, unknown>[];
+    expect(last.every((el) => el.$action === 'remove')).toBe(true);
+    expect(f.ids()).toEqual([]);
+    f.emit('graphRoam'); // pending frame
+    cleanup();
+    expect(cancelled).toHaveLength(1);
+    expect(f.handlers.get('rendered')?.size).toBe(0);
+    expect(f.handlers.get('graphRoam')?.size).toBe(0);
   });
 });

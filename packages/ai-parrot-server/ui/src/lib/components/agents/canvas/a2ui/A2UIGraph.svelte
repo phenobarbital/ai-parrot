@@ -317,6 +317,127 @@
       ],
     };
   }
+  export const C4_FRAME_ID_PREFIX = 'c4-frame-';
+
+  /**
+   * Project abstract boundary frames into viewport-pixel `graphic` elements.
+   *
+   * @param convert - Maps an abstract layout point to pixels (the live chart's `convertToPixel`).
+   * @param frames - Frames from `computeBoundaryFrames`, in abstract layout coordinates.
+   * @returns Silent, unfilled rect + text elements placed behind the graph; frames with
+   *   non-finite projected corners are skipped.
+   */
+  export function projectFrames(
+    convert: (pt: [number, number]) => number[] | undefined,
+    frames: BoundaryFrame[],
+  ): Record<string, unknown>[] {
+    const elements: Record<string, unknown>[] = [];
+    for (const frame of frames) {
+      const a = convert([frame.x, frame.y]);
+      const b = convert([frame.x + frame.w, frame.y + frame.h]);
+      if (!a || !b || ![a[0], a[1], b[0], b[1]].every((v) => Number.isFinite(v))) continue;
+      const x0 = Math.min(a[0], b[0]);
+      const y0 = Math.min(a[1], b[1]);
+      const x1 = Math.max(a[0], b[0]);
+      const y1 = Math.max(a[1], b[1]);
+      elements.push({
+        id: `${C4_FRAME_ID_PREFIX}${frame.id}`,
+        type: 'rect',
+        silent: true,
+        z: -10 + frame.depth,
+        shape: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+        style: { fill: 'none', stroke: '#888', lineWidth: 1, lineDash: [6, 4] },
+      });
+      elements.push({
+        id: `${C4_FRAME_ID_PREFIX}${frame.id}-label`,
+        type: 'text',
+        silent: true,
+        z: -10 + frame.depth,
+        x: x0 + 4,
+        y: y0 + 4,
+        style: { text: frame.label, fill: '#666', fontSize: 11 },
+      });
+    }
+    return elements;
+  }
+
+  /** Minimal chart surface the frame lifecycle needs (a subset of `echarts.EChartsType`). */
+  export interface FrameChart {
+    on(event: string, handler: () => void): void;
+    off(event: string, handler: () => void): void;
+    convertToPixel(finder: { seriesIndex: number }, value: [number, number]): number[] | undefined;
+    setOption(option: Record<string, unknown>): void;
+    getOption(): Record<string, unknown> | undefined;
+  }
+
+  function ownedGraphicIds(chart: FrameChart): Set<string> {
+    const ids = new Set<string>();
+    const graphic = chart.getOption()?.graphic;
+    const list = Array.isArray(graphic) ? graphic : graphic ? [graphic] : [];
+    for (const g of list as Record<string, unknown>[]) {
+      const children = Array.isArray(g?.elements) ? (g.elements as Record<string, unknown>[]) : [g];
+      for (const el of children) {
+        const id = el?.id;
+        if (typeof id === 'string' && id.startsWith(C4_FRAME_ID_PREFIX)) ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * Subscribe a live chart to boundary-frame reprojection on `rendered`/`graphRoam`.
+   *
+   * Updates are coalesced into one animation frame; `setOption` is issued only when the
+   * projected geometry/labels change or owned ids went missing, so the `rendered` event the
+   * write causes never loops.
+   *
+   * @param chart - The live chart instance.
+   * @param getProperties - Returns the CURRENT graph properties (never a captured snapshot).
+   * @param raf - Frame scheduler (defaults to `requestAnimationFrame`).
+   * @param caf - Frame canceller (defaults to `cancelAnimationFrame`).
+   * @returns Cleanup that unregisters both events and cancels any pending frame.
+   */
+  export function attachFrameProjection(
+    chart: FrameChart,
+    getProperties: () => GraphProperties,
+    raf: (cb: () => void) => number = (cb) => requestAnimationFrame(cb),
+    caf: (handle: number) => void = (handle) => cancelAnimationFrame(handle),
+  ): () => void {
+    let frame = 0;
+    let lastKey = '';
+    let written = new Set<string>();
+    const update = () => {
+      const properties = getProperties();
+      const frames = properties.kind === 'c4' ? computeBoundaryFrames(properties) : [];
+      const elements = projectFrames((p) => chart.convertToPixel({ seriesIndex: 0 }, p), frames);
+      const key = JSON.stringify(elements);
+      const present = ownedGraphicIds(chart);
+      const ids = new Set(elements.map((el) => el.id as string));
+      const missing = [...ids].some((id) => !present.has(id));
+      const stale = [...new Set([...present, ...written])].filter((id) => !ids.has(id) && present.has(id));
+      if (key === lastKey && !missing && stale.length === 0) return;
+      const graphic = [...stale.map((id) => ({ id, $action: 'remove' })), ...elements];
+      lastKey = key;
+      written = ids;
+      if (graphic.length) chart.setOption({ graphic });
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = raf(() => {
+        frame = 0;
+        update();
+      });
+    };
+    chart.on('rendered', schedule);
+    chart.on('graphRoam', schedule);
+    schedule();
+    return () => {
+      chart.off('rendered', schedule);
+      chart.off('graphRoam', schedule);
+      if (frame) caf(frame);
+      frame = 0;
+    };
+  }
 </script>
 
 <script lang="ts">
@@ -354,6 +475,11 @@
 
   let option = $derived(buildGraphOption(properties, resolveColor));
 
+  /** Mounted-chart hook: projects C4 boundary frames through the live viewport. */
+  function handleChartReady(chart: unknown): () => void {
+    return attachFrameProjection(chart as FrameChart, () => properties);
+  }
+
   let sizeClass = $derived(
     properties.size === 'inline'
       ? 'a2ui-graph-inline'
@@ -368,5 +494,5 @@
   role="img"
   aria-label={properties.accessibleDescription ?? `Graph of ${properties.nodes.length} nodes`}
 >
-  <ECharts options={option} />
+  <ECharts options={option} onChartReady={handleChartReady} />
 </div>
