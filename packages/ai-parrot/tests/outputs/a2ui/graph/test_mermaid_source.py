@@ -201,3 +201,32 @@ def test_graph_spec_from_mermaid_source_subset_and_rejection() -> None:
     assert isinstance(graph_spec_from_mermaid_source("stateDiagram-v2\n[*] --> idle\nidle --> done\n"), GraphSpec)
     with pytest.raises(MermaidCodecError):
         graph_spec_from_mermaid_source(CLASS_SRC)
+
+
+@pytest.mark.parametrize("line", ["CLICK a callback", 'Click a href "x"', "LINK a x", "links A: {}", "Callback a fn"])
+def test_check_rejects_interaction_keywords_case_insensitively(line: str) -> None:
+    assert MERMAID_UNSAFE_INTERACTION in _codes(check_mermaid_source(f"flowchart TD\n a-->b\n {line}\n"))
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        'flowchart TD\nA-->B %%{init: {"flowchart":{"htmlLabels":true}}}%%\n',
+        'flowchart TD %%{init: {"themeCSS":"x"}}%%\nA-->B\n',
+        "flowchart TD\nA-->B;%%{init:{}}%%\n",
+    ],
+)
+def test_check_rejects_mid_line_directive_and_normalize_strips_it(src: str) -> None:
+    assert MERMAID_UNSAFE_DIRECTIVE in _codes(check_mermaid_source(src))
+    normalized, _theme = normalize_mermaid_source(src)
+    assert "%%{" not in normalized
+    assert check_mermaid_source(normalized) == []
+
+
+def test_front_matter_config_after_leading_blank_lines() -> None:
+    src = "\n\n---\nconfig:\n  theme: dark\n---\nflowchart TD\n a-->b\n"
+    assert MERMAID_UNSAFE_DIRECTIVE in _codes(check_mermaid_source(src))
+    normalized, _theme = normalize_mermaid_source(src)
+    assert "config:" not in normalized
+    assert check_mermaid_source(normalized) == []
+    assert detect_diagram_type(src) == "flowchart"

@@ -116,9 +116,10 @@ _HEADER_TO_TYPE: Final[dict[str, str]] = {
     "radar-beta": "radar",
     "treemap-beta": "treemap",
 }
-_INTERACTION_KEYWORDS: Final[frozenset[str]] = frozenset({"click", "link", "callback"})
+_INTERACTION_KEYWORDS: Final[frozenset[str]] = frozenset({"click", "link", "links", "callback"})
 _UNSAFE_ANYWHERE = re.compile(r"javascript:|<script", re.IGNORECASE)
 _DIRECTIVE_RE = re.compile(r"^[ \t]*%%\{.*?\}%%[ \t]*\n?", re.DOTALL | re.MULTILINE)
+_INLINE_DIRECTIVE_RE = re.compile(r"%%\{.*?\}%%", re.DOTALL)
 _THEME_RE = re.compile(r"""["']?theme["']?\s*:\s*["']?(\w+)""")
 _OPEN_BRACKETS: Final[str] = "[({"
 _CLOSE_BRACKETS: Final[str] = "])}"
@@ -139,11 +140,12 @@ def _split_lines(source: str) -> list[str]:
 
 def _front_matter_span(lines: list[str]) -> tuple[int, int] | None:
     """Return the 0-based ``(start, end)`` indexes of a leading ``---`` block, or ``None``."""
-    if not lines or lines[0].strip() != "---":
+    start = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if start is None or lines[start].strip() != "---":
         return None
-    for idx in range(1, len(lines)):
+    for idx in range(start + 1, len(lines)):
         if lines[idx].strip() == "---":
-            return 0, idx
+            return start, idx
     return None
 
 
@@ -230,6 +232,11 @@ def normalize_mermaid_source(source: str) -> tuple[str, str | None]:
             theme = found.group(1)
             break
     text = _DIRECTIVE_RE.sub("", text)
+    for match in _INLINE_DIRECTIVE_RE.finditer(text):
+        found = _THEME_RE.search(match.group(0))
+        if theme is None and found and found.group(1) in MERMAID_THEMES:
+            theme = found.group(1)
+    text = _INLINE_DIRECTIVE_RE.sub("", text)
 
     lines = text.split("\n")
     span = _front_matter_span(lines)
@@ -237,7 +244,7 @@ def normalize_mermaid_source(source: str) -> tuple[str, str | None]:
         kept: list[str] = []
         skipping = False
         for idx, line in enumerate(lines):
-            if 0 < idx < span[1]:
+            if span[0] < idx < span[1]:
                 if line.startswith("config:"):
                     skipping = True
                     continue
@@ -272,7 +279,7 @@ def check_mermaid_source(source: str, *, declared_type: str | None = None) -> li
 
     lines = _split_lines(source)
     for idx, raw in enumerate(lines):
-        if raw.strip().startswith("%%{"):
+        if "%%{" in raw:
             issues.append(
                 {
                     "code": MERMAID_UNSAFE_DIRECTIVE,
@@ -282,7 +289,7 @@ def check_mermaid_source(source: str, *, declared_type: str | None = None) -> li
             )
     span = _front_matter_span(lines)
     if span is not None:
-        for idx in range(1, span[1]):
+        for idx in range(span[0] + 1, span[1]):
             if lines[idx].startswith("config:"):
                 issues.append(
                     {
@@ -293,7 +300,7 @@ def check_mermaid_source(source: str, *, declared_type: str | None = None) -> li
                 )
 
     for line_no, statement in iter_statements(source):
-        if statement.split(maxsplit=1)[0] in _INTERACTION_KEYWORDS:
+        if statement.split(maxsplit=1)[0].lower() in _INTERACTION_KEYWORDS:
             issues.append(
                 {
                     "code": MERMAID_UNSAFE_INTERACTION,

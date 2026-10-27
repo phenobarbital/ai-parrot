@@ -738,7 +738,9 @@ def _validate_linked_sources(
     from parrot.outputs.a2ui.linked.executor import dependencies_of, execution_order
 
     _, failed = execution_order(sources)
-    tainted = {key for key in sources if any(ref not in sources or ref == key for ref in dependencies_of(sources[key]))}
+    tainted = {
+        key for key in sources if any(ref not in sources or ref == key for ref in dependencies_of(sources[key]))
+    }
     changed = True
     while changed:
         changed = False
