@@ -76,14 +76,14 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "foundation; no dependencies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4757-route-labels-hint-channel.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "imports parse_route_label/OutputShape from TASK-4757 (registry/routing/route_labels.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4758-embedding-router-label-support.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,7 +123,7 @@
       "parallel": true,
       "parallelism_notes": "imports parse_route_label from TASK-4757 (registry/routing/route_labels.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4759-route-bank-loader.md"
     },
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -145,7 +145,7 @@
       "parallel": true,
       "parallelism_notes": "needs set_output_shape/is_inline_component from TASK-4757, route_label_scores + encoder kwarg from TASK-4758 (embedding_router.py), tenant_output_mode_routes field from TASK-4759 (capabilities/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4760-mixin-labels-tenants-hint.md"
     },
@@ -156,14 +156,14 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: TASK-4757 duck-types the ctx on purpose; touches only utils/helpers.py and bots/abstract.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4761-request-context-hint-attribute.md"
     },
@@ -174,14 +174,14 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: reads only the existing catalog (get_component, ComponentDefinition.schema_)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4762-catalog-schema-to-pydantic.md"
     },
@@ -192,14 +192,14 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: reads definition.instructions from the existing catalog; owns tests/outputs/a2ui/inline/__init__.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4763-inline-prompt-builder.md"
     },
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -219,7 +219,7 @@
       "parallel": true,
       "parallelism_notes": "shares the test package marker tests/outputs/a2ui/inline/__init__.py created by TASK-4763; the module itself is pure",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4764-inline-feasibility-rules.md"
     },
@@ -230,7 +230,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -241,7 +241,7 @@
       "parallel": true,
       "parallelism_notes": "imports check_feasibility from TASK-4764 (inline/feasibility.py) and INLINE_COMPONENTS from TASK-4763 (inline/prompt.py); TASK-4762 fixes the structured_output contract it extracts; creates inline/__init__.py naming all three",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4765-inline-emitter.md"
     },
@@ -252,7 +252,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -262,7 +262,7 @@
       "parallel": true,
       "parallelism_notes": "calls resolve_route_banks from TASK-4759 (registry/routing/route_bank.py) and feeds configure_output_router reworked by TASK-4760 (bots/mixins/intent_router.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4766-pandasagent-configure-routes.md"
     },
@@ -273,7 +273,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -285,7 +285,7 @@
       "parallel": true,
       "parallelism_notes": "shares bots/data.py with TASK-4766 (serialized, lower id first); calls get_component_hint from TASK-4757, component_model from TASK-4762 (catalog/_model.py), emit_inline_component from TASK-4765 (inline/emitter.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4767-pandasagent-ask-seams.md"
     },
@@ -296,7 +296,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -305,7 +305,7 @@
       "parallel": true,
       "parallelism_notes": "reads the parrot_presentation payload shape fixed by TASK-4765 (inline/emitter.py presentation_extension)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4768-ui-presentation-marker.md"
     },
@@ -316,7 +316,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -325,7 +325,7 @@
       "parallel": true,
       "parallelism_notes": "imports isInlinePresentation from TASK-4768 (canvas/a2ui/a2ui-presentation.ts)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4769-chatbubble-inline-a2ui.md"
     },
@@ -336,7 +336,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -345,7 +345,7 @@
       "parallel": true,
       "parallelism_notes": "calls emit_inline_component from TASK-4765 (inline/emitter.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4770-inline-emitter-conformance.md"
     },
@@ -356,7 +356,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -368,7 +368,7 @@
       "parallel": true,
       "parallelism_notes": "documents shipped behaviour of routes.yaml (TASK-4759), the marker (TASK-4765), the ask() seams (TASK-4767) and the bubble (TASK-4769)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T02:40:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4771-inline-routing-docs.md"
     }
