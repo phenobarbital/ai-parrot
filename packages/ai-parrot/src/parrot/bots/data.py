@@ -41,7 +41,6 @@ from ..conf import STATIC_DIR
 from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
-from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
 from ..bots.prompts.domain_layers import (
     DATA_INSTRUCTIONS_LAYER,
     DATAFRAME_CONTEXT_LAYER,
@@ -813,10 +812,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             total = len(result) if isinstance(result, str) else sum(len(s.text) for s in result)
             sorted_layers = sorted(
                 self._prompt_builder._layers.values(),
-                key=lambda l: l.priority,
+                key=lambda layer: layer.priority,
             )
             breakdown = ", ".join(
-                f"{l.name}={len(r)}" for l in sorted_layers if (r := (l.render(kwargs) or "").strip())
+                f"{layer.name}={len(r)}" for layer in sorted_layers if (r := (layer.render(kwargs) or "").strip())
             )
             self.logger.debug("System prompt: %d chars | %s", total, breakdown)
         return result
@@ -1181,7 +1180,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             fields = getattr(output_type, "model_fields", None)
             if not fields:
                 return None
-            skeleton = {name: None for name in fields}
+            skeleton = dict.fromkeys(fields)
 
         try:
             skeleton_str = json.dumps(skeleton, indent=2, default=str)
@@ -2544,7 +2543,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Keep only candidates that are currently live, non-empty DataFrames.
         candidate_values: Dict[str, pd.DataFrame] = {}
         for var in candidates:
-            value = await pandas_tool.get_var(var)
+            try:
+                value = await pandas_tool.get_var(var)
+            except Exception as exc:  # best-effort inference must never fail the turn
+                self.logger.warning("Skipping data_variable candidate %r: get_var failed: %s", var, exc)
+                continue
             if isinstance(value, pd.DataFrame) and not value.empty:
                 candidate_values[var] = value
         live_dataframes = list(candidate_values.keys())

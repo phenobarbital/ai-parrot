@@ -53,6 +53,7 @@ from .protocol import (
     TransportEnvelope,
     ValueResponse,
     WorkerConfig,
+    decode_snapshot,
     decode_value,
     encode_value,
     read_frame,
@@ -1156,9 +1157,12 @@ class WorkerHandle:
         return self.known_vars
 
     async def snapshot(self) -> dict[str, Any]:
-        """Return a serializable dump of the whole worker namespace."""
+        """Return a serializable dump of the whole worker namespace.
+
+        Guard-refused entries come back as placeholder strings (see protocol.decode_snapshot).
+        """
         response: SnapshotResponse = await self._send(SnapshotRequest(), self._namespace_timeout_s)
-        return {name: decode_value(value) for name, value in response.data.items()}
+        return decode_snapshot(response.data)
 
     async def reset(self) -> None:
         """Reset the worker's REPL environment (equivalent to `reset_environment()`)."""

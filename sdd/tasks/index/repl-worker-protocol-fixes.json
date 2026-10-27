@@ -1,0 +1,54 @@
+{
+  "feature": "repl-worker-protocol-fixes",
+  "feature_id": "FEAT-751",
+  "spec": "sdd/specs/repl-worker-protocol-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-26T23:40:25+00:00",
+  "completed_at": "2026-10-26T23:47:42+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/repl_worker/test_protocol.py",
+          "packages/ai-parrot/tests/repl_worker/test_handle.py",
+          "packages/ai-parrot/tests/repl_worker/test_e2e.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:8a921eab26cd8919340a2e31af30e0a3782a1595171f7cde46073a08ed2b9a8d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4752",
+      "slug": "per-variable-snapshot-decode",
+      "title": "Per-variable snapshot decode survives guard-refused values",
+      "feature_id": "FEAT-751",
+      "feature": "repl-worker-protocol-fixes",
+      "spec": "sdd/specs/repl-worker-protocol-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task, no dependencies (fixes ledger issue:bbef2d4da62a)",
+      "assigned_to": "claude-session",
+      "started_at": "2026-10-26T23:41:00+00:00",
+      "completed_at": "2026-10-26T23:44:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4752-per-variable-snapshot-decode.md",
+      "verification": "verified"
+    }
+  ]
+}
