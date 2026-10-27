@@ -229,10 +229,8 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Seat: gpt-5.6-terra · Backend: codex · Attempts: 1)
+**Date**: 2026-10-27
+**Notes**: Delivered and merged; merge-tier validation green. Closed via close_task.sh (no durable review-evidence artifact writable). A hook-written sdd/ledger/events.jsonl, if present in the attempt commit, was stripped before merge.
 
 **Deviations from spec**: none
