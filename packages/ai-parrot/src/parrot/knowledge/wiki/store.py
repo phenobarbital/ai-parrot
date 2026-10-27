@@ -352,13 +352,21 @@ class WikiStoreMigrationError(RuntimeError):
 _HELD_MIGRATION_LOCKS: dict[str, str] = {}
 
 
-def _lock_identity(path: Path) -> tuple[int, int]:
-    """(inode, mtime_ns) of ``path`` — what a stale-reclaimer observed."""
+def _lock_identity(path: Path) -> tuple[int, int, str]:
+    """(inode, mtime_ns, content) of ``path`` — what a stale-reclaimer observed.
+
+    The content carries the owner's token: a freed inode is reused immediately and mtime has tick resolution, so
+    (inode, mtime) alone can match a fresh lock that replaced the stale one within the same tick.
+    """
     st = path.stat()
-    return st.st_ino, st.st_mtime_ns
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        content = ""
+    return st.st_ino, st.st_mtime_ns, content
 
 
-def _reclaim_stale_lock(lock_path: Path, observed: tuple[int, int]) -> None:
+def _reclaim_stale_lock(lock_path: Path, observed: tuple[int, int, str]) -> None:
     """Remove the stale lock whose identity is ``observed`` without ever deleting a FRESH lock.
 
     ``unlink(pathname)`` after an age check races: another contender can replace the stale file with its own live
