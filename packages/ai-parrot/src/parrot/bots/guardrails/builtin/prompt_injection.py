@@ -584,6 +584,7 @@ class PromptInjectionGuardrail(Guardrail):
         strict_mode: bool = True,
         block_on_threat: bool = False,
         injection_probability_threshold: float = 0.98,
+        scan_tool_output: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialize the guardrail, lazily wiring the pytector boundary.
@@ -596,6 +597,8 @@ class PromptInjectionGuardrail(Guardrail):
                 Also selects ``on_error`` (`fail_closed` vs `fail_open`).
             injection_probability_threshold: Minimum pytector probability
                 required to treat input as an injection.
+            scan_tool_output: When True, also inspect TOOL_OUTPUT content.
+                Threats at that stage always produce TRANSFORM, never BLOCK.
             **kwargs: Accepted and ignored, for forward-compat with extra
                 policy keys passed via `guardrails=[{"name": ..., ...}]`.
         """
@@ -603,6 +606,14 @@ class PromptInjectionGuardrail(Guardrail):
         self.block_on_threat = block_on_threat
         self.injection_probability_threshold = injection_probability_threshold
         self.on_error = "fail_closed" if block_on_threat else "fail_open"
+        # FEAT-761: opt-in scanning of tool / retrieval content. Instance
+        # attributes on purpose — `build_pipelines_from_config` routes by the
+        # instance's `stages`, and the ClassVar default must stay INPUT-only.
+        self.scan_tool_output = scan_tool_output
+        if scan_tool_output:
+            self.stages = {GuardrailStage.INPUT, GuardrailStage.TOOL_OUTPUT}
+            # Run after SecretsGuardrail (10) at TOOL_OUTPUT: scrub secrets first.
+            self.priority = {GuardrailStage.INPUT: 10, GuardrailStage.TOOL_OUTPUT: 20}
         self.logger = logging.getLogger(__name__)
 
         # Local helper for stripping framework-injected XML before any
@@ -660,6 +671,10 @@ class PromptInjectionGuardrail(Guardrail):
         # TASK-2308).
         if not content or not content.strip():
             return GuardrailResult(action=GuardrailAction.PASS)
+        if ctx.stage == GuardrailStage.TOOL_OUTPUT and content.lstrip().startswith(
+            "<potentially_unsafe_input"
+        ):
+            return GuardrailResult(action=GuardrailAction.PASS)
 
         # Start by assuming input is safe so, absent any detector hit, the
         # ORIGINAL input passes through unchanged.
@@ -692,6 +707,32 @@ class PromptInjectionGuardrail(Guardrail):
 
         if not threats:
             return GuardrailResult(action=GuardrailAction.PASS)
+
+        if ctx.stage == GuardrailStage.TOOL_OUTPUT:
+            max_severity = max_threat_level(threats)
+            await self._security_logger.log_injection_attempt(
+                user_id=ctx.user_id or "anonymous",
+                session_id=ctx.session_id or "unknown",
+                chatbot_id=str(ctx.extras.get("chatbot_id", "")),
+                threats=threats,
+                original_input=content,
+                sanitized_input=sanitized,
+                metadata={
+                    "bot_name": ctx.agent_name,
+                    "context": ctx.extras.get("context") or {},
+                    "tool_name": ctx.tool_name,
+                },
+            )
+            return GuardrailResult(
+                action=GuardrailAction.TRANSFORM,
+                content=self._wrap_flagged_input(sanitized, threats),
+                report={
+                    "threats_detected": len(threats),
+                    "max_severity": max_severity.value,
+                    "stage": "tool_output",
+                    "tool_name": ctx.tool_name,
+                },
+            )
 
         await self._security_logger.log_injection_attempt(
             user_id=ctx.user_id or "anonymous",
