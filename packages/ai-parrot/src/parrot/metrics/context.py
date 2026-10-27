@@ -40,5 +40,7 @@ def resolve_metric_tenant(
     ctx_kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None
     if isinstance(ctx_kwargs, dict):
         ctx_tenant = ctx_kwargs.get("tenant")
-    chosen = next((candidate for candidate in (explicit, ctx_tenant, current_skill_tenant(), default) if candidate), None)
+    chosen = next(
+        (candidate for candidate in (explicit, ctx_tenant, current_skill_tenant(), default) if candidate), None
+    )
     return validate_tenant_id(chosen) if chosen else None
