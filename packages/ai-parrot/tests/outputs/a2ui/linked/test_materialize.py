@@ -138,6 +138,22 @@ def test_component_unsupported_root() -> None:
     assert component is None
 
 
+def test_component_malformed_create_surface_returns_none() -> None:
+    """A non-mapping createSurface value is gracefully rejected."""
+    assert component_from_envelope({"createSurface": "not-a-mapping"}) is None
+    assert component_from_envelope({"createSurface": 42}) is None
+    assert component_from_envelope({"createSurface": ["list"]}) is None
+
+
+def test_component_non_dict_items_in_components() -> None:
+    """Non-mapping entries in components are skipped without raising."""
+    assert component_from_envelope({"components": ["string", 42]}) is None
+    result = component_from_envelope(
+        {"components": ["skip-me", {"id": "root", "component": "Chart", "x": "month"}]}
+    )
+    assert result == {"id": "root", "component": "Chart", "x": "month"}
+
+
 def test_component_wrapped_envelope() -> None:
     """A serialized createSurface wrapper is unwrapped before root selection."""
     component = component_from_envelope(

@@ -146,10 +146,17 @@ def component_from_envelope(envelope: Mapping[str, Any]) -> dict[str, Any] | Non
     envelope has no components or the root's ``component`` is not in ``SUPPORTED_ROOTS``.
     """
     payload = envelope.get("createSurface", envelope)
+    if not isinstance(payload, Mapping):
+        return None
     components = payload.get("components") or []
     if not components:
         return None
-    root = next((component for component in components if component.get("id") == "root"), components[0])
+    root = next(
+        (component for component in components if isinstance(component, Mapping) and component.get("id") == "root"),
+        components[0],
+    )
+    if not isinstance(root, Mapping):
+        return None
     if root.get("component") not in SUPPORTED_ROOTS:
         return None
 
