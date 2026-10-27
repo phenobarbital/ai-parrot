@@ -113,9 +113,15 @@ New in rev 2:
 - **G5 — No new `OutputMode` members per component.** The target is
   `OutputMode.A2UI` plus a *component hint* carried on the request context.
 - **G6 — Catalog is the single source of truth.** The emitter derives its
-  prompt and validation from the component's registered `ComponentDefinition`
-  (`schema_` + `instructions`), never from a hand-written per-component prompt
-  copy; a per-component *authoring-notes* constant may only add guidance on top.
+  authoring contract and validation from the component's registered
+  `ComponentDefinition` (`schema_` + `instructions`), never from a
+  hand-written per-component copy. The *schema* reaches the LLM as a Pydantic
+  model generated from `schema_` at import time (`component_model()`, M6a) and
+  passed as `structured_output`; the *prose* guidance reaches it as
+  `instructions` in the system prompt. A generated model is a derivation of
+  `schema_`, not a second copy of it, so it satisfies G6 — what G6 forbids is a
+  hand-maintained schema restatement. A per-component *authoring-notes*
+  constant may only add guidance on top.
 - **G7 — Every emitted surface validates** against the Parrot/viz-core catalog
   allowlist with LLM-origin semantics and, lowered, against the Basic wire
   schema — exactly like every other emitter in the conformance suite.
@@ -243,9 +249,10 @@ embedding router + one catalog-driven A2UI emitter**.
                                                    _apply_default_output_mode (unchanged)
                                                                          ▼
                         ┌───────────────────────────────────────────────────────────────┐
-                        │ inline/prompt.py  build_component_prompt(hint)                 │
-                        │   catalog ComponentDefinition.schema_ + .instructions          │
-                        │   + INLINE_AUTHORING_NOTES[hint]  ──► system prompt addon      │
+                        │ catalog/_model.py  component_model(hint)                      │
+                        │   ComponentDefinition.schema_ -> pydantic -> structured_output│
+                        │ inline/prompt.py   build_component_prompt(hint)               │
+                        │   .instructions + INLINE_AUTHORING_NOTES[hint] -> prompt addon│
                         └───────────────────────────────┬───────────────────────────────┘
                                                         ▼  main LLM turn (tools, DataFrame)
                         ┌───────────────────────────────────────────────────────────────┐
@@ -294,7 +301,13 @@ A sibling feature makes a catalog component routable by doing **only** this:
    `"a2ui:<Name>"` — to `DEFAULT_OUTPUT_MODE_ROUTES` (or to a `routes.yaml`).
 3. Optionally add an entry to `INLINE_AUTHORING_NOTES["<Name>"]` (M6) when the
    catalog `instructions` are not enough for single-turn authoring.
-4. Optionally extend `check_feasibility()` with a component-specific rule;
+4. Optionally declare `SOURCE_MODEL = <PydanticModel>` on the component class
+   (M6a) when the component already has one — `component_model()` then
+   advertises it verbatim instead of generating from `schema_`, preserving its
+   validators. Components whose `SCHEMA` is itself `derive_schema(Model, ...)`
+   (`Chart`/`DataTable`/`Map`/`Graph`) should always declare it; a schema-only
+   component needs nothing.
+5. Optionally extend `check_feasibility()` with a component-specific rule;
    unknown components default to "feasible when the config validates".
 
 FEAT-754 (C4 kind for `Graph`) needs no route change: `a2ui:Graph` is
@@ -413,6 +426,10 @@ class EmbeddingIntentRouter:
     def __init__(self, model=..., threshold=..., margin=..., *, encoder: Any | None = None) -> None: ...
     def add_route(self, label: OutputMode | str, utterances: list[str]) -> None: ...
     def route_label_scores(self, query: str) -> list[tuple[str, float]]: ...
+
+# parrot/outputs/a2ui/catalog/_model.py
+def model_from_schema(schema: Mapping[str, Any], *, name: str) -> type[BaseModel]: ...
+def component_model(component: str, catalog_id: Optional[str] = None) -> type[BaseModel]: ...
 
 # parrot/outputs/a2ui/inline
 def build_component_prompt(component: str) -> str: ...
@@ -645,13 +662,72 @@ writing the code is mechanical".
       """...precedence text extended: explicit > router (mode + hint) > metric default shape (FEAT-756) > agent default."""
   ```
 
+### Module 6a: Catalog schema → Pydantic model (`catalog/_model.py`)
+- **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/_model.py` (new);
+  `catalog/viz_core/graph.py` (modify — one `SOURCE_MODEL` line)
+- **Responsibility**: turn a registered component's `schema_` into the Pydantic
+  model the emitter advertises as `structured_output`. Catalog-level (not
+  `inline/`-local) because it is generic over any registered component and
+  `inline/` is only its first consumer. Pure and import-time cacheable; imports
+  no agent and no client.
+- **Depends on**: `catalog.get_component` (returns `RegisteredComponent`, which
+  carries BOTH `.definition` and `.component_cls` — verified
+  `catalog/base.py:293-297`, `catalog/__init__.py:209,236`), Pydantic v2 `create_model`.
+- **Source-model rule**: a component that already *has* a Pydantic source may
+  declare it as a `SOURCE_MODEL` class attribute, read off `component_cls`
+  exactly as `SCHEMA` / `INSTRUCTIONS` already are (`catalog/__init__.py:179-180`)
+  — no change to `ComponentDefinition` or `register_component`. `component_model()`
+  returns `SOURCE_MODEL` when declared and generates from `schema_` otherwise.
+  In v1 only `Graph` declares one: `GraphComponent.SOURCE_MODEL = GraphSpec`
+  (`viz_core/graph.py:35` already imports `GraphSpec` for `derive_schema`).
+  Round-tripping `GraphSpec` through `GRAPH_SCHEMA` would discard its validators
+  (`kind="dag"` rejects cycles), so the declared model always wins.
+- **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
+  ```python
+  # parrot/outputs/a2ui/catalog/_model.py  (new)
+  from pydantic import BaseModel, create_model
+
+  def model_from_schema(schema: Mapping[str, Any], *, name: str) -> type[BaseModel]:
+      """Build a Pydantic v2 model from a catalog component's JSON Schema.
+
+      Mapping rules (the catalog's object schemas are deliberately loose — this
+      must not tighten them, or a valid config becomes unauthorable):
+        * a property with NO ``type`` -> ``Any``  (``KPICARD_SCHEMA["value"]`` /
+          ``["delta"]``: number | string | binding, untyped ON PURPOSE);
+        * ``{"type": ["array", "object"]}`` -> ``Union[list, dict]``
+          (``KPICARD_SCHEMA["series"]``);
+        * ``{"type": ["boolean", "null"]}`` -> ``Optional[bool]``
+          (``KPICARD_SCHEMA["higherIsBetter"]`` — null and omitted differ ON PURPOSE,
+          so the field defaults to a sentinel, never to ``False``);
+        * ``enum`` -> ``Literal[...]``; nested ``object``/``array`` items -> a nested
+          model built by the same rules;
+        * every property is Optional unless named in the schema's ``required``;
+        * each field carries the schema's ``description`` verbatim as its
+          ``Field(description=...)`` so the provider sees the catalog's own words;
+        * ``model_config = ConfigDict(extra="allow")`` — a binding descriptor
+          (``{"path": "/pointer"}``) may appear in place of ANY property value, so
+          the model must never reject a shape the catalog accepts.
+
+      Returns a NEW model type each call; callers cache (see component_model).
+      """
+
+  def component_model(component: str, catalog_id: Optional[str] = None) -> type[BaseModel]:
+      """The model to advertise as ``structured_output`` for ``component``.
+
+      ``component_cls.SOURCE_MODEL`` when declared, else ``model_from_schema(
+      definition.schema_, name=f"{component}Config")``. Cached per
+      ``(catalog_id, component)``; the cache is cleared by
+      ``unregister_component`` call sites in tests. Raises ``KeyError`` when the
+      component is not registered (same contract as ``get_component``)."""
+  ```
+
 ### Module 6: Inline emitter package (prompt · feasibility · emitter)
 - **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/inline/__init__.py`,
   `prompt.py`, `feasibility.py`, `emitter.py` (new)
 - **Responsibility**: the single catalog-driven authoring path for a display-only
   component in an inline answer. Obeys the a2ui one-way import rule
   (`builders.py:14`): no agents, no clients.
-- **Depends on**: catalog (`get_component`, `ProducerOrigin`), `build_surface`,
+- **Depends on**: Module 6a (`component_model`), catalog (`get_component`, `ProducerOrigin`), `build_surface`,
   `serialize`, `finalize_a2ui_response`, `models.SurfaceMetadata/Extensions`;
   `StructuredOutputBase._extract_json_code`-equivalent logic (re-implemented
   locally — that helper lives in the visualizations satellite,
@@ -665,10 +741,15 @@ writing the code is mechanical".
   INLINE_AUTHORING_NOTES: Final[dict[str, str]] = {"Graph": "..."}  # Graph-only in v1; others rely on catalog instructions
 
   def build_component_prompt(component: str) -> str:
-      """System-prompt addon for ``component``: header ("INLINE A2UI <Name> OUTPUT MODE"), the catalog
-      ``definition.schema_`` as JSON, ``definition.instructions``, ``INLINE_AUTHORING_NOTES.get(component, "")``,
-      and the fixed rules (single JSON object, no prose/fences, compute every figure yourself, never emit
-      rows/positions/actions). Raises ``KeyError`` when the component is not registered."""
+      """System-prompt addon for ``component``: header ("INLINE A2UI <Name> OUTPUT MODE"),
+      ``definition.instructions``, ``INLINE_AUTHORING_NOTES.get(component, "")``, and the fixed rules
+      (compute every figure yourself, never emit rows/positions/actions). Raises ``KeyError`` when the
+      component is not registered.
+
+      The SCHEMA is deliberately NOT serialized into the prompt: it reaches the model as
+      ``component_model(component)`` passed as ``structured_output`` (M6a / M7), the same way
+      ``STRUCTURED_CHART`` advertises ``StructuredChartConfig`` rather than inlining its schema
+      (``data.py:1504-1515``). The prompt carries prose guidance only, so the two never drift."""
 
   # parrot/outputs/a2ui/inline/feasibility.py  (new)
   class FeasibilityResult(NamedTuple):
@@ -702,8 +783,14 @@ writing the code is mechanical".
       """``{"kind": "widget", "inline": True, "origin": "chat_turn", "component": component}``."""
 
   def extract_component_config(response: Any) -> Optional[dict[str, Any]]:
-      """Config dict from ``response.structured_output`` (dict/BaseModel) else the first JSON object in
-      ``response.output`` / ``response.content`` (fenced or bare). ``None`` when nothing parses."""
+      """Config dict from ``response.structured_output`` — now the PRIMARY path, since M7 advertises
+      ``component_model(hint)`` to the client: a ``BaseModel`` is dumped with ``model_dump(by_alias=True,
+      exclude_none=True)`` (camelCase wire names, and an omitted field stays omitted — load-bearing for
+      ``higherIsBetter``), a dict is taken as-is.
+
+      The free-JSON fallback is RETAINED, not removed: not every provider honors structured output on a
+      tool-using turn, and G3 requires degrading rather than failing. Order: ``structured_output`` ->
+      first JSON object in ``response.output`` / ``response.content`` (fenced or bare) -> ``None``."""
 
   def emit_inline_component(response: Any, component: str, *, frame: Any | None = None,
                             surface_id: Optional[str] = None) -> InlineEmitOutcome:
@@ -718,10 +805,11 @@ writing the code is mechanical".
 ### Module 7: PandasAgent wiring
 - **Path**: `packages/ai-parrot/src/parrot/bots/data.py` (modify)
 - **Responsibility**: default bank utterances for the four routes; load route
-  banks at configure; honor the explicit kwarg; inject the component prompt; skip
-  the forced `PandasAgentResponse`; call the emitter before the existing A2UI
-  fallback; degrade like the structured modes do.
-- **Depends on**: Modules 1, 3, 4, 6.
+  banks at configure; honor the explicit kwarg; inject the component prompt;
+  advertise the component model as `structured_output` in place of the forced
+  `PandasAgentResponse`; call the emitter before the existing A2UI fallback;
+  degrade like the structured modes do.
+- **Depends on**: Modules 1, 3, 4, 6a, 6.
 - **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
   ```python
   # modifies parrot/bots/data.py
@@ -739,7 +827,12 @@ writing the code is mechanical".
           """New kwarg ``a2ui_component`` (popped from kwargs): explicit hint -> ``set_output_shape(ctx, OutputShape(A2UI, hint))``
           and the router is skipped (G2). After resolution (:1350-1358): ``component_hint = get_component_hint(ctx)``.
           Prompt seam (:1418): for ``output_mode == A2UI and component_hint`` append ``build_component_prompt(hint)``.
-          Structured forcing (:1513): for A2UI+hint do NOT force ``PandasAgentResponse`` (free JSON, structured_chart style).
+          Structured forcing (:1513): for A2UI+hint force ``component_model(hint)`` instead of ``PandasAgentResponse`` --
+          the existing ternary gains a branch, exactly as ``STRUCTURED_CHART`` already forces ``StructuredChartConfig``.
+          The FEAT-215 comment at :1505-1511 is the precedent AND the rationale: forcing ``PandasAgentResponse`` there made
+          the model "emit a prose-only {explanation} and omit the chart config", and advertising the real config model fixed
+          it -- the same failure mode would hit an inline component. The ``_client_uses_split_structured_with_tools``
+          fast-path addendum below (:1524) then applies to the component model unchanged, with no new branch.
           Before the fallback at :1960: ``if output_mode == A2UI and component_hint and response.a2ui_envelope is None:
           outcome = emit_inline_component(response, hint, frame=<response.data if DataFrame>)``; ``degraded`` -> the
           existing fallback runs (logs the outcome.reason)."""
@@ -810,14 +903,17 @@ writing the code is mechanical".
 | `test_tie_breaker_over_labels_accepts_only_candidates` | M4 | labels in prompt; off-list answer → abstain to embedding winner |
 | `test_super_chain_still_reached_on_abstain` | M4 | `_SuperSentinel` pattern from `test_intent_router_output_mode.py` |
 | `test_request_context_has_a2ui_component_default_none` | M5 | attribute present, default `None` |
-| `test_build_component_prompt_uses_catalog_schema_and_instructions` | M6 | prompt contains the schema JSON, the catalog instructions, Graph notes only for Graph; unknown → `KeyError` |
+| `test_model_from_schema_preserves_loose_vocabulary` | M6a | untyped `value`/`delta` → `Any`; `series` `["array","object"]` → union accepts both; `higherIsBetter` round-trips `True`/`False`/`None`/omitted as four distinct outcomes; a `{"path": "/p"}` binding validates for every property; `required` honored |
+| `test_component_model_prefers_source_model` | M6a | `Graph` → `GraphSpec` itself (not a generated type), and a cyclic `kind="dag"` still raises; `KPICard`/`InfoCard`/`Timeline` → generated; cached per `(catalog_id, name)`; unregistered → `KeyError` |
+| `test_build_component_prompt_uses_catalog_instructions` | M6 | prompt contains the catalog instructions and Graph notes only for Graph; prompt does **not** contain serialized JSON Schema (it rides in `structured_output`); unknown → `KeyError` |
 | `test_check_feasibility_rules` | M6 | each reason code reachable; unknown component feasible |
 | `test_emit_inline_component_emits_and_stamps_marker` | M6 | envelope on `response.a2ui_envelope`, `createSurface.metadata.extensions.parrot_presentation` present, `output_mode == A2UI`, `response.response` non-empty, metadata status `emitted` |
 | `test_emit_inline_component_degrades_never_raises` | M6 | unparseable / infeasible / invalid-schema configs → `degraded` with the right reason; `a2ui_envelope` stays `None` |
-| `test_extract_component_config_sources` | M6 | `structured_output` dict, BaseModel, fenced JSON in `output`, bare JSON in `content`, nothing → `None` |
+| `test_extract_component_config_sources` | M6 | BaseModel via `model_dump(by_alias=True, exclude_none=True)` (camelCase; omitted field stays omitted), `structured_output` dict, then the retained fallbacks — fenced JSON in `output`, bare JSON in `content`, nothing → `None` |
 | `test_default_routes_contain_four_composite_keys` | M7 | keys present, every utterance non-empty, EN+ES counts ≥ 8 |
 | `test_ask_explicit_a2ui_component_skips_router` | M7 | harness replicating the call site (pattern of `test_intent_router_output_mode_integration.py`): explicit kwarg → router not consulted |
-| `test_ask_wires_prompt_addon_and_emitter` | M7 | source-fidelity assertions that `data.py` contains `build_component_prompt(` and `emit_inline_component(` at the guarded sites |
+| `test_ask_wires_prompt_addon_and_emitter` | M7 | source-fidelity assertions that `data.py` contains `build_component_prompt(`, `component_model(` and `emit_inline_component(` at the guarded sites |
+| `test_ask_forces_component_model_for_a2ui_hint` | M7 | A2UI+hint → `llm_kwargs["structured_output"].output_type is component_model(hint)`; `STRUCTURED_CHART` still forces `StructuredChartConfig`; every other mode still forces `PandasAgentResponse` |
 | `getPresentation / isInlinePresentation` (vitest) | M8 | marker parsed; malformed → `null`/`false` |
 | `inferSurfaceKind prefers marker` (vitest) | M8 | marker `kind` wins over root heuristic; no marker → today's result |
 | `ChatBubble renders inline A2UISurface` (vitest) | M8 | `output_mode: "a2ui"` + inline marker + `features.a2ui` → `A2UISurface` mounted; without marker → no bubble widget |
@@ -912,7 +1008,8 @@ def composite_route_score():
 - [ ] **G1**: for `output_mode=DEFAULT` the component prompt addon is injected *before* the main LLM turn (`data.py:1418` seam) and no second LLM call is made to author the component.
 - [ ] **G2**: an explicit `output_mode` or `a2ui_component=` kwarg is never overridden by the router; an explicit hint skips routing entirely.
 - [ ] **G3**: router or emitter failure of any kind yields `OutputMode.DEFAULT` prose with `response.metadata["a2ui_inline"]["reason"]` set; no exception escapes `ask()`; no empty bubble (`response.response` non-empty).
-- [ ] **G4/G6**: no new classifier; the prompt is built from `ComponentDefinition.schema_` + `instructions`; the only hand-written per-component text is `INLINE_AUTHORING_NOTES`.
+- [ ] **G4/G6**: no new classifier; the authoring contract is built from `ComponentDefinition.schema_` (via `component_model()`) + `instructions` (via the prompt addon); no schema is restated by hand, and the only hand-written per-component text is `INLINE_AUTHORING_NOTES`.
+- [ ] **G6 (model fidelity)**: for every component in `INLINE_COMPONENTS`, a config that validates against the catalog `schema_` also validates against `component_model()` — asserted over the conformance fixtures, so the generated model can never be stricter than the catalog.
 - [ ] **G7**: every inline envelope passes `validate_envelope(origin=LLM)` and, lowered, `validate_message` (conformance test); `requires_actions` components are rejected at CONFIGURE (`is_inline_component`) and at emit time.
 - [ ] **G8**: `routes.yaml` at agent level and tenant level are loaded and merged (default ← agent ← tenant) with `replace` semantics; an invalid file or key logs a warning and is skipped; the code constant remains the fallback.
 - [ ] Per-tenant routers share one encoder instance (no per-tenant model load).
@@ -1142,6 +1239,9 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
 | `IntentRouterMixin._select_output_router` | `current_skill_tenant()` / `ctx.kwargs` | tenant pick | `skills/tenancy.py:82`, `utils/helpers.py:36` |
 | `route_bank.resolve_route_banks` | `PandasAgent.configure` | before `configure_output_router` | `data.py:898-903` |
 | `route_bank.tenant_routes_path` | `secure_path`, `validate_tenant_id`, `TENANTS_DIRNAME` | path containment | `utils/paths.py:52`, `skills/tenancy.py:30,26` |
+| `catalog._model.component_model` | `catalog.get_component()` → `.component_cls.SOURCE_MODEL` / `.definition.schema_` | attribute read, same pattern as `SCHEMA`/`INSTRUCTIONS` | `catalog/__init__.py:179-180,209,236` |
+| `catalog._model.component_model` | `PandasAgent.ask` structured forcing | `StructuredOutputConfig(output_type=...)` branch beside `StructuredChartConfig` | `data.py:1504-1515` |
+| `GraphComponent.SOURCE_MODEL` | `GraphSpec` | one class attribute; `GraphSpec` is already imported for `derive_schema` | `viz_core/graph.py:35` |
 | `inline.prompt.build_component_prompt` | `PandasAgent.ask` system prompt | appended at the `get_system_prompt` seam | `data.py:1418` |
 | `inline.emitter.emit_inline_component` | `build_surface(origin=LLM, surface_metadata=...)` | validated envelope | `builders.py:79-89` |
 | `inline.emitter.emit_inline_component` | `serialize()` → `response.a2ui_envelope`; `finalize_a2ui_response()` | same seam as structured dual-emit / FEAT-273 | `serialization.py:104`, `emission.py:18`, `structured_base.py:139-199` |
@@ -1162,6 +1262,8 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
 - ~~A renderer registered for `OutputMode.A2UI`~~ — `_MODULE_MAP` has no A2UI entry (`formats/__init__.py:52-73`); the only `register_renderer(OutputMode.…)` calls are for TEXT/JSON/HTML/YAML/TABLE (core) and APPLICATION/SLACK/JINJA2/MARKDOWN/WHATSAPP/MAP/CARD/TEMPLATE_REPORT/ECHARTS/STRUCTURED_*/INFOGRAPHIC (visualizations). `PandasAgent.ask()` degrades A2UI to DEFAULT when no tool produced a surface (`data.py:1955-1966`).
 - ~~A catalog-driven LLM authoring prompt for KPICard / InfoCard / Timeline / Graph in a chat turn~~ — only `structured_chart/_table/_map` register system prompts; `generate_envelope()` (`producer.py:191`) is a separate free-form call with its own `client.ask`, not the main turn.
 - ~~`parrot/outputs/a2ui/inline/` package, `parrot/registry/routing/route_labels.py`, `route_bank.py`~~ — do not exist yet.
+- ~~`model_from_schema()` / `component_model()` / `catalog/_model.py` / any JSON-Schema → Pydantic generator~~ — derivation today runs the OTHER way only: `catalog/parrot/_derive.py:88` `derive_schema(Model, ...)` turns a Pydantic model into a catalog schema (used by `chart.py:26`, `datatable.py:27`, `map.py:26`, `viz_core/graph.py:35`). *(grep `model_from_schema|component_model` over `packages/*/src`: 0 hits.)*
+- ~~A `SOURCE_MODEL` attribute on any catalog component~~ — component classes declare `SCHEMA`, `INSTRUCTIONS` and `lower()`; `register_component` reads only `SCHEMA`/`INSTRUCTIONS` off the class (`catalog/__init__.py:179-180`), and `ComponentDefinition` has no model field (`catalog/base.py:234,258-266`). `RegisteredComponent` does expose `.component_cls`, which is how M6a reaches a declared `SOURCE_MODEL` without touching the registration contract.
 - ~~`routes.yaml` loader / `AGENTS_DIR/<agent>/routes.yaml` convention~~ — grep `routes\.yaml|load_output_mode_routes` over `packages/*/src`: 0 hits; the tenant tree today holds only `skills/` (`tenancy.py:42-48`).
 - ~~`metadata.extensions.parrot_presentation`~~ — grep over `packages/*/src` and the UI: 0 hits; existing `parrot_*` keys are `parrot_role`, `parrot_variant`, `parrot_component_id`, `parrot_optional`, `parrot_unit`/`parrot_trend`/…, `parrot_data_sources`, `parrot_param` (`docs/outputs/a2ui-v1.md:151-158`).
 - ~~An `a2ui` branch in `ChatBubble.svelte`~~ — grep `a2ui` in that file: 0 hits; `A2UISurface` is mounted only from `InfographicCanvas.svelte:21` (and recursively `A2UINode.svelte`).
@@ -1200,6 +1302,8 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
 | `packages/ai-parrot/src/parrot/utils/helpers.py` | MODIFY | `        self.intent_score = None` | `helpers.py:42` | 1 |
 | `packages/ai-parrot/src/parrot/bots/abstract.py` | MODIFY (docstring) | `    async def _resolve_output_mode(` | `abstract.py:4168` | 1 |
 | `packages/ai-parrot/src/parrot/bots/abstract.py` | MODIFY (docstring) | `    def _apply_default_output_mode(self, output_mode: OutputMode) -> OutputMode:` | `abstract.py:4191` | 1 |
+| `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/_model.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/viz_core/graph.py` | MODIFY | `    SCHEMA = GRAPH_SCHEMA` | `viz_core/graph.py:73` | 1 |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/inline/__init__.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/inline/prompt.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/outputs/a2ui/inline/feasibility.py` | CREATE | — | — | — |
@@ -1208,7 +1312,7 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
 | `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `            await asyncio.to_thread(self.configure_output_router, router_cfg)` | `data.py:903` | 1 |
 | `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `                _resolved_mode = await self._resolve_output_mode(question, ctx)` | `data.py:1350` | 1 |
 | `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `                    if system_prompt_addon := self.formatter.get_system_prompt(output_mode):` | `data.py:1418` | 1 |
-| `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `                        StructuredChartConfig if output_mode == OutputMode.STRUCTURED_CHART else PandasAgentResponse` | `data.py:1513` | 1 |
+| `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `                        StructuredChartConfig if output_mode == OutputMode.STRUCTURED_CHART else PandasAgentResponse` | `data.py:1513` | 1 — gains the A2UI+hint branch returning `component_model(hint)` |
 | `packages/ai-parrot/src/parrot/bots/data.py` | MODIFY | `                # There is no A2UI renderer to dispatch to — the mode is a request-side` / `                # signal handled by the render tools — so degrade to DEFAULT` / `                # rather than let the formatter raise "No renderer registered".` / `                if output_mode == OutputMode.A2UI:` | `data.py:1957-1960` | 2 (bare line also at `:1880`; use the 3 comment lines above as context) |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-presentation.ts` | CREATE | — | — | — |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-kind.ts` | MODIFY | `export function inferSurfaceKind(surface: CreateSurface): SurfaceKind {` | `a2ui-kind.ts:31` | 1 |
@@ -1255,10 +1359,14 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
   global. Unknown tenant → global (no warning spam: warn once per tenant like
   `skills/mixin.py:176`).
 - **Prompt addon contract** (mirrors `STRUCTURED_CHART_SYSTEM_PROMPT`,
-  `structured_chart.py:40-100`): single JSON object, no prose/markdown/fences;
-  the LLM computes every figure itself in the tool loop (KPICard `value`/`delta`
-  are literals, never bindings); never emit rows, positions or `action`; include
-  the catalog schema verbatim as JSON; append `INLINE_AUTHORING_NOTES` last.
+  `structured_chart.py:40-100`): the LLM computes every figure itself in the
+  tool loop (KPICard `value`/`delta` are literals, never bindings); never emit
+  rows, positions or `action`; append `INLINE_AUTHORING_NOTES` last. The
+  schema is **not** serialized into the prompt — it is advertised as
+  `structured_output=component_model(hint)` (M6a), so prompt and schema cannot
+  drift. Keep the "no prose/markdown/fences" line anyway: it still governs the
+  free-JSON fallback path in `extract_component_config` for providers that do
+  not honor structured output on a tool-using turn.
 - **Emitter placement**: after structured post-processing and before the
   existing A2UI-fallback at `data.py:1960`, so a degraded outcome flows into the
   very same `DEFAULT` degradation already in place. The emitter never touches
@@ -1287,12 +1395,23 @@ A2UISurface.svelte props { envelope, persistedSurfaceId?, transformsBase?, share
   entry skipped (mirrors the current `ValueError` branch).
 - **Text-only transports** (Telegram / A2A text) → `finalize_a2ui_response()`
   fills `response.response`; `lower()` remains the renderer-side fallback.
-- **Graph authoring quality** is the hard case (brainstorm con). Mitigation:
-  `INLINE_AUTHORING_NOTES["Graph"]` (≤ 25 nodes, stable ids, `direction`,
-  `accessibleDescription`, no positions, choose `kind` per catalog
-  instructions) plus `GraphSpec` validation via `build_surface`. If it still
-  proves unreliable, the brainstorm's fallback is a dedicated prompt asset for
-  Graph — never a dedicated mode.
+- **Graph authoring quality** is the hard case (brainstorm con, since softened:
+  `GRAPH_INSTRUCTIONS` already exists and is explicit — brainstorm Recon
+  Finding 1). Mitigation: `INLINE_AUTHORING_NOTES["Graph"]` adds inline-specific
+  guidance *on top of* those catalog instructions (≤ 25 nodes, stable ids,
+  `direction`, `accessibleDescription`, no positions), and `Graph` is the one
+  component whose `SOURCE_MODEL` is the real `GraphSpec`, so its validators
+  (`kind="dag"` rejects cycles) run inside `structured_output` parsing — before
+  `build_surface` ever sees the config. If it still proves unreliable, the
+  brainstorm's fallback is a dedicated prompt asset for Graph — never a
+  dedicated mode.
+- **A generated model must never be stricter than its catalog schema.** The
+  catalog's object schemas are loose on purpose (untyped `value`, `array|object`
+  `series`, a binding descriptor permitted in place of any value). A generator
+  that tightens them silently makes a legal config unauthorable, and the failure
+  is invisible — the LLM simply never produces that shape. `extra="allow"`, `Any`
+  for untyped properties, and the G6-fidelity check in the Verification Checklist
+  are the guards.
 - **`get_component` ambiguity**: today no name is registered twice
   (`catalog/__init__.py:209-222`); if a sibling spec introduces one, the
   emitter must pass `catalog_id` — covered by the registration contract (§2).
@@ -1336,7 +1455,7 @@ Resolved by FEAT-224 (carried forward from the brainstorm, never re-opened):
 Rev 2 questions:
 - [x] Composite label format: string keys vs a parallel `a2ui_component_routes` field? — *Resolved in spec*: composite string keys `"a2ui:<Component>"` inside `output_mode_routes` (one bank, one grammar in `route_labels.py`); validation extended in `configure_output_router` (§3 M1/M4). A parallel field would split the bank across two merge paths for `routes.yaml`.
 - [x] Where the per-agent / per-tenant phrase bank lives? — *Resolved in spec*: `AGENTS_DIR/{agent_id}/routes.yaml` + `AGENTS_DIR/{agent_id}/tenants/{tenant}/routes.yaml` (sibling of the FEAT-707 `skills/` tree, same `validate_tenant_id`/`secure_path` containment), not a key inside the agent config document (§3 M3).
-- [x] Emitter contract: pydantic `structured_output` generated off the catalog schema vs free JSON + catalog validation? — *Resolved in spec*: free JSON authored in the main turn under a catalog-schema system prompt, then `build_surface(origin=LLM)` validation (structured_chart style); `Graph` gets `INLINE_AUTHORING_NOTES["Graph"]` (§3 M6). Dynamic pydantic models would re-encode the catalog schema and break G6.
+- [x] Emitter contract: pydantic `structured_output` generated off the catalog schema vs free JSON + catalog validation? — *Resolved by the brainstorm owner 2026-10-27, superseding this spec's first answer*: a Pydantic model generated from `schema_` (`component_model()`, §3 M6a) passed as `structured_output`, with the free-JSON parse retained as the degradation fallback. The earlier in-spec answer ("free JSON under a catalog-schema system prompt; dynamic pydantic models would re-encode the catalog schema and break G6") was written concurrently with, and without sight of, the brainstorm resolution; it is superseded on two grounds: **(a)** a model *generated from* `schema_` is a derivation, not a second copy, so G6 is satisfied — G6 forbids a hand-maintained restatement, which this is not; **(b)** `data.py:1504-1515` already does exactly this for `STRUCTURED_CHART`, and its FEAT-215 comment records that NOT advertising the real config model made the LLM "emit a prose-only {explanation} and omit the chart config". The accepted cost is that the repo now derives in both directions (`_derive.py` model→schema for Chart/DataTable/Map/Graph; `_model.py` schema→model for the hand-written three) — see the brainstorm's Open Questions for the rejected alternative.
 - [x] Name/namespace of the inline marker? — *Resolved in spec*: `metadata.extensions.parrot_presentation`, **surface-level**, following the `parrot_*` convention of `docs/outputs/a2ui-v1.md:140-162` (the `a2ui_` prefix is reserved and rejected by `Extensions`, `models.py:355-360`); no existing key fits (`parrot_variant` is component-level and describes lowered Cards).
 - [x] Revive rev 1's data-feasibility layer per component inside the emitter? — *Resolved in spec*: yes, emitter-local `check_feasibility()` with fixed reason codes, no `CapabilityRegistry` coupling (§3 M6). Degradation target in v1 is prose (`DEFAULT`), not `structured_table` — re-running a second renderer after the main turn would violate G1.
 - [x] Which inline components ship in v1? — *Resolved in spec*: `KPICard` + `InfoCard` + `Timeline` + `Graph` (`INLINE_COMPONENTS`); `MermaidDiagram` (FEAT-753) joins through the registration contract.

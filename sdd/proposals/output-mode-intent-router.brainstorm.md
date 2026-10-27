@@ -139,9 +139,8 @@ New in rev 2:
    `STRUCTURED_CHART_SYSTEM_PROMPT`: rows come from the computed DataFrame /
    tool output, the LLM emits only the component config) and passes a Pydantic
    model derived from the component's catalog schema as `structured_output`
-   (decided — see Open Questions; **conflicts with the committed FEAT-755
-   spec**, see the Conflict note there), validates the result against the
-   catalog,
+   (decided — see Open Questions; the FEAT-755 spec was amended to match),
+   validates the result against the catalog,
    builds the envelope with the existing builders, and sets
    `response.a2ui_envelope` + `response.output` exactly like
    `StructuredOutputBase._emit_a2ui_envelope`. Display-only components only
@@ -423,7 +422,19 @@ Resolved for rev 2 (decided 2026-10-27, Jesus Lara; recon on `dev` @ 2026-10-27)
   - **Known cost, accepted**: the generator must handle the deliberately loose vocabulary in the hand-written schemas — `KPICARD_SCHEMA["value"]` and `["delta"]` carry a `description` but **no** `type` (number | string | binding, on purpose), `["series"]` is `{"type": ["array", "object"]}`, and any property may instead receive a `{"path": "/pointer"}` binding descriptor. Untyped → `Any`; a type list → a `Union`; every property optional unless named in the schema's `required`.
   - **Consequence accepted explicitly**: the repo then derives in *both* directions — `_derive.py` turns a Pydantic model into a catalog schema (FEAT-473 G2, used by `Chart`/`DataTable`/`Map`/`Graph`), and `model_from_schema` turns a catalog schema back into a model. The alternative (write `KPICardConfig`/`InfoCardConfig`/`TimelineConfig` and flip those three `SCHEMA`s to `derive_schema`, leaving one direction) was put and **rejected**: it would rewrite three shipped wire schemas to gain uniformity.
   - **Builder note (author's call, not decided above)**: for a component that already declares a source model — `Graph` → `GraphSpec` (`viz_core/graph.py:35`) — the emitter should use that model directly rather than round-tripping it through `GRAPH_SCHEMA`, which would discard its validators (`kind="dag"` rejects cycles). `model_from_schema` is the fallback for schema-only components; "source model if declared, else generate" should be an explicit lookup on the component definition.
-  - > ⚠️ **CONFLICT with the committed FEAT-755 spec.** `sdd/specs/inline-a2ui-component-routing.spec.md` (commit `94248ef35`, 2026-10-27 02:49) closed this same question the **opposite** way — its Open Questions log reads *"Resolved in spec: free JSON authored in the main turn under a catalog-schema system prompt, then `build_surface(origin=LLM)` validation (structured_chart style); `Graph` gets `INLINE_AUTHORING_NOTES["Graph"]`. Dynamic pydantic models would re-encode the catalog schema and break G6."* Its §3 M6 `build_component_prompt()` puts `definition.schema_` into the prompt as JSON and `extract_component_config()` parses the first JSON object out of the response. **The two artifacts disagree and the spec is the downstream one — this must be settled before `/sdd-task`.** Settling it either way is a one-module change (M6 only); nothing in M1/M3/M4/M5/M7 depends on which is chosen.
+  - > ✅ **CONFLICT RESOLVED 2026-10-27.** `sdd/specs/inline-a2ui-component-routing.spec.md`
+    > (commit `94248ef35`) had independently closed this question the opposite way
+    > — free JSON under a catalog-schema system prompt. The spec was **amended to
+    > match this resolution**: new §3 **Module 6a** (`catalog/_model.py` —
+    > `model_from_schema()` / `component_model()`), `build_component_prompt()` no
+    > longer serializes the schema, `PandasAgent.ask` forces `component_model(hint)`
+    > at the `data.py:1513` structured-forcing seam, and the spec's own question log
+    > records the supersession. The spec's G6 objection ("dynamic pydantic models
+    > would re-encode the catalog schema") was answered rather than ignored: a model
+    > *generated from* `schema_` is a derivation, not a hand-maintained restatement,
+    > and `data.py:1504-1515` already advertises `StructuredChartConfig` the same way
+    > — its FEAT-215 comment records that *not* doing so made the LLM emit prose and
+    > omit the config.
 
 - [x] **Inline marker → `metadata.extensions.parrot_presentation`.** Confirmed against the documented convention (`docs/outputs/a2ui-v1.md:140-158`): `a2ui_` is reserved for official extensions, so this codebase's keys are always `parrot_*`, and `parrot_data_sources` (FEAT-598) is the existing *surface-level* precedent for a key on `createSurface.metadata.extensions`. No existing key is a sensible host — `parrot_role` and `parrot_variant` are per-node presentation roles, not surface provenance. Payload: `{"kind": "widget", "inline": true, "origin": "chat_turn"}`. Must be added to the extension-key table in `a2ui-v1.md` (that doc's own §"Extension keys" rule) and validate against `common_types.json#/$defs/Extensions`. *(FEAT-755 spec agrees, and additionally carries `"component": <Name>` in the payload — adopt that.)*
 
