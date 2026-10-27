@@ -217,7 +217,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -225,8 +225,9 @@
       "parallelism_notes": "touches only packages/ai-parrot-server mcp/config.py + transports; no shared files with other tasks",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4738-remove-dead-grpc-mcp-stub.md"
+      "completed_at": "2026-10-27T02:03:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4738-remove-dead-grpc-mcp-stub.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4739",
