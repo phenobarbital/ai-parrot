@@ -322,10 +322,15 @@ def test_component_wrapped_envelope(): ...                   # {"createSurface":
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4753
+- Feature: materialize-turn-linked-widget
+- Implementation SHA: e115d1d722e95e4d898f10b46262585530e8d2c9
+- Closed at (UTC): 2026-10-27T01:54:49+00:00
+- Fix commits: none
 
-**Deviations from spec**: `pin_failed` reason added (see Implementation Notes) | describe others if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 201.9s · Tokens: n/a |
