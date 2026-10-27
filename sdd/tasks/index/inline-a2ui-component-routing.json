@@ -95,7 +95,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "imports parse_route_label/OutputShape from TASK-4757 (registry/routing/route_labels.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4758-embedding-router-label-support.md"
+      "completed_at": "2026-10-27T03:04:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4758-embedding-router-label-support.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4759",
@@ -115,7 +116,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +126,9 @@
       "parallelism_notes": "imports parse_route_label from TASK-4757 (registry/routing/route_labels.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4759-route-bank-loader.md"
+      "completed_at": "2026-10-27T03:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4759-route-bank-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4760",
@@ -214,7 +216,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -224,8 +226,9 @@
       "parallelism_notes": "shares the test package marker tests/outputs/a2ui/inline/__init__.py created by TASK-4763; the module itself is pure",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4764-inline-feasibility-rules.md"
+      "completed_at": "2026-10-27T03:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4764-inline-feasibility-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4765",
