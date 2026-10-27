@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-26T00:50:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-27T01:48:31+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -74,16 +74,17 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root: no deps; creates parrot/roost/__init__.py lazy map + tests/roost/conftest.py so no later task edits them",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4711-roost-performatives-messages.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:46:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4711-roost-performatives-messages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4712",
@@ -92,7 +93,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -101,9 +102,10 @@
       "parallel": true,
       "parallelism_notes": "scoring.py lives in the parrot/roost/ package whose __init__.py (lazy export map) TASK-4711 creates",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4712-roost-bid-scoring.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4712-roost-bid-scoring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4713",
@@ -112,7 +114,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,9 +124,10 @@
       "parallel": true,
       "parallelism_notes": "imports RoostMessage/Performative from TASK-4711 (roost/messages.py, performatives.py) and rank_bids/Bid/Award from TASK-4712 (roost/scoring.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4713-roost-protocol-engine.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:00:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4713-roost-protocol-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4714",
@@ -133,16 +136,17 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root: touches only FEAT-070 capabilities/models.py + capabilities/registry.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4714-capability-registry-agent-index.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:46:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4714-capability-registry-agent-index.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4715",
@@ -151,7 +155,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -160,9 +164,10 @@
       "parallel": true,
       "parallelism_notes": "imports CarrierKind from TASK-4711 (roost/performatives.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4715-roost-directory-models.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4715-roost-directory-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4716",
@@ -171,7 +176,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,9 +186,10 @@
       "parallel": true,
       "parallelism_notes": "calls CapabilityRegistry.register_agent_capability/find_exact from TASK-4714 (capabilities/registry.py); imports RoostAgentConfig/CapabilityMatch/locality_of/rank from TASK-4715 (roost/directory.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4716-agent-registry-find-capability.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4716-agent-registry-find-capability.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4717",
@@ -192,7 +198,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -201,9 +207,10 @@
       "parallel": true,
       "parallelism_notes": "imports InterAgentGrant/RoostAgentConfig/CapabilityMatch from TASK-4715 (roost/directory.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4717-roost-grant-policy.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4717-roost-grant-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4718",
@@ -212,7 +219,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,9 +229,10 @@
       "parallel": true,
       "parallelism_notes": "imports ProtocolEngine/Transition from TASK-4713 (roost/protocols.py) and GrantPolicy from TASK-4717 (roost/grant.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4718-roost-gating-dispatcher.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:09:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4718-roost-gating-dispatcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4719",
@@ -233,7 +241,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -242,9 +250,10 @@
       "parallel": true,
       "parallelism_notes": "imports RoostMessage/AgentAddress from TASK-4711 (roost/messages.py) for the subscribe->inform bridge",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4719-roost-blackboard.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4719-roost-blackboard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4720",
@@ -253,7 +262,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -262,9 +271,10 @@
       "parallel": true,
       "parallelism_notes": "imports RoostMessage/AgentAddress/CarrierKind from TASK-4711; creates carriers/__init__.py lazy map so TASK-4721/4722 never edit it",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4720-roost-carriers-inprocess.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T12:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4720-roost-carriers-inprocess.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4721",
@@ -273,7 +283,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -282,9 +292,10 @@
       "parallel": true,
       "parallelism_notes": "subclasses Carrier and wraps a signal carrier from TASK-4720 (roost/carriers/base.py, inprocess.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4721-roost-carrier-shm.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4721-roost-carrier-shm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4722",
@@ -293,7 +304,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -302,9 +313,10 @@
       "parallel": true,
       "parallelism_notes": "subclasses Carrier from TASK-4720 (roost/carriers/base.py); codec uses LocalEnvelope from TASK-4711",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4722-roost-codec-bus-carrier.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4722-roost-codec-bus-carrier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4723",
@@ -313,7 +325,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -322,9 +334,10 @@
       "parallel": true,
       "parallelism_notes": "imports RoostMessage/Performative from TASK-4711 (roost/messages.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4723-roost-audit-ledger.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4723-roost-audit-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4724",
@@ -333,7 +346,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -343,9 +356,10 @@
       "parallel": true,
       "parallelism_notes": "imports EnvelopeCodec/JsonEnvelopeCodec from TASK-4722 (roost/codec.py) and CapabilityMatch from TASK-4715 (roost/directory.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4724-roost-squawk-bridge.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:16:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4724-roost-squawk-bridge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4725",
@@ -354,7 +368,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -368,9 +382,10 @@
       "parallel": true,
       "parallelism_notes": "composes GatingDispatcher (TASK-4718), Blackboard (TASK-4719), Carrier (TASK-4720), RoostAuditLedger (TASK-4723), squawk_bridge (TASK-4724) and calls AgentRegistry.find_capability (TASK-4716)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4725-roost-endpoint.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:19:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4725-roost-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4726",
@@ -379,7 +394,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -388,9 +403,10 @@
       "parallel": true,
       "parallelism_notes": "RoostToolkit wraps RoostEndpoint/RoostFailure from TASK-4725 (roost/endpoint.py); AgentTool path calls endpoint.query",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4726-roost-toolkit-agenttool.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:26:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4726-roost-toolkit-agenttool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4727",
@@ -399,7 +415,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -409,9 +425,10 @@
       "parallel": true,
       "parallelism_notes": "MatrixCarrier subclasses Carrier from TASK-4720; MatrixBlackboard subclasses Blackboard from TASK-4719",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4727-matrix-roost-carrier-blackboard.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4727-matrix-roost-carrier-blackboard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4728",
@@ -420,7 +437,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -429,9 +446,10 @@
       "parallel": true,
       "parallelism_notes": "ask_agent calls RoostEndpoint.request/query and catches RoostFailure from TASK-4725 (roost/endpoint.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4728-matrix-ask-agent-roost.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:26:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4728-matrix-ask-agent-roost.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4729",
@@ -440,7 +458,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -450,9 +468,10 @@
       "parallel": true,
       "parallelism_notes": "gate tests exercise AgentRegistry.find_capability from TASK-4716 and RoostToolkit/RoostEndpoint from TASK-4726 (endpoint transitively)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4729-roost-gates-ls1-ls5.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:30:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4729-roost-gates-ls1-ls5.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4730",
@@ -461,7 +480,7 @@
       "feature_id": "FEAT-747",
       "feature": "local-inter-agent",
       "spec": "sdd/specs/local-inter-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -471,9 +490,10 @@
       "parallel": true,
       "parallelism_notes": "L-S6 gate uses MatrixCarrier/MatrixBlackboard from TASK-4727 and documents ask_agent subsumption from TASK-4728",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4730-matrix-gate-ls6-and-docs.md"
+      "started_at": "2026-10-26T12:39:56+00:00",
+      "completed_at": "2026-10-26T13:30:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4730-matrix-gate-ls6-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
