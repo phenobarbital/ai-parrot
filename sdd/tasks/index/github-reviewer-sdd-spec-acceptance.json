@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27",
-  "completed_at": null,
+  "completed_at": "2026-10-27T17:19:38+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -37,16 +37,17 @@
       "feature_id": "FEAT-759",
       "feature": "github-reviewer-sdd-spec-acceptance",
       "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: modifies reviewer.py, conf.py and the reviewer test fixture; consumes no new toolkit symbol. Runs alongside TASK-4814, which owns separate toolkit files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4813-reviewer-sdd-foundations.md"
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:08:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4813-reviewer-sdd-foundations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4814",
@@ -55,16 +56,17 @@
       "feature_id": "FEAT-759",
       "feature": "github-reviewer-sdd-spec-acceptance",
       "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: owns gittoolkit.py and test_gittoolkit_pr_context.py; no reviewer files or shared configuration are modified. Can run alongside TASK-4813.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4814-gittoolkit-directory-listing.md"
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:08:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4814-gittoolkit-directory-listing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4815",
@@ -73,7 +75,7 @@
       "feature_id": "FEAT-759",
       "feature": "github-reviewer-sdd-spec-acceptance",
       "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,9 +85,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-4813 for max_spec_scan_files and serialized writes to github_reviewer.py/test_github_reviewer.py; depends on TASK-4814 for GitToolkit.list_repo_directory and RepoDirectoryListing in gittoolkit.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4815-resolve-sdd-spec-requirements.md"
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:16:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4815-resolve-sdd-spec-requirements.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4816",
@@ -94,7 +97,7 @@
       "feature_id": "FEAT-759",
       "feature": "github-reviewer-sdd-spec-acceptance",
       "spec": "sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,9 +106,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-4815 for _fetch_spec_requirement and serialized writes to github_reviewer.py/test_github_reviewer.py; TASK-4813 settings, result field and base_ref payload arrive transitively through TASK-4815.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4816-integrate-sdd-review-fallback.md"
+      "started_at": "2026-10-27T16:56:25+00:00",
+      "completed_at": "2026-10-27T17:19:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4816-integrate-sdd-review-fallback.md",
+      "verification": "verified"
     }
   ]
 }
