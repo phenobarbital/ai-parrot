@@ -44,7 +44,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -52,8 +52,9 @@
       "parallelism_notes": "no dependencies; creates outbox.py + test_ledger_outbox.py, which no other task in wave 1 touches",
       "assigned_to": null,
       "started_at": "2026-10-27T23:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4857-ledger-outbox-storage.md"
+      "completed_at": "2026-10-27T23:17:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4857-ledger-outbox-storage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4858",
@@ -122,7 +123,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -130,8 +131,9 @@
       "parallelism_notes": "no code dependency (spec §3 M4); touches only claude_code/assets.py, installer.py and the root hook test — runs alongside TASK-4857",
       "assigned_to": null,
       "started_at": "2026-10-27T23:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4861-ledger-hook-migration.md"
+      "completed_at": "2026-10-27T23:17:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4861-ledger-hook-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4862",
