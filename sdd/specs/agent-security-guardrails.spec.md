@@ -315,11 +315,19 @@ Agent(guardrails=[{"name": "prompt_injection", "scan_tool_output": True},
   set, leakage-attempt prompts), an embedding-similarity detector wrapper,
   threshold-selection sweep, p50/p95 latency, startup time + resident
   memory, Spanish-benign FP minimum (gate: 0 FP on the benign-ES bucket at
-  the selected threshold), and a **candidate manifest** (model id, HF
-  revision, sha256, license, verdict). Candidates: the brainstorm matrix
-  (gravitee Prompt Guard 2 86M/22M ONNX, vllm-sr mmbert32k, madhurjindal
-  Large via export, 0din embeddings — non-default until licensed, enguard
-  potion, protectai v2 baseline). Output: pinned winner + threshold for M4.
+  the selected threshold), a **Spanish ATTACK recall bucket** (the
+  shortlist's EN-only fine-tunes risk ES misses, not FPs), and a
+  **candidate manifest** (model id, HF revision, sha256, license, verdict).
+  **Default-eligible shortlist and pre-registered decision rule are fixed
+  in §8 (resolved)**: vllm-sr mmbert32k (apache-2.0) · madhurjindal Large
+  (MIT, own export) · gravitee Prompt Guard 2 86M **fp32 only** (llama4,
+  conditional attribution; int8 excluded — its own eval shows F1
+  0.98→0.89) · enguard potion (MIT); 0din and NC-licensed models excluded;
+  winner = highest combined ES+EN F1 s.t. 0 ES-benign FPs and p50 ≤ 30 ms
+  CPU @ 512 tokens, ties → permissive license, then size. 0din embeddings
+  may still be *measured* (local eval) to inform any future licensing
+  conversation, flagged non-eligible in the manifest. Output: pinned
+  winner + threshold for M4.
 - **Depends on**: M2's detector shapes (benchmark wrapper mirrors them);
   can start concurrently using the model card contracts.
 
@@ -775,18 +783,40 @@ Verified against: `4e3ba6289`
 - [x] Priority ordering + preset — *Resolved in spec Q&A*: injection 10 →
   jailbreak 11 → leakage 12 (INPUT) / 220 (OUTPUT); `security` preset
   ships in v1.
-- [ ] **Bake-off outcome** (M3, hard gate): which candidate wins, at what
-  threshold; licenses re-verified per candidate (0din declares NONE —
-  blocker unless clarified with 0din/Mozilla; gravitee = llama4 community;
-  vllm-sr/madhurjindal = apache-2.0/MIT). — *Owner: Jesús*
-- [ ] **Reference attack corpus** (only if an embedding engine wins):
-  WildJailbreak redistribution terms for derived vectors, size budget,
-  shipping channel (package data vs HF dataset vs env dir), update
-  cadence. — *Owner: Jesús*
-- [ ] Should the extraction-attempt heuristic patterns (leakage INPUT) and
-  the jailbreak heuristic floor live in one shared data file or per
-  guardrail? Decide at implementation; default: per guardrail. —
-  *Owner: implementer*
+- [x] **Bake-off eligibility + decision rule** — *Resolved 2026-10-27
+  (licenses verified via HF cards/API; empirical winner is M3's committed
+  output, now mechanical)*: default-eligible shortlist =
+  `vllm-sr/mmbert32k-jailbreak-detector-merged` (apache-2.0; EN-only
+  fine-tune on toxic-chat + Salad-Data — ES-attack *miss* risk, so the
+  bake-off adds a Spanish ATTACK recall bucket, not just Spanish benign),
+  `madhurjindal/Jailbreak-Detector-Large` (MIT; EN fine-tune; own ONNX
+  export via `export.py`), `gravitee-io/Llama-Prompt-Guard-2-86M-onnx`
+  **fp32 graph only** (llama4 community license — conditional: "Built with
+  Llama" attribution + AUP noted in ops docs if it wins; its own eval shows
+  the int8 quant collapses F1 0.98→0.89 / recall 0.80, so `model.quant.onnx`
+  is excluded on quality), `enguard/medium-guard-128m-xx` (MIT, latency
+  dark horse). **Excluded from default**: 0din embeddings (NO license
+  declared — may re-enter only if 0din/Mozilla clarifies),
+  `sheltron-ai/prompt-guard-68m` (CC-BY-NC), any protectai model (ES-FP
+  baseline only). **Pre-registered decision rule**: winner = highest
+  combined ES+EN F1 subject to (a) 0 Spanish-benign FPs at the selected
+  threshold and (b) p50 ≤ 30 ms CPU @ 512 tokens; ties → more permissive
+  license (apache/MIT over llama4), then smaller artifact. M3 commits the
+  numbers + manifest; §5 gate unchanged.
+- [x] **Reference attack corpus** — *Resolved 2026-10-27*: moot for v1 —
+  no embedding candidate is license-eligible, so **no corpus artifact
+  ships in v1** (the chassis's `EmbeddingSimilarityEngine` stays: the
+  benchmark wrapper uses it and a future embedding adoption needs it).
+  Policy recorded for that future: corpus = operator-downloaded artifact
+  resolved at warmup via the env-dir chain, never package data; evaluation
+  seeds stay curated in-repo ES/EN (the `corpus.py` +
+  `assert_seed_disjoint` pattern); WildJailbreak is ODC-BY + gated-auto
+  (AI2 terms) — local evaluation use with attribution is fine, derived
+  vectors are NOT redistributed by this repo.
+- [x] Heuristic pattern data location — *Resolved 2026-10-27*: per
+  guardrail — each builtin owns its pattern data as module-level
+  structures next to its code (one-owner discipline, mirroring the
+  FEAT-439 import-boundary rule). No shared pattern file.
 
 ---
 
