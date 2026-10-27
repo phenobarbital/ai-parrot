@@ -66,7 +66,7 @@ When a citation is resolved, the system follows this exact order:
 - Filename gating: A prefixed filename (e.g., `FS-0007-...`) supplies an alias only if its upper-cased prefix is in `known_prefixes`. Otherwise it supplies no candidate, never a degraded bare alias.
 - No rewriting of bare identities: A file that declares `ADR-7` owns the alias `ADR-7`. The parser never injects `local_prefix` into a bare `id:` field.
 - Prefixed supersedes: A `supersedes:` header can use prefixed aliases (e.g., `supersedes: FS-ADR-3`). The resolution order applies to these as well.
-- Same-alias ambiguity: If two different prefixes produce the same canonical alias (e.g., `FS-ADR-7` and `PARROT-ADR-7`), both are distinct entries in the alias map and neither is marked ambiguous. The first one wins.
+- Same-alias ambiguity: If two different prefixes produce the same canonical alias (e.g., `FS-ADR-7` and `PARROT-ADR-7`), both are distinct entries in the alias map and neither is marked ambiguous.
 - RFC non-prefixing: RFC references are never prefixed. The shared prefix group matches them lexically, but the prefix is discarded when the kind is `RFC`.
 
 ## How Decisions Attach to Code
@@ -78,6 +78,8 @@ Automatic citation extraction is **Python only**, from comment tokens and docstr
 - An executable string literal is never a citation
 - Applicability never propagates through the call graph
 - Duplicate ADR-42 aliases stay unresolved
+
+Other languages use explicit Markdown `sym:` links only.
 
 Citations use the same prefix grammar as ADR files. A bare `ADR-42` in code resolves to the bare alias. A prefixed citation like `FS-ADR-3` resolves only if `FS` is in `known_prefixes`. An unlisted prefix is discarded, so `XX-ADR-3` may still resolve to `ADR-3` or `<local_prefix>-ADR-3` if configured.
 
