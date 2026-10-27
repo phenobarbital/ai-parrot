@@ -88,14 +88,26 @@ def test_sweep_threshold_returns_reject_all_when_no_threshold_passes() -> None:
 
 def test_evaluate_gate_reports_all_failures() -> None:
     """Eligibility, Spanish FP, and p50 gates produce stable reasons."""
+    over_budget = cj.P50_BUDGET_MS + 1.25
     result = _scored_result(
-        p50_ms=31.25,
+        p50_ms=over_budget,
         candidate=_candidate(license_name="none", eligible=False),
     )
     metrics = {"es_benign_fp": 2.0}
     passes, reasons = cj.evaluate_gate(result, 0.8, metrics)
     assert not passes
-    assert reasons == ["not-eligible:none", "es-benign-fp:2", "p50:31.25"]
+    assert reasons == ["not-eligible:none", "es-benign-fp:2", f"p50:{over_budget:.2f}"]
+
+
+def test_p50_budget_is_the_amended_45_ms_and_boundary_is_inclusive() -> None:
+    """FEAT-761: budget amended 30 -> 45 ms (operator decision); exactly 45.0 still passes."""
+    assert cj.P50_BUDGET_MS == 45.0
+    ok = _scored_result(p50_ms=45.0, benign_es=[0.0] * 25)
+    passes, reasons = cj.evaluate_gate(ok, 0.5, {"es_benign_fp": 0.0})
+    assert passes and reasons == []
+    slow = _scored_result(p50_ms=45.01, benign_es=[0.0] * 25)
+    passes, reasons = cj.evaluate_gate(slow, 0.5, {"es_benign_fp": 0.0})
+    assert not passes and reasons == ["p50:45.01"]
 
 
 def test_pick_winner_ties_break_by_license_then_artifact_size() -> None:
