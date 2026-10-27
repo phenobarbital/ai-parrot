@@ -25,13 +25,23 @@ class RoostToolkit(AbstractToolkit):
         content: str,
         body: Optional[str] = None,
     ) -> dict:
-        """Send a message to another agent when no more specific tool fits."""
-        message = await self._endpoint.send(
-            Performative(performative),
-            receivers=[AgentAddress(name=receiver)],
-            content=content,
-            body=body,
-        )
+        """Send a message to another agent when no more specific tool fits.
+
+        For ``request`` the content is the capability id to run on the receiver; for ``query`` it is the
+        question; for ``subscribe`` it is a capability filter; for ``inform`` it is the fact to tell.
+        ``request`` and ``query`` wait for the reply and return it under ``result``.
+        """
+        address = AgentAddress(name=receiver)
+        if performative == "request":
+            result = await self._endpoint.request(content, {}, receiver=address)
+            return {"status": "done", "result": result}
+        if performative == "query":
+            result = await self._endpoint.query(content, receiver=address)
+            return {"status": "done", "result": result}
+        if performative == "subscribe":
+            conversation_id = await self._endpoint.subscribe(capability_filter=content)
+            return {"status": "subscribed", "conversation_id": conversation_id}
+        message = await self._endpoint.inform(receivers=[address], content=content, body=body)
         return {"status": "sent", "conversation_id": message.conversation_id}
 
     async def report(self, receiver: str, fact: str) -> dict:

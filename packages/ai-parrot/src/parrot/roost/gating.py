@@ -105,6 +105,9 @@ class GatingDispatcher:
         }
         if msg.performative in openers and self.engine.state(msg.conversation_id) is None:
             self.engine.open(msg)
+            exceeded = self.engine.check_hops(msg)
+            if exceeded is not None:
+                return Dispatch(decision=DispatchDecision.CLOSED, transition=exceeded, emit=exceeded.emit)
         else:
             transition = self.engine.accept(msg, hops=hops)
             if transition.kind == "not_understood":

@@ -13,7 +13,7 @@ from .blackboard import Blackboard
 from .carriers.base import Carrier, Undeliverable
 from .directory import RoostAgentConfig
 from .gating import Dispatch, DispatchDecision, GatingDispatcher, Handler
-from .grant import GrantPolicy
+from .grant import GrantDenied, GrantPolicy
 from .messages import AgentAddress, FailureInfo, RoostMessage
 from .performatives import CarrierKind, FailureCode, InteractionProtocol, Performative
 from .protocols import ConversationBudget, ProtocolEngine, TerminalState
@@ -53,6 +53,7 @@ class RoostEndpoint:
         wake: Optional[WakeCallback] = None,
         registry: Optional["AgentRegistry"] = None,
         grant: Optional[GrantPolicy] = None,
+        sweep_interval: float = 0.25,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.agent_name, self.config, self.engine, self.dispatcher = agent_name, config, engine, dispatcher
@@ -62,6 +63,8 @@ class RoostEndpoint:
         self.grant = grant or GrantPolicy()
         self._pending: dict[str, asyncio.Future[Any]] = {}
         self._subs: list[tuple[Carrier, str]] = []
+        self._sweep_interval = sweep_interval
+        self._sweeper: Optional[asyncio.Task[None]] = None
         self._metrics = {"messages_in": 0, "messages_out": 0, "wakes": 0, "not_understood": 0, "stored": 0}
 
     def address(self) -> AgentAddress:
@@ -77,9 +80,15 @@ class RoostEndpoint:
         for carrier in self.carriers.values():
             subscription_id = await carrier.subscribe(self.address(), self._on_message, capabilities=capabilities)
             self._subs.append((carrier, subscription_id))
+        if self._sweeper is None and self._sweep_interval > 0:
+            self._sweeper = asyncio.get_running_loop().create_task(self._sweep_loop())
 
     async def stop(self) -> None:
         """Unsubscribe and fail outstanding request waiters as cancelled."""
+        if self._sweeper is not None:
+            self._sweeper.cancel()
+            await asyncio.gather(self._sweeper, return_exceptions=True)
+            self._sweeper = None
         for carrier, subscription_id in self._subs:
             await carrier.unsubscribe(subscription_id)
         self._subs.clear()
@@ -88,6 +97,32 @@ class RoostEndpoint:
             if not future.done():
                 future.set_exception(failure)
         self._pending.clear()
+
+    async def _sweep_loop(self) -> None:
+        """Periodically close expired conversations (deadline / bid window)."""
+        while True:
+            await asyncio.sleep(self._sweep_interval)
+            try:
+                await self.sweep()
+            except Exception:  # noqa: BLE001 — a sweep failure must never kill the loop
+                self.logger.exception("Roost sweep failed")
+
+    async def sweep(self) -> int:
+        """Run ``ProtocolEngine.expire`` and deliver the typed ``failure(TIMEOUT)`` it emits.
+
+        Failures addressed to this agent resolve the local request waiter; the rest go out over the carriers.
+
+        Returns:
+            Number of conversations closed by this sweep.
+        """
+        transitions = self.engine.expire()
+        for transition in transitions:
+            for emitted in transition.emit:
+                if emitted.is_addressed_to(self.agent_name):
+                    await self._resolve_pending(emitted)
+                else:
+                    await self._send_reply(emitted)
+        return len(transitions)
 
     async def _on_message(self, msg: RoostMessage) -> None:
         """Audit, dispatch, and execute an inbound Roost message."""
@@ -120,7 +155,10 @@ class RoostEndpoint:
                 response = await self.wake(msg, dispatch)
                 if response is not None:
                     await self._send_reply(response)
-                    self.engine.charge(msg.conversation_id, int(getattr(response, "tokens", 0)))
+                    exhausted = self.engine.charge(msg.conversation_id, response.tokens)
+                    if exhausted is not None:
+                        for emitted in exhausted.emit:
+                            await self._send_reply(emitted)
             await self._resolve_pending(msg)
             return
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
@@ -216,6 +254,7 @@ class RoostEndpoint:
         in_reply_to: Optional[str] = None,
         body: Optional[str] = None,
         envelope: Any = None,
+        hops: int = 0,
     ) -> RoostMessage:
         """Build, audit, route, and deliver one outbound Roost message."""
         conversation_id = conversation_id or uuid.uuid4().hex
@@ -232,6 +271,7 @@ class RoostEndpoint:
             content=content,
             body=body,
             envelope=envelope,
+            hops=hops,
         )
         await self._deliver_outbound(msg)
         return msg
@@ -261,8 +301,22 @@ class RoostEndpoint:
         *,
         timeout: Optional[float] = None,
         receiver: Optional[AgentAddress] = None,
+        hops: int = 0,
     ) -> Any:
-        """Execute a Request conversation and return its native result."""
+        """Execute a Request conversation and return its native result.
+
+        Args:
+            cap_id: Capability to request.
+            args: Tool arguments.
+            timeout: Seconds to wait; also becomes the envelope budget.
+            receiver: Explicit target agent; the caller's grant must cover *cap_id* (fail-closed).
+            hops: Chain depth of the caller (e.g. ``ctx.current_hops``) seeding the hop budget.
+
+        Raises:
+            GrantDenied: *cap_id* is outside the caller's grant.
+        """
+        if receiver is not None and not self.grant.allows(self.config, cap_id):
+            raise GrantDenied(cap_id)
         if receiver is None:
             if self.registry is None:
                 raise Undeliverable(cap_id)
@@ -286,6 +340,7 @@ class RoostEndpoint:
             capability_filter=cap_id,
             content=dict(args),
             envelope=envelope,
+            hops=hops,
         )
         self.engine.open(opener)
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
@@ -299,6 +354,7 @@ class RoostEndpoint:
                 protocol=InteractionProtocol.REQUEST,
                 conversation_id=conversation_id,
                 envelope=envelope,
+                hops=hops + 1,
             )
             wait_timeout = timeout
             if wait_timeout is None and getattr(envelope, "budget_ms", None) is not None:
@@ -307,6 +363,7 @@ class RoostEndpoint:
                 return await future
             return await asyncio.wait_for(future, wait_timeout)
         except asyncio.TimeoutError as exc:
+            self._close_timed_out(conversation_id)
             failure = FailureInfo(code=FailureCode.TIMEOUT, detail="request timed out")
             raise RoostFailure(failure) from exc
         finally:
@@ -319,6 +376,7 @@ class RoostEndpoint:
         receiver: AgentAddress,
         timeout: Optional[float] = None,
         expected_schema: Optional[dict] = None,
+        hops: int = 0,
     ) -> Any:
         """Execute a Query conversation without an agreement phase."""
         del expected_schema
@@ -336,6 +394,7 @@ class RoostEndpoint:
             receivers=[receiver],
             content=question,
             envelope=envelope,
+            hops=hops,
         )
         self.engine.open(opener)
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
@@ -348,14 +407,22 @@ class RoostEndpoint:
                 protocol=InteractionProtocol.QUERY,
                 conversation_id=conversation_id,
                 envelope=envelope,
+                hops=hops + 1,
             )
             if timeout is None:
                 return await future
             return await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as exc:
+            self._close_timed_out(conversation_id)
             raise RoostFailure(FailureInfo(code=FailureCode.TIMEOUT, detail="query timed out")) from exc
         finally:
             self._pending.pop(conversation_id, None)
+
+    def _close_timed_out(self, conversation_id: str) -> None:
+        """Mark a locally timed-out conversation terminal so late replies are not-understood."""
+        state = self.engine.state(conversation_id)
+        if state is not None and state.terminal is None:
+            self.engine.close(conversation_id, TerminalState.TIMED_OUT, reason="timeout")
 
     async def cfp(
         self,
@@ -366,7 +433,6 @@ class RoostEndpoint:
         scorer: Optional[BidScorer] = None,
     ) -> Award:
         """Broadcast a Contract Net call, score proposals, and notify bidders."""
-        del scorer
         conversation_id = uuid.uuid4().hex
         envelope = squawk_bridge.new_envelope(correlation_id=conversation_id, caller=self.agent_name)
         opener = RoostMessage(
@@ -388,7 +454,7 @@ class RoostEndpoint:
             envelope=envelope,
         )
         await asyncio.sleep(bid_window_ms / 1000)
-        award = self.engine.award(conversation_id)
+        award = self.engine.award(conversation_id, scorer)
         state = self.engine.state(conversation_id)
         if state is not None:
             for proposal in state.proposals:

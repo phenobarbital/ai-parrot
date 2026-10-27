@@ -50,18 +50,22 @@ def test_schemas_expose_only_the_performative_enum_and_no_grant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_maps_the_enum_to_a_typed_performative() -> None:
+async def test_send_routes_each_enum_value_through_its_protocol() -> None:
     endpoint = _endpoint()
+    endpoint.request = AsyncMock(return_value={"salary": 1})
+    endpoint.query = AsyncMock(return_value="answer")
+    endpoint.inform = AsyncMock(return_value=MagicMock(conversation_id="conversation-2"))
+    toolkit = RoostToolkit(endpoint)
+    worker = AgentAddress(name="worker")
 
-    result = await RoostToolkit(endpoint).send("request", "worker", "do it", body="Please do it")
-
-    assert result == {"status": "sent", "conversation_id": "conversation-1"}
-    endpoint.send.assert_awaited_once_with(
-        Performative.REQUEST,
-        receivers=[AgentAddress(name="worker")],
-        content="do it",
-        body="Please do it",
-    )
+    assert await toolkit.send("request", "worker", "hr.people.salary") == {"status": "done", "result": {"salary": 1}}
+    endpoint.request.assert_awaited_once_with("hr.people.salary", {}, receiver=worker)
+    assert await toolkit.send("query", "worker", "why?") == {"status": "done", "result": "answer"}
+    endpoint.query.assert_awaited_once_with("why?", receiver=worker)
+    result = await toolkit.send("inform", "worker", "fact", body="hi")
+    assert result == {"status": "sent", "conversation_id": "conversation-2"}
+    endpoint.inform.assert_awaited_once_with(receivers=[worker], content="fact", body="hi")
+    endpoint.send.assert_not_awaited()
 
 
 @pytest.mark.asyncio

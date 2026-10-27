@@ -66,7 +66,13 @@ def test_message_requires_receiver_or_capability_filter() -> None:
 
 def test_package_import_is_lazy() -> None:
     """Importing the package alone does not load a Roost submodule."""
-    for module_name in [name for name in sys.modules if name.startswith("parrot.roost")]:
-        del sys.modules[module_name]
-    importlib.import_module("parrot.roost")
-    assert "parrot.roost.messages" not in sys.modules
+    saved = {name: module for name, module in sys.modules.items() if name.startswith("parrot.roost")}
+    try:
+        for module_name in saved:
+            del sys.modules[module_name]
+        importlib.import_module("parrot.roost")
+        assert "parrot.roost.messages" not in sys.modules
+    finally:
+        for name in [n for n in sys.modules if n.startswith("parrot.roost")]:
+            del sys.modules[name]
+        sys.modules.update(saved)

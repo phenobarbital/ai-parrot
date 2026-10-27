@@ -137,6 +137,7 @@ class AgentSwarmToolkit(AbstractToolkit):
                 receiver=AgentAddress(name=agent),
                 timeout=timeout,
                 expected_schema=expected_schema,
+                hops=ctx.current_hops.get(),
             )
         except RoostFailure as exc:
             status = status_map.get(exc.failure.code, "error")

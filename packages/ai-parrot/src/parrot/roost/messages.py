@@ -74,6 +74,8 @@ class RoostMessage(BaseModel):
     failure: Optional[FailureInfo] = None
     permission_context: Any = None
     auth_token: Optional[str] = None
+    hops: int = 0
+    tokens: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")

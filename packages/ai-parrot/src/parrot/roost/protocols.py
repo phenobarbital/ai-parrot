@@ -245,6 +245,7 @@ class ProtocolEngine:
             budget_ms = getattr(opener.envelope, "budget_ms", None)
             budget = ConversationBudget(
                 hop_limit=self._default_hop_limit,
+                hops=opener.hops,
                 token_budget=getattr(opener.envelope, "token_budget", None),
                 deadline=now + timedelta(milliseconds=budget_ms) if budget_ms is not None else None,
             )
@@ -275,6 +276,13 @@ class ProtocolEngine:
         if transition.kind == "not_understood":
             self.logger.info("Roost protocol did not understand message %s", msg.message_id)
         return transition
+
+    def check_hops(self, msg: RoostMessage) -> Optional[Transition]:
+        """Close the conversation with ``failure(HOP_LIMIT)`` when it was opened beyond its hop limit."""
+        state = self._states.get(msg.conversation_id)
+        if state is None or state.terminal is not None or state.budget.hops <= state.budget.hop_limit:
+            return None
+        return self._close_with_failure(state, FailureCode.HOP_LIMIT, "conversation hop limit exceeded", msg)
 
     def charge(self, conversation_id: str, tokens: int) -> Optional[Transition]:
         """Consume LLM tokens and close if the configured budget is exhausted."""
@@ -307,8 +315,8 @@ class ProtocolEngine:
                 closed.append(Transition(kind="closed", state=state))
         return closed
 
-    def award(self, conversation_id: str) -> Award:
-        """Score collected proposals with ``rank_bids``."""
+    def award(self, conversation_id: str, scorer: Optional[BidScorer] = None) -> Award:
+        """Score collected proposals with ``rank_bids`` (per-call *scorer* overrides the engine default)."""
         state = self._states.get(conversation_id)
         if state is None or state.protocol is not InteractionProtocol.CONTRACT_NET:
             return Award()
@@ -326,7 +334,7 @@ class ProtocolEngine:
             )
             for proposal in state.proposals
         ]
-        return rank_bids(bids, self._scorer, tie_epsilon=self._tie_epsilon)
+        return rank_bids(bids, scorer or self._scorer, tie_epsilon=self._tie_epsilon)
 
     def state(self, conversation_id: str) -> Optional[ConversationState]:
         """Return state for *conversation_id*, if present."""

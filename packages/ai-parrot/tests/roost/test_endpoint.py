@@ -2,16 +2,19 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncio
 import pytest
 
 from parrot.roost.carriers.inprocess import InProcessCarrier
-from parrot.roost.directory import RoostAgentConfig
+from parrot.roost.directory import InterAgentGrant, RoostAgentConfig
 from parrot.roost.endpoint import RoostEndpoint, RoostFailure
 from parrot.roost.gating import GatingDispatcher, HandlerRegistry
 from parrot.roost.grant import GrantPolicy
 from parrot.roost.messages import AgentAddress, FailureInfo
 from parrot.roost.performatives import CarrierKind, FailureCode, InteractionProtocol, Performative
 from parrot.roost.protocols import ProtocolEngine
+
+GRANTED = RoostAgentConfig(grant=InterAgentGrant(scopes=["*"]))
 
 
 def make_endpoint(
@@ -59,7 +62,7 @@ async def test_request_returns_native_object_and_uses_manager_guard() -> None:
         config=RoostAgentConfig(capabilities=["hr.people.salary"], backing="deterministic"),
         tool_result=result,
     )
-    caller = make_endpoint("caller", carrier)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
     await hr.start()
     await caller.start()
     try:
@@ -83,7 +86,7 @@ async def test_request_returns_native_object_and_uses_manager_guard() -> None:
 async def test_refuse_rejects_pending_request_with_typed_failure() -> None:
     """A refusal is surfaced as a RoostFailure rather than an empty response."""
     carrier = InProcessCarrier()
-    caller = make_endpoint("caller", carrier)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
     server = make_endpoint("server", carrier)
     await caller.start()
     await server.start()
@@ -185,7 +188,7 @@ async def test_failing_tool_yields_typed_failure_not_timeout(error: Exception, c
         "hr", carrier, config=RoostAgentConfig(capabilities=["hr.people.salary"], backing="deterministic")
     )
     hr.tool_manager.execute_tool = AsyncMock(side_effect=error)
-    caller = make_endpoint("caller", carrier)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
     await hr.start()
     await caller.start()
     try:
@@ -195,3 +198,54 @@ async def test_failing_tool_yields_typed_failure_not_timeout(error: Exception, c
     finally:
         await caller.stop()
         await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_request_with_receiver_outside_grant_is_denied() -> None:
+    """A direct request is fail-closed against the caller's inter-agent grant (AC-12)."""
+    from parrot.roost.grant import GrantDenied
+
+    carrier = InProcessCarrier()
+    caller = make_endpoint("caller", carrier, config=RoostAgentConfig(grant=InterAgentGrant(scopes=["hr.*"])))
+    with pytest.raises(GrantDenied):
+        await caller.request("finance.payroll", {}, receiver=AgentAddress(name="finance"), timeout=1)
+    with pytest.raises(GrantDenied):
+        await make_endpoint("bare", carrier).request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_hop_limit_is_enforced_on_the_wire() -> None:
+    """A request seeded beyond the hop limit is answered with failure(HOP_LIMIT)."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=RoostAgentConfig(capabilities=["hr.x"], backing="deterministic"))
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=2, hops=8)
+        assert exc_info.value.failure.code is FailureCode.HOP_LIMIT
+        hr.tool_manager.execute_tool.assert_not_awaited()
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_expired_conversation_emits_failure_timeout_to_the_requester() -> None:
+    """The serving side's sweep sends failure(TIMEOUT) when a conversation passes its deadline."""
+    carrier = InProcessCarrier()
+    server = make_endpoint("server", carrier, config=RoostAgentConfig(capabilities=["s.x"]))
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await server.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("s.x", {}, receiver=AgentAddress(name="server"), timeout=0.2)
+        assert exc_info.value.failure.code is FailureCode.TIMEOUT
+        await asyncio.sleep(0.3)
+        assert await server.sweep() >= 0
+        assert caller.engine.state(next(iter(caller.engine._states))).terminal is not None
+    finally:
+        await caller.stop()
+        await server.stop()
