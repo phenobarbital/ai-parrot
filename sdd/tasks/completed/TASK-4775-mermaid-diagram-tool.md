@@ -281,10 +281,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added `parrot_tools/mermaid_diagram.py` (`render_mermaid_diagram`), the `mermaid_diagram` entry in `TOOL_REGISTRY` and 4 tests; test_publish_surface_tool.py still green (12 passed total). Validation errors propagate from `_execute`; `execute()` reports them as a failed ToolResult.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
