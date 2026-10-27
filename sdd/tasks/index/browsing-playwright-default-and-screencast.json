@@ -36,7 +36,7 @@
     {
       "id": "TASK-4839",
       "slug": "browsing-playwright-default-driver",
-      "title": "Default driver → Playwright",
+      "title": "Default driver \u2192 Playwright",
       "feature_id": "FEAT-763",
       "feature": "browsing-playwright-default-and-screencast",
       "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
@@ -59,7 +59,7 @@
       "feature_id": "FEAT-763",
       "feature": "browsing-playwright-default-and-screencast",
       "spec": "sdd/specs/browsing-playwright-default-and-screencast.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -68,7 +68,7 @@
       "parallel": true,
       "parallelism_notes": "file overlap with TASK-4839: both modify toolkit_models.py, scraping/toolkit.py, driver_factory.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T21:37:30.888275+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4840-browsing-screencast-config-plumbing.md"
     },
