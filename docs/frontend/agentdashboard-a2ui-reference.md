@@ -627,7 +627,7 @@ Parrot's; resolve a component's effective catalog as `component.catalogId
 
 | Prop | Type | Notes |
 |---|---|---|
-| `kind` | `flowchart, state, sequence, dag` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop) |
+| `kind` | `flowchart, state, sequence, dag, c4` | default `flowchart`; `dag` rejects cycles, the others legally allow them (real workflows loop); `c4` requires `level` and C4 node types |
 | `direction` | `TB, LR, BT, RL` | default `TB` |
 | `nodes` | `[{id, label?, shape?, group?, state?, icon?, meta?}]` | `shape ∈ rect (default), rounded, diamond, circle, hexagon, subroutine`; `state ∈ pending, running, completed, failed, skipped, waiting` — DATA, see the status-role table below |
 | `edges` | `[{from, to, label?, kind?, condition?}]` | `kind ∈ solid (default), dashed, thick` |
@@ -637,6 +637,11 @@ Parrot's; resolve a component's effective catalog as `component.catalogId
 | `data` | `{"path": …}` | binding to `{node_id: {state?, label?, meta?}}` — overlays per-node state at render time |
 | `accessibleDescription`, `size` (`inline, tile (default), hero`) | | viz-core common props, same meaning everywhere |
 | `action` | the standard v1.0 `Action` | TOOL origin only (D10b gate, same as everywhere else) — dispatched on node click with `context.nodeId`/`context.nodeLabel` added |
+| `level` | `context, container, component, dynamic` | required when `kind: "c4"`; forbidden otherwise |
+| C4 node fields | `c4Type, technology?, description?` | `c4Type` is required for C4 nodes; technology is valid for container/component families, and descriptions feed the C4 tooltip |
+| C4 edge fields | `technology?, hint?, bidirectional?` | Mermaid relationship technology, placement hint, and two-ended relationship; hints/bidirectionality are forbidden for `dynamic` |
+| C4 boundary fields | `parent?, c4Type?` | boundaries are nested groups; `c4Type ∈ enterprise, system, container, generic` |
+| C4 layout fields | `shapeInRow?, boundaryInRow?` | supplied together as semantic layout counts; C4 uses deterministic tier placement |
 
 Node `state` → semantic status role → theme token (the SAME five roles
 this app's own `A2UIGraph.svelte` and the backend's `_graph_svg`/`echarts`
@@ -658,6 +663,11 @@ edge-list, Text graph-source]}`, `parrot_variant: "graph"` — see
 for the exhaustive lowering-role table, the mermaid codec subset, and the
 layout/degradation contract (force → layered, oversize → truncated edge
 list, both recorded).
+
+For `kind: "c4"`, the bundled renderer uses C4-specific symbols and captions, places `technology` on a second
+label line, gives external elements dashed styling, draws bidirectional relationships with two arrowheads, and
+projects nested boundary frames when positions are complete. It retains the existing graph interaction contract;
+satellite SVG and ECharts renderers remain generic-node fallbacks and do not preserve nested boundary frames.
 
 **Frontend**: dispatch `Graph` via ECharts' native `graph` series
 (`layout: "none"` from `layout.positions` when present, else `"circular"`)
