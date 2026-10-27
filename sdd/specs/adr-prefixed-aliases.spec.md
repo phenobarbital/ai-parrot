@@ -96,7 +96,11 @@ its existing `[\s\-/]?` separator and `\d{1,5}` bound, and leading zeros are
 still stripped. This layer answers only "is this text a design reference, and
 what are its parts?". It is where the two planes must agree, and the agreement
 is enforced by a parity test that compares match spans and extracted triples
-over a shared corpus.
+over a shared corpus. Compact citation-shaped prefixes matching
+`^(?:ADR|RFC)[0-9]{1,5}$` (case-insensitive) are reserved: config rejects them,
+and both citation regexes exclude them before consuming a prefix. Thus
+`ADR1-ADR-2` retains both old references, and `ADR1-RFC-2` retains its ADR
+match in both planes. Other alphanumeric prefixes remain valid.
 
 **Resolution layer (config-aware, BOTH planes).** `normalize_adr_alias` gains an
 optional `known_prefixes` argument, and `CodeExtractor` gains a matching
@@ -124,10 +128,18 @@ Citation resolution then uses a two-step lookup: the citation's canonical alias
 is tried against the alias map first; if the citation was bare and the project
 declares a `local_prefix`, `<local_prefix>-ADR-<n>` is tried second. That lets
 a repository's own code keep writing `# ADR-3` while its ADR files carry the
-fully qualified `FS-ADR-3`. No other fallback exists — an unknown prefixed
-alias is `ADR_REFERENCE_MISSING`, never silently reinterpreted as the bare
-form, because a typo quietly resolving to a *different* repository's decision
-is the exact class of failure this feature removes.
+fully qualified `FS-ADR-3`. At each candidate, check the ambiguous-alias set
+BEFORE the map: ambiguity returns `ADR_REFERENCE_AMBIGUOUS` immediately and
+never falls through to another candidate. An exact hit also ends the lookup.
+Only an absent, unambiguous bare alias may try the local candidate.
+
+A RECOGNIZED prefixed alias that has no record returns `ADR_REFERENCE_MISSING`
+and is never retried as bare. An UNLISTED syntactic prefix is deliberately
+removed during normalization, even in a configured repository; its resulting
+bare alias follows the ordinary exact/local lookup. For example, with only
+`FS` allowed, `XX-ADR-3` may resolve `ADR-3` or `FS-ADR-3`. This compatibility
+choice does not detect misspelled or undeclared namespaces. AC8 applies only
+to recognized prefixes; it is not a guarantee against all namespace typos.
 
 ADR identity is never rewritten. `parse_adr` does not inject `local_prefix`
 into a bare `id:`; a file that declares `ADR-7` owns the alias `ADR-7`. This
@@ -149,7 +161,7 @@ author gave it, not acquire the identity of whatever repository it landed in.
                 text, known_prefixes)    number, target)
                              │              │
   resolution layer           │              └──→ Rationale node titled
-  (wiki only)                │                   "<PREFIX>-ADR-<n>"
+  (both planes)              │                   "<PREFIX>-ADR-<n>"
                              ▼
          ingest._alias_index  →  exact alias  →  hit
                              └→  bare + local_prefix  →  hit
@@ -162,7 +174,7 @@ author gave it, not acquire the identity of whatever repository it landed in.
 |---|---|---|
 | `decisions/parser.py` `ADR_REFERENCE_RE` | modifies | optional prefix group; separator class for the number unchanged |
 | `decisions/parser.py` `normalize_adr_alias` | extends signature | new optional `known_prefixes` arg; default preserves today's output |
-| `decisions/parser.py` `FILENAME_ID_RE` | modifies | accepts an optional `<prefix>-` before the digits |
+| `decisions/parser.py` `FILENAME_ID_RE` | modifies | optional `<prefix>-` before digits; parser accepts the candidate only for allowed prefixes |
 | `decisions/parser.py` `parse_adr` | modifies | identity precedence and `supersedes` accept prefixed aliases |
 | `decisions/models.py` `DecisionConfig` | extends | `local_prefix`, `known_prefixes` fields |
 | `decisions/ingest.py` `_resolve_citations` | modifies | two-step lookup; passes config into normalization |
@@ -192,7 +204,9 @@ into this repo's `.parrot/wiki.json`, never baked into the model.
 is allowed to honor (Q2); `local_prefix`, when set, is always treated as a member
 whether or not it is listed. Both are upper-cased and validated against
 `^[A-Za-z][A-Za-z0-9]*$`; an invalid value is a config error, not a silent
-drop.
+drop. Additionally reject compact citation-shaped names matching
+`^(?:ADR|RFC)[0-9]{1,5}$` case-insensitively, so configured prefixes cannot
+conflict with existing compact references.
 
 ### New Public Interfaces
 
@@ -244,7 +258,7 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
   #: (graphindex/extractors/code.py:35). Do NOT widen either independently —
   #: M5's parity test fails if the two disagree on any span.
   ADR_REFERENCE_RE = re.compile(
-      r"\b(?:([A-Za-z][A-Za-z0-9]*)-)?ADR[\s\-/]?(\d{1,5})\b", re.IGNORECASE
+      r"\b(?:(?!(?:ADR|RFC)\d{1,5}-)([A-Za-z][A-Za-z0-9]*)-)?ADR[\s\-/]?(\d{1,5})\b", re.IGNORECASE
   )  # verified: decisions/parser.py:45
 
   #: A leading ``0042-`` or ``fs-0042-`` style filename prefix.
@@ -271,9 +285,12 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
       """Parse one ADR document.
 
       Identity precedence is unchanged (frontmatter ``id`` -> H1 -> filename)
-      and each candidate is normalized with ``known_prefixes`` before
-      comparison, so a file whose frontmatter says ``FS-ADR-7`` and whose
-      name is ``0007-...`` still reports ``conflicting ADR identifiers``.
+      and frontmatter/H1 candidates use ``normalize_adr_alias``.
+      A numeric filename keeps its old alias. A prefixed filename supplies
+      an alias ONLY if its upper-cased prefix is in ``known_prefixes``;
+      otherwise it supplies NO candidate, never a degraded bare alias.
+      With FS allowed, frontmatter ``FS-ADR-7`` and filename ``0007-...``
+      still report ``conflicting ADR identifiers``.
       ``local_prefix`` is NEVER injected into a bare id.
       """  # verified: decisions/parser.py:236
   ```
@@ -295,7 +312,8 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
       @classmethod
       def _validate_prefixes(cls, value): ...
           """Upper-case each prefix; reject anything not matching
-          ``^[A-Za-z][A-Za-z0-9]*$`` with a ValueError."""
+          ``^[A-Za-z][A-Za-z0-9]*$`` or matching the reserved compact
+          citation pattern ``^(?:ADR|RFC)[0-9]{1,5}$`` with a ValueError."""
 
       def effective_prefixes(self) -> frozenset[str]:
           """``known_prefixes`` plus ``local_prefix`` when it is set."""
@@ -319,7 +337,7 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
   # "FS-ADR-3", "RFC 4180", "ADR/007". The optional prefix group mirrors
   # decisions/parser.py:ADR_REFERENCE_RE exactly; the two are parity-tested.
   _CITATION_RE = re.compile(
-      r"\b(?:([A-Za-z][A-Za-z0-9]*)-)?(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE
+      r"\b(?:(?!(?:ADR|RFC)\d{1,5}-)([A-Za-z][A-Za-z0-9]*)-)?(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE
   )  # verified: graphindex/extractors/code.py:35
 
   class CodeExtractor:
@@ -378,17 +396,28 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
       """
 
   def _lookup_alias(
-      alias: str, alias_map: dict[str, str], local_prefix: str | None
-  ) -> str | None:
-      """Resolve a citation alias to a decision_id, or ``None``.
+      alias: str,
+      alias_map: dict[str, str],
+      ambiguous_aliases: set[str],
+      local_prefix: str | None,
+  ) -> tuple[str | None, str | None]:
+      """Resolve a citation alias to an id or a diagnostic code.
 
-      Exact match first. When ``alias`` is bare and ``local_prefix`` is set,
-      ``<local_prefix>-ADR-<n>`` is tried second. A prefixed alias that misses
-      is NEVER retried as the bare form.
+      Return (decision_id, diagnostic_code): success is (id, None);
+      failure is (None, ADR_REFERENCE_AMBIGUOUS or ADR_REFERENCE_MISSING).
+      Check the exact candidate for ambiguity before its map entry. Stop on
+      ambiguity or a hit. Only an absent bare alias with ``local_prefix``
+      may try ``<local_prefix>-ADR-<n>``; apply the same ambiguity-first rule
+      there. A recognized prefixed alias is NEVER retried as bare.
+      The caller attaches path/context to the returned diagnostic code.
       """
   ```
-  Both `_alias_index` call sites (`ingest.py:107`, `ingest.py:272`) route
-  through `_lookup_alias`.
+  `_resolve_citations` passes BOTH `_alias_index` outputs to `_lookup_alias`
+  for each citation. The second `_alias_index` call in `refresh_decisions`
+  remains a code-walk guard (`alias_map or ambiguous_aliases`), not a lookup.
+  Thread `config.effective_prefixes()` into both `parse_adr` and
+  `extract_python_citations`, and pass `config.local_prefix` into resolution.
+  Cold and incremental sync must use this same resolution path.
 
 ### Module 5: Parity and regression tests
 - **Path**: `packages/ai-parrot/tests/knowledge/wiki/decisions/test_alias_grammar.py` (new),
@@ -430,6 +459,13 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
 | `test_bare_citation_falls_back_to_local_prefix` | M4 | `# ADR-3` resolves to `FS-ADR-3` when `local_prefix="FS"` |
 | `test_prefixed_citation_never_falls_back_to_bare` | M4 | `# XX-ADR-3` with `XX` known and no record → `ADR_REFERENCE_MISSING` |
 | `test_same_prefix_duplicate_is_still_ambiguous` | M4 | two files both claiming `FS-ADR-7` still raise `ADR_REFERENCE_AMBIGUOUS` |
+| `test_compact_citations_are_not_prefixes` | M1/M3 | all old references survive in `ADR1-ADR-2`, `RFC1-ADR-2`, `ADR1-RFC-2`; compare all ADR spans and all GraphIndex labels |
+| `test_reserved_prefixes_rejected` | M2 | reject `ADR1`, `adr00001`, `RFC2119` in both fields; accept `ADR123456` and `FS` |
+| `test_unlisted_filename_is_not_identity` | M1 | with None, empty or unrelated prefixes, `fs-0042-topic.md` adds neither alias nor conflict, with and without explicit `id: ADR-7` |
+| `test_unlisted_citation_uses_bare_resolution` | M4 | `XX-ADR-3` with only FS known resolves the exact bare record first, then local FS record if bare is absent |
+| `test_local_fallback_ambiguity` | M4 | bare `ADR-7` plus duplicated `FS-ADR-7` returns ambiguous, not missing |
+| `test_exact_ambiguity_stops_fallback` | M4 | duplicated bare `ADR-7` plus unique `FS-ADR-7` stays ambiguous |
+| `test_exact_hit_precedes_local_ambiguity` | M4 | unique bare `ADR-7` wins even if `FS-ADR-7` is ambiguous |
 
 ### Integration Tests
 
@@ -458,14 +494,16 @@ markers: none
 def parity_corpus() -> list[str]:
     """Strings both planes must agree on, span for span.
 
-    Lifted verbatim from ``sdd/state/FEAT-760/grammar_parity_probe.py``, the
-    probe whose 2026-10-27 run produced the measurements cited in §5 and §7.
+    Minimum regression corpus shared with the executable design probe.
+    Compare ALL GraphIndex matches, not just the first search result.
     """
     return [
         "ADR-42", "ADR/042", "ADR 42", "adr42",
         "FS-ADR-3", "parrot-ADR-7", "PARROT-adr/007",
         "ADR_42", "ADR--42", "ADR - 42",
         "see-ADR-3 for why", "RFC 4180", "FS-RFC-2119",
+        "ADR1-ADR-2", "RFC1-ADR-2", "ADR1-RFC-2", "ADR1-RFC2",
+        "FS-ADR1-ADR-2", "ADR-99999", "ADR-123456",
         "x = \"see ADR-42\"",
     ]
 ```
@@ -486,34 +524,43 @@ def parity_corpus() -> list[str]:
       both and emits no `ADR_REFERENCE_AMBIGUOUS`.
 - [ ] AC6 — two records claiming the SAME canonical alias still emit
       `ADR_REFERENCE_AMBIGUOUS` and still drop the alias from the map.
-- [ ] AC7 — a bare `# ADR-3` citation resolves to `FS-ADR-3` when
-      `local_prefix="FS"`, and to `ADR-3` when it is unset.
-- [ ] AC8 — a prefixed citation whose alias has no record yields
-      `ADR_REFERENCE_MISSING` and is never retried as the bare alias.
+- [ ] AC7 — a bare `# ADR-3` citation prefers a unique exact `ADR-3` record.
+      Only when that alias is absent and unambiguous does `local_prefix="FS"`
+      permit fallback to `FS-ADR-3`; without a local prefix, absence is missing.
+- [ ] AC8 — a RECOGNIZED prefixed citation whose alias has no record yields
+      `ADR_REFERENCE_MISSING` and is never retried as the bare alias. Unlisted
+      prefixes degrade to bare first and follow exact/local lookup.
 - [ ] AC9 — `parse_adr` never injects `local_prefix` into a bare `id:`.
 - [ ] AC10 — `DecisionConfig` rejects a prefix not matching
-      `^[A-Za-z][A-Za-z0-9]*$` and upper-cases the ones it accepts.
+      `^[A-Za-z][A-Za-z0-9]*$` or matching reserved
+      `^(?:ADR|RFC)[0-9]{1,5}$` case-insensitively, and upper-cases accepted values.
 - [ ] AC11 — a GraphIndex run with `known_prefixes=None` produces byte-identical
       Rationale node ids, titles and `citation_ref` values to the pre-change run
       for EVERY corpus, hyphenated prose included. The probe measured what the
       allowlist exists to prevent: without it, `see-ADR-3` retitles to
       `SEE-ADR-3` and `FS-RFC-2119` to `FS-RFC-2119`.
+- [ ] AC12 — `docs/guides/wiki-adr-decisions.md` documents the grammar, both
+      config keys, the two-step resolution order, and the unlisted-prefix
+      degradation.
+- [ ] AC13 — `ruff check` clean on every changed file; the Validation Contract
+      suites pass.
 - [ ] AC14 — for the same allowlist, GraphIndex's ADR node label equals the
       wiki's canonical alias on every string in the parity corpus; the two
       planes agree on labels, not only on spans.
 - [ ] AC15 — `_register` never prefixes an `RFC`: `FS-RFC-2119` yields
       `RFC-2119` even when `FS` is an allowed prefix.
 
-AC11, AC14 and AC15 were pre-verified against the resolved design on the §4
-corpus (`sdd/state/FEAT-760/grammar_parity_probe.py`, run 2026-10-27): zero
-violations, zero wiki-plane value regressions, and `FS-RFC-2119` → `RFC-2119`
-in both the configured and unconfigured cases. The probe models the rules; the
-implementation must still satisfy them against the real code.
-- [ ] AC12 — `docs/guides/wiki-adr-decisions.md` documents the grammar, both
-      config keys, the two-step resolution order, and the unlisted-prefix
-      degradation.
-- [ ] AC13 — `ruff check` clean on every changed file; the Validation Contract
-      suites pass.
+- [ ] AC16 — unlisted prefixed filenames supply no identity candidate and
+      introduce no conflict diagnostic; numeric filenames retain old behavior.
+- [ ] AC17 — ambiguity in either exact or local-fallback candidates emits
+      `ADR_REFERENCE_AMBIGUOUS`; ambiguous exact aliases never fall through,
+      and exact hits win over any local candidate.
+
+The revised design probe (`sdd/state/FEAT-760/grammar_parity_probe.py`) asserts
+all-match parity, unconfigured labels, filename gating and lookup outcomes.
+It exits nonzero on a violation. This is design evidence only: implementation
+must still pass the real parser, extractor and sync tests, including node ids.
+
 
 ---
 
@@ -687,9 +734,10 @@ Verified against: `028063330`
 - **`local_prefix` is a resolution aid, never an identity rewrite.** Injecting
   it into a bare ADR `id:` would give a pulled ADR file the identity of the
   repository that received it — the exact bug the follow-on `pull` must not have.
-- **`_alias_index` is called twice** (`ingest.py:107`, `ingest.py:272`). Both
-  paths must route through `_lookup_alias`; fixing one and not the other
-  produces resolution that works on a cold sync and fails on a warm one.
+- **Preserve ambiguous aliases throughout resolution.** `_alias_index` is
+  called for citation resolution and for the refresh code-walk guard. The
+  guard stays true for an ambiguity-only inventory. Lookup receives both
+  outputs and checks ambiguity on exact AND local candidates.
 - **GraphIndex node ids are content-derived** (`_make_node_id(file_path,
   f"__citation__{norm}")`, `code.py:598`). Changing `norm` changes node ids for
   prefixed citations only; AC11 pins that unprefixed corpora are unaffected.
@@ -774,3 +822,4 @@ An adversarial `codex` review of the implemented diff is still expected at
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft |
 | 0.2 | 2026-10-27 | Jesus Lara | Q1/Q2/Q3 resolved: GraphIndex applies the allowlist (RFC never prefixed), `known_prefixes` hand-maintained, `local_prefix` frozen as `PARROT`. M3 extended to `CodeExtractor.__init__` + `graphindex/cli.py`; AC11 rewritten, AC14/AC15 added. |
+| 0.3 | 2026-10-27 | Codex | Resolve review findings: protect compact citation boundaries, reserve conflicting prefix names, clarify recognized/unlisted lookup, gate prefixed filenames, preserve exact/fallback ambiguity, and strengthen executable regression evidence. |
