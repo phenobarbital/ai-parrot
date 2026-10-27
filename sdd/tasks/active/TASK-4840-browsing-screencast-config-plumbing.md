@@ -68,6 +68,14 @@ avoid a merge conflict (spec's Worktree Strategy).
 
 ---
 
+Implementation correction: the live toolkit session uses `_PlaywrightSetup.get_driver()` in
+`driver_context.py`, not `DriverFactory.create()`. Forward the recording directory there too.
+
+| File | Action | Description |
+|---|---|---|
+| `packages/ai-parrot-tools/src/parrot_tools/scraping/driver_context.py` | MODIFY | Forward recording directory on live toolkit path |
+| `packages/ai-parrot-tools/tests/scraping/test_driver_context.py` | MODIFY | Exercise live registry config forwarding and backend isolation |
+
 ## Codebase Contract (Anti-Hallucination)
 
 ### Verified Imports
