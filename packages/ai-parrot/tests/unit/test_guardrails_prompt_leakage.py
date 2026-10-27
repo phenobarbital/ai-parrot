@@ -218,3 +218,17 @@ async def test_leak_matcher_runs_off_the_event_loop(monkeypatch):
     monkeypatch.setattr(pl, "_detect_leak", spy)
     await PromptLeakageGuardrail().check(BENIGN, _ctx(GuardrailStage.OUTPUT, SYSTEM_PROMPT))
     assert seen and seen[0] != threading.get_ident()
+
+
+@pytest.mark.asyncio
+async def test_missing_prompt_is_visible_not_silent(caplog):
+    """FEAT-761 review: a skipped OUTPUT check stays PASS but is reported and warned once."""
+    g = PromptLeakageGuardrail(block_on_threat=True)
+    with caplog.at_level("WARNING"):
+        first = await g.check(PARA_1, _ctx(GuardrailStage.OUTPUT))
+        second = await g.check(PARA_2, _ctx(GuardrailStage.OUTPUT))
+    assert first.action == GuardrailAction.PASS and second.action == GuardrailAction.PASS
+    assert first.report == {"skipped": "no_system_prompt"} == second.report
+    warnings = [r for r in caplog.records if "no rendered system prompt" in r.getMessage()]
+    assert len(warnings) == 1
+    assert PARA_1[:30] not in caplog.text

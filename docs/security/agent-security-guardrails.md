@@ -153,6 +153,13 @@ The rendered prompt is request-local and is only placed in guardrail context whe
 requires it. It is not copied into the report. Use a unique, non-secret canary per deployment if deterministic canary
 detection is desired; rotate it as configuration, not as an authentication credential.
 
+**Coverage.** The rendered prompt is captured in the `BaseBot` entry points (`ask`, `ask_stream`, `conversation`,
+`invoke`). Agents that render their own system prompt or do not run the unified OUTPUT pipeline (for example
+`bots/data.py`, `bots/database/agent.py` and `bots/voice.py`) may not be covered; verify per agent. When the OUTPUT check cannot run because no prompt was captured it does **not**
+fail closed, even with `block_on_threat=True`: it logs one warning per guardrail and adds
+`{"skipped": "no_system_prompt"}` to the response's `metadata["guardrails"]["prompt_leakage"]`. Monitor for that
+marker if leakage protection matters for an agent.
+
 Streaming currently checks prompt leakage only against the assembled final `AIMessage`. Chunks already emitted by
 `ask_stream()` are not withheld, so a disclosure can reach the consumer before final-response redaction. Do not stream
 sensitive workloads until a withholding adapter is deployed.
@@ -162,9 +169,9 @@ sensitive workloads until a withholding adapter is deployed.
 Jailbreak and prompt-leakage events use the content-free `log_security_category_event` path, and pipeline reports and
 telemetry for the new categories are content-free by contract. They may contain category, severity, numeric score,
 action, duration, stage, agent/session identifiers, offsets, and aggregate counts. They must not contain user text, tool
-output, retrieved chunks, system prompts, matched substrings, or transformed content. The older prompt-injection event
-path predates this guarantee and can log matched text; apply appropriate log access and retention controls until that
-path is migrated. Do not add payloads when forwarding content-free events to an observer or SIEM.
+output, retrieved chunks, system prompts, matched substrings, or transformed content. Prompt-injection scanning of tool output and retrieved chunks (`scan_tool_output`) also uses the content-free path. The
+INPUT-stage prompt-injection event path predates this guarantee and can log matched text and store the original input;
+apply appropriate log access and retention controls until it is migrated. Do not add payloads when forwarding content-free events to an observer or SIEM.
 
 ## Follow-ups
 

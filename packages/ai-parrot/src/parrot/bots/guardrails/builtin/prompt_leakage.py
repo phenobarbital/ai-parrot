@@ -172,6 +172,7 @@ class PromptLeakageGuardrail(Guardrail):
         self.on_error = "fail_closed" if self.policy.block_on_threat else "fail_open"
         self.logger = logging.getLogger(__name__)
         self._security_logger = SecurityEventLogger(logger=self.logger)
+        self._warned_no_prompt = False
 
     async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
         """Dispatch to INPUT heuristics or OUTPUT matcher; never puts text in reports/logs."""
@@ -214,7 +215,16 @@ class PromptLeakageGuardrail(Guardrail):
     async def _check_output(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
         prompt = ctx.extras.get("system_prompt")
         if not isinstance(prompt, str) or not prompt.strip():
-            return GuardrailResult(action=GuardrailAction.PASS)
+            # No rendered prompt was captured for this turn (agent path not wired for capture): the
+            # check cannot run. Stay PASS (spec) but never silently: warn once per guardrail and
+            # surface a content-free marker in the response guardrail metadata on every skipped turn.
+            if not self._warned_no_prompt:
+                self._warned_no_prompt = True
+                self.logger.warning(
+                    "prompt_leakage OUTPUT check skipped: no rendered system prompt was captured for this turn "
+                    "(this agent path does not capture it); later skips are reported in response metadata only"
+                )
+            return GuardrailResult(action=GuardrailAction.PASS, report={"skipped": "no_system_prompt"})
         # CPU-bound (shingles + fuzzy alignment): keep it off the event loop.
         match = await asyncio.to_thread(_detect_leak, prompt, content, self.policy)
         if not match.leaked:

@@ -708,18 +708,17 @@ class PromptInjectionGuardrail(Guardrail):
 
         if ctx.stage == GuardrailStage.TOOL_OUTPUT:
             max_severity = max_threat_level(threats)
-            await self._security_logger.log_injection_attempt(
-                user_id=ctx.user_id or "anonymous",
-                session_id=ctx.session_id or "unknown",
-                chatbot_id=str(ctx.extras.get("chatbot_id", "")),
-                threats=threats,
-                original_input=content,
-                sanitized_input=sanitized,
-                metadata={
-                    "bot_name": ctx.agent_name,
-                    "context": ctx.extras.get("context") or {},
-                    "tool_name": ctx.tool_name,
-                },
+            # Tool/retrieval content can be sensitive: log a content-free event only
+            # (no matched text, no original/sanitized input, no DB row with the text).
+            probabilities = [t["probability"] for t in threats if isinstance(t.get("probability"), (int, float))]
+            await self._security_logger.log_security_category_event(
+                category="prompt_injection_tool_output",
+                severity=max_severity,
+                score=max(probabilities) if probabilities else None,
+                user_id=ctx.user_id,
+                session_id=ctx.session_id,
+                chatbot_id=str(ctx.extras.get("chatbot_id", "")) or None,
+                counts={"threats_detected": len(threats)},
             )
             return GuardrailResult(
                 action=GuardrailAction.TRANSFORM,
