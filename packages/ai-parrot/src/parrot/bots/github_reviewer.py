@@ -2060,9 +2060,7 @@ class GitHubReviewer(Agent):
             retained.append(line)
         return "\n".join(retained)
 
-    async def _fetch_spec_requirement(
-        self, repo: str, feature_id: str, ref: str
-    ) -> Optional[Dict[str, Any]]:
+    async def _fetch_spec_requirement(self, repo: str, feature_id: str, ref: str) -> Optional[Dict[str, Any]]:
         """Return validated SDD requirements in the existing Jira fields envelope."""
         path = await self._locate_spec_file(repo, feature_id, ref)
         if path is None or self.git_toolkit is None:
