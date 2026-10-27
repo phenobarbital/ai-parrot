@@ -441,10 +441,223 @@ class TestArrowValueCodec:
         with pytest.raises((ValueError, pa.ArrowInvalid)):
             decode_value(payload)
 
-    def test_pickle_allowlist_unchanged(self):
+    def test_pickle_allowlist_is_the_declared_set(self):
+        """Tripwire: widening the allowlist must be a deliberate edit here.
+
+        `pyarrow` in particular is still NOT allowed as a whole package —
+        only the individual reconstructors in `_SAFE_PICKLE_QUALIFIED_NAMES`
+        are, because `pyarrow.lib` also holds `OSFile`/`memory_map`.
+        """
         from parrot.tools.repl_worker.protocol import _SAFE_PICKLE_TOP_LEVEL_MODULES
 
         assert "pyarrow" not in _SAFE_PICKLE_TOP_LEVEL_MODULES
         assert _SAFE_PICKLE_TOP_LEVEL_MODULES == frozenset(
-            {"pandas", "numpy", "datetime", "decimal", "collections", "builtins", "pathlib"}
+            {
+                "pandas",
+                "numpy",
+                "datetime",
+                "decimal",
+                "collections",
+                "builtins",
+                "pathlib",
+                "re",
+                "uuid",
+                "fractions",
+                "zoneinfo",
+            }
         )
+
+
+class TestArrowSymbolAllowlist:
+    """PandasAgent drives pandas/Arrow, so the values it hands back carry
+    pyarrow internals — but `pyarrow.lib` mixes pickle's reconstructors in
+    with `OSFile`/`memory_map`. The guard opens that module one symbol at a
+    time: data reconstructors yes, capabilities no.
+    """
+
+    def test_restore_array_is_allowed(self):
+        from parrot.tools.repl_worker.protocol import _SAFE_PICKLE_QUALIFIED_NAMES
+
+        assert "pyarrow.lib._restore_array" in _SAFE_PICKLE_QUALIFIED_NAMES
+
+    @pytest.mark.parametrize(
+        "forbidden",
+        ["OSFile", "memory_map", "create_memory_map", "NativeFile", "MemoryMappedFile"],
+    )
+    def test_pyarrow_file_capabilities_are_not_allowed(self, forbidden):
+        from parrot.tools.repl_worker.protocol import _SAFE_PICKLE_QUALIFIED_NAMES
+
+        assert f"pyarrow.lib.{forbidden}" not in _SAFE_PICKLE_QUALIFIED_NAMES
+
+    def test_pyarrow_osfile_reduce_gadget_blocked(self):
+        """A `__reduce__` payload that would truncate a host file is refused
+        even though sibling symbols in the same module are allowed."""
+        import pyarrow as pa
+
+        class Evil:
+            def __reduce__(self):
+                return (pa.OSFile, ("/tmp/parrot-guard-probe", "w"))
+
+        payload = base64.b64encode(pickle.dumps(Evil())).decode("ascii")
+        with pytest.raises(pickle.UnpicklingError, match="OSFile"):
+            decode_value({"__repl_worker_pickle_b64__": payload})
+
+    def test_pandas_read_pickle_reduce_gadget_blocked(self):
+        """`pandas` is allowlisted, but `pandas.read_pickle` hands bytes to an
+        UNRESTRICTED `pickle.load` — it would route straight around this
+        guard, so it is denied by name."""
+
+        class Evil:
+            def __reduce__(self):
+                return (pd.read_pickle, ("/etc/passwd",))
+
+        payload = base64.b64encode(pickle.dumps(Evil())).decode("ascii")
+        with pytest.raises(pickle.UnpicklingError, match="dangerous callable"):
+            decode_value({"__repl_worker_pickle_b64__": payload})
+
+    def test_numpy_load_reduce_gadget_blocked(self):
+        import numpy as np
+
+        class Evil:
+            def __reduce__(self):
+                return (np.load, ("/tmp/parrot-guard-probe.npy",))
+
+        payload = base64.b64encode(pickle.dumps(Evil())).decode("ascii")
+        with pytest.raises(pickle.UnpicklingError, match="dangerous callable"):
+            decode_value({"__repl_worker_pickle_b64__": payload})
+
+    def test_module_prefix_match_respects_dot_boundary(self):
+        from parrot.tools.repl_worker.protocol import _SAFE_PICKLE_MODULE_PREFIXES, _matches_prefix
+
+        assert _matches_prefix("scipy.sparse._csr", _SAFE_PICKLE_MODULE_PREFIXES, include_self=False)
+        # The bare top level is NOT allowed — that is where `read_csv` lives.
+        assert not _matches_prefix("polars", _SAFE_PICKLE_MODULE_PREFIXES, include_self=False)
+        assert not _matches_prefix("scipyfoo.bar", _SAFE_PICKLE_MODULE_PREFIXES, include_self=False)
+
+    @pytest.mark.parametrize(
+        "module,name",
+        [
+            ("sklearn.utils._joblib", "load"),
+            ("sklearn.datasets", "fetch_openml"),
+            ("scipy.io", "savemat"),
+            ("plotly.io", "write_image"),
+            ("polars.io.csv", "read_csv"),
+        ],
+    )
+    def test_io_regions_of_allowed_packages_are_refused(self, module, name):
+        """An allowed package's IO region stays shut — `sklearn.utils._joblib`
+        most of all, since `joblib.load` is an UNRESTRICTED `pickle.load`."""
+        from parrot.tools.repl_worker.protocol import _RestrictedUnpickler
+
+        unpickler = _RestrictedUnpickler(io.BytesIO(b""))
+        with pytest.raises(pickle.UnpicklingError, match="IO region"):
+            unpickler.find_class(module, name)
+
+    @pytest.mark.parametrize(
+        "module,name",
+        [
+            ("pandas.io.common", "os.system"),
+            ("pandas", "io.common.os.system"),
+            ("numpy", "ctypeslib.load_library"),
+            ("scipy.sparse._csr", "os.system"),
+        ],
+    )
+    def test_dotted_attribute_traversal_is_refused(self, module, name):
+        """Under protocol >= 4 `pickle` resolves a DOTTED name by walking
+        attributes from the module, so an allowlisted module that merely
+        imports `os` re-exports it. Verified exploitable before this guard:
+        `("pandas.io.common", "os.system")` ran a shell command.
+        """
+        from parrot.tools.repl_worker.protocol import _RestrictedUnpickler
+
+        unpickler = _RestrictedUnpickler(io.BytesIO(b""))
+        with pytest.raises(pickle.UnpicklingError, match="dotted attribute traversal"):
+            unpickler.find_class(module, name)
+
+    def test_traversal_payload_does_not_execute(self):
+        """End-to-end form of the above, through `decode_value()` itself."""
+        from parrot.tools.repl_worker.protocol import _safe_pickle_loads
+
+        payload = b"\x80\x04" b"\x8c\x10pandas.io.common" b"\x8c\tos.system" b"\x93" b"\x8c\x04true" b"\x85R."
+        with pytest.raises(pickle.UnpicklingError, match="dotted attribute traversal"):
+            _safe_pickle_loads(payload)
+
+
+class TestPandasAgentValueKinds:
+    """Regression for the PandasAgent failure: under pandas 3 the default
+    string dtype is pyarrow-backed, so ordinary values that are NOT a
+    DataFrame/Series (`df.columns`, `Series.unique()`, a groupby object)
+    pickled through `pyarrow.lib` and the guard refused them mid-answer.
+    """
+
+    @staticmethod
+    def _frame() -> pd.DataFrame:
+        return pd.DataFrame({"s": ["a", "b"], "n": [1, 2]})
+
+    def test_string_index_round_trips_via_arrow(self):
+        columns = self._frame().columns
+        encoded = encode_value(columns)
+        assert encoded["kind"] == "index"
+        pd.testing.assert_index_equal(decode_value(encoded), columns)
+
+    def test_unnamed_index_does_not_acquire_a_name(self):
+        """The Arrow carrier labels its column by position; that label must
+        not leak back as the Index's name."""
+        decoded = decode_value(encode_value(pd.Index(["a", "b"])))
+        assert decoded.name is None
+
+    def test_named_index_keeps_its_name(self):
+        index = pd.Index(["a", "b"], name="label")
+        pd.testing.assert_index_equal(decode_value(encode_value(index)), index)
+
+    @pytest.mark.parametrize("names", [None, ["k", "v"]])
+    def test_multiindex_round_trips(self, names):
+        index = pd.MultiIndex.from_tuples([("a", 1), ("b", 2)], names=names)
+        encoded = encode_value(index)
+        assert encoded["kind"] == "multiindex"
+        pd.testing.assert_index_equal(decode_value(encoded), index)
+
+    def test_extension_array_round_trips_via_arrow(self):
+        values = self._frame()["s"].unique()
+        encoded = encode_value(values)
+        assert encoded["kind"] == "array"
+        assert list(decode_value(encoded)) == list(values)
+
+    def test_groupby_object_decodes_through_the_symbol_allowlist(self):
+        """Arrow cannot carry a groupby object, so it pickles — and its
+        pyarrow internals must resolve through the qualified-name tier."""
+        decoded = decode_value(encode_value(self._frame().groupby("s")))
+        assert sorted(decoded.groups) == ["a", "b"]
+
+    def test_index_nested_in_execution_results_dict(self):
+        """`PandasAgent` reads `execution_results` as one value — a single
+        bad entry used to poison the whole dict."""
+        frame = self._frame()
+        decoded = decode_value(encode_value({"cols": frame.columns, "df": frame}))
+        pd.testing.assert_index_equal(decoded["cols"], frame.columns)
+        pd.testing.assert_frame_equal(decoded["df"], frame)
+
+    def test_arrow_backed_categorical_survives_the_pickle_fallback(self):
+        """Arrow declines this frame (opaque objects), so it pickles; the
+        Categorical's pyarrow-backed `.categories` must be scrubbed first.
+        Data is preserved; only the dtype is loosened to `object`."""
+        frame = pd.DataFrame({"c": pd.Categorical(["a", "b"]), "o": [object(), object()]})
+        decoded = decode_value(encode_value(frame))
+        assert list(decoded["c"].astype(str)) == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            pytest.param(lambda: __import__("uuid").uuid4(), id="uuid"),
+            pytest.param(lambda: __import__("re").compile("x+"), id="regex"),
+            pytest.param(lambda: __import__("fractions").Fraction(1, 3), id="fraction"),
+        ],
+    )
+    def test_data_only_stdlib_values_round_trip(self, factory):
+        value = factory()
+        assert decode_value(encode_value(value)) == value
+
+    def test_tz_aware_timestamps_round_trip(self):
+        """`zoneinfo.ZoneInfo` rides along inside a tz-aware dtype."""
+        frame = pd.DataFrame({"d": pd.to_datetime(["2024-01-01"]).tz_localize("America/New_York")})
+        pd.testing.assert_frame_equal(decode_value(encode_value(frame)), frame)
