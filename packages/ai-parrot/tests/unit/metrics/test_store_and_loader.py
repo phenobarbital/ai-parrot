@@ -1,4 +1,5 @@
 """Tests for the metric store and metrics.yaml seed loader (FEAT-756 M2)."""
+
 from __future__ import annotations
 
 import logging

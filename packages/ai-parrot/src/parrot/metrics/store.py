@@ -1,4 +1,5 @@
 """MetricStore protocol and the in-memory backend (FEAT-756 M2)."""
+
 from __future__ import annotations
 
 from typing import Iterable, Protocol, runtime_checkable

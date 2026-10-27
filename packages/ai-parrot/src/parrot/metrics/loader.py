@@ -1,4 +1,5 @@
 """metrics.yaml seed lane: agent-level and FEAT-707 tenant trees (FEAT-756 M2)."""
+
 from __future__ import annotations
 
 import logging
@@ -91,7 +92,9 @@ def load_metrics_yaml(
     return definitions, report
 
 
-def load_agent_metrics(agent_root: Path, *, logger: logging.Logger | None = None) -> dict[str | None, list[MetricDefinition]]:
+def load_agent_metrics(
+    agent_root: Path, *, logger: logging.Logger | None = None
+) -> dict[str | None, list[MetricDefinition]]:
     """Load global and valid tenant metrics from an agent's YAML tree."""
     log = logger or _LOGGER
     global_definitions, _ = load_metrics_yaml(agent_root / METRICS_FILENAME, logger=log)
