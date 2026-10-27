@@ -74,12 +74,11 @@ citation collides anyway.
 - Multiple citations per comment or docstring. `normalize_adr_alias` returns
   only the first match in a block (`decisions/evidence.py:147,160`); that
   limitation is preserved unchanged.
-- Prefixing `RFC-<n>` references in GraphIndex beyond what lexical parity
-  requires. RFCs are an external numbering space; they are matched, carried
-  and titled, not namespaced. **Caveat**: as currently specified the shared
-  prefix group DOES apply to `RFC` in GraphIndex (measured: `FS-RFC-2119`
-  retitles from `RFC-2119` to `FS-RFC-2119`). Q1 decides whether that is
-  accepted or the group is restricted to `ADR`.
+- Prefixing `RFC-<n>` references. RFCs are an external numbering space;
+  namespacing them means nothing. The shared prefix group matches them
+  lexically — that is what keeps the two planes span-identical — but
+  `_register` DISCARDS the prefix when the kind is `RFC`, so every RFC
+  Rationale node keeps the title it has today (Q1, resolved).
 
 ---
 
@@ -91,7 +90,7 @@ The change is one grammar, applied at two layers that are deliberately kept
 apart:
 
 **Lexical layer (pure, config-free).** Both regexes gain an optional prefix
-group. The canonical form becomes `<PREFIX>-ADR-<n>`, where `<PREFIX>` matches
+group. This layer is where the two planes must agree span-for-span. The canonical form becomes `<PREFIX>-ADR-<n>`, where `<PREFIX>` matches
 `[A-Za-z][A-Za-z0-9]*` and is upper-cased on normalization; the number keeps
 its existing `[\s\-/]?` separator and `\d{1,5}` bound, and leading zeros are
 still stripped. This layer answers only "is this text a design reference, and
@@ -99,14 +98,27 @@ what are its parts?". It is where the two planes must agree, and the agreement
 is enforced by a parity test that compares match spans and extracted triples
 over a shared corpus.
 
-**Resolution layer (wiki only, config-aware).** `normalize_adr_alias` gains an
-optional `known_prefixes` argument. When it is `None` or empty — every
+**Resolution layer (config-aware, BOTH planes).** `normalize_adr_alias` gains an
+optional `known_prefixes` argument, and `CodeExtractor` gains a matching
+constructor parameter so GraphIndex applies the SAME allowlist (Q1, resolved:
+the planes agree on labels, not only on spans). When it is `None` or empty — every
 repository that exists today — a syntactic prefix is **ignored** and the token
 normalizes to the bare `ADR-<n>`, which is byte-for-byte today's behavior. A
 prefix is honored only when it appears in the repository's configured
 allowlist. This is what makes the feature a no-op for unconfigured repos and
 what keeps prose like `# see-ADR-3: ...` resolving the way it does now instead
-of becoming a phantom `SEE-ADR-3`.
+of becoming a phantom `SEE-ADR-3` — in the wiki's alias map AND in GraphIndex's
+Rationale node titles.
+
+`known_prefixes` is maintained by hand in `.parrot/wiki.json` (Q2, resolved).
+It is NOT derived from whatever `adr pull` has installed: that would couple this
+feature's configuration to a feature that does not exist yet, and an allowlist
+is a statement about what this repository agrees to trust — the kind of thing a
+human writes down.
+
+ai-parrot's own `local_prefix` is **`PARROT`**, frozen before the first ADR is
+written (Q3, resolved). Changing it later invalidates every citation that used
+the bare form, so it is fixed now, while the cost of being wrong is zero.
 
 Citation resolution then uses a two-step lookup: the citation's canonical alias
 is tried against the alias map first; if the citation was bare and the project
@@ -155,7 +167,9 @@ author gave it, not acquire the identity of whatever repository it landed in.
 | `decisions/models.py` `DecisionConfig` | extends | `local_prefix`, `known_prefixes` fields |
 | `decisions/ingest.py` `_resolve_citations` | modifies | two-step lookup; passes config into normalization |
 | `decisions/evidence.py` `extract_python_citations` | extends signature | threads `known_prefixes` to `normalize_adr_alias` |
-| `graphindex/extractors/code.py` `_CITATION_RE` / `_register` | modifies | prefix captured and carried into the Rationale node title |
+| `graphindex/extractors/code.py` `_CITATION_RE` / `_register` | modifies | prefix captured, filtered through the allowlist, carried into the node title; discarded for `RFC` |
+| `graphindex/extractors/code.py` `CodeExtractor.__init__` | extends signature | new optional `known_prefixes` param, same plain-data pattern as `tag_set` (`code.py:84`) |
+| `graphindex/cli.py` `CodeExtractor(...)` | modifies | the single production construction site passes the allowlist through (`cli.py:132`) |
 | `WikiProjectConfig.decisions` | unchanged | new fields arrive through the existing nested model (`project.py:695`) |
 
 ### Data Models
@@ -170,9 +184,12 @@ class DecisionConfig(_Strict):
     known_prefixes: list[str] = Field(default_factory=list)
 ```
 
-`local_prefix` is the alias prefix this repository owns (`"PARROT"`,
-`"FS"`). `known_prefixes` is the set of prefixes this repository's plane is
-allowed to honor; `local_prefix`, when set, is always treated as a member
+`local_prefix` is the alias prefix this repository owns. For ai-parrot it is
+`"PARROT"` (Q3). The field DEFAULT stays `None` — a repository that has not
+declared a prefix must behave exactly as it does today, so `PARROT` is written
+into this repo's `.parrot/wiki.json`, never baked into the model.
+`known_prefixes` is the hand-maintained set of prefixes this repository's plane
+is allowed to honor (Q2); `local_prefix`, when set, is always treated as a member
 whether or not it is listed. Both are upper-cased and validated against
 `^[A-Za-z][A-Za-z0-9]*$`; an invalid value is a config error, not a silent
 drop.
@@ -284,11 +301,15 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
           """``known_prefixes`` plus ``local_prefix`` when it is set."""
   ```
 
-### Module 3: GraphIndex lexical parity
-- **Path**: `packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py`
-- **Responsibility**: match the same spans as M1 and carry the prefix into the
-  Rationale node's title, `citation_ref` and node id.
-- **Depends on**: M1's grammar (contract only — different file, no shared edit).
+### Module 3: GraphIndex parity and allowlist
+- **Path**: `packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py`,
+  `packages/ai-parrot/src/parrot/knowledge/graphindex/cli.py`
+- **Responsibility**: match the same spans as M1, apply the same allowlist, and
+  carry an allowed ADR prefix into the Rationale node's title, `citation_ref`
+  and node id — never an RFC's.
+- **Depends on**: M1's grammar (contract only — different file, no shared edit)
+  and M2 (the caller resolves `effective_prefixes()` before constructing the
+  extractor).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py
@@ -301,19 +322,36 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
       r"\b(?:([A-Za-z][A-Za-z0-9]*)-)?(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE
   )  # verified: graphindex/extractors/code.py:35
 
+  class CodeExtractor:
+      def __init__(
+          self,
+          tag_set: Optional[set[str]] = None,
+          ignore_file: Optional[str] = None,
+          known_prefixes: Optional[frozenset[str]] = None,
+      ) -> None:
+          """``known_prefixes`` is plain data, resolved from config by the
+          CALLER — the extractor never imports WikiProjectConfig, keeping the
+          FEAT-540 seam intact."""  # verified: graphindex/extractors/code.py:84
+
   def _register(
       prefix: Optional[str], raw_kind: str, number: str, link_target: Optional[str]
   ) -> None:
       """Register one citation node.
 
-      ``norm`` becomes ``<PREFIX>-<KIND>-<n>`` when a prefix was captured and
-      ``<KIND>-<n>`` otherwise, so an unprefixed corpus produces byte-identical
-      node ids to today's.
+      ``norm`` becomes ``<PREFIX>-<KIND>-<n>`` only when ``prefix`` is a member
+      of ``self._known_prefixes`` AND ``raw_kind`` is ``ADR``; otherwise it is
+      ``<KIND>-<n>``. An RFC is NEVER prefixed — namespacing an external
+      numbering space is meaningless (§1 Non-Goals). An unprefixed corpus, and
+      any corpus in a repository with no configured prefixes, therefore produces
+      byte-identical node ids to today's.
       """  # verified: graphindex/extractors/code.py:594
   ```
   Both `_CITATION_RE.finditer` call sites (`code.py:631`, `code.py:656`) pass
   the new group through; the docstring-scanning site at `code.py:631` and the
-  comment-walking site at `code.py:656` are the only two.
+  comment-walking site at `code.py:656` are the only two. The single production
+  construction site, `graphindex/cli.py:132`, passes `known_prefixes` in;
+  `OdooCodeExtractor` (`extractors/odoo_code.py:165`) inherits `__init__`
+  unchanged.
 
 ### Module 4: Citation resolution
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/ingest.py`,
@@ -383,8 +421,11 @@ def split_decision_alias(alias: str) -> tuple[str | None, int]:
 | `test_local_prefix_never_injected` | M1 | a bare `id: ADR-7` stays `ADR-7` even with `local_prefix="FS"` |
 | `test_prefix_validation_rejects_bad_values` | M2 | `"1FS"`, `"F S"`, `""` raise; `"fs"` normalizes to `"FS"` |
 | `test_effective_prefixes_includes_local` | M2 | `local_prefix="FS"` is a member even when absent from `known_prefixes` |
-| `test_graphindex_node_title_carries_prefix` | M3 | `# FS-ADR-3` yields a Rationale node titled `FS-ADR-3` |
-| `test_graphindex_unprefixed_ids_unchanged` | M3 | an unprefixed corpus produces the same node ids as before the change |
+| `test_graphindex_node_title_carries_prefix` | M3 | `# FS-ADR-3` with `known_prefixes={"FS"}` yields a Rationale node titled `FS-ADR-3` |
+| `test_graphindex_unlisted_prefix_degrades` | M3 | `# see-ADR-3` with no prefixes configured yields a node titled `ADR-3`, not `SEE-ADR-3` |
+| `test_graphindex_never_prefixes_rfc` | M3 | `# FS-RFC-2119` with `known_prefixes={"FS"}` yields `RFC-2119` |
+| `test_graphindex_unconfigured_ids_unchanged` | M3 | with `known_prefixes=None`, every node id, title and `citation_ref` is byte-identical to the pre-change run, including for hyphenated prose |
+| `test_graphindex_allowlist_matches_wiki_labels` | M3 | over the parity corpus and one allowlist, GraphIndex's ADR labels equal the wiki's aliases |
 | `test_distinct_prefixes_are_not_ambiguous` | M4 | two records `PARROT-ADR-7` / `FS-ADR-7` both resolve; no `ADR_REFERENCE_AMBIGUOUS` |
 | `test_bare_citation_falls_back_to_local_prefix` | M4 | `# ADR-3` resolves to `FS-ADR-3` when `local_prefix="FS"` |
 | `test_prefixed_citation_never_falls_back_to_bare` | M4 | `# XX-ADR-3` with `XX` known and no record → `ADR_REFERENCE_MISSING` |
@@ -407,6 +448,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_ingest.py
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_models.py
 - packages/ai-parrot/tests/knowledge/graphindex/test_graphify_parity.py
+- packages/ai-parrot/tests/knowledge/graphindex/test_cli.py
 markers: none
 
 ### Test Data / Fixtures
@@ -451,13 +493,22 @@ def parity_corpus() -> list[str]:
 - [ ] AC9 — `parse_adr` never injects `local_prefix` into a bare `id:`.
 - [ ] AC10 — `DecisionConfig` rejects a prefix not matching
       `^[A-Za-z][A-Za-z0-9]*$` and upper-cases the ones it accepts.
-- [ ] AC11 — a GraphIndex run over a corpus containing no `<word>-ADR-<n>` and
-      no `<word>-RFC-<n>` text produces byte-identical Rationale node ids, titles
-      and `citation_ref` values to the pre-change run. Corpora that DO contain
-      such text change label (measured: `see-ADR-3` → `SEE-ADR-3`,
-      `FS-RFC-2119` → `FS-RFC-2119` where both were previously `ADR-3` /
-      `RFC-2119`); that divergence is Q1 and must be resolved before this
-      criterion is finalized.
+- [ ] AC11 — a GraphIndex run with `known_prefixes=None` produces byte-identical
+      Rationale node ids, titles and `citation_ref` values to the pre-change run
+      for EVERY corpus, hyphenated prose included. The probe measured what the
+      allowlist exists to prevent: without it, `see-ADR-3` retitles to
+      `SEE-ADR-3` and `FS-RFC-2119` to `FS-RFC-2119`.
+- [ ] AC14 — for the same allowlist, GraphIndex's ADR node label equals the
+      wiki's canonical alias on every string in the parity corpus; the two
+      planes agree on labels, not only on spans.
+- [ ] AC15 — `_register` never prefixes an `RFC`: `FS-RFC-2119` yields
+      `RFC-2119` even when `FS` is an allowed prefix.
+
+AC11, AC14 and AC15 were pre-verified against the resolved design on the §4
+corpus (`sdd/state/FEAT-760/grammar_parity_probe.py`, run 2026-10-27): zero
+violations, zero wiki-plane value regressions, and `FS-RFC-2119` → `RFC-2119`
+in both the configured and unconfigured cases. The probe models the rules; the
+implementation must still satisfy them against the real code.
 - [ ] AC12 — `docs/guides/wiki-adr-decisions.md` documents the grammar, both
       config keys, the two-step resolution order, and the unlisted-prefix
       degradation.
@@ -520,10 +571,18 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
 
 # packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py
 _CITATION_RE = re.compile(r"\b(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE)  # line 35
+class CodeExtractor:                                                        # line 65
+    def __init__(self, tag_set: Optional[set[str]] = None,                  # line 84
+                 ignore_file: Optional[str] = None) -> None: ...            # lines 86-88
 def _register(raw_kind: str, number: str, link_target: Optional[str]) -> None:  # line 594
     norm = f"{raw_kind.upper()}-{int(number)}"                              # line 595
     for match in _CITATION_RE.finditer(node.summary):                       # line 631
     matches = list(_CITATION_RE.finditer(text))                             # line 656
+
+# packages/ai-parrot/src/parrot/knowledge/graphindex/cli.py
+    extractor = CodeExtractor(ignore_file=str(ignore_file) if ignore_file else None)  # line 132
+#   -> the ONLY production construction site; OdooCodeExtractor subclasses
+#      CodeExtractor without overriding __init__ (extractors/odoo_code.py:165)
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/project.py
 class WikiProjectConfig(BaseModel):                                         # line 588
@@ -576,6 +635,8 @@ Verified against: `028063330`
 | `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/evidence.py` | MODIFY | `def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation], list[DecisionDiagnostic]]:` | `evidence.py:92` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py` | MODIFY | `_CITATION_RE = re.compile(r"\b(ADR\|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE)` | `code.py:35` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py` | MODIFY | `        def _register(raw_kind: str, number: str, link_target: Optional[str]) -> None:` | `code.py:594` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/code.py` | MODIFY | `    def __init__(` | `code.py:84` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/cli.py` | MODIFY | `    extractor = CodeExtractor(` | `cli.py:132` | 1 |
 | `packages/ai-parrot/tests/knowledge/wiki/decisions/test_alias_grammar.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/knowledge/wiki/decisions/test_parser.py` | MODIFY | `    def test_alias_normalization(self, text):` | `test_parser.py:100` | 1 |
 | `docs/guides/wiki-adr-decisions.md` | MODIFY | `## What Gets Parsed` | `wiki-adr-decisions.md` | 1 |
@@ -614,6 +675,11 @@ Verified against: `028063330`
   GraphIndex node id is `_make_node_id(file_path, f"__citation__{norm}")`
   (`code.py:598`) — so this is inert today. It is recorded because any future
   code that starts using the span inherits the shift.
+- **The allowlist must reach BOTH planes or the labels diverge.** `CodeExtractor`
+  defaults `known_prefixes` to `None`, which is the safe default but also means
+  a caller that forgets to pass it silently gets unprefixed labels while the
+  wiki gets prefixed ones. `graphindex/cli.py:132` is the only production
+  construction site; AC14 is what catches a second one appearing later.
 - **Hyphenated prose is the back-compat hazard.** `# see-ADR-3: ...` resolves
   to `ADR-3` today. The unlisted-prefix-degrades-to-bare rule is what preserves
   that; dropping the rule in favor of "any syntactic prefix is a prefix" would
@@ -641,13 +707,15 @@ None. No new packages.
 - **Module dependency graph**:
   - M4 → M1 (imports `normalize_adr_alias`'s new signature) and → M2
     (calls `DecisionConfig.effective_prefixes()`).
-  - M3 → M1 by contract only: the grammar is fixed in §2, and M3 edits a
-    different file, so M3 and M1 may run concurrently.
+  - M3 → M1 by contract only (the grammar is fixed in §2 and M3 edits
+    different files, so M3 and M1 may run concurrently) and M3 → M2 for real
+    (`graphindex/cli.py` calls `effective_prefixes()` before constructing the
+    extractor).
   - M5 → M1, M3, M4 (asserts all three).
   - M6 → M1–M4 (documents their behavior).
   - M1 and M2 have no edge between them and are expected to run concurrently.
 - **Shared files**: none across modules. `decisions/parser.py` belongs
-  exclusively to M1; `graphindex/extractors/code.py` exclusively to M3. M5's
+  exclusively to M1; `graphindex/extractors/code.py` exclusively to M3, together with `graphindex/cli.py`. M5's
   edits to `test_parser.py` are the only tests M1 also plausibly touches —
   M1's task owns the production file, M5's owns every test file.
 - **Exclusive resources**: none. No extension rebuild, lockfile or migration.
@@ -658,25 +726,27 @@ None. No new packages.
 
 ## 8. Open Questions
 
-- [ ] Q1 — Should the lexical parity contract require GraphIndex to apply the
-      same `known_prefixes` allowlist the wiki uses? As specified, GraphIndex is
-      purely lexical (it has no project config at the extractor layer). The probe
-      measured the consequence: in an unconfigured repo `see-ADR-3` yields alias
-      `ADR-3` in the wiki but a Rationale node titled `SEE-ADR-3` in GraphIndex,
-      and `FS-RFC-2119` retitles from `RFC-2119` to `FS-RFC-2119`. The planes
-      still agree span-for-span, which is what the original constraint protects,
-      but not on the label — so the RFC namespace, which this spec declares a
-      non-goal, is in fact touched. Three ways out: accept the divergence and
-      document it; thread config into the extractor; or restrict GraphIndex's
-      prefix group to `ADR` only, leaving `RFC` unprefixed. —
-      *Owner: Jesus Lara*
-- [ ] Q2 — Should `known_prefixes` be maintained by hand in `.parrot/wiki.json`,
-      or derived automatically from whatever the follow-on `adr pull` has
-      installed? Deriving it is less to get wrong but couples this feature's
-      config to a feature that does not exist yet. — *Owner: Jesus Lara*
-- [ ] Q3 — Does ai-parrot's own `local_prefix` become `PARROT`, and is that
-      value frozen before the first ADR is written? Changing it later
-      invalidates every citation that used the bare form. — *Owner: Jesus Lara*
+- [x] Q1 — Should GraphIndex apply the same `known_prefixes` allowlist the wiki
+      uses, or stay purely lexical? — *Resolved 2026-10-27*: **it applies the
+      allowlist.** `CodeExtractor.__init__` already takes plain-data config
+      (`tag_set`, `ignore_file`, `code.py:84-88`) and has exactly one production
+      construction site (`graphindex/cli.py:132`), so passing a
+      `frozenset[str]` costs one optional parameter and does not make the
+      extractor import `WikiProjectConfig` — the FEAT-540 seam is untouched.
+      Sub-decision (spec author's call, not the owner's): the prefix is
+      DISCARDED for `RFC`, because namespacing an external numbering space
+      means nothing.
+- [x] Q2 — Hand-maintained `known_prefixes`, or derived from what `adr pull`
+      installed? — *Resolved 2026-10-27*: **hand-maintained** in
+      `.parrot/wiki.json`. Deriving it would couple this feature to one that
+      does not exist yet.
+- [x] Q3 — Is ai-parrot's `local_prefix` `PARROT`, frozen before the first ADR?
+      — *Resolved 2026-10-27*: **yes, `PARROT`, frozen now.** The model default
+      stays `None`; `PARROT` is written into this repository's config, so no
+      other repository inherits it.
+
+No open questions remain. The follow-on `adr publish` / `adr pull` feature is
+blocked on its own design document, not on this spec.
 
 ---
 
@@ -703,3 +773,4 @@ An adversarial `codex` review of the implemented diff is still expected at
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft |
+| 0.2 | 2026-10-27 | Jesus Lara | Q1/Q2/Q3 resolved: GraphIndex applies the allowlist (RFC never prefixed), `known_prefixes` hand-maintained, `local_prefix` frozen as `PARROT`. M3 extended to `CodeExtractor.__init__` + `graphindex/cli.py`; AC11 rewritten, AC14/AC15 added. |

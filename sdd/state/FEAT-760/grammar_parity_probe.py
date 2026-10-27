@@ -59,4 +59,37 @@ for t in ["RFC 4180", "FS-RFC-2119", "ADR-42"]:
     print(f"  {t!r:16} old={onorm:14} new={nnorm:16} span {o.span() if o else None}/{n.span() if n else None}")
 
 print()
-print("REGRESSIONS vs today (unconfigured repo):", regress or "none")
+print("=== AC14/AC15: label parity between planes under one allowlist ===")
+KNOWN = {"FS", "PARROT"}
+
+def gi_label(m, known):
+    """Mirror the resolved _register rule: allowlist applies, RFC never prefixed."""
+    pre, kind, num = m.group(1), m.group(2).upper(), m.group(3)
+    if pre and known and pre.upper() in known and kind == "ADR":
+        return f"{pre.upper()}-{kind}-{int(num)}"
+    return f"{kind}-{int(num)}"
+
+bad = []
+for t in CORPUS:
+    wm = NEW_WIKI.search(t)
+    gm = NEW_GI.search(t)
+    wiki = norm(wm, KNOWN) if wm else None
+    gi = gi_label(gm, KNOWN) if gm else None
+    gi_unconf = gi_label(gm, None) if gm else None
+    old_gi_m = OLD_GI.search(t)
+    old_gi = f"{old_gi_m.group(1).upper()}-{int(old_gi_m.group(2))}" if old_gi_m else None
+    is_adr = bool(gm) and gm.group(2).upper() == "ADR"
+    # AC14: ADR labels must match the wiki alias under the same allowlist
+    if is_adr and wiki != gi:
+        bad.append(("AC14", t, wiki, gi))
+    # AC15: RFC is never prefixed
+    if gm and gm.group(2).upper() == "RFC" and gi.count("-") > 1:
+        bad.append(("AC15", t, None, gi))
+    # AC11: unconfigured GraphIndex is byte-identical to today
+    if gi_unconf != old_gi:
+        bad.append(("AC11", t, old_gi, gi_unconf))
+    print(f"  {t!r:22} wiki={str(wiki):14} gi={str(gi):14} gi(unconf)={str(gi_unconf):12} old_gi={old_gi}")
+
+print()
+print("VIOLATIONS:", bad or "none — AC11, AC14 and AC15 hold on this corpus")
+print("REGRESSIONS vs today (unconfigured repo, wiki plane):", regress or "none")
