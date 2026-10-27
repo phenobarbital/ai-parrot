@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T19:30:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-27T23:21:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -326,7 +326,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -340,8 +340,9 @@
       "parallelism_notes": "Integration over the whole feature: builds guardrails=[\"security\"] (preset from TASK-4826) which instantiates JailbreakGuardrail (TASK-4835) and PromptLeakageGuardrail (TASK-4836); asserts retrieval scanning (TASK-4834) and the rendered-prompt extras (TASK-4837).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4838-security-guardrails-integration-docs.md"
+      "completed_at": "2026-10-27T23:21:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4838-security-guardrails-integration-docs.md",
+      "verification": "verified"
     }
   ]
 }
