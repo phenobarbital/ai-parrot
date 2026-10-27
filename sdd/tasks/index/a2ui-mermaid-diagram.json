@@ -71,7 +71,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -79,8 +79,9 @@
       "parallelism_notes": "root task: creates graph/mermaid_source.py and the four MERMAID_* codes in catalog/base.py that every other code task consumes; also sole editor of graph/__init__.py",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4772-mermaid-source-utilities.md"
+      "completed_at": "2026-10-27T12:13:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4772-mermaid-source-utilities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4773",
