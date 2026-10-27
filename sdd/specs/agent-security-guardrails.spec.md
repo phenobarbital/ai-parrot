@@ -487,6 +487,21 @@ tests:
 - packages/ai-parrot/tests/unit/test_guardrails_secrets.py
 - packages/ai-parrot/tests/integration/test_guardrails_output.py
 - packages/ai-parrot/tests/integration/test_guardrails_injection_onnx.py
+- packages/ai-parrot/tests/unit/test_guardrails_stage_priority_reports.py
+- packages/ai-parrot/tests/unit/test_guardrails_security_preset.py
+- packages/ai-parrot/tests/unit/test_guardrails_engine_chassis.py
+- packages/ai-parrot/tests/unit/test_guardrails_engine_chassis_embedding.py
+- packages/ai-parrot/tests/unit/test_security_category_events.py
+- packages/ai-parrot/tests/knowledge/contracts/test_dependency_boundary.py
+- packages/ai-parrot/tests/unit/test_guardrails_scan_tool_output.py
+- packages/ai-parrot/tests/unit/test_guardrails_retrieval_scan.py
+- packages/ai-parrot/tests/unit/test_guardrails_jailbreak.py
+- packages/ai-parrot/tests/unit/test_guardrails_prompt_leakage.py
+- packages/ai-parrot/tests/unit/test_guardrails_rendered_prompt.py
+- packages/ai-parrot/tests/integration/test_security_guardrails_e2e.py
+- tests/benchmarks/test_jailbreak_bakeoff_harness.py
+- tests/benchmarks/test_jailbreak_bakeoff_manifest.py
+- tests/benchmarks/test_injection_guardrail_metrics.py
 markers: none
 
 ### Test Data / Fixtures

@@ -41,6 +41,7 @@ from parrot.outputs.a2ui.catalog import (
 )
 from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
 from parrot.outputs.a2ui.graph import (
+    C4Level,
     Direction,
     GraphEdge,
     GraphGroup,
@@ -52,14 +53,17 @@ from parrot.outputs.a2ui.graph import (
     VizSize,
     compute_positions,
 )
+from parrot.outputs.a2ui.graph.mermaid_source import detect_diagram_type, normalize_mermaid_source
 from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface, Extensions, SurfaceMetadata
 
 __all__ = [
+    "build_c4_diagram",
     "build_card",
     "build_chart",
     "build_datatable",
     "build_graph",
     "build_html_document",
+    "build_mermaid_diagram",
     "build_infographic",
     "build_kpicard",
     "build_linked_surface",
@@ -327,6 +331,58 @@ def build_html_document(
     )
 
 
+def build_mermaid_diagram(
+    *,
+    source: str,
+    title: str | None = None,
+    caption: str | None = None,
+    theme: str | None = None,
+    accessible_description: str | None = None,
+    diagram_type: str | None = None,
+    surface_id: str = "mermaid-diagram",
+    origin: ProducerOrigin = ProducerOrigin.TOOL,
+    metadata: ComponentMetadata | None = None,
+) -> CreateSurface:
+    """Build a validated single-component ``MermaidDiagram`` ``CreateSurface`` (FEAT-753).
+
+    Normalizes ``source`` first (directives stripped, ``theme`` lifted — an explicit ``theme`` wins),
+    fills ``diagramType`` from :func:`detect_diagram_type` unless given, then delegates to
+    :func:`build_surface`. Pure: same input -> byte-identical envelope.
+
+    Args:
+        source: Mermaid source.
+        title: Optional title.
+        caption: Optional caption.
+        theme: Optional theme hint (``default``/``neutral``/``dark``/``forest``/``base``).
+        accessible_description: One-sentence screen-reader summary.
+        diagram_type: Declared type; a mismatch with the detected one fails validation.
+        surface_id: Envelope surface id.
+        origin: Producer origin (default TOOL; pass ``ProducerOrigin.LLM`` to apply the LLM gates).
+        metadata: Optional component-level metadata forwarded to ``build_surface``.
+
+    Returns:
+        The validated ``CreateSurface``.
+
+    Raises:
+        CatalogValidationError: size cap, unsafe statement, or declared ``diagram_type`` mismatch.
+    """
+    normalized, lifted_theme = normalize_mermaid_source(source)
+    props: dict[str, Any] = {
+        "source": normalized,
+        "diagramType": diagram_type or detect_diagram_type(normalized),
+    }
+    if title is not None:
+        props["title"] = title
+    if caption is not None:
+        props["caption"] = caption
+    effective_theme = theme if theme is not None else lifted_theme
+    if effective_theme is not None:
+        props["theme"] = effective_theme
+    if accessible_description is not None:
+        props["accessibleDescription"] = accessible_description
+    return build_surface("MermaidDiagram", props, surface_id=surface_id, origin=origin, metadata=metadata)
+
+
 def build_graph(
     *,
     nodes: Sequence[GraphNode | dict[str, Any]],
@@ -339,6 +395,7 @@ def build_graph(
     groups: Sequence[GraphGroup | dict[str, Any]] | None = None,
     layout: GraphLayout | dict[str, Any] | None = None,
     selection: GraphSelection | dict[str, Any] | None = None,
+    level: C4Level | None = None,
     data_binding: str | None = None,
     data_model: dict[str, Any] | None = None,
     action: Action | None = None,
@@ -372,6 +429,7 @@ def build_graph(
             are filled in (see ``compute_layout`` below); its own
             ``rank_sep``/``node_sep`` (if set) are honoured.
         selection: Optional selection state.
+        level: ``GraphSpec.level`` — required when ``kind="c4"`` (validated by the model).
         data_binding: Optional data-model pointer (e.g. ``"/nodes"``) —
             becomes ``{"path": "/nodes"}`` on the wire, overlaying each
             node's ``state``/``label``/``meta`` at render time.
@@ -422,6 +480,7 @@ def build_graph(
         groups=group_models,
         layout=layout_model,
         selection=selection_model,
+        level=level,
     )
 
     if compute_layout:
@@ -451,6 +510,72 @@ def build_graph(
         props,
         surface_id=surface_id,
         data_model=data_model,
+        origin=origin,
+    )
+
+
+def build_c4_diagram(
+    *,
+    level: C4Level,
+    nodes: Sequence[GraphNode | dict[str, Any]],
+    edges: Sequence[GraphEdge | dict[str, Any]],
+    boundaries: Sequence[GraphGroup | dict[str, Any]] | None = None,
+    direction: Direction = "TB",
+    title: str | None = None,
+    accessible_description: str | None = None,
+    size: VizSize = "tile",
+    layout: GraphLayout | dict[str, Any] | None = None,
+    selection: GraphSelection | dict[str, Any] | None = None,
+    data_binding: str | None = None,
+    data_model: dict[str, Any] | None = None,
+    action: Action | None = None,
+    compute_layout: bool = True,
+    surface_id: str = "c4-diagram",
+    origin: ProducerOrigin = ProducerOrigin.TOOL,
+) -> CreateSurface:
+    """Build a viz-core ``Graph`` envelope with ``kind="c4"``.
+
+    Thin wrapper over :func:`build_graph` (``groups=boundaries``); every validation, layout and origin
+    rule is ``build_graph``'s.
+
+    Args:
+        level: C4 abstraction level (``GraphSpec.level``).
+        nodes: The diagram's elements.
+        edges: The diagram's relationships.
+        boundaries: Optional C4 boundaries (forwarded as ``groups``).
+        direction: ``GraphSpec.direction``.
+        title: Optional display title.
+        accessible_description: viz-core common prop.
+        size: viz-core common prop.
+        layout: Optional layout configuration.
+        selection: Optional selection state.
+        data_binding: Optional data-model pointer.
+        data_model: The envelope's ``dataModel``.
+        action: Optional component-level action (TOOL origin only).
+        compute_layout: Whether to fill ``layout.positions``.
+        surface_id: Envelope surface id.
+        origin: Producer origin.
+
+    Returns:
+        The validated :class:`~parrot.outputs.a2ui.models.CreateSurface`.
+    """
+    return build_graph(
+        nodes=nodes,
+        edges=edges,
+        kind="c4",
+        level=level,
+        direction=direction,
+        title=title,
+        accessible_description=accessible_description,
+        size=size,
+        groups=boundaries,
+        layout=layout,
+        selection=selection,
+        data_binding=data_binding,
+        data_model=data_model,
+        action=action,
+        compute_layout=compute_layout,
+        surface_id=surface_id,
         origin=origin,
     )
 

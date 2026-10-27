@@ -1,0 +1,58 @@
+{
+  "feature": "e2e-browser-screencast-logs",
+  "feature_id": "FEAT-762",
+  "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T21:36:53.176481+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_existing_page_produces_playable_webm",
+          "packages/ai-parrot-server/tests/unit/e2e/test_screencast.py",
+          "packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_start_command_spawns_ticketed_daemon",
+          "packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_stop_command_signals_and_reports_path",
+          "packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_screencast_daemon_lifecycle",
+          "packages/ai-parrot-server/tests/unit/e2e/test_cli.py::test_exploration_screencast_protocol",
+          "packages/ai-parrot-server/tests/integration/e2e/test_screencast_cli.py::test_screencast_cli_round_trip"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:ccacf60b99b951988d3b36d40e9237fbddf14027f043f8958f84cdbaadabe136"
+  },
+  "decomposition_scope": "M0 only; M1-M3 await successful spike and backend contract update. Do not close feature from this partial index.",
+  "tasks": [
+    {
+      "id": "TASK-4842",
+      "slug": "e2e-active-page-screencast-spike",
+      "title": "Prove active-page Obscura screencast capture and encoding",
+      "feature_id": "FEAT-762",
+      "feature": "e2e-browser-screencast-logs",
+      "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No task dependencies. Uses isolated Obscura process, unused_tcp_port, and test-local output; modifies only its declared integration test, evidence report, and spec. No shared dependency manifests or conftest mutations.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4842-e2e-active-page-screencast-spike.md"
+    }
+  ]
+}

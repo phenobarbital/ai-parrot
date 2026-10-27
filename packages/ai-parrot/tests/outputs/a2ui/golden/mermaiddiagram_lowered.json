@@ -1,0 +1,52 @@
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "description"
+          }
+        },
+        "text": "Alice greets Bob"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Login flow"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "caption"
+          }
+        },
+        "text": "Happy path"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_diagram_type": "sequence",
+            "parrot_mermaid_theme": "neutral",
+            "parrot_role": "mermaid-source"
+          }
+        },
+        "text": "sequenceDiagram\n    participant A as Alice\n    A->>B: hello\n"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "root",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "mermaid-diagram"
+    }
+  }
+}
