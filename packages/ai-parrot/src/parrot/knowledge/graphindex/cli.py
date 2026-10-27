@@ -93,6 +93,30 @@ def discover_python_files(
     return sorted(files)
 
 
+def _load_known_prefixes(discovery_root: Path) -> frozenset[str]:
+    """Resolve the ADR prefix allowlist for ``discovery_root``.
+
+    Walks up to the nearest wiki project root so nested inputs see the
+    repository config. An unreadable or invalid ``.parrot/wiki.json`` degrades
+    to an empty allowlist (bare ADR aliases only) with a warning, so the code
+    graph build never depends on a valid wiki config.
+
+    Args:
+        discovery_root: Directory the code graph is discovered from.
+
+    Returns:
+        The effective ADR prefixes, empty when none are configured or usable.
+    """
+    from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_project_config
+
+    root = find_project_root(discovery_root) or discovery_root
+    try:
+        return load_project_config(root).decisions.effective_prefixes()
+    except WikiConfigError as exc:
+        logger.warning("Ignoring ADR prefixes; %s", exc)
+        return frozenset()
+
+
 async def build_code_graph(
     paths: Sequence[Path],
     output_dir: Path,
@@ -137,12 +161,10 @@ async def build_code_graph(
     for base in paths:
         base = base.resolve()
         discovery_root = base if base.is_dir() else base.parent
-        from parrot.knowledge.wiki.project import load_project_config
-
-        config = await asyncio.to_thread(load_project_config, discovery_root)
+        known_prefixes = await asyncio.to_thread(_load_known_prefixes, discovery_root)
         extractor = CodeExtractor(
             ignore_file=str(ignore_file) if ignore_file else None,
-            known_prefixes=config.decisions.effective_prefixes(),
+            known_prefixes=known_prefixes,
         )
         for file_path in discover_python_files(base, ignore_spec):
             try:

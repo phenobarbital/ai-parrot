@@ -129,8 +129,25 @@ class TestBuildCodeGraph:
             json.dumps({"decisions": {"local_prefix": "1INVALID"}}), encoding="utf-8"
         )
         (invalid / "citing.py").write_text("# ADR-1\nvalue = 1\n", encoding="utf-8")
-        with pytest.raises(ValueError, match="Invalid wiki config"):
-            await cli.build_code_graph([invalid], tmp_path / "invalid-output", detect_comms=False)
+        invalid_output = tmp_path / "invalid-output"
+        await cli.build_code_graph([invalid], invalid_output, detect_comms=False)
+        invalid_graph = json.loads((invalid_output / "graph.json").read_text(encoding="utf-8"))
+        assert "ADR-1" in {node["name"] for node in invalid_graph["nodes"]}
+
+    @pytest.mark.asyncio
+    async def test_nested_input_uses_repo_root_config(self, tmp_path: Path) -> None:
+        """A nested input path inherits the nearest ancestor wiki config."""
+        repo = tmp_path / "repo"
+        (repo / ".parrot").mkdir(parents=True)
+        (repo / ".parrot" / "wiki.json").write_text(
+            json.dumps({"decisions": {"local_prefix": "FS"}}), encoding="utf-8"
+        )
+        (repo / "pkg").mkdir()
+        (repo / "pkg" / "citing.py").write_text("# FS-ADR-3\nvalue = 1\n", encoding="utf-8")
+        output = tmp_path / "nested-output"
+        await cli.build_code_graph([repo / "pkg"], output, detect_comms=False)
+        graph = json.loads((output / "graph.json").read_text(encoding="utf-8"))
+        assert "FS-ADR-3" in {node["name"] for node in graph["nodes"]}
 
     @pytest.mark.asyncio
     async def test_multiple_roots_keep_allowlists_isolated(self, tmp_path: Path) -> None:
