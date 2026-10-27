@@ -13,6 +13,7 @@ Provides optional mix-in classes that add capabilities to bots:
 ``__getattr__`` to avoid pulling the heavy a2ui/recipes/catalog import chain
 into every agent that merely uses ``IdentityMixin`` or ``IntentRouterMixin``.
 """
+
 from .intent_router import IntentRouterMixin
 from .metric_routing import MetricRoutingMixin
 from .identity import IdentityMixin
