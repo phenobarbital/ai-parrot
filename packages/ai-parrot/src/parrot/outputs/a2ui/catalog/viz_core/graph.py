@@ -168,6 +168,9 @@ class GraphComponent:
     """
 
     SCHEMA = GRAPH_SCHEMA
+    # FEAT-755: component_model() returns this verbatim, so GraphSpec's validators
+    # (kind="dag" rejects cycles) survive instead of being lost to a schema round-trip.
+    SOURCE_MODEL = GraphSpec
     INSTRUCTIONS = GRAPH_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:

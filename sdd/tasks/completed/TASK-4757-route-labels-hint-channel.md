@@ -351,10 +351,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by codex/gpt-5.6-terra (attempt 1, 444s)
+**Date**: 2026-10-27
+**Notes**: Added route_labels.py (label grammar, OutputShape, set_output_shape/get_component_hint) and test_route_labels.py. Fidelity gate clean. Merge-tier validation (chunk 0) green: exit 0. Closed via close_task.sh because finalize_task needs a durable review EvidenceRef that coder_record_review does not return; review recorded as coder-review feedback ids.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

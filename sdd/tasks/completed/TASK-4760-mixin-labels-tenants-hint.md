@@ -367,10 +367,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by codex/gpt-5.6-terra (attempt 1, 163s)
+**Date**: 2026-10-27
+**Notes**: Intent router changes (label validation, tenant routers, hint resolution, label tie-breaker) in intent_router.py plus tests. Merge-tier validation (chunk 2) green: 337 passed. Reviewed for file fidelity only (no line-level diff review). Closed via close_task.sh (no durable review EvidenceRef available for finalize_task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

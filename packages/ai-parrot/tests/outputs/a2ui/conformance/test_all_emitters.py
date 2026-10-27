@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from parrot.models.infographic import InfographicResponse
@@ -85,6 +86,7 @@ from parrot.outputs.a2ui.catalog.base import CatalogValidationError, to_componen
 from parrot.outputs.a2ui.catalog.parrot.form import FormField, FormSubmit, build_form
 from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
 from parrot.outputs.a2ui.graph import GraphSpec, from_mermaid, graph_spec_from_mermaid_source, to_mermaid
+from parrot.outputs.a2ui.inline.emitter import PRESENTATION_EXTENSION, emit_inline_component
 from parrot.outputs.a2ui.models import A2UIAgentMessage, Component, CreateSurface
 from parrot.outputs.a2ui.recipes import SUPPORTED_SCHEMA_VERSION
 from parrot.outputs.a2ui.recipes.migrate import migrate_layout
@@ -885,3 +887,52 @@ class TestLinkedSurfaceConformance:
             surface_id="linked-dashboard-join",
         )
         _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
+
+
+# ---------------------------------------------------------------------------
+# Inline emitter (inline/emitter.py, FEAT-755) — LLM-origin producer.
+# ---------------------------------------------------------------------------
+
+_INLINE_CASES: list[tuple[str, dict]] = [
+    ("KPICard", {"label": "Worked hours", "value": 1234.5, "unit": "h", "trend": "up"}),
+    ("InfoCard", {"title": "Release status", "body": "All checks are green."}),
+    ("Timeline", {"events": [{"title": "Kickoff", "timestamp": "2026-10-27"}]}),
+    (
+        "Graph",
+        {
+            "nodes": [{"id": "a", "label": "Start"}, {"id": "b", "label": "End"}],
+            "edges": [{"from": "a", "to": "b", "label": "go"}],
+            "accessibleDescription": "Two-step flow from Start to End",
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(("component", "config"), _INLINE_CASES, ids=[c for c, _ in _INLINE_CASES])
+def test_inline_emitter_envelopes_conform(component: str, config: dict) -> None:
+    """FEAT-755 G7: every inline-emitted envelope is catalog- and wire-conformant.
+
+    The inline emitter is an LLM-origin producer, so it is validated with LLM-origin
+    semantics — the same gates that reject an `action` or `parrot_data_sources` from
+    a model-authored surface.
+    """
+    response = SimpleNamespace(
+        structured_output=config,
+        output=None,
+        content=None,
+        response="",
+        data=None,
+        metadata={},
+        a2ui_envelope=None,
+        output_mode=None,
+    )
+    outcome = emit_inline_component(response, component)
+    assert outcome.status == "emitted", f"{component}: {outcome.reason}"
+
+    message = A2UIAgentMessage.model_validate(response.a2ui_envelope)
+    envelope = message.create_surface
+    assert envelope is not None
+    _assert_conformant(envelope, origin=ProducerOrigin.LLM)
+
+    extensions = envelope.metadata.extensions.root
+    assert PRESENTATION_EXTENSION in extensions

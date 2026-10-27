@@ -235,10 +235,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (orchestrator), delivery by sdd-coder (codex gpt-5.6-terra, attempt 1)
+**Date**: 2026-10-27
+**Notes**: Docs only: created docs/outputs/inline-a2ui-component-routing.md and added the parrot_presentation row to docs/outputs/a2ui-v1.md (exactly the 2 listed files). The engine's merge-tier background validation ended outcome=timed_out/exit 0 with only the two skipped vitest wrappers in its log, so it was NOT treated as green; the task's own Validation Command (test_all_emitters.py) was run directly: 29 passed. Docs content was not line-by-line reviewed against the code.
