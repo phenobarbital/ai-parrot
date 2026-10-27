@@ -11,6 +11,7 @@ tags: [a2ui, output-mode, intent-router, inline-widgets, kpicard, phrase-bank]
 **Date**: 2026-06-04 (rev 1) · 2026-10-27 (rev 2)
 **Author**: Juan Ruffato (rev 1), Jesus Lara (rev 2)
 **Status**: accepted (rev 2 — re-scoped to A2UI component routing; rev 1 was realized by FEAT-224)
+**Open questions**: all resolved 2026-10-27 — see *Open Questions* and *Rev 2 Recon Findings*
 **Recommended Option**: A (composite component routes on the existing embedding router + one catalog-driven A2UI emitter)
 **Feeds**: `sdd/specs/inline-a2ui-component-routing.spec.md` (FEAT-755)
 
@@ -133,10 +134,13 @@ New in rev 2:
    (`ctx`/kwarg `a2ui_component`), the mode stays an `OutputMode`, so every
    existing caller is unchanged.
 2. **Generic catalog-driven emitter for `OutputMode.A2UI` + hint.** One
-   renderer builds the system prompt from the component's catalog JSON schema
-   (same contract style as `STRUCTURED_CHART_SYSTEM_PROMPT`: data rows come
-   from the computed DataFrame / tool output via `dataVariable`, the LLM emits
-   only the component config), parses + validates the JSON against the catalog,
+   renderer builds the system prompt from the component's registered
+   `INSTRUCTIONS` plus the `dataVariable` convention (same contract style as
+   `STRUCTURED_CHART_SYSTEM_PROMPT`: rows come from the computed DataFrame /
+   tool output, the LLM emits only the component config) and passes a Pydantic
+   model derived from the component's catalog schema as `structured_output`
+   (decided — see Open Questions; the FEAT-755 spec was amended to match),
+   validates the result against the catalog,
    builds the envelope with the existing builders, and sets
    `response.a2ui_envelope` + `response.output` exactly like
    `StructuredOutputBase._emit_a2ui_envelope`. Display-only components only
@@ -157,9 +161,11 @@ New in rev 2:
 the single source of truth; reuses FEAT-224 end to end; per-tenant config
 mirrors skills; gives FEAT-753/754/756 a ready channel.
 ❌ **Cons:** `RouteScore`/`_resolve_output_mode` signatures grow a label/hint
-(additive, but touches the FEAT-224 core); the generic prompt must be good
-enough for four very different components (Graph is the hard one — may need a
-per-component "authoring notes" asset in the catalog module).
+(additive, but touches the FEAT-224 core). *The rev-2 worry that the generic prompt might not serve
+four very different components — "Graph is the hard one, may need a
+per-component authoring notes asset" — is largely void: every component
+already ships `INSTRUCTIONS`, `GRAPH_INSTRUCTIONS` included (Recon
+Finding 1).*
 📊 **Effort:** Medium.
 🔗 **Reuse:** `EmbeddingIntentRouter` (`registry/routing/embedding_router.py:57`),
 `IntentRouterMixin._resolve_output_mode` (`intent_router.py:209`),
@@ -270,8 +276,10 @@ keeps working exactly as today. Explicitly picking a mode, or typing a
 | `parrot/bots/data.py` (`DEFAULT_OUTPUT_MODE_ROUTES`, `PandasAgent.configure`) | extends | new default utterances; load agent/tenant bank |
 | `parrot/outputs/a2ui/catalog/parrot/*` | reuses | schemas drive the emitter; optional per-component authoring notes |
 | `parrot/outputs/formats/` (+ ai-parrot-visualizations) | adds | the catalog-driven `OutputMode.A2UI` emitter |
-| `parrot/skills/tenancy.py` (FEAT-707 tree) | reuses | tenant override location |
-| `packages/ai-parrot-server/ui/.../canvas/a2ui/`, `ChatBubble` | extends | inline render of KPICard / InfoCard / Timeline / Graph |
+| `parrot/skills/tenancy.py` (FEAT-707 tree) | extends | tenant override location (`tenants/{t}/routes.yaml`); add `"routes"` to `RESERVED_TENANT_NAMES` |
+| `parrot/outputs/a2ui/catalog/` | adds | `model_from_schema()` — JSON Schema → Pydantic, for the schema-only components |
+| `packages/ai-parrot-server/ui/src/lib/components/agents/ChatBubble.svelte` | adds | wire `A2UISurface` into the bubble for `parrot_presentation.inline` envelopes — today the bubble imports no A2UI symbol (Recon Finding 3) |
+| `…/agents/canvas/a2ui/A2UINode.svelte` | none expected | already dispatches KPICard / InfoCard / Timeline / viz-core Graph (`:214-249`) |
 | handlers `agent.py` | none expected | `a2ui_envelope` passthrough already exists (L2727/2874/2975) |
 | navigator-frontend-next | none (documented contract) | consumer |
 
@@ -401,10 +409,98 @@ Resolved by FEAT-224 (carried forward from rev 1):
 - [x] Extend `IntentRouterMixin` vs standalone router — *Resolved by FEAT-224*: extends the mixin; `AbstractBot._resolve_output_mode()` is the cooperative no-op terminal.
 - [x] Confidence threshold — *Resolved by FEAT-224*: `output_mode_threshold=0.85`, `discrepancy_margin=0.05`, calibrated for e5-small.
 
-Open for rev 2 (owner: Jesus Lara unless noted):
-- [ ] Composite label format: `"a2ui:<Component>"` string keys inside `output_mode_routes`, or a parallel `a2ui_component_routes: dict[str, list[str]]` field? (string keys keep one bank; a parallel field keeps `OutputMode(mode_value)` validation untouched)
-- [ ] Where the per-agent / per-tenant phrase bank lives: `AGENTS_DIR/{agent}/routes.yaml` + `tenants/{tenant}/routes.yaml` (mirrors FEAT-707 skills), or a key inside the existing agent config document?
-- [ ] Emitter contract: LLM `structured_output` from a pydantic model generated off the catalog JSON schema, or free JSON + `validate_envelope` (the structured_chart style)? Graph likely needs authoring notes either way.
-- [ ] Name/namespace of the inline marker: `metadata.extensions.parrot_presentation` (new) vs extending an existing extension key — check `docs/outputs/a2ui-v1.md` "metadata.extensions" conventions. — *Owner: spec author*
-- [ ] Should rev 1's data-feasibility layer be revived per component (KPICard needs a scalar, Timeline needs dated rows), as a post-production downgrade inside the emitter? (recommendation: yes, emitter-local, no `CapabilityRegistry` coupling)
-- [ ] Which inline components ship in v1: KPICard + InfoCard + Timeline + Graph (recommended), or KPICard only first?
+Resolved for rev 2 (decided 2026-10-27, Jesus Lara; recon on `dev` @ 2026-10-27):
+
+- [x] **Composite label format → `"a2ui:<Component>"` string keys inside the existing `output_mode_routes`.** One bank, one merge rule across the three config levels, and one label space — which matters because `_llm_disambiguate_output_mode` (`intent_router.py:252`) builds its candidate set from a single ranked list; a parallel `a2ui_component_routes` field could never break a tie *between* `structured_chart` and `a2ui:KPICard`. Cost is confined to `configure_output_router` (`intent_router.py:188-198`), which today does `OutputMode(mode_value)` inside a `try/except ValueError` and warns: it gains a label parse in front of that call, and the existing warn-and-skip path covers a malformed label unchanged. *(FEAT-755 spec agrees — §3 M1, `A2UI_LABEL_PREFIX`.)*
+
+- [x] **Phrase bank location → `routes.yaml` beside `skills/`, at both levels.** `AGENTS_DIR/{agent_id}/routes.yaml` and `AGENTS_DIR/{agent_id}/tenants/{tenant}/routes.yaml`, mirroring FEAT-707 exactly and reusing `secure_path` / `validate_tenant_id` / `discover_tenant_dirs` (`parrot/skills/tenancy.py:42-60`). The deciding constraint: agent *definitions* are a single YAML document (`agent:` / `model:` / `tools:` / `system_prompt:` — `tests/fixtures/agents/marketing.yaml`), but tenants are a *directory tree*, so a tenant override cannot live inside that document; putting the agent level in the document and the tenant level in a file would mean two loaders for one setting. Merge order: `DEFAULT_OUTPUT_MODE_ROUTES` ← agent `routes.yaml` ← tenant `routes.yaml`, per label (a level that redeclares a label replaces its utterance list, it does not append). *(FEAT-755 spec agrees — §3 M4 `route_bank.py`.)*
+  - **Builder note**: `RESERVED_TENANT_NAMES` (`tenancy.py:23`) must gain `"routes"`, alongside the existing `skills` / `prompts` / `queries` / `kb` / … entries — otherwise a tenant could be named `routes`.
+
+- [x] **Emitter contract → a Pydantic model derived from the component's catalog JSON schema, passed as `structured_output`.** `AbstractClient.ask()` already takes `structured_output: Union[type, StructuredOutputConfig, None]` and wraps a bare type in `StructuredOutputConfig(output_type=…, format=OutputFormat.JSON)` (`clients/base.py:1824-1830, 1874`), so the client side needs no change. A new `model_from_schema()` (catalog-local) generates the model at import time from the registered `SCHEMA`. The system prompt is still built per component from `component.INSTRUCTIONS` plus the `dataVariable` convention, in the shape of `STRUCTURED_CHART_SYSTEM_PROMPT` (`structured_chart.py:40`) — the schema rides in `structured_output` instead of being `json.dumps`-ed into the prompt.
+  - **Known cost, accepted**: the generator must handle the deliberately loose vocabulary in the hand-written schemas — `KPICARD_SCHEMA["value"]` and `["delta"]` carry a `description` but **no** `type` (number | string | binding, on purpose), `["series"]` is `{"type": ["array", "object"]}`, and any property may instead receive a `{"path": "/pointer"}` binding descriptor. Untyped → `Any`; a type list → a `Union`; every property optional unless named in the schema's `required`.
+  - **Consequence accepted explicitly**: the repo then derives in *both* directions — `_derive.py` turns a Pydantic model into a catalog schema (FEAT-473 G2, used by `Chart`/`DataTable`/`Map`/`Graph`), and `model_from_schema` turns a catalog schema back into a model. The alternative (write `KPICardConfig`/`InfoCardConfig`/`TimelineConfig` and flip those three `SCHEMA`s to `derive_schema`, leaving one direction) was put and **rejected**: it would rewrite three shipped wire schemas to gain uniformity.
+  - **Builder note (author's call, not decided above)**: for a component that already declares a source model — `Graph` → `GraphSpec` (`viz_core/graph.py:35`) — the emitter should use that model directly rather than round-tripping it through `GRAPH_SCHEMA`, which would discard its validators (`kind="dag"` rejects cycles). `model_from_schema` is the fallback for schema-only components; "source model if declared, else generate" should be an explicit lookup on the component definition.
+  - > ✅ **CONFLICT RESOLVED 2026-10-27.** `sdd/specs/inline-a2ui-component-routing.spec.md`
+    > (commit `94248ef35`) had independently closed this question the opposite way
+    > — free JSON under a catalog-schema system prompt. The spec was **amended to
+    > match this resolution**: new §3 **Module 6a** (`catalog/_model.py` —
+    > `model_from_schema()` / `component_model()`), `build_component_prompt()` no
+    > longer serializes the schema, `PandasAgent.ask` forces `component_model(hint)`
+    > at the `data.py:1513` structured-forcing seam, and the spec's own question log
+    > records the supersession. The spec's G6 objection ("dynamic pydantic models
+    > would re-encode the catalog schema") was answered rather than ignored: a model
+    > *generated from* `schema_` is a derivation, not a hand-maintained restatement,
+    > and `data.py:1504-1515` already advertises `StructuredChartConfig` the same way
+    > — its FEAT-215 comment records that *not* doing so made the LLM emit prose and
+    > omit the config.
+
+- [x] **Inline marker → `metadata.extensions.parrot_presentation`.** Confirmed against the documented convention (`docs/outputs/a2ui-v1.md:140-158`): `a2ui_` is reserved for official extensions, so this codebase's keys are always `parrot_*`, and `parrot_data_sources` (FEAT-598) is the existing *surface-level* precedent for a key on `createSurface.metadata.extensions`. No existing key is a sensible host — `parrot_role` and `parrot_variant` are per-node presentation roles, not surface provenance. Payload: `{"kind": "widget", "inline": true, "origin": "chat_turn"}`. Must be added to the extension-key table in `a2ui-v1.md` (that doc's own §"Extension keys" rule) and validate against `common_types.json#/$defs/Extensions`. *(FEAT-755 spec agrees, and additionally carries `"component": <Name>` in the payload — adopt that.)*
+
+- [x] **Data-feasibility layer → yes, revived per component, emitter-local, post-production.** No `CapabilityRegistry` coupling (rev 1's layer-1 feasibility is still not built and stays unbuilt). The house precedent is `StructuredChartRenderer._safe_x` / `_safe_y`, which silently falls back when the LLM names a column absent from the real data so the frontend never receives an invalid config. Per component: `KPICard` needs a scalar `value`; `Timeline` needs ≥1 event with a `title`; `InfoCard` needs a non-empty `title`; `Graph` needs ≥1 node and no dangling edge. Failing the check degrades (KPICard/Timeline → `structured_table` when rows exist, else prose) with a logged reason — never an empty bubble, never a raise. *(FEAT-755 spec agrees — §3 M6 `feasibility.py`, same four rules.)*
+
+- [x] **v1 scope → all four: `KPICard`, `InfoCard`, `Timeline`, `Graph`.** The marginal cost per component turned out to be phrase-bank utterances plus a conformance test, not a renderer — see the recon findings below. `Graph` pulls `VIZ_CORE_CATALOG_ID` into the emitter's allowlist alongside the Parrot catalog, which FEAT-753/754 need regardless; the allowlist is therefore `{parrot: KPICard, InfoCard, Timeline}` ∪ `{viz-core: Graph}`, filtered to `requires_actions=False`. *(FEAT-755 spec agrees — `INLINE_COMPONENTS`.)*
+
+---
+
+## Rev 2 Recon Findings (verified on `dev` @ 2026-10-27)
+
+Four facts found while resolving the questions above. They narrow the work and
+**correct** statements made earlier in this document; the spec should trust this
+section over the body where they disagree.
+
+1. **Per-component authoring notes already exist — Option A's stated risk is
+   largely void.** Every registered catalog component ships `SCHEMA` **and**
+   `INSTRUCTIONS` (`catalog/parrot/{kpicard,infocard,timeline,chart,datatable,map,report,form,filterbar,htmldocument,infographic}.py`,
+   `catalog/viz_core/graph.py:42`), and `catalog_instructions(catalog_ids)`
+   (`catalog/__init__.py:313`) already aggregates them per catalog, with
+   `catalog_header_instructions()` for catalog-wide guidance. `GRAPH_INSTRUCTIONS`
+   is explicit and good ("author TYPED nodes/edges — never a mermaid string …
+   never set `action`"). The emitter therefore needs no new per-component prompt
+   asset as a baseline. *(The FEAT-755 spec nevertheless adds
+   `INLINE_AUTHORING_NOTES = {"Graph": …}` for inline-specific guidance on top —
+   reasonable, but it should be justified as an addition to `GRAPH_INSTRUCTIONS`,
+   not as a substitute for a missing asset.)*
+
+2. **`Graph` is not in the Parrot catalog.** It registers under
+   `VIZ_CORE_CATALOG_ID` (`@register_component("Graph", catalog_id=VIZ_CORE_CATALOG_ID)`),
+   not `catalog/parrot/`. Anywhere this document says "the A2UI Parrot-catalog
+   components … `Graph`", read "Parrot catalog ∪ viz-core". The emitter's
+   allowlist and its `validate_envelope(..., surface_catalog_id=…)` call both
+   span two catalog ids.
+
+3. **The reference renderer already renders all four inline — the real gap is
+   the bubble.** `A2UINode.svelte:214-249` already dispatches `KPICard`,
+   `Timeline` (via `InfographicTimelineBlock`), `InfoCard` and viz-core `Graph`
+   (via `A2UIGraph.svelte`, guarded by `isVizCoreGraph`). But `A2UISurface` is
+   imported **only** by `InfographicCanvas.svelte` — `ChatBubble.svelte`
+   references no A2UI symbol at all. So thread (c) is *"wire `A2UISurface` into
+   `ChatBubble` for an envelope whose `parrot_presentation.inline` is true"*,
+   not *"build four inline components"*. The Impact table row for
+   `canvas/a2ui/` + `ChatBubble` is re-scoped accordingly, and the UI path is
+   `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/`
+   (the body's `…/canvas/a2ui/` omitted `agents/`).
+
+4. **`OutputMode.A2UI` has no registered renderer, and `register_renderer` takes
+   a *static* `system_prompt`.** Every other mode registers a fixed string
+   (`register_renderer(OutputMode.STRUCTURED_CHART, system_prompt=…)`,
+   `formats/__init__.py:76`), while the catalog emitter's prompt varies per
+   component hint.
+   **Correction (2026-10-27, after the FEAT-755 spec review):** this is NOT a
+   requirement — the renderer-registration path is simply not used. The spec
+   appends the component prompt directly at the `ask()` seam
+   (`data.py:1417-1419`, `if system_prompt_addon := self.formatter.get_system_prompt(...)`),
+   so `register_renderer` needs no per-request hook and `OutputMode.A2UI` needs
+   no registered renderer at all. An earlier revision of this finding listed a
+   "per-request prompt hook" as new machinery; that was wrong and is withdrawn.
+   What remains true: `OutputMode.A2UI` has no renderer, and `PandasAgent.ask()`
+   degrades it to `DEFAULT` when no tool produced a surface
+   (`data.py:1955-1966`) — which is exactly the fallback the emitter slots in
+   front of.
+
+### Additional "Does NOT Exist" entries (rev 2 recon)
+- ~~`model_from_schema()` / any JSON-Schema → Pydantic generator~~ — `_derive.py`
+  only goes Pydantic → JSON Schema.
+- ~~`"routes"` in `RESERVED_TENANT_NAMES`~~ — `tenancy.py:23` lists
+  `skills`/`learned`/`tenants`/`prompts`/`queries`/`kb`/`documents`/`flows`/`_drafts`/`_shared`.
+- ~~Any A2UI import in `ChatBubble.svelte`~~ — the chat bubble renders no A2UI today.
+- ~~A per-request/dynamic `system_prompt` on `register_renderer`~~ — static string only.
