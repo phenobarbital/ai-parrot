@@ -1,45 +1,36 @@
 # FEAT-762 active-page screencast spike (TASK-4842, M0)
 
 ## Result
-**PARTIAL / BLOCKED on a spec decision.** Capture + WebM encode/decode of the
-exact existing page works on real Obscura v0.2.2, but ONLY through a
-CDPSession on the *original* automation connection. A *separate* recorder
-connection (the spec's detached `parrot e2e screencast` daemon design)
-**cannot attach** to the page. AC-3 is met for the in-connection path; AC-1/AC-4
-are not met for the separate-recorder design, and the spec contract (AC-6) was
-deliberately NOT frozen.
+**PASS for the in-connection recorder** (user decision (a), 2026-10-27). Real Obscura 0.2.2
+captured the exact existing page via a Playwright `CDPSession` on the original automation
+connection and produced a playable VP8 WebM whose decoded frames show white -> red after start.
+The originally specified *separate detached recorder* is **infeasible** (see Observations);
+spec §2/§Backend Contract Gate were revised accordingly.
 
 ## Reproduction and environment
-- Command: `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot-server/src:packages/ai-parrot/src pytest packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_existing_page_produces_playable_webm -q -rs`
-- Obscura 0.2.2 (`~/.local/bin/obscura`), Playwright (venv), PyAV 13.1.0 (libvpx
-  VP8 encoder present), Pillow 13.0.0, Python 3.12. Raw log: `artifacts/logs/FEAT-762-spike.log` (1 passed).
-- Implementation commit: see the TASK-4842 commit on this branch.
+- `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot-server/src:packages/ai-parrot/src pytest packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_existing_page_produces_playable_webm -q -rs`
+- Tested test commit: `87424df1485c77f3ca47beb8b7fc77d8c7c7a75d`. Obscura 0.2.2, PyAV 13.1.0 (libvpx), Pillow 13.0.0, Python 3.12.
+- Result line: `1 passed, 1 warning in 4.81s` (raw log `artifacts/logs/FEAT-762-spike.log`, gitignored).
+- Also passed via the engine merge-tier validation (`6 passed, 8 skipped`, then the node `1 passed`).
 
-## Observations
-- `Page.startScreencast` is supported; frames are `obscuraFrameSource: activity-driven`
-  (a frame is emitted only when the page changes, not at a fixed rate) — the encoder
-  must place frames by `metadata.timestamp` (test uses a 1/1000 time base).
-- Frames: JPEG, 1280x720, ack with `Page.screencastFrameAck` required.
-- **Isolation**: each CDP connection gets its own isolate. A second connection sees
-  `Target.getTargets == []`, its own fresh `about:blank` `page-1` in `/json/list`,
-  `Runtime.evaluate` on `/devtools/page/page-1` answers "No page", and
-  `Target.attachToTarget` with the original page's ids answers "Target not found".
-- `context.new_cdp_session(page)` works on the original Playwright connection;
-  white→red change after start is visible in decoded WebM frames; a decoy blue page
-  never appears; page URL, state, context pages and browser stayed intact after stop.
+## Asserted by the test
+- A second CDP connection sees `Target.getTargets == []`.
+- Frames received (>=2), first frame 1280x720, span >= 500 ms.
+- Decoded WebM: first sample white, last sample red, red run monotone to the end, no blue (decoy) sample.
+- After stop: page URL unchanged, page and decoy still in `context.pages`, page state `red`, browser connected.
 
-## Backend contract (verified, in-connection variant only)
-- Transport: Playwright `BrowserContext.new_cdp_session(page)`; events `Page.screencastFrame`
-  (`data` base64 JPEG, `metadata.timestamp`, `sessionId`), calls `Page.startScreencast`
-  `{format, quality, everyNthFrame}`, `Page.screencastFrameAck`, `Page.stopScreencast`, then `CDPSession.detach()`.
-- Encoder: `av` (libvpx VP8, webm) in a `ProcessPoolExecutor`; decode with `av` for verification.
-  Dependency status: `av` is only a root constraint override (`av>=13,<14`), NOT a declared
-  dependency of any package that would host M1 — needs user approval.
+## Manual observations (probes, NOT asserted by the test)
+- `Target.attachToTarget` from a second connection -> "Target not found"; `/devtools/page/page-1`
+  of a second connection -> "No page" / its own fresh `about:blank`.
+- Frames are `obscuraFrameSource: activity-driven` (only on change); JPEG; acked via `Page.screencastFrameAck`.
+- Obscura only lets the most recently created page evaluate JS (an earlier page raised
+  "Cannot read properties of undefined"), so the decoy is created first; a stronger
+  "decoy created last" test is not possible on 0.2.2.
 
-## Handoff / required decision
-The spec's M1 (detached recorder process attaching by CDP endpoint + page target ID)
-is infeasible on Obscura 0.2.2. Options: (a) record inside the process that owns the
-Playwright connection (needs the exploration agent to run Playwright, not Bash-only
-`parrot e2e` CLI commands); (b) get an Obscura capability for cross-connection target
-sharing; (c) change the recording approach. M0 is NOT passed for the stated design; do not
-decompose M1–M3 until the spec is revised. Task left incomplete; spec untouched.
+## Backend contract
+See spec §6 "Backend Contract Gate" (frozen). `av` is not a declared dependency of the hosting
+package: declaring it needs user approval (open question in spec §8).
+
+## Handoff
+M0 passed for the in-process design. Before `/sdd-task` decomposes M1–M3 the spec's M1–M3/CLI
+text must be revised (`/sdd-spec`) for the in-process recorder. This report does not certify the whole feature.
