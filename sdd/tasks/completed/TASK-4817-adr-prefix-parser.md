@@ -157,4 +157,4 @@ spec validation contract once; do not widen this task to directory-wide pytest.
 
 ## Completion Note
 
-Pending; populated by the finalization workflow after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, merged. Parser grammar accepts optional prefix; known_prefixes gate prefixed ids/filenames. Merge-tier validation: 90 passed.

@@ -42,7 +42,7 @@
       "feature_id": "FEAT-760",
       "feature": "adr-prefixed-aliases",
       "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +50,9 @@
       "parallelism_notes": "Independent parser.py owner; consumes no new symbols from another task.",
       "assigned_to": null,
       "started_at": "2026-10-27T18:10:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4817-adr-prefix-parser.md"
+      "completed_at": "2026-10-27T18:14:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4817-adr-prefix-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4818",
@@ -180,7 +181,7 @@
       "feature_id": "FEAT-760",
       "feature": "adr-prefixed-aliases",
       "spec": "sdd/specs/adr-prefixed-aliases.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -188,8 +189,9 @@
       "parallelism_notes": "Independent guide owner; consumes the approved spec only. Existing parser tests serve as a narrow documentation baseline; no dependency on unfinished implementation is required.",
       "assigned_to": null,
       "started_at": "2026-10-27T18:10:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4824-adr-prefix-guide.md"
+      "completed_at": "2026-10-27T18:14:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4824-adr-prefix-guide.md",
+      "verification": "verified"
     }
   ]
 }
