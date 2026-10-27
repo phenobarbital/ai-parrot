@@ -378,10 +378,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added `catalog/parrot/mermaiddiagram.py` (schema, instructions, lower), registration import, `_validate_mermaid_sources` pass (every origin, Create + Update), tests and frozen golden. 170 tests green across the M2 file, test_catalog, parity, htmldocument, lazy_imports and graph/. `UpdateComponents` validation needs `surface_catalog_id=` (it carries no catalog id), so the tests pass `DEFAULT_CATALOG_ID` via a `_validate` helper. Test components use `id="root"`.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -90,7 +90,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,9 @@
       "parallelism_notes": "imports check_mermaid_source, MERMAID_DIAGRAM_TYPES, MERMAID_SOURCE_MAX_BYTES, MERMAID_THEMES, detect_diagram_type from TASK-4772 (graph/mermaid_source.py); sole editor of catalog/__init__.py and catalog/parrot/__init__.py",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4773-mermaiddiagram-component-validation.md"
+      "completed_at": "2026-10-27T12:16:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4773-mermaiddiagram-component-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4774",
