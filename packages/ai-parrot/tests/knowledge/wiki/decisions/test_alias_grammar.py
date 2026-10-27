@@ -1,4 +1,5 @@
 """Cross-plane ADR lexical parity and configured-label compatibility."""
+
 from __future__ import annotations
 
 import pytest
@@ -41,20 +42,13 @@ async def test_graphindex_allowlist_matches_wiki_labels(parity_corpus: list[str]
             source = f'# {text}\ndef parity_case_{index}():\n    """{text}"""\n    pass\n'
             nodes, _ = await extractor.extract("parity.py", source)
             citations = [node for node in nodes if node.domain_tags.get("tag") == "CITATION"]
-            actual_adr_labels = {
-                node.title for node in citations if node.domain_tags.get("citation_kind") == "ADR"
-            }
+            actual_adr_labels = {node.title for node in citations if node.domain_tags.get("citation_kind") == "ADR"}
             expected_adr_labels = {
-                normalize_adr_alias(match.group(0), known_prefixes)
-                for match in ADR_REFERENCE_RE.finditer(text)
+                normalize_adr_alias(match.group(0), known_prefixes) for match in ADR_REFERENCE_RE.finditer(text)
             }
-            actual_rfc_labels = {
-                node.title for node in citations if node.domain_tags.get("citation_kind") == "RFC"
-            }
+            actual_rfc_labels = {node.title for node in citations if node.domain_tags.get("citation_kind") == "RFC"}
             expected_rfc_labels = {
-                f"RFC-{int(match.group(3))}"
-                for match in _CITATION_RE.finditer(text)
-                if match.group(2).upper() == "RFC"
+                f"RFC-{int(match.group(3))}" for match in _CITATION_RE.finditer(text) if match.group(2).upper() == "RFC"
             }
 
             assert actual_adr_labels == expected_adr_labels, (known_prefixes, text)
