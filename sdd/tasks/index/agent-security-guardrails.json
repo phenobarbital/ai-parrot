@@ -213,7 +213,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -224,8 +224,9 @@
       "parallelism_notes": "TASK-4825: sets dict priority {INPUT:10, TOOL_OUTPUT:20} and relies on TRANSFORM reports surfacing (Guardrail.priority_for / pipeline.py). TASK-4828: same file builtin/prompt_injection.py, last in its edit chain.",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4833-scan-tool-output-injection.md"
+      "completed_at": "2026-10-27T21:55:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4833-scan-tool-output-injection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4834",
