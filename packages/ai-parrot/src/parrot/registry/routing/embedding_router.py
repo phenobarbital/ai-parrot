@@ -34,7 +34,6 @@ import numpy as np
 from parrot.models.outputs import OutputMode
 from parrot.registry.routing.route_labels import OutputShape, parse_route_label
 
-
 class RouteScore(NamedTuple):
     """Result of :meth:`EmbeddingIntentRouter.route`.
 
