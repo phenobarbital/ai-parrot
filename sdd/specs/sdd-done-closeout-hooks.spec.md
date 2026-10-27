@@ -10,7 +10,7 @@ tags: [sdd-done, hooks, e2e, closeout, notifications, portability]
 **Feature ID**: FEAT-764
 **Date**: 2026-10-28
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source**: `sdd/proposals/sdd-done-closeout-hooks.proposal.md` (research: `sdd/state/FEAT-764/`)
 
@@ -42,7 +42,7 @@ The only side effect today, Jira, is hard-wired behind `--resolve-jira`.
 - G3. Three hook kinds:
   - `command`: a shell command;
   - `agent`: a host subagent such as `e2e-ui-tester`, dispatched by the host;
-  - `builtin`: in-repo actions `jira.transition`, `telegram.send`, `webhook.post`.
+  - `builtin`: in-repo actions `jira.transition`, `telegram.send`, `push.send`, `webhook.post`.
 - G4. `blocking` `pre_pr` hooks abort closeout before any stamp, push or PR,
   and `--force` cannot bypass them. `post_pr` / `on_failure` hooks never block.
 - G5. Artifacts (screenshots, screencasts, logs) are **never committed**. They
@@ -249,8 +249,16 @@ def main(argv: Sequence[str] | None = None) -> int: """Exit 0 ok · 1 blocking f
   - `telegram.send`: Bot API `sendMessage`. The token comes from
     `with.token_env` (default `SDD_TELEGRAM_BOT_TOKEN`) and the chat from
     `with.chat_id_env`.
-  - `webhook.post`: posts the JSON context to the URL in `with.url_env`, which
-    can also target push gateways such as ntfy.
+  - `push.send`: a dedicated push notification with `with.title` and
+    `with.template`, plus an optional `with.priority`. `with.provider` selects
+    the backend from a small provider registry:
+    - `ntfy` (default): POST to `${with.url_env:-SDD_NTFY_URL}/<topic>`, where
+      the topic comes from `with.topic_env` (default `SDD_NTFY_TOPIC`) and an
+      optional token from `SDD_NTFY_TOKEN`;
+    - `gotify`: POST `/message` with the `X-Gotify-Key` header from `SDD_GOTIFY_TOKEN`.
+    An unknown provider is a config error (M1 validation), never a runtime skip.
+  - `webhook.post`: posts the JSON context to the URL in `with.url_env`,
+    with optional `with.headers_env` for auth. This is the generic escape hatch.
   - HTTP goes through **aiohttp** via `asyncio.run`, never requests or httpx.
     Secrets come only from env; a missing secret gives `skipped`, never `fail`.
 - **Depends on**: M1 (`HookContext`, `HookResult`)
@@ -288,7 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int: """Exit 0 ok · 1 blocking f
 |---|---|
 | `test_closeout_hooks_config.py` | absent file → empty; malformed TOML → error; blocking on post_pr → error; unknown builtin → error; duplicate name → error; per-kind required fields |
 | `test_run_closeout_hooks.py` | command pass/fail/timeout; blocking fail → exit 1; non-blocking fail → exit 0; agent → exit 3 + pending; record+finalize; `--dry-run` runs pre_pr and refuses post_pr (exit 0, all skipped); artifacts globbed under the `/tmp` root (tmp_path override); evidence_md lists paths; env vars passed to command |
-| `test_closeout_builtins.py` | jira: no key → skipped, key found → transition called (aiohttp mocked); telegram/webhook: missing env → skipped; payload shape |
+| `test_closeout_builtins.py` | jira: no key → skipped, key found → transition called (aiohttp mocked); telegram/push/webhook: missing env → skipped; payload shape; push.send ntfy + gotify request shape; unknown push provider → config error |
 | `test_sdd_done_hooks_contract.py` | both twins reference `run_closeout_hooks` for all three events, contain no `--resolve-jira`, and place 4.8 before the §5 report (text-contract test, same style as `test_sdd_done_brief_contract.py`) |
 
 ### Integration Tests
@@ -392,8 +400,9 @@ Base: `dev` after the 2026-10-28 merge of origin/dev.
 - `.claude/` files may need `git add -f` (memory: FEAT-703). Edit **both** twins.
 
 ### Known Risks / Gotchas
-- **Portability:** consumer repos must receive the three new scripts. How the
-  installer (FEAT-633) ships `scripts/sdd/*` was **not verified** here. See §8 Q1.
+- **Portability:** FEAT-633 moves `scripts/` into the package (§8 Q1). The new
+  modules must use only package-relative/stdlib imports and no
+  `Path(__file__).parents[...]` checkout lookups, so that they relocate unchanged.
 - **Agent hooks on Codex:** there is no native subagent dispatch. The twin
   records `fail` with "unsupported on this host" for blocking agent hooks,
   rather than silently passing them.
@@ -413,8 +422,8 @@ None new (`aiohttp`, `pydantic` already core; `tomllib` stdlib).
 ---
 
 ## 8. Open Questions
-- [ ] Q1: How does the FEAT-633 installer deliver `scripts/sdd/*.py` to consumer repos? Verify and add the new scripts to that list in M4/M5. *Owner: Jesus*
-- [ ] Q2: Should `push.send` be its own builtin (FCM/APNs/ntfy), or is `webhook.post` enough for v1? *Owner: Jesus*
+- [x] Q1: How do the scripts reach consumer repos? — *Resolved 2026-10-28*: FEAT-633 (branch `feat-FEAT-633-parrot-installer`) moves `scripts/` into the installable package. This feature writes its three modules under `scripts/sdd/` like their siblings, and they migrate with the rest. They stay self-contained (no checkout-relative imports) so the move is mechanical.
+- [x] Q2: push vs webhook — *Resolved 2026-10-28*: ship BOTH. A dedicated `push.send` (providers `ntfy`, `gotify`) and a generic `webhook.post`.
 - [x] Config location: TOML only — *Resolved in proposal*: `.parrot/sdd_hooks.toml` (more control), no CLAUDE.md section.
 - [x] `--resolve-jira` — *Resolved in proposal*: remove the flag; Jira becomes an opt-in `post_pr` hook that checks for a spec-linked ticket.
 - [x] Artifacts — *Resolved in proposal*: never committed; written to /tmp, path served; preserving them is the operator's job.
@@ -436,9 +445,10 @@ Status: skipped (proposal status is `review`, not `accepted`)
 - Module graph: M2 → M1 (models), M2 → M3 (BUILTINS), M3 → M1 (HookContext/HookResult), M4 → M2 (CLI contract), M5 → M1–M3.
 - Shared files: none between modules. M4 alone edits both twins.
 - Exclusive resources: none.
-- Cross-feature dependencies: none. Keep in mind FEAT-758, which also edits sdd-done; the merge order is whichever lands first.
+- Cross-feature dependencies: none blocking. FEAT-633 will later relocate these scripts into the package; keep them self-contained. Keep in mind FEAT-758, which also edits sdd-done; the merge order is whichever lands first.
 
 ## Revision History
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-28 | Claude | Initial spec from proposal |
+| 0.2 | 2026-10-28 | Claude | Q1/Q2 resolved: FEAT-633 packaging; add push.send (ntfy, gotify); approved |
