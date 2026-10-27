@@ -434,6 +434,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 
 tests:
 - packages/ai-parrot/tests/bots/test_github_reviewer.py
+- packages/ai-parrot-tools/tests/test_gittoolkit_pr_context.py
 markers: none
 
 ### Test Data / Fixtures
@@ -740,3 +741,4 @@ design-research seat only runs over an **accepted** exploration doc, per
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft, scoped from a live diagnosis of `Trocdigital/fieldsync` PR #573 (no review vote cast because the PR referenced an SDD `FEAT-811` id instead of a Jira `NAV-<number>` key) |
 | 0.2 | 2026-10-27 | Codex | Address review: validate search candidates at target ref, preserve Jira precedence on fetch failure, expose source in public outcomes, reject complete template boilerplate, verify existing webhook base_ref contract, and specify regression coverage. |
 | 0.3 | 2026-10-27 | Codex | Record owner approval of `enable_sdd_spec_fallback=True` as the default and close the remaining open question. |
+| 0.4 | 2026-10-27 | Codex | Include the M2 directory-listing regression test file in the feature validation contract. |
