@@ -28,6 +28,9 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
+    "C4BoundaryType",
+    "C4ElementType",
+    "C4Level",
     "Direction",
     "EdgeKind",
     "GraphEdge",
@@ -41,10 +44,11 @@ __all__ = [
     "NodeShape",
     "NodeState",
     "Position",
+    "RelHint",
     "VizSize",
 ]
 
-GraphKind = Literal["flowchart", "state", "sequence", "dag"]
+GraphKind = Literal["flowchart", "state", "sequence", "dag", "c4"]
 Direction = Literal["TB", "LR", "BT", "RL"]
 NodeShape = Literal["rect", "rounded", "diamond", "circle", "hexagon", "subroutine"]
 NodeState = Literal["pending", "running", "completed", "failed", "skipped", "waiting"]
@@ -52,6 +56,35 @@ EdgeKind = Literal["solid", "dashed", "thick"]
 LayoutEngine = Literal["layered", "force", "manual"]
 #: viz-core common prop (spec §2 Overview: size is intent, never pixels).
 VizSize = Literal["inline", "tile", "hero"]
+#: C4 abstraction level (Mermaid header: C4Context / C4Container / C4Component / C4Dynamic).
+C4Level = Literal["context", "container", "component", "dynamic"]
+#: C4 element type — exactly the 20 Mermaid C4 element macros, snake_case on the wire.
+C4ElementType = Literal[
+    "person",
+    "person_ext",
+    "system",
+    "system_ext",
+    "system_db",
+    "system_db_ext",
+    "system_queue",
+    "system_queue_ext",
+    "container",
+    "container_ext",
+    "container_db",
+    "container_db_ext",
+    "container_queue",
+    "container_queue_ext",
+    "component",
+    "component_ext",
+    "component_db",
+    "component_db_ext",
+    "component_queue",
+    "component_queue_ext",
+]
+#: C4 boundary type — Enterprise_Boundary / System_Boundary / Container_Boundary / Boundary (generic).
+C4BoundaryType = Literal["enterprise", "system", "container", "generic"]
+#: Relationship placement hint — Mermaid Rel_U / Rel_D / Rel_L / Rel_R / Rel_Back.
+RelHint = Literal["up", "down", "left", "right", "back"]
 
 
 class GraphNode(BaseModel):
@@ -73,7 +106,7 @@ class GraphNode(BaseModel):
             interpreted by this module.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     id: str
     label: Optional[str] = None
@@ -82,6 +115,9 @@ class GraphNode(BaseModel):
     state: Optional[NodeState] = None
     icon: Optional[str] = None
     meta: Optional[dict[str, Any]] = None
+    c4_type: Optional[C4ElementType] = Field(default=None, alias="c4Type")
+    technology: Optional[str] = None
+    description: Optional[str] = None
 
 
 class GraphEdge(BaseModel):
@@ -105,6 +141,9 @@ class GraphEdge(BaseModel):
     label: Optional[str] = None
     kind: Optional[EdgeKind] = None
     condition: Optional[str] = None
+    technology: Optional[str] = None
+    hint: Optional[RelHint] = None
+    bidirectional: Optional[bool] = None
 
 
 class GraphGroup(BaseModel):
@@ -117,11 +156,13 @@ class GraphGroup(BaseModel):
             :class:`GraphSpec` and belong to at most one group.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     id: str
     label: Optional[str] = None
     nodes: list[str]
+    parent: Optional[str] = None
+    c4_type: Optional[C4BoundaryType] = Field(default=None, alias="c4Type")
 
 
 class Position(BaseModel):
@@ -160,6 +201,8 @@ class GraphLayout(BaseModel):
     rank_sep: Optional[float] = Field(default=None, alias="rankSep")
     node_sep: Optional[float] = Field(default=None, alias="nodeSep")
     positions: Optional[dict[str, Position]] = None
+    shape_in_row: Optional[int] = Field(default=None, alias="shapeInRow", ge=1)
+    boundary_in_row: Optional[int] = Field(default=None, alias="boundaryInRow", ge=1)
 
 
 class GraphSelection(BaseModel):
@@ -224,6 +267,7 @@ class GraphSpec(BaseModel):
     layout: Optional[GraphLayout] = None
     selection: Optional[GraphSelection] = None
     data: Optional[dict[str, dict[str, Any]]] = None
+    level: Optional[C4Level] = None
 
     @model_validator(mode="after")
     def _validate_graph(self) -> GraphSpec:
@@ -278,7 +322,89 @@ class GraphSpec(BaseModel):
                     "layout.engine='manual' requires a position for every node; " f"missing: {sorted(missing)}"
                 )
 
+        self._validate_c4()
         return self
+
+    def _validate_c4(self) -> None:
+        """Enforce V1–V7 for C4 vocabulary and group parent relationships."""
+        is_c4 = self.kind == "c4"
+        groups = self.groups or []
+
+        if is_c4:
+            if self.level is None:
+                raise ValueError("kind='c4' requires level")
+            for node in self.nodes:
+                if node.c4_type is None:
+                    raise ValueError(f"kind='c4' requires c4_type for node {node.id!r}")
+        else:
+            if self.level is not None:
+                raise ValueError("level is only valid for kind='c4'")
+            for node in self.nodes:
+                if node.c4_type is not None:
+                    raise ValueError("node.c4_type is only valid for kind='c4'")
+            for edge in self.edges:
+                if edge.hint is not None:
+                    raise ValueError("edge.hint is only valid for kind='c4'")
+                if edge.bidirectional is not None:
+                    raise ValueError("edge.bidirectional is only valid for kind='c4'")
+            for group in groups:
+                if group.parent is not None:
+                    raise ValueError("group.parent is only valid for kind='c4'")
+                if group.c4_type is not None:
+                    raise ValueError("group.c4_type is only valid for kind='c4'")
+            if self.layout is not None:
+                if self.layout.shape_in_row is not None:
+                    raise ValueError("layout.shape_in_row is only valid for kind='c4'")
+                if self.layout.boundary_in_row is not None:
+                    raise ValueError("layout.boundary_in_row is only valid for kind='c4'")
+
+        group_ids = [group.id for group in groups]
+        group_id_set = set(group_ids)
+        if len(group_ids) != len(group_id_set):
+            duplicates = sorted({group_id for group_id in group_ids if group_ids.count(group_id) > 1})
+            raise ValueError(f"Duplicate GraphGroup id(s): {duplicates}")
+        for group in groups:
+            if group.parent is not None:
+                if group.parent not in group_id_set:
+                    raise ValueError(f"GraphGroup {group.id!r} parent references unknown group {group.parent!r}")
+                if group.parent == group.id:
+                    raise ValueError(f"GraphGroup {group.id!r} cannot be its own parent")
+        cycle_group = self._group_parent_cycle()
+        if cycle_group is not None:
+            raise ValueError(f"GraphGroup parent cycle found at {cycle_group!r}")
+
+        if self.layout is not None:
+            shape_in_row = self.layout.shape_in_row
+            boundary_in_row = self.layout.boundary_in_row
+            if (shape_in_row is None) != (boundary_in_row is None):
+                raise ValueError("layout.shape_in_row and layout.boundary_in_row must be set together")
+
+        if self.level == "dynamic":
+            for edge in self.edges:
+                if edge.hint is not None or edge.bidirectional is not None:
+                    raise ValueError("level='dynamic' does not allow edge hint or bidirectional")
+
+        if is_c4:
+            for edge in self.edges:
+                if edge.bidirectional is True and edge.hint is not None:
+                    raise ValueError("bidirectional C4 edges cannot specify hint")
+            for node in self.nodes:
+                if node.c4_type is not None and node.c4_type.startswith(("person", "system")):
+                    if node.technology is not None:
+                        raise ValueError(f"C4 {node.c4_type} node {node.id!r} cannot specify technology")
+
+    def _group_parent_cycle(self) -> Optional[str]:
+        """Return the first group id whose parent chain loops back on itself, else None."""
+        parents = {group.id: group.parent for group in self.groups or []}
+        for start in parents:
+            visited: set[str] = set()
+            current: Optional[str] = start
+            while current is not None:
+                if current in visited:
+                    return current
+                visited.add(current)
+                current = parents.get(current)
+        return None
 
     def _has_cycle(self) -> bool:
         """Whether the (directed) edge graph contains a cycle.
