@@ -7,6 +7,7 @@ types, so a record round-trips through the canonical JSON envelope in
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
@@ -73,6 +74,33 @@ class DecisionConfig(_Strict):
     max_files: int = Field(default=8, gt=0)
     max_candidates: int = Field(default=3, gt=0)
     timeout_seconds: int = Field(default=60, gt=0)
+    local_prefix: str | None = None
+    known_prefixes: list[str] = Field(default_factory=list)
+
+    @field_validator("local_prefix", "known_prefixes")
+    @classmethod
+    def _validate_prefixes(cls, value: str | list[str] | None) -> str | list[str] | None:
+        """Uppercase prefixes and reject invalid or compact-citation names."""
+        if value is None:
+            return None
+
+        prefixes = value if isinstance(value, list) else [value]
+        normalized_prefixes: list[str] = []
+        for prefix in prefixes:
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", prefix):
+                raise ValueError(f"invalid ADR prefix: {prefix!r}")
+            normalized_prefix = prefix.upper()
+            if re.fullmatch(r"(?:ADR|RFC)[0-9]{1,5}", normalized_prefix):
+                raise ValueError(f"ADR prefix must not be a compact citation: {prefix!r}")
+            normalized_prefixes.append(normalized_prefix)
+
+        if isinstance(value, list):
+            return normalized_prefixes
+        return normalized_prefixes[0]
+
+    def effective_prefixes(self) -> frozenset[str]:
+        """Return configured foreign prefixes plus the optional local prefix."""
+        return frozenset((*self.known_prefixes, *(() if self.local_prefix is None else (self.local_prefix,))))
 
 
 class EvidenceRef(_Strict):
