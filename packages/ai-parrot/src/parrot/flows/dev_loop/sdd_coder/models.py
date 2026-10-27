@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -181,10 +180,6 @@ class RosterSeat(BaseModel):
             raise ValueError(f"RosterSeat {self.label!r}: backend is required when kind='mcp'")
         if self.kind == "native" and self.backend is not None:
             raise ValueError(f"RosterSeat {self.label!r}: backend must be None when kind='native'")
-        if self.kind == "native" and self.effort is not None:
-            logging.getLogger(__name__).warning(
-                "RosterSeat %r: effort=%r is not applied to native seats yet", self.label, self.effort
-            )
         return self
 
 
@@ -467,6 +462,9 @@ class NativePrep(BaseModel):
     worktree_path: str
     seat_label: str
     model: str = "haiku"
+    effort: Optional[str] = None
+    """Effort the orchestrator passes to the `Agent` tool (`low|medium|high|xhigh|max`); `None` keeps the
+    session default. Resolved like MCP seats: strong_models (complex/unknown) -> seat -> unset."""
     attempt_uid: str = ""
     coder_feedback: str = ""
     validation_verdict: str = ""

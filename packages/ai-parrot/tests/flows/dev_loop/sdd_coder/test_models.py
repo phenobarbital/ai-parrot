@@ -662,13 +662,18 @@ def test_roster_seat_effort_rejects_unknown():
         RosterSeat(label="a", backend="codex", model="m", effort="ultra")
 
 
-def test_native_seat_effort_warns(caplog):
+def test_native_seat_effort_validates_silently(caplog):
+    """Native seats apply effort through NativePrep now, so configuring it is no longer a warning."""
     with caplog.at_level("WARNING"):
-        RosterSeat(label="h", kind="native")
-    assert not caplog.records
-    with caplog.at_level("WARNING"):
-        RosterSeat(label="h", kind="native", effort="high")
-    assert len(caplog.records) == 1
+        seat = RosterSeat(label="h", kind="native", effort="high")
+    assert seat.effort == "high" and not caplog.records
+
+
+def test_native_prep_effort_defaults_none():
+    from parrot.flows.dev_loop.sdd_coder.models import NativePrep
+
+    prep = NativePrep(task_id="TASK-1", task_file="t.md", branch="b", worktree_path="/w", seat_label="h")
+    assert prep.effort is None
 
 
 def test_strong_model_identity_effort():
