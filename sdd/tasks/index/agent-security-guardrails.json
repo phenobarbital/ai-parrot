@@ -302,7 +302,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -313,8 +313,9 @@
       "parallelism_notes": "TASK-4825: _output_extras reads the Guardrail.requires_system_prompt flag created there. TASK-4834: both modify bots/abstract.py (serialized, 4834 first).",
       "assigned_to": null,
       "started_at": "2026-10-27T21:33:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4837-rendered-prompt-capture.md"
+      "completed_at": "2026-10-27T22:00:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4837-rendered-prompt-capture.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4838",

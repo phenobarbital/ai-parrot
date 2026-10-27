@@ -236,10 +236,8 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Seat: sonnet · Backend: native · Attempts: 1)
+**Date**: 2026-10-27
+**Notes**: Rendered-prompt ContextVar capture + _output_extras added; 7 tests; merge-tier validation green. Engine-reported lint residuals in abstract.py/base.py (E402/F841) are pre-existing style debt, left to /sdd-done. Closed via close_task.sh (no durable review-evidence artifact writable).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: capture via request-local ContextVar at base.py call sites (spec §3 M7 said "per-turn holder"; this is that holder, made concurrency-safe).
+**Deviations from spec**: tests use a concrete _StubBot subclass (AbstractBot is abstract).
