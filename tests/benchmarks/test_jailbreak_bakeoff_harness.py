@@ -104,12 +104,8 @@ def test_pick_winner_ties_break_by_license_then_artifact_size() -> None:
     llama = cj.CandidateResult(_candidate("llama", license_name="llama4"), artifact_mb=1.0)
     apache_large = cj.CandidateResult(_candidate("apache-large", license_name="apache-2.0"), artifact_mb=20.0)
     mit_small = cj.CandidateResult(_candidate("mit-small", license_name="mit"), artifact_mb=5.0)
-    assert cj.pick_winner(
-        [(llama, 0.5, metrics, True), (apache_large, 0.5, metrics, True)]
-    ) is apache_large
-    assert cj.pick_winner(
-        [(apache_large, 0.5, metrics, True), (mit_small, 0.5, metrics, True)]
-    ) is mit_small
+    assert cj.pick_winner([(llama, 0.5, metrics, True), (apache_large, 0.5, metrics, True)]) is apache_large
+    assert cj.pick_winner([(apache_large, 0.5, metrics, True), (mit_small, 0.5, metrics, True)]) is mit_small
 
 
 def test_pick_winner_never_selects_noneligible_and_returns_none_without_pass() -> None:

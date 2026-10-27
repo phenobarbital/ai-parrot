@@ -129,9 +129,7 @@ class _StaticModelDetector:
             model2vec_inference = importlib.import_module("model2vec.inference")
             pipeline_type = model2vec_inference.StaticModelPipeline
         except (ImportError, AttributeError) as exc:
-            raise RuntimeError(
-                "The enguard candidate requires model2vec with StaticModelPipeline support."
-            ) from exc
+            raise RuntimeError("The enguard candidate requires model2vec with StaticModelPipeline support.") from exc
         self._model = pipeline_type.from_pretrained(self.model_id)
 
     def score(self, text: str) -> float:
@@ -180,9 +178,7 @@ def _metrics_at(result: CandidateResult, threshold: float) -> dict[str, float]:
     benign_es = result.scores["benign_es"]
     jailbreak_es = result.scores["jailbreak_es"]
     es_benign_fp = sum(score >= threshold for score in benign_es)
-    recall_jailbreak_es = (
-        sum(score >= threshold for score in jailbreak_es) / len(jailbreak_es) if jailbreak_es else 0.0
-    )
+    recall_jailbreak_es = sum(score >= threshold for score in jailbreak_es) / len(jailbreak_es) if jailbreak_es else 0.0
     return {
         "f1_en": _f1(scores_en, labels_en, threshold),
         "f1_es": _f1(scores_es, labels_es, threshold),
@@ -298,12 +294,8 @@ def write_manifest(
         "candidates": manifest_candidates,
     }
     results = {"candidates": raw_candidates}
-    (output_path / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    (output_path / "results.json").write_text(
-        json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    (output_path / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_path / "results.json").write_text(json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _sha256(path: Path) -> str:

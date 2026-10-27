@@ -163,7 +163,5 @@ def assert_buckets_disjoint() -> None:
             normalized = " ".join(item.casefold().split())
             previous_bucket = seen.get(normalized)
             if previous_bucket is not None:
-                raise AssertionError(
-                    f"Prompt appears in both {previous_bucket!r} and {bucket_name!r}: {item!r}"
-                )
+                raise AssertionError(f"Prompt appears in both {previous_bucket!r} and {bucket_name!r}: {item!r}")
             seen[normalized] = bucket_name
