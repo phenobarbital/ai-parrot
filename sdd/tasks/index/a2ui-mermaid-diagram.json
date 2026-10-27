@@ -214,7 +214,7 @@
       "feature_id": "FEAT-753",
       "feature": "a2ui-mermaid-diagram",
       "spec": "sdd/specs/a2ui-mermaid-diagram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -224,8 +224,9 @@
       "parallelism_notes": "needs the 'mermaid-source' lowering role from TASK-4773 (catalog/parrot/mermaiddiagram.py); sole editor of interactive_html.py",
       "assigned_to": null,
       "started_at": "2026-10-27T02:39:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4779-interactive-html-mermaid-degradation.md"
+      "completed_at": "2026-10-27T12:20:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4779-interactive-html-mermaid-degradation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4780",
