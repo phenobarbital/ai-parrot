@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -271,3 +272,48 @@ class TestDefaultBankAndConfigure:
         await agent.configure()
 
         assert configured == [explicit]
+
+
+class TestAskWiring:
+    """PandasAgent keeps component-routing seams at the one-turn ask boundary."""
+
+    _DATA_SOURCE = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "data.py"
+
+    def test_explicit_component_sets_a2ui_shape_and_skips_router(self):
+        """An explicit component selection takes precedence over route resolution."""
+        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+
+        assert 'a2ui_component = kwargs.pop("a2ui_component", None)' in source
+        assert "if a2ui_component:" in source
+        assert "set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))" in source
+        assert "elif output_mode == OutputMode.DEFAULT:" in source
+        assert "_resolved_mode = await self._resolve_output_mode(question, ctx)" in source
+
+    def test_a2ui_component_uses_catalog_prompt_and_model(self):
+        """A hinted A2UI turn advertises the catalog contract in its first call."""
+        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+
+        assert "component_hint = get_component_hint(ctx) or a2ui_component" in source
+        assert "system_prompt += build_component_prompt(component_hint)" in source
+        assert "_forced_output_type = component_model(component_hint)" in source
+
+    def test_existing_structured_forcing_paths_remain_available(self):
+        """Chart and ordinary structured requests retain their established models."""
+        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+
+        assert "elif output_mode == OutputMode.STRUCTURED_CHART:" in source
+        assert "_forced_output_type = StructuredChartConfig" in source
+        assert "_forced_output_type = PandasAgentResponse" in source
+
+    def test_inline_emitter_is_guarded_and_degrades_through_existing_fallback(self):
+        """Inline emission only runs for an unresolved hinted A2UI response."""
+        source = self._DATA_SOURCE.read_text(encoding="utf-8")
+
+        assert 'getattr(response, "a2ui_envelope", None) is None' in source
+        assert "outcome = emit_inline_component(" in source
+        assert "frame=response.data if isinstance(response.data, pd.DataFrame) else None" in source
+        assert 'if outcome.status == "degraded":' in source
+        assert "Inline A2UI emit degraded (%s): %s" in source
+        assert source.index("outcome = emit_inline_component(") < source.index(
+            "# A2UI was requested but nothing rendered a surface this turn"
+        )
