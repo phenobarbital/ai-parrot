@@ -106,7 +106,7 @@ def _emit_element(node: GraphNode, depth: int) -> str:
 
 def _emit_boundary_open(group: GraphGroup, depth: int) -> str:
     """Emit a ``<Macro>(id, \"label\") {`` line for a boundary."""
-    return f'{_INDENT * depth}{_BOUNDARY_MACRO[group.c4_type]}({group.id}, {_quote(group.label or group.id)}) {{'
+    return f"{_INDENT * depth}{_BOUNDARY_MACRO[group.c4_type]}({group.id}, {_quote(group.label or group.id)}) {{"
 
 
 def _emit_rel(edge: GraphEdge, index: int, dynamic: bool) -> str:
