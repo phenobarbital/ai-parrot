@@ -1,4 +1,5 @@
 """Closeout-hook registry for /sdd-done (FEAT-764): models + `.parrot/sdd_hooks.toml` loader."""
+
 from __future__ import annotations
 
 import re

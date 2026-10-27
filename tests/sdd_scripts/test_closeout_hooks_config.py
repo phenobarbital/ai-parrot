@@ -1,4 +1,5 @@
 """Tests for the /sdd-done closeout-hooks TOML registry."""
+
 from pathlib import Path
 
 import pytest
