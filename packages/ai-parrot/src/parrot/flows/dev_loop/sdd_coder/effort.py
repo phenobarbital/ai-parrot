@@ -18,6 +18,9 @@ EFFORT_FIELD_BY_BACKEND: Dict[str, str] = {
     "codex": "reasoning_effort",
 }
 
+#: Values the Claude Code `Agent` tool accepts for its `effort` parameter (native seats).
+NATIVE_AGENT_EFFORTS: Tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+
 EffortSource = Literal["strong_model", "seat"]
 
 
@@ -37,8 +40,10 @@ def resolve_seat_effort_with_source(
         ``(effort, source)``; ``(None, None)`` when nothing is configured.
     """
     if classification in ("complex", "unknown"):
+        # Native seats have no backend; strong_models names them `native` (same key as roster.eligible_seats).
+        backend = "native" if seat.kind == "native" else seat.backend
         for ident in strong_models:
-            if (ident.backend, ident.model) == (seat.backend, seat.model or "") and ident.effort:
+            if (ident.backend, ident.model) == (backend, seat.model or "") and ident.effort:
                 return ident.effort, "strong_model"
     if seat.effort:
         return seat.effort, "seat"
@@ -64,6 +69,39 @@ def resolve_seat_effort(
         The effort value or ``None``.
     """
     return resolve_seat_effort_with_source(seat, classification, strong_models)[0]
+
+
+def resolve_native_effort(
+    seat: RosterSeat,
+    classification: Optional[str],
+    strong_models: Sequence[StrongModelIdentity],
+    *,
+    logger: logging.Logger,
+) -> Optional[str]:
+    """Resolve the `Agent` tool effort for a native seat's attempt.
+
+    Same precedence as :func:`resolve_seat_effort`; a value the `Agent` tool does not accept
+    (``none``, ``minimal``) is skipped with a WARNING instead of being handed to the orchestrator.
+
+    Args:
+        seat: The native roster seat running the attempt.
+        classification: Complexity classification of the task, if assessed.
+        strong_models: Strong-model identities of the complexity policy.
+        logger: Logger used for the skip warning.
+
+    Returns:
+        The effort to pass to the `Agent` tool, or ``None`` to leave the session default.
+    """
+    effort = resolve_seat_effort(seat, classification, strong_models)
+    if effort is not None and effort not in NATIVE_AGENT_EFFORTS:
+        logger.warning(
+            "native seat %r: effort=%r not supported by the Agent tool (accepted: %s); ignored",
+            seat.label,
+            effort,
+            ", ".join(NATIVE_AGENT_EFFORTS),
+        )
+        return None
+    return effort
 
 
 def _accepted_values(annotation: object) -> Optional[Tuple[str, ...]]:

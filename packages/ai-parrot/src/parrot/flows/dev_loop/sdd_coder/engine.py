@@ -68,7 +68,11 @@ from parrot.flows.dev_loop.sdd_coder.fidelity import (
 )
 from parrot.flows.dev_loop.test_scope.context import write_attempt_context
 from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext, ValidationVerdict
-from parrot.flows.dev_loop.sdd_coder.effort import apply_effort_to_profile, resolve_seat_effort_with_source
+from parrot.flows.dev_loop.sdd_coder.effort import (
+    apply_effort_to_profile,
+    resolve_native_effort,
+    resolve_seat_effort_with_source,
+)
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
 from parrot.flows.dev_loop.sdd_coder.lint import run_lint_pass
 from parrot.flows.dev_loop.sdd_coder.models import (
@@ -2362,6 +2366,12 @@ class SddCoderEngine:
         if red is not None:
             self._validation_reds.pop((execution_id or "", task_id), None)
             prep = prep.model_copy(update={"validation_verdict": verdict})
+        effort = resolve_native_effort(
+            seat, assessment.classification, self.roster.complexity.strong_models, logger=self.logger
+        )
+        if effort is not None:
+            self.logger.info("native seat %r: Agent effort=%s for %s", seat.label, effort, task_id)
+            prep = prep.model_copy(update={"effort": effort})
         return prep
 
     async def _reserve_native_attempt(
