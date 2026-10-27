@@ -78,6 +78,7 @@ class _MinimalReviewer:
         # ``public_channel_id`` after construction.
         self._management_chat_id: Optional[ChatId] = None
         self._no_ticket_notified: set = set()
+        self.alert_chat_ids: List[Any] = []
         self._wiki_cache = None
         self._wiki_warmup_task = None
         self._wiki_refresh_task = None
@@ -108,6 +109,10 @@ class _MinimalReviewer:
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _notify_ticket_not_found = GitHubReviewer._notify_ticket_not_found
+    _format_ticket_not_found_comment = GitHubReviewer._format_ticket_not_found_comment
+    _alert_review_skipped = GitHubReviewer._alert_review_skipped
+    _notify_review_error = GitHubReviewer._notify_review_error
     _build_wiki_context = GitHubReviewer._build_wiki_context
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
@@ -1180,6 +1185,287 @@ class TestNoTicketComment:
         )
         # Failure must NOT poison the dedup set; the next delivery retries.
         assert r._no_ticket_notified == set()
+
+
+class TestTicketNotFoundComment:
+    """Coverage for the _format_ticket_not_found_comment helper."""
+
+    def test_format_includes_ticket_key_and_author(self):
+        r = _MinimalReviewer(jira_project="NAV")
+        body = r._format_ticket_not_found_comment({"author": "octocat"}, "NAV-42")
+        assert "@octocat" in body
+        assert "NAV-42" in body
+        assert "could not fetch" in body.lower() or "not accessible" in body.lower()
+        assert "GitHubReviewer agent" in body
+
+    def test_format_handles_missing_author(self):
+        r = _MinimalReviewer(jira_project="PROJ")
+        body = r._format_ticket_not_found_comment({}, "PROJ-7")
+        assert "PROJ-7" in body
+        lines = body.split("\n")
+        assert "@" not in lines[2]
+
+
+class TestNotifyTicketNotFound:
+    """Coverage for _notify_ticket_not_found: posts a comment and alerts."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "author": "dev1",
+        "pr_title": "feat: sync",
+        "pr_url": "https://github.com/owner/repo/pull/10",
+    }
+
+    async def test_posts_comment_and_returns_response(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 55})
+
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result == {"id": 55}
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        call_kw = r.git_toolkit.add_pr_comment.await_args.kwargs
+        assert call_kw["pr_number"] == 10
+        assert "NAV-99" in call_kw["body"]
+
+    async def test_returns_none_when_no_git_toolkit(self):
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result is None
+
+    async def test_returns_none_when_comment_post_fails(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("API error"))
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result is None
+        r.logger.error.assert_called_once()
+
+    async def test_calls_alert_review_skipped(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 1})
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        r._alert_review_skipped.assert_awaited_once()
+        call_kw = r._alert_review_skipped.await_args.kwargs
+        assert call_kw["repo"] == "owner/repo"
+        assert call_kw["pr_number"] == 10
+        assert "NAV-99" in call_kw["reason"]
+
+
+class TestAlertReviewSkipped:
+    """Coverage for _alert_review_skipped: sends Telegram alerts to all alert_chat_ids."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "pr_title": "feat: something",
+        "pr_url": "https://github.com/owner/repo/pull/5",
+    }
+
+    async def test_sends_to_all_alert_chat_ids(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111", "222"]
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        r._wrapper = MagicMock(bot=bot)
+
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test reason", payload=self._PAYLOAD,
+        )
+        assert bot.send_message.await_count == 2
+        chat_ids_sent = [c.kwargs["chat_id"] for c in bot.send_message.await_args_list]
+        assert "111" in chat_ids_sent
+        assert "222" in chat_ids_sent
+        text = bot.send_message.await_args_list[0].kwargs["text"]
+        assert "PR review skipped" in text
+        assert "test reason" in text
+        assert "#5" in text
+
+    async def test_does_nothing_without_bot(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111"]
+        r._wrapper = None
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+
+    async def test_does_nothing_without_alert_chat_ids(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        r._wrapper = MagicMock(bot=bot)
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+        bot.send_message.assert_not_awaited()
+
+    async def test_single_send_failure_does_not_raise(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111", "222"]
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=[RuntimeError("bad chat"), None])
+        r._wrapper = MagicMock(bot=bot)
+
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+        assert bot.send_message.await_count == 2
+        r.logger.warning.assert_called_once()
+
+
+class TestNotifyReviewError:
+    """Coverage for _notify_review_error: posts a PR comment and sends a Telegram alert."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "author": "dev1",
+        "pr_title": "big PR",
+        "pr_url": "https://github.com/owner/repo/pull/42",
+    }
+
+    async def test_posts_comment_and_alerts(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 99})
+        r._alert_review_skipped = AsyncMock()
+
+        error = RuntimeError("LLM timeout")
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=error, payload=self._PAYLOAD,
+        )
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        body = r.git_toolkit.add_pr_comment.await_args.kwargs["body"]
+        assert "NAV-10" in body
+        assert "RuntimeError" in body
+        assert "Automated review failed" in body
+
+        r._alert_review_skipped.assert_awaited_once()
+        alert_kw = r._alert_review_skipped.await_args.kwargs
+        assert "RuntimeError" in alert_kw["reason"]
+        assert "LLM timeout" in alert_kw["reason"]
+
+    async def test_still_alerts_when_comment_post_fails(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("GitHub down"))
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=ValueError("bad diff"), payload=self._PAYLOAD,
+        )
+        r.logger.warning.assert_called_once()
+        r._alert_review_skipped.assert_awaited_once()
+
+    async def test_skips_comment_when_no_git_toolkit(self):
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=RuntimeError("boom"), payload=self._PAYLOAD,
+        )
+        r._alert_review_skipped.assert_awaited_once()
+
+
+class TestReviewPullRequestTicketNotFound:
+    """review_pull_request returns ticket_not_found with a comment when Jira fails."""
+
+    async def test_ticket_not_found_posts_comment_and_returns_outcome(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value=None)
+        r._notify_ticket_not_found = AsyncMock(return_value={"id": 77})
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "Fixes NAV-999",
+                "pr_title": "",
+                "author": "dev1",
+            }
+        )
+        assert out["status"] == "ticket_not_found"
+        assert out["jira_key"] == "NAV-999"
+        assert out["comment"] == {"id": 77}
+        r._notify_ticket_not_found.assert_awaited_once()
+
+    async def test_ticket_not_found_no_comment_key_when_notify_returns_none(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value=None)
+        r._notify_ticket_not_found = AsyncMock(return_value=None)
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "Fixes NAV-999",
+                "pr_title": "",
+            }
+        )
+        assert out["status"] == "ticket_not_found"
+        assert "comment" not in out
+
+
+class TestReviewPullRequestLLMCrash:
+    """review_pull_request catches LLM/diff exceptions and returns error status."""
+
+    async def test_diff_crash_returns_error_and_notifies(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S"}})
+        r._fetch_diff = AsyncMock(side_effect=RuntimeError("diff too large"))
+        r._notify_review_error = AsyncMock()
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "Fixes NAV-42",
+                "pr_title": "",
+            }
+        )
+        assert out["status"] == "error"
+        assert out["jira_key"] == "NAV-42"
+        assert "diff too large" in out["error"]
+        r._notify_review_error.assert_awaited_once()
+
+    async def test_llm_crash_returns_error_and_notifies(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S"}})
+        r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
+        r._ask_llm_for_review = AsyncMock(side_effect=TimeoutError("LLM timed out"))
+        r._notify_review_error = AsyncMock()
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "Fixes NAV-42",
+                "pr_title": "",
+            }
+        )
+        assert out["status"] == "error"
+        assert "LLM timed out" in out["error"]
+        r._notify_review_error.assert_awaited_once()
+        call_kw = r._notify_review_error.await_args.kwargs
+        assert call_kw["ticket_key"] == "NAV-42"
+        assert call_kw["pr_number"] == 576
 
 
 class TestSetupWebhookRoute:
