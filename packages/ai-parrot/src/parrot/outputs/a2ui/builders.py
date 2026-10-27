@@ -41,6 +41,7 @@ from parrot.outputs.a2ui.catalog import (
 )
 from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
 from parrot.outputs.a2ui.graph import (
+    C4Level,
     Direction,
     GraphEdge,
     GraphGroup,
@@ -55,6 +56,7 @@ from parrot.outputs.a2ui.graph import (
 from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface, Extensions, SurfaceMetadata
 
 __all__ = [
+    "build_c4_diagram",
     "build_card",
     "build_chart",
     "build_datatable",
@@ -339,6 +341,7 @@ def build_graph(
     groups: Sequence[GraphGroup | dict[str, Any]] | None = None,
     layout: GraphLayout | dict[str, Any] | None = None,
     selection: GraphSelection | dict[str, Any] | None = None,
+    level: C4Level | None = None,
     data_binding: str | None = None,
     data_model: dict[str, Any] | None = None,
     action: Action | None = None,
@@ -372,6 +375,7 @@ def build_graph(
             are filled in (see ``compute_layout`` below); its own
             ``rank_sep``/``node_sep`` (if set) are honoured.
         selection: Optional selection state.
+        level: ``GraphSpec.level`` — required when ``kind="c4"`` (validated by the model).
         data_binding: Optional data-model pointer (e.g. ``"/nodes"``) —
             becomes ``{"path": "/nodes"}`` on the wire, overlaying each
             node's ``state``/``label``/``meta`` at render time.
@@ -422,6 +426,7 @@ def build_graph(
         groups=group_models,
         layout=layout_model,
         selection=selection_model,
+        level=level,
     )
 
     if compute_layout:
@@ -451,6 +456,72 @@ def build_graph(
         props,
         surface_id=surface_id,
         data_model=data_model,
+        origin=origin,
+    )
+
+
+def build_c4_diagram(
+    *,
+    level: C4Level,
+    nodes: Sequence[GraphNode | dict[str, Any]],
+    edges: Sequence[GraphEdge | dict[str, Any]],
+    boundaries: Sequence[GraphGroup | dict[str, Any]] | None = None,
+    direction: Direction = "TB",
+    title: str | None = None,
+    accessible_description: str | None = None,
+    size: VizSize = "tile",
+    layout: GraphLayout | dict[str, Any] | None = None,
+    selection: GraphSelection | dict[str, Any] | None = None,
+    data_binding: str | None = None,
+    data_model: dict[str, Any] | None = None,
+    action: Action | None = None,
+    compute_layout: bool = True,
+    surface_id: str = "c4-diagram",
+    origin: ProducerOrigin = ProducerOrigin.TOOL,
+) -> CreateSurface:
+    """Build a viz-core ``Graph`` envelope with ``kind="c4"``.
+
+    Thin wrapper over :func:`build_graph` (``groups=boundaries``); every validation, layout and origin
+    rule is ``build_graph``'s.
+
+    Args:
+        level: C4 abstraction level (``GraphSpec.level``).
+        nodes: The diagram's elements.
+        edges: The diagram's relationships.
+        boundaries: Optional C4 boundaries (forwarded as ``groups``).
+        direction: ``GraphSpec.direction``.
+        title: Optional display title.
+        accessible_description: viz-core common prop.
+        size: viz-core common prop.
+        layout: Optional layout configuration.
+        selection: Optional selection state.
+        data_binding: Optional data-model pointer.
+        data_model: The envelope's ``dataModel``.
+        action: Optional component-level action (TOOL origin only).
+        compute_layout: Whether to fill ``layout.positions``.
+        surface_id: Envelope surface id.
+        origin: Producer origin.
+
+    Returns:
+        The validated :class:`~parrot.outputs.a2ui.models.CreateSurface`.
+    """
+    return build_graph(
+        nodes=nodes,
+        edges=edges,
+        kind="c4",
+        level=level,
+        direction=direction,
+        title=title,
+        accessible_description=accessible_description,
+        size=size,
+        groups=boundaries,
+        layout=layout,
+        selection=selection,
+        data_binding=data_binding,
+        data_model=data_model,
+        action=action,
+        compute_layout=compute_layout,
+        surface_id=surface_id,
         origin=origin,
     )
 
