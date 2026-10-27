@@ -1684,7 +1684,7 @@ class GitToolkit(AbstractToolkit):
         Raises:
             GitToolkitError: If the clone/pull fails (stderr is token-scrubbed).
         """
-        if os.path.isdir(os.path.join(dest_dir, ".git")):
+        if await asyncio.to_thread(os.path.isdir, os.path.join(dest_dir, ".git")):
             # Already a clone → fast-forward instead of re-cloning (idempotent).
             extra: Dict[str, Any] = {"private": True} if private else {}
             if timeout is not None:
@@ -1752,7 +1752,7 @@ class GitToolkit(AbstractToolkit):
         Raises:
             GitToolkitError: If ``repo_path`` is not a clone or the pull fails.
         """
-        if not os.path.isdir(os.path.join(repo_path, ".git")):
+        if not await asyncio.to_thread(os.path.isdir, os.path.join(repo_path, ".git")):
             raise GitToolkitError(f"{repo_path!r} is not a git clone")
         env: Optional[Dict[str, str]] = None
         token: Optional[str] = None
