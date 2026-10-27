@@ -248,8 +248,8 @@ def test_no_provider_fields():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (review and close of a delivery merged by an earlier run)
+**Date**: 2026-10-27
+**Notes**: Reviewed: CapabilityCallRecord, CapabilityCallEvent, AbstractLogger.record_capability no-op, exports. Tests: test_capability_call_record.py passes; observability unit suite shows only the pre-existing baseline failure test_attributes.py::test_every_shipped_client_name_is_mapped. Engine merge-tier validation could not run in the sandbox (parrot.conf mkdir of ONTOLOGY_DIR on the read-only primary checkout, exit 4); tests were run by hand with ONTOLOGY_DIR set to a scratch dir. finalize_task not used (no review EvidenceRef artifact exists); closed via close_task.sh. Per-attempt seat/model attribution is not recorded here: the attempt_uid of this pre-existing delivery was not available, so coder_record_review/coder_record_feedback were NOT recorded.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.
