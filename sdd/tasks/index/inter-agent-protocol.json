@@ -318,7 +318,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -329,8 +329,9 @@
       "parallelism_notes": "needs the satellite package from TASK-4737 (parrot/squawk/) and imports SquawkCapability/CapabilityCategory/contract_delta from TASK-4740",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4743-squawk-bindings-contract-cache.md"
+      "completed_at": "2026-10-27T02:20:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4743-squawk-bindings-contract-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4744",
