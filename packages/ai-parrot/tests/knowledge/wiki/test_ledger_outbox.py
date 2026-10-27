@@ -120,7 +120,10 @@ async def test_crash_during_seal_leaves_no_batch(
     outbox = LedgerOutbox(ledger_dir)
     real_rename = os.rename
 
-    def fail_rename(source: str | bytes | os.PathLike[str] | os.PathLike[bytes], destination: str | bytes | os.PathLike[str] | os.PathLike[bytes]) -> None:
+    def fail_rename(
+        source: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        destination: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+    ) -> None:
         raise OSError("simulated publish crash")
 
     monkeypatch.setattr("parrot.knowledge.wiki.ledger.outbox.os.rename", fail_rename)
