@@ -88,14 +88,14 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: creates parrot/models/suggestions.py and the AIMessage field everything else imports",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4794-suggestion-models.md"
     },
@@ -106,14 +106,14 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: self-contained change to skills/tenancy.py (ContextVar + scope token)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4795-turn-skill-contextvar.md"
     },
@@ -124,14 +124,14 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: SkillSuggestion is plain pydantic in skills/models.py + parsers.py, no parrot.models import",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4796-skill-frontmatter-suggestions.md"
     },
@@ -142,7 +142,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -151,7 +151,7 @@
       "parallel": true,
       "parallelism_notes": "imports Suggestion/SuggestionSource from TASK-4794 (parrot/models/suggestions.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4797-suggestion-protocol-engine.md"
     },
@@ -162,7 +162,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -174,7 +174,7 @@
       "parallel": true,
       "parallelism_notes": "imports Suggestion* from TASK-4794; current_turn_skill from TASK-4795 (skills/tenancy.py); reads SkillDefinition.suggestions from TASK-4796; SuggestionContext/renderer_available from TASK-4797 (bots/suggestions/)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4798-deterministic-suggestion-providers.md"
     },
@@ -185,7 +185,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -195,7 +195,7 @@
       "parallel": true,
       "parallelism_notes": "imports SuggestionBatch from TASK-4794 (models/suggestions.py) and SuggestionContext from TASK-4797 (bots/suggestions/protocol.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4799-llm-suggestion-provider.md"
     },
@@ -206,7 +206,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -217,7 +217,7 @@
       "parallel": true,
       "parallelism_notes": "builds SuggestionEngine and modifies bots/suggestions/__init__.py from TASK-4797; registers the providers of TASK-4798 (providers.py) and TASK-4799 (llm.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4800-bot-suggestion-wiring.md"
     },
@@ -228,14 +228,14 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: regenerates shared generated code (ui/schemas/*.json via generate_ts_types.py and src/lib/types/generated/* via pnpm generate)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4801-chat-models-suggestions-schema.md"
     },
@@ -246,7 +246,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,7 +255,7 @@
       "parallel": true,
       "parallelism_notes": "reads AIMessage.suggestions / Suggestion.model_dump from TASK-4794 (models/suggestions.py) in handlers/agent.py and its tests",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4802-handler-suggestions-passthrough.md"
     },
@@ -266,7 +266,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -275,7 +275,7 @@
       "parallel": true,
       "parallelism_notes": "imports the generated AgentChatSuggestion type produced by TASK-4801 (types/generated/AgentChatResponse.d.ts)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4803-ui-suggestion-chips-component.md"
     },
@@ -286,7 +286,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -296,7 +296,7 @@
       "parallel": true,
       "parallelism_notes": "uses the generated AgentChatSuggestion type from TASK-4801 and renders SuggestionChips.svelte created by TASK-4803",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4804-ui-suggestion-chat-wiring.md"
     },
@@ -307,7 +307,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -323,7 +323,7 @@
       "parallel": true,
       "parallelism_notes": "documents shipped API of TASK-4800 (bot kwargs/register_suggestion_provider), wire keys of TASK-4802, UI click contract of TASK-4804, trailer frame of TASK-4807/4808, Telegram buttons of TASK-4810 and Studio fields/migration of TASK-4811/4812",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4805-followup-chips-docs.md"
     },
@@ -334,7 +334,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -344,7 +344,7 @@
       "parallel": true,
       "parallelism_notes": "replaces TASK-4800's _attach_suggestions call site in bots/base.py ask_stream (same file, consumes _attach_suggestions); adds a PrivateAttr next to AIMessage.suggestions from TASK-4794 (models/responses.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4806-stream-deferred-suggestions.md"
     },
@@ -355,7 +355,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -365,7 +365,7 @@
       "parallel": true,
       "parallelism_notes": "modifies handlers/agent.py after TASK-4802 (guards its envelope['suggestions'] site, reuses _suggestions_payload); reads AIMessage._suggestions_task and passes defer_suggestions from TASK-4806",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4807-handler-suggestions-trailer.md"
     },
@@ -376,7 +376,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -386,7 +386,7 @@
       "parallel": true,
       "parallelism_notes": "imports generated AgentChatSuggestion from TASK-4801 (generated/AgentChatResponse.d.ts); modifies AgentChat.svelte + AgentChat.test.ts after TASK-4804 (same files, its suggestions mapping at :1033)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4808-ui-stream-suggestions-trailer.md"
     },
@@ -397,7 +397,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -406,7 +406,7 @@
       "parallel": true,
       "parallelism_notes": "tests build parrot.models.Suggestion from TASK-4794 (models/suggestions.py); own files only (telegram/suggestion_buttons.py, telegram/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4809-telegram-suggestion-buttons-store.md"
     },
@@ -417,7 +417,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -426,7 +426,7 @@
       "parallel": true,
       "parallelism_notes": "imports SUGGESTION_PREFIX/SuggestionButtonStore/build_suggestion_keyboard from TASK-4809 (telegram/suggestion_buttons.py) and reads config.suggestion_buttons it adds",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4810-telegram-suggestion-buttons-wiring.md"
     },
@@ -437,14 +437,14 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no code dependency: _build_database_bot passes kwargs AbstractBot already accepts via **kwargs; own files (models/bots.py, manager/manager.py, new migration); migration is not applied by the task",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4811-studio-suggestion-fields-backend.md"
     },
@@ -455,7 +455,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -464,7 +464,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: regenerates shared ui/schemas + src/lib/types/generated via generate_ts_types.py and pnpm generate; ordered after TASK-4801, which regenerates the same directories",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-27T15:14:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4812-studio-suggestion-fields-ui.md"
     }
