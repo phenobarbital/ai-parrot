@@ -208,6 +208,12 @@ def emit_inline_component(
             return _degraded(response, component, feasibility.reason or "unexpected_error")
 
         sid = surface_id or f"{component.lower()}-{uuid4().hex[:8]}"
+        if component == "Graph":
+            # Graph is registered under the viz-core catalog, not the default Parrot one;
+            # like build_graph, carry the catalog id on the component itself.
+            from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
+
+            config = {**config, "catalogId": VIZ_CORE_CATALOG_ID}
         try:
             surface = build_surface(
                 component,

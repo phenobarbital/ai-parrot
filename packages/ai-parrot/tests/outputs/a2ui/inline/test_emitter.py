@@ -204,3 +204,16 @@ class TestDegraded:
 
         assert outcome.status == "degraded"
         assert outcome.reason == "config_unparseable"
+
+
+def test_graph_emits_under_viz_core_catalog() -> None:
+    """Graph must validate under the viz-core catalog, not the default Parrot one."""
+    response = _response(
+        output='```json\n{"nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}], '
+        '"edges": [{"from": "a", "to": "b"}]}\n```'
+    )
+
+    outcome = emit_inline_component(response, "Graph")
+
+    assert outcome.status == "emitted", response.metadata
+    assert response.a2ui_envelope is not None
