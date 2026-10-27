@@ -1,11 +1,14 @@
 """Inline component prompt addon (FEAT-755 TASK-4763)."""
+
 from __future__ import annotations
 
 import pytest
 
 from parrot.outputs.a2ui.catalog import get_component
 from parrot.outputs.a2ui.inline.prompt import (
-    INLINE_AUTHORING_NOTES, INLINE_COMPONENTS, build_component_prompt,
+    INLINE_AUTHORING_NOTES,
+    INLINE_COMPONENTS,
+    build_component_prompt,
 )
 
 

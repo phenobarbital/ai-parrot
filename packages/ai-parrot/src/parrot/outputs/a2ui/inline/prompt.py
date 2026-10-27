@@ -7,12 +7,14 @@ inline-specific authoring notes. The schema reaches the model as
 schema (``bots/data.py:1504-1515``). Keeping the two apart is what keeps prompt and
 schema from drifting (spec G6).
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Final
 
 from parrot.outputs.a2ui.catalog import get_component
+
 # Component registration happens on import of the catalog subpackages (side effect only).
 from parrot.outputs.a2ui.catalog import parrot as _parrot_catalog  # noqa: F401
 from parrot.outputs.a2ui.catalog import viz_core as _viz_core_catalog  # noqa: F401
