@@ -128,9 +128,7 @@ async def start_screencast(page: "Page", out_dir: Path, *, max_frames: int = 600
         session = ScreencastSession(page=page, cdp=cdp, out_dir=out_dir, max_frames=max_frames)
 
         def on_frame(event: dict[str, Any]) -> None:
-            ack = asyncio.create_task(
-                _send(cdp, "Page.screencastFrameAck", {"sessionId": event["sessionId"]})
-            )
+            ack = asyncio.create_task(_send(cdp, "Page.screencastFrameAck", {"sessionId": event["sessionId"]}))
             session.ack_tasks.append(ack)
             if len(session.frames) >= session.max_frames:
                 session.overflow = True

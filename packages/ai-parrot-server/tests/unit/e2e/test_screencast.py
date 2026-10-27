@@ -106,9 +106,7 @@ async def test_start_screencast_existing_page_succeeds(tmp_path: Path) -> None:
 
     assert session.page is page
     assert page.context.requested_page is page
-    assert cdp.calls == [
-        ("Page.startScreencast", {"format": "jpeg", "quality": 70, "everyNthFrame": 1})
-    ]
+    assert cdp.calls == [("Page.startScreencast", {"format": "jpeg", "quality": 70, "everyNthFrame": 1})]
     assert page.context.pages == [page]
     assert page.close_calls == 0
 
@@ -141,9 +139,7 @@ async def test_start_screencast_failure_releases_resources(tmp_path: Path) -> No
     assert page.close_calls == 0
 
 
-async def test_stop_screencast_finalizes_and_preserves_page(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_stop_screencast_finalizes_and_preserves_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Stop follows lifecycle order and publishes without owning the page."""
     cdp = FakeCDPSession()
     page = FakePage(cdp)
@@ -169,9 +165,7 @@ async def test_stop_screencast_finalizes_and_preserves_page(
     assert page.context.pages == [page]
 
 
-async def test_stop_screencast_invalid_output_raises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_stop_screencast_invalid_output_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Empty capture and undecodable output both fail without publication."""
     monkeypatch.setattr(screencast, "_run_in_worker", _inline_worker)
     empty_session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path / "empty")
@@ -233,9 +227,7 @@ async def test_stop_screencast_refuses_overwrite_and_is_idempotent(
     assert worker_calls == ["_successful_encoder", "<lambda>"]
 
 
-async def test_frame_buffer_overflow_is_explicit_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_frame_buffer_overflow_is_explicit_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Overflow acknowledges every frame but never publishes truncation."""
     worker_called = False
 
@@ -261,9 +253,7 @@ async def test_frame_buffer_overflow_is_explicit_failure(
     ]
 
 
-async def test_missing_encoder_extra_is_typed_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_missing_encoder_extra_is_typed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing optional encoder dependency produces the documented error."""
 
     def missing_encoder(frames: list[tuple[int, bytes]], out_path: str) -> int:
