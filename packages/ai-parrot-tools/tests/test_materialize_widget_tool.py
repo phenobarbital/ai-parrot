@@ -355,3 +355,91 @@ def test_tool_is_renderer_callable() -> None:
     functions = ToolManagerExecutor(manager).list_functions()
 
     assert "materialize_widget" in {function.name for function in functions}
+
+
+def test_tool_hidden_from_renderer_when_a2ui_hidden() -> None:
+    """AC5: a2ui_hidden=True excludes the tool from list_functions and callAgentFunction dispatch."""
+    tool = MaterializeWidgetTool()
+    tool.a2ui_hidden = True
+    manager = ToolManager()
+    manager.register_tool(tool)
+
+    functions = ToolManagerExecutor(manager).list_functions()
+
+    assert "materialize_widget" not in {function.name for function in functions}
+
+
+@pytest.mark.asyncio
+async def test_tool_callable_via_executor_dispatch() -> None:
+    """AC5: the tool is invocable through ToolManagerExecutor.call (callAgentFunction path)."""
+    builder = FakeTool(_success({"a2ui_envelope": _linked_envelope(), "artifacts": []}))
+    bot = _bot(builder=builder)
+    tool = MaterializeWidgetTool(bot=bot, user_id="u1", session_id="s1")
+    manager = ToolManager()
+    manager.register_tool(tool)
+    executor = ToolManagerExecutor(manager)
+    ctx = SimpleNamespace(permission_context=None, agent_id="agent", user_id="u1")
+
+    result = await executor.call(
+        "materialize_widget",
+        {"turn_id": "t1", "envelope": _source_envelope()},
+        ctx,
+    )
+
+    assert result.success is True
+    assert result.result["status"] == "materialized"
+
+
+@pytest.mark.asyncio
+async def test_tool_builder_failure_skips_store_save() -> None:
+    """AC6: when the build sibling fails, the result is build_failed and no publish_surface call is made."""
+    builder = FakeTool(_failure("unknown slug"))
+    publisher = FakeTool(_success({"surface_id": "s-1"}))
+    tool = MaterializeWidgetTool(
+        bot=_bot(builder=builder, publisher=publisher),
+        user_id="u1",
+        session_id="s1",
+    )
+
+    result = await tool.execute(turn_id="t1", envelope=_source_envelope(), pin=True)
+
+    assert result.result["status"] == "not_materializable"
+    assert result.result["reason"] == "build_failed"
+    assert result.result["message"] == "unknown slug"
+    assert publisher.calls == []
+
+
+@pytest.mark.asyncio
+async def test_tool_pctx_owner_differs_from_bound_user() -> None:
+    """When the pctx principal differs from the bound user_id, the pctx identity wins for turn lookup."""
+    pctx = build_principal_context("u3", channel="a2ui")
+    builder = FakeTool(_success({"a2ui_envelope": _linked_envelope(), "artifacts": []}))
+    bot = _bot(builder=builder)
+    tool = MaterializeWidgetTool(bot=bot, user_id="u1", session_id="s1")
+
+    result = await tool.execute(turn_id="t1", envelope=_source_envelope(), _permission_context=pctx)
+
+    assert result.result["status"] == "not_materializable"
+    assert result.result["reason"] == "turn_not_found"
+    assert bot.conversation_memory.calls == [("u3", "s1", "agent")]
+
+
+@pytest.mark.asyncio
+async def test_tool_sibling_permission_error_surfaces_as_error_result() -> None:
+    """A sibling raising an untyped exception propagates through _materialize and is caught by execute()'s handler."""
+
+    class RaisingTool:
+        async def execute(self, **kwargs: Any) -> ToolResult:
+            raise PermissionError("authorization denied for slug 'payroll'")
+
+    tool = MaterializeWidgetTool(
+        bot=_bot(builder=RaisingTool()),
+        user_id="u1",
+        session_id="s1",
+    )
+
+    result = await tool.execute(turn_id="t1", envelope=_source_envelope())
+
+    assert result.status == "error"
+    assert result.result is None
+    assert "authorization denied" in result.error

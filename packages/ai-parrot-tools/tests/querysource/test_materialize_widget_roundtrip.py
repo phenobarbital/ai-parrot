@@ -17,6 +17,7 @@ from parrot_tools.querysource.toolkit import QuerysourceToolkit
 from parrot_tools.ui_surfaces import PublishSurfaceTool
 
 SLUG = "epson_field_activity"
+FORBIDDEN_SLUG = "payroll_confidential"
 
 
 @pytest.fixture
@@ -120,3 +121,55 @@ async def test_materialize_then_refresh_roundtrip(fake_core_qs):
     record = store.save.call_args.args[0]
     source = record.envelope["metadata"]["extensions"]["parrot_data_sources"][SLUG]
     assert source["target"] == f"/{SLUG}/rows"
+
+
+async def test_materialize_forbidden_slug_build_failed_no_save(fake_core_qs, monkeypatch):
+    """AC6: a slug that fails during build_linked_surface returns build_failed and store.save is never called."""
+    store = MagicMock()
+    store.save = AsyncMock(return_value="surface-1")
+    service = MagicMock()
+    service.validate_for_persistence = AsyncMock()
+    service.ensure_snapshot = AsyncMock(side_effect=lambda envelope, **kwargs: envelope)
+
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    original_describe = toolkit.describe_slug
+
+    async def _fail_on_forbidden(slug, **kwargs):
+        if slug == FORBIDDEN_SLUG:
+            raise RuntimeError(f"slug '{slug}' is not allowed")
+        return await original_describe(slug, **kwargs)
+
+    monkeypatch.setattr(toolkit, "describe_slug", _fail_on_forbidden)
+
+    tool_manager = ToolManager()
+    tool_manager.register_toolkit(toolkit)
+    tool_manager.register_tool(
+        PublishSurfaceTool(surface_store=store, linked_service=service, user_id="u1", agent_id="agent")
+    )
+    turn = ConversationTurn(
+        turn_id="t1",
+        user_id="u1",
+        user_message="payroll data",
+        assistant_response="…",
+        tool_invocations=[
+            ToolInvocation(tool_name="qs_execute_slug", input={"slug": FORBIDDEN_SLUG, "limit": 100})
+        ],
+    )
+    history = ConversationHistory(session_id="s1", user_id="u1", turns=[turn])
+    bot = SimpleNamespace(conversation_memory=_Memory(history), memory_key_id="agent", tool_manager=tool_manager)
+    tool = MaterializeWidgetTool(bot=bot, user_id="u1")
+    tool_manager.register_tool(tool)
+
+    on_screen = {
+        "surfaceId": "structured_chart-1",
+        "components": [
+            {"id": "root", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"], "data": {"path": "/rows"}}
+        ],
+        "dataModel": {"rows": [{"day": "2026-01-01", "visits": 1}]},
+    }
+    result = await tool.execute(turn_id="t1", session_id="s1", envelope=on_screen, pin=True)
+    payload = result.result
+
+    assert payload["status"] == "not_materializable"
+    assert payload["reason"] == "build_failed"
+    store.save.assert_not_awaited()

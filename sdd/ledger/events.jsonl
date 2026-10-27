@@ -1885,3 +1885,4 @@
 {"event_id":"ec8c49f36058","kind":"task.closed","subject":"task:TASK-4746","actor":"agent:close_task.sh","ts":"2026-10-27T02:20:56.391582+00:00","payload":{"feature":"inter-agent-protocol","verification":"verified"}}
 {"event_id":"6bb02af8e175","kind":"issue.claimed","subject":"issue:2c68f68d9115","actor":"agent:sdd-fix","ts":"2026-10-27T02:25:13.351221+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
 {"event_id":"7740e9479175","kind":"issue.claimed","subject":"issue:2e0c391973f3","actor":"agent:sdd-fix","ts":"2026-10-27T02:26:05.237072+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
+{"event_id":"31cd7382c4a2","kind":"issue.closed","subject":"issue:2e0c391973f3","actor":"agent:sdd-fix","ts":"2026-10-27T02:29:34.136510+00:00","payload":{"reason":"Added isinstance guards in component_from_envelope for non-mapping createSurface and non-dict component entries","closed_by":"agent:sdd-fix","resolved_by":"commit:f704d32a6"}}
