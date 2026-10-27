@@ -967,9 +967,9 @@ runners:
   - src/lib/components/agents/canvas/a2ui/A2UINode.test.ts
   - src/lib/components/agents/ChatBubble.test.ts
 
-(`test_route_labels.py`, `test_route_bank.py`, `test_intent_router_component_routes.py`,
-`test_catalog_model.py`, `outputs/a2ui/inline/test_*.py` and `a2ui-presentation.test.ts` are
-created by this feature; every other operand exists today and exercises touched code.)
+> (`test_route_labels.py`, `test_route_bank.py`, `test_intent_router_component_routes.py`,
+> `test_catalog_model.py`, `outputs/a2ui/inline/test_*.py` and `a2ui-presentation.test.ts` are
+> created by this feature; every other operand exists today and exercises touched code.)
 
 ### Test Data / Fixtures
 ```python
