@@ -59,7 +59,7 @@ from ..base import (
     GuardrailResult,
     GuardrailStage,
 )
-from ._engine_chassis import ClassifierOnnxEngine, env_int, load_tokenizer, resolve_positive_index, softmax
+from ._engine_chassis import ClassifierOnnxEngine, env_int, load_tokenizer, resolve_positive_index, score_async, softmax
 
 logger = logging.getLogger(__name__)
 
@@ -672,7 +672,7 @@ class PromptInjectionGuardrail(Guardrail):
         scan_text = self._framework_sanitizer.strip_framework_patterns(content)
 
         if self._injection_engine is not None:
-            probability = self._injection_engine.score(scan_text)
+            probability = await score_async(self._injection_engine, scan_text)
             if probability > self.injection_probability_threshold:
                 preview = (scan_text or "")[:120]
                 pattern = (
