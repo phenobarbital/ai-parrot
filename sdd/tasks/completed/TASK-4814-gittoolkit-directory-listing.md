@@ -226,4 +226,4 @@ call arguments/counts and public outcomes, not just private implementation detai
 
 ## Completion Note
 
-Pending implementation; finalization owns this section.
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1. Ref-specific directory listing added to gittoolkit. Merged by engine; 38 tests in test_gittoolkit_pr_context.py pass. Residual lint: 2x ASYNC240 (gittoolkit.py:1687,1755) left for /sdd-done.
