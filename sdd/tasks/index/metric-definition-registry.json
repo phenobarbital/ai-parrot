@@ -87,7 +87,7 @@
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -97,8 +97,9 @@
       "parallelism_notes": "imports RecipeSource/KPICardShape/ChartShape/DataTableShape/MapShape/TimeSpec/PeriodBinding/DimensionSpec from TASK-4843 (parrot/metrics/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4845-kpi-table-importer.md"
+      "completed_at": "2026-10-27T23:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4845-kpi-table-importer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4846",
@@ -167,7 +168,7 @@
     {
       "id": "TASK-4849",
       "slug": "metric-periods",
-      "title": "Metric periods \u2014 preset resolution, comparison window, series buckets",
+      "title": "Metric periods — preset resolution, comparison window, series buckets",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -188,7 +189,7 @@
     {
       "id": "TASK-4850",
       "slug": "metric-shape-emitter",
-      "title": "Metric shape emitter \u2014 KPI figures, KPICard props, baked and linked envelopes",
+      "title": "Metric shape emitter — KPI figures, KPICard props, baked and linked envelopes",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -209,7 +210,7 @@
     {
       "id": "TASK-4851",
       "slug": "metric-source-executors",
-      "title": "Metric source executors \u2014 query_slug, transformer, recipe",
+      "title": "Metric source executors — query_slug, transformer, recipe",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
@@ -230,11 +231,11 @@
     {
       "id": "TASK-4852",
       "slug": "metrics-toolkit",
-      "title": "MetricsToolkit \u2014 list, describe, query and explain metrics",
+      "title": "MetricsToolkit — list, describe, query and explain metrics",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -246,17 +247,18 @@
       "parallelism_notes": "imports MetricRegistry from TASK-4847 (parrot/metrics/registry.py); build_metric_envelope/build_linked_metric_envelope/figures from TASK-4850 (shapes.py); executor_for/SourceFrame from TASK-4851 (executors.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4852-metrics-toolkit.md"
+      "completed_at": "2026-10-27T23:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4852-metrics-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4853",
       "slug": "metric-routing-mixin",
-      "title": "MetricRoutingMixin \u2014 metric default-shape slot in _resolve_output_mode",
+      "title": "MetricRoutingMixin — metric default-shape slot in _resolve_output_mode",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -267,8 +269,9 @@
       "parallelism_notes": "imports bind_metric_match/resolve_metric_tenant from TASK-4846 (parrot/metrics/context.py) and MetricRegistry from TASK-4847 (parrot/metrics/registry.py); FEAT-755 route_labels already on dev",
       "assigned_to": null,
       "started_at": "2026-10-27T23:12:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4853-metric-routing-mixin.md"
+      "completed_at": "2026-10-27T23:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4853-metric-routing-mixin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4854",
@@ -293,7 +296,7 @@
     {
       "id": "TASK-4855",
       "slug": "metric-definitions-handler",
-      "title": "MetricDefinitionsHandler \u2014 /api/v1/metrics REST lane",
+      "title": "MetricDefinitionsHandler — /api/v1/metrics REST lane",
       "feature_id": "FEAT-756",
       "feature": "metric-definition-registry",
       "spec": "sdd/specs/metric-definition-registry.spec.md",
