@@ -1,4 +1,5 @@
 """REST lane of the FEAT-756 metric registry: /api/v1/metrics[/schema|/{metric_id}]."""
+
 from __future__ import annotations
 
 import logging

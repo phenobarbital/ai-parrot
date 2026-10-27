@@ -1,4 +1,5 @@
 """Unit tests for MetricDefinitionsHandler (FEAT-756, TASK-4855) — test_ui_surfaces_handler.py idiom."""
+
 from __future__ import annotations
 
 import logging
