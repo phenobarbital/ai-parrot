@@ -2090,4 +2090,3 @@
 {"event_id":"81ee8fe0d45e","kind":"task.closed","subject":"task:TASK-4850","actor":"agent:close_task.sh","ts":"2026-10-27T23:34:04.160861+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
 {"event_id":"2b6c8b8fe49b","kind":"task.closed","subject":"task:TASK-4851","actor":"agent:close_task.sh","ts":"2026-10-27T23:34:04.468713+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
 {"event_id":"44c455ef8265","kind":"task.closed","subject":"task:TASK-4855","actor":"agent:close_task.sh","ts":"2026-10-27T23:34:04.798692+00:00","payload":{"feature":"metric-definition-registry","verification":"verified"}}
-{"event_id":"aa3a36780fe2","kind":"issue.claimed","subject":"issue:43d1039c2717","actor":"agent:sdd-fix","ts":"2026-10-27T23:18:00.681481+00:00","payload":{"claimed_by":"agent:sdd-fix"}}
