@@ -31,6 +31,7 @@ KPICard, InfoCard, Timeline and viz-core Graph. Nothing in the renderer needs bu
 - Create `a2ui-presentation.ts` with `PRESENTATION_EXTENSION`, `PresentationExtension`, `getPresentation`, `isInlinePresentation`.
 - Make `inferSurfaceKind` prefer the marker's `kind` when present, falling back to today's heuristic.
 - Create `a2ui-presentation.test.ts`; extend `a2ui-kind.test.ts` for marker precedence.
+- Create the pytest wrapper `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py` — the validation contract accepts pytest commands only, so a bare vitest command is invisible to `select_tests.py`.
 
 **NOT in scope**: `ChatBubble.svelte` (TASK-4769), any change to `A2UINode.svelte` (it already renders all four components), and any change to generated types (the marker lives inside `metadata.extensions`, already typed loosely).
 
@@ -44,6 +45,7 @@ KPICard, InfoCard, Timeline and viz-core Graph. Nothing in the renderer needs bu
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-kind.ts` | MODIFY | Marker precedence over the heuristic |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-presentation.test.ts` | CREATE | Unit tests |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts` | MODIFY | Precedence tests |
+| `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py` | CREATE | pytest wrapper so the validation contract can see these vitest files |
 
 ---
 
@@ -109,6 +111,10 @@ export function isLinkedSurface(envelope: A2UIEnvelope | null | undefined): bool
     {
       "path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts",
       "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py",
+      "action": "CREATE"
     }
   ],
   "contract_symbols": []
@@ -227,6 +233,28 @@ describe('isInlinePresentation', () => {
 ```
 **Why**: the existing block already covers the heuristic exhaustively; appending to it proves precedence without duplicating fixtures.
 
+
+### `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py` (CREATE)
+```python
+"""FEAT-755 (TASK-4768): run the A2UI presentation-marker vitest suite from pytest."""
+
+from ._vitest import run_vitest
+
+
+def test_a2ui_presentation_vitest() -> None:
+    """getPresentation / isInlinePresentation and inferSurfaceKind marker precedence."""
+    run_vitest(
+        "src/lib/components/agents/canvas/a2ui/a2ui-presentation.test.ts",
+        "src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts",
+    )
+```
+**Why**: `check_task_graph` rejects a non-pytest `## Validation Commands` entry — a bare
+vitest command is invisible to `select_tests.py`. `_vitest.run_vitest` (verified:
+`packages/ai-parrot-server/tests/ui/_vitest.py`) shells out to `pnpm exec vitest run` in
+the UI directory and **skips** cleanly when `pnpm` or `node_modules` is absent, so the
+suite stays green on a backend-only checkout. Follow
+`tests/ui/test_vitest_a2ui_chart_adapter.py` exactly — same import, same one-call shape.
+
 ### FILL IN checklist
 - [ ] `a2ui-presentation.ts::getPresentation` — defensive parse + kind validation; bounded by AC-1
 - [ ] `a2ui-presentation.ts::isInlinePresentation` — null-safe envelope check; bounded by AC-2
@@ -249,8 +277,7 @@ describe('isInlinePresentation', () => {
 
 > File-level pytest only — no directories, no package roots.
 
-- `pnpm --dir packages/ai-parrot-server/ui vitest run src/lib/components/agents/canvas/a2ui/a2ui-presentation.test.ts`
-- `pnpm --dir packages/ai-parrot-server/ui vitest run src/lib/components/agents/canvas/a2ui/a2ui-kind.test.ts`
+- `pytest packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py -q`
 
 ---
 

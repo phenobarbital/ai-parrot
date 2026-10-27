@@ -957,6 +957,8 @@ runners:
   - packages/ai-parrot/tests/outputs/formats/test_structured_chart.py
   - packages/ai-parrot/tests/unit/test_skill_tenancy.py
   - packages/ai-parrot-visualizations/tests/formats/test_structured_envelope.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -968,7 +970,8 @@ runners:
   - src/lib/components/agents/ChatBubble.test.ts
 
 > (`test_route_labels.py`, `test_route_bank.py`, `test_intent_router_component_routes.py`,
-> `test_catalog_model.py`, `outputs/a2ui/inline/test_*.py` and `a2ui-presentation.test.ts` are
+> `test_catalog_model.py`, `outputs/a2ui/inline/test_*.py`, the two `tests/ui/test_vitest_*.py`
+> wrappers and `a2ui-presentation.test.ts` are
 > created by this feature; every other operand exists today and exercises touched code.)
 
 ### Test Data / Fixtures

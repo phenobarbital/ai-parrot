@@ -259,7 +259,6 @@ def parse_route_label(label: str) -> OutputShape: ...  # raises ValueError on a 
 > File-level pytest only — no directories, no package roots.
 
 - `pytest packages/ai-parrot/tests/routing/test_embedding_router.py -q`
-- `pytest packages/ai-parrot/tests/routing/test_route_labels.py -q`
 
 ---
 

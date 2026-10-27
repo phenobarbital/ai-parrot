@@ -30,6 +30,7 @@ and placed *before* the `structured_chart` branch.
 - Lazily import `A2UISurface` in the existing `$effect` block when the message is an inline A2UI answer.
 - Add an `{:else if}` branch before the `structured_chart` branch rendering `A2UISurface`.
 - Extend `ChatBubble.test.ts` for the flag-on, flag-off and no-marker cases.
+- Create the pytest wrapper `packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py` — the validation contract accepts pytest commands only.
 
 **NOT in scope**: `a2ui-presentation.ts` / `a2ui-kind.ts` (TASK-4768), `A2UINode.svelte` (already renders all four components), and navigator-frontend-next (out of scope for the whole feature).
 
@@ -41,6 +42,7 @@ and placed *before* the `structured_chart` branch.
 |---|---|---|
 | `packages/ai-parrot-server/ui/src/lib/components/agents/ChatBubble.svelte` | MODIFY | Lazy import + inline A2UI branch |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/ChatBubble.test.ts` | MODIFY | Render tests |
+| `packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py` | CREATE | pytest wrapper so the validation contract can see this vitest file |
 
 ---
 
@@ -101,6 +103,10 @@ export function isInlinePresentation(envelope: A2UIEnvelope | null | undefined):
     {
       "path": "packages/ai-parrot-server/ui/src/lib/components/agents/ChatBubble.test.ts",
       "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py",
+      "action": "CREATE"
     }
   ],
   "contract_symbols": []
@@ -186,6 +192,27 @@ export function isInlinePresentation(envelope: A2UIEnvelope | null | undefined):
 ```
 **Why**: the flag-off and no-marker cases are the regression guards — they are what prove this change is invisible to every existing surface.
 
+
+### `packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py` (CREATE)
+```python
+"""FEAT-755 (TASK-4769): run the ChatBubble inline-A2UI vitest suite from pytest."""
+
+from ._vitest import run_vitest
+
+
+def test_chatbubble_inline_a2ui_vitest() -> None:
+    """ChatBubble mounts A2UISurface for an inline A2UI message under features.a2ui."""
+    run_vitest(
+        "src/lib/components/agents/ChatBubble.test.ts",
+    )
+```
+**Why**: `check_task_graph` rejects a non-pytest `## Validation Commands` entry — a bare
+vitest command is invisible to `select_tests.py`. `_vitest.run_vitest` (verified:
+`packages/ai-parrot-server/tests/ui/_vitest.py`) shells out to `pnpm exec vitest run` in
+the UI directory and **skips** cleanly when `pnpm` or `node_modules` is absent, so the
+suite stays green on a backend-only checkout. Follow
+`tests/ui/test_vitest_a2ui_chart_adapter.py` exactly — same import, same one-call shape.
+
 ### FILL IN checklist
 - [ ] `ChatBubble.svelte` — the `A2UISurfaceComp` state declaration in the file's existing style; bounded by AC-1
 - [ ] `ChatBubble.svelte` — the `<A2UISurfaceComp />` mount with prop names copied from `InfographicCanvas.svelte`; bounded by AC-2
@@ -207,9 +234,7 @@ export function isInlinePresentation(envelope: A2UIEnvelope | null | undefined):
 
 > File-level pytest only — no directories, no package roots.
 
-- `pnpm --dir packages/ai-parrot-server/ui vitest run src/lib/components/agents/ChatBubble.test.ts`
-- `pnpm --dir packages/ai-parrot-server/ui vitest run src/lib/components/agents/canvas/a2ui/A2UISurface.test.ts`
-- `pnpm --dir packages/ai-parrot-server/ui vitest run src/lib/components/agents/canvas/a2ui/A2UINode.test.ts`
+- `pytest packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py -q`
 
 ---
 

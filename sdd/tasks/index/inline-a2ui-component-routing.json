@@ -34,7 +34,9 @@
           "packages/ai-parrot/tests/outputs/test_legacy_deprecation.py",
           "packages/ai-parrot/tests/outputs/formats/test_structured_chart.py",
           "packages/ai-parrot/tests/unit/test_skill_tenancy.py",
-          "packages/ai-parrot-visualizations/tests/formats/test_structured_envelope.py"
+          "packages/ai-parrot-visualizations/tests/formats/test_structured_envelope.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_a2ui_presentation.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_chatbubble_inline_a2ui.py"
         ],
         "settings": {
           "markers": ""
@@ -64,7 +66,7 @@
         ]
       }
     ],
-    "digest": "sha256:b89321349a6d7b0ee24d44931ea09d9eef4e6b33be3c1628fd8a914f7c6a4465"
+    "digest": "sha256:74a68fc9db18fb6ce40bd69e07d551bac6af5e97466b5eddc22b56b29d2f04e2"
   },
   "tasks": [
     {

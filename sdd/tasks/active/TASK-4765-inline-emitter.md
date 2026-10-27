@@ -377,8 +377,6 @@ class TestDegraded:
 > File-level pytest only — no directories, no package roots.
 
 - `pytest packages/ai-parrot/tests/outputs/a2ui/inline/test_emitter.py -q`
-- `pytest packages/ai-parrot/tests/outputs/a2ui/inline/test_prompt.py -q`
-- `pytest packages/ai-parrot/tests/outputs/a2ui/inline/test_feasibility.py -q`
 - `pytest packages/ai-parrot/tests/outputs/a2ui/test_emission_wiring.py -q`
 - `pytest packages/ai-parrot/tests/outputs/a2ui/test_builders.py -q`
 

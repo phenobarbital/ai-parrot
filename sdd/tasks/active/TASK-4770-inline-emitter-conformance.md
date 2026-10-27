@@ -183,7 +183,6 @@ def test_inline_emitter_envelopes_conform() -> None:
 > File-level pytest only — no directories, no package roots.
 
 - `pytest packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py -q`
-- `pytest packages/ai-parrot/tests/outputs/a2ui/inline/test_emitter.py -q`
 
 ---
 

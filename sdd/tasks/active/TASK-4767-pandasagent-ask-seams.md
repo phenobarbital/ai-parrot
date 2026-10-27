@@ -266,7 +266,6 @@ class TestAskWiring:
 
 - `pytest packages/ai-parrot/tests/bots/test_intent_router_component_routes.py -q`
 - `pytest packages/ai-parrot/tests/bots/test_intent_router_output_mode_integration.py -q`
-- `pytest packages/ai-parrot/tests/outputs/a2ui/inline/test_emitter.py -q`
 - `pytest packages/ai-parrot/tests/outputs/formats/test_structured_chart.py -q`
 
 ---
