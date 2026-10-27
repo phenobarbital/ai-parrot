@@ -1,4 +1,6 @@
-import asyncio, json, sys
+import asyncio
+import json
+import sys
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -23,7 +25,7 @@ async def main():
             text = await page.evaluate("() => document.getElementById('out').innerText || document.getElementById('out').textContent")
             out[name] = {
                 "raw_svg_len": res["raw"], "clean_svg_len": len(clean),
-                "labels_visible": {l: (l in text) for l in labels},
+                "labels_visible": {label: (label in text) for label in labels},
                 "has_foreignObject": "foreignObject" in clean, "has_script": "<script" in clean.lower(),
             }
             await page.screenshot(path=str(S / f"{name}.png"))
