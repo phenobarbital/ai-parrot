@@ -117,6 +117,13 @@ class TestInheritance:
 
 
 class TestConstructor:
+    def test_record_video_resolves_confined_dir(self, tmp_path) -> None:
+        toolkit = WebScrapingToolkit(record_video=True, plans_dir=tmp_path / "plans")
+        assert toolkit._config.record_video_dir == str(tmp_path / "plans" / "files" / "recordings")
+
+    def test_record_video_disabled_by_default(self, toolkit) -> None:
+        assert toolkit._config.record_video_dir is None
+
     def test_default_config(self, toolkit):
         assert toolkit._config.driver_type == "playwright"
         assert toolkit._config.headless is True

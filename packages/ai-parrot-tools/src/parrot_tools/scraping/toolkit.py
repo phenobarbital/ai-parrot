@@ -298,6 +298,7 @@ class WebScrapingToolkit(AbstractToolkit):
         obscura_stealth: Obscura stealth-mode flag.
         obscura_allow_private_network: Obscura
             ``--allow-private-network`` flag.
+        record_video: Record Playwright sessions under ``files_root/recordings``.
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
@@ -327,6 +328,7 @@ class WebScrapingToolkit(AbstractToolkit):
         obscura_stealth: bool = False,
         obscura_allow_private_network: bool = False,
         confine_paths: bool = False,
+        record_video: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -356,6 +358,8 @@ class WebScrapingToolkit(AbstractToolkit):
         self._registry: PlanRegistry | None = None
         self._llm_client = llm_client
         self._plans_dir = Path(plans_dir) if plans_dir else Path("scraping_plans")
+        if record_video:
+            self._config = self._config.merge({"record_video_dir": str(self.files_root / "recordings")})
         self.confine_paths = bool(confine_paths)
         self.logger = logging.getLogger(__name__)
 

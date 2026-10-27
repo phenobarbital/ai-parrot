@@ -132,6 +132,8 @@ class DriverConfig(BaseModel):
     obscura_port: int = 9222
     obscura_stealth: bool = False
     obscura_allow_private_network: bool = False
+    record_video_dir: Optional[str] = None
+    """Session recording directory; consumed only by the Playwright backend."""
 
     def merge(self, overrides: Optional[Dict[str, Any]] = None) -> DriverConfig:
         """Return a new DriverConfig with overrides applied.

@@ -123,6 +123,7 @@ class DriverFactory:
                 executable_path=resolve_browser_binary(
                     config.get("browser_binary") or config.get("executable_path"), browser, channel
                 ),
+                record_video_dir=config.get("record_video_dir"),
             )
             logger.info("Creating PlaywrightDriver (browser=%s)", pw_browser)
             return PlaywrightDriver(pw_config)

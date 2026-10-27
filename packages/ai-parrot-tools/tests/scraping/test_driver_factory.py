@@ -212,3 +212,11 @@ class TestDriverFactoryExports:
         )
 
         assert DF is not None
+
+
+@pytest.mark.parametrize("backend,expected", [("playwright", "/x/recordings"), ("obscura", None)])
+@patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
+def test_recording_config_backend_isolation(mock_cls: MagicMock, backend: str, expected: str | None) -> None:
+    """Recording configuration reaches only the native Playwright backend."""
+    DriverFactory.create({"driver_type": backend, "record_video_dir": "/x/recordings"})
+    assert mock_cls.call_args.args[0].record_video_dir == expected
