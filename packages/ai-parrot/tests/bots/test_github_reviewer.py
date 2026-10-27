@@ -738,7 +738,9 @@ class TestSDDReviewerFoundations:
                 GitHubReviewer("owner/repo", max_spec_scan_files=invalid_cap)
 
         assert PRReviewResult(summary="ok", approve=True).requirement_source == "jira"
-        assert PRReviewResult(summary="ok", approve=True, requirement_source="sdd_spec").requirement_source == "sdd_spec"
+        assert (
+            PRReviewResult(summary="ok", approve=True, requirement_source="sdd_spec").requirement_source == "sdd_spec"
+        )
         with pytest.raises(ValueError):
             PRReviewResult(summary="ok", approve=True, requirement_source="other")
 
