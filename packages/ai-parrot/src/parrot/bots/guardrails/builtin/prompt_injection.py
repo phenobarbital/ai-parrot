@@ -671,9 +671,7 @@ class PromptInjectionGuardrail(Guardrail):
         # TASK-2308).
         if not content or not content.strip():
             return GuardrailResult(action=GuardrailAction.PASS)
-        if ctx.stage == GuardrailStage.TOOL_OUTPUT and content.lstrip().startswith(
-            "<potentially_unsafe_input"
-        ):
+        if ctx.stage == GuardrailStage.TOOL_OUTPUT and content.lstrip().startswith("<potentially_unsafe_input"):
             return GuardrailResult(action=GuardrailAction.PASS)
 
         # Start by assuming input is safe so, absent any detector hit, the

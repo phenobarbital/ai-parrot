@@ -145,7 +145,7 @@ async def test_wrapped_tool_output_passes_without_rescanning() -> None:
         agent_name="lookup",
         tool_name="lookup",
     )
-    wrapped = "  <potentially_unsafe_input flagged_by=\"test\">unsafe</potentially_unsafe_input>"
+    wrapped = '  <potentially_unsafe_input flagged_by="test">unsafe</potentially_unsafe_input>'
 
     result = await guardrail.check(wrapped, ctx)
 
