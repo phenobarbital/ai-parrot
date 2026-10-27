@@ -362,7 +362,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -372,8 +372,9 @@
       "parallelism_notes": "extends SquawkBlobStore/_authorize from TASK-4744 (blobs/store.py) and modifies blobs/__init__.py it created",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4745-squawk-blob-filemanager-sweeper.md"
+      "completed_at": "2026-10-27T02:20:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4745-squawk-blob-filemanager-sweeper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4746",
