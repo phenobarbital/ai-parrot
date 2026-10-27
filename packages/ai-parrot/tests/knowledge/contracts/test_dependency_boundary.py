@@ -1,7 +1,8 @@
 """Packaging and dependency-boundary tests for FEAT-539 (TASK-3052).
 
-``rapidfuzz>=3.0`` is the *only* dependency this feature adds, and only to
-the core ``graphindex`` optional extra. These tests also pin the boundary
+``rapidfuzz>=3.0`` was promoted to a core dependency by FEAT-761 for
+prompt-leakage fuzzy matching on the OUTPUT path, while the ``graphindex``
+extra retains its duplicate declaration. These tests also pin the boundary
 rules the spec relies on: core contracts modules never import
 ``parrot_tools`` or ``parrot.scheduler``, and no SQLite backend appears.
 """
@@ -41,9 +42,14 @@ def test_rapidfuzz_is_declared_in_the_graphindex_extra(core_project):
     assert any(item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in graphindex), graphindex
 
 
-def test_rapidfuzz_is_not_a_core_runtime_dependency(core_project):
+def test_rapidfuzz_is_a_core_runtime_dependency(core_project):
+    """FEAT-761 promoted rapidfuzz to core (prompt-leakage fuzzy matching on the OUTPUT path).
+
+    Supersedes FEAT-539's "not a core runtime dependency" pin; the graphindex
+    extra keeps its entry so the extra-boundary tests above/below still hold.
+    """
     core = core_project["project"]["dependencies"]
-    assert not any("rapidfuzz" in item for item in core)
+    assert any(item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in core), core
 
 
 def test_rapidfuzz_is_added_to_exactly_one_core_extra(core_project):
