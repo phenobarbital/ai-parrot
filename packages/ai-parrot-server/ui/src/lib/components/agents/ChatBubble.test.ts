@@ -178,7 +178,7 @@ describe("ChatBubble", () => {
       }),
     });
 
-    expect(screen.getByText("Hello world")).toBeInTheDocument();
+    expect(container.querySelector("strong")?.textContent).toBe("world");
     expect(container.textContent).not.toContain("Worked hours");
   });
 
@@ -190,7 +190,7 @@ describe("ChatBubble", () => {
       }),
     });
 
-    expect(screen.getByText("Hello world")).toBeInTheDocument();
+    expect(container.querySelector("strong")?.textContent).toBe("world");
     expect(container.textContent).not.toContain("Worked hours");
   });
 
