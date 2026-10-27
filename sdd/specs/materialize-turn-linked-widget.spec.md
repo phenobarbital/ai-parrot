@@ -11,7 +11,7 @@ tags: [a2ui, linked-surfaces, ui-surfaces, widgets, agent-functions, querysource
 **Feature ID**: FEAT-757
 **Date**: 2026-10-27
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot next minor (ai-parrot / ai-parrot-tools)
 **Exploration doc**: none — seeded from the NAV-10382 review (§4b "From an inline answer to a persisted widget",
 `docs/frontend/agentdashboard-a2ui-reference.md` §6 / §8.6–8.7). No brainstorm/proposal exists for this slug.
