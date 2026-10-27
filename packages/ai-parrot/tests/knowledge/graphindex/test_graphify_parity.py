@@ -108,6 +108,69 @@ async def _extract(src: str):
 
 class TestCitationExtraction:
     @pytest.mark.asyncio
+    async def test_graphindex_prefix_labels_and_rfc(self) -> None:
+        """Only allowed ADR prefixes change citation labels and identifiers."""
+        source = '''\
+def configured():
+    """FS-ADR-3 and see-ADR-3 are documented here."""
+    # FS-ADR-3 and FS-RFC-2119 are also cited in a comment.
+    return 1
+'''
+        nodes, edges = await CodeExtractor(known_prefixes=frozenset({"FS"})).extract("prefix.py", source)
+        citations = {node.title: node for node in nodes if node.domain_tags.get("tag") == "CITATION"}
+
+        assert set(citations) == {"FS-ADR-3", "ADR-3", "RFC-2119"}
+        assert {
+            title: (node.node_id, node.domain_tags["citation_ref"], node.domain_tags["citation_kind"])
+            for title, node in citations.items()
+        } == {
+            "FS-ADR-3": ("afb0542fbf967fe8", "FS-ADR-3", "ADR"),
+            "ADR-3": ("acd19f956e1746da", "ADR-3", "ADR"),
+            "RFC-2119": ("6d338048318af2e9", "RFC-2119", "RFC"),
+        }
+
+        configured_symbol = next(node for node in nodes if node.title == "configured")
+        reference_edges = [
+            edge
+            for edge in edges
+            if edge.kind == EdgeKind.REFERENCES and edge.source_id == configured_symbol.node_id
+        ]
+        assert {edge.target_id for edge in reference_edges} == {node.node_id for node in citations.values()}
+        assert len(reference_edges) == 3
+
+    @pytest.mark.asyncio
+    async def test_graphindex_unconfigured_ids_unchanged(self) -> None:
+        """None and empty allowlists preserve fixed pre-change citation payloads."""
+        source = '''\
+# see-ADR-3 and FS-RFC-2119 remain bare references.
+# Compact references: ADR1-ADR-2, RFC1-ADR-2, and ADR1-RFC-2.
+def legacy():
+    """Old separators remain valid: ADR 0042 and ADR/007."""
+    return 1
+'''
+        expected = {
+            "ADR-1": ("1eff7a947bfbcae2", "ADR"),
+            "ADR-2": ("d3dde6a888db7978", "ADR"),
+            "ADR-3": ("cc9a455609d03ae0", "ADR"),
+            "ADR-7": ("1a6de1be4ecf69c3", "ADR"),
+            "ADR-42": ("a4378c19a7a64b91", "ADR"),
+            "RFC-1": ("256dca36ec7228f3", "RFC"),
+            "RFC-2": ("c24d8cedfd8b5105", "RFC"),
+            "RFC-2119": ("215e16a25fe770c2", "RFC"),
+        }
+
+        for known_prefixes in (None, frozenset()):
+            nodes, _edges = await CodeExtractor(known_prefixes=known_prefixes).extract("legacy.py", source)
+            citations = {node.title: node for node in nodes if node.domain_tags.get("tag") == "CITATION"}
+            assert {
+                title: (node.node_id, node.domain_tags["citation_kind"])
+                for title, node in citations.items()
+            } == expected
+            assert {title: node.domain_tags["citation_ref"] for title, node in citations.items()} == {
+                title: title for title in expected
+            }
+
+    @pytest.mark.asyncio
     async def test_citations_become_rationale_nodes(self):
         nodes, _edges = await _extract(_SRC)
         cites = {
