@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4834 — per-chunk retrieval scanning."""
+
 import logging
 from types import SimpleNamespace
 from typing import Any
