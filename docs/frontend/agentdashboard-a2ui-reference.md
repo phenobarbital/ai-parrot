@@ -977,6 +977,37 @@ Use the shared Axios singleton (`$lib/api/http.ts`) so the bearer interceptor an
 - Keep one SSE connection per `(agent, session)` while a surface is mounted; on `callRendererFunction` evaluate the named function (Basic functions, or your own renderer functions) and answer with `rendererFunctionResponse` echoing `functionCallId`.
 - Surface state: before calling `refresh_dashboard` with no explicit args, push the current filters with an `action` whose `dataModel` is `{filters: {...}}` so the tool reports `filter_source: "surface_state"`.
 
+#### Materializing an inline answer (`materialize_widget`, FEAT-757)
+
+"Keep this fresh" on an inline chart/table/KPI: send a `callAgentFunction` for `materialize_widget` (catalogId set to
+the surface catalog) with `{turn_id, session_id, envelope, pin}`, where `envelope` is the bubble's `a2ui_envelope`.
+No prompt and no LLM turn: the agent rebuilds the same widget bound to the query that produced the turn.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `turn_id` | string | yes | The chat turn whose answer should become a refreshable widget. |
+| `envelope` | object | yes | The a2ui_envelope that turn displayed (the chat bubble already holds it). |
+| `session_id` | string | no | Session of the turn; defaults to the bound session. |
+| `title` | string | no | Title for the pinned widget; defaults to the turn question. |
+| `pin` | boolean | no | Also persist the linked widget as a refreshable pinned surface. |
+| `snapshot` | boolean | no | Embed current rows (share links / offline export only); default definition-only. |
+
+| Status | Reason | Description |
+|---|---|---|
+| `materialized` | - | The widget was successfully materialized and is refreshable. |
+| `already_linked` | - | The turn already produced a linked surface; the same envelope is returned. |
+| `snapshot_only` | `no_slug_origin` | No query slug origin could be extracted from the turn. |
+| `snapshot_only` | `unsupported_component` | The envelope's root component is not supported for relinking. |
+| `not_materializable` | `turn_not_found` | The specified turn could not be found. |
+| `not_materializable` | `no_envelope` | No envelope was provided. |
+| `not_materializable` | `multi_source_turn` | The turn used multiple distinct data origins. |
+| `not_materializable` | `no_querysource_toolkit` | The agent lacks the QuerySource toolkit. |
+| `not_materializable` | `build_failed` | Building the linked surface failed. |
+| `not_materializable` | `no_publish_surface` | The agent lacks the PublishSurface tool. |
+| `not_materializable` | `pin_failed` | Pinning the surface failed. |
+
+On `snapshot_only`, pin the bubble's envelope as-is with `POST /api/v1/ui/surfaces` (kind widget).
+
 ### 8.7 Pinned-surfaces sidebar and sharing
 
 `GET /api/v1/ui/surfaces?kind=dashboard` for the sidebar (`access: owner|shared`, `refreshable`, `updated_at`); refresh button only when `refreshable`; share dialog → `POST …/share` → copy `${appUrl}/…/surface/${surface_id}?share=${token}` (the target page forwards `?share=` to `getSurface`/`getSurfaceHtml`); revoke via `DELETE …/share/{token}`. A `410` on open means the share was revoked or expired; `404` means unknown or not yours.
