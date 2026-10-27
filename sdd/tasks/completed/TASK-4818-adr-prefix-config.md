@@ -16,7 +16,7 @@ below were checked at `4e3ba6289`. No ADR publication, migration, or new depende
 
 ## Scope
 
-Implement M2 and resolved Q3: add strict prefix settings, expose effective_prefixes(), and opt this repository into PARROT without changing global defaults.
+Implement M2 and resolved Q3: add strict prefix settings, expose effective_prefixes(), and do NOT bake PARROT into the model default. (Amended by sdd-worker: `.parrot/wiki.json` is gitignored and absent from worktrees, so the PARROT opt-in is a manual local-config edit by the operator, not a committed deliverable.)
 
 **NOT in scope**: files outside the table, ADR publish/pull, rewriting bare record identity,
 or adding multiple wiki citations per comment/docstring. Tests assigned to another task
@@ -27,7 +27,6 @@ remain read-only here. Do not alter existing public defaults beyond this task's 
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py` | MODIFY | Add validated config fields and effective prefix set |
-| `.parrot/wiki.json` | MODIFY | Set local_prefix to PARROT for this repository only |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -42,7 +41,6 @@ from pydantic import Field, field_validator  # existing models.py:13
 
 - `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py:62`: `DecisionConfig(_Strict)`, fields through `timeout_seconds` at :75; `_Strict` forbids extras.
 - `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:695`: nested `decisions: DecisionConfig` already exists; do not modify that file.
-- `.parrot/wiki.json` already has a decisions object ending with `"timeout_seconds": 60`.
 - Symbol: `sym:packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py#DecisionConfig`.
 
 ### Does NOT Exist
@@ -59,10 +57,6 @@ from pydantic import Field, field_validator  # existing models.py:13
   "targets": [
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
-      "action": "MODIFY"
-    },
-    {
-      "path": ".parrot/wiki.json",
       "action": "MODIFY"
     }
   ],
@@ -86,7 +80,6 @@ from pydantic import Field, field_validator  # existing models.py:13
 
 1. Add and validate the two model fields — invalid namespace names must fail at configuration loading.
 2. Expose effective_prefixes as an immutable union — callers need the same semantics without shared mutation.
-3. Set PARROT only in this repository configuration — preserve unconfigured behavior everywhere else.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py` (MODIFY)
 
@@ -111,33 +104,11 @@ def effective_prefixes(self) -> frozenset[str]:
 ```
 
 **Why**: Keep validation in the existing strict Pydantic model and share one plain-data allowlist across both planes.
-### `.parrot/wiki.json` (MODIFY)
-
-Anchor: `    "timeout_seconds": 60` — `.parrot/wiki.json:75`, occurrences: 1 (verified with `grep -F -c`).
-
-```jsonc
-// Within the existing decisions object, preserve every other setting:
-"timeout_seconds": 60,
-"local_prefix": "PARROT",
-"known_prefixes": []
-// FILL IN: maintain valid JSON punctuation; these comments are instructions only.
-```
-
-**Why**: The local repository owns PARROT; other repositories must retain a None default.
-
-
-### FILL IN checklist
-
-- [ ] AC10: accept FS, fs, PARROT and ADR123456; uppercase accepted values; reject empty, 1FS, F S, punctuation, ADR1, adr00001 and RFC2119 in both fields.
-- [ ] Defaults are local_prefix=None and known_prefixes=[]; effective_prefixes includes local prefix, deduplicates and never mutates fields.
-- [ ] This repository sets local_prefix=PARROT; nested WikiProjectConfig validation and serialization remain compatible.
-- [ ] Complete all blueprint bodies; no placeholder may remain in implementation files.
-
 ## Acceptance Criteria
 
 - [ ] AC10: accept FS, fs, PARROT and ADR123456; uppercase accepted values; reject empty, 1FS, F S, punctuation, ADR1, adr00001 and RFC2119 in both fields.
 - [ ] Defaults are local_prefix=None and known_prefixes=[]; effective_prefixes includes local prefix, deduplicates and never mutates fields.
-- [ ] This repository sets local_prefix=PARROT; nested WikiProjectConfig validation and serialization remain compatible.
+- [ ] Nested WikiProjectConfig validation and serialization remain compatible.
 - [ ] The targeted validation commands pass; Ruff is clean on modified Python files.
 
 ## Validation Commands
@@ -163,4 +134,4 @@ spec validation contract once; do not widen this task to directory-wide pytest.
 
 ## Completion Note
 
-Pending; populated by the finalization workflow after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, merged; merge-tier validation 90 passed. Contract amended: `.parrot/wiki.json` is gitignored/absent in worktrees, so the PARROT local_prefix opt-in is NOT committed — operator must add `"local_prefix": "PARROT"` to the decisions block of the main checkout's `.parrot/wiki.json` by hand.

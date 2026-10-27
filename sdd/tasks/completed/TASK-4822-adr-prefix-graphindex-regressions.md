@@ -174,4 +174,4 @@ spec validation contract once; do not widen this task to directory-wide pytest.
 
 ## Completion Note
 
-Pending; populated by the finalization workflow after implementation and validation.
+Implemented by seat gpt-5.6-sol (codex), 1 attempt, merged; merge-tier validation 117 passed.
