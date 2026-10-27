@@ -843,18 +843,17 @@ wikitoolkit ledger outbox prepare --repo-root "<worktree-path>"
 FINAL_PREP_RC=$?
 wikitoolkit ledger outbox integrate --repo-root "<worktree-path>"
 FINAL_INTEG_RC=$?
-if (( FINAL_PREP_RC != 0 || FINAL_INTEG_RC != 0 || LEDGER_DELIVERY_PENDING != 0 )); then
+# Shell state does not persist between Bash calls: treat an unset flag as unknown and re-check.
+wikitoolkit ledger outbox status --repo-root "<worktree-path>" --json | grep -q '"pending_batches": 0' && STILL_PENDING=0 || STILL_PENDING=1
+if (( FINAL_PREP_RC != 0 || FINAL_INTEG_RC != 0 || ${LEDGER_DELIVERY_PENDING:-0} != 0 || STILL_PENDING != 0 )); then
     echo '⚠️  Closeout incomplete: ledger delivery pending — retry with wikitoolkit ledger outbox integrate --repo-root "<worktree-path>" --batch-id <id>'
     # Retain the worktree and batch; do not run the removal block below.
 else
-    echo "Ledger delivery complete; worktree cleanup may proceed."
+    echo "Ledger delivery complete; removing the worktree."
+    git worktree remove "$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
 fi
 ```
-Remove the worktree ONLY when both delivery passes exited 0 and `LEDGER_DELIVERY_PENDING` is unset/0.
-
-```bash
-git worktree remove "$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
-```
+The removal runs ONLY inside the `else` above, i.e. when both delivery passes exited 0 and nothing is pending.
 This also works with `IN_WORKTREE=1` (git allows removing the current
 worktree, and the sandbox binds `$WORKTREES_DIR` writable), but the shell's
 cwd disappears with it — make this the LAST filesystem step and run any

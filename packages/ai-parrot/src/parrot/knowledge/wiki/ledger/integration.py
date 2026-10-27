@@ -143,7 +143,7 @@ def _apply(state: dict[str, dict[str, Any]], event: LedgerEvent) -> None:
 
 async def build_scratch_snapshot(merged: Sequence[bytes], *, scratch_dir: Path, dest: Path) -> bool:
     """Replay ``merged`` raw lines in an isolated ledger and export ``dest``."""
-    scratch_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(scratch_dir.mkdir, parents=True, exist_ok=True)
     data = b"".join(line + b"\n" for line in merged)
     await asyncio.to_thread((scratch_dir / "events.jsonl").write_bytes, data)
     service = LedgerService.from_dir(scratch_dir)
@@ -491,7 +491,20 @@ class LedgerIntegrator:
                     error_code="push-failed",
                     recovery_path=str(tmp),
                 )
-            verified_log = read_logical_log(tmp)
+            try:
+                verified_log = read_logical_log(tmp)
+            except StrictLedgerReadError:
+                return LedgerDeliveryReport(
+                    status="pending",
+                    batch_id=batch.batch_id,
+                    attempts=attempt,
+                    remote_head=None,
+                    commit_sha=commit_sha,
+                    added=len(plan.new_lines),
+                    remaining=len(batch.event_ids),
+                    error_code="verify-failed",
+                    recovery_path=str(tmp),
+                )
             verified_by_id = {event.event_id: _canonical(event) for _, event in verified_log}
             expected = {event.event_id: _canonical(event) for event in sealed.events}
             if any(verified_by_id.get(event_id) != canonical for event_id, canonical in expected.items()):
@@ -513,12 +526,8 @@ class LedgerIntegrator:
             ).hexdigest()
             await self.outbox.acknowledge(batch, remote_head=remote_head, verified_digest=verified_digest)
             remaining_status = await self.outbox.status(known_ids=set(verified_by_id))
-            remaining = max(
-                0,
-                int(remaining_status["pending_events"])
-                + int(remaining_status["unsealed_events"])
-                - len(batch.event_ids),
-            )
+            # The receipt above already removed this batch from ``pending_events``.
+            remaining = int(remaining_status["pending_events"]) + int(remaining_status["unsealed_events"])
             self.logger.info("ledger delivery attempt=%d base=%s added=%d", attempt, base_sha, len(plan.new_lines))
             recovery = await self._remove_if_clean(tmp)
             return LedgerDeliveryReport(

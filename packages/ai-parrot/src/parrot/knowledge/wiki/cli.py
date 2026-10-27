@@ -3755,7 +3755,7 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
         click.echo(
             json.dumps({"status": "pending", "error_code": "outbox-locked"}) if json_output else "Outbox is locked."
         )
-        raise SystemExit(2)
+        raise SystemExit(2) from None
     except StrictLedgerReadError as exc:
         click.echo(
             json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc),
