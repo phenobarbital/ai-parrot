@@ -340,7 +340,6 @@ class PlaywrightDriver:
 
 ### Validation Contract
 
-```
 tests:
 - packages/ai-parrot-tools/tests/scraping/test_toolkit_models.py
 - packages/ai-parrot-tools/tests/scraping/test_toolkit.py
@@ -348,7 +347,6 @@ tests:
 - packages/ai-parrot-tools/tests/scraping/test_playwright_driver.py
 - packages/ai-parrot-tools/tests/scraping/test_browsing_screencast.py
 markers: none
-```
 
 ### Test Data / Fixtures
 ```python
