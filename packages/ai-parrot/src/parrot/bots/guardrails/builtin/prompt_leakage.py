@@ -6,6 +6,7 @@ rapidfuzz segment alignment, against the turn's rendered system prompt in
 message only (v1): chunks already sent cannot be retracted — reports carry
 ``stream_checked: "final_only"``.
 """
+
 import logging
 import re
 from dataclasses import dataclass, field
@@ -114,13 +115,13 @@ def _detect_leak(prompt: str, response: str, policy: LeakagePolicy) -> _LeakMatc
     r_tokens = [m.group().lower() for m in r_matches]
 
     # 3. shingles
-    p_shingles = {tuple(p_tokens[i:i + n]) for i in range(len(p_tokens) - n + 1)}
+    p_shingles = {tuple(p_tokens[i : i + n]) for i in range(len(p_tokens) - n + 1)}
     if len(p_shingles) < policy.min_prompt_shingles:
         return match
     spans: list[tuple[int, int]] = []
     hits: set[tuple[str, ...]] = set()
     for i in range(len(r_tokens) - n + 1):
-        sh = tuple(r_tokens[i:i + n])
+        sh = tuple(r_tokens[i : i + n])
         if sh in p_shingles:
             hits.add(sh)
             spans.append((r_matches[i].start(), r_matches[i + n - 1].end()))
@@ -135,7 +136,7 @@ def _detect_leak(prompt: str, response: str, policy: LeakagePolicy) -> _LeakMatc
     seg_len = 3 * n
     r_lower = response.lower()
     for i in range(0, len(p_tokens), seg_len):
-        segment = p_tokens[i:i + seg_len]
+        segment = p_tokens[i : i + seg_len]
         if len(segment) < n:
             continue
         aln = fuzz.partial_ratio_alignment(" ".join(segment), r_lower, score_cutoff=policy.fuzzy_threshold)
@@ -184,12 +185,14 @@ class PromptLeakageGuardrail(Guardrail):
     async def _check_input(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
         if not any(p.search(content) for p in _EXTRACTION_PATTERNS):
             return GuardrailResult(action=GuardrailAction.PASS)
-        threats = [{
-            "type": "prompt_leakage",
-            "level": ThreatLevel.HIGH,
-            "pattern": "extraction-heuristic",
-            "description": "System prompt extraction attempt",
-        }]
+        threats = [
+            {
+                "type": "prompt_leakage",
+                "level": ThreatLevel.HIGH,
+                "pattern": "extraction-heuristic",
+                "description": "System prompt extraction attempt",
+            }
+        ]
         await self._security_logger.log_security_category_event(
             category="prompt_leakage",
             severity=ThreatLevel.HIGH,
