@@ -3,6 +3,7 @@
 Exports are lazy so importing ``parrot.metrics`` stays cheap and so sibling modules can be added
 without editing this file.
 """
+
 from __future__ import annotations
 
 import importlib

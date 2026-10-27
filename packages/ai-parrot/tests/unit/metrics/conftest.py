@@ -1,4 +1,5 @@
 """Shared fixtures for parrot.metrics tests (FEAT-756)."""
+
 from __future__ import annotations
 
 import re

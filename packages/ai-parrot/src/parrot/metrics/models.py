@@ -1,4 +1,5 @@
 """Metric definition models (FEAT-756 §2). Pure Pydantic — no a2ui / tools imports."""
+
 from __future__ import annotations
 
 from datetime import date, datetime

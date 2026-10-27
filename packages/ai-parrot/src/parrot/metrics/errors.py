@@ -1,4 +1,5 @@
 """Errors raised by the metric definition registry (FEAT-756)."""
+
 from __future__ import annotations
 
 

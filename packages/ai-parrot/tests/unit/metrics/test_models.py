@@ -1,4 +1,5 @@
 """Tests for metric definition models (FEAT-756 M1)."""
+
 from __future__ import annotations
 
 import pytest
@@ -50,9 +51,12 @@ def test_period_binding_exactly_one_mode() -> None:
     """Bindings require a placeholder pair or a date column, exclusively."""
     assert PeriodBinding(start_placeholder="firstdate", end_placeholder="lastdate").date_column is None
     assert PeriodBinding(date_column="work_date").date_column == "work_date"
-    for value in ({}, {"start_placeholder": "firstdate"}, {"end_placeholder": "lastdate"}, {
-        "start_placeholder": "firstdate", "end_placeholder": "lastdate", "date_column": "work_date"
-    }):
+    for value in (
+        {},
+        {"start_placeholder": "firstdate"},
+        {"end_placeholder": "lastdate"},
+        {"start_placeholder": "firstdate", "end_placeholder": "lastdate", "date_column": "work_date"},
+    ):
         with pytest.raises(ValidationError):
             PeriodBinding.model_validate(value)
 
