@@ -1,4 +1,5 @@
 """Deterministic follow-up chips from the stashed MetricMatch (FEAT-756 G7, FEAT-752 provider)."""
+
 from __future__ import annotations
 
 import logging
@@ -29,37 +30,41 @@ class MetricSuggestionProvider:
             return []
         try:
             chips = []
-            
+
             # Add "vs previous period" chip if comparison is enabled
             if match.metric.comparison.mode != "none":
                 prompt = f"Compare {match.metric.name} vs previous period"
-                label = f"vs previous period"
+                label = "vs previous period"
                 if len(label) > 40:
                     label = label[:37] + "..."
-                chips.append(Suggestion(
-                    label=label,
-                    prompt=prompt,
-                    output_mode=None,
-                    kind=SuggestionKind.FOLLOWUP,
-                    source=SuggestionSource.PROVIDER,
-                    action=None
-                ))
-            
+                chips.append(
+                    Suggestion(
+                        label=label,
+                        prompt=prompt,
+                        output_mode=None,
+                        kind=SuggestionKind.FOLLOWUP,
+                        source=SuggestionSource.PROVIDER,
+                        action=None,
+                    )
+                )
+
             # Add dimension chips (max 3)
             for dimension in match.metric.dimensions[:3]:
                 prompt = f"Show {match.metric.name} by {dimension.label or dimension.name}"
                 label = f"by {dimension.label or dimension.name}"
                 if len(label) > 40:
                     label = label[:37] + "..."
-                chips.append(Suggestion(
-                    label=label,
-                    prompt=prompt,
-                    output_mode=None,
-                    kind=SuggestionKind.FOLLOWUP,
-                    source=SuggestionSource.PROVIDER,
-                    action=None
-                ))
-            
+                chips.append(
+                    Suggestion(
+                        label=label,
+                        prompt=prompt,
+                        output_mode=None,
+                        kind=SuggestionKind.FOLLOWUP,
+                        source=SuggestionSource.PROVIDER,
+                        action=None,
+                    )
+                )
+
             # Add presentation chips for other shapes
             current_shape = match.metric.default_shape.component
             for shape in _SHAPES:
@@ -68,17 +73,19 @@ class MetricSuggestionProvider:
                     label = f"as {shape}"
                     if len(label) > 40:
                         label = label[:37] + "..."
-                    chips.append(Suggestion(
-                        label=label,
-                        prompt=prompt,
-                        output_mode=None,
-                        kind=SuggestionKind.PRESENTATION,
-                        source=SuggestionSource.PROVIDER,
-                        action=None
-                    ))
-            
+                    chips.append(
+                        Suggestion(
+                            label=label,
+                            prompt=prompt,
+                            output_mode=None,
+                            kind=SuggestionKind.PRESENTATION,
+                            source=SuggestionSource.PROVIDER,
+                            action=None,
+                        )
+                    )
+
             # Return up to max_chips
-            return chips[:self.max_chips]
+            return chips[: self.max_chips]
         except Exception as exc:
             _LOGGER.warning("metric suggestions failed: %s", exc)
             return []
