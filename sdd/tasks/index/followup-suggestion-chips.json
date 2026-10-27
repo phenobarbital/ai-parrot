@@ -36,7 +36,18 @@
           "packages/ai-parrot/tests/bots/test_suggestion_bot_wiring.py",
           "packages/ai-parrot-server/tests/handlers/test_suggestions_passthrough.py",
           "packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chips.py",
-          "packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chat_wiring.py"
+          "packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chat_wiring.py",
+          "packages/ai-parrot/tests/bots/test_suggestion_stream_deferred.py",
+          "packages/ai-parrot-server/tests/handlers/test_suggestions_trailer.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_suggestion_stream_trailer.py",
+          "packages/ai-parrot-integrations/tests/telegram/test_suggestion_buttons.py",
+          "packages/ai-parrot-integrations/tests/telegram/test_suggestion_buttons_wrapper.py",
+          "packages/ai-parrot-integrations/tests/telegram/test_tenant_binding.py",
+          "packages/ai-parrot/tests/test_callbacks.py",
+          "packages/ai-parrot-server/tests/test_botmodel_suggestion_fields.py",
+          "packages/ai-parrot-server/tests/manager/test_build_database_bot_tools.py",
+          "packages/ai-parrot/tests/handlers/test_bot_model_fields.py",
+          "packages/ai-parrot-server/tests/ui/test_vitest_studio_suggestion_fields.py"
         ],
         "settings": {
           "markers": ""
@@ -53,7 +64,9 @@
           "src/lib/components/agents/ChatBubble.test.ts",
           "src/lib/components/agents/AgentChat.test.ts",
           "src/lib/api/stream.test.ts",
-          "src/lib/components/agents/SuggestionChips.test.ts"
+          "src/lib/components/agents/SuggestionChips.test.ts",
+          "src/lib/agents/fields.test.ts",
+          "src/pages/agents/form/TabsCapabilities.test.ts"
         ],
         "settings": {
           "cwd": "packages/ai-parrot-server/ui"
@@ -65,7 +78,7 @@
         ]
       }
     ],
-    "digest": "sha256:8c2a40541c4caea4bbd2f8a65f99b8d8d3cfd7d5e2160349ee2dce3777dc1413"
+    "digest": "sha256:c9ee3fc5d6cb25c381d6d33561c11752e9f4200e98fbbba59c61187624ffa68e"
   },
   "tasks": [
     {
@@ -300,14 +313,160 @@
       "depends_on": [
         "TASK-4800",
         "TASK-4802",
-        "TASK-4804"
+        "TASK-4804",
+        "TASK-4807",
+        "TASK-4808",
+        "TASK-4810",
+        "TASK-4811",
+        "TASK-4812"
       ],
       "parallel": true,
-      "parallelism_notes": "documents shipped API of TASK-4800 (bot kwargs/register_suggestion_provider), wire keys of TASK-4802 (handlers/agent.py) and UI click contract of TASK-4804",
+      "parallelism_notes": "documents shipped API of TASK-4800 (bot kwargs/register_suggestion_provider), wire keys of TASK-4802, UI click contract of TASK-4804, trailer frame of TASK-4807/4808, Telegram buttons of TASK-4810 and Studio fields/migration of TASK-4811/4812",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4805-followup-chips-docs.md"
+    },
+    {
+      "id": "TASK-4806",
+      "slug": "stream-deferred-suggestions",
+      "title": "Deferred suggestions in ask_stream (defer_suggestions → AIMessage._suggestions_task)",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4794",
+        "TASK-4800"
+      ],
+      "parallel": true,
+      "parallelism_notes": "replaces TASK-4800's _attach_suggestions call site in bots/base.py ask_stream (same file, consumes _attach_suggestions); adds a PrivateAttr next to AIMessage.suggestions from TASK-4794 (models/responses.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4806-stream-deferred-suggestions.md"
+    },
+    {
+      "id": "TASK-4807",
+      "slug": "handler-suggestions-trailer",
+      "title": "AgentTalk stream suggestions trailer (suggestions_trailer flag)",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4802",
+        "TASK-4806"
+      ],
+      "parallel": true,
+      "parallelism_notes": "modifies handlers/agent.py after TASK-4802 (guards its envelope['suggestions'] site, reuses _suggestions_payload); reads AIMessage._suggestions_task and passes defer_suggestions from TASK-4806",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4807-handler-suggestions-trailer.md"
+    },
+    {
+      "id": "TASK-4808",
+      "slug": "ui-stream-suggestions-trailer",
+      "title": "Admin UI trailer-aware stream.ts + AgentChat early completion",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4801",
+        "TASK-4804"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports generated AgentChatSuggestion from TASK-4801 (generated/AgentChatResponse.d.ts); modifies AgentChat.svelte + AgentChat.test.ts after TASK-4804 (same files, its suggestions mapping at :1033)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4808-ui-stream-suggestions-trailer.md"
+    },
+    {
+      "id": "TASK-4809",
+      "slug": "telegram-suggestion-buttons-store",
+      "title": "Telegram suggestion buttons — token store, keyboard builder, config toggle",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4794"
+      ],
+      "parallel": true,
+      "parallelism_notes": "tests build parrot.models.Suggestion from TASK-4794 (models/suggestions.py); own files only (telegram/suggestion_buttons.py, telegram/models.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4809-telegram-suggestion-buttons-store.md"
+    },
+    {
+      "id": "TASK-4810",
+      "slug": "telegram-suggestion-buttons-wiring",
+      "title": "Telegram wrapper — chip keyboard after replies, sg callback replays the prompt",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4809"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports SUGGESTION_PREFIX/SuggestionButtonStore/build_suggestion_keyboard from TASK-4809 (telegram/suggestion_buttons.py) and reads config.suggestion_buttons it adds",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4810-telegram-suggestion-buttons-wiring.md"
+    },
+    {
+      "id": "TASK-4811",
+      "slug": "studio-suggestion-fields-backend",
+      "title": "Agent Studio backend — BotModel chip fields, DB migration, both kwarg whitelists",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no code dependency: _build_database_bot passes kwargs AbstractBot already accepts via **kwargs; own files (models/bots.py, manager/manager.py, new migration); migration is not applied by the task",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4811-studio-suggestion-fields-backend.md"
+    },
+    {
+      "id": "TASK-4812",
+      "slug": "studio-suggestion-fields-ui",
+      "title": "Agent Studio UI — BotWritePayload fields, regeneration, Capabilities tab group",
+      "feature_id": "FEAT-752",
+      "feature": "followup-suggestion-chips",
+      "spec": "sdd/specs/followup-suggestion-chips.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4801"
+      ],
+      "parallel": false,
+      "parallelism_notes": "exclusive: regenerates shared ui/schemas + src/lib/types/generated via generate_ts_types.py and pnpm generate; ordered after TASK-4801, which regenerates the same directories",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4812-studio-suggestion-fields-ui.md"
     }
   ]
 }

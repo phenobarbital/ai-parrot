@@ -7,7 +7,7 @@ base_branch: dev
 # projects: parts of the codebase this doc concerns. Use `packages/*` dir names
 #   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
 #   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
-projects: [ai-parrot, ai-parrot-server, admin-ui, docs]
+projects: [ai-parrot, ai-parrot-server, ai-parrot-integrations, admin-ui, docs]
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
 tags: [suggestions, followup-chips, chat-response, skills, output-mode, admin-ui]
 # e2e: optional deterministic-E2E-gate policy metadata (FEAT-581). Absent
@@ -78,8 +78,14 @@ chips — its only "Reply" / "Explain" affordances are hover-revealed side butto
 - **G6 — Reference renderer.** The ai-parrot-server admin UI renders chips under the assistant bubble; a click
   sends `prompt` (+ optional `output_mode`) through the existing `handleSend` path, and the "Explain this" chip maps to
   the existing `handleExplain` path (`AgentChat.svelte:1687-1725` → `bot.followup()`, `handlers/agent.py:1869-1882`).
-- **G7 — Documented degradation.** Telegram, Teams and A2A ignore the field in v1 (justification in §2); the wire
-  contract is documented so navigator-frontend-next can consume it without reading Python.
+- **G7 — Documented channel coverage.** Teams and A2A ignore the field in v1 (justification in §2); Telegram renders
+  chips as inline-keyboard quick replies when the bot opts in (rev 0.3, Module 9); the wire contract is documented
+  so navigator-frontend-next can consume it without reading Python.
+- **G8 — Non-blocking stream tail (rev 0.3, Q1).** A stream client that sends `suggestions_trailer: true` receives
+  the final envelope immediately and the chips in a separate trailing frame (Module 8); clients that do not ask
+  keep the v1 wire byte-for-byte.
+- **G9 — Agent Studio settings (rev 0.3, Q5).** The five chip settings are editable in the admin agent form
+  (Capabilities tab) and reach database-stored bots (Module 10).
 
 ### Non-Goals (explicitly out of scope)
 
@@ -88,8 +94,8 @@ chips — its only "Reply" / "Explain" affordances are hover-revealed side butto
   (it will register a provider against the protocol defined here).
 - New A2UI components or inline component routing — **FEAT-755**.
 - navigator-frontend-next changes (consumer of the wire contract only).
-- Rendering chips as Telegram inline keyboards / Teams `suggestedActions` / A2A parts (deferred — §2 "Channel
-  degradation", §8 Q3).
+- Rendering chips as Teams `suggestedActions` / A2A parts (deferred — §2 "Channel degradation"). Telegram buttons
+  are IN scope since rev 0.3 (Module 9); Telegram group/channel chats are not (private-chat path only).
 - Persisting suggestions in `ChatStorage` / conversation history reloads (chips are shown for the live turn only).
 - Changing `parrot/clients/base.py` (`AbstractClient.invoke()` is consumed as-is).
 
@@ -147,7 +153,8 @@ Rendering chips as Telegram quick replies is **not** a mapping change: Telegram 
 token, so the chip prompt cannot ride in the button — it needs a turn-scoped server store plus a `callbacks.py`
 prefix handler (`build_inline_keyboard`, `telegram/callbacks.py:318`), i.e. a feature of its own (§8 Q3). Because the
 field is additive and defaults to `[]`, these channels are unaffected and a custom wrapper can still read
-`AIMessage.suggestions`.
+`AIMessage.suggestions`. **Rev 0.3 (Q3):** that Telegram feature is now part of this spec as Module 9 (opt-in
+`suggestion_buttons`); Teams and A2A keep ignoring the field.
 
 ### Component Diagram
 ```
@@ -615,6 +622,66 @@ writing the code is mechanical".
 - **Depends on**: all modules
 - **Interface Skeleton**: n/a (Markdown; section list in §7 "Docs").
 
+### Module 8: Stream suggestions trailer (rev 0.3 — Q1)
+- **Paths**: `parrot/models/responses.py` (`AIMessage._suggestions_task` private attr), `parrot/bots/base.py`
+  (`ask_stream`), `parrot/handlers/agent.py` (`post` flag pop + `_handle_stream_response`), admin UI
+  `src/lib/api/stream.ts` + `AgentChat.svelte`.
+- **Responsibility**: when the agent stream request body carries `suggestions_trailer: true`, the final envelope goes
+  out without waiting for the chips, and the chips follow in a second NUL-separated frame before EOF:
+  `<text>\n\x00{envelope}\n\x00{"suggestions": [...], "turn_id": "<turn>"}`. Without the flag the v1 wire is
+  byte-identical (chips inside the envelope). The trailer frame is written only when the list is non-empty.
+- **Bot side**: `ask_stream(..., defer_suggestions=True)` (popped from `kwargs`, never forwarded) starts
+  `_attach_suggestions(...)` as an `asyncio.Task` right before `yield ai_message` instead of awaiting it, and stores
+  it on `ai_message._suggestions_task` (pydantic `PrivateAttr`, never serialised). `asyncio.create_task` copies the
+  current context, so `current_turn_skill()` and the tenant ContextVars still hold when the task runs after the
+  generator's `finally` has reset them. **No extra item is yielded** — about 15 other `ask_stream` consumers
+  (`handlers/stream.py`, `openai_compat.py`, `a2a/server.py`, Slack, agentd, voice, CLI) would mis-handle one.
+- **Handler**: pops `suggestions_trailer` next to `avatar_bifurcate` (`handlers/agent.py:1694`) so it never leaks into
+  `**data` → `bot.ask_stream(**kwargs)`; passes `defer_suggestions=True`; sets `X-Parrot-Stream:
+  chunked-aimessage+suggestions`; never puts `suggestions` in the envelope on this path (deterministic regardless of
+  task timing); after the envelope `write`+`drain` awaits the task with
+  `asyncio.wait_for(..., timeout=bot.suggestion_timeout_s + 1.0)` and writes the trailer; cancels the task on client
+  cancel / error. A timeout or task failure only means no trailer.
+- **UI**: `consumeStream` splits every frame on NUL (JSON text never contains a raw NUL): it yields `done` as soon as
+  the second NUL arrives (or at EOF, as today), then `{type: "suggestions", suggestions, turn_id}` for a trailer frame
+  that carries `suggestions`; any other trailing frame (e.g. a late `{"error": ...}`) is ignored. `AgentChat.svelte`
+  sends `suggestions_trailer: true` in the agent stream payload, swaps the pending bubble for the final message inside
+  the `done` branch (the bubble completes immediately) and patches `suggestions` onto that message when the trailer
+  arrives. `streamChatWithBot` and the non-stream paths are unchanged. Chips stay live-turn only (no ChatStorage).
+- **Depends on**: M2 (`_attach_suggestions`), M5 (handler passthrough site 1), M6 (`AgentChat.svelte` mappings).
+
+### Module 9: Telegram quick-reply buttons (rev 0.3 — Q3)
+- **Paths** (`packages/ai-parrot-integrations/src/parrot/integrations/telegram/`): `suggestion_buttons.py` (new),
+  `models.py` (`TelegramAgentConfig`), `wrapper.py`.
+- **Responsibility**: opt-in `suggestion_buttons: bool = False` and `suggestion_button_ttl_s: int = 86400` on
+  `TelegramAgentConfig` (+ `from_dict`). After `handle_message` sends the reply, the non-`action` chips (≤ 6, two per
+  row, label ≤ 40 chars) go out as a short "💡 Follow-ups:" message with an inline keyboard. Each button's
+  `callback_data` is `sg:<token>` (`secrets.token_urlsafe(9)`, well under Telegram's 64-byte limit — `CallbackData.MAX_BYTES`);
+  the token maps, in a TTL store backed by `InMemoryStateStore` (`integrations/core/state.py:14`), to
+  `{prompt, output_mode, chat_id, user_id}`. The wrapper registers the `sg` prefix with `CallbackRegistry.register`
+  (`callbacks.py:271`) **before** `_register_handlers()` (`wrapper.py:230`), because the `callback_query` route is only
+  installed when the registry is non-empty (`wrapper.py:364`). A press: unknown/expired token → toast "expired";
+  clicker or chat ≠ the stored ones → toast, no turn; otherwise the prompt is replayed as a new turn through
+  `_invoke_agent` (stored `output_mode` mapped to `OutputMode`, fallback `OutputMode.TELEGRAM`) and the reply is sent
+  with its own chips. `kind == "action"` chips (explain) are never rendered on Telegram (no explain path there).
+  Group/channel chats (`_process_group_query`) are unchanged.
+- **Depends on**: M1 (`Suggestion`).
+
+### Module 10: Agent Studio settings (rev 0.3 — Q5)
+- **Paths**: `parrot/models/bots.py` (`BotModel`), `sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql` (new),
+  `parrot/manager/manager.py` (`_build_database_bot`), `parrot/server/ui/models.py` (`BotWritePayload`) + the
+  regenerated `ui/schemas/BotWritePayload.json` / `generated/BotWritePayload.d.ts`, `ui/src/lib/agents/fields.ts`,
+  `ui/src/pages/agents/form/TabsCapabilities.svelte`.
+- **Responsibility**: make `enable_suggestions`, `suggest_followups`, `suggestion_timeout_s`, `max_suggestions` and
+  `suggestion_model` editable for database-stored agents. Bot construction from the DB goes through two hard-coded
+  key lists — `BotModel.to_bot_config()` (create/update path) and `BotManager._build_database_bot()` (startup/reload
+  path) — so both forward the five fields. Defaults equal the constructor defaults (`False`, `False`, `4.0`, `6`,
+  `None`). The columns land on `navigator.ai_bots` through an idempotent migration that must be applied before deploy
+  (a missing column fails every `BotModel` read — FEAT-593 precedent). The Capabilities tab gets a "Follow-up
+  suggestions" group (two switches, two number inputs, one optional text input). `presentation_modes` stays
+  code/YAML-only.
+- **Depends on**: M2 (kwarg semantics/defaults), M5 (both regenerate `ui/schemas` — serialized).
+
 ---
 
 ## 4. Test Specification
@@ -684,6 +751,17 @@ runners:
   - packages/ai-parrot-server/tests/handlers/test_suggestions_passthrough.py
   - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chips.py
   - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chat_wiring.py
+  - packages/ai-parrot/tests/bots/test_suggestion_stream_deferred.py
+  - packages/ai-parrot-server/tests/handlers/test_suggestions_trailer.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_stream_trailer.py
+  - packages/ai-parrot-integrations/tests/telegram/test_suggestion_buttons.py
+  - packages/ai-parrot-integrations/tests/telegram/test_suggestion_buttons_wrapper.py
+  - packages/ai-parrot-integrations/tests/telegram/test_tenant_binding.py
+  - packages/ai-parrot/tests/test_callbacks.py
+  - packages/ai-parrot-server/tests/test_botmodel_suggestion_fields.py
+  - packages/ai-parrot-server/tests/manager/test_build_database_bot_tools.py
+  - packages/ai-parrot/tests/handlers/test_bot_model_fields.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_studio_suggestion_fields.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -692,6 +770,8 @@ runners:
   - src/lib/components/agents/AgentChat.test.ts
   - src/lib/api/stream.test.ts
   - src/lib/components/agents/SuggestionChips.test.ts
+  - src/lib/agents/fields.test.ts
+  - src/pages/agents/form/TabsCapabilities.test.ts
 
 > Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
 > (replace the flat lines; never write both). Kinds, tiers and settings come from `.parrot/test_runners.toml`;
@@ -741,12 +821,19 @@ def provider_that_raises():
       of every existing skill under `packages/*/tests` fixtures still succeeds (field optional).
 - [ ] `register_suggestion_provider()` works from outside the package (a test registers a provider class defined in the
       test module) — the FEAT-756 extension path.
-- [ ] Streaming: suggestions appear only in the final envelope; text chunks are unchanged.
+- [ ] Streaming: without `suggestions_trailer`, suggestions appear only in the final envelope; text chunks are unchanged.
+- [ ] Streaming with `suggestions_trailer: true`: the envelope carries no `suggestions` and is written before the chips
+      are computed; a non-empty chip list arrives as a second `\n\x00` frame `{"suggestions", "turn_id"}`; the admin
+      UI completes the bubble on the envelope and adds the chips when the trailer arrives (Module 8).
 - [ ] `ui/schemas/AgentChatResponse.json` and the generated `.d.ts` are regenerated by the scripts (never hand-edited);
       `test_ts_codegen.py::test_schemas_in_sync_with_committed` passes.
 - [ ] Admin UI: chips render under assistant bubbles; presentation chip click sends `output_mode`; explain chip click
       sends `turn_id` + `data` to the existing explain path; nothing renders while streaming.
-- [ ] Telegram / Teams / A2A test suites unchanged and green (no code touched there).
+- [ ] Teams / A2A untouched. Telegram with `suggestion_buttons: true` sends non-action chips as `sg:<token>` inline
+      buttons; a press by the original user replays the prompt as a turn; expired token or another user → toast,
+      no turn; with the flag off nothing changes (Module 9).
+- [ ] Agent Studio: the five settings round-trip through the form, `BotModel.to_bot_config()` and
+      `_build_database_bot()`; `ui/schemas/BotWritePayload.json` regenerated; migration file present (Module 10).
 - [ ] `docs/agents/followup-suggestion-chips.md` written with the sections listed in §7.
 - [ ] No breaking changes to existing public API; `ruff check` clean on touched files.
 
@@ -1078,7 +1165,9 @@ with chips): `{"enabled_lanes": [...], "count": n, "providers": {name: {"status"
 `suggest_followups`, `suggestion_timeout_s`, `max_suggestions`, `presentation_modes`) · 3. Skill-declared chips
 (frontmatter) · 4. Writing a provider (`SuggestionProvider`, `register_suggestion_provider`, FEAT-756 example sketch)
 · 5. Wire contract (JSON + stream final envelope; omitted-when-empty) and the client click contract (explain action)
-· 6. Channel behaviour (admin UI renders; Telegram/Teams/A2A ignore in v1) · 7. Cost, latency and metadata.
+· 6. Channel behaviour (admin UI renders; Telegram buttons via `suggestion_buttons`; Teams/A2A ignore in v1) ·
+7. Cost, latency and metadata · 8. Stream trailer (`suggestions_trailer`, frame format, UI handling) · 9. Agent
+Studio settings + the `FEAT-752-ai-bots-suggestion-columns.sql` migration (apply before deploy).
 
 ### Known Risks / Gotchas
 - **Stream tail latency**: the LLM lane runs before the final envelope, so an opted-in agent's stream ends up to
@@ -1107,7 +1196,8 @@ with chips): `{"enabled_lanes": [...], "count": n, "providers": {name: {"status"
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] **Q1 — Trailing stream event?** v1 puts suggestions in the final envelope (blocks the stream tail by the LLM lane's
+- [x] **Q1 — Trailing stream event?** *Resolved (rev 0.3): yes, opt-in per request (`suggestions_trailer: true`) —
+      Module 8; the v1 envelope stays the default.* v1 puts suggestions in the final envelope (blocks the stream tail by the LLM lane's
       latency). Should a later revision emit the final envelope first and a separate `suggestions` trailer so the UI
       can finish the bubble immediately? Needs a stream-format change on both server and `stream.ts`. — *Owner: Jesus Lara*
 - [x] **Q2 — Lightweight model override.** *Resolved (rev 0.2): yes — `suggestion_model: Optional[str] = None` bot
@@ -1115,14 +1205,16 @@ with chips): `{"enabled_lanes": [...], "count": n, "providers": {name: {"status"
       explicit model (`_resolve_invoke_model`, `clients/base.py:2054-2088`), so an agent on `gemini-2.5-pro` runs the
       suggestion call on that model. Should `LLMSuggestionProvider` accept a `model=` override kwarg
       (`suggestion_model`) to force the cheap tier? Proposed: yes, additive, default `None`. — *Owner: Jesus Lara*
-- [ ] **Q3 — Telegram quick replies.** Map chips to `build_inline_keyboard` (`telegram/callbacks.py:318`) with a
+- [x] **Q3 — Telegram quick replies.** *Resolved (rev 0.3): in scope as Module 9 (opt-in `suggestion_buttons`,
+      `sg:<token>` + TTL store, private chats only).* Map chips to `build_inline_keyboard` (`telegram/callbacks.py:318`) with a
       turn-scoped store so the callback can recover the prompt? Separate feature (needs a `callbacks.py` prefix handler
       and TTL store). — *Owner: Jesus Lara*
 - [x] **Q4 — Agent YAML config.** *Resolved (rev 0.2): no whitelist — `BotMetadata.get_instance()` merges
       `startup_config` with runtime kwargs and passes them to the factory verbatim (`registry/registry.py:108,155`).* Do `AGENTS_DIR` agent definitions forward arbitrary constructor kwargs so
       `suggest_followups: true` can be set declaratively, or does the loader whitelist keys? Verify at task time;
       if whitelisted, add the four kwargs to the whitelist in the M2 task. — *Owner: implementer of M2*
-- [ ] **Q5 — Opt-in default for the admin "Agent Studio".** Should the studio expose the toggles in the agent form
+- [x] **Q5 — Opt-in default for the admin "Agent Studio".** *Resolved (rev 0.3): yes — Module 10 (form fields,
+      both DB kwarg whitelists, `navigator.ai_bots` migration).* Should the studio expose the toggles in the agent form
       (`TabsCapabilities.svelte`)? Out of this spec unless answered yes before `/sdd-task`. — *Owner: Jesus Lara*
 
 ---
@@ -1148,7 +1240,9 @@ Status: skipped (no accepted exploration document — spec authored from the NAV
     soon as M1's field name is fixed — which it is, here). These run concurrently.
 - **Shared files** (tasks serialized): `bots/abstract.py` and `bots/base.py` (M2 only); `skills/models.py` +
   `skills/parsers.py` (M3 only); `handlers/agent.py` (M5 only — all four passthrough sites in ONE task);
-  `AgentChat.svelte` + `ChatBubble.svelte` + `types/agent.ts` (M6 — one task for the three files).
+  `AgentChat.svelte` + `ChatBubble.svelte` + `types/agent.ts` (M6 — one task for the three files). Rev 0.3: M8 touches
+  `base.py` (after M2), `handlers/agent.py` (after M5) and `AgentChat.svelte` (after M6); M9 owns the Telegram files;
+  M10's schema regeneration runs after M5's (both rewrite `ui/schemas`).
 - **Exclusive resources** (`parallel: false`): schema + TS regeneration (`ui/schemas/AgentChatResponse.json`,
   `src/lib/types/generated/`) — M5 owns it; M6 depends on it being merged first.
 - **Cross-feature dependencies**: none to merge first. FEAT-756 (`metric-definition-registry`) consumes
@@ -1160,5 +1254,6 @@ Status: skipped (no accepted exploration document — spec authored from the NAV
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.3 | 2026-10-27 | Jesus Lara | Q1/Q3/Q5 resolved and brought into scope: Module 8 (opt-in stream suggestions trailer), Module 9 (Telegram quick-reply buttons), Module 10 (Agent Studio settings + DB columns); G7 reworded, G8/G9 added, ACs and validation contract extended |
 | 0.2 | 2026-10-27 | Jesus Lara | Approved for `/sdd-task`. Skill lane reads a new `current_turn_skill()` (active skill is consumed before the answer); Q2 resolved (`suggestion_model` kwarg); Q4 resolved (YAML kwargs forwarded) |
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 ticket review (server-side suggestions decision); anchors verified against `b7e78ccec` |
