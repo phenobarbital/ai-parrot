@@ -377,9 +377,14 @@ class SecurityEventLogger:
         counts = dict(counts or {})
         severity_str = severity.value if hasattr(severity, "value") else str(severity)
         self.logger.warning(
-            "SECURITY: %s detected | Severity: %s | Score: %s | User: %s | "
-            "Session: %s | Bot: %s | Counts: %s",
-            category, severity_str.upper(), score, user_id, session_id, chatbot_id, counts,
+            "SECURITY: %s detected | Severity: %s | Score: %s | User: %s | " "Session: %s | Bot: %s | Counts: %s",
+            category,
+            severity_str.upper(),
+            score,
+            user_id,
+            session_id,
+            chatbot_id,
+            counts,
         )
         if not self.db_pool:
             return
@@ -413,9 +418,7 @@ class SecurityEventLogger:
                     datetime.now(timezone.utc),
                 )
         except Exception as e:  # noqa: BLE001 - never raise, never echo content
-            self.logger.error(
-                "Failed to log %s security event to database: %s", category, type(e).__name__
-            )
+            self.logger.error("Failed to log %s security event to database: %s", category, type(e).__name__)
 
     async def _log_to_database(
         self,

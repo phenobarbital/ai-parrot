@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4829 — content-free security events."""
+
 import inspect
 import logging
 
@@ -42,9 +43,7 @@ def test_signature_has_no_content_parameter():
     params = inspect.signature(SecurityEventLogger.log_security_category_event).parameters
     for name in params:
         assert name not in {"content", "text", "matched_text", "original_input", "sanitized_input"}
-    assert all(
-        p.kind is inspect.Parameter.KEYWORD_ONLY for n, p in params.items() if n != "self"
-    )
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for n, p in params.items() if n != "self")
 
 
 @pytest.mark.asyncio
