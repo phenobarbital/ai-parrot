@@ -108,7 +108,7 @@ def effective_prefixes(self) -> frozenset[str]:
 
 - [ ] AC10: accept FS, fs, PARROT and ADR123456; uppercase accepted values; reject empty, 1FS, F S, punctuation, ADR1, adr00001 and RFC2119 in both fields.
 - [ ] Defaults are local_prefix=None and known_prefixes=[]; effective_prefixes includes local prefix, deduplicates and never mutates fields.
-- [ ] This repository sets local_prefix=PARROT; nested WikiProjectConfig validation and serialization remain compatible.
+- [ ] Nested WikiProjectConfig validation and serialization remain compatible.
 - [ ] The targeted validation commands pass; Ruff is clean on modified Python files.
 
 ## Validation Commands
