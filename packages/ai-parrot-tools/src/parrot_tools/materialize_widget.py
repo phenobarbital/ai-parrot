@@ -166,9 +166,7 @@ class MaterializeWidgetTool(AbstractTool):
                     _permission_context=self._current_pctx,
                 )
                 publish_payload = getattr(publish_result, "result", None)
-                candidate_surface_id = (
-                    publish_payload.get("surface_id") if isinstance(publish_payload, dict) else None
-                )
+                candidate_surface_id = publish_payload.get("surface_id") if isinstance(publish_payload, dict) else None
                 if getattr(publish_result, "success", False) and isinstance(candidate_surface_id, str):
                     surface_id = candidate_surface_id
                     pinned = True
