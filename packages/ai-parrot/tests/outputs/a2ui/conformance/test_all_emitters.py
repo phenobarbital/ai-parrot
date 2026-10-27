@@ -66,6 +66,7 @@ from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.builders import (
     build_card,
     build_chart,
+    build_c4_diagram,
     build_datatable,
     build_graph,
     build_infographic,
@@ -82,7 +83,7 @@ from parrot.outputs.a2ui.catalog import (
 from parrot.outputs.a2ui.catalog.base import CatalogValidationError, to_components
 from parrot.outputs.a2ui.catalog.parrot.form import FormField, FormSubmit, build_form
 from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
-from parrot.outputs.a2ui.graph import from_mermaid, to_mermaid
+from parrot.outputs.a2ui.graph import GraphSpec, from_mermaid, to_mermaid
 from parrot.outputs.a2ui.models import A2UIAgentMessage, Component, CreateSurface
 from parrot.outputs.a2ui.recipes import SUPPORTED_SCHEMA_VERSION
 from parrot.outputs.a2ui.recipes.migrate import migrate_layout
@@ -561,6 +562,76 @@ class TestCatalogDefinitionIncludesGraph:
 
         parrot_doc = export_catalog_definition()  # DEFAULT_CATALOG_ID
         assert "Graph" not in parrot_doc["components"]
+
+
+def _c4_envelope() -> CreateSurface:
+    """Build the C4 fixture through the public C4 diagram builder."""
+    fixture = json.loads((_FIXTURES_DIR / "c4_container_diagram.json").read_text())
+    return build_c4_diagram(
+        level=fixture["level"],
+        nodes=fixture["nodes"],
+        edges=fixture["edges"],
+        boundaries=fixture["groups"],
+        title=fixture["title"],
+        accessible_description=fixture["accessibleDescription"],
+    )
+
+
+class TestC4GraphConformance:
+    """C4 graphs remain conformant across the existing renderer fleet."""
+
+    def test_build_c4_diagram_conformant(self) -> None:
+        _assert_conformant(_c4_envelope())
+
+    def test_c4_mermaid_roundtrip_byte_stable(self) -> None:
+        component = _c4_envelope().components[0]
+        props = component.model_dump(
+            by_alias=True,
+            exclude={"id", "component", "catalog_id"},
+            exclude_none=True,
+        )
+        spec = GraphSpec(**props)
+        source = to_mermaid(spec)
+        assert to_mermaid(from_mermaid(source)) == source
+
+    @pytest.mark.asyncio
+    async def test_c4_graph_renders_on_every_registered_renderer(self) -> None:
+        from parrot.outputs.a2ui_renderers.adaptive_cards import AdaptiveCardsRenderer
+        from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer
+        from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer
+        from parrot.outputs.a2ui_renderers.ssr_html import SSRHTMLRenderer
+
+        envelope = _c4_envelope()
+        _assert_conformant(envelope)
+
+        for renderer in (SSRHTMLRenderer(), InteractiveHTMLRenderer(), EChartsRenderer()):
+            artifact = await renderer.render(envelope)
+            assert not artifact.metadata.get("degraded"), type(renderer).__name__
+
+        ac_artifact = await AdaptiveCardsRenderer().render(envelope)
+        ac_degraded = ac_artifact.metadata.get("degraded") or []
+        assert len(ac_degraded) == 1
+        assert VIZ_CORE_CATALOG_ID in ac_degraded[0]["reason"]
+
+        try:
+            import folium  # noqa: F401
+        except ImportError:
+            return
+
+        from parrot.outputs.a2ui_renderers.folium_map import FoliumMapRenderer
+
+        map_and_graph = build_surface(
+            "Map",
+            {"layers": [{"layer": "base"}]},
+            surface_id="map",
+        )
+        graph_component = envelope.components[0].model_copy(update={"id": "graph"})
+        combined = map_and_graph.model_copy(update={"components": [*map_and_graph.components, graph_component]})
+        map_artifact = await FoliumMapRenderer().render(combined)
+        map_degraded = map_artifact.metadata.get("degraded") or []
+        graph_records = [record for record in map_degraded if record["component"] == "Graph"]
+        assert len(graph_records) == 1
+        assert VIZ_CORE_CATALOG_ID in graph_records[0]["reason"]
 
 
 class TestMixedCatalogSurfaceValidates:
