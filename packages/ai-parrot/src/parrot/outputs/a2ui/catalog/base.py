@@ -94,6 +94,11 @@ DATA_SOURCE_INVALID = "DATA_SOURCE_INVALID"
 #: A ``transform.ref`` names no entry of the signed transforms manifest (or no valid manifest is
 #: available) (FEAT-598 M9/S6).
 TRANSFORM_REF_UNKNOWN = "TRANSFORM_REF_UNKNOWN"
+# FEAT-753 — MermaidDiagram source gate (graph/mermaid_source.check_mermaid_source).
+MERMAID_SOURCE_TOO_LARGE = "MERMAID_SOURCE_TOO_LARGE"
+MERMAID_UNSAFE_DIRECTIVE = "MERMAID_UNSAFE_DIRECTIVE"
+MERMAID_UNSAFE_INTERACTION = "MERMAID_UNSAFE_INTERACTION"
+MERMAID_DIAGRAM_TYPE_MISMATCH = "MERMAID_DIAGRAM_TYPE_MISMATCH"
 
 
 class ProducerOrigin(str, Enum):

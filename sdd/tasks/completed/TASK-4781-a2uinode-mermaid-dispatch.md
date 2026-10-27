@@ -191,10 +191,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added the import and the `MermaidDiagram` dispatch branch before `HtmlDocument` in A2UINode.svelte (no catalog guard: HtmlDocument's branch has none either), the mocked-mermaid dispatch test and the pytest wrapper. Two pre-existing A2UINode tests (`DataTable applies columns[].format`, `KPICard honours format`) fail under `LANG=es_ES.UTF-8` (they format with the default locale while the component pins en-US); they also fail on a clean tree. Both wrappers pass with `LANG=en_US.UTF-8`. Not touched here.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

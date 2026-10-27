@@ -190,10 +190,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added the `mermaid-source` role branch to ssr_html.py (escaped `<pre><code class=language-mermaid>`, one degraded record with the fixed message) plus tests in test_ssr_html.py and test_pdf.py (pdf.py unchanged). 148 passed across the four renderer test files. Black was NOT applied to these renderer files (it reflows unrelated code); only the inserted hunks were kept.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

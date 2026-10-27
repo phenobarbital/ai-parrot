@@ -441,10 +441,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP disconnected)
+**Date**: 2026-10-27
+**Notes**: Implemented `graph/mermaid_source.py`, 4 `MERMAID_*` codes in `catalog/base.py`, re-exports in `graph/__init__.py`, and 50 tests (all green, incl. test_mermaid.py and test_lazy_imports.py). The cycle-probe test derives the src path from `__file__` (a relative PYTHONPATH does not survive pytest's cwd). The bridge tests use `flowchart TB` with declared nodes because the codec accepts only TB/LR/BT/RL and requires declared nodes; `DIRECTIVE_SRC` stays `flowchart TD` for the check/normalize tests. Empty/whitespace-only source normalizes to `""`.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
