@@ -126,6 +126,44 @@ class TestIdentity:
         assert record is not None
         assert any(d.code == "ADR_PARSE_FAILED" and "conflicting" in d.message.lower() for d in diags)
 
+    @pytest.mark.parametrize("known", [None, frozenset(), frozenset({"FS"})])
+    def test_unlisted_filename_is_not_identity(self, known: frozenset[str] | None):
+        """An unknown prefixed filename contributes neither identity nor conflict."""
+        body = "# A decision\n\n## Decision\nKeep the parser strict.\n"
+        record, diagnostics = parse_adr("docs/adr/XX-0007-topic.md", body, known)
+        assert record is not None
+        assert record.external_id is None
+        assert not any("conflicting ADR identifiers" in diagnostic.message for diagnostic in diagnostics)
+
+        explicit = "---\nid: ADR-7\n---\n\n" + body
+        record, diagnostics = parse_adr("docs/adr/XX-0007-topic.md", explicit, known)
+        assert record is not None
+        assert record.external_id == "ADR-7"
+        assert not any("conflicting ADR identifiers" in diagnostic.message for diagnostic in diagnostics)
+
+    def test_prefixed_identity_and_supersedes(self):
+        """Recognized aliases survive precedence and supersedes parsing."""
+        text = (
+            "---\n"
+            "id: FS-ADR-7\n"
+            "supersedes: PARROT-ADR-6\n"
+            "---\n\n"
+            "# ADR-7: Keep bare identifiers\n\n"
+            "## Decision\nKeep both identity forms available.\n"
+        )
+        record, diagnostics = parse_adr("docs/adr/fs-0042-prefixed.md", text, frozenset({"FS", "PARROT"}))
+        assert record is not None
+        assert record.external_id == "FS-ADR-7"
+        assert [link.target_id for link in record.links] == ["PARROT-ADR-6"]
+        assert any("conflicting ADR identifiers" in diagnostic.message for diagnostic in diagnostics)
+
+        filename_record, filename_diagnostics = parse_adr(
+            "docs/adr/fs-0042-prefixed.md", "## Decision\nUse the configured filename.\n", frozenset({"FS"})
+        )
+        assert filename_record is not None
+        assert filename_record.external_id == "FS-ADR-42"
+        assert not any("conflicting ADR identifiers" in diagnostic.message for diagnostic in filename_diagnostics)
+
 
 class TestBoundedParsing:
     def test_long_adr_not_body_truncated(self):
