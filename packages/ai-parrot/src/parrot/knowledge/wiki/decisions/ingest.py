@@ -110,7 +110,7 @@ async def _resolve_citations(
     root: Path,
     code_paths: list[str],
     inventory: list[DecisionRecord],
-    config: DecisionConfig | None = None,
+    config: DecisionConfig,
 ) -> tuple[_ResolvedLinks, list[DecisionDiagnostic]]:
     """Resolve Python citations using exact and optional local-prefix aliases.
 
@@ -118,6 +118,10 @@ async def _resolve_citations(
         code_paths: EVERY indexed Python target, not only changed files —
             changing an ADR must repair links in unchanged citing code
             (spec §2 Module 3).
+        config: the project's ADR settings. Required: the recognized
+            prefixes and the local namespace decide which aliases are
+            extracted at all, so a silent default would quietly resolve
+            a configured repository as if it were unconfigured.
 
     Returns:
         ``(resolved, diagnostics)``. ``resolved[decision_id]`` is
@@ -130,7 +134,6 @@ async def _resolve_citations(
         ``ADR_REFERENCE_MISSING``; a duplicated alias is
         ``ADR_REFERENCE_AMBIGUOUS``. Both stay unresolved.
     """
-    settings = config if config is not None else DecisionConfig()
     alias_map, ambiguous_aliases = _alias_index(inventory)
     # decision_id -> target_id -> evidence refs citing that target
     grouped: dict[str, dict[str, list[EvidenceRef]]] = {}
@@ -142,14 +145,14 @@ async def _resolve_citations(
         except OSError as exc:
             diagnostics.append(DecisionDiagnostic(code=ADR_SOURCE_UNAVAILABLE, message=str(exc), path=rel_path))
             continue
-        citations, cite_diagnostics = extract_python_citations(rel_path, text, settings.effective_prefixes())
+        citations, cite_diagnostics = extract_python_citations(rel_path, text, config.effective_prefixes())
         diagnostics.extend(cite_diagnostics)
         for citation in citations:
             decision_id, diagnostic_code = _lookup_alias(
                 citation.alias,
                 alias_map,
                 ambiguous_aliases,
-                settings.local_prefix,
+                config.local_prefix,
             )
             if diagnostic_code == ADR_REFERENCE_AMBIGUOUS:
                 diagnostics.append(
@@ -160,7 +163,7 @@ async def _resolve_citations(
                     )
                 )
                 continue
-            if diagnostic_code == ADR_REFERENCE_MISSING:
+            if decision_id is None:
                 diagnostics.append(
                     DecisionDiagnostic(
                         code=ADR_REFERENCE_MISSING,
@@ -169,8 +172,6 @@ async def _resolve_citations(
                     )
                 )
                 continue
-            if decision_id is None:
-                raise AssertionError("successful alias lookup must return a decision id")
             ref = build_evidence(
                 citation.rel_path, text, citation.page_id, citation.start_line, citation.end_line, citation.kind
             )

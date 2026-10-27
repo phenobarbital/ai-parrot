@@ -352,6 +352,7 @@ class TestPrefixedRefresh:
             ),
             (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["XX"]), "ADR_REFERENCE_MISSING", None),
             (["ADR-7"], "XX-ADR-7", DecisionConfig(known_prefixes=["FS"]), None, "ADR-7"),
+            (["FS-ADR-7"], "XX-ADR-7", DecisionConfig(local_prefix="FS"), None, "FS-ADR-7"),
         ],
     )
     async def test_exact_and_local_resolution(

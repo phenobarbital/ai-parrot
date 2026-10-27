@@ -77,26 +77,27 @@ class DecisionConfig(_Strict):
     local_prefix: str | None = None
     known_prefixes: list[str] = Field(default_factory=list)
 
-    @field_validator("local_prefix", "known_prefixes")
+    @staticmethod
+    def _normalize_prefix(prefix: str) -> str:
+        """Uppercase one prefix, rejecting invalid or compact-citation names."""
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", prefix):
+            raise ValueError(f"invalid ADR prefix: {prefix!r}")
+        normalized_prefix = prefix.upper()
+        if re.fullmatch(r"(?:ADR|RFC)[0-9]{1,5}", normalized_prefix):
+            raise ValueError(f"ADR prefix must not be a compact citation: {prefix!r}")
+        return normalized_prefix
+
+    @field_validator("local_prefix")
     @classmethod
-    def _validate_prefixes(cls, value: str | list[str] | None) -> str | list[str] | None:
-        """Uppercase prefixes and reject invalid or compact-citation names."""
-        if value is None:
-            return None
+    def _validate_local_prefix(cls, value: str | None) -> str | None:
+        """Normalize the optional local namespace prefix."""
+        return None if value is None else cls._normalize_prefix(value)
 
-        prefixes = value if isinstance(value, list) else [value]
-        normalized_prefixes: list[str] = []
-        for prefix in prefixes:
-            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", prefix):
-                raise ValueError(f"invalid ADR prefix: {prefix!r}")
-            normalized_prefix = prefix.upper()
-            if re.fullmatch(r"(?:ADR|RFC)[0-9]{1,5}", normalized_prefix):
-                raise ValueError(f"ADR prefix must not be a compact citation: {prefix!r}")
-            normalized_prefixes.append(normalized_prefix)
-
-        if isinstance(value, list):
-            return normalized_prefixes
-        return normalized_prefixes[0]
+    @field_validator("known_prefixes")
+    @classmethod
+    def _validate_known_prefixes(cls, value: list[str]) -> list[str]:
+        """Normalize every configured foreign prefix."""
+        return [cls._normalize_prefix(prefix) for prefix in value]
 
     def effective_prefixes(self) -> frozenset[str]:
         """Return configured foreign prefixes plus the optional local prefix."""

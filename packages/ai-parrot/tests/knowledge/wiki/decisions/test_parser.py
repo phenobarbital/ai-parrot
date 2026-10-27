@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from parrot.knowledge.wiki.decisions.parser import normalize_adr_alias, parse_adr, resolve_status, split_sections
+from parrot.knowledge.wiki.decisions.parser import (
+    normalize_adr_alias,
+    parse_adr,
+    resolve_status,
+    split_decision_alias,
+    split_sections,
+)
 
 ACCEPTED = """\
 ---
@@ -163,6 +169,15 @@ class TestIdentity:
         assert filename_record is not None
         assert filename_record.external_id == "FS-ADR-42"
         assert not any("conflicting ADR identifiers" in diagnostic.message for diagnostic in filename_diagnostics)
+
+
+    @pytest.mark.parametrize(
+        ("alias", "expected"),
+        [("ADR-42", (None, 42)), ("FS-ADR-7", ("FS", 7)), ("PARROT-ADR-006", ("PARROT", 6))],
+    )
+    def test_canonical_alias_splits_into_prefix_and_number(self, alias: str, expected: tuple[str | None, int]):
+        """A canonical alias splits back into its optional prefix and number."""
+        assert split_decision_alias(alias) == expected
 
 
 class TestBoundedParsing:
