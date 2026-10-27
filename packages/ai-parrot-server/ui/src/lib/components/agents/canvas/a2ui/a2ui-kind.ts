@@ -9,6 +9,7 @@
  * `-infographic` surfaceId suffix).
  */
 import type { A2UIEnvelope, CreateSurface, WireComponent } from './a2ui-types';
+import { getPresentation } from './a2ui-presentation';
 import { getDataSources } from './linked/types';
 
 export type SurfaceKind = 'widget' | 'infographic' | 'dashboard';
@@ -28,6 +29,8 @@ const INFOGRAPHIC_LIKE_ROOTS = new Set(['Infographic', 'Report']);
  *   Timeline/any single primitive), or when there is no `root` component.
  */
 export function inferSurfaceKind(surface: CreateSurface): SurfaceKind {
+  const declared = getPresentation(surface);
+  if (declared) return declared.kind;
   const root = surface.components.find((c) => c.id === 'root');
   if (!root) return 'widget';
   if (INFOGRAPHIC_LIKE_ROOTS.has(root.component)) {
