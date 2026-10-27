@@ -10,7 +10,7 @@ tags: [ledger, outbox, concurrency, worktrees, git-hooks, sdd]
 **Feature ID**: FEAT-758
 **Date**: 2026-10-27
 **Author**: Jesus Lara (with Codex)
-**Status**: draft
+**Status**: approved
 **Target version**: Next release; version unassigned
 
 ## 1. Motivation & Business Requirements
