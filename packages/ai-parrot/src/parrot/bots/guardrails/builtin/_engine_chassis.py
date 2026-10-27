@@ -75,6 +75,15 @@ class ScoringEngine(Protocol):
         ...
 
 
+async def score_async(engine: ScoringEngine, text: str) -> float:
+    """Run ``engine.score(text)`` in a worker thread — never on the event loop.
+
+    ORT sessions are thread-capped at construction, so concurrent offloads
+    cannot oversubscribe the CPU beyond the configured intra/inter-op caps.
+    """
+    return await asyncio.to_thread(engine.score, text)
+
+
 def env_int(name: str, default: int) -> int:
     """Read an integer environment variable, falling back to ``default``.
 
@@ -278,6 +287,94 @@ class ClassifierOnnxEngine:
         return float(softmax(logits[0])[self._positive_index])
 
 
+def load_corpus_matrix(path: Path) -> Any:
+    """Load a pre-embedded ``(N, d)`` float32 corpus and L2-normalize rows.
+
+    Args:
+        path: Path to the reference-corpus ``.npy`` matrix.
+
+    Returns:
+        A normalized float32 matrix with one embedding per row.
+
+    Raises:
+        ValueError: The file does not contain a non-empty 2-D matrix.
+    """
+    import numpy as np
+
+    matrix = np.load(path, allow_pickle=False)
+    if matrix.ndim != 2 or matrix.shape[0] == 0:
+        raise ValueError(f"Corpus matrix at {path} must be a non-empty 2-D array")
+    matrix = matrix.astype(np.float32, copy=False)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return matrix / np.maximum(norms, 1e-9)
+
+
+class EmbeddingSimilarityEngine:
+    """ONNX embedding backbone; score = max cosine vs a reference corpus."""
+
+    engine_name = "onnx-embedding"
+
+    def __init__(
+        self,
+        tokenizer_dir: Path,
+        graph_path: Path,
+        model_id: str,
+        corpus_matrix: Any,
+        *,
+        env_prefix: str,
+        max_length: int = DEFAULT_MAX_LENGTH,
+    ) -> None:
+        """Load tokenizer + a thread-capped ORT session without downloading.
+
+        Args:
+            tokenizer_dir: Local directory holding tokenizer files.
+            graph_path: Exact path to the ONNX graph.
+            model_id: Identifier logged/reported as this engine's model.
+            corpus_matrix: Pre-normalized reference embedding matrix.
+            env_prefix: Prefix for ``<P>_ORT_*_THREADS`` environment variables.
+            max_length: Tokenizer truncation length.
+        """
+        import onnxruntime as ort
+
+        self.model_id = model_id
+        self._max_length = max_length
+        self._tokenizer = load_tokenizer(tokenizer_dir)
+        self._corpus_matrix = corpus_matrix
+
+        opts = ort.SessionOptions()
+        intra = env_int(f"{env_prefix}_ORT_INTRA_OP_THREADS", 2)
+        if intra > 0:
+            opts.intra_op_num_threads = intra
+        opts.inter_op_num_threads = env_int(f"{env_prefix}_ORT_INTER_OP_THREADS", 1)
+        self._session = ort.InferenceSession(
+            str(graph_path),
+            sess_options=opts,
+            providers=["CPUExecutionProvider"],
+        )
+        self._input_names = {inp.name for inp in self._session.get_inputs()}
+
+    def score(self, text: str) -> float:
+        """Mean-pool token embeddings and return max corpus cosine in ``[0, 1]``."""
+        import numpy as np
+
+        encoded = self._tokenizer(
+            text,
+            return_tensors="np",
+            truncation=True,
+            max_length=self._max_length,
+        )
+        feed = {name: value for name, value in encoded.items() if name in self._input_names}
+        if "token_type_ids" in self._input_names and "token_type_ids" not in feed:
+            feed["token_type_ids"] = np.zeros_like(encoded["input_ids"])
+        embeddings = np.asarray(self._session.run(None, feed)[0], dtype=np.float32)
+        attention_mask = np.asarray(encoded["attention_mask"], dtype=np.float32)
+        weights = attention_mask[..., np.newaxis]
+        pooled = np.sum(embeddings * weights, axis=1) / np.maximum(np.sum(weights, axis=1), 1e-9)
+        vector = pooled / np.maximum(np.linalg.norm(pooled, axis=1, keepdims=True), 1e-9)
+        similarity = float(np.max(vector @ self._corpus_matrix.T))
+        return min(1.0, max(0.0, similarity))
+
+
 # ---------------------------------------------------------------------------
 # Generic per-category resolver + warm-up (new categories only).
 # ---------------------------------------------------------------------------
@@ -310,7 +407,19 @@ def _build_engine(spec: EngineSpec, tokenizer_dir: Path, graph_path: Path, model
             positive_label_match=spec.positive_label_match,
             max_length=spec.max_length,
         )
-    raise ValueError(f"engine kind {spec.kind!r} not supported yet")
+    corpus_env = os.environ.get(f"{spec.env_prefix}_CORPUS")
+    if spec.kind == "embedding":
+        if not corpus_env:
+            raise FileNotFoundError(f"{spec.env_prefix}_CORPUS is not set (embedding engines need a reference corpus)")
+        return EmbeddingSimilarityEngine(
+            tokenizer_dir,
+            graph_path,
+            model_id,
+            load_corpus_matrix(Path(corpus_env)),
+            env_prefix=spec.env_prefix,
+            max_length=spec.max_length,
+        )
+    raise ValueError(f"unknown engine kind {spec.kind!r}")
 
 
 def _env_dir_graph(spec: EngineSpec) -> tuple[Path, Path] | None:
