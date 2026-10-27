@@ -193,7 +193,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,7 +202,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4831: runs compare_jailbreak.main() and its manifest test imports cj.evaluate_gate/ES_BENIGN_MAX_FP/P50_BUDGET_MS created there. Operator task (network + human sign-off).",
       "assigned_to": null,
-      "started_at": "2026-10-27T21:33:16+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4832-jailbreak-bakeoff-run-and-pin.md"
     },
@@ -256,7 +256,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -268,7 +268,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4827: imports EngineSpec/resolve_engine/warmup_model (_engine_chassis.py). TASK-4828: imports score_async. TASK-4829: calls SecurityEventLogger.log_security_category_event. TASK-4832: default model id/graph/threshold constants are read from results-jailbreak/manifest.json and test-checked against it.",
       "assigned_to": null,
-      "started_at": "2026-10-27T21:33:16+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4835-jailbreak-guardrail.md"
     },
@@ -324,7 +324,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -337,7 +337,7 @@
       "parallel": true,
       "parallelism_notes": "Integration over the whole feature: builds guardrails=[\"security\"] (preset from TASK-4826) which instantiates JailbreakGuardrail (TASK-4835) and PromptLeakageGuardrail (TASK-4836); asserts retrieval scanning (TASK-4834) and the rendered-prompt extras (TASK-4837).",
       "assigned_to": null,
-      "started_at": "2026-10-27T21:33:16+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4838-security-guardrails-integration-docs.md"
     }
