@@ -307,8 +307,8 @@ async def _frames(data: bytes, n=3):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-10-27
+**Notes**: Seat gpt-5.6-sol (attempt f8feeee1f7ff4f8abe586dbd3f85826f). Review fix c30c5304319ae1dd46d5ffab8f1abdba96ca01bf: LocalDiskBlobStore._paths used the caller-supplied key as a path segment with no validation (path traversal via has/meta/open_read/grant/delete; IndexError without a colon); it now requires sha256:<64 lowercase hex> and raises HandleClaimError, with a parametrized regression test. Tests: tests/blobs passes (10). Unfixed observations: put_stream dedup returns the FIRST owner's metadata to a second owner storing identical bytes, and dedup by plaintext digest can return an unencrypted blob for a data_class that requires encryption. Engine merge-tier validation cannot run in the sandbox (parrot.conf mkdir of ONTOLOGY_DIR on the read-only primary checkout); tests were run by hand with ONTOLOGY_DIR set to a scratch dir. finalize_task not used (no review EvidenceRef artifact); closed via close_task.sh. Review/feedback entries not recorded (not wired for this run).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.
