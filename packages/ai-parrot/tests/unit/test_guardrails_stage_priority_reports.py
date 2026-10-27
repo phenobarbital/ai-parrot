@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4825 — per-stage priority + orthogonal reports."""
+
 from typing import ClassVar
 
 import pytest
@@ -160,9 +161,7 @@ async def test_transform_without_report_adds_no_report() -> None:
 async def test_block_and_flag_report_behavior_is_unchanged() -> None:
     """BLOCK and FLAG reports retain the existing pipeline behavior."""
     block_pipeline = GuardrailPipeline()
-    block_pipeline.add(
-        _Recorder("block", 10, GuardrailResult(action=GuardrailAction.BLOCK, report={"count": 1}), [])
-    )
+    block_pipeline.add(_Recorder("block", 10, GuardrailResult(action=GuardrailAction.BLOCK, report={"count": 1}), []))
     block_outcome = await block_pipeline.run("content", _ctx(GuardrailStage.INPUT))
 
     flag_pipeline = GuardrailPipeline()
