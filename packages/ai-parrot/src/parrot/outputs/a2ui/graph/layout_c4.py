@@ -187,11 +187,22 @@ def compute_c4_positions(
         for node_id, position in positions.items()
     }
 
+    # Persons and ``*_ext`` members sit outside tier 1, so they must not stretch a boundary box.
+    tier_one_ids = {node.id for node in spec.nodes if _tier_of(node) == 1}
+    boxed_spec = spec.model_copy(
+        update={
+            "groups": [
+                group.model_copy(update={"nodes": [node_id for node_id in group.nodes if node_id in tier_one_ids]})
+                for group in spec.groups or []
+            ]
+        }
+    )
+
     logger.debug("c4 layout: %d nodes, %d groups", len(spec.nodes), len(spec.groups or []))
     return LayoutResult(
         positions=positions,
         width=width,
         height=height,
-        group_boxes=_group_boxes(spec, positions),
+        group_boxes=_group_boxes(boxed_spec, positions),
         reversed_edges=[],
     )

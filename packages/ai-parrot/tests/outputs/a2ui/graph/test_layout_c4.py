@@ -137,3 +137,26 @@ def test_group_boxes_nested_for_any_kind() -> None:
 def test_compute_positions_dispatches_c4() -> None:
     spec = _fixture_spec()
     assert compute_positions(spec) == compute_c4_positions(spec)
+
+
+def test_c4_boundary_box_ignores_person_and_external_members() -> None:
+    spec = GraphSpec.model_validate(
+        {
+            "kind": "c4",
+            "level": "container",
+            "nodes": [
+                {"id": "user", "c4Type": "person"},
+                {"id": "api", "c4Type": "container"},
+                {"id": "mail", "c4Type": "system_ext"},
+            ],
+            "edges": [],
+            "groups": [{"id": "boundary", "nodes": ["user", "api", "mail"], "c4Type": "system"}],
+        }
+    )
+    result = compute_c4_positions(spec)
+    api = result.positions["api"]
+    x, y, width, height = result.group_boxes["boundary"]
+    assert x < api.x < x + width
+    assert y < api.y < y + height
+    assert not (x <= result.positions["user"].x <= x + width and y <= result.positions["user"].y <= y + height)
+    assert not (x <= result.positions["mail"].x <= x + width and y <= result.positions["mail"].y <= y + height)

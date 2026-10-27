@@ -6,7 +6,7 @@ GraphSpec` (schema parity by construction, FEAT-473 G2) via
 :func:`~parrot.outputs.a2ui.catalog.parrot._derive.derive_schema`, plus ONE
 post-derivation merge: ``action`` is not a ``GraphSpec`` field (it's the
 Component-level prop; the official ``common_types.json#/$defs/
-ComponentCommon`` does not define it either — spec §2 Overview), so it is
+ComponentCommon`` does not define it either — FEAT-754 spec, Overview), so it is
 declared explicitly as a ``$ref`` to the vendored ``common_types.json#/
 $defs/Action``. ``lower()`` never hand-edits ``GRAPH_SCHEMA`` further.
 
@@ -86,7 +86,7 @@ def _edge_extensions(edge: GraphEdge) -> dict[str, Any]:
 
 
 def _c4_children(spec: GraphSpec) -> list[BasicNode]:
-    """Boundary-list and element-list Columns for a kind="c4" spec (order and roles per spec §2 Data Models)."""
+    """Boundary-list and element-list Columns for a kind="c4" spec (order and roles per the FEAT-754 spec data models)."""
     children: list[BasicNode] = []
     groups = spec.groups or []
 
@@ -175,7 +175,7 @@ class GraphComponent:
 
         A graph without a native drawing surface degrades to its
         accessible description, a caption, an edge list, and its mermaid
-        source (spec §2 Data Models "Lowered tree") — every renderer
+        source (FEAT-754 spec, "Lowered tree") — every renderer
         without viz-core support (or without a graph engine) still shows
         something readable and copyable. Any ``data`` binding passes
         through UNRESOLVED under ``metadata.extensions.parrot_graph_data``
