@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import io as _io
 import json
+import logging
 import pickle
 import struct
 import sys
@@ -27,6 +28,8 @@ import types
 from typing import Any, BinaryIO, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 # 4-byte, big-endian, unsigned length prefix — never newline-delimited JSON,
 # since REPL output frequently embeds newlines (Key Constraint).
@@ -202,15 +205,11 @@ def _without_arrow_dtypes(value: Any) -> Any:
         return value
 
     def _arrow_backed(dtype: Any) -> bool:
-        return isinstance(dtype, pd.ArrowDtype) or (
-            isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow"
-        )
+        return isinstance(dtype, pd.ArrowDtype) or (isinstance(dtype, pd.StringDtype) and dtype.storage == "pyarrow")
 
     def _plain_index(index: Any) -> Any:
         if isinstance(index, pd.MultiIndex):
-            return index.set_levels(
-                [lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels]
-            )
+            return index.set_levels([lvl.astype(object) if _arrow_backed(lvl.dtype) else lvl for lvl in index.levels])
         return index.astype(object) if _arrow_backed(index.dtype) else index
 
     result = value.copy()
@@ -317,6 +316,31 @@ def decode_value(value: Any) -> Any:
     if isinstance(value, list):
         return [decode_value(v) for v in value]
     return value
+
+
+def decode_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    """Decode a ``SnapshotResponse.data`` mapping one entry at a time.
+
+    One value the insecure-deserialization guard refuses (e.g. an altair
+    ``Chart``, whose pickle references a module outside the allowlist) must
+    not cost the caller every other variable. Such an entry is replaced by an
+    inert placeholder string and a warning is logged; no object is ever
+    constructed for it. Any other exception propagates unchanged.
+
+    Args:
+        data: The worker's ``{name: encode_value(value)}`` mapping.
+
+    Returns:
+        ``{name: decoded value or placeholder}``.
+    """
+    decoded: dict[str, Any] = {}
+    for name, value in data.items():
+        try:
+            decoded[name] = decode_value(value)
+        except pickle.UnpicklingError as exc:
+            logger.warning("repl_worker snapshot: variable %r not transportable: %s", name, exc)
+            decoded[name] = f"<{name}: refused by insecure-deserialization guard (not transportable)>"
+    return decoded
 
 
 # ---------------------------------------------------------------------------
