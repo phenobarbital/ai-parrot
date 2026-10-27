@@ -28,7 +28,7 @@ tags: [a2ui, output-mode, intent-router, inline-widgets, kpicard, phrase-bank]
 **Feature ID**: FEAT-755
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 
 > **Source**: accepted brainstorm
