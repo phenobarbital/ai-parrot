@@ -1,4 +1,5 @@
 """Per-component feasibility rules (FEAT-755 TASK-4764)."""
+
 from __future__ import annotations
 
 import pytest
@@ -20,7 +21,9 @@ class TestTimeline:
     def test_titled_event_feasible(self):
         assert check_feasibility("Timeline", {"events": [{"title": "Launch"}]}, None).feasible
 
-    @pytest.mark.parametrize("config", [{"events": []}, {"events": [{"timestamp": "2024"}]}, {"events": [{"title": ""}]}, {}])
+    @pytest.mark.parametrize(
+        "config", [{"events": []}, {"events": [{"timestamp": "2024"}]}, {"events": [{"title": ""}]}, {}]
+    )
     def test_missing(self, config):
         assert check_feasibility("Timeline", config, None) == FeasibilityResult(False, "timeline_events_missing")
 

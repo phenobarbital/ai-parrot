@@ -7,6 +7,7 @@ instead of emitting an empty-looking card. Emitter-local by design: no
 
 Pure module: no parrot imports, no pandas. ``frame`` is duck-tested only.
 """
+
 from __future__ import annotations
 
 from typing import Any, Mapping, NamedTuple, Optional
