@@ -27,7 +27,9 @@ def test_metric_view_c1_shadow_by_id(worked_hours_def: MetricDefinition) -> None
 
 def test_metric_view_c2_alias_collision_tenant_wins(worked_hours_def: MetricDefinition) -> None:
     """Tenant aliases remove colliding aliases from surviving global definitions."""
-    global_definition = worked_hours_def.model_copy(update={"id": "global_hours", "aliases": ["Hours Worked", "global"]})
+    global_definition = worked_hours_def.model_copy(
+        update={"id": "global_hours", "aliases": ["Hours Worked", "global"]}
+    )
     tenant_definition = worked_hours_def.model_copy(
         update={"id": "tenant_hours", "tenant": "acme", "aliases": ["hours worked", "tenant"]}
     )
@@ -83,7 +85,9 @@ async def test_registry_resolve_alias(worked_hours_def: MetricDefinition) -> Non
     assert match.requested_dimension == "cost center"
 
 
-async def test_registry_resolve_never_raises(worked_hours_def: MetricDefinition, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_registry_resolve_never_raises(
+    worked_hours_def: MetricDefinition, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Matcher failures are logged and converted to a non-match."""
     matcher = MetricMatcher(enable_embeddings=False)
     registry = MetricRegistry(InMemoryMetricStore([worked_hours_def]), matcher=matcher)
