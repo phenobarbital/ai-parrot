@@ -672,6 +672,18 @@ runners:
   - packages/ai-parrot-server/tests/handlers/test_structured_envelope_passthrough.py
   - packages/ai-parrot-server/tests/handlers/test_agent_a2ui_stream.py
   - packages/ai-parrot-server/tests/test_agenttalk_dual_emit.py
+  - packages/ai-parrot/tests/unit/models/test_suggestion_models.py
+  - packages/ai-parrot/tests/unit/test_skill_turn_scope.py
+  - packages/ai-parrot/tests/unit/test_skill_tenant_hardening.py
+  - packages/ai-parrot/tests/unit/test_skill_tenancy.py
+  - packages/ai-parrot/tests/unit/test_skill_suggestions_frontmatter.py
+  - packages/ai-parrot/tests/bots/test_suggestion_engine.py
+  - packages/ai-parrot/tests/bots/test_suggestion_providers.py
+  - packages/ai-parrot/tests/bots/test_suggestion_llm_provider.py
+  - packages/ai-parrot/tests/bots/test_suggestion_bot_wiring.py
+  - packages/ai-parrot-server/tests/handlers/test_suggestions_passthrough.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chips.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_chat_wiring.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -679,16 +691,14 @@ runners:
   - src/lib/components/agents/ChatBubble.test.ts
   - src/lib/components/agents/AgentChat.test.ts
   - src/lib/api/stream.test.ts
+  - src/lib/components/agents/SuggestionChips.test.ts
 
 > Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
 > (replace the flat lines; never write both). Kinds, tiers and settings come from `.parrot/test_runners.toml`;
 > the flat form stays valid and is lifted on read to one pytest runner.
 
-New test files this feature adds (listed in §6 Edit Sites; `/sdd-task` appends them to the contract once they exist):
-`packages/ai-parrot/tests/unit/models/test_suggestion_models.py`, `packages/ai-parrot/tests/bots/test_suggestion_engine.py`,
-`packages/ai-parrot/tests/bots/test_suggestion_providers.py`, `packages/ai-parrot/tests/unit/test_skill_suggestions_frontmatter.py`,
-`packages/ai-parrot-server/tests/handlers/test_suggestions_passthrough.py`,
-`packages/ai-parrot-server/ui/src/lib/components/agents/SuggestionChips.test.ts`.
+> New test files created by this feature are listed above as operands (rev 0.2, `/sdd-task`); each is created by
+> the task whose Validation Commands name it.
 
 ### Test Data / Fixtures
 ```python
