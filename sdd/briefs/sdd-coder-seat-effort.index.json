@@ -16,15 +16,15 @@
       "feature_id": "BRIEF-sdd-coder-seat-effort",
       "feature": "sdd-coder-seat-effort",
       "spec": "sdd/briefs/sdd-coder-seat-effort.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-10-27T22:48:40+00:00",
+      "completed_at": "2026-10-27T22:48:40+00:00",
       "file": "sdd/briefs/sdd-coder-seat-effort/tasks/HOTFIX-sdd-coder-seat-effort-1-effort-schema-and-codex.md"
     },
     {

@@ -2,7 +2,7 @@
 
 **Feature**: sdd-coder-seat-effort — Per-seat reasoning effort for the sdd-coder roster
 **Spec**: `sdd/briefs/sdd-coder-seat-effort.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -187,4 +187,8 @@ def _build_command(self, *, profile, cwd, schema_path, output_path, prompt) -> L
 
 ## Completion Note
 
-<!-- Filled in by the implementer. -->
+Implemented in 74bbb816f. All six files touched, nothing else.
+- `SeatEffort` alias in sdd_coder/models.py; `RosterSeat.effort`; native seat + effort logs one WARNING, no raise.
+- `StrongModelIdentity.effort`: models.py imports complexity_models, so importing SeatEffort there would cycle; the identical Literal is declared locally as `_SeatEffort`.
+- `CodexCodeDispatchProfile.reasoning_effort`; `_build_command` inserts `-c model_reasoning_effort=<x>` right after the approval_policy pair (before `--output-schema`). None leaves the command unchanged.
+- Validation: test_models, test_codex_command_variants, test_codex_dispatcher, test_roster: 225 passed. ruff clean on the six files.
