@@ -221,8 +221,9 @@ See blueprint test.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (cherry-pick of minimax.minimax-m2.5 attempt 2, `643a6c228`; commit `8b8ae2760`)
+**Date**: 2026-10-27
+**Notes**: Closed `forced`. The pool delivery was rejected by the fidelity gate twice: `sdd/ledger/events.jsonl` (ledger hook output, 79/84 lines, not coder-authored) and, on the second run, nine uncommitted scratch `test_biscuit*.py` files. With explicit user approval the three declared files were cherry-picked without them. Review recorded as `coder-review:24d69f106ebd0639c3f357ce` (no fix commits). Merge-tier validation reported `outcome=failed` with exit_code 0: the opt-in spike test is skipped without `PARROT_SPIKE=1`. The user accepted the manual run (`PARROT_SPIKE=1 pytest ... -> 1 passed`) as evidence; `finalize_task` was not used because no review EvidenceRef artifact exists.
+**Review edits (docs only)**: report date corrected to 2026-10-27; limitation added — `spike.py` hardcodes `starts_with("hr.reports.")` rather than deriving it from the token's `capability_glob` fact, so M10 must derive the prefix from the verified fact and add a second-glob regression.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in file set; see limitation above.
