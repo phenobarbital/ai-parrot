@@ -11,7 +11,7 @@ from typing import Any
 
 from .base import Guardrail, GuardrailStage
 from .pipeline import GuardrailPipeline, GuardrailTelemetryEntry
-from .registry import build_guardrails
+from .registry import build_guardrails, expand_presets
 
 
 def _requested_name(item: str | dict[str, Any] | Guardrail) -> str | None:
@@ -77,7 +77,7 @@ def build_pipelines_from_config(
         ValueError: An unknown guardrail name was requested.
     """
     legacy_flags = legacy_flags or {}
-    explicit_spec: list[str | dict[str, Any] | Guardrail] = list(guardrails or [])
+    explicit_spec: list[str | dict[str, Any] | Guardrail] = expand_presets(list(guardrails or []))
     requested_names = {
         name for name in (_requested_name(item) for item in explicit_spec) if name is not None
     }
