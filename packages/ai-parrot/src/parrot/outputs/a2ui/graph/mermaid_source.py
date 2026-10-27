@@ -133,9 +133,18 @@ class MermaidSourceIssue(TypedDict):
     line_no: int | None
 
 
+_INVISIBLE_RE = re.compile("[\u200b-\u200d\u2060\ufeff]")
+_TITLE_KEY_RE = re.compile(r"^title\s*:")
+
+
 def _split_lines(source: str) -> list[str]:
-    """Split on any line ending (``\\r\\n``, ``\\r``, ``\\n``)."""
-    return source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    """Split on any line ending (``\\r\\n``, ``\\r``, ``\\n``), dropping zero-width characters.
+
+    Zero-width characters (BOM, ZWSP, ZWNJ, ZWJ, word joiner) are removed so that ``str.strip`` and the
+    keyword match see the same token boundaries as Mermaid's own lexer (fail closed).
+    """
+    text = _INVISIBLE_RE.sub("", source)
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
 def _front_matter_span(lines: list[str]) -> tuple[int, int] | None:
@@ -147,6 +156,28 @@ def _front_matter_span(lines: list[str]) -> tuple[int, int] | None:
         if lines[idx].strip() == "---":
             return start, idx
     return None
+
+
+def _is_ambiguous(line: str) -> bool:
+    """True when ``line`` ends inside a quote or an open bracket (quote/bracket rules differ per diagram)."""
+    in_quote = False
+    escape = False
+    depth = 0
+    for ch in line:
+        if in_quote:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_quote = False
+        elif ch == '"':
+            in_quote = True
+        elif ch in _OPEN_BRACKETS:
+            depth += 1
+        elif ch in _CLOSE_BRACKETS:
+            depth = max(0, depth - 1)
+    return in_quote or depth > 0
 
 
 def _split_statements(line: str) -> list[str]:
@@ -219,7 +250,7 @@ def detect_diagram_type(source: str) -> str:
 
 
 def normalize_mermaid_source(source: str) -> tuple[str, str | None]:
-    """Strip every ``%%{ … }%%`` directive (single- or multi-line) and front-matter ``config:``; lift ``theme``.
+    """Strip every ``%%{ … }%%`` directive (single- or multi-line) and every front-matter key except ``title:``; lift ``theme``.
 
     Returns ``(normalized_source, theme)`` — ``theme`` only when it is one of ``MERMAID_THEMES``.
     Line endings become ``\\n`` and exactly one trailing newline is guaranteed. Never raises.
@@ -241,18 +272,11 @@ def normalize_mermaid_source(source: str) -> tuple[str, str | None]:
     lines = text.split("\n")
     span = _front_matter_span(lines)
     if span is not None:
-        kept: list[str] = []
-        skipping = False
-        for idx, line in enumerate(lines):
-            if span[0] < idx < span[1]:
-                if line.startswith("config:"):
-                    skipping = True
-                    continue
-                if skipping and (line.startswith((" ", "\t")) or not line.strip()):
-                    continue
-                skipping = False
-            kept.append(line)
-        lines = kept
+        lines = [
+            line
+            for idx, line in enumerate(lines)
+            if not (span[0] < idx < span[1]) or _TITLE_KEY_RE.match(line) or not line.strip()
+        ]
     text = "\n".join(lines)
     if not text.strip():
         return "", theme
@@ -262,7 +286,7 @@ def normalize_mermaid_source(source: str) -> tuple[str, str | None]:
 def check_mermaid_source(source: str, *, declared_type: str | None = None) -> list[MermaidSourceIssue]:
     """Validate ``source`` for the wire; return EVERY issue found (empty list == valid). Pure; never raises.
 
-    Order: size/empty -> surviving directive or front-matter ``config:`` -> interaction statement /
+    Order: size/empty -> surviving directive or front-matter key other than ``title:`` -> interaction statement /
     ``javascript:`` / ``<script`` -> declared type mismatch.
     """
     issues: list[MermaidSourceIssue] = []
@@ -290,11 +314,11 @@ def check_mermaid_source(source: str, *, declared_type: str | None = None) -> li
     span = _front_matter_span(lines)
     if span is not None:
         for idx in range(span[0] + 1, span[1]):
-            if lines[idx].startswith("config:"):
+            if lines[idx].strip() and not _TITLE_KEY_RE.match(lines[idx]):
                 issues.append(
                     {
                         "code": MERMAID_UNSAFE_DIRECTIVE,
-                        "message": "front-matter 'config:' is not allowed in source",
+                        "message": "front matter other than a single-line 'title:' is not allowed in source",
                         "line_no": idx + 1,
                     }
                 )
@@ -308,6 +332,24 @@ def check_mermaid_source(source: str, *, declared_type: str | None = None) -> li
                     "line_no": line_no,
                 }
             )
+    # Fail closed: on a line whose quotes/brackets do not balance, Mermaid's per-diagram lexer may still
+    # treat every ';' as a statement boundary, so scan each raw ';' segment regardless of quoting.
+    for idx, raw in enumerate(lines):
+        if span is not None and span[0] <= idx <= span[1]:
+            continue
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("%%") or not _is_ambiguous(stripped):
+            continue
+        for segment in stripped.split(";"):
+            tokens = segment.split(maxsplit=1)
+            if tokens and tokens[0].lower() in _INTERACTION_KEYWORDS:
+                issues.append(
+                    {
+                        "code": MERMAID_UNSAFE_INTERACTION,
+                        "message": f"interaction statement {tokens[0]!r} is not allowed",
+                        "line_no": idx + 1,
+                    }
+                )
     for idx, raw in enumerate(lines):
         for found in _UNSAFE_ANYWHERE.finditer(raw):
             issues.append(

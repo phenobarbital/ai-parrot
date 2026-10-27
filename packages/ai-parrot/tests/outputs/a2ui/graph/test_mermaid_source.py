@@ -124,7 +124,7 @@ def test_check_rejects_surviving_directive() -> None:
     assert [(i["code"], i["line_no"]) for i in issues] == [(MERMAID_UNSAFE_DIRECTIVE, 1)]
     cfg = "---\nconfig:\n  theme: dark\n---\nflowchart TD\n a-->b\n"
     issues = check_mermaid_source(cfg)
-    assert [(i["code"], i["line_no"]) for i in issues] == [(MERMAID_UNSAFE_DIRECTIVE, 2)]
+    assert [(i["code"], i["line_no"]) for i in issues] == [(MERMAID_UNSAFE_DIRECTIVE, 2), (MERMAID_UNSAFE_DIRECTIVE, 3)]
 
 
 @pytest.mark.parametrize(
@@ -230,3 +230,39 @@ def test_front_matter_config_after_leading_blank_lines() -> None:
     assert "config:" not in normalized
     assert check_mermaid_source(normalized) == []
     assert detect_diagram_type(src) == "flowchart"
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        'sequenceDiagram\nA->>B: say "hi; link A: x @ https://evil.example',
+        "sequenceDiagram\nA->>B: hi (;link A: x @ https://evil.example",
+        'flowchart TB\nA-->B\n\ufeffclick A href "https://e"',
+        'flowchart TB\nA-->B\n\u200bclick A href "https://e"',
+        "flowchart TB\nA-->B\ncl\u200bick A href x",
+    ],
+)
+def test_check_fails_closed_on_ambiguous_lines_and_invisible_chars(src: str) -> None:
+    assert MERMAID_UNSAFE_INTERACTION in _codes(check_mermaid_source(src))
+
+
+@pytest.mark.parametrize(
+    "front",
+    [
+        '"config":\n  themeCSS: x',
+        "config :\n  themeCSS: x",
+        "  config:\n    themeCSS: x",
+        "{config: {themeCSS: x}}",
+        "config:\n  theme: dark",
+    ],
+)
+def test_check_rejects_any_front_matter_except_title(front: str) -> None:
+    issues = check_mermaid_source(f"---\n{front}\n---\nflowchart TB\nA-->B\n")
+    assert MERMAID_UNSAFE_DIRECTIVE in _codes(issues)
+
+
+def test_front_matter_title_allowed_and_normalizer_drops_other_keys() -> None:
+    assert check_mermaid_source("---\ntitle: Hi\n---\nflowchart TB\nA-->B\n") == []
+    normalized, _ = normalize_mermaid_source('---\ntitle: Hi\n"config":\n  themeCSS: x\n---\nflowchart TB\nA-->B\n')
+    assert "themeCSS" not in normalized
+    assert "title: Hi" in normalized

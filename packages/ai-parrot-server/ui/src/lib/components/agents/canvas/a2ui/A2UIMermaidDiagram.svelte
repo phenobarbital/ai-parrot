@@ -24,6 +24,14 @@
     mermaidPromise ??= import('mermaid').then((m) => m.default);
     return mermaidPromise;
   }
+
+  /** mermaid.initialize() is global: serialise initialize + parse + render so concurrent diagrams keep their own theme. */
+  let renderQueue: Promise<unknown> = Promise.resolve();
+  function enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const run = renderQueue.then(job, job);
+    renderQueue = run.catch(() => undefined);
+    return run;
+  }
 </script>
 
 <script lang="ts">
@@ -38,23 +46,30 @@
     const source = properties.source;
     const theme = resolveMermaidTheme(properties.theme, themeStore.isDark);
     let cancelled = false;
+    status = 'loading';
     (async () => {
+      const id = `a2ui-mermaid-${++renderCounter}`;
       try {
         const mermaid = await loadMermaid();
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme,
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-          class: { htmlLabels: false },
+        const svg = await enqueue(async () => {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme,
+            htmlLabels: false,
+            flowchart: { htmlLabels: false },
+            class: { htmlLabels: false },
+          });
+          await mermaid.parse(source);
+          return (await mermaid.render(id, source)).svg;
         });
-        await mermaid.parse(source);
-        const { svg } = await mermaid.render(`a2ui-mermaid-${++renderCounter}`, source);
         if (cancelled) return;
         svgHtml = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
         status = 'ready';
       } catch {
+        // mermaid.render may leave its temporary element behind when it fails after parse succeeds
+        document.getElementById(id)?.remove();
+        document.getElementById(`d${id}`)?.remove();
         if (!cancelled) status = 'error';
       }
     })();
