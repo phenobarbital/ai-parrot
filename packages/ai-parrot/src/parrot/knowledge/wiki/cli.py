@@ -126,6 +126,8 @@ from parrot.knowledge.wiki.runtime import (
 )
 from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH, shared_log_files
+from parrot.knowledge.wiki.ledger.outbox import LedgerDeliveryReport, LedgerOutbox, OutboxLockedError, StrictLedgerReadError
+from parrot.knowledge.wiki.ledger.integration import LedgerIntegrator
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
@@ -3650,21 +3652,18 @@ def _git_toplevel(cwd: Path) -> Path:
 @click.option("--quiet", is_flag=True, default=False)
 @remote_cli.remote_aware(proxied=False)
 def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
-    """Append this machine's shareable events to the committed shared ledger log."""
+    """Append shareable events to the committed log for explicit diagnostics only."""
+    if stage:
+        click.echo(
+            "export-log --stage is obsolete (FEAT-758): ledger events no longer travel in feature commits. "
+            "Re-run `parrot claude install` to upgrade the hooks; /sdd-done delivers events with "
+            "`wikitoolkit ledger outbox prepare|integrate`.",
+            err=True,
+        )
+        raise SystemExit(4)
     root = Path(repo_root) if repo_root else _git_toplevel(Path.cwd())
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
-        if stage and (report.added > 0 or report.created):
-            try:
-                subprocess.run(
-                    ["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as exc:
-                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
-                raise SystemExit(1) from exc
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3672,6 +3671,202 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
             click.echo(f"Exported {report.dest} (+{report.added} events)")
         else:
             click.echo(f"Exported {report.dest} (unchanged)")
+
+
+_OUTBOX_EXIT = {"delivered": 0, "already_delivered": 0, "pending": 2, "conflict": 3, "unsupported": 4}
+
+
+@ledger.group("outbox")
+def ledger_outbox() -> None:
+    """Local-only durable delivery of ledger events to origin/dev (FEAT-758)."""
+
+
+def _outbox_source(repo_root: str, ledger_dir: str | None) -> Path | None:
+    """Resolve the local journal directory, or ``None`` for a remote-only ledger."""
+    if ledger_dir:
+        return Path(ledger_dir).resolve()
+    if click.get_current_context().obj.get("remote") is not None:
+        return None
+    return Path(LedgerService.from_root(Path(repo_root)).log.path).parent
+
+
+def _unsupported(json_output: bool, reason: str) -> None:
+    """Emit an unsupported-source result and exit with the documented code."""
+    payload = {"status": "unsupported", "error_code": reason}
+    if json_output:
+        click.echo(json.dumps(payload))
+    else:
+        click.echo(f"Unsupported ledger outbox source: {reason}", err=True)
+    raise SystemExit(4)
+
+
+def _emit_delivery_reports(reports: list[LedgerDeliveryReport], json_output: bool, repo_root: str) -> None:
+    """Render typed integration reports with durable recovery guidance."""
+    if json_output:
+        click.echo(json.dumps([report.model_dump(mode="json") for report in reports]))
+        return
+    for report in reports:
+        click.echo(
+            f"{report.batch_id}: {report.status} (added={report.added}, remaining={report.remaining}, "
+            f"attempts={report.attempts})"
+        )
+        if report.error_code:
+            click.echo(f"  error: {report.error_code}")
+        if report.recovery_path:
+            click.echo(f"  recovery path: {report.recovery_path}")
+        if _OUTBOX_EXIT[report.status] != 0:
+            click.echo(
+                "  retry: wikitoolkit ledger outbox integrate "
+                f"--repo-root {repo_root} --batch-id {report.batch_id}"
+            )
+
+
+@ledger_outbox.command("prepare")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: bool) -> None:
+    """Resolve local source, capture a batch, and report its durable location."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source)
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    try:
+        source_ref = subprocess.run(
+            ["git", "-C", repo_root, "rev-parse", "--abbrev-ref", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        source_head = subprocess.run(
+            ["git", "-C", repo_root, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        known = _run(integrator.remote_event_ids())
+        batch = _run(
+            outbox.prepare(repo_root=Path(repo_root), source_ref=source_ref, source_head=source_head, known_ids=known)
+        )
+    except OutboxLockedError:
+        click.echo(json.dumps({"status": "pending", "error_code": "outbox-locked"}) if json_output else "Outbox is locked.")
+        raise SystemExit(2)
+    except StrictLedgerReadError as exc:
+        click.echo(json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc), err=not json_output)
+        raise SystemExit(3) from exc
+    except (OSError, subprocess.CalledProcessError) as exc:
+        click.echo(json.dumps({"status": "pending", "error_code": "prepare-failed"}) if json_output else str(exc), err=not json_output)
+        raise SystemExit(2) from exc
+    except Exception as exc:
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "remote-unavailable"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(2) from exc
+    if batch is None:
+        payload = {"status": "no-op"}
+        click.echo(json.dumps(payload) if json_output else "Nothing to prepare.")
+        return
+    path = outbox.pending_dir / batch.batch_id
+    payload = {"status": "prepared", "batch": batch.model_dump(mode="json"), "path": str(path)}
+    click.echo(json.dumps(payload) if json_output else f"Prepared {batch.batch_id} at {path}")
+
+
+@ledger_outbox.command("status")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bool) -> None:
+    """Show sealed/unsealed pending delivery without acknowledgement or pushes."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source)
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    remote_fresh = True
+    try:
+        known = _run(integrator.remote_event_ids())
+    except Exception:
+        known = set()
+        remote_fresh = False
+    try:
+        payload: dict[str, Any] = _run(outbox.status(known_ids=known))
+        batches = _run(outbox.pending())
+        payload["batches"] = [batch.model_dump(mode="json") for batch in batches]
+        payload["remote_fresh"] = remote_fresh
+        try:
+            payload["contaminated_paths"] = _run(integrator.check_feature_diff("HEAD"))
+        except Exception:
+            payload["contaminated_paths"] = []
+            payload["remote_fresh"] = False
+    except StrictLedgerReadError as exc:
+        click.echo(json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc), err=not json_output)
+        raise SystemExit(3) from exc
+    except OSError as exc:
+        click.echo(json.dumps({"status": "pending", "error_code": "status-failed"}) if json_output else str(exc), err=not json_output)
+        raise SystemExit(2) from exc
+    if json_output:
+        click.echo(json.dumps(payload))
+    else:
+        click.echo(
+            f"Pending: {payload['pending_batches']} batches, {payload['pending_events']} events; "
+            f"unsealed: {payload['unsealed_events']} (remote fresh: {payload['remote_fresh']})"
+        )
+        if payload["contaminated_paths"]:
+            click.echo("Legacy canonical ledger changes: " + ", ".join(payload["contaminated_paths"]), err=True)
+    if payload["contaminated_paths"]:
+        raise SystemExit(4)
+
+
+@ledger_outbox.command("integrate")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--batch-id", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: str | None, json_output: bool) -> None:
+    """Deliver pending batches and map typed outcomes to documented exit codes."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source)
+    try:
+        batches = _run(outbox.pending())
+    except StrictLedgerReadError as exc:
+        click.echo(json.dumps([]) if json_output else str(exc), err=not json_output)
+        raise SystemExit(3) from exc
+    except OSError as exc:
+        click.echo(json.dumps([]) if json_output else str(exc), err=not json_output)
+        raise SystemExit(2) from exc
+    if batch_id:
+        batches = [batch for batch in batches if batch.batch_id == batch_id]
+        if not batches:
+            report = LedgerDeliveryReport(
+                status="conflict",
+                batch_id=batch_id,
+                attempts=0,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=0,
+                error_code="unknown-batch",
+            )
+            _emit_delivery_reports([report], json_output, repo_root)
+            raise SystemExit(3)
+    if not batches:
+        click.echo(json.dumps([]) if json_output else "Nothing to integrate.")
+        return
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    reports: list[LedgerDeliveryReport] = []
+    for batch in batches:
+        report = _run(integrator.integrate(batch))
+        reports.append(report)
+        if _OUTBOX_EXIT[report.status] != 0:
+            break
+    _emit_delivery_reports(reports, json_output, repo_root)
+    exit_code = _OUTBOX_EXIT[reports[-1].status]
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 @ledger.command("import-log")
