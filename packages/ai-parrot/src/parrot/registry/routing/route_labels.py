@@ -7,6 +7,7 @@ to :attr:`OutputMode.A2UI` plus a component hint carried on the request context.
 This module is deliberately pure: the A2UI catalog is imported lazily, inside
 :func:`is_inline_component` only, so ``parrot.registry.routing`` stays light.
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,7 +105,7 @@ def set_output_shape(ctx: Any, shape: OutputShape) -> OutputMode:
         The output mode stored in ``shape``.
     """
     if ctx is not None:
-        setattr(ctx, "a2ui_component", shape.component)
+        ctx.a2ui_component = shape.component
     return shape.mode
 
 

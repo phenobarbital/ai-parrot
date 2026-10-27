@@ -1,4 +1,5 @@
 """Unit tests for the composite route-label grammar (FEAT-755 TASK-4757)."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
