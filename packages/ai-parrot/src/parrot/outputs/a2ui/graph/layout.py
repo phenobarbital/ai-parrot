@@ -127,7 +127,7 @@ def _break_cycles(
         adjacency[from_id].append(to_id)
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = dict.fromkeys(node_ids, WHITE)
+    color = {node_id: WHITE for node_id in node_ids}
     back_edges: set[tuple[str, str]] = set()
 
     def _visit(start: str) -> None:

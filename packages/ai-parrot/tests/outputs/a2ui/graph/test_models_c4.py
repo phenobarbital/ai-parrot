@@ -55,7 +55,7 @@ def test_c4_fields_rejected_on_other_kinds() -> None:
         ("group.c4Type", lambda data: data["groups"][0].update(c4Type="system")),
         ("layout.shapeInRow", lambda data: data.update(layout={"shapeInRow": 2, "boundaryInRow": 2})),
     )
-    for field, add_field in invalid_c4_fields:
+    for _field, add_field in invalid_c4_fields:
         candidate = json.loads(json.dumps(graph))
         add_field(candidate)
         with pytest.raises(ValidationError, match="only valid for kind='c4'"):
