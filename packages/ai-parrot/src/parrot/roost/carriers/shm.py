@@ -49,7 +49,7 @@ class SharedMemoryCarrier(Carrier):
             encode_dataframe, content, msg.conversation_id, strict=True, max_bytes=self._max_bytes
         )
         digest = hashlib.sha256(
-            ",".join(f"{col}:{dtype}" for col, dtype in zip(content.columns, content.dtypes)).encode("utf-8")
+            ",".join(f"{col}:{dtype}" for col, dtype in zip(content.columns, content.dtypes, strict=False)).encode("utf-8")
         ).hexdigest()
         ref = ShmPayloadRef(
             shm_name=encoded.shm_name or "",
