@@ -2,6 +2,7 @@
 
 Tests the voice_config field and voice_enabled property on MSTeamsAgentConfig.
 """
+
 import logging
 
 import pytest
@@ -270,19 +271,46 @@ class TestFormDesignerSubmitConfig:
 
         assert config.formdesigner_tenant_map == {"aad-guid": "formdesigner-tenant"}
 
-    def test_malformed_tenant_map_warns_and_leaves_map_unset(self, monkeypatch, caplog):
-        """Malformed tenant-map JSON warns without preventing startup."""
+    def test_malformed_tenant_map_env_json_fails_closed(self, monkeypatch):
+        """Malformed tenant-map env JSON raises instead of being silently ignored."""
         monkeypatch.setattr(
             msteams_models.config,
             "get",
             lambda key: "not-json" if key == "TESTBOT_FORMDESIGNER_TENANT_MAP" else None,
         )
 
-        with caplog.at_level(logging.WARNING, logger=msteams_models.__name__):
-            config = MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
+        with pytest.raises(ValueError, match="FORMDESIGNER_TENANT_MAP"):
+            MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
+
+    def test_tenant_map_env_wrong_shape_fails_closed(self, monkeypatch):
+        """A tenant-map env JSON that is not an object of strings raises."""
+        monkeypatch.setattr(
+            msteams_models.config,
+            "get",
+            lambda key: '{"aad-guid": 7}' if key == "TESTBOT_FORMDESIGNER_TENANT_MAP" else None,
+        )
+
+        with pytest.raises(ValueError, match="non-empty strings"):
+            MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot")
+
+    def test_tenant_map_direct_init_validated(self):
+        """A directly-passed tenant map is validated on construction."""
+        with pytest.raises(ValueError, match="non-empty strings"):
+            MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot", formdesigner_tenant_map={"g": 1})
+
+    def test_tenant_map_from_dict_validated(self):
+        """An invalid tenant map via from_dict raises too (dataclass __post_init__)."""
+        with pytest.raises(ValueError, match="non-empty strings"):
+            MSTeamsAgentConfig.from_dict(
+                "TestBot",
+                {"chatbot_id": "test-bot", "formdesigner_tenant_map": {"": "x"}},
+            )
+
+    def test_tenant_map_empty_dict_means_no_map(self):
+        """An explicitly empty map normalizes to None."""
+        config = MSTeamsAgentConfig(name="TestBot", chatbot_id="test-bot", formdesigner_tenant_map={})
 
         assert config.formdesigner_tenant_map is None
-        assert len([record for record in caplog.records if record.levelno == logging.WARNING]) == 1
 
     def test_from_dict_sets_submit_security_fields(self):
         """The dictionary constructor forwards both new configuration fields."""

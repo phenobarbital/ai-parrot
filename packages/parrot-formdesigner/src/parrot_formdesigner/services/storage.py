@@ -56,7 +56,7 @@ from typing import Any
 
 from ._identifiers import qualified_table, validate_identifier
 from .registry import FormStorage
-from ..core.schema import FormSchema
+from ..core.schema import FormDialect, FormSchema
 from ..core.style import StyleSchema
 
 logger = logging.getLogger(__name__)
@@ -338,8 +338,7 @@ class PostgresFormStorage(FormStorage):
         """
         if self._pool is None:
             raise RuntimeError(
-                "PostgresFormStorage is not initialized. "
-                "Call initialize() before performing storage operations."
+                "PostgresFormStorage is not initialized. " "Call initialize() before performing storage operations."
             )
 
     # ------------------------------------------------------------------
@@ -362,6 +361,7 @@ class PostgresFormStorage(FormStorage):
         """
         if self._pool is None:
             import asyncpg  # lazy runtime import
+
             self._pool = await asyncpg.create_pool(
                 dsn=self._dsn,
                 min_size=self._min_size,
@@ -373,9 +373,7 @@ class PostgresFormStorage(FormStorage):
         sql = self._create_table_sql(tenant)
         async with self._pool.acquire() as conn:
             await conn.execute(sql)
-        self.logger.info(
-            "%s ensured", self._qualified(tenant)
-        )
+        self.logger.info("%s ensured", self._qualified(tenant))
 
     async def close(self) -> None:
         """Close the asyncpg pool if this storage owns it.
@@ -481,14 +479,14 @@ class PostgresFormStorage(FormStorage):
         self._require_pool()
         form_id = json.loads(schema_json).get("form_id", "")
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                self._promote_sql(tenant), form_uid, form_id, version, schema_json, tenant
-            )
+            row = await conn.fetchrow(self._promote_sql(tenant), form_uid, form_id, version, schema_json, tenant)
 
         promoted = row is not None
         self.logger.debug(
             "Promote form_uid=%s version=%s in %s: %s",
-            form_uid, version, self._qualified(tenant),
+            form_uid,
+            version,
+            self._qualified(tenant),
             "promoted" if promoted else "no row affected (already published)",
         )
         return promoted
@@ -517,9 +515,7 @@ class PostgresFormStorage(FormStorage):
         form_uid_param = form_uid
         async with self._pool.acquire() as conn:
             if version is not None:
-                row = await conn.fetchrow(
-                    self._load_version_sql(tenant), form_uid_param, version
-                )
+                row = await conn.fetchrow(self._load_version_sql(tenant), form_uid_param, version)
             else:
                 row = await conn.fetchrow(self._load_sql(tenant), form_uid_param)
 
@@ -547,9 +543,7 @@ class PostgresFormStorage(FormStorage):
 
             return form
         except Exception as exc:
-            self.logger.error(
-                "Failed to deserialize form form_uid=%s: %s", form_uid, exc
-            )
+            self.logger.error("Failed to deserialize form form_uid=%s: %s", form_uid, exc)
             return None
 
     async def load_by_slug(
@@ -577,13 +571,9 @@ class PostgresFormStorage(FormStorage):
         self._require_pool()
         async with self._pool.acquire() as conn:
             if version is not None:
-                row = await conn.fetchrow(
-                    self._load_by_slug_version_sql(tenant), tenant, form_id, version
-                )
+                row = await conn.fetchrow(self._load_by_slug_version_sql(tenant), tenant, form_id, version)
             else:
-                row = await conn.fetchrow(
-                    self._load_by_slug_sql(tenant), tenant, form_id
-                )
+                row = await conn.fetchrow(self._load_by_slug_sql(tenant), tenant, form_id)
 
         if row is None:
             return None
@@ -688,6 +678,12 @@ class PostgresFormStorage(FormStorage):
                 if isinstance(desc, dict):
                     desc = next(iter(desc.values()), None)
                 entry["description"] = str(desc) if desc else None
+
+                raw_dialect = data.get("dialect", FormDialect.JSON_SCHEMA.value)
+                try:
+                    entry["dialect"] = FormDialect(raw_dialect).value
+                except ValueError:
+                    entry["dialect"] = FormDialect.JSON_SCHEMA.value
             except Exception as exc:
                 self.logger.debug(
                     "Malformed schema_json for form %s: %s",
@@ -696,6 +692,7 @@ class PostgresFormStorage(FormStorage):
                 )
                 entry["title"] = ""
                 entry["description"] = None
+                entry["dialect"] = FormDialect.JSON_SCHEMA.value
             result.append(entry)
 
         return result

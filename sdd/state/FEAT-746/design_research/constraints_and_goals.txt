@@ -1,0 +1,55 @@
+
+- **Every remote-tool path stringifies into context.** `A2ARemoteAgentTool._execute`, `A2AClient.invoke_skill` and `MCPToolProxy._extract_result_text` all return the remote payload as text/JSON to the LLM.
+  *Implication*: the handle path cannot wrap them; the RemoteToolkit needs its own result route that lands handle + descriptor + provenance in WorkingMemory before anything reaches the model.
+  *Evidence*: F001, F011
+
+- **A2AServer exposes tools, not capabilities, behind a credential-shaped gate.** `_build_skills_from_tools` converts the agent's tools to skills; the gate is `CredentialBroker` per user.
+  *Implication*: the serving side inverts the A2A model (contract catalog is the surface; gate keys on capability annotations). A2AServer is a pattern, not a base class.
+  *Evidence*: F001, F013
+
+- **D10 is wrong as written.** `AgentRegistry` holds local `BotMetadata`/`BotConfig` only (no kind/protocol/endpoint, zero remote hits in source or 180 days of history); remote agents live in `ToolManager.register_a2a_agent → RegisteredAgent` and `A2AMeshDiscovery`.
+  *Implication*: discovery is a design decision (U2), not a reuse.
+  *Evidence*: F003, F004, F016
+
+- **AuditLedger reuse is mechanism-only.** The entry schema is fixed (user_id, channel, tool, provider, key_fingerprint); FEAT-704's TASK-4474 declines to reuse it and defines its own entry over `AbstractKMSSigner` + async storage callable; the in-memory ledger swallows storage failures.
+  *Implication*: the served ledger is a new signed entry type with a fail-closed durable sink.
+  *Evidence*: F006, F026
+
+- **PBAC already sits below the LLM.** `PBACToolCallGuardrail` runs first in `execute_tool`, `PBACPermissionResolver` re-checks inside `AbstractTool.execute`; keyed by tool name; matcher is resource-only.
+  *Implication*: the capability gate composes ahead of this chain; per-caller rate limits and aggregation minimums need subject-aware logic the matcher lacks.
+  *Evidence*: F007, F022, F023
+
+- **gRPC is greenfield in this repo.** `grpc_session.py` is a dead client stub (protobuf import commented out, tunnels JSON-RPC); grpcio arrives only through `navigator-eventbus[grpc]`; the protobuf + grpc.aio server built in TASK-1791 (`parrot.events.v1`) was extracted to navigator-eventbus in FEAT-312.
+  *Implication*: lift the generated-stub, auth-in-metadata and "open dicts as JSON strings" conventions from navigator-eventbus; delete or replace the stub in the same feature.
+  *Evidence*: F002, F011, F021, F024
+
+- **The bus has the primitives but not the pattern.** navigator-eventbus v2: `EventEnvelope` with `correlation_id`/`trace_context`, Redis Streams at-least-once with event_id dedup and DLQ; JSON wire; no `reply_to`; parrot is publish-only today.
+  *Implication*: S6 needs a bytes-safe serializer and a request/reply convention partly outside this repo.
+  *Evidence*: F008, F024
+
+- **pandas + pyarrow everywhere, Polars nowhere.** WorkingMemory summariser, Arrow transport and `share_dataframe` are pandas; pyarrow ≥ 25 is pinned; no pyproject declares polars.
+  *Implication*: D6 adds a dependency and a second frame engine (U3); Arrow IPC on the wire is engine-neutral.
+  *Evidence*: F002, F003, F010
+
+- **Blob store base is close but not content-addressed.** `ArtifactBlobStore`/`BlobRef` are immutable, checksummed (`ck_`) and fingerprinted (`fp_`), publish-then-reference, but keyed by (scope, artifact_id, version); no media-type registry, TTL, ACL or affordances; `FileManagerInterface` has no byte-range or streaming read.
+  *Implication*: content addressing, handle ACLs and dedup-by-digest are new; S2 streaming cannot sit on the file manager.
+  *Evidence*: F010, F015, F019
+
+- **Telemetry exists per LLM call, not per hop.** `UsageRecord` + `CostCalculator` + ContextVar attribution + FEAT-710 fan-out exist; nothing injects/extracts a trace across a network hop; deterministic tool calls emit no usage event.
+  *Implication*: D13 needs a trace carrier in gRPC metadata/bus headers and a per-capability usage event on the served side.
+  *Evidence*: F009, F018, F025
+
+- **Name collisions.** Three `Artifact` types (`storage.models.Artifact`, `interfaces.artifact_store.ArtifactStore` / task-memory, `a2a.models.Artifact`) and FEAT-070's `CapabilityEntry`.
+  *Implication*: the spec must pick distinct nouns for the handle and the contract capability.
+  *Evidence*: F005, F010
+
+- **S3/S4 have landing points.** `ToolSchemaAdapter` compiles per `ToolFormat` (OpenAI/Anthropic/Google/Groq/Vertex/Bedrock); `AbstractClient._apply_cache_hints` owns cache hints.
+  *Evidence*: F003
+
+- **FEAT-704 overlap is design-only.** Owner-bound `ResultHandle`/`claim`, `SemanticAuditLedger`, `GovernedDatasetSink` are specified inside the semantic satellite; 0/26 tasks started.
+  *Implication*: own the shared contract in core or consume FEAT-704's (U1).
+  *Evidence*: F020, F026
+
+- **MCP adapter is nearly free.** `AgentMCPMount` + `RemoteMCPServerBase.register_tool` + `result_policy` caps map almost 1:1 onto "expose a mounted category as an MCP server".
+  *Evidence*: F011
+

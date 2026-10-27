@@ -97,7 +97,7 @@ def build_login_required_card(*, locale: str = "en") -> dict[str, Any]:
     return _card([_text(_t("login", locale))])
 
 
-def build_empty_forms_card(*, tenant: str, locale: str = "en") -> dict[str, Any]:
+def build_empty_forms_card(*, locale: str = "en") -> dict[str, Any]:
     """Build an empty-state card for a tenant with no forms."""
     return _card([_text(_t("empty", locale))])
 
@@ -107,7 +107,7 @@ def build_form_not_found_card(ref: str, *, locale: str = "en") -> dict[str, Any]
     return _card([_text(_t("not_found", locale).format(ref=ref))])
 
 
-def build_error_card(message: str, *, locale: str = "en") -> dict[str, Any]:
+def build_error_card(message: str) -> dict[str, Any]:
     """Build an attention-styled card from a caller-supplied safe message."""
     return _card([_text(message, color="Attention")])
 

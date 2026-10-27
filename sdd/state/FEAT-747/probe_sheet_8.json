@@ -1,0 +1,134 @@
+[
+ {
+  "id": "c230",
+  "kind": "file",
+  "path": "sdd/specs/a2a-protocol-compatibility.spec.md",
+  "line": null
+ },
+ {
+  "id": "c238",
+  "kind": "file",
+  "path": "sdd/specs/dataplane-authz.spec.md",
+  "line": null
+ },
+ {
+  "id": "c246",
+  "kind": "file",
+  "path": "sdd/specs/eventbus-consolidation.spec.md",
+  "line": null
+ },
+ {
+  "id": "c172",
+  "kind": "file",
+  "path": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+  "line": null
+ },
+ {
+  "id": "c138",
+  "kind": "file",
+  "path": "sdd/specs/integrations-matrix-multi.spec.md",
+  "line": null
+ },
+ {
+  "id": "c104",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 10
+ },
+ {
+  "id": "c105",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 28
+ },
+ {
+  "id": "c106",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 171
+ },
+ {
+  "id": "c137",
+  "kind": "file",
+  "path": "sdd/specs/matrix-collaborative-crew.spec.md",
+  "line": 1
+ },
+ {
+  "id": "c107",
+  "kind": "file",
+  "path": "sdd/specs/matrix-swarm-sample.spec.md",
+  "line": null
+ },
+ {
+  "id": "c109",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 80
+ },
+ {
+  "id": "c110",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 259
+ },
+ {
+  "id": "c111",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 404
+ },
+ {
+  "id": "c237",
+  "kind": "file",
+  "path": "sdd/specs/pbac-guardrails.spec.md",
+  "line": null
+ },
+ {
+  "id": "c228",
+  "kind": "file",
+  "path": "sdd/specs/tool-call-delegate.spec.md",
+  "line": 8
+ },
+ {
+  "id": "c188",
+  "kind": "file",
+  "path": "sdd/tasks/active/TASK-4474-semantic-audit-ledger.md",
+  "line": null
+ },
+ {
+  "id": "c43",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1182-trace-context-dataclass.md",
+  "line": null
+ },
+ {
+  "id": "c187",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1642-auditledger.md",
+  "line": null
+ },
+ {
+  "id": "c245",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1800-buscore-facade-dlq.md",
+  "line": null
+ },
+ {
+  "id": "c276",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1945-dataframe-arrow-transport.md",
+  "line": null
+ },
+ {
+  "id": "c268",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md",
+  "line": null
+ },
+ {
+  "id": "c41",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-976-add-shared-data-and-noderesult.md",
+  "line": null
+ }
+]

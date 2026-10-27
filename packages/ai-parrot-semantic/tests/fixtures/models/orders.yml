@@ -1,0 +1,22 @@
+models:
+  - name: customers
+    table: dim.customers
+    columns: {id: INTEGER, tenant_id: VARCHAR, email: VARCHAR, salary: DECIMAL}
+    primary_key: [id]
+    dimensions:
+      - {name: email, kind: categorical, column: email}
+    metrics:
+      - {name: customer_count, agg: count}
+    relationships:
+      - {from_model: customers, to_model: orders, cardinality: one_to_many, from_columns: [id], to_columns: [customer_id]}
+  - name: orders
+    table: sales.orders
+    columns: {id: INTEGER, customer_id: INTEGER, region: VARCHAR, tenant_id: VARCHAR, order_date: TIMESTAMP, amount: DECIMAL}
+    primary_key: [id]
+    dimensions:
+      - {name: region, kind: categorical, column: region}
+      - {name: order_date, kind: time, column: order_date, grain: month}
+    metrics:
+      - {name: revenue, agg: sum, column: amount}
+      - {name: order_count, agg: count}
+    relationships: []

@@ -1,0 +1,275 @@
+[
+ {
+  "id": "c1",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2AClient",
+  "expected_line": 40
+ },
+ {
+  "id": "c2",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "send_message",
+  "expected_line": 213
+ },
+ {
+  "id": "c3",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "stream_message",
+  "expected_line": 245
+ },
+ {
+  "id": "c4",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2ARemoteAgentTool",
+  "expected_line": 543
+ },
+ {
+  "id": "c5",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "_execute",
+  "expected_line": 607
+ },
+ {
+  "id": "c6",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "A2ARemoteSkillTool",
+  "expected_line": 695
+ },
+ {
+  "id": "c7",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "symbol": "discover",
+  "expected_line": 144
+ },
+ {
+  "id": "c17",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+  "symbol": "A2AEndpoint",
+  "expected_line": 73
+ },
+ {
+  "id": "c18",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "symbol": "A2AClientMixin",
+  "expected_line": 34
+ },
+ {
+  "id": "c15",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/models.py",
+  "symbol": "AgentCard",
+  "expected_line": 1007
+ },
+ {
+  "id": "c16",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/models.py",
+  "symbol": "AgentCardSignature",
+  "expected_line": 785
+ },
+ {
+  "id": "c138",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/",
+  "line": null
+ },
+ {
+  "id": "c125",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/approval_token.py",
+  "line": 1
+ },
+ {
+  "id": "c66",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c67",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "symbol": "AuditLedger",
+  "expected_line": 65
+ },
+ {
+  "id": "c76",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataplane_guard.py",
+  "symbol": "DataPlanePolicyGuard",
+  "expected_line": 45
+ },
+ {
+  "id": "c77",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataset_guard.py",
+  "symbol": "DatasetPolicyGuard",
+  "expected_line": 56
+ },
+ {
+  "id": "c78",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/dataset_guard.py",
+  "symbol": "usage",
+  "expected_line": 19
+ },
+ {
+  "id": "c79",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/eval_context.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c124",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/grants.py",
+  "line": 1
+ },
+ {
+  "id": "c80",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/models.py",
+  "symbol": "PolicyRuleConfig",
+  "expected_line": 32
+ },
+ {
+  "id": "c83",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+  "symbol": "pbac_action_namespace",
+  "expected_line": 52
+ },
+ {
+  "id": "c81",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/pbac.py",
+  "line": 1
+ },
+ {
+  "id": "c160",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+  "symbol": "PermissionContext",
+  "expected_line": null
+ },
+ {
+  "id": "c70",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "can_execute",
+  "expected_line": 25
+ },
+ {
+  "id": "c71",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "PBACPermissionResolver",
+  "expected_line": 247
+ },
+ {
+  "id": "c72",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "line": 289
+ },
+ {
+  "id": "c73",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "symbol": "filter_tools",
+  "expected_line": 341
+ },
+ {
+  "id": "c161",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/resolver.py",
+  "line": null
+ },
+ {
+  "id": "c152",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "PBACToolCallGuardrail",
+  "expected_line": null
+ },
+ {
+  "id": "c158",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "check",
+  "expected_line": null
+ },
+ {
+  "id": "c159",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "symbol": "PolicyDenialReport",
+  "expected_line": null
+ },
+ {
+  "id": "c44",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/clients/base.py",
+  "symbol": "_apply_cache_hints",
+  "expected_line": 565
+ },
+ {
+  "id": "c84",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/__init__.py",
+  "symbol": "eventbus",
+  "expected_line": 8
+ },
+ {
+  "id": "c147",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/core/events/bus/ingress/grpc.py",
+  "line": null
+ },
+ {
+  "id": "c85",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+  "symbol": "lifecycle",
+  "expected_line": 18
+ },
+ {
+  "id": "c86",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+  "symbol": "subscribers",
+  "expected_line": 54
+ },
+ {
+  "id": "c169",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/events.py",
+  "symbol": "AfterClientCallEvent",
+  "expected_line": null
+ },
+ {
+  "id": "c87",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/events/tool.py",
+  "symbol": "tool",
+  "expected_line": 1
+ },
+ {
+  "id": "c89",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/legacy_bridge.py",
+  "symbol": "EventRegistry",
+  "expected_line": 23
+ }
+]

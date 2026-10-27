@@ -32,6 +32,7 @@ from parrot.tools.repl_worker.protocol import (
     SnapshotResponse,
     ValueResponse,
     WorkerConfig,
+    decode_snapshot,
     decode_value,
     encode_value,
     read_frame,
@@ -312,3 +313,138 @@ class TestInsecureDeserializationGuard:
         arr = np.array([1, 2, 3])
         decoded = decode_value(encode_value(arr))
         assert (decoded == arr).all()
+
+
+class _NotOnAllowlist:
+    """Module-level so it pickles; its module is outside the unpickle allowlist."""
+
+    def __init__(self, value: int = 1) -> None:
+        self.value = value
+
+
+def _pickle_marker(obj) -> dict:
+    return {"__repl_worker_pickle_b64__": base64.b64encode(pickle.dumps(obj)).decode("ascii")}
+
+
+def _placeholder(name: str) -> str:
+    return f"<{name}: refused by insecure-deserialization guard (not transportable)>"
+
+
+class TestDecodeSnapshot:
+    """`decode_snapshot()` degrades guard-refused entries to placeholders (FEAT-751)."""
+
+    def test_refused_entry_becomes_placeholder(self, caplog):
+        data = {"greeting": "hi", "n": 3, "bad": _pickle_marker(_NotOnAllowlist())}
+        with caplog.at_level("WARNING", logger="parrot.tools.repl_worker.protocol"):
+            decoded = decode_snapshot(data)
+        assert decoded["greeting"] == "hi"
+        assert decoded["n"] == 3
+        assert decoded["bad"] == _placeholder("bad")
+        assert any("'bad'" in record.getMessage() for record in caplog.records)
+
+    def test_decode_value_still_raises_for_refused_entry(self):
+        with pytest.raises(pickle.UnpicklingError):
+            decode_value(_pickle_marker(_NotOnAllowlist()))
+
+    def test_reduce_gadget_never_executes(self, tmp_path):
+        import os
+
+        marker_file = tmp_path / "pwned"
+
+        class Evil:
+            def __reduce__(self):
+                return (os.system, (f"touch {marker_file}",))
+
+        decoded = decode_snapshot({"ok": 1, "evil": _pickle_marker(Evil())})
+        assert decoded == {"ok": 1, "evil": _placeholder("evil")}
+        assert not marker_file.exists()
+
+    def test_allowlisted_values_round_trip(self):
+        import pathlib
+
+        import numpy as np
+
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        arr = np.array([1, 2, 3])
+        path = pathlib.Path("/srv/reports")
+        decoded = decode_snapshot({"df": encode_value(df), "arr": encode_value(arr), "path": encode_value(path)})
+        pd.testing.assert_frame_equal(decoded["df"], df)
+        assert (decoded["arr"] == arr).all()
+        assert decoded["path"] == path
+
+
+class TestArrowValueCodec:
+    """FEAT-750 (ledger issue:e19ac9b4ba42): DataFrames/Series cross the
+    worker boundary as Arrow IPC, so pyarrow-backed columns (pandas 3's
+    default `str` dtype, `ArrowDtype`) no longer hit the pickle guard — and
+    the guard itself stays exactly as strict as FEAT-380 made it.
+    """
+
+    @staticmethod
+    def _pyarrow_frame() -> pd.DataFrame:
+        import pyarrow as pa
+
+        return pd.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "s": pd.array(["x", "y", None], dtype="string[pyarrow]"),
+                "f": pd.Series([1.5, 2.5, None], dtype=pd.ArrowDtype(pa.float64())),
+                "d": pd.to_datetime(["2024-01-01", "2024-02-01", "2024-03-01"]),
+            },
+            index=pd.Index([10, 20, 30], name="k"),
+        )
+
+    def test_pyarrow_backed_dataframe_round_trips(self):
+        df = self._pyarrow_frame()
+        pd.testing.assert_frame_equal(decode_value(encode_value(df)), df)
+
+    def test_dataframe_uses_arrow_marker(self):
+        encoded = encode_value(self._pyarrow_frame())
+        assert set(encoded) == {"__repl_worker_arrow_b64__", "kind"}
+        assert encoded["kind"] == "dataframe"
+
+    def test_series_round_trips(self):
+        series = pd.Series(["a", None, "c"], dtype="string[pyarrow]", name="label")
+        encoded = encode_value(series)
+        assert encoded["kind"] == "series"
+        pd.testing.assert_series_equal(decode_value(encoded), series)
+
+    def test_dataframe_nested_in_container_round_trips(self):
+        df = self._pyarrow_frame()
+        decoded = decode_value(encode_value({"frames": [df]}))
+        pd.testing.assert_frame_equal(decoded["frames"][0], df)
+
+    def test_arrow_unrepresentable_falls_back_to_pickle(self):
+        """Python objects Arrow can't carry go through the guarded pickle
+        path; pyarrow-backed labels/columns are cast to `object` first so the
+        guard never needs to trust `pyarrow`."""
+        df = pd.DataFrame({"o": [{"k": 1}, [1, 2]], "s": ["a", "b"]})
+        encoded = encode_value(df)
+        assert set(encoded) == {"__repl_worker_pickle_b64__"}
+        decoded = decode_value(encoded)
+        assert list(decoded.columns) == ["o", "s"]
+        assert list(decoded["o"]) == [{"k": 1}, [1, 2]]
+        assert list(decoded["s"]) == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"__repl_worker_arrow_b64__": "!!not-base64!!", "kind": "dataframe"},
+            {"__repl_worker_arrow_b64__": base64.b64encode(b"not an arrow stream").decode(), "kind": "dataframe"},
+            {"__repl_worker_arrow_b64__": "", "kind": "evil"},
+            {"__repl_worker_arrow_b64__": 123, "kind": "series"},
+        ],
+    )
+    def test_forged_arrow_marker_fails_safely(self, payload):
+        import pyarrow as pa
+
+        with pytest.raises((ValueError, pa.ArrowInvalid)):
+            decode_value(payload)
+
+    def test_pickle_allowlist_unchanged(self):
+        from parrot.tools.repl_worker.protocol import _SAFE_PICKLE_TOP_LEVEL_MODULES
+
+        assert "pyarrow" not in _SAFE_PICKLE_TOP_LEVEL_MODULES
+        assert _SAFE_PICKLE_TOP_LEVEL_MODULES == frozenset(
+            {"pandas", "numpy", "datetime", "decimal", "collections", "builtins", "pathlib"}
+        )

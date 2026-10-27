@@ -1,0 +1,216 @@
+[
+ {
+  "id": "c102",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "WorkingMemoryToolkit",
+  "expected_line": 47
+ },
+ {
+  "id": "c103",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "store_result",
+  "expected_line": 374
+ },
+ {
+  "id": "c104",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "list_tool_dataframes",
+  "expected_line": 917
+ },
+ {
+  "id": "c105",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "from_runtime",
+  "expected_line": 217
+ },
+ {
+  "id": "c106",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "store",
+  "expected_line": 357
+ },
+ {
+  "id": "c107",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "search_stored",
+  "expected_line": 562
+ },
+ {
+  "id": "c157",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "symbol": "exclude_tools",
+  "expected_line": null
+ },
+ {
+  "id": "c153",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/tests/test_toolmanager_ranker.py",
+  "symbol": "rank_tools",
+  "expected_line": null
+ },
+ {
+  "id": "c154",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/tools/test_toolkit_reregistration.py",
+  "line": null
+ },
+ {
+  "id": "c19",
+  "kind": "file",
+  "path": "pyproject.toml",
+  "line": 150
+ },
+ {
+  "id": "c20",
+  "kind": "symbol",
+  "path": "pyproject.toml",
+  "symbol": "protobuf",
+  "expected_line": 199
+ },
+ {
+  "id": "c183",
+  "kind": "file",
+  "path": "sdd/proposals/agent-host-protocol-session-state.proposal.md",
+  "line": 1
+ },
+ {
+  "id": "c184",
+  "kind": "file",
+  "path": "sdd/proposals/agent-host-protocol-session-state.proposal.md",
+  "line": 60
+ },
+ {
+  "id": "c182",
+  "kind": "file",
+  "path": "sdd/proposals/semantic-layer-rev2.proposal.md",
+  "line": null
+ },
+ {
+  "id": "c185",
+  "kind": "file",
+  "path": "sdd/proposals/structured-artifact-contract.brainstorm.md",
+  "line": 1
+ },
+ {
+  "id": "c155",
+  "kind": "file",
+  "path": "sdd/specs/per-tool-connection.spec.md",
+  "line": null
+ },
+ {
+  "id": "c145",
+  "kind": "file",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "line": null
+ },
+ {
+  "id": "c163",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "DataPlanePolicyGuard",
+  "expected_line": null
+ },
+ {
+  "id": "c177",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "ResultHandleStore",
+  "expected_line": 634
+ },
+ {
+  "id": "c178",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "SemanticAuditLedger",
+  "expected_line": 605
+ },
+ {
+  "id": "c179",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "GovernedDatasetSink",
+  "expected_line": 679
+ },
+ {
+  "id": "c180",
+  "kind": "symbol",
+  "path": "sdd/specs/semantic-layer.spec.md",
+  "symbol": "GovernancePipeline",
+  "expected_line": 541
+ },
+ {
+  "id": "c156",
+  "kind": "file",
+  "path": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
+  "line": null
+ },
+ {
+  "id": "c181",
+  "kind": "file",
+  "path": "sdd/tasks/active/TASK-4476-semantic-result-handles.md",
+  "line": null
+ },
+ {
+  "id": "c148",
+  "kind": "symbol",
+  "path": "sdd/tasks/completed/TASK-1791-ws-grpc-ingress.md",
+  "symbol": "Completion",
+  "expected_line": null
+ },
+ {
+  "id": "c149",
+  "kind": "symbol",
+  "path": "sdd/tasks/completed/TASK-1804-ingress-ws-grpc.md",
+  "symbol": "Completion",
+  "expected_line": null
+ },
+ {
+  "id": "c168",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1804-ingress-ws-grpc.md",
+  "line": null
+ },
+ {
+  "id": "c167",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1827-delete-rewire-events-bus-core.md",
+  "line": null
+ },
+ {
+  "id": "c134",
+  "kind": "file",
+  "path": "sdd/tasks/index/a2a-protocol-compatibility.json",
+  "line": null
+ },
+ {
+  "id": "c150",
+  "kind": "file",
+  "path": "sdd/tasks/index/eventbus-core-extraction.json",
+  "line": null
+ },
+ {
+  "id": "c151",
+  "kind": "file",
+  "path": "sdd/tasks/index/parrot-eventbus-migration.json",
+  "line": null
+ },
+ {
+  "id": "c141",
+  "kind": "file",
+  "path": "sdd/tasks/index/parrot-telemetry-event-fanout.json",
+  "line": null
+ },
+ {
+  "id": "c146",
+  "kind": "file",
+  "path": "sdd/tasks/index/semantic-layer.json",
+  "line": null
+ }
+]

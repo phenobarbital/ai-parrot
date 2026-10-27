@@ -530,6 +530,11 @@ jobs:
       - name: Run tool-optimizations tests
         run: uv run pytest packages/ai-parrot-tools/tests/tool_optimizations -q --tb=short
 
+      - name: Semantic-layer tests
+        run: |
+          uv sync --all-packages --extra duckdb
+          uv run pytest packages/ai-parrot-semantic/tests -q --tb=short
+
   test-loaders:
     name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest

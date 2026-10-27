@@ -74,7 +74,12 @@ class TurnRunner:
         self.logger = logging.getLogger(__name__)
         self._hooks: List[_RunnerPostTurnHook] = []
         self._active_task: Optional[asyncio.Task] = None
-        self._capabilities = capabilities or self._default_capabilities(bot)
+        # Bots expose a prompt-text ``capabilities`` str (AbstractBot); only a real
+        # BackendCapabilities counts here, anything else falls back to the defaults.
+        if isinstance(capabilities, BackendCapabilities):
+            self._capabilities = capabilities
+        else:
+            self._capabilities = self._default_capabilities(bot)
 
     @staticmethod
     def _default_capabilities(bot: Any) -> BackendCapabilities:
@@ -221,9 +226,13 @@ class TurnRunner:
                             partial += text
                             seq += 1
                             yield TextDelta(turn_id=turn_id, seq=seq, text=text)
-                    except asyncio.CancelledError:
+                    finally:
+                        # Always close here, in this task: the loop above `break`s on the final
+                        # AIMessage, leaving ask_stream() suspended at its last `yield`. Left to the
+                        # asyncgen finalizer, aclose() runs in a NEW task/Context and ask_stream's
+                        # `finally` fails resetting its ContextVar tokens ("was created in a
+                        # different Context" / "Task exception was never retrieved").
                         await stream.aclose()
-                        raise
                 else:
                     message = await self.bot.ask(question=query, **self._identity_kwargs())
                     partial = summarize_message_text(message)

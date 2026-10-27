@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux'",
@@ -36,6 +36,7 @@ members = [
     "ai-parrot-loaders",
     "ai-parrot-openlit-bridge",
     "ai-parrot-pipelines",
+    "ai-parrot-semantic",
     "ai-parrot-server",
     "ai-parrot-tools",
     "ai-parrot-visualizations",
@@ -1834,6 +1835,35 @@ requires-dist = [
     { name = "rapidocr", marker = "extra == 'planogram'", specifier = ">=3.9" },
 ]
 provides-extras = ["planogram"]
+
+[[package]]
+name = "ai-parrot-semantic"
+source = { editable = "packages/ai-parrot-semantic" }
+dependencies = [
+    { name = "ai-parrot" },
+    { name = "jsonschema" },
+    { name = "pyyaml" },
+    { name = "sqlglot" },
+]
+
+[package.optional-dependencies]
+bigquery = [
+    { name = "google-cloud-bigquery" },
+]
+duckdb = [
+    { name = "duckdb" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ai-parrot", editable = "packages/ai-parrot" },
+    { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.0" },
+    { name = "google-cloud-bigquery", marker = "extra == 'bigquery'", specifier = ">=3.30" },
+    { name = "jsonschema", specifier = ">=4.20" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "sqlglot", specifier = ">=30.1,<31" },
+]
+provides-extras = ["duckdb", "bigquery"]
 
 [[package]]
 name = "ai-parrot-server"
