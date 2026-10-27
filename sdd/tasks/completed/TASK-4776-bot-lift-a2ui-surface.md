@@ -190,10 +190,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: `_LIFTABLE_SURFACE_ARTIFACT_TYPES` frozenset in bots/base.py replaces the single-type comparison; docstring extended; 2 new tests (8 passed in the file). The method lives on `BaseBot`, not `AbstractBot` (contract_symbols id left as is). `ruff check` on base.py reports pre-existing E402/F841 findings unrelated to this change; left for /sdd-done.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
