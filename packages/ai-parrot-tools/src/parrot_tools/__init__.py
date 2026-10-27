@@ -59,6 +59,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "kubernetes": "parrot_tools.kubernetes.toolkit.KubernetesToolkit",
     "lsp": "parrot_tools.lsp.toolkit.LSPToolkit",
     "massive": "parrot_tools.massive.toolkit.MassiveToolkit",
+    "materialize_widget": "parrot_tools.materialize_widget.MaterializeWidgetTool",
     "math": "parrot_tools.math.MathTool",
     "metadata": "parrot_tools.metadata.MetadataTool",
     "word_to_markdown": "parrot_tools.msword.WordToMarkdownTool",

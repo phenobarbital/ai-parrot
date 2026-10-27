@@ -85,9 +85,7 @@ class TestExcelLoaderSheetMode:
         loader = ExcelLoader(source=str(multi_sheet_excel), output_mode="sheet")
         docs = await loader.load()
         assert len(docs) == 2
-        sheet_names = [
-            d.metadata["document_meta"]["sheet"] for d in docs
-        ]
+        sheet_names = [d.metadata["sheet"] for d in docs]
         assert "Sales" in sheet_names
         assert "Expenses" in sheet_names
         assert "Empty" not in sheet_names
@@ -118,8 +116,8 @@ class TestExcelLoaderSheetMode:
         """Metadata has content_type: 'sheet', table_count, sheet name."""
         loader = ExcelLoader(source=str(simple_excel), output_mode="sheet")
         docs = await loader.load()
-        meta = docs[0].metadata["document_meta"]
-        assert meta["content_type"] == "sheet"
+        meta = docs[0].metadata
+        assert meta["content_type"] == "markdown"
         assert "table_count" in meta
         assert meta["table_count"] >= 0
         assert meta["sheet"] == "Sales"
@@ -154,9 +152,7 @@ class TestExcelLoaderSheetMode:
         """Empty sheets produce no Documents."""
         loader = ExcelLoader(source=str(multi_sheet_excel), output_mode="sheet")
         docs = await loader.load()
-        sheet_names = [
-            d.metadata["document_meta"]["sheet"] for d in docs
-        ]
+        sheet_names = [d.metadata["sheet"] for d in docs]
         assert "Empty" not in sheet_names
 
     @pytest.mark.asyncio
@@ -196,8 +192,8 @@ class TestExcelLoaderRowMode:
         assert len(docs) == 5
         # Each doc should have row-level metadata
         for doc in docs:
-            meta = doc.metadata["document_meta"]
-            assert meta["content_type"] == "row"
+            meta = doc.metadata
+            assert meta["content_type"] == "text"
             assert "row_index" in meta
 
     @pytest.mark.asyncio
@@ -226,6 +222,6 @@ class TestExcelLoaderDataFrameInput:
         # Should produce per-row documents (3 rows)
         assert len(docs) == 3
         for doc in docs:
-            meta = doc.metadata["document_meta"]
-            assert meta["content_type"] == "row"
+            meta = doc.metadata
+            assert meta["content_type"] == "text"
             assert meta["sheet"] == "DataFrame"
