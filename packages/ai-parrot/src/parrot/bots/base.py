@@ -465,6 +465,7 @@ class BaseBot(AbstractBot):
                 **kwargs,
             ) + (system_prompt_addition or "")
 
+            self._capture_rendered_prompt(system_prompt)
             self._debug_prompt_dump(
                 method="conversation",
                 system_prompt=system_prompt,
@@ -776,6 +777,7 @@ class BaseBot(AbstractBot):
 
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(user_id=user_id, session_id=session_id, **kwargs)
+            self._capture_rendered_prompt(system_prompt)
 
             # Configure LLM if needed
             llm = self.get_client()
@@ -1401,6 +1403,7 @@ class BaseBot(AbstractBot):
                 len(system_prompt or ""),
             )
 
+            self._capture_rendered_prompt(system_prompt)
             self._debug_prompt_dump(
                 method="ask",
                 system_prompt=system_prompt,
@@ -2058,6 +2061,7 @@ class BaseBot(AbstractBot):
                 **kwargs,
             ) + (system_prompt_addition or "")
 
+            self._capture_rendered_prompt(system_prompt)
             self._debug_prompt_dump(
                 method="ask_stream",
                 system_prompt=system_prompt,

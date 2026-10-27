@@ -119,6 +119,14 @@ from .guardrails.config import build_pipelines_from_config
 from .guardrails.events import GuardrailActionEvent
 from .guardrails.pipeline import GuardrailPipeline, GuardrailTelemetryEntry, PipelineOutcome
 from .guardrails.streaming import StreamingGuardrail
+from contextvars import ContextVar
+
+#: FEAT-761 — the system prompt actually sent to the LLM for the CURRENT
+#: request. Request-local on purpose: one bot instance serves concurrent
+#: turns, so an instance attribute would compare one turn's output with
+#: another turn's prompt. Set by `_capture_rendered_prompt` at the
+#: `bots/base.py` call sites; read by `_run_output_pipeline`.
+_RENDERED_SYSTEM_PROMPT: ContextVar[Optional[str]] = ContextVar("parrot_rendered_system_prompt", default=None)
 
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
@@ -2755,6 +2763,30 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         )
         return await self._guardrail_pipelines[GuardrailStage.INPUT].run(question, ctx)
 
+    def _capture_rendered_prompt(self, prompt: Any) -> None:
+        """Record this request's rendered system prompt for OUTPUT guardrails (FEAT-761).
+
+        Accepts ``str`` or ``List[CacheableSegment]`` (prompt caching); stores
+        a flat string in the request-local ContextVar. Never raises.
+        """
+        try:
+            if isinstance(prompt, str):
+                value: Optional[str] = prompt
+            elif isinstance(prompt, (list, tuple)):
+                value = "".join(getattr(s, "text", str(s)) for s in prompt)
+            else:
+                value = str(prompt) if prompt else None
+            _RENDERED_SYSTEM_PROMPT.set(value)
+        except Exception:  # pragma: no cover - defensive
+            _RENDERED_SYSTEM_PROMPT.set(None)
+
+    def _output_extras(self, response: AIMessage, pipeline: GuardrailPipeline) -> Dict[str, Any]:
+        """OUTPUT ctx extras; ``system_prompt`` only when a registered guardrail requires it."""
+        extras: Dict[str, Any] = {"chatbot_id": str(self.chatbot_id), "ai_message": response}
+        if any(getattr(g, "requires_system_prompt", False) for g in pipeline.guardrails):
+            extras["system_prompt"] = _RENDERED_SYSTEM_PROMPT.get()
+        return extras
+
     async def _run_output_pipeline(self, response: AIMessage, method: str) -> AIMessage:
         """Run the unified OUTPUT guardrail pipeline (FEAT-396) on a response.
 
@@ -2795,7 +2827,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # new `GuardrailContext` field. `content` (passed to `run()`
             # below) is still the sole value any guardrail may TRANSFORM;
             # `ai_message` here is read-only context.
-            extras={"chatbot_id": str(self.chatbot_id), "ai_message": response},
+            extras=self._output_extras(response, pipeline),
         )
         outcome = await pipeline.run(response.output, ctx)
 
