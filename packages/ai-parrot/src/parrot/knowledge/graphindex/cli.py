@@ -129,10 +129,6 @@ async def build_code_graph(
             "gitwildmatch", ignore_file.read_text(encoding="utf-8").splitlines()
         )
 
-    extractor = CodeExtractor(
-        ignore_file=str(ignore_file) if ignore_file else None
-    )
-
     all_nodes: list[UniversalNode] = []
     all_edges: list[UniversalEdge] = []
     files_indexed = 0
@@ -141,6 +137,13 @@ async def build_code_graph(
     for base in paths:
         base = base.resolve()
         discovery_root = base if base.is_dir() else base.parent
+        from parrot.knowledge.wiki.project import load_project_config
+
+        config = await asyncio.to_thread(load_project_config, discovery_root)
+        extractor = CodeExtractor(
+            ignore_file=str(ignore_file) if ignore_file else None,
+            known_prefixes=config.decisions.effective_prefixes(),
+        )
         for file_path in discover_python_files(base, ignore_spec):
             try:
                 source = file_path.read_text(encoding="utf-8", errors="replace")
