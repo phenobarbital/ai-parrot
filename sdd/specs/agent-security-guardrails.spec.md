@@ -10,7 +10,7 @@ tags: [guardrails, security, jailbreak, prompt-injection, prompt-leakage, onnx]
 **Feature ID**: FEAT-761
 **Date**: 2026-10-27
 **Author**: Jesús Lara (spec drafted with Claude Code)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > Source brainstorm: `sdd/proposals/agent-security-guardrails.brainstorm.md`
