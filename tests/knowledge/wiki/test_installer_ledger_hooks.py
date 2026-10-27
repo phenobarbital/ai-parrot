@@ -142,9 +142,7 @@ def test_outdated_pre_commit_block_is_upgraded_preserving_custom_bytes(tmp_path:
     assert hook is not None
     hook.parent.mkdir(parents=True, exist_ok=True)
     old_block = (
-        f"{assets.LEDGER_HOOK_BEGIN}\n"
-        "wikitoolkit ledger export-log --stage --quiet\n"
-        f"{assets.LEDGER_HOOK_END}\n"
+        f"{assets.LEDGER_HOOK_BEGIN}\n" "wikitoolkit ledger export-log --stage --quiet\n" f"{assets.LEDGER_HOOK_END}\n"
     )
     original = "#!/bin/sh\necho custom-before\n" + old_block + "echo custom-after\n"
     hook.write_text(original, encoding="utf-8")

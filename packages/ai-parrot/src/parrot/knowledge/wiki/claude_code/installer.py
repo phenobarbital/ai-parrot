@@ -1000,8 +1000,7 @@ def _install_ledger_hooks(root: Path) -> list[str]:
                 )
                 if updated is None:
                     actions.append(
-                        f"git {event} ledger hook — skipped "
-                        "(unbalanced parrot-ledger markers; fix manually)"
+                        f"git {event} ledger hook — skipped " "(unbalanced parrot-ledger markers; fix manually)"
                     )
                 elif updated == text:
                     actions.append(f"git {event} ledger hook — already installed")
