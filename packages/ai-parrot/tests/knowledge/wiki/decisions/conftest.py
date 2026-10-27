@@ -193,3 +193,17 @@ async def adr_store(tmp_path):
     from parrot.knowledge.wiki.file_store import InMemoryWikiStore
 
     return InMemoryWikiStore(tmp_path / "wiki-pages", wiki_name="adr-test")
+
+
+@pytest.fixture
+def parity_corpus() -> list[str]:
+    """Minimum FEAT-760 all-match grammar and compatibility corpus."""
+    return [
+        "ADR-42", "ADR/042", "ADR 42", "adr42",
+        "FS-ADR-3", "parrot-ADR-7", "PARROT-adr/007",
+        "ADR_42", "ADR--42", "ADR - 42",
+        "see-ADR-3 for why", "RFC 4180", "FS-RFC-2119",
+        "ADR1-ADR-2", "RFC1-ADR-2", "ADR1-RFC-2", "ADR1-RFC2",
+        "FS-ADR1-ADR-2", "ADR-99999", "ADR-123456",
+        'x = "see ADR-42"',
+    ]
