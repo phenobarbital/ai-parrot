@@ -283,7 +283,7 @@
       "feature_id": "FEAT-755",
       "feature": "inline-a2ui-component-routing",
       "spec": "sdd/specs/inline-a2ui-component-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -296,8 +296,9 @@
       "parallelism_notes": "shares bots/data.py with TASK-4766 (serialized, lower id first); calls get_component_hint from TASK-4757, component_model from TASK-4762 (catalog/_model.py), emit_inline_component from TASK-4765 (inline/emitter.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T02:40:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4767-pandasagent-ask-seams.md"
+      "completed_at": "2026-10-27T03:48:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4767-pandasagent-ask-seams.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4768",
