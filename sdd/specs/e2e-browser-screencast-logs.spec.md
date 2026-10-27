@@ -479,7 +479,7 @@ basis or introduce a new encoder dependency without approval.
 ### External Dependencies
 
 M0 identified `av` (libvpx VP8 WebM) and Pillow as the working encoder path; declaring `av`
-as a dependency of the hosting package needs user approval. No dependency is added by this spec revision. The existing Playwright extra
+as a dependency of the hosting package was user-approved 2026-10-28 and declared as the `screencast` extra of `ai-parrot-server`. The existing Playwright extra
 is not proof of a frame-to-WebM encoder. M0 must identify usable installed
 capture/codec dependencies and their supported package install path. If a
 new dependency is required, approval and an updated dependency contract
