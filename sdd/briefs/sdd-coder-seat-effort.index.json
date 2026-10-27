@@ -5,7 +5,7 @@
   "type": "brief",
   "base_branch": "dev",
   "created_at": "2026-10-27",
-  "completed_at": null,
+  "completed_at": "2026-10-27T22:50:51+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-sdd-coder-seat-effort",
       "feature": "sdd-coder-seat-effort",
       "spec": "sdd/briefs/sdd-coder-seat-effort.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallel": false,
       "parallelism_notes": "needs the schema fields from task 1",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-10-27T22:50:51+00:00",
+      "completed_at": "2026-10-27T22:50:51+00:00",
       "file": "sdd/briefs/sdd-coder-seat-effort/tasks/HOTFIX-sdd-coder-seat-effort-2-resolve-and-apply-effort.md"
     }
   ]

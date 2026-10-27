@@ -2,7 +2,7 @@
 
 **Feature**: sdd-coder-seat-effort — Per-seat reasoning effort for the sdd-coder roster
 **Spec**: `sdd/briefs/sdd-coder-seat-effort.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: HOTFIX-sdd-coder-seat-effort-1
@@ -217,4 +217,8 @@ def _roster(*labels_backends) -> RosterConfig                        # line 92
 
 ## Completion Note
 
-<!-- Filled in by the implementer. -->
+Implemented in 21b5d3e26. Six listed files only.
+- New leaf module `sdd_coder/effort.py`: `resolve_seat_effort`, plus `resolve_seat_effort_with_source` (returns the source for the INFO log) and `apply_effort_to_profile` (checks the value against the field's Literal, since model_copy does not validate).
+- `_run_attempt` applies it right after the subagent copy; INFO line logged when applied.
+- Template and example: commented `effort` docs only; no active value changed.
+- Validation: test_effort, test_engine_dispatch, test_roster, test_complexity_routing: 184 passed; ruff clean.
