@@ -241,8 +241,8 @@ Build a `ServedLedgerEntry` fixture (status "OK", backing deterministic); sinks:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-10-27
+**Notes**: Seat gpt-5.6-sol (attempt 250af2015fe647c4975f32c73c762e91). Review fix 14b5d605d1e1ee8075c15d30a92cb128f95e1652: postgres_ledger_sink passed created_at as an ISO string into a $2::timestamptz parameter, which asyncpg rejects (needs a datetime); the fake pool hid it. Now converted with datetime.fromisoformat and asserted in the test; NOT exercised against a real PostgreSQL. Unfixed observation: the `table` argument is interpolated into the INSERT as an identifier (safe only while it is a trusted constant). Engine merge-tier validation cannot run in the sandbox (parrot.conf mkdir of ONTOLOGY_DIR on the read-only primary checkout); tests were run by hand with ONTOLOGY_DIR set to a scratch dir (46 passed across interagent, blobs, contract, server). finalize_task not used (no review EvidenceRef artifact); closed via close_task.sh. Review/feedback entries not recorded (not wired for this run).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the file set.
