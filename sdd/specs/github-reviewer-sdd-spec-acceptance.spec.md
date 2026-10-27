@@ -685,11 +685,9 @@ already called elsewhere in the same file (`contents/{path}`).
   `GitHubWebhookHook._build_event_payload` (`github_webhook.py:191-205`).
   Pull-request events already forward `base_ref`; `base_sha` is absent but
   not required by the chosen lookup contract. Reuse the builder unchanged.
-- [ ] Should `enable_sdd_spec_fallback` default to `True` (as this spec
-  proposes — it is a strictly bounded fallback that only ever fires when
-  no Jira key was found) or `False` (opt-in per `GitHubReviewer`
-  subclass, so a repo owner must deliberately turn it on)? — *Owner: Jesus
-  Lara*.
+- [x] `enable_sdd_spec_fallback` defaults to `True`, approved by Jesus Lara
+  on 2026-10-27. The bounded fallback only runs when no Jira key is found;
+  repository owners can disable it explicitly with `False`.
 - [x] Jira-key presence always wins, including unreadable/missing Jira
   tickets. The approved review correction preserves `ticket_not_found`
   rather than switching to SDD criteria on fetch failure.
@@ -741,3 +739,4 @@ design-research seat only runs over an **accepted** exploration doc, per
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft, scoped from a live diagnosis of `Trocdigital/fieldsync` PR #573 (no review vote cast because the PR referenced an SDD `FEAT-811` id instead of a Jira `NAV-<number>` key) |
 | 0.2 | 2026-10-27 | Codex | Address review: validate search candidates at target ref, preserve Jira precedence on fetch failure, expose source in public outcomes, reject complete template boilerplate, verify existing webhook base_ref contract, and specify regression coverage. |
+| 0.3 | 2026-10-27 | Codex | Record owner approval of `enable_sdd_spec_fallback=True` as the default and close the remaining open question. |
