@@ -142,3 +142,45 @@ def test_positive_label_resolution_preserves_injection_default() -> None:
     assert _resolve_injection_index({"0": "safe", "2": "malicious_request"}, ("jailbreak", "malicious")) == 2
     assert _resolve_injection_index({0: "safe", 4: "prompt_injection"}) == 4
     assert _resolve_injection_index({0: "LABEL_0", 1: "LABEL_1"}, ("jailbreak", "malicious")) == 1
+
+
+def test_measure_all_skips_ineligible_candidate_that_fails_to_load(tmp_path):
+    """An ineligible candidate failing to load is recorded, not fatal."""
+    good = _candidate("good/model")
+    bad = _candidate("bad/model", eligible=False)
+
+    def fake_measure(candidate: cj.Candidate, root):
+        if candidate is bad:
+            raise ModuleNotFoundError("No module named 'optimum'")
+        return _scored_result(candidate=candidate)
+
+    results, skipped = cj.measure_all((good, bad), tmp_path, measure=fake_measure)
+
+    assert [r.candidate.model_id for r in results] == ["good/model"]
+    assert skipped == [
+        {
+            "model_id": "bad/model",
+            "license": "mit",
+            "eligible": False,
+            "reason": "ModuleNotFoundError: No module named 'optimum'",
+        }
+    ]
+
+
+def test_measure_all_reraises_for_eligible_candidate(tmp_path):
+    """An eligible candidate must never be silently dropped."""
+    good = _candidate("good/model")
+
+    def fake_measure(candidate: cj.Candidate, root):
+        raise FileNotFoundError("graph missing")
+
+    with pytest.raises(FileNotFoundError):
+        cj.measure_all((good,), tmp_path, measure=fake_measure)
+
+
+def test_write_manifest_records_skipped_candidates(tmp_path):
+    """The manifest carries a ``skipped`` list, empty by default."""
+    cj.write_manifest(tmp_path, [], None, [{"model_id": "bad/model", "reason": "x"}])
+    assert json.loads((tmp_path / "manifest.json").read_text())["skipped"] == [{"model_id": "bad/model", "reason": "x"}]
+    cj.write_manifest(tmp_path, [], None)
+    assert json.loads((tmp_path / "manifest.json").read_text())["skipped"] == []

@@ -255,8 +255,14 @@ def write_manifest(
     out_dir: str | Path,
     evaluated: list[tuple[CandidateResult, float, dict[str, float], bool]],
     winner: CandidateResult | None,
+    skipped: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Write deterministic provenance manifest and raw benchmark results."""
+    """Write deterministic provenance manifest and raw benchmark results.
+
+    ``skipped`` lists ineligible candidates that could not be measured; they are
+    recorded under ``"skipped"`` so the evidence stays complete without them
+    being able to influence the winner.
+    """
     output_path = Path(out_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     manifest_candidates: list[dict[str, Any]] = []
@@ -292,6 +298,7 @@ def write_manifest(
     manifest = {
         "winner": winner.candidate.model_id if winner is not None else None,
         "candidates": manifest_candidates,
+        "skipped": skipped or [],
     }
     results = {"candidates": raw_candidates}
     (output_path / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -376,6 +383,42 @@ def _measure_candidate(candidate: Candidate, model_root: Path) -> CandidateResul
     )
 
 
+def measure_all(
+    candidates: tuple[Candidate, ...],
+    model_root: Path,
+    measure: Any = None,
+) -> tuple[list[CandidateResult], list[dict[str, Any]]]:
+    """Measure every candidate, tolerating load failures of ineligible ones only.
+
+    An ineligible candidate can never be the pinned winner, so failing to load
+    it (missing optional dependency, absent artifact) is recorded as ``skipped``
+    instead of discarding the whole run. An eligible candidate that fails still
+    raises: a real contender must never be silently dropped.
+
+    Returns:
+        ``(results, skipped)`` where ``skipped`` holds ``model_id``, ``license``,
+        ``eligible`` and a ``reason`` (exception type and message).
+    """
+    measure_fn = measure or _measure_candidate
+    results: list[CandidateResult] = []
+    skipped: list[dict[str, Any]] = []
+    for candidate in candidates:
+        try:
+            results.append(measure_fn(candidate, model_root))
+        except Exception as exc:  # noqa: BLE001 - re-raised below for eligible candidates
+            if candidate.eligible:
+                raise
+            skipped.append(
+                {
+                    "model_id": candidate.model_id,
+                    "license": candidate.license,
+                    "eligible": False,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                }
+            )
+    return results, skipped
+
+
 def main() -> None:
     """Run all candidates, apply the gate, and write reproducible evidence."""
     pin_thread_env(1)
@@ -385,13 +428,13 @@ def main() -> None:
     args = parser.parse_args()
 
     evaluated: list[tuple[CandidateResult, float, dict[str, float], bool]] = []
-    for candidate in CANDIDATES:
-        result = _measure_candidate(candidate, args.onnx_root)
+    results, skipped = measure_all(CANDIDATES, args.onnx_root)
+    for result in results:
         threshold, metrics = sweep_threshold(result)
         passes, _ = evaluate_gate(result, threshold, metrics)
         evaluated.append((result, threshold, metrics, passes))
     winner = pick_winner(evaluated)
-    write_manifest(args.out, evaluated, winner)
+    write_manifest(args.out, evaluated, winner, skipped)
     if winner is None:
         raise SystemExit("No eligible jailbreak candidate passed the pre-registered gate")
 
