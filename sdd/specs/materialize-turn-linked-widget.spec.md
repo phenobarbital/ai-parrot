@@ -61,7 +61,7 @@ records the chosen component. What is missing is one canonical entry point that 
 ### Non-Goals (explicitly out of scope)
 
 - NG1. **No LLM fallback.** If the turn has no re-runnable data origin the tool says so (`snapshot_only`); it does
-  not silently re-ask the agent. (Open question Q1 tracks whether to add an opt-in re-ask lane later.)
+  not silently re-ask the agent, and there is no opt-in re-ask mode (decided, Q1).
 - NG2. No new agent and no change to `Agent.followup()` / `AnswerMemory` — `followup` stays the "Explain this"
   mechanism; this feature does not route through it.
 - NG3. No persistence of the inline envelope on the turn (`ConversationTurn` has no envelope field). v1 takes the
@@ -178,7 +178,7 @@ class MaterializeWidgetTool(AbstractTool):
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: origin + component extraction | yes | pure functions and the two models above; reason strings fixed in §7; no I/O | — |
-| M2: `MaterializeWidgetTool` | no | orchestration order, sibling-tool delegation, ownership rule and result mapping are fixed here, but the session-id plumbing (Q2) is open | Q2 |
+| M2: `MaterializeWidgetTool` | yes | orchestration order, sibling-tool delegation, ownership rule, explicit `session_id` arg (Q2) and result mapping are fixed here | — |
 | M3: docs | yes | add one section to the two docs listed in §6 Edit Sites | — |
 
 ### Module 1: Origin and component extraction (pure)
@@ -191,6 +191,7 @@ class MaterializeWidgetTool(AbstractTool):
   EXECUTE_TOOL = "qs_execute_slug"                                   # verified: toolkit.py:84 (tool_prefix "qs") + :253
   LINKED_TOOLS = frozenset({"qs_build_linked_surface", "qs_build_linked_dashboard"})  # verified: toolkit.py:3-5
   SUPPORTED_ROOTS = frozenset({"Chart", "DataTable", "KPICard"})     # verified: builders.py:528 docstring / toolkit.py:361
+  NEUTRAL_TOOLS: frozenset[str]   # read-only tools tolerated between the query and the answer (Q3, see §7)
 
   class SlugOrigin(BaseModel): ...
   class OriginOutcome(BaseModel):
@@ -247,6 +248,9 @@ class MaterializeWidgetTool(AbstractTool):
 | `test_extract_origin_already_linked` | M1 | trailing `qs_build_linked_surface` → `already_linked` |
 | `test_extract_origin_multi_source` | M1 | two distinct slugs → `multi_source` |
 | `test_extract_origin_none` | M1 | no slug invocation (pandas turn) → `none` |
+| `test_extract_origin_neutral_tools_tolerated` | M1 | `qs_describe_slug` / `load_skill` between query and answer still yields the origin |
+| `test_extract_origin_non_neutral_tool_blocks` | M1 | a pandas/python tool call in the turn → `none` (`no_slug_origin`) |
+| `test_tool_missing_session_id` | M2 | no arg and no bound session → `turn_not_found` |
 | `test_extract_origin_drops_offset_keeps_tenant` | M1 | `offset` omitted, `tenant` preserved |
 | `test_component_strips_bindings_and_rows` | M1 | `Chart`/`DataTable`/`KPICard` lose binding + rows, keep type/axes/title |
 | `test_component_unsupported_root` | M1 | `Infographic` root → `None` |
@@ -392,10 +396,10 @@ Verified against: `2fdf94351`
 - Permission/identity: user from `self._current_pctx` (via `PermissionContext.session`; **verify the attribute path at task time**), falling back to the constructor-bound `user_id`; never from tool args.
 
 ### Known Risks / Gotchas
-- **Session plumbing (Q2).** `ToolManagerExecutor.call` passes only `permission_context`; the A2UI `session_id` (`A2UICallContext`) does not reach the tool. Mitigation: `session_id` is an explicit arg (the frontend always has it), and ownership is still safe because the history key includes the pctx-derived `user_id`.
+- **Session plumbing (Q2, resolved).** `ToolManagerExecutor.call` passes only `permission_context`; the A2UI `session_id` (`A2UICallContext`) does not reach the tool. Decision: `session_id` is an explicit arg (the frontend always has it), and ownership is still safe because the history key includes the pctx-derived `user_id`. A missing `session_id` with no constructor-bound one ⇒ `not_materializable` / `turn_not_found`.
 - **Idempotency of the origin.** The recorded `qs_execute_slug` input is *post-normalization* (Stage 0 canonicalization, `ToolInvocation.input`); `limit` was capped at `max_rows`. The linked widget will fetch with the renderer's own paging — document that `limit` is advisory.
 - **Offloaded inputs.** Oversized tool inputs may be offloaded by compaction (`omitted`); treat an invocation with offloaded `input` as unusable (`no_slug_origin`) rather than guessing.
-- **Wrong-widget risk.** If a turn ran `qs_execute_slug` for exploration and then charted a pandas-derived frame, the last slug is not necessarily the plotted data. v1 rule: if the turn also carries a non-slug transform tool call (any invocation outside the `qs_*` family and not read-only), return `snapshot_only` / `no_slug_origin` rather than relink. Exact allowlist is Q3.
+- **Wrong-widget risk.** If a turn ran `qs_execute_slug` for exploration and then charted a pandas-derived frame, the last slug is not necessarily the plotted data. v1 rule (Q3, resolved): any invocation in the turn outside `NEUTRAL_TOOLS` makes the turn `snapshot_only` / `no_slug_origin` rather than relinked. `NEUTRAL_TOOLS` = `qs_list_slugs`, `qs_describe_slug`, `qs_get_dialect_reference`, `qs_list_components`, `qs_validate_pipeline`, plus the working-memory/skill read tools (`read_omitted_content`, `list_skill_commands`, `load_skill`, `read_skill_asset`, `search_skills`, `read_skill`, `list_skills`) — exact names re-verified at task time. `qs_execute_slug`, `qs_build_linked_surface`/`_dashboard` are handled by the origin logic itself; `qs_run_multiquery`/`qs_save_multiquery` are NOT neutral.
 - **Linked envelopes are definition-only by default** (`rows: []`, `snapshot_at: null`); pinning performs the save-time snapshot in the owner's context (`publish_surface`), so a guardless bot fails closed (`LinkedGuardRequired`) — surfaced as `build_failed`/`no_publish_surface`-class errors, never a crash.
 - `Agent.followup()` reads `AnswerMemory`, which is in-memory per process; that is why this design reads `conversation_memory` instead.
 
@@ -406,11 +410,11 @@ None new.
 
 ## 8. Open Questions
 
-- [ ] Q1. Add an opt-in LLM re-ask lane (`mode="reask"`) for `snapshot_only` turns, or keep v1 strictly deterministic and let the frontend pin a snapshot? — *Owner: Jesus Lara* (recommended: deterministic only).
-- [ ] Q2. Where does `session_id` come from for the renderer lane — explicit arg (recommended, v1), or extend `ToolManagerExecutor.call` to bind `ctx.session_id` into tools that declare they want it? — *Owner: Jesus Lara*
-- [ ] Q3. Exact allowlist of "non-transforming" tools that may sit between `qs_execute_slug` and the answer without invalidating the origin (see "Wrong-widget risk"). — *Owner: Jesus Lara*
-- [ ] Q4. Should `InfographicAuthoringMixin.configure` auto-register the tool next to `publish_surface`, or stay opt-in per agent? Library code does not auto-register `PublishSurfaceTool` today (recommended: opt-in). — *Owner: Jesus Lara*
-- [ ] Q5. Persist the inline envelope on the turn (e.g. `turn.metadata["a2ui_envelope"]`) in a follow-up feature so the frontend can send only `turn_id`? Out of scope here (NG3). — *Owner: Jesus Lara*
+- [x] Q1. Add an opt-in LLM re-ask lane for `snapshot_only` turns? — *Resolved 2026-10-27 (Jesus Lara)*: no. v1 is strictly deterministic; the tool returns `snapshot_only` and the frontend pins a snapshot. Reflected in NG1, §2 Overview and AC3.
+- [x] Q2. Where does `session_id` come from on the renderer lane? — *Resolved 2026-10-27 (Jesus Lara)*: explicit `session_id` arg; no change to `ToolManagerExecutor`/`A2UICallContext`. Ownership stays safe because the history key includes the pctx-derived `user_id`. Reflected in `MaterializeWidgetArgs` and §7.
+- [x] Q3. Which tools may sit between `qs_execute_slug` and the answer? — *Resolved 2026-10-27 (Jesus Lara)*: only the read-only `qs_*` family plus working-memory/skill read tools (`NEUTRAL_TOOLS` in M1, listed in §7). Any other invocation in the turn ⇒ `snapshot_only` / `no_slug_origin`.
+- [x] Q4. Auto-register the tool in `InfographicAuthoringMixin.configure`? — *Resolved 2026-10-27 (Jesus Lara)*: no, opt-in per agent (`MaterializeWidgetTool(bot=self)`), like `PublishSurfaceTool`; M3 docs show the registration snippet.
+- [x] Q5. Persist the inline envelope on the turn so the frontend can send only `turn_id`? — *Deferred (NG3)*: out of this feature; v1 takes the envelope from the caller. Candidate follow-up spec.
 
 ---
 
