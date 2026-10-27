@@ -1577,25 +1577,57 @@ class GitHubReviewer(Agent):
 
         ticket = await self._fetch_ticket(ticket_key)
         if ticket is None:
-            return {
+            self.logger.warning(
+                "GitHubReviewer: ticket %s not found for PR %s#%s; review aborted.",
+                ticket_key,
+                repo,
+                pr_number,
+            )
+            outcome: Dict[str, Any] = {
                 "status": "ticket_not_found",
                 "jira_key": ticket_key,
                 "pr_number": pr_number,
             }
-
-        diff_text, diff_truncated, diff_available = await self._fetch_diff(repo, pr_number)
-        await self._await_wiki_refresh(wiki_refresh)
-
-        async with self._wiki_review_lease() as wiki_leased:
-            result = await self._ask_llm_for_review(
-                payload=payload,
-                ticket_key=ticket_key,
-                ticket=ticket,
-                diff_text=diff_text,
-                diff_truncated=diff_truncated,
-                diff_available=diff_available,
-                use_wiki=wiki_leased,
+            comment = await self._notify_ticket_not_found(
+                repo=repo, pr_number=pr_number, ticket_key=ticket_key, payload=payload,
             )
+            if comment is not None:
+                outcome["comment"] = comment
+            return outcome
+
+        try:
+            diff_text, diff_truncated, diff_available = await self._fetch_diff(repo, pr_number)
+            await self._await_wiki_refresh(wiki_refresh)
+
+            async with self._wiki_review_lease() as wiki_leased:
+                result = await self._ask_llm_for_review(
+                    payload=payload,
+                    ticket_key=ticket_key,
+                    ticket=ticket,
+                    diff_text=diff_text,
+                    diff_truncated=diff_truncated,
+                    diff_available=diff_available,
+                    use_wiki=wiki_leased,
+                )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: review crashed for %s#%s (%s): %s",
+                repo,
+                pr_number,
+                ticket_key,
+                exc,
+                exc_info=True,
+            )
+            await self._notify_review_error(
+                repo=repo, pr_number=pr_number, ticket_key=ticket_key,
+                error=exc, payload=payload,
+            )
+            return {
+                "status": "error",
+                "pr_number": pr_number,
+                "jira_key": ticket_key,
+                "error": str(exc),
+            }
 
         outcome: Dict[str, Any] = {
             "status": "reviewed",
@@ -1709,6 +1741,142 @@ class GitHubReviewer(Agent):
             f"_Posted by the GitHubReviewer agent._"
         )
 
+    async def _notify_ticket_not_found(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        ticket_key: str,
+        payload: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Leave a PR comment when the referenced Jira ticket could not be fetched.
+
+        Unlike the ``no_ticket`` path (PR references no key at all), this fires
+        when a key was extracted but Jira returned an error or the ticket does
+        not exist. The dedup key includes the ticket so editing the body to
+        reference a different key retries.
+        """
+        if self.git_toolkit is None:
+            return None
+
+        body = self._format_ticket_not_found_comment(payload, ticket_key)
+        try:
+            response = await self.git_toolkit.add_pr_comment(
+                pr_number=pr_number,
+                body=body,
+                repository=repo,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: failed to post ticket-not-found comment on %s#%s: %s",
+                repo,
+                pr_number,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+        await self._alert_review_skipped(
+            repo=repo,
+            pr_number=pr_number,
+            reason=f"Jira ticket `{ticket_key}` could not be fetched",
+            payload=payload,
+        )
+        return response
+
+    def _format_ticket_not_found_comment(self, payload: Dict[str, Any], ticket_key: str) -> str:
+        """Render the comment posted when the Jira ticket lookup fails."""
+        author = payload.get("author")
+        salutation = f"@{author} " if author else ""
+        return (
+            f"### Automated review skipped — Jira ticket not accessible\n\n"
+            f"{salutation}The reviewer found `{ticket_key}` in this pull "
+            f"request but could not fetch it from Jira (the ticket may not "
+            f"exist, may have been moved, or the reviewer's credentials may "
+            f"lack access to the project).\n\n"
+            f"**To unblock review**, verify that `{ticket_key}` is the "
+            f"correct key and that it is accessible, then push a new commit "
+            f"to re-trigger the reviewer.\n\n"
+            f"_Posted by the GitHubReviewer agent._"
+        )
+
+    async def _alert_review_skipped(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        reason: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        """Send a Telegram alert when a webhook-triggered review cannot complete."""
+        bot = self._get_telegram_bot()
+        if bot is None or not self.alert_chat_ids:
+            return
+        title = html.escape(str(payload.get("pr_title") or ""))
+        url = html.escape(str(payload.get("pr_url") or ""), quote=True)
+        esc_repo = html.escape(repo)
+        esc_reason = html.escape(reason)
+        text = (
+            f"<b>PR review skipped</b>\n"
+            f"Repo: <code>{esc_repo}</code>\n"
+            f'PR: <a href="{url}">#{pr_number} {title}</a>\n'
+            f"Reason: {esc_reason}"
+        )
+        for chat_id in self.alert_chat_ids:
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send skip-alert to chat %s: %s",
+                    chat_id,
+                    exc,
+                )
+
+    async def _notify_review_error(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        ticket_key: str,
+        error: Exception,
+        payload: Dict[str, Any],
+    ) -> None:
+        """Post a PR comment and Telegram alert when the review crashes unexpectedly."""
+        if self.git_toolkit is not None:
+            error_type = type(error).__name__
+            body = (
+                f"### Automated review failed\n\n"
+                f"The reviewer encountered an internal error while reviewing "
+                f"this PR against `{ticket_key}` (`{error_type}`).\n\n"
+                f"The next push will re-trigger the review. If this persists, "
+                f"check the reviewer logs.\n\n"
+                f"_Posted by the GitHubReviewer agent._"
+            )
+            try:
+                await self.git_toolkit.add_pr_comment(
+                    pr_number=pr_number,
+                    body=body,
+                    repository=repo,
+                )
+            except Exception as comment_exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to post error comment on %s#%s: %s",
+                    repo,
+                    pr_number,
+                    comment_exc,
+                )
+        await self._alert_review_skipped(
+            repo=repo,
+            pr_number=pr_number,
+            reason=f"Review crashed: {type(error).__name__}: {error}",
+            payload=payload,
+        )
+
     async def _fetch_ticket(
         self,
         ticket_key: str,
@@ -1745,6 +1913,12 @@ class GitHubReviewer(Agent):
 
         envelope = envelope or {}
         if envelope.get("status") != "ok":
+            self.logger.warning(
+                "GitHubReviewer: jira_get_issue(%s) returned status=%r (message=%s)",
+                ticket_key,
+                envelope.get("status"),
+                envelope.get("message") or envelope.get("error") or "no detail",
+            )
             return None
         return envelope.get("data")
 
