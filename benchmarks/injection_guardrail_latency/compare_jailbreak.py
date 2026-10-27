@@ -26,7 +26,8 @@ from benchmarks.injection_guardrail_latency.detectors import (
 from benchmarks.injection_guardrail_latency.jailbreak_corpus import BUCKETS, JAILBREAK_EN, JAILBREAK_ES
 
 ES_BENIGN_MAX_FP = 0
-P50_BUDGET_MS = 30.0
+# Amended 2026-10-28 (operator decision after the first measurement run): 30.0 -> 45.0 ms.
+P50_BUDGET_MS = 45.0
 LICENSE_RANK = {"apache-2.0": 0, "mit": 0, "llama4": 1}
 
 
