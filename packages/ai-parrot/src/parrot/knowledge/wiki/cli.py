@@ -126,7 +126,12 @@ from parrot.knowledge.wiki.runtime import (
 )
 from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH, shared_log_files
-from parrot.knowledge.wiki.ledger.outbox import LedgerDeliveryReport, LedgerOutbox, OutboxLockedError, StrictLedgerReadError
+from parrot.knowledge.wiki.ledger.outbox import (
+    LedgerDeliveryReport,
+    LedgerOutbox,
+    OutboxLockedError,
+    StrictLedgerReadError,
+)
 from parrot.knowledge.wiki.ledger.integration import LedgerIntegrator
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
@@ -3716,8 +3721,7 @@ def _emit_delivery_reports(reports: list[LedgerDeliveryReport], json_output: boo
             click.echo(f"  recovery path: {report.recovery_path}")
         if _OUTBOX_EXIT[report.status] != 0:
             click.echo(
-                "  retry: wikitoolkit ledger outbox integrate "
-                f"--repo-root {repo_root} --batch-id {report.batch_id}"
+                "  retry: wikitoolkit ledger outbox integrate " f"--repo-root {repo_root} --batch-id {report.batch_id}"
             )
 
 
@@ -3748,13 +3752,21 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
             outbox.prepare(repo_root=Path(repo_root), source_ref=source_ref, source_head=source_head, known_ids=known)
         )
     except OutboxLockedError:
-        click.echo(json.dumps({"status": "pending", "error_code": "outbox-locked"}) if json_output else "Outbox is locked.")
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "outbox-locked"}) if json_output else "Outbox is locked."
+        )
         raise SystemExit(2)
     except StrictLedgerReadError as exc:
-        click.echo(json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc), err=not json_output)
+        click.echo(
+            json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc),
+            err=not json_output,
+        )
         raise SystemExit(3) from exc
     except (OSError, subprocess.CalledProcessError) as exc:
-        click.echo(json.dumps({"status": "pending", "error_code": "prepare-failed"}) if json_output else str(exc), err=not json_output)
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "prepare-failed"}) if json_output else str(exc),
+            err=not json_output,
+        )
         raise SystemExit(2) from exc
     except Exception as exc:
         click.echo(
@@ -3800,10 +3812,16 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
             payload["contaminated_paths"] = []
             payload["remote_fresh"] = False
     except StrictLedgerReadError as exc:
-        click.echo(json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc), err=not json_output)
+        click.echo(
+            json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc),
+            err=not json_output,
+        )
         raise SystemExit(3) from exc
     except OSError as exc:
-        click.echo(json.dumps({"status": "pending", "error_code": "status-failed"}) if json_output else str(exc), err=not json_output)
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "status-failed"}) if json_output else str(exc),
+            err=not json_output,
+        )
         raise SystemExit(2) from exc
     if json_output:
         click.echo(json.dumps(payload))

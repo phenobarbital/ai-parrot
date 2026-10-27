@@ -56,7 +56,9 @@ def test_integrate_maps_status_to_exit_code(tmp_path: Path, status: str, code: i
         patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox),
         patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
     ):
-        result = CliRunner().invoke(ledger, ["outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)])
+        result = CliRunner().invoke(
+            ledger, ["outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)]
+        )
     assert result.exit_code == code, result.output
 
 
@@ -66,7 +68,13 @@ def test_integrate_json_is_structured(tmp_path: Path) -> None:
     outbox = MagicMock()
     outbox.pending = AsyncMock(return_value=[batch])
     report = LedgerDeliveryReport(
-        status="delivered", batch_id=batch.batch_id, attempts=1, remote_head="a" * 40, commit_sha="b" * 40, added=1, remaining=0
+        status="delivered",
+        batch_id=batch.batch_id,
+        attempts=1,
+        remote_head="a" * 40,
+        commit_sha="b" * 40,
+        added=1,
+        remaining=0,
     )
     integrator = MagicMock()
     integrator.integrate = AsyncMock(return_value=report)
@@ -112,7 +120,9 @@ def test_status_never_acknowledges(tmp_path: Path) -> None:
     """Status only reads batches and leaves receipt storage untouched."""
     batch = _batch()
     outbox = MagicMock()
-    outbox.status = AsyncMock(return_value={"pending_batches": 1, "pending_events": 0, "unsealed_events": 0, "truncated_tail": False})
+    outbox.status = AsyncMock(
+        return_value={"pending_batches": 1, "pending_events": 0, "unsealed_events": 0, "truncated_tail": False}
+    )
     outbox.pending = AsyncMock(return_value=[batch])
     integrator = MagicMock()
     integrator.remote_event_ids = AsyncMock(return_value=set())
@@ -121,7 +131,9 @@ def test_status_never_acknowledges(tmp_path: Path) -> None:
         patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox),
         patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
     ):
-        result = CliRunner().invoke(ledger, ["outbox", "status", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)])
+        result = CliRunner().invoke(
+            ledger, ["outbox", "status", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)]
+        )
     assert result.exit_code == 0, result.output
     assert not (tmp_path / "outbox" / "receipts").exists()
     assert not hasattr(outbox, "acknowledge") or not outbox.acknowledge.called
@@ -130,7 +142,9 @@ def test_status_never_acknowledges(tmp_path: Path) -> None:
 def test_status_reports_contamination_exit_4(tmp_path: Path) -> None:
     """Canonical paths changed by a feature are reported without being changed."""
     outbox = MagicMock()
-    outbox.status = AsyncMock(return_value={"pending_batches": 0, "pending_events": 0, "unsealed_events": 0, "truncated_tail": False})
+    outbox.status = AsyncMock(
+        return_value={"pending_batches": 0, "pending_events": 0, "unsealed_events": 0, "truncated_tail": False}
+    )
     outbox.pending = AsyncMock(return_value=[])
     integrator = MagicMock()
     integrator.remote_event_ids = AsyncMock(return_value=set())
@@ -139,6 +153,8 @@ def test_status_reports_contamination_exit_4(tmp_path: Path) -> None:
         patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox),
         patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
     ):
-        result = CliRunner().invoke(ledger, ["outbox", "status", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)])
+        result = CliRunner().invoke(
+            ledger, ["outbox", "status", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)]
+        )
     assert result.exit_code == 4, result.output
     assert "sdd/ledger/events.jsonl" in result.output
