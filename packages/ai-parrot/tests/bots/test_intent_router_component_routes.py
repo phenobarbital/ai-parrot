@@ -354,3 +354,24 @@ class TestAskWiring:
 
         assert len(client.calls) == 1
         assert build_component_prompt("KPICard") not in client.calls[0]["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_explicit_a2ui_mode_keeps_component_hint(self):
+        """An explicit A2UI mode agrees with the hint, so the catalog addon is still injected."""
+        from parrot.models.outputs import OutputMode
+        from parrot.outputs.a2ui.inline.prompt import build_component_prompt
+
+        agent, client = self._agent()
+        await self._ask(agent, output_mode=OutputMode.A2UI, a2ui_component="KPICard")
+
+        assert len(client.calls) == 1
+        assert build_component_prompt("KPICard") in client.calls[0]["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_non_string_component_degrades_without_raising(self):
+        """G3: an unhashable hint must not escape ask()."""
+        agent, client = self._agent()
+        response = await self._ask(agent, a2ui_component=["KPICard"])
+
+        assert response is not None
+        assert len(client.calls) == 1

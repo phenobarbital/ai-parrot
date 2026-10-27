@@ -1437,9 +1437,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # caller did not specify a mode (precedence: explicit > router >
             # default). No-op unless a routing mixin (IntentRouterMixin) is present.
             if ctx is not None:
-                # A reused context must not leak a previous turn's component hint.
+                # ask() owns ctx.a2ui_component: a reused context must not leak a previous turn's hint.
                 ctx.a2ui_component = None
-            if a2ui_component and not is_inline_component(a2ui_component):
+            if a2ui_component and not (isinstance(a2ui_component, str) and is_inline_component(a2ui_component)):
                 # G3: an unknown / action-bearing component must never reach the
                 # prompt/model builders (they raise KeyError); degrade to the
                 # normal flow instead.
@@ -1447,10 +1447,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     "a2ui_component=%r is not an inline-capable component; ignoring the hint", a2ui_component
                 )
                 a2ui_component = None
-            if a2ui_component and output_mode == OutputMode.DEFAULT:
+            if a2ui_component and output_mode in (OutputMode.DEFAULT, OutputMode.A2UI):
+                # A hint implies A2UI when the mode is unspecified, and agrees with an explicit A2UI mode.
                 output_mode = set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))
             elif a2ui_component:
-                # G2: an explicit output_mode is never overridden by the hint.
+                # G2: an explicit non-A2UI output_mode is never overridden by the hint.
+                self.logger.info(
+                    "a2ui_component=%r ignored: explicit output_mode=%s takes precedence", a2ui_component, output_mode
+                )
                 a2ui_component = None
             elif output_mode == OutputMode.DEFAULT:
                 _resolved_mode = await self._resolve_output_mode(question, ctx)
