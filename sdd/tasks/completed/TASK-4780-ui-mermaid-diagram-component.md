@@ -300,10 +300,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-10-27
+**Notes**: Added `mermaid@^11.17.2` (package.json + lockfile; `--frozen-lockfile` install passes), `A2UIMermaidDiagram.svelte` (dark-mode via `themeStore.isDark` from `$lib/stores/theme.svelte`, the app convention), 6 vitest cases and the pytest wrapper. `vite build` emits `mermaid.core-*.js` (652 kB) as its own async chunk, with no `securityLevel` string in any `index-*.js` entry chunk. Real-browser smoke (real mermaid + DOMPurify in headless Chrome, flowchart + class diagram, labels visible after sanitization) is in artifacts/logs/FEAT-753-mermaid-smoke.{md,json,py} (force-added; screenshots stay local). pnpm needed a task-local `--store-dir` because the default store is read-only in the sandbox; pnpm also rewrote the `\\u2014` escape in package.json's `generate` script, which I restored by hand. Ran under a prior orphan attempt's structure (commit 68938237e) but re-verified and changed the theme detection.
 
-**Completed by**: [agent name]
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
