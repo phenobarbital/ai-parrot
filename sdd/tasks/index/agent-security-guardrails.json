@@ -257,7 +257,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -270,8 +270,9 @@
       "parallelism_notes": "TASK-4827: imports EngineSpec/resolve_engine/warmup_model (_engine_chassis.py). TASK-4828: imports score_async. TASK-4829: calls SecurityEventLogger.log_security_category_event. TASK-4832: default model id/graph/threshold constants are read from results-jailbreak/manifest.json and test-checked against it.",
       "assigned_to": null,
       "started_at": "2026-10-27T23:03:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4835-jailbreak-guardrail.md"
+      "completed_at": "2026-10-27T23:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4835-jailbreak-guardrail.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4836",
