@@ -184,10 +184,8 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Seat: sonnet · Backend: native · Attempts: 1 · Tokens: ~73k)
+**Date**: 2026-10-27
+**Notes**: SecurityEventLogger.log_security_category_event added (content-free); 4 new tests; merge-tier validation green. A hook-written sdd/ledger/events.jsonl was swept into the coder commit and stripped before merge (not a coder defect). Closed via close_task.sh (no durable review-evidence artifact writable).
 
 **Deviations from spec**: none
