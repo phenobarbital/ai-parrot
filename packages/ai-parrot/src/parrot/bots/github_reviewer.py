@@ -79,7 +79,10 @@ from parrot.scheduler import ScheduleType, schedule, schedule_daily_report, sche
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
+    FileContentResult,
     GitToolkit,
+    GitToolkitError,
+    RepoDirectoryListing,
     StatsNotReadyError,
     WeeklyCodeFrequency,
 )
@@ -1907,6 +1910,198 @@ class GitHubReviewer(Agent):
             reason=f"Review crashed: {type(error).__name__}: {error}",
             payload=payload,
         )
+
+    @staticmethod
+    def _is_valid_spec_content(content: FileContentResult, feature_id: str) -> bool:
+        """Return whether a file result is readable text with an exact unfenced feature header."""
+        if (
+            not content.exists
+            or content.error is not None
+            or content.truncated
+            or content.encoding != "utf-8"
+            or not isinstance(content.content, str)
+        ):
+            return False
+
+        feature_header = re.compile(rf"^\s*\*\*Feature ID\*\*:\s*{re.escape(feature_id)}\s*$")
+        in_fence = False
+        fence_marker = ""
+        for line in content.content.splitlines():
+            marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+            if marker:
+                token = marker.group(1)[0]
+                if not in_fence:
+                    in_fence = True
+                    fence_marker = token
+                elif token == fence_marker:
+                    in_fence = False
+                continue
+            if not in_fence and feature_header.fullmatch(line):
+                return True
+        return False
+
+    @staticmethod
+    def _is_direct_spec_path(path: str) -> bool:
+        """Return whether ``path`` is a direct child SDD specification file."""
+        prefix = "sdd/specs/"
+        suffix = path[len(prefix) :] if path.startswith(prefix) else ""
+        return bool(suffix) and "/" not in suffix and suffix.endswith(".spec.md")
+
+    async def _locate_spec_file(self, repo: str, feature_id: str, ref: str) -> Optional[str]:
+        """Resolve a validated direct spec path at ref within a bounded read budget."""
+        if not ref or self.git_toolkit is None:
+            return None
+
+        read_cache: Dict[str, Optional[FileContentResult]] = {}
+
+        async def read_candidate(path: str) -> Optional[FileContentResult]:
+            """Read a candidate once, respecting the shared lookup budget."""
+            if path in read_cache:
+                return read_cache[path]
+            if len(read_cache) >= self.max_spec_scan_files:
+                return None
+            try:
+                result = await self.git_toolkit.get_file_content_at_ref(path, ref, repository=repo)
+            except GitToolkitError as exc:
+                self.logger.warning("GitHubReviewer: unable to read SDD spec %s at %s: %s", path, ref, exc)
+                result = None
+            read_cache[path] = result
+            return result
+
+        try:
+            search_result = await self.git_toolkit.search_repo_code(
+                f'"{feature_id}" path:sdd/specs extension:md', repository=repo
+            )
+        except GitToolkitError as exc:
+            self.logger.warning("GitHubReviewer: SDD spec search failed for %s: %s", feature_id, exc)
+            search_result = None
+
+        if (
+            search_result is not None
+            and search_result.error is None
+            and search_result.total_count == 1
+            and len(search_result.items) == 1
+        ):
+            candidate = search_result.items[0].get("path")
+            if isinstance(candidate, str) and self._is_direct_spec_path(candidate):
+                content = await read_candidate(candidate)
+                if content is not None and self._is_valid_spec_content(content, feature_id):
+                    return candidate
+
+        try:
+            listing: RepoDirectoryListing = await self.git_toolkit.list_repo_directory(
+                path="sdd/specs", ref=ref, repository=repo
+            )
+        except GitToolkitError as exc:
+            self.logger.warning("GitHubReviewer: unable to list SDD specs at %s: %s", ref, exc)
+            return None
+
+        if not listing.exists:
+            return None
+        for entry in sorted(listing.entries, key=lambda item: item.path):
+            if entry.type != "file" or not self._is_direct_spec_path(entry.path):
+                continue
+            content = await read_candidate(entry.path)
+            if content is not None and self._is_valid_spec_content(content, feature_id):
+                return entry.path
+        return None
+
+    @staticmethod
+    def _parse_spec_sections(markdown: str) -> Dict[str, str]:
+        """Split Markdown on unfenced level-two headings with normalized section keys."""
+        sections: Dict[str, List[str]] = {}
+        current_key: Optional[str] = None
+        in_fence = False
+        fence_marker = ""
+        for line in markdown.splitlines(keepends=True):
+            marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+            if marker:
+                token = marker.group(1)[0]
+                if not in_fence:
+                    in_fence = True
+                    fence_marker = token
+                elif token == fence_marker:
+                    in_fence = False
+            heading = None if in_fence else re.match(r"^##\s+(.+?)\s*$", line)
+            if heading:
+                current_key = re.sub(r"^\d+\.\s+", "", heading.group(1)).lower()
+                sections.setdefault(current_key, [])
+            elif current_key is not None:
+                sections[current_key].append(line)
+        return {key: "".join(value) for key, value in sections.items()}
+
+    @staticmethod
+    def _filter_spec_acceptance_criteria(acceptance_criteria: str) -> str:
+        """Remove SDD template boilerplate while retaining substantive criterion text."""
+        generic_criteria = {
+            "all unit tests pass (`pytest tests/unit/ -v`)",
+            "all integration tests pass (`pytest tests/integration/ -v`)",
+            "documentation updated in `docs/`",
+            "no breaking changes to existing public api",
+            "performance benchmark: <metric> within <threshold>",
+        }
+        retained: List[str] = []
+        in_comment = False
+        for line in acceptance_criteria.splitlines():
+            stripped = line.strip()
+            if "<!--" in stripped:
+                in_comment = "-->" not in stripped.split("<!--", 1)[1]
+                continue
+            if in_comment:
+                if "-->" in stripped:
+                    in_comment = False
+                continue
+            if not stripped or stripped.startswith(">") or re.fullmatch(r"[-*_]{3,}", stripped):
+                continue
+            normalized = re.sub(r"^(?:(?:[-*+]|\d+[.)])\s*)?(?:\[\s*[ xX]\s*\]\s*)?", "", stripped)
+            normalized = " ".join(normalized.split()).lower()
+            if normalized in generic_criteria or re.fullmatch(r"criterion\s+n", normalized):
+                continue
+            retained.append(line)
+        return "\n".join(retained)
+
+    async def _fetch_spec_requirement(self, repo: str, feature_id: str, ref: str) -> Optional[Dict[str, Any]]:
+        """Return validated SDD requirements in the existing Jira fields envelope."""
+        path = await self._locate_spec_file(repo, feature_id, ref)
+        if path is None or self.git_toolkit is None:
+            return None
+        try:
+            content = await self.git_toolkit.get_file_content_at_ref(path, ref, repository=repo)
+        except GitToolkitError as exc:
+            self.logger.warning("GitHubReviewer: unable to re-read SDD spec %s at %s: %s", path, ref, exc)
+            return None
+        if not self._is_valid_spec_content(content, feature_id):
+            return None
+
+        sections = self._parse_spec_sections(content.content or "")
+        acceptance_criteria = self._filter_spec_acceptance_criteria(sections.get("acceptance criteria", ""))
+        if not acceptance_criteria:
+            return None
+
+        title = ""
+        in_fence = False
+        fence_marker = ""
+        for line in (content.content or "").splitlines():
+            marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+            if marker:
+                token = marker.group(1)[0]
+                if not in_fence:
+                    in_fence = True
+                    fence_marker = token
+                elif token == fence_marker:
+                    in_fence = False
+                continue
+            heading = None if in_fence else re.match(r"^#\s+(.+?)\s*$", line)
+            if heading:
+                title = heading.group(1)
+                break
+        return {
+            "fields": {
+                "summary": title,
+                "description": sections.get("motivation & business requirements", ""),
+                self._ac_field_id: acceptance_criteria,
+            }
+        }
 
     async def _fetch_ticket(
         self,
