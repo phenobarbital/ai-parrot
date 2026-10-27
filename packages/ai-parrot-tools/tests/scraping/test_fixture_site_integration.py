@@ -170,7 +170,7 @@ def _decode_webm(path: str) -> list[tuple[int, int, int]]:
     with av.open(path) as container:
         for frame in container.decode(video=0):
             rgb = frame.to_image().convert("RGB")
-            samples.append(rgb.getpixel((rgb.width - 10, rgb.height - 10)))
+            samples.append(rgb.getpixel((rgb.width // 2, rgb.height - 10)))
     return samples
 
 
@@ -201,6 +201,8 @@ class TestObscuraScreencastRecording:
                 browser = await pw.chromium.connect_over_cdp(endpoint)
                 try:
                     context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                    # Obscura 0.2.2 only lets the most recently created page evaluate JS, so the
+                    # decoy must be created first and the selected page last.
                     decoy = await context.new_page()
                     await decoy.goto(f"{base}/login", wait_until="commit")
                     await decoy.evaluate("document.body.style.background = 'blue'")
@@ -211,11 +213,13 @@ class TestObscuraScreencastRecording:
 
                     # Finding 1: a SEPARATE CDP connection cannot see the page.
                     async with aiohttp.ClientSession() as http:
-                        ver = await (await http.get(f"{endpoint}/json/version")).json()
-                        ws = await http.ws_connect(ver["webSocketDebuggerUrl"])
-                        await ws.send_json({"id": 1, "method": "Target.getTargets"})
-                        reply = await asyncio.wait_for(ws.receive_json(), 5)
-                        await ws.close()
+                        async with http.get(f"{endpoint}/json/version") as resp:
+                            ver = await resp.json()
+                        async with http.ws_connect(ver["webSocketDebuggerUrl"]) as ws:
+                            await ws.send_json({"id": 1, "method": "Target.getTargets"})
+                            reply = {}
+                            while reply.get("id") != 1:
+                                reply = await asyncio.wait_for(ws.receive_json(), 5)
                     assert reply["result"]["targetInfos"] == [], "separate connection unexpectedly sees pages"
 
                     # Finding 2: a CDPSession on the ORIGINAL connection records the exact page.
@@ -223,7 +227,7 @@ class TestObscuraScreencastRecording:
                     frames: list[tuple[int, bytes]] = []
                     tasks: list[asyncio.Task] = []
 
-                    def on_frame(event: dict) -> None:
+                    def on_frame(event: dict) -> None:  # noqa: D401 - CDP event callback
                         ts = int(event["metadata"]["timestamp"] * 1000)
                         if len(frames) < 600:  # bounded
                             frames.append((ts, base64.b64decode(event["data"])))
@@ -242,6 +246,10 @@ class TestObscuraScreencastRecording:
                     await cdp.detach()
                     await asyncio.gather(*tasks, return_exceptions=True)
                     assert len(frames) >= 2
+                    from PIL import Image
+
+                    assert Image.open(io.BytesIO(frames[0][1])).size == (1280, 720)
+                    assert frames[-1][0] - frames[0][0] >= 500, "frames span too short"
 
                     out = str(tmp_path / "screencast.webm")
                     loop = asyncio.get_running_loop()
@@ -252,7 +260,9 @@ class TestObscuraScreencastRecording:
                     first, last = samples[0], samples[-1]
                     assert first[0] > 200 and first[1] > 200 and first[2] > 200, first  # white
                     assert last[0] > 200 and last[1] < 80 and last[2] < 80, last  # red, not decoy blue
-                    assert not any(s[2] > 200 and s[0] < 80 for s in samples), "decoy page recorded"
+                    assert not any(s[2] > 200 and s[0] < 80 for s in samples), "blue decoy recorded"
+                    reds = [i for i, s in enumerate(samples) if s[0] > 200 and s[1] < 80]
+                    assert reds and reds == list(range(reds[0], len(samples))), "white->red not monotone"
 
                     # Preservation: original page/context/state intact after recorder stop.
                     assert page.url == url_before
