@@ -84,7 +84,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -94,8 +94,9 @@
       "parallelism_notes": "modifies integration.py + test_ledger_outbox_integration.py created by TASK-4858 and calls its merge_batch/build_scratch_snapshot; uses LedgerOutbox from TASK-4857 transitively",
       "assigned_to": null,
       "started_at": "2026-10-27T23:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4859-ledger-integrator-git-transaction.md"
+      "completed_at": "2026-10-27T23:26:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4859-ledger-integrator-git-transaction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4860",
