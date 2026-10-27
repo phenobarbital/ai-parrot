@@ -70,9 +70,7 @@ class ContractCache:
         # Phase 2: difflib fill-up on remaining cap_ids
         remaining_cap_ids = [cap_id for cap_id in all_caps_map if cap_id not in matched_cap_ids]
         if remaining_cap_ids and len(matched_caps) < limit:
-            close_ids = difflib.get_close_matches(
-                query, remaining_cap_ids, n=limit - len(matched_caps), cutoff=0.6
-            )
+            close_ids = difflib.get_close_matches(query, remaining_cap_ids, n=limit - len(matched_caps), cutoff=0.6)
             for cid in close_ids:
                 matched_caps.append(all_caps_map[cid])
 

@@ -104,8 +104,6 @@ def check_version_rules(previous: SquawkContract, candidate: SquawkContract) -> 
         c_cap = cand_caps[cap_id]
         if p_cap.input_schema != c_cap.input_schema or p_cap.returns != c_cap.returns:
             if not is_major_bump:
-                violations.append(
-                    f"Capability '{cap_id}' schema or return type changed without major version bump"
-                )
+                violations.append(f"Capability '{cap_id}' schema or return type changed without major version bump")
 
     return violations
