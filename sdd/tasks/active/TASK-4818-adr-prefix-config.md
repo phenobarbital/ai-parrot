@@ -41,7 +41,6 @@ from pydantic import Field, field_validator  # existing models.py:13
 
 - `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py:62`: `DecisionConfig(_Strict)`, fields through `timeout_seconds` at :75; `_Strict` forbids extras.
 - `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:695`: nested `decisions: DecisionConfig` already exists; do not modify that file.
-- `.parrot/wiki.json` already has a decisions object ending with `"timeout_seconds": 60`.
 - Symbol: `sym:packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py#DecisionConfig`.
 
 ### Does NOT Exist
@@ -81,7 +80,6 @@ from pydantic import Field, field_validator  # existing models.py:13
 
 1. Add and validate the two model fields — invalid namespace names must fail at configuration loading.
 2. Expose effective_prefixes as an immutable union — callers need the same semantics without shared mutation.
-3. Set PARROT only in this repository configuration — preserve unconfigured behavior everywhere else.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py` (MODIFY)
 
@@ -106,28 +104,6 @@ def effective_prefixes(self) -> frozenset[str]:
 ```
 
 **Why**: Keep validation in the existing strict Pydantic model and share one plain-data allowlist across both planes.
-### `.parrot/wiki.json` (MODIFY)
-
-Anchor: `    "timeout_seconds": 60` — `.parrot/wiki.json:75`, occurrences: 1 (verified with `grep -F -c`).
-
-```jsonc
-// Within the existing decisions object, preserve every other setting:
-"timeout_seconds": 60,
-"local_prefix": "PARROT",
-"known_prefixes": []
-// FILL IN: maintain valid JSON punctuation; these comments are instructions only.
-```
-
-**Why**: The local repository owns PARROT; other repositories must retain a None default.
-
-
-### FILL IN checklist
-
-- [ ] AC10: accept FS, fs, PARROT and ADR123456; uppercase accepted values; reject empty, 1FS, F S, punctuation, ADR1, adr00001 and RFC2119 in both fields.
-- [ ] Defaults are local_prefix=None and known_prefixes=[]; effective_prefixes includes local prefix, deduplicates and never mutates fields.
-- [ ] This repository sets local_prefix=PARROT; nested WikiProjectConfig validation and serialization remain compatible.
-- [ ] Complete all blueprint bodies; no placeholder may remain in implementation files.
-
 ## Acceptance Criteria
 
 - [ ] AC10: accept FS, fs, PARROT and ADR123456; uppercase accepted values; reject empty, 1FS, F S, punctuation, ADR1, adr00001 and RFC2119 in both fields.
