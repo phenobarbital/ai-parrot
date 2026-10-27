@@ -13,7 +13,6 @@ from .base import Guardrail, GuardrailStage
 from .pipeline import GuardrailPipeline, GuardrailTelemetryEntry
 from .registry import build_guardrails, expand_presets
 
-
 def _requested_name(item: str | dict[str, Any] | Guardrail) -> str | None:
     """Best-effort extraction of the guardrail name an explicit spec entry requests.
 

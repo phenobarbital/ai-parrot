@@ -1,4 +1,5 @@
 """FEAT-761 TASK-4826 — registry names + security preset."""
+
 import os
 import subprocess
 import sys
