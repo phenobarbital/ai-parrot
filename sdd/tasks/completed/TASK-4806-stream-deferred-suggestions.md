@@ -228,4 +228,7 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed. Anchors re-verified (the `_trusted_source` pop was disambiguated by its preceding comment; `Any` was already imported in responses.py).
+`AIMessage._suggestions_task` is a `PrivateAttr` placed right below the `suggestions` field; `ask_stream` pops `defer_suggestions` and builds the `_attach_suggestions` coroutine once, then either schedules it (`asyncio.create_task`) or awaits it, keeping exactly one textual call so TASK-4800's source test stays valid.
+Tests: 6 new in `test_suggestion_stream_deferred.py` (private attr never serialised; source-level branch/ordering; the flag precedes and is absent from the explicit `llm_kwargs` dict; create_task keeps the turn-skill context after the scope exits; deferred task resolves to the same message with chips while the message is still chip-less beforehand). With `test_linked_surface_lifting.py` and `test_suggestion_bot_wiring.py`: 20 passed.
+Limitation: `ask_stream` itself is not driven end to end (it needs a full bot and LLM client); the branch is verified by source inspection plus the isolated task mechanics. ruff: only the pre-existing findings in base.py.
