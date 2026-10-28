@@ -171,6 +171,8 @@ removes only what the run created.
 compare `(Get-FileHash install-parrot.ps1).Hash` with its line in `SHA256SUMS`, read the script, then run
 `powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global -With sdd`.
 
+> **Windows status (pending CI verification):** the `-Global` path has not yet run on a Windows runner. CI checks the script's syntax, its `-DryRun` plan and its pre-write gates under `pwsh` on Linux; the install itself, the post-install rollback and the USER PATH restore are covered only by an offline harness that is still marked expected-to-fail. They become verified claims when the install-matrix Windows leg passes.
+
 Reference detail (gate, plan text, launcher order, `--portable`, version skew) is in
 [docs/install/global-runtime.md](install/global-runtime.md).
 

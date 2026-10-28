@@ -178,4 +178,7 @@ this release have no gate. The fix is `parrot self update` (managed) or `parrot 
 ## Windows notes
 
 The PowerShell installer needs an x64 Windows with PowerShell 5.1+ (`Invoke-WebRequest`, `Get-FileHash`),
-verifies the uv zip with `Get-FileHash`, and edits only the USER PATH; a rollback restores the original value.
+verifies the uv zip with `Get-FileHash`, and edits only the USER PATH; a rollback is designed to restore the
+original value.
+
+> **Windows status (pending CI verification):** the `-Global` path has not yet run on a Windows runner. CI checks the script's syntax, its `-DryRun` plan and its pre-write gates under `pwsh` on Linux; the install itself, the post-install rollback and the USER PATH restore are covered only by an offline harness that is still marked expected-to-fail. They become verified claims when the install-matrix Windows leg passes.
