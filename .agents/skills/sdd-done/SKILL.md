@@ -16,7 +16,7 @@ and legacy shell examples; retain all workflow gates and evidence requirements.
 Use this skill when the user asks to run `sdd-done`, close a feature, push an
 SDD worktree, open the feature PR, or clean up a completed SDD worktree.
 
-Codex invocation: `$sdd-done FEAT-NNN [--dry-run] [--merge] [--force] [--resolve-jira] [--sync-down]`.
+Codex invocation: `$sdd-done FEAT-NNN [--dry-run] [--merge] [--force] [--sync-down]`.
 
 ## Purpose
 
@@ -111,11 +111,33 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - exit non-zero: abort the entire command now, before building the
      verification report — `--force` does not bypass this (spec AC9); it only
      overrides per-task partial/missing evidence and ledger merge blockers
+     - before exiting, run the `on_failure` hooks (FEAT-764): write the hook context
+       (step 4.8 fields, `abort_reason` = "E2E gate <status>") to
+       `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/context.json`, then
+       `python -m scripts.sdd.run_closeout_hooks --event on_failure --context <ctx> --root <worktree> || true`;
+       non-blocking, its exit code is ignored and it never changes the abort
    - the decision table itself (policy resolution, where a missing `e2e` key
      defaults to `optional` and a malformed value is never coerced; missing
      plans; validator errors; an uninstalled `ai-parrot-server`) lives in
      `scripts/sdd/check_e2e_closeout.py`, not here — the exit code is the
      contract, and the gate takes no `--force` argument at all
+4.8. Closeout hooks — pre_pr (FEAT-764), after 4.7's test report and before step 6:
+   - write the hook context JSON (`feat_id`, `spec_path`, `branch`, `base_branch`, `worktree`,
+     `test_report_md` as the rendered report text, `e2e_gate` as the step 4.6 JSON object,
+     `abort_reason` null, `dry_run`) to `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/context.json`
+   - run `python -m scripts.sdd.run_closeout_hooks --event pre_pr --context <ctx> --root <worktree>`
+     (add `--dry-run` when `$sdd-done --dry-run`; pre_pr runs under dry-run). Its stdout JSON carries
+     `results[]`, `pending_agents[]`, `blocking_failed` and `evidence_md`
+   - exit 0: continue; keep `evidence_md` for the PR body (`## Evidence`) and the step 12 `Hooks:` line
+   - exit 3 (agent hooks pending): for each `pending_agents[]` entry, native subagent dispatch is
+     unavailable on Codex, so record it as unsupported: `python -m scripts.sdd.run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --record <name> --status fail --summary "agent hooks unsupported on this host"`
+     (run inline instead only if the host can actually run it); then
+     `python -m scripts.sdd.run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --finalize`
+     and continue on exit 0
+   - exit 1 (a blocking pre_pr hook failed) or exit 2 (config/usage error, e.g. malformed
+     `.parrot/sdd_hooks.toml`): abort before step 8. Run the `on_failure` hooks as in step 4.6
+     (`--event on_failure`, `abort_reason` set, `|| true`). `--force` does not bypass this
+   - the pre_pr hook decision is the exit code; never re-derive it here
 5. Classify:
    - `VERIFIED`: commit found and files exist
    - `PARTIAL`: commit found but files are missing
@@ -180,7 +202,8 @@ do not run task closure again on base_branch and do not clean worktrees with unk
       exactly when blockers exist — gate on the **exit code**, not on parsing its output
     - If blockers found and not `--force`, refuse merge and list the blockers
       (`wikitoolkit ledger acknowledge <ISSUE-ID> --reason "..." --actor human:<name>`
-      is how a human resolves one)
+      is how a human resolves one); before refusing, run the `on_failure` hooks
+      (`abort_reason` = "merge blocked by critical ledger issues", `|| true`, exit code ignored)
     - If `--force`, warn but proceed with merge
 
 11. Snapshot ledger issues (feature flows only):
@@ -206,24 +229,26 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 12. Integrate:
     - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
     - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
-      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD" 2>/dev/null)`) after `<N>/<total> tasks verified.`.
+      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD" 2>/dev/null)`) after `<N>/<total> tasks verified.`, followed by the
+      pre_pr `evidence_md` as `## Evidence` when it is non-empty.
       Guard any `--body-file "$TEST_REPORT_MD"` fallback with `[ -s "$TEST_REPORT_MD" ]`.
     - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
+12.1. Closeout hooks — post_pr (FEAT-764), after step 12 and skipped under `--dry-run`:
+    - set `pr_url` (PR flow) or `merge_sha` (`--merge`, the HEAD of the main repo after the merge)
+      in the hook context, then run `python -m scripts.sdd.run_closeout_hooks --event post_pr --context <ctx> --root <worktree>`
+    - agent hooks follow the same loop as 4.8 (`--event post_pr`, record unsupported as `fail`, then `--finalize`)
+    - post_pr never aborts closeout; report its outcome in the step 12 output only
+    - the Jira transition is now the opt-in `jira.transition` builtin in `.parrot/sdd_hooks.toml`
+      (a `post_pr` hook); it skips with a note when the spec has no Jira key
 13. Hotfix sync-down:
     - only with `--sync-down` or deprecated `--sync-dev`
     - verify feature branch is ancestor of `origin/main`
     - merge into `staging`, abort cleanly on conflict
     - merge into `dev`, abort cleanly on conflict
     - leave user on `main`
-14. Resolve Jira if requested:
-    - find Jira key in spec or proposal metadata
-    - prefer Jira MCP tools if available
-    - fallback to configured Jira environment variables
-    - transition to Done, Resolved, Ready for UAT, Complete, or Close
-    - report missing credentials or missing transitions without failing closeout
 15. Cleanup:
     - remove the worktree only after successful push/PR or merge path
     - if running inside it, leave the feature worktree for an allowed directory
@@ -242,9 +267,10 @@ Branch pushed: <branch>
 PR opened: <url> or manual command printed
 Ledger: closed issue:<id> (task:TASK-NNN) / skipped issue:<id> - <reason>
 E2E: <policy> - <status> (gate_satisfied: <bool>)
+Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
+Hook evidence: <absolute artifact paths from evidence_md, or none>
 Tests: <passed>/<tests> (<failed> failed) - re-run: done
 Worktree removed: .claude/worktrees/<name>
-Jira: <key> -> Done, when requested and successful
 ```
 
 ## References

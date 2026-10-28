@@ -1,14 +1,13 @@
 ---
 model: haiku
-description: Verify that a feature's tasks were implemented, check for merge blockers, snapshot ledger issues, push the branch, optionally resolve the linked Jira ticket, and clean up the worktree.
+description: Verify that a feature's tasks were implemented, check for merge blockers, snapshot ledger issues, push the branch, and clean up the worktree.
 ---
 
 # /sdd-done — Verify, Check Blockers, Snapshot, Push, and Cleanup a Feature
 
 Verify that a feature's tasks were implemented in its worktree, check for merge
 blockers scoped to the current feature, snapshot ledger issues on base branch,
-ensure the branch is pushed, and clean up the worktree. Optionally transitions
-the linked Jira ticket to "Done" / "Resolved".
+ensure the branch is pushed, and clean up the worktree.
 
 **This command runs on the spec's `base_branch`** — read from the spec's
 YAML frontmatter (FEAT-145). For `type: feature` that is `dev` (default)
@@ -24,7 +23,6 @@ verify work, but modifies state only on `base_branch`.
 /sdd-done FEAT-014 --dry-run           # show what would change, don't change anything
 /sdd-done FEAT-014 --merge             # direct merge into base_branch (checks blockers)
 /sdd-done FEAT-014 --force             # mark done even if some checks fail, bypass blockers
-/sdd-done FEAT-014 --resolve-jira      # also transition the Jira ticket to Done
 /sdd-done FEAT-014 --sync-down         # for hotfixes: after the user merges the PR
                                        # to main, propagate the change to staging + dev
                                        # (mostly redundant with sync-down.yml Action)
@@ -47,7 +45,7 @@ verify work, but modifies state only on `base_branch`.
 > It opens the PR itself in every flow, against the flow's `base_branch` — `main` for a
 > hotfix brief, `dev`/`staging` for a feature. Merging a `main` PR is the human act:
 > `--merge` with `BASE_BRANCH == main` is refused before anything is pushed, under every
-> flag combination — including `--force` and `--resolve-jira`. After a `main` PR merges,
+> flag combination — including `--force`. After a `main` PR merges,
 > `.github/workflows/sync-down.yml` propagates it to `staging` and `dev`; if the Action
 > fails or you are offline, re-run with `--sync-down`. (`--sync-dev` is a deprecated alias.)
 
@@ -231,6 +229,9 @@ JSON object: `policy`, `status`, `gate_satisfied`, `reason_codes`, `allowed`.
   ```
   Exit nonzero. `--dry-run` still shows this refusal and stops the same way
   it stops after Step 5 — it never proceeds to a mutating step.
+  Before exiting, run the `on_failure` hooks (FEAT-764; non-blocking, never changes this abort, exit code ignored):
+  `write_hook_context "E2E gate <status>"; python -m scripts.sdd.run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`
+  (`write_hook_context` is defined in §4.8; calling it before §4.8 is safe — unknown fields are null).
 
 The decision table itself — policy resolution (a missing `e2e` key defaults to
 `optional`; a present but malformed value is never coerced to a safe default),
@@ -280,6 +281,82 @@ python -m scripts.sdd.test_report render --index "$IDX" --worktree "$WT" --out "
 `render` always writes `$TEST_REPORT_MD` and exits 0 — an unusable index yields a visible
 `## Tests — no data` section instead of an error, so no later step can fail on a missing file
 (issue:326c8c0da36c). Only a malformed invocation exits 2.
+
+### 4.8. Closeout Hooks — pre_pr (FEAT-764)
+
+Repository-defined hooks from `.parrot/sdd_hooks.toml` (absent file ⇒ no-op). The dispatcher is
+code; **its exit code is the contract** — do not re-derive it here. A blocking `pre_pr` failure is
+never bypassed by `--force`. `pre_pr` runs under `--dry-run` too. The dispatcher prints one JSON
+object on stdout (`event`, `results[]`, `pending_agents[]`, `blocking_failed`, `evidence_md`).
+
+The hook context is one JSON file written by the helper below. Step 4.6 uses the same helper for its
+abort path, before this step has run: fields not yet known (`test_report_md`, `pr_url`, `merge_sha`)
+are null.
+
+```bash
+# Hook-context writer (FEAT-764). $1 = abort_reason ("" when not aborting).
+write_hook_context() {
+  HOOKS_DIR="${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/$FEAT_ID"; mkdir -p "$HOOKS_DIR"
+  FEAT_ID="$FEAT_ID" BRANCH="$BRANCH" BASE_BRANCH="$BASE_BRANCH" WORKTREE_PATH="$WORKTREE_PATH" \
+  SPEC_PATH="${SPEC_PATH:-sdd/specs/<feature-slug>.spec.md}" TEST_REPORT_MD="${TEST_REPORT_MD:-}" \
+  GATE_JSON="${GATE_JSON:-}" PR_URL="${PR_URL:-}" MERGE_SHA="${MERGE_SHA:-}" \
+  HOOK_ABORT_REASON="$1" DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<'PY'
+import json, os, pathlib, sys
+env = os.environ
+def _text(path):
+    p = pathlib.Path(path) if path else None
+    return p.read_text(encoding="utf-8") if p and p.is_file() else None
+def _gate(raw):
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
+ctx = {
+    "feat_id": env["FEAT_ID"], "spec_path": env["SPEC_PATH"], "branch": env["BRANCH"],
+    "base_branch": env["BASE_BRANCH"], "worktree": env["WORKTREE_PATH"],
+    "pr_url": env["PR_URL"] or None, "merge_sha": env["MERGE_SHA"] or None,
+    "test_report_md": _text(env["TEST_REPORT_MD"]), "e2e_gate": _gate(env["GATE_JSON"]),
+    "abort_reason": env["HOOK_ABORT_REASON"] or None, "dry_run": env["DRY_RUN"] == "1",
+}
+pathlib.Path(sys.argv[1]).write_text(json.dumps(ctx), encoding="utf-8")
+PY
+}
+
+write_hook_context ""
+HOOKS_OUT=$(python -m scripts.sdd.run_closeout_hooks --event pre_pr \
+    --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" ${DRY_RUN:+--dry-run})
+HOOKS_EXIT=$?
+```
+
+`DRY_RUN` is `1` when the command was invoked with `--dry-run`, otherwise empty.
+
+| `HOOKS_EXIT` | Meaning | Action |
+|---|---|---|
+| `0` | every blocking hook passed (non-blocking failures allowed) | `EVIDENCE_MD=$(jq -r '.evidence_md' <<<"$HOOKS_OUT")`; count `results[]` by status for Step 12's `Hooks:` line; continue to §5 |
+| `3` | agent hooks pending | run the agent loop below |
+| `1` | a `blocking` pre_pr hook failed | run on_failure (below), then abort before Step 7 |
+| `2` | config or usage error (a malformed `.parrot/sdd_hooks.toml` fails closed) | run on_failure, then abort before Step 7 |
+
+**Agent loop (exit 3).** For each entry of `pending_agents[]` in `HOOKS_OUT`, in order:
+1. Launch it: `Agent(subagent_type=<agent>, prompt=<prompt>)`.
+2. Record its outcome:
+   ```bash
+   python -m scripts.sdd.run_closeout_hooks --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" \
+       --record "<name>" --status pass|fail --summary "<one line>"
+   ```
+After all entries are recorded, finalize (unrecorded pending hooks become failures):
+```bash
+HOOKS_OUT=$(python -m scripts.sdd.run_closeout_hooks --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" --finalize)
+HOOKS_EXIT=$?
+```
+`--finalize` returns `0` (continue as above) or `1` (abort as below).
+
+**Abort (exit 1 or 2 after finalize):** `write_hook_context "pre_pr blocking hook failed"` (or the
+config-error reason), then
+`python -m scripts.sdd.run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`,
+and stop. `on_failure` never changes the abort; its exit code is ignored.
+
+The `EVIDENCE_MD` value is appended to the PR body in §9.2 as `## Evidence` when non-empty.
 
 ### 5. Build Verification Report
 Classify each task:
@@ -463,6 +540,9 @@ if [[ "$MERGE_FLAG" == "--merge" ]]; then
         if [[ "$FORCE_FLAG" != "--force" ]]; then
             echo ""
             echo "Use --force to bypass blocker checks (not recommended)."
+            # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
+            write_hook_context "merge blocked by critical ledger issues"
+            python -m scripts.sdd.run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
             exit 1
         else
             echo ""
@@ -573,6 +653,7 @@ gh pr create \
 <N>/<total> tasks verified.
 
 $(cat "$TEST_REPORT_MD" 2>/dev/null)
+${EVIDENCE_MD:+$EVIDENCE_MD}
 
 ---
 _Closed by /sdd-done_
@@ -654,6 +735,26 @@ After a successful merge and self-heal, push `<BASE_BRANCH>`:
 ```bash
 git push origin "$BASE_BRANCH"
 ```
+
+### 9.3. Closeout Hooks — post_pr (FEAT-764)
+
+Runs after §9.2, once the PR URL (PR flow) or the merge SHA (`--merge`) is known. Skipped under
+`--dry-run`. It **never aborts** closeout: its outcome is reported in Step 12 only. Agent hooks follow
+the same dispatch loop as §4.8 (exit 3 → launch each `pending_agents[]` entry → `--record` → `--finalize`),
+with `--event post_pr`.
+
+```bash
+if [[ -z "$DRY_RUN" ]]; then
+    PR_URL="<PR URL printed by §9.2>"                     # PR flow
+    # MERGE_SHA="$(git -C "$MAIN_ROOT" rev-parse HEAD)"   # --merge flow, after the merge
+    write_hook_context ""
+    HOOKS_POST_OUT=$(python -m scripts.sdd.run_closeout_hooks --event post_pr --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH")
+    POST_EXIT=$?   # reported only; never fails closeout
+fi
+```
+
+The Jira transition is now the opt-in `jira.transition` builtin in `.parrot/sdd_hooks.toml`
+(a `post_pr` hook); it skips with a note when the spec has no Jira key.
 
 ### 9.5. Hotfix → Sync-down (FEAT-187, only with `--sync-down`)
 
@@ -762,109 +863,6 @@ else
 fi
 ```
 
-### 10. Transition Jira Ticket (if --resolve-jira)
-
-If `--resolve-jira` is passed AND the spec has a Jira key (set by `/sdd-tojira`):
-
-**a) Extract the Jira key from the spec:**
-```bash
-# Look for "**Jira**: [NAV-8036](...)" or a "jira:" metadata field in the spec
-JIRA_KEY=$(grep -oP '(?<=\*\*Jira\*\*: \[)[A-Z]+-\d+' sdd/specs/<feature>.spec.md)
-# Or from the brainstorm "## Jira Source" table
-if [[ -z "$JIRA_KEY" ]]; then
-    JIRA_KEY=$(grep -oP '(?<=\| Key \| )[A-Z]+-\d+' sdd/proposals/<key>-*.brainstorm.md)
-fi
-```
-
-If no Jira key is found, skip this step with a note:
-```
-ℹ️  No Jira key found in spec — skipping Jira transition.
-   To link a spec to Jira: /sdd-tojira <spec-path>
-```
-
-**b) Load Jira credentials:**
-```bash
-eval "$(python -c "from navconfig import config; import os; [print(f'export {k}={v}') for k,v in os.environ.items() if k.startswith('JIRA_')]")"
-JIRA_INSTANCE="${JIRA_INSTANCE%/}"
-```
-
-If `JIRA_INSTANCE` or `JIRA_API_TOKEN` are not set, warn and skip.
-
-**c) Get available transitions for the ticket:**
-
-Jira transitions are workflow-dependent — you cannot set a status directly.
-First, fetch the available transitions:
-
-**MCP path:**
-```
-jira_transition_issue(issue_key="<JIRA_KEY>")  # list available transitions
-```
-
-**curl fallback:**
-```bash
-TRANSITIONS=$(curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
-  "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY/transitions")
-echo "$TRANSITIONS" | jq '.transitions[] | {id, name}'
-```
-
-**d) Find and execute the "Done" / "Resolved" transition:**
-
-Look for a transition whose name matches (case-insensitive):
-`Done`, `Resolved`, `Close`, `Ready for UAT`, `Complete`.
-
-```bash
-# Find the transition ID
-TRANSITION_ID=$(echo "$TRANSITIONS" | jq -r '
-  .transitions[] |
-  select(.name | test("(?i)done|resolved|close|complete|ready for uat")) |
-  .id' | head -1)
-```
-
-If found, execute it:
-
-**MCP path:**
-```
-jira_transition_issue(issue_key="<JIRA_KEY>", transition_id="<TRANSITION_ID>")
-```
-
-**curl fallback:**
-```bash
-curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY/transitions" \
-  -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}"
-```
-
-If multiple matching transitions exist, prefer in this order:
-1. "Done"
-2. "Resolved"
-3. "Ready for UAT"
-4. "Complete"
-5. "Close"
-
-If no matching transition is found:
-```
-⚠️  No "Done" or "Resolved" transition available for <JIRA_KEY>.
-   Current status: <current_status>
-   Available transitions: <list>
-   You may need to transition it manually in Jira.
-```
-
-**e) Optionally resolve subtasks too:**
-
-If the ticket has subtasks (created by `--with-subtasks` in `/sdd-tojira`),
-transition each one that is still open:
-```bash
-SUBTASKS=$(curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
-  "$JIRA_INSTANCE/rest/api/3/issue/$JIRA_KEY?fields=subtasks" \
-  | jq -r '.fields.subtasks[].key')
-
-for SUBTASK in $SUBTASKS; do
-    # Get transitions for this subtask, find "Done", execute
-    # Same logic as above
-done
-```
-
 ### 11. Cleanup the Worktree
 ```bash
 git worktree remove "$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
@@ -903,6 +901,8 @@ Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
 E2E: <policy> — <status>
+Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
+Hook evidence: <absolute artifact paths from §4.8 evidence_md, or none>
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
@@ -919,6 +919,8 @@ Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
 E2E: <policy> — <status>
+Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
+Hook evidence: <absolute artifact paths from §4.8 evidence_md, or none>
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
@@ -929,12 +931,6 @@ Ledger: closed issue:569e81756247 (task:TASK-3580)
         skipped issue:0306504b9917 — linked task(s) not verified: TASK-3601
 ```
 
-If `--resolve-jira` was used and succeeded:
-```
-Jira: NAV-8036 → Done ✅
-  Subtasks transitioned: 4/4
-```
-
 If ALL tasks were closed:
 ```
 ✅ FEAT-<ID> — <title>: all <N> tasks closed.
@@ -942,7 +938,6 @@ If ALL tasks were closed:
 Branch pushed. PR opened → <BASE_BRANCH>.
 {if --merge} Merged into <BASE_BRANCH> directly. {end if}
 Worktree cleaned up. Feature branch deleted.
-{if --resolve-jira} Jira NAV-8036 → Done ✅ {end if}
 ```
 
 ## Reference
