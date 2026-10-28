@@ -17,6 +17,10 @@ class JiraToolkitConfig(BaseModel):
     # Verified against JiraToolkit._init_jira_client (jiratoolkit.py:889-939): the
     # only auth_type values handled by the static (non oauth2_3lo) client-init path.
     auth_type: Literal["basic_auth", "token_auth", "oauth", "oauth2_local"] | None = None
+    site_url: str | None = Field(
+        default=None,
+        description="Browser site URL for issue links when server_url is the api.atlassian.com gateway",
+    )
     knowledge_base: str | None = Field(default=None, description="Path to YAML knowledge base file")
     username: str | None = None
     password: str | None = Field(default=None, json_schema_extra=_SECRET)

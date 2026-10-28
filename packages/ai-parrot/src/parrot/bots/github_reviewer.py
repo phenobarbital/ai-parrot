@@ -4185,7 +4185,12 @@ class GitHubReviewer(Agent):
         empty string means "render this ticket as plain text": a report must
         not lose a ticket over a missing base URL.
         """
-        base = getattr(self.jira_toolkit, "server_url", None)
+        toolkit = self.jira_toolkit
+        # ``site_url`` is the browser site; ``server_url`` may be the
+        # api.atlassian.com gateway, whose /browse/ links do not open.
+        base = getattr(toolkit, "site_url", None)
+        if not isinstance(base, str) or not base:
+            base = getattr(toolkit, "server_url", None)
         base = base.rstrip("/") if isinstance(base, str) else ""
         return f"{base}/browse/{key}" if base else ""
 
