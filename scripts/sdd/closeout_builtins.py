@@ -1,7 +1,9 @@
 """Builtin closeout-hook actions for /sdd-done (FEAT-764)."""
+
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -16,6 +18,7 @@ from scripts.sdd.closeout_hooks_config import HookContext, HookKind, HookResult,
 
 BuiltinFn = Callable[[HookSpec, HookContext, Path], HookResult]
 _JIRA_KEY_RE = re.compile(r"\*\*Jira\*\*: \[([A-Z]+-\d+)")
+_JIRA_FRONTMATTER_RE = re.compile(r"^jira:\s*[\"']?\[?([A-Z]+-\d+)", re.MULTILINE)
 
 
 class _Defaulting(dict):
@@ -28,8 +31,15 @@ def _render(template: str, ctx: HookContext) -> str:
     return template.format_map(_Defaulting(ctx.model_dump()))
 
 
-async def _request(method: str, url: str, *, headers: dict[str, str] | None = None,
-                   json_body: Any = None, data: str | None = None, timeout: int = 60) -> tuple[int, Any]:
+async def _request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    json_body: Any = None,
+    data: str | None = None,
+    timeout: int = 60,
+) -> tuple[int, Any]:
     """Single HTTP seam (patched in tests). Returns (status, parsed body or text)."""
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
         async with session.request(method, url, headers=headers, json=json_body, data=data) as resp:
@@ -40,9 +50,36 @@ async def _request(method: str, url: str, *, headers: dict[str, str] | None = No
             return resp.status, body
 
 
+def _ok(status: int) -> bool:
+    """True for any 2xx HTTP status."""
+    return 200 <= status < 300
+
+
+def _jira_cred(name: str) -> str | None:
+    """Resolve a Jira credential: environment first, then navconfig (imported lazily)."""
+    value = os.environ.get(name)
+    if value:
+        return value
+    try:
+        from navconfig import config  # noqa: PLC0415 - optional dependency
+    except ImportError:
+        return None
+    try:
+        found = config.get(name)
+    except Exception:  # noqa: BLE001 - config backends vary; absence means "not configured"
+        return None
+    return str(found) if found else None
+
+
 def _result(hook: HookSpec, status: str, summary: str, started: float) -> HookResult:
-    return HookResult(name=hook.name, kind=HookKind.BUILTIN, status=status, blocking=hook.blocking,
-                      duration_s=round(time.monotonic() - started, 3), summary=summary)
+    return HookResult(
+        name=hook.name,
+        kind=HookKind.BUILTIN,
+        status=status,
+        blocking=hook.blocking,
+        duration_s=round(time.monotonic() - started, 3),
+        summary=summary,
+    )
 
 
 def jira_transition(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> HookResult:
@@ -53,56 +90,76 @@ def jira_transition(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> Hoo
     except (OSError, UnicodeError) as exc:
         return _result(hook, "fail", f"Failed to read spec: {type(exc).__name__}", started)
 
-    key_match = _JIRA_KEY_RE.search(spec_text)
+    key_match = _JIRA_KEY_RE.search(spec_text) or _JIRA_FRONTMATTER_RE.search(spec_text)
     if not key_match:
         return _result(hook, "skipped", "No Jira key in spec", started)
 
     key = key_match.group(1)
-    jira_instance = os.environ.get("JIRA_INSTANCE")
-    jira_username = os.environ.get("JIRA_USERNAME")
-    jira_api_token = os.environ.get("JIRA_API_TOKEN")
+    jira_instance = _jira_cred("JIRA_INSTANCE")
+    jira_username = _jira_cred("JIRA_USERNAME")
+    jira_api_token = _jira_cred("JIRA_API_TOKEN")
 
-    if not all([jira_instance, jira_username, jira_api_token]):
+    if not (jira_instance and jira_username and jira_api_token):
         return _result(hook, "skipped", "Missing Jira credentials", started)
 
+    if not jira_instance.startswith(("http://", "https://")):
+        jira_instance = f"https://{jira_instance}"
     base_url = f"{jira_instance.rstrip('/')}/rest/api/3"
     transitions_url = f"{base_url}/issue/{key}/transitions"
+    basic = base64.b64encode(f"{jira_username}:{jira_api_token}".encode()).decode()
+    auth_headers = {"Accept": "application/json", "Authorization": f"Basic {basic}"}
 
     try:
-        # Try to import navconfig for credentials
-        try:
-            from navconfig import Config
-            config = Config()
-            jira_instance = config.get("jira", {}).get("instance", jira_instance)
-            jira_username = config.get("jira", {}).get("username", jira_username)
-            jira_api_token = config.get("jira", {}).get("api_token", jira_api_token)
-        except ImportError:
-            pass
-
-        status, transitions = asyncio.run(_request("GET", transitions_url, headers={"Accept": "application/json"}, timeout=hook.timeout_s))
-        if status != 200:
+        status, transitions = asyncio.run(
+            _request("GET", transitions_url, headers=auth_headers, timeout=hook.timeout_s)
+        )
+        if not _ok(status):
             return _result(hook, "fail", f"Failed to fetch transitions: HTTP {status}", started)
 
         target_status = hook.with_.get("status", "Done").lower()
         transition_id = None
         for transition in transitions.get("transitions", []):
-            if transition.get("to", {}).get("name", "").lower() == target_status or transition.get("name", "").lower() == target_status:
+            if (
+                transition.get("to", {}).get("name", "").lower() == target_status
+                or transition.get("name", "").lower() == target_status
+            ):
                 transition_id = transition.get("id")
                 break
 
         if not transition_id:
             available = [t.get("to", {}).get("name", t.get("name", "")) for t in transitions.get("transitions", [])]
-            return _result(hook, "fail", f"No matching transition for status '{target_status}'. Available: {', '.join(available)}", started)
+            return _result(
+                hook,
+                "fail",
+                f"No matching transition for status '{target_status}'. Available: {', '.join(available)}",
+                started,
+            )
 
         payload = {"transition": {"id": transition_id}}
-        status, _ = asyncio.run(_request("POST", transitions_url, json_body=payload, headers={"Accept": "application/json"}, timeout=hook.timeout_s))
-        if status != 204:
+        status, _ = asyncio.run(
+            _request(
+                "POST",
+                transitions_url,
+                json_body=payload,
+                headers=auth_headers,
+                timeout=hook.timeout_s,
+            )
+        )
+        if not _ok(status):
             return _result(hook, "fail", f"Transition failed: HTTP {status}", started)
 
         comment_url = f"{base_url}/issue/{key}/comment"
         comment_payload = {"body": f"PR merged: {ctx.pr_url or ''}\nSHA: {ctx.merge_sha or ''}"}
-        status, _ = asyncio.run(_request("POST", comment_url, json_body=comment_payload, headers={"Accept": "application/json"}, timeout=hook.timeout_s))
-        if status != 201:
+        status, _ = asyncio.run(
+            _request(
+                "POST",
+                comment_url,
+                json_body=comment_payload,
+                headers=auth_headers,
+                timeout=hook.timeout_s,
+            )
+        )
+        if not _ok(status):
             return _result(hook, "fail", f"Comment failed: HTTP {status}", started)
 
         return _result(hook, "pass", f"Transitioned {key} to {target_status} and posted comment", started)
@@ -129,7 +186,7 @@ def telegram_send(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> HookR
 
     try:
         status, body = asyncio.run(_request("POST", url, json_body=payload, timeout=hook.timeout_s))
-        if status != 200:
+        if not _ok(status):
             return _result(hook, "fail", f"Telegram send failed: HTTP {status}", started)
         return _result(hook, "pass", "Telegram message sent", started)
     except Exception as exc:
@@ -153,8 +210,10 @@ def _push_ntfy(hook: HookSpec, ctx: HookContext, title: str, message: str, prior
         headers["Authorization"] = f"Bearer {token}"
 
     try:
-        status, _ = asyncio.run(_request("POST", f"{url}/{topic}", headers=headers, data=message, timeout=hook.timeout_s))
-        if status != 200:
+        status, _ = asyncio.run(
+            _request("POST", f"{url}/{topic}", headers=headers, data=message, timeout=hook.timeout_s)
+        )
+        if not _ok(status):
             return "fail", f"ntfy send failed: HTTP {status}"
         return "pass", "ntfy notification sent"
     except Exception as exc:
@@ -177,8 +236,10 @@ def _push_gotify(hook: HookSpec, ctx: HookContext, title: str, message: str, pri
         headers["X-Gotify-Key"] = token
 
     try:
-        status, _ = asyncio.run(_request("POST", f"{url}/message", headers=headers, json_body=payload, timeout=hook.timeout_s))
-        if status != 200:
+        status, _ = asyncio.run(
+            _request("POST", f"{url}/message", headers=headers, json_body=payload, timeout=hook.timeout_s)
+        )
+        if not _ok(status):
             return "fail", f"gotify send failed: HTTP {status}"
         return "pass", "gotify notification sent"
     except Exception as exc:
@@ -227,8 +288,10 @@ def webhook_post(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> HookRe
                 return _result(hook, "fail", f"Invalid JSON in {headers_env}", started)
 
     try:
-        status, _ = asyncio.run(_request("POST", url, json_body=ctx.model_dump(), headers=headers, timeout=hook.timeout_s))
-        if status != 200:
+        status, _ = asyncio.run(
+            _request("POST", url, json_body=ctx.model_dump(), headers=headers, timeout=hook.timeout_s)
+        )
+        if not _ok(status):
             return _result(hook, "fail", f"Webhook POST failed: HTTP {status}", started)
         return _result(hook, "pass", "Webhook POST successful", started)
     except Exception as exc:
