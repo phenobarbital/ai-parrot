@@ -228,7 +228,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -236,8 +236,9 @@
       "parallelism_notes": "exclusive: regenerates shared generated code (ui/schemas/*.json via generate_ts_types.py and src/lib/types/generated/* via pnpm generate)",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4801-chat-models-suggestions-schema.md"
+      "completed_at": "2026-10-28T00:16:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4801-chat-models-suggestions-schema.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4802",
