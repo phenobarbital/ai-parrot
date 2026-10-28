@@ -37,3 +37,21 @@
 - **Finding F2**: navconfig derives its project root from the venv's parent and aborts without `env/<env>/.env`; the
   harness scaffolds an empty `env/dev/.env` next to the throwaway venv. The `--global` bootstrap venv (M2) must do the
   same or set `SITE_ROOT`.
+
+## Local Linux evidence with this branch's wheels (FEAT-633 R7, 2026-10-28)
+This is the local equivalent of the `smoke-core` leg on ubuntu x64. Both wheels were built from the branch at
+`9efbcb711` with `uv build --wheel --python 3.12`: `ai_parrot-1.2.5-cp312-cp312-linux_x86_64.whl` and
+`ai_parrot_tools-1.2.5-py3-none-any.whl`. They were smoked with
+`smoke_install.py --wheel … --wheel … --python 3.12` (`UV_PYTHON_PREFERENCE=only-managed`, `PYTHONPATH`,
+`VIRTUAL_ENV`, `PARROT_PROJECT` and `CLAUDE_PROJECT_DIR` unset).
+- `install_ok=true`, `sdist_failures=[]`, `errors=[]`.
+- `scripts_ok`: `parrot` / `wikitoolkit` / `bookstore` all `true`. **F1 is resolved:** `parrot --help` now exits 0
+  without `pytest` installed (R1, `LazyGroup.format_commands`).
+- `mcp_ok=true`.
+
+The macOS arm64, Windows x64 and ubuntu arm64 legs, plus `smoke-sdd-foreign`, still need a CI run. `install-matrix.yml`
+is not on the default branch, so it cannot be dispatched by itself. The route is `release.yml`, which is on `main` with
+`workflow_dispatch`, dispatched against this branch. Its `smoke-core` job calls this workflow with the freshly built
+`{core-dist-*,dist-tools}` wheels, and its `deploy` job is gated on `github.event_name == 'release'`, so nothing is
+published:
+`gh workflow run release.yml --repo phenobarbital/ai-parrot --ref feat-FEAT-633-parrot-installer`.
