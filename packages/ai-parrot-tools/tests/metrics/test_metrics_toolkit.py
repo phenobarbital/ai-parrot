@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from parrot.metrics.errors import MetricNotFound
+
 from parrot.metrics.models import MetricDefinition
 from parrot.metrics.store import InMemoryMetricStore
 from parrot_tools.metrics.executors import SourceFrame
@@ -111,5 +113,47 @@ async def test_list_metrics_uses_request_tenant_and_rejects_invalid(
     )
     await toolkit._pre_execute("list_metrics")
     assert [metric.id for metric in await toolkit.list_metrics()] == ["worked_hours"]
-    with pytest.raises(ValueError):
-        await toolkit._pre_execute("list_metrics", tenant="../x")
+    # A model-supplied tenant argument is never honoured.
+    await toolkit._pre_execute("list_metrics", tenant="other-corp")
+    assert toolkit._call_tenant == "acme"
+
+
+async def test_call_tenant_is_isolated_between_concurrent_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two concurrent tasks bind their own tenant; neither overwrites the other mid-call."""
+    import asyncio
+
+    toolkit = MetricsToolkit(store=InMemoryMetricStore([]))
+    seen: dict[str, str | None] = {}
+
+    async def run(name: str) -> None:
+        monkeypatch.setattr(
+            "parrot_tools.metrics.toolkit.current_context", lambda: SimpleNamespace(kwargs={"tenant": name})
+        )
+        await toolkit._pre_execute("list_metrics")
+        await asyncio.sleep(0.01)
+        seen[name] = toolkit._call_tenant
+
+    await asyncio.gather(asyncio.create_task(run("acme")), asyncio.create_task(run("globex")))
+    assert seen == {"acme": "acme", "globex": "globex"}
+
+
+async def test_private_metric_hidden_from_non_owner(
+    worked_hours: MetricDefinition, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Private definitions are visible only to their owner in the tool lane."""
+    private = worked_hours.model_copy(update={"tenant": "acme", "visibility": "private", "owner": "u1"})
+    toolkit = MetricsToolkit(store=InMemoryMetricStore([private]))
+    monkeypatch.setattr(
+        "parrot_tools.metrics.toolkit.current_context",
+        lambda: SimpleNamespace(kwargs={"tenant": "acme", "user_id": "u2"}),
+    )
+    await toolkit._pre_execute("list_metrics")
+    assert await toolkit.list_metrics() == []
+    with pytest.raises(MetricNotFound):
+        await toolkit.describe_metric("worked_hours")
+    monkeypatch.setattr(
+        "parrot_tools.metrics.toolkit.current_context",
+        lambda: SimpleNamespace(kwargs={"tenant": "acme", "user_id": "u1"}),
+    )
+    await toolkit._pre_execute("list_metrics")
+    assert [m.id for m in await toolkit.list_metrics()] == ["worked_hours"]

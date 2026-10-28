@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import date
 from typing import Any, Literal
 
 from parrot.metrics.context import resolve_metric_tenant
+from parrot.metrics.errors import MetricNotFound
 from parrot.metrics.models import (
     ChartShape,
     DataTableShape,
@@ -30,6 +32,8 @@ from .executors import executor_for
 from .models import MetricExplanation, MetricSummary, QueryMetricResult
 from .periods import comparison_period, resolve_period, series_buckets
 from .shapes import KPIFigures, aggregate, build_linked_metric_envelope, build_metric_envelope, figures
+
+_CALL_TENANT: ContextVar[str | None] = ContextVar("parrot_metrics_call_tenant", default=None)
 
 
 class MetricsToolkit(AbstractToolkit):
@@ -62,7 +66,6 @@ class MetricsToolkit(AbstractToolkit):
         self.max_rows = max_rows
         self.allow_pin = allow_pin
         self._publish_tool = publish_tool
-        self._call_tenant: str | None = None
 
     def _get_querysource(self) -> QuerysourceToolkit:
         """Lazily build the QuerySource toolkit from ``querysource_kwargs``."""
@@ -70,21 +73,56 @@ class MetricsToolkit(AbstractToolkit):
             self._querysource = QuerysourceToolkit(**self._querysource_kwargs)
         return self._querysource
 
-    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
-        """Resolve the effective tenant (D3) and stash it for the call."""
-        await super()._pre_execute(tool_name, **kwargs)
-        self._call_tenant = resolve_metric_tenant(kwargs.get("tenant"), current_context(), self.default_tenant)
+    @property
+    def _call_tenant(self) -> str | None:
+        """Tenant bound to the current task's tool call (never shared across concurrent calls)."""
+        return _CALL_TENANT.get()
 
-    async def list_metrics(
-        self, search: str | None = None, program: str | None = None, tenant: str | None = None
-    ) -> list[MetricSummary]:
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
+        """Resolve the effective tenant (D3) for this call and bind it to the current task.
+
+        A tenant argument supplied by the model is never honoured: the tenant comes only from
+        the request context, the request-local skill tenant, or the toolkit default.
+        """
+        await super()._pre_execute(tool_name, **kwargs)
+        _CALL_TENANT.set(resolve_metric_tenant(None, current_context(), self.default_tenant))
+
+    @staticmethod
+    def _caller_id() -> str | None:
+        """Return the calling user's id from the request context, when one is bound."""
+        ctx = current_context()
+        if ctx is None:
+            return None
+        user_id = getattr(ctx, "user_id", None)
+        kwargs = getattr(ctx, "kwargs", None)
+        if not user_id and isinstance(kwargs, dict):
+            user_id = kwargs.get("user_id")
+        return str(user_id) if user_id else None
+
+    def _is_visible(self, definition: MetricDefinition) -> bool:
+        """Hide ``private`` definitions from everyone but their owner."""
+        if definition.visibility != "private":
+            return True
+        caller = self._caller_id()
+        return caller is not None and definition.owner == caller
+
+    async def _describe(self, metric_id: str) -> MetricDefinition:
+        """Return one effective, caller-visible metric or raise ``MetricNotFound``."""
+        definition = await self.registry.describe(metric_id, tenant=self._call_tenant)
+        if not self._is_visible(definition):
+            raise MetricNotFound(metric_id)
+        return definition
+
+    async def list_metrics(self, search: str | None = None, program: str | None = None) -> list[MetricSummary]:
         """List the metrics visible in this tenant.
 
         ``search`` filters name, aliases, and description case-insensitively.
-        ``tenant`` is routing only; omit it to use the request's tenant.
         """
-        del tenant
-        definitions = await self.registry.list(tenant=self._call_tenant, program=program)
+        definitions = [
+            definition
+            for definition in await self.registry.list(tenant=self._call_tenant, program=program)
+            if self._is_visible(definition)
+        ]
         needle = search.casefold().strip() if search else ""
         if needle:
             definitions = [
@@ -106,10 +144,9 @@ class MetricsToolkit(AbstractToolkit):
             for definition in definitions
         ]
 
-    async def describe_metric(self, metric_id: str, tenant: str | None = None) -> MetricDefinition:
+    async def describe_metric(self, metric_id: str) -> MetricDefinition:
         """Return the full definition of one metric (source, unit, dimensions, default period and shape)."""
-        del tenant
-        return await self.registry.describe(metric_id, tenant=self._call_tenant)
+        return await self._describe(metric_id)
 
     def _shape_for_query(self, definition: MetricDefinition, requested: str | None, dimension: Any | None) -> ShapeSpec:
         """Return the declared or safely derived display shape for this request."""
@@ -170,16 +207,14 @@ class MetricsToolkit(AbstractToolkit):
         linked: bool = False,
         pin: bool = False,
         title: str | None = None,
-        tenant: str | None = None,
     ) -> QueryMetricResult:
         """Execute a metric and return its value plus a ready A2UI envelope.
 
         The metric's default shape is used unless overridden; ``by`` uses a
         declared dimension and derives a chart from a KPI metric.
         """
-        del tenant
         started = time.monotonic()
-        definition = await self.registry.describe(metric_id, tenant=self._call_tenant)
+        definition = await self._describe(metric_id)
         dimension = definition.dimension(by) if by else None
         if by and dimension is None:
             declared = ", ".join(dimension.name for dimension in definition.dimensions) or "none"
@@ -289,10 +324,9 @@ class MetricsToolkit(AbstractToolkit):
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
-    async def explain_metric(self, metric_id: str, tenant: str | None = None) -> MetricExplanation:
+    async def explain_metric(self, metric_id: str) -> MetricExplanation:
         """Explain how a metric is computed without calling an LLM."""
-        del tenant
-        definition = await self.registry.describe(metric_id, tenant=self._call_tenant)
+        definition = await self._describe(metric_id)
         source = definition.source
         slug = None
         if source.kind == "query_slug":
