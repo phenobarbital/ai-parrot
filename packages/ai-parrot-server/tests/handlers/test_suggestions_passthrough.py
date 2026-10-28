@@ -70,11 +70,12 @@ class TestFourSitesAreAdditive:
     """Every site sets the key only inside `if _suggestions is not None`, so a chip-less body is unchanged."""
 
     def test_all_four_sites_use_the_helper_conditionally(self):
-        assert _SRC.count("_suggestions_payload(") == 5  # definition + four call sites
+        # definition + four body builders + the stream trailer writer (TASK-4807)
+        assert _SRC.count("_suggestions_payload(") == 6
         for target in ("envelope", "a2ui_body", "obj_response"):
             pattern = (
                 r"_suggestions = _suggestions_payload\((?:ai_message|response)\)\n"
-                r"\s+if _suggestions is not None:\n"
+                r"\s+if _suggestions is not None(?: and not suggestions_trailer)?:\n"
                 rf"\s+{target}\[\"suggestions\"\] = _suggestions"
             )
             assert re.search(pattern, _SRC), target
@@ -84,7 +85,11 @@ class TestFourSitesAreAdditive:
         for line_no, line in enumerate(_SRC.splitlines()):
             if '["suggestions"] = _suggestions' in line:
                 previous = _SRC.splitlines()[line_no - 1].strip()
-                assert previous == "if _suggestions is not None:", (line_no, previous)
+                # the stream envelope additionally yields to the opt-in trailer frame (TASK-4807)
+                assert previous in (
+                    "if _suggestions is not None:",
+                    "if _suggestions is not None and not suggestions_trailer:",
+                ), (line_no, previous)
 
     def test_a2ui_branch_keeps_its_original_key_order(self):
         keys = ["input", "output", "output_mode", "a2ui_envelope", "artifact_id", "metadata"]
