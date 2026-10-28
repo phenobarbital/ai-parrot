@@ -12,7 +12,12 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.6 (2026-10-21) — folds in C25 of
+**Revision**: 0.7 (2026-10-28) — Jesus Lara's decisions on the PR #1823 merge-readiness review:
+C26 re-derives the shipped asset inventory (**84** manifest entries; the 80 of rev 0.5 predates
+`code-reviewer`, `qa-runner`, the packaged `docs/sdd/CODEX.md` and FEAT-764's
+`sdd_hooks.example.toml`), and C27 makes Claude break the bare-`wikitoolkit` tie exactly as Codex
+does (amends D7; no new task).
+**Revision 0.6** (2026-10-21) — folds in C25 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.7): the installed
 `sdd-coder`/`sdd-worker` guard hook must resolve when ai-parrot lives only in the target
 repo's `.venv` (found in navigator-eventbus); `parrot sdd install` renders the hook line
@@ -33,7 +38,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -556,7 +561,8 @@ class ToolkitTemplate(BaseModel):
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
   (15 commands per host, 13 tracked templates, 81 manifest entries; *[rev 0.5 C22]* 14 commands
   per host and **80** entries once `/sdd-insight` is excluded and FEAT-708's `sdd-contract-probe` is
-  added on Claude and on Google (`.agents/agents/sdd-contract-probe/agent.md`, `b53d93ba4`);
+  added on Claude and on Google (`.agents/agents/sdd-contract-probe/agent.md`, `b53d93ba4`;
+  *[rev 0.7 C26]* **84** today, see C26);
   the Google host already has its 15th workflow, the `/sdd-brief` twin added on `dev` in
   `69fb12a41`, which TASK-4089 modifies instead of creating) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
@@ -589,6 +595,31 @@ class ToolkitTemplate(BaseModel):
   package (`parrot/flows/dev_loop/test_scope`), still loading it by path so it never
   imports `parrot.flows.dev_loop`. `regen_core_paths` keeps its monorepo paths because it
   stays.
+- **Rev 0.7 amendment C26 — shipped asset inventory** *[rev 0.7 C26]* (re-derived 2026-10-28 on the
+  PR #1823 branch merged with `dev` `8523132c8`; `python scripts/sdd/check_asset_sync.py --write`).
+  The manifest has **84** entries. The source globs (`ASSET_SOURCES`) are unchanged; the growth
+  comes from files that were born after the rev 0.5 count:
+
+  | Group | Entries | Hosts | Members |
+  |---|---|---|---|
+  | `/sdd-*` commands | 42 | 14 per host (claude / codex+google skills / google workflows) | brainstorm, brief, codereview, done, explain, fix, fromjira, next, proposal, spec, start, status, task, tojira |
+  | `sdd/templates/*` | 14 | all | the 13 of rev 0.5 + `sdd_hooks.example.toml` (FEAT-764, new) |
+  | Claude agents | 12 | claude | the 10 `sdd-*` (incl. `sdd-contract-probe`, `sdd-coder`) + `code-reviewer`, `qa-runner` (new, `PACKAGED_ONLY`) |
+  | Google agents | 9 | google | the `sdd-*` agents without `sdd-coder` |
+  | Other | 7 | per row | `sdd/WORKFLOW.md`, `sdd/CONVENTIONS.md` (seed), `.claude/hooks/sdd-worker-format.sh`, `.claude/rules/worktree-management.md`, `.claude/skills/second-opinion/SKILL.md`, `.codex/agents/sdd-worker.toml`, `docs/sdd/CODEX.md` (codex+google, new, `PACKAGED_ONLY`) |
+
+  80 (rev 0.5) + 4 new = 84. `code-reviewer`/`qa-runner` ship because `sdd-worker` and `sdd-autopilot`
+  dispatch them; their repo originals name monorepo paths, so the wheel carries hand-maintained,
+  repo-neutral copies (`check_asset_sync.PACKAGED_ONLY`, never overwritten by `--write`). The
+  packaged `docs/sdd/CODEX.md` is likewise repo-neutral and, per C22, omits `/sdd-insight`; the
+  `sdd/WORKFLOW.md` twin keeps its `/sdd-insight` row marked "monorepo only, not shipped", and
+  `test_no_repo_script_refs` pins that no packaged asset offers it.
+  **Referenced but not shipped** (known gaps, not regressions; `wikitoolkit ledger`): `/remove-worktree`
+  (named by `sdd-fix`, `sdd-status`, `worktree-management.md`; its body names monorepo paths) and
+  `/pr-review` (stage 5 of `sdd-autopilot`, `sdd-tojira`; its body carries org data). In a foreign
+  repo those hints point at commands that do not exist. `.claude/hooks/sdd-worker-format.sh` is
+  installed but not registered in `.claude/settings.json` — `parrot sdd install` prints that note (by
+  design, unchanged).
 - **Rev 0.6 amendment C25 (M6 part)** *[rev 0.6 C25]* (details and "done when" in the
   amendments proposal §3, rev 0.7). C16's bare hook resolves only when `parrot` on PATH is
   the managed launcher. With ai-parrot installed only in the target repo's `.venv` (project
@@ -647,7 +678,7 @@ class ToolkitTemplate(BaseModel):
     - E: navconfig one-liners become an env-var precondition.
 
     Both C16 gates add `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`.
-    `/sdd-insight` does not ship, so there are **80** manifest entries, counting FEAT-708's
+    `/sdd-insight` does not ship, so there are **80** manifest entries (*[rev 0.7 C26]* **84**), counting FEAT-708's
     `sdd-contract-probe` agent on Claude and on Google; since `b53d93ba4` the agent names no
     monorepo path (module lookup via `git ls-files`), so it adds no lines to the rewrite. (TASK-4089, 4090,
     4091, 4299)
@@ -872,7 +903,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   allowlisted; the only allowlist entry is (d)'s `.venv/bin` fallback line (TASK-4089 `_C16_ALLOWLIST`,
   TASK-4090 `MONOREPO_PATH_ALLOWLIST`). *[C22]* C22 in M6 refines (a)–(d) into categories A–E; category E
   (navconfig one-liners become an env-var precondition) covers D18, and `/sdd-insight`
-  leaves the shipped set (14 commands per host, 80 manifest entries). FEAT-708's
+  leaves the shipped set (14 commands per host, 80 manifest entries; *[rev 0.7 C26]* 84). FEAT-708's
   `sdd-contract-probe` names no monorepo path since `b53d93ba4`, so it adds no hits.
 - **D4 — moving `worktree_environment`** *[rev 0.5 D4]* (TASK-4085 C16 rows, 4509).
   (a) The guard must not fail open: `_load_guard_bash` (`worktree_environment.py:294-307`)
@@ -902,6 +933,15 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   portable if any is portable, C24 and `[PR #1746 review]`), so an http/url entry does not
   turn a portable install back into a baked one (`claude_code/assets.py:134`,
   `codex/assets.py:111-118`).
+  *[rev 0.7 C27]* "Decides directly" holds only for the **baked (absolute)** form. The bare form is
+  ambiguous: a baked install falls back to the bare `wikitoolkit` when no binary resolves
+  (`resolve_wikitoolkit_bin`: `.venv/bin` → `which` → bare), so it is byte-identical to the portable
+  form. Both hosts then let the managed `parrot-*` entries break the tie (any portable → portable,
+  all baked → baked), and a bare entry with no managed `parrot-*` entry means portable. This is
+  `codex/installer.py::_current_portable_mode` since TASK-4083; Claude now follows it
+  (`claude_code/installer.py::_current_portable_mode`), so a plain re-install never migrates a
+  baked install to portable, and `--portable` / `--no-portable` still migrate explicitly. Test:
+  `tests/knowledge/wiki/test_portable_mode_parity.py` (same truth table on both hosts).
 - **D8 — store version stamp, downgrade, unwritable directory** *[rev 0.5 D8]*
   (TASK-4092, 4093). See Module 7.
 
@@ -1290,7 +1330,8 @@ def linked_worktree_repo(tmp_path):
       reports ⚠️, and none reports ✅ on zero tests. `cache_test_contract --check` passes on
       this spec and its index.
 - [ ] *[rev 0.5 C22]* Both C16 gates pass with the single allowlisted line;
-      `check_asset_sync.py` reports 80 entries (re-derived from `git ls-files` at run time).
+      `check_asset_sync.py` reports *[rev 0.7 C26]* **84** entries (re-derived from `git ls-files` at run time
+      plus the 3 `PACKAGED_ONLY` assets; the inventory is C26's table).
 - [ ] *[rev 0.5 C23]* After `parrot sdd install --host codex`, the C3 foreign repo has the
       `.gitattributes` ledger block and the four ledger hooks.
 - [ ] *[rev 0.5 C24]* A newer `schema_version` is refused, not re-stamped (`issue:f249c19e8a4d`
@@ -1639,4 +1680,5 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.5 (`dev`) | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract (the curated list of the row above, not `none — fallback`) + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries before C22 (83 after the Google probe copy, see the next row; **80** once `/sdd-insight` is excluded). Anchors re-verified on `9625844f5` (spec-wide, not only §6): `store.py` +144, `project.py` `parrot_home` +148, `claude_code/{assets,installer}.py`, `codex/{assets,installer}.py`, `mcp/hosts.py`, `pyproject.toml` (`[project.scripts]` 199-206, package-data 970/983, `[tool.cibuildwheel]` 1057-1059), `release.yml` (`build-parrot-codec` 408-479); two anchor texts changed (`_open` signature, `elif servers.get(...)`), `_migrate` anchor made unique; D6's `_is_wikitoolkit_entry` corrected to :753 |
 | 0.5 (`dev`) | 2026-10-20 | Jesus Lara + Claude | D8 corrected (owner: too strict): the store gate compares `schema_version` only; `min_runtime_version` is stamped but informational (error message), so a same-schema store opens whatever release wrote it. `sdd-contract-probe` invocation fixed on dev: Antigravity copy `.agents/agents/sdd-contract-probe/agent.md`, host-neutral invocation in `sdd-task`/`sdd-brainstorm`/`sdd-proposal` (both hosts), module lookup via `git ls-files` (no monorepo path) → 9 Google agents, 80 manifest entries with C22; TASK-4070/4089/4090/4092/4093/4095 updated |
 | 0.5 (merge) | 2026-10-20 | Claude, for Jesus Lara | `dev`'s rev 0.5 amendments (clauses D1–D8, M6 inventory, anchors on `9625844f5`) merged into PR #1746's rev 0.5 (C18–C24): D1 keeps C20 (ai-parrot-tools in the managed runtime; core-only is `issue:2c263fd19a1a`), D2 keeps the curated Validation Contract, D3 keeps C22 (`/sdd-insight` out; rules (a)–(d) ≙ categories A–D), D8 takes `dev`'s schema-only gate, `sdd-contract-probe` ships on Claude and Google → 80 manifest entries, `SourceRegistry` → `SourceCollectionManager._connect` |
+| 0.7 | 2026-10-28 | Jesus Lara (decisions) + Arturo Martinez + Claude | PR #1823 merge-readiness review: C26 re-derives the asset inventory — **84** manifest entries (80 + `code-reviewer`, `qa-runner`, packaged `docs/sdd/CODEX.md`, FEAT-764 `sdd_hooks.example.toml`), counts at §3 M6 / C22 / D3 / §5 updated, `/remove-worktree` and `/pr-review` recorded as referenced-but-not-shipped; C27 amends D7 — a bare `wikitoolkit` entry is ambiguous on every host and the managed `parrot-*` entries break the tie (Claude aligned with Codex, `test_portable_mode_parity.py`); closes `issue:ace18bef4e6e` |
 | 0.6 | 2026-10-21 | Jesus Lara + Claude | Amendment C25 folded in (proposal rev 0.7), from navigator-eventbus (project-venv install, no `~/.parrot/bin`, agents hand-patched to `<root>/.venv/lib/python3.11/site-packages/.../worktree_environment.py`): `parrot sdd install` renders the guard-hook line (bare under the managed launcher or `--portable`, else the absolute `parrot` script of the installing venv), C4 compares rendered bytes, `sdd_status()["guard_hook"]`, doctor `sdd: guard hook`; new tests `test_guard_hook_rendering`, `test_doctor_sdd_guard_hook`, `test_installed_hook_project_venv_only` (amends TASK-4091, TASK-4080) |
