@@ -231,4 +231,6 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback; the pool's first attempt delivered nothing and the MCP server then disconnected).
+Added `_turn_skill`, `current_turn_skill()`, the `ActiveSkillScope` NamedTuple token, and the composite enter/exit scope exactly per the blueprint (`exit_active_skill_scope` resets turn then active). Tests: 4 new (`test_skill_turn_scope.py`) + `test_skill_tenant_hardening.py` + `test_skill_tenancy.py` = 39 passed. ruff and black clean.
+Extra test beyond the spec's three: nested scopes restore the values set before entering. A Pyright 'unknown import symbol' notice on the test file is a stale resolution against the main checkout; the import works.
