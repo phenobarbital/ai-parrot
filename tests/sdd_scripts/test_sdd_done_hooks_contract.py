@@ -50,7 +50,11 @@ def test_post_pr_after_integrate() -> None:
     doc = _text(_DOC)
     assert doc.index("### 9.2") < doc.index("### 9.3. Closeout Hooks — post_pr") < doc.index("### 9.5")
     twin = _text(_TWIN)
-    assert twin.index("12. Integrate:") < twin.index("12.1. Closeout hooks — post_pr") < twin.index("13. Hotfix sync-down:")
+    assert (
+        twin.index("12. Integrate:")
+        < twin.index("12.1. Closeout hooks — post_pr")
+        < twin.index("13. Hotfix sync-down:")
+    )
 
 
 def test_hooks_not_force_bypassable() -> None:
