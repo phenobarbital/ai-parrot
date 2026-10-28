@@ -201,10 +201,8 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Seat: opus · Backend: native · Attempts: 1)
+**Date**: 2026-10-27
+**Notes**: AbstractBot._scan_retrieved_chunks added; 5 tests; merge-tier validation green. Test uses a concrete _StubBot subclass because AbstractBot has abstract methods. Closed via close_task.sh (no durable review-evidence artifact writable).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: test builds a concrete subclass instead of AbstractBot.__new__ (abstract methods).

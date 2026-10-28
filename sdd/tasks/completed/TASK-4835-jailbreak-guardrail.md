@@ -264,10 +264,8 @@ See CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 174.7s)
+**Date**: 2026-10-28
+**Notes**: JailbreakGuardrail + warmup added. Defaults taken from the committed bake-off manifest: madhurjindal/Jailbreak-Detector-Large, onnx/model.onnx, threshold 0.044844940304756165 (verified against manifest by worker; consistency test enforces it). Merge-tier validation green. Closed via close_task.sh (no durable review-evidence artifact writable). Caveats on the pin (thin 0.19 ms latency margin, threshold fitted to a 25-item ES-benign bucket, budget amended 30->45 ms) are in the bake-off README.
 
 **Deviations from spec**: none

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T19:30:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-27T23:21:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -58,16 +58,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: only modifies bots/guardrails/base.py and pipeline.py, which no other task touches.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4825-pipeline-core-extensions.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:45:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4825-pipeline-core-extensions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4826",
@@ -76,16 +77,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: lazy factories reference jailbreak/prompt_leakage modules by dotted path only (never imported until built); tests stub the factories. Sole owner of registry.py and config.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4826-registry-security-preset.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:45:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4826-registry-security-preset.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4827",
@@ -94,16 +96,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates builtin/_engine_chassis.py; first of the prompt_injection.py edit chain (4827 -> 4828 -> 4833).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4827-engine-chassis-classifier.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:45:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4827-engine-chassis-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4828",
@@ -112,7 +115,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,9 +124,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4827: extends _build_engine/EngineSpec/load_tokenizer in _engine_chassis.py that 4827 creates, and both modify builtin/prompt_injection.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4828-embedding-engine-async-scoring.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:51:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4828-embedding-engine-async-scoring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4829",
@@ -132,16 +136,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: sole editor of parrot/security/prompt_injection.py (adds a sibling method only).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4829-content-free-security-events.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:43:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4829-content-free-security-events.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4830",
@@ -150,16 +155,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml and regenerates the workspace lockfile uv.lock — shared state every other task's environment reads.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4830-rapidfuzz-core-dependency.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:38:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4830-rapidfuzz-core-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4831",
@@ -168,16 +174,17 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: benchmarks-only (jailbreak_corpus.py, compare_jailbreak.py, detectors.py) and a root tests/benchmarks file; no package source touched.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4831-jailbreak-bakeoff-harness.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:51:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4831-jailbreak-bakeoff-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4832",
@@ -186,7 +193,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -196,8 +203,9 @@
       "parallelism_notes": "TASK-4831: runs compare_jailbreak.main() and its manifest test imports cj.evaluate_gate/ES_BENIGN_MAX_FP/P50_BUDGET_MS created there. Operator task (network + human sign-off).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4832-jailbreak-bakeoff-run-and-pin.md"
+      "completed_at": "2026-10-27T23:03:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4832-jailbreak-bakeoff-run-and-pin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4833",
@@ -206,7 +214,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -216,9 +224,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4825: sets dict priority {INPUT:10, TOOL_OUTPUT:20} and relies on TRANSFORM reports surfacing (Guardrail.priority_for / pipeline.py). TASK-4828: same file builtin/prompt_injection.py, last in its edit chain.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4833-scan-tool-output-injection.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:55:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4833-scan-tool-output-injection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4834",
@@ -227,7 +236,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -236,9 +245,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4833: _scan_retrieved_chunks gates on the scan_tool_output attribute PromptInjectionGuardrail gains there. First bots/abstract.py edit (then TASK-4837).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4834-retrieval-chunk-scanning.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:58:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4834-retrieval-chunk-scanning.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4835",
@@ -247,7 +257,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -259,9 +269,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4827: imports EngineSpec/resolve_engine/warmup_model (_engine_chassis.py). TASK-4828: imports score_async. TASK-4829: calls SecurityEventLogger.log_security_category_event. TASK-4832: default model id/graph/threshold constants are read from results-jailbreak/manifest.json and test-checked against it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4835-jailbreak-guardrail.md"
+      "started_at": "2026-10-27T23:03:22+00:00",
+      "completed_at": "2026-10-27T23:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4835-jailbreak-guardrail.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4836",
@@ -270,7 +281,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -281,9 +292,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4825: uses dict priority via Guardrail.priority_for and sets requires_system_prompt (base.py). TASK-4829: calls log_security_category_event. TASK-4830: imports rapidfuzz, which must be a declared core dependency first.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4836-prompt-leakage-guardrail.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T21:51:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4836-prompt-leakage-guardrail.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4837",
@@ -292,7 +304,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -302,9 +314,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-4825: _output_extras reads the Guardrail.requires_system_prompt flag created there. TASK-4834: both modify bots/abstract.py (serialized, 4834 first).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4837-rendered-prompt-capture.md"
+      "started_at": "2026-10-27T21:33:16+00:00",
+      "completed_at": "2026-10-27T22:00:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4837-rendered-prompt-capture.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4838",
@@ -313,7 +326,7 @@
       "feature_id": "FEAT-761",
       "feature": "agent-security-guardrails",
       "spec": "sdd/specs/agent-security-guardrails.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -327,8 +340,9 @@
       "parallelism_notes": "Integration over the whole feature: builds guardrails=[\"security\"] (preset from TASK-4826) which instantiates JailbreakGuardrail (TASK-4835) and PromptLeakageGuardrail (TASK-4836); asserts retrieval scanning (TASK-4834) and the rendered-prompt extras (TASK-4837).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4838-security-guardrails-integration-docs.md"
+      "completed_at": "2026-10-27T23:21:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4838-security-guardrails-integration-docs.md",
+      "verification": "verified"
     }
   ]
 }

@@ -174,10 +174,8 @@ The flipped test above is the specification.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 134.9s · Tokens: n/a)
+**Date**: 2026-10-27
+**Notes**: rapidfuzz>=3.0 added to core dependencies (graphindex extra entry kept); boundary test flipped; uv.lock refreshed. Merge-tier validation: 28 passed. Closed via close_task.sh (not finalize_task): no durable review-evidence artifact could be written (durable root is read-only in the sandbox). Review recorded via coder_record_review (coder-review:ee1b705a65344c1fb9df386f), 0 fix commits.
 
 **Deviations from spec**: none
