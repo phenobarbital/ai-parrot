@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import base64
 import mimetypes
-from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator, model_validator, model_serializer
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
 from .suggestions import Suggestion
@@ -228,6 +228,14 @@ class AIMessage(BaseModel):
 
     # Allow arbitrary types for output field (pandas DataFrames, etc.)
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_suggestions(self, handler: Any) -> Dict[str, Any]:
+        """Drop an empty ``suggestions`` list so non-opted-in agents serialize byte-identically to pre-FEAT-752."""
+        data = handler(self)
+        if isinstance(data, dict) and not data.get("suggestions", True):
+            data.pop("suggestions", None)
+        return data
 
     @property
     def content(self) -> Any:
