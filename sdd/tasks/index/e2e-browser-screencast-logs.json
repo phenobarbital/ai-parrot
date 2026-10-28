@@ -95,10 +95,10 @@
       "feature_id": "FEAT-762",
       "feature": "e2e-browser-screencast-logs",
       "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-10-28T00:17:22+00:00",
       "parallel": true,
       "id": "TASK-4866",
       "slug": "e2e-ui-tester-screencast-protocol",
@@ -109,7 +109,8 @@
         "TASK-4865"
       ],
       "parallelism_notes": "documents record_on_anomaly/AnomalyRecorder (.triggered/.path/.error) created by TASK-4865; prose must match its final signature.",
-      "file": "sdd/tasks/active/TASK-4866-e2e-ui-tester-screencast-protocol.md"
+      "file": "sdd/tasks/completed/TASK-4866-e2e-ui-tester-screencast-protocol.md",
+      "verification": "verified"
     }
   ]
 }

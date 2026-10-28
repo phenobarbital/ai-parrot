@@ -174,4 +174,6 @@ and pass after the edit.
 
 ## Completion Note
 
-Owned by the finalization tool after verified acceptance.
+**Completed**: 2026-10-28 — seats mistral (2 attempts) and glm failed/timed out (max_turns, no final output; task-tier validation `0 failure(s)` glitch), so attempt 4 was implemented by the orchestrator (sonnet) in the feature worktree for this standard-classification S task.
+**Verification**: `test_exploration_screencast_protocol` passes; ruff clean. Prose edits: endpoint rule replacing `RunState.endpoint`, screencast paragraph with a script example, extra `evidence_refs` entry.
+**Notes**: attempt branches of the failed seats were discarded unmerged.
