@@ -10,7 +10,7 @@ import logging
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Final, List, Optional
+from typing import Dict, Final, List, NamedTuple, Optional
 
 from parrot.observability.context import current_tenant
 from parrot.utils.paths import secure_path, validate_path_segment
@@ -77,6 +77,9 @@ def discover_tenant_dirs(agent_root: Path, logger: Optional[logging.Logger] = No
 
 _skill_tenant = current_tenant
 _active_skill: ContextVar[Optional[SkillDefinition]] = ContextVar("parrot_active_skill", default=None)
+# FEAT-752: the skill activated during this turn. Unlike `_active_skill`, it is NOT cleared when the system
+# prompt consumes the skill, so post-answer hooks (suggestion chips) can still read it.
+_turn_skill: ContextVar[Optional[SkillDefinition]] = ContextVar("parrot_turn_skill", default=None)
 
 
 def current_skill_tenant() -> Optional[str]:
@@ -99,24 +102,39 @@ def current_active_skill() -> Optional[SkillDefinition]:
     return _active_skill.get()
 
 
+def current_turn_skill() -> Optional[SkillDefinition]:
+    """Return the skill a ``/trigger`` activated during this turn, even after the prompt consumed it (FEAT-752)."""
+    return _turn_skill.get()
+
+
 def set_active_skill(skill: Optional[SkillDefinition]) -> None:
-    """Replace the request-local active skill."""
+    """Replace the request-local active skill; a non-``None`` skill is also recorded as the turn skill."""
     _active_skill.set(skill)
+    if skill is not None:
+        _turn_skill.set(skill)
 
 
-def enter_active_skill_scope() -> Token:
-    """Snapshot the active skill so :func:`exit_active_skill_scope` can restore it.
+class ActiveSkillScope(NamedTuple):
+    """Opaque token pair returned by :func:`enter_active_skill_scope`."""
+
+    active: Token
+    turn: Token
+
+
+def enter_active_skill_scope() -> ActiveSkillScope:
+    """Snapshot the active and turn skills so :func:`exit_active_skill_scope` can restore both.
 
     ``ask()``/``ask_stream()`` open this scope so a skill a ``/trigger`` set
     during a call never outlives that call, even when the call fails before
     the system prompt consumes it.
     """
-    return _active_skill.set(_active_skill.get())
+    return ActiveSkillScope(_active_skill.set(_active_skill.get()), _turn_skill.set(_turn_skill.get()))
 
 
-def exit_active_skill_scope(token: Token) -> None:
-    """Restore the active skill captured by :func:`enter_active_skill_scope`."""
-    _active_skill.reset(token)
+def exit_active_skill_scope(token: ActiveSkillScope) -> None:
+    """Restore the skills captured by :func:`enter_active_skill_scope`."""
+    _turn_skill.reset(token.turn)
+    _active_skill.reset(token.active)
 
 
 @dataclass(frozen=True)
