@@ -120,9 +120,9 @@ async def start_screencast(page: "Page", out_dir: Path, *, max_frames: int = 600
     if max_frames < 1:
         raise E2EScreencastError("Screencast frame capacity must be positive.", reason_code="frame_overflow")
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / SCREENCAST_FILENAME
-    if out_path.exists():
+    await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)  # blocking fs work off the loop
+    if await asyncio.to_thread(out_path.exists):
         raise E2EScreencastError(f"Screencast output already exists: {out_path}", reason_code="output_exists")
 
     cdp: Any = None
@@ -297,7 +297,7 @@ class AnomalyRecorder:
                 f"Unexpected failure {action} anomaly screencast.",
                 reason_code="capture_failed",
             )
-        logger.exception("Unexpected failure %s anomaly screencast for run %s.", action, self.run_id, exc_info=exc)
+        logger.error("Unexpected failure %s anomaly screencast for run %s.", action, self.run_id, exc_info=exc)
 
     async def __aenter__(self) -> "AnomalyRecorder":
         """Register page listeners."""
