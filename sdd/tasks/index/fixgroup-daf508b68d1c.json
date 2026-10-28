@@ -15,7 +15,7 @@
       "feature_id": "FEAT-767",
       "feature": "fixgroup-daf508b68d1c",
       "spec": "sdd/specs/fixgroup-daf508b68d1c.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/active/TASK-4876-a2ui-stream-contract-tests.md",
       "discovered_from": "issue:46f02d0469bb",
-      "parallelism_notes": "Single task; edits one test file in ai-parrot-server."
+      "parallelism_notes": "Single task; edits one test file in ai-parrot-server.",
+      "started_at": "2026-10-28T00:58:00+00:00"
     }
   ]
 }
