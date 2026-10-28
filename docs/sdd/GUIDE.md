@@ -293,7 +293,7 @@ git checkout dev
 /sdd-done FEAT-147
 /sdd-done FEAT-147 --dry-run         # ver qué pasaría sin tocar nada
 /sdd-done FEAT-147 --force           # cerrar aún con tareas con issues
-/sdd-done FEAT-147 --resolve-jira    # transicionar el ticket a Done
+# Configura el hook post_pr jira.transition; véase docs/sdd/closeout-hooks.md
 ```
 
 Pasos:
@@ -310,8 +310,8 @@ Pasos:
    `gh pr create --base main` para que abras la PR a mano. Tras el
    merge, vuelves a correr con `--sync-dev` para llevar el cambio a
    `dev`.
-7. Si pides `--resolve-jira`, transiciona el ticket (y subtasks) a
-   "Done" / "Resolved".
+7. Si configuras el hook `post_pr` `jira.transition`, transiciona el ticket
+   (y subtasks) al estado configurado. Véase `docs/sdd/closeout-hooks.md`.
 8. Limpia el worktree: `git worktree remove ...`.
 
 > **Regla no negociable**: `/sdd-done` **nunca** pushea a `main` ni abre
@@ -372,7 +372,7 @@ cd .claude/worktrees/feat-150-agent-tracing
 cd .claude/worktrees/feat-NNN-<slug>
 /sdd-start ...
 # Al terminar:
-/sdd-done FEAT-NNN --resolve-jira
+# Configura jira.transition en .parrot/sdd_hooks.toml; véase docs/sdd/closeout-hooks.md
 ```
 
 ### 5.4. Hotfix urgente sobre `main`

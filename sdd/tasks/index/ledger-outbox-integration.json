@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T22:36:17.089978+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-28T00:14:21+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -44,16 +44,17 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies; creates outbox.py + test_ledger_outbox.py, which no other task in wave 1 touches",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4857-ledger-outbox-storage.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:17:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4857-ledger-outbox-storage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4858",
@@ -62,7 +63,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,9 +72,10 @@
       "parallel": true,
       "parallelism_notes": "imports LedgerDeliveryConflict, StrictLedgerReadError, read_strict_events from TASK-4857 (ledger/outbox.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4858-ledger-integration-replay.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:21:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4858-ledger-integration-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4859",
@@ -82,7 +84,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -91,9 +93,10 @@
       "parallel": true,
       "parallelism_notes": "modifies integration.py + test_ledger_outbox_integration.py created by TASK-4858 and calls its merge_batch/build_scratch_snapshot; uses LedgerOutbox from TASK-4857 transitively",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4859-ledger-integrator-git-transaction.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:26:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4859-ledger-integrator-git-transaction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4860",
@@ -102,7 +105,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -111,9 +114,10 @@
       "parallel": true,
       "parallelism_notes": "imports LedgerIntegrator (remote_event_ids, integrate, check_feature_diff) from TASK-4859 (ledger/integration.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4860-ledger-outbox-cli.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:30:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4860-ledger-outbox-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4861",
@@ -122,16 +126,17 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no code dependency (spec §3 M4); touches only claude_code/assets.py, installer.py and the root hook test — runs alongside TASK-4857",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4861-ledger-hook-migration.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:17:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4861-ledger-hook-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4862",
@@ -140,7 +145,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -150,9 +155,10 @@
       "parallel": true,
       "parallelism_notes": "documents the `ledger outbox` CLI and exit codes from TASK-4860 (cli.py) and the no-op pre-commit hook from TASK-4861 (assets.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4862-sdd-done-outbox-workflows.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:43:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4862-sdd-done-outbox-workflows.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4863",
@@ -161,7 +167,7 @@
       "feature_id": "FEAT-758",
       "feature": "ledger-outbox-integration",
       "spec": "sdd/specs/ledger-outbox-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -171,9 +177,10 @@
       "parallel": true,
       "parallelism_notes": "acceptance tests drive the `ledger outbox` CLI from TASK-4860 (cli.py) and upgraded _install_ledger_hooks via TASK-4861; docs describe the done flow written by TASK-4862",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4863-ledger-outbox-docs-acceptance.md"
+      "started_at": "2026-10-27T23:11:20+00:00",
+      "completed_at": "2026-10-27T23:47:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4863-ledger-outbox-docs-acceptance.md",
+      "verification": "verified"
     }
   ]
 }
