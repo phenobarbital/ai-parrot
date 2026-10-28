@@ -13,6 +13,12 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 _SHAPES = ("KPICard", "Chart", "DataTable")
+_MAX_LABEL = 40
+
+
+def _clip(label: str) -> str:
+    """Truncate a chip label to 40 characters."""
+    return label if len(label) <= _MAX_LABEL else label[: _MAX_LABEL - 1] + "…"
 
 
 class MetricSuggestionProvider:
@@ -48,7 +54,7 @@ class MetricSuggestionProvider:
                 label = dimension.label or dimension.name
                 chips.append(
                     Suggestion(
-                        label=f"by {label}",
+                        label=_clip(f"by {label}"),
                         prompt=f"Show {metric.name} by {label}",
                         kind=SuggestionKind.FOLLOWUP,
                         source=SuggestionSource.PROVIDER,

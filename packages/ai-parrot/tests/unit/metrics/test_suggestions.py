@@ -135,3 +135,10 @@ async def test_comparison_none_skips_compare_chip(
         assert "as DataTable" in shape_labels
     finally:
         reset_metric_match(token)
+
+
+def test_clip_truncates_long_labels() -> None:
+    from parrot.metrics.suggestions import _clip
+
+    assert len(_clip("by " + "x" * 80)) == 40
+    assert _clip("by region") == "by region"
