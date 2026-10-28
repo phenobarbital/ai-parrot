@@ -270,10 +270,15 @@ def test_run_builtin_exception_becomes_fail(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4868
+- Feature: sdd-done-closeout-hooks
+- Implementation SHA: 0c18ae2995b1119dd3a956d4e0b42cc96e84acb1
+- Closed at (UTC): 2026-10-28T00:16:48+00:00
+- Fix commits: 0c18ae2995b1119dd3a956d4e0b42cc96e84acb1
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 3 (minimax, glm failed on output format; mistral delivered) · Duration: 203s · Tokens: 471k/11k; reviewer fixes 0c18ae299 (feedback coder-feedback:efef32711350ac58833883a4) |

@@ -60,7 +60,7 @@
       "feature_id": "FEAT-764",
       "feature": "sdd-done-closeout-hooks",
       "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -70,8 +70,9 @@
       "parallelism_notes": "imports HookContext/HookResult/HookSpec/PUSH_PROVIDERS from TASK-4867 (scripts/sdd/closeout_hooks_config.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T23:55:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4868-closeout-builtins.md"
+      "completed_at": "2026-10-28T00:16:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4868-closeout-builtins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4869",
