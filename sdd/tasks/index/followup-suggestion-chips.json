@@ -190,7 +190,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -201,8 +201,9 @@
       "parallelism_notes": "imports SuggestionBatch from TASK-4794 (models/suggestions.py) and SuggestionContext from TASK-4797 (bots/suggestions/protocol.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4799-llm-suggestion-provider.md"
+      "completed_at": "2026-10-28T00:50:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4799-llm-suggestion-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4800",

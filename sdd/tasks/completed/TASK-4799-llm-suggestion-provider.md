@@ -286,4 +286,7 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed: `bots/suggestions/llm.py`, `tests/bots/test_suggestion_llm_provider.py`.
+`suggest()` filled per spec section 7: one `client.invoke(output_type=SuggestionBatch, model=self.model, max_tokens, temperature)` inside `async with client`; chips rebuilt with forced `source=llm`, `kind=followup`, `output_mode=None`, `action=None`; truncated to `max_items`; `last_cost` = {model, usage, elapsed_ms}. A malformed batch is caught separately and yields `[]` with `last_cost=None`; a dict output is validated into a `SuggestionBatch`.
+Tests: 7 passed (spec's four plus dict output, malformed output, cost reset between calls). ruff and black clean.
+Known design caveat (spec-mandated, not changed): `last_cost` is per-provider-instance state, so two concurrent turns on the same bot can read each other's cost record in `metadata["suggestions"]["llm"]`. Chips are unaffected. TASK-4800 or a follow-up could return cost with the chips instead.
