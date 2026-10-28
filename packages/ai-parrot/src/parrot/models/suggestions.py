@@ -1,4 +1,5 @@
 """Follow-up suggestion chip models (FEAT-752)."""
+
 from __future__ import annotations
 
 from enum import Enum
