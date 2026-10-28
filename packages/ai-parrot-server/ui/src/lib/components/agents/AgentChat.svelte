@@ -22,6 +22,7 @@
     InteractiveArtifactResult,
     InteractiveArtifactTabData,
   } from "$lib/types/agent";
+  import type { AgentChatSuggestion } from "$lib/types/generated/AgentChatResponse";
   import type { BotChatRequest } from "$lib/types/bot-chat";
   import {
     stripSourcesFromResponse,
@@ -1031,6 +1032,7 @@
                         : null,
                   sources: resolveAgentSources(agentResult.sources),
                   a2ui_envelope: agentResult.a2ui_envelope,
+                  suggestions: agentResult.suggestions,
                 };
               }
             }
@@ -1372,6 +1374,7 @@
                   : null,
             sources: resolveAgentSources(result.sources),
             a2ui_envelope: result.a2ui_envelope,
+            suggestions: result.suggestions,
           };
         }
       }
@@ -1557,6 +1560,7 @@
         htmlResponse: isInteractive ? null : isHtml ? responseText : null,
         sources: resolveAgentSources(result.sources),
         a2ui_envelope: result.a2ui_envelope,
+        suggestions: result.suggestions,
         // Spoken answer (present only when TTS succeeded) — kept in-memory only.
         // FEAT-169: in avatar mode, audio comes from the LiveKit room — do not play audio_base64
         audio_base64: avatarLive ? undefined : result.audio_base64,
@@ -1672,6 +1676,15 @@
 
   function handleRepeat(text: string) {
     inputText = text;
+  }
+
+  function handleSuggestion(message: AgentMessage, s: AgentChatSuggestion) {
+    // FEAT-752: explain chips reuse the existing explain flow; everything else is an ordinary chat turn.
+    if (s.kind === "action") {
+      if (s.action === "explain") handleExplain(message.id, message.data);
+      return; // unknown actions are ignored, never sent as a chat turn
+    }
+    handleSend(s.prompt, undefined, s.output_mode ?? undefined);
   }
 
   function handleFollowup(turnId: string, data: any) {
@@ -2441,6 +2454,7 @@
                       onRepeat={handleRepeat}
                       onFollowup={handleFollowup}
                       onExplain={handleExplain}
+                      onSuggestion={handleSuggestion}
                       onRetry={handleRetry}
                       onDetailedFeedback={handleDetailedFeedback}
                       onRegenerate={handleRegenerate}

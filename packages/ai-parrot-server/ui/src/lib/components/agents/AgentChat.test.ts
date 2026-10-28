@@ -201,3 +201,113 @@ describe("AgentChat — compact variant", () => {
     expect(screen.getByTitle("Open history")).toBeInTheDocument();
   });
 });
+
+describe("AgentChat — suggestion chips", () => {
+  const presentationChip = {
+    label: "View as table",
+    prompt: "Show the previous answer as a table",
+    output_mode: "structured_table",
+    kind: "presentation",
+    source: "provider",
+    action: null,
+  };
+  const explainChip = {
+    label: "Explain this",
+    prompt: "Explain this answer",
+    output_mode: null,
+    kind: "action",
+    source: "provider",
+    action: "explain",
+  };
+  const rows = [{ month: "Sep", sales: 10 }];
+
+  it("a presentation chip sends an ordinary chat turn carrying its output_mode", async () => {
+    enableStreamingFor("bot-1");
+    // Distinct turn id per streamed turn: AgentChat keys its message list by turn id.
+    streamChatWithAgent.mockImplementation(async function* () {
+      const turn = `t${streamChatWithAgent.mock.calls.length}`;
+      yield { type: "chunk", text: "Answer" };
+      yield {
+        type: "done",
+        message: {
+          output: "Answer",
+          metadata: { session_id: "s1", turn_id: turn },
+          sources: [],
+          tool_calls: [],
+          suggestions: [presentationChip],
+        },
+      };
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    const chip = await screen.findByTestId("suggestion-chip");
+    expect(chip.textContent?.trim()).toBe("View as table");
+    await fireEvent.click(chip);
+
+    await waitFor(() => expect(streamChatWithAgent).toHaveBeenCalledTimes(2));
+    const payload = streamChatWithAgent.mock.calls[1][1];
+    expect(payload.query).toBe("Show the previous answer as a table");
+    expect(payload.output_mode).toBe("structured_table");
+  });
+
+  it("an explain chip reuses the explain flow with turn_id and data (no chat turn)", async () => {
+    chatWithAgent.mockResolvedValueOnce({
+      response: "Answer",
+      data: rows,
+      metadata: { session_id: "s1", turn_id: "t1" },
+      sources: [],
+      tool_calls: [],
+      suggestions: [explainChip],
+    });
+    chatWithAgent.mockResolvedValue({ response: "Because...", metadata: {}, sources: [], tool_calls: [] });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    const chip = await screen.findByTestId("suggestion-chip");
+    expect(chip.getAttribute("data-kind")).toBe("action");
+    await fireEvent.click(chip);
+
+    await waitFor(() => expect(chatWithAgent).toHaveBeenCalledTimes(2));
+    const payload = chatWithAgent.mock.calls[1][1];
+    expect(payload.turn_id).toBe("t1");
+    expect(payload.data).toEqual(rows);
+    expect(streamChatWithAgent).not.toHaveBeenCalled();
+  });
+
+  it("an unknown action chip is ignored and never sent as a chat turn", async () => {
+    chatWithAgent.mockResolvedValueOnce({
+      response: "Answer",
+      metadata: { session_id: "s1", turn_id: "t1" },
+      sources: [],
+      tool_calls: [],
+      suggestions: [{ ...explainChip, label: "Mystery", action: "teleport" }],
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    const chip = await screen.findByTestId("suggestion-chip");
+    await fireEvent.click(chip);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(chatWithAgent).toHaveBeenCalledTimes(1);
+    expect(streamChatWithAgent).not.toHaveBeenCalled();
+  });
+
+  it("renders no chips when the response carries none", async () => {
+    chatWithAgent.mockResolvedValue({
+      response: "Plain reply",
+      metadata: { session_id: "s1", turn_id: "t1" },
+      sources: [],
+      tool_calls: [],
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    await waitFor(() => expect(screen.getByText("Plain reply")).toBeInTheDocument());
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
+});
