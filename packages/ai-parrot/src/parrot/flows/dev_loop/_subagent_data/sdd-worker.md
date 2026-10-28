@@ -99,6 +99,12 @@ directory switching, no shared mutable state across features.
    to the main repo to update state — there is no shared monolithic index
    to coordinate on. Per-spec indexes mean each feature owns its own file.
 
+7. **LEDGER FINDINGS GO THROUGH THE LEDGER SERVICE (FEAT-758).**
+   Record deferred findings with `wikitoolkit ledger open` (or the `ledger_open` MCP tool) carrying the
+   task/review attribution in `--discovered-from`. NEVER append to, edit or stage `sdd/ledger/events.jsonl`
+   or `sdd/ledger/issues.jsonl` — feature commits must not change them. `/sdd-done` delivers events to
+   `origin/dev` through the outbox. Coder findings returned in a `DevelopmentOutput` are registered by you.
+
 ---
 
 ## Input

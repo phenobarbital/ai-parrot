@@ -127,6 +127,8 @@
   import QuickRating from "./QuickRating.svelte";
   import type { QuickRatingType } from "./FeedbackTypes";
   import SourcesPanel from "./SourcesPanel.svelte";
+  import SuggestionChips from "./SuggestionChips.svelte";
+  import type { AgentChatSuggestion } from "$lib/types/generated/AgentChatResponse";
 
   import Icon from "@iconify/svelte";
   import { AppTooltip } from "$lib/ui/components";
@@ -138,6 +140,7 @@
     onRepeat,
     onFollowup,
     onExplain,
+    onSuggestion,
     onFeedback,
     onDetailedFeedback,
     onRetry,
@@ -165,6 +168,7 @@
     onRepeat?: (text: string) => void;
     onFollowup?: (turnId: string, data: any) => void;
     onExplain?: (turnId: string, data: any) => void;
+    onSuggestion?: (message: AgentMessage, suggestion: AgentChatSuggestion) => void;
     onFeedback?: (messageId: string, isLike: boolean) => void;
     onDetailedFeedback?: (messageId: string) => void;
     onRetry?: (msgId: string) => void;
@@ -1772,6 +1776,13 @@
         <!-- Sources Panel — shown whenever the response carries sources (RAG/bot) -->
         {#if !isStreaming && message.sources && message.sources.length > 0}
           <SourcesPanel sources={message.sources} />
+        {/if}
+
+        {#if !isUser && !isStreaming && onSuggestion && message.suggestions?.length}
+          <SuggestionChips
+            suggestions={message.suggestions}
+            onSelect={(s: AgentChatSuggestion) => onSuggestion(message, s)}
+          />
         {/if}
 
         <!-- Data Display + action row. The botMode guard hides the row

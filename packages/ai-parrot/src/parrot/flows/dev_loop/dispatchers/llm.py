@@ -2211,7 +2211,7 @@ class LLMCodeDispatcher:
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=cwd,
-                stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+                stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=8 * 1024 * 1024,

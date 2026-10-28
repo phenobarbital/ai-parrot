@@ -323,7 +323,8 @@ Agent(guardrails=[{"name": "prompt_injection", "scan_tool_output": True},
   (MIT, own export) · gravitee Prompt Guard 2 86M **fp32 only** (llama4,
   conditional attribution; int8 excluded — its own eval shows F1
   0.98→0.89) · enguard potion (MIT); 0din and NC-licensed models excluded;
-  winner = highest combined ES+EN F1 s.t. 0 ES-benign FPs and p50 ≤ 30 ms
+  winner = highest combined ES+EN F1 s.t. 0 ES-benign FPs and p50 ≤ 45 ms
+  (amended from 30 ms on 2026-10-28 by operator decision, after the first run)
   CPU @ 512 tokens, ties → permissive license, then size. 0din embeddings
   may still be *measured* (local eval) to inform any future licensing
   conversation, flagged non-eligible in the manifest. Output: pinned
@@ -815,7 +816,8 @@ Verified against: `4e3ba6289`
   `sheltron-ai/prompt-guard-68m` (CC-BY-NC), any protectai model (ES-FP
   baseline only). **Pre-registered decision rule**: winner = highest
   combined ES+EN F1 subject to (a) 0 Spanish-benign FPs at the selected
-  threshold and (b) p50 ≤ 30 ms CPU @ 512 tokens; ties → more permissive
+  threshold and (b) p50 ≤ 45 ms CPU @ 512 tokens (amended from 30 ms on
+  2026-10-28 by operator decision, after the first measurement run); ties → more permissive
   license (apache/MIT over llama4), then smaller artifact. M3 commits the
   numbers + manifest; §5 gate unchanged.
 - [x] **Reference attack corpus** — *Resolved 2026-10-27*: moot for v1 —

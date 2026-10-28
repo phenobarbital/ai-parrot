@@ -75,3 +75,25 @@ def test_codegen_registry(tmp_path: Path):
     committed = Path(gen.SCHEMAS_DIR)
     for name in ("AgentChatResponse", "AgentChatMetadata", "AgentToolCall"):
         assert json.loads(written[name].read_text()) == json.loads((committed / f"{name}.json").read_text())
+
+
+def test_chat_models_suggestions_schema():
+    schema = AgentChatResponse.model_json_schema()
+    assert "suggestions" in schema["properties"]
+    assert "AgentChatSuggestion" in schema["$defs"]
+    m = AgentChatResponse.model_validate(
+        {
+            **JSON_ENVELOPE,
+            "suggestions": [
+                {
+                    "label": "Explain this",
+                    "prompt": "Explain this answer",
+                    "kind": "action",
+                    "source": "provider",
+                    "action": "explain",
+                }
+            ],
+        }
+    )
+    assert m.suggestions[0].action == "explain"
+    assert AgentChatResponse.model_validate(STREAM_ENVELOPE).suggestions == []
