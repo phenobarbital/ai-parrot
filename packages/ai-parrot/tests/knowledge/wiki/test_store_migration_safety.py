@@ -233,3 +233,43 @@ async def test_backups_in_the_same_second_do_not_overwrite_each_other(tmp_path: 
     store = SQLiteWikiStore(db, "t")
     first, second = store._backup_store(), store._backup_store()
     assert first != second and first.exists() and second.exists()
+
+
+async def test_plane_created_by_source_manager_is_stamped_without_backup(tmp_path: Path) -> None:
+    """`wikitoolkit build` creates the schema via SourceCollectionManager (no meta rows); stamping it is not a migration."""
+    from parrot.knowledge.wiki.sources import SourceCollectionManager
+
+    db = tmp_path / "wiki.db"
+    SourceCollectionManager(tmp_path / "sources", db_path=db)
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone() is None
+
+    assert await SQLiteWikiStore(db, "t").get_meta("k") is None
+    assert not list(tmp_path.glob("wiki.db.bak-*")), "a freshly built plane must not leave a backup sidecar"
+    assert not store_mod._migration_lock_path(db).exists()
+    with sqlite3.connect(db) as conn:
+        stamped = dict(conn.execute("SELECT key, value FROM meta"))
+    assert stamped["schema_version"] == store_mod.SCHEMA_VERSION
+    assert store_mod.MIN_RUNTIME_KEY in stamped
+
+
+async def test_stale_version_row_is_still_backed_up(tmp_path: Path) -> None:
+    """A PRESENT but different schema_version is a real version change: the backup still runs."""
+    db = await _stale_plane(tmp_path)
+    assert await SQLiteWikiStore(db, "t").get_meta("k") == "v"
+    assert list(tmp_path.glob("wiki.db.bak-*"))
+
+
+async def test_unstamped_plane_missing_a_column_is_still_backed_up(tmp_path: Path) -> None:
+    """No version row AND structural work pending (a missing column) is a migration: the backup still runs."""
+    from parrot.knowledge.wiki.sources import SourceCollectionManager
+
+    db = tmp_path / "wiki.db"
+    SourceCollectionManager(tmp_path / "sources", db_path=db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE pages DROP COLUMN content_hash")
+
+    await SQLiteWikiStore(db, "t").get_meta("k")
+    assert list(tmp_path.glob("wiki.db.bak-*"))
+    with sqlite3.connect(db) as conn:
+        assert "content_hash" in {row[1] for row in conn.execute("PRAGMA table_info(pages)")}

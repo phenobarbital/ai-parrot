@@ -1592,10 +1592,38 @@ class SQLiteWikiStore(BaseWikiStore):
             return True
         return any([await self._uses_legacy_fts(conn, table) for table in _FTS_TABLES])
 
+    async def _is_unstamped_current_plane(self, conn: aiosqlite.Connection) -> bool:
+        """Pure-read probe: the plane already has the current shape and only lacks its version stamp.
+
+        A plane whose schema was created outside the store — ``SourceCollectionManager`` runs
+        ``WIKI_SCHEMA_SQL`` with plain ``sqlite3`` during ``wikitoolkit build`` and writes no
+        ``meta`` rows — has every current column and no legacy FTS table, but no
+        ``schema_version`` row. Its only pending work is stamping ``schema_version`` /
+        ``min_runtime_version``: there is no structural change to undo, so a pre-migration
+        backup would only leave a useless ``.bak-*`` sidecar next to every freshly built plane.
+        A row that is PRESENT but different is a real version change and is not covered here.
+
+        Args:
+            conn: An open connection; not mutated.
+
+        Returns:
+            ``True`` when no ``schema_version`` row exists, no column is missing and no FTS
+            table is still ``concept_id``-keyed.
+        """
+        missing, _ = await self._migration_needed(conn)
+        if missing:
+            return False
+        async with conn.execute("SELECT 1 FROM meta WHERE key = 'schema_version'") as cur:
+            if await cur.fetchone() is not None:
+                return False
+        return not any([await self._uses_legacy_fts(conn, table) for table in _FTS_TABLES])
+
     async def _migrate_safely(self, conn: aiosqlite.Connection) -> None:
         """Run ``_migrate`` under the cross-process lock with a restorable backup.
 
         A current plane takes the unchanged read-first path (no lock, no backup, no write).
+        A structurally current plane that only lacks its version stamp is stamped under the
+        lock and the runtime gate, without a backup (see :meth:`_is_unstamped_current_plane`).
         """
         if not await self._has_migration_work(conn):
             await self._migrate(conn)  # still read-first: attrs/FTS-trigger self-heal probes only
@@ -1604,6 +1632,9 @@ class SQLiteWikiStore(BaseWikiStore):
             await self._check_runtime_gate(conn)  # a newer runtime may have migrated while we waited
             if not await self._has_migration_work(conn):
                 await self._migrate(conn)
+                return
+            if await self._is_unstamped_current_plane(conn):
+                await self._migrate(conn)  # writes only the schema_version / min_runtime_version stamp
                 return
             # a failing backup raises WikiStoreMigrationError and removes its own partial .bak-*
             backup = await asyncio.to_thread(self._backup_store)
