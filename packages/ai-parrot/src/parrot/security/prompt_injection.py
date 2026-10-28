@@ -346,6 +346,80 @@ class SecurityEventLogger:
                 metadata=metadata or {}
             )
 
+    async def log_security_category_event(
+        self,
+        *,
+        category: str,
+        severity: ThreatLevel,
+        score: Optional[float] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        chatbot_id: Optional[str] = None,
+        counts: Optional[Dict[str, int]] = None,
+    ) -> None:
+        """Log a security detection WITHOUT any input/output/prompt text (FEAT-761).
+
+        Used by the jailbreak and prompt-leakage guardrails, whose offending
+        content may be the system prompt itself. The signature deliberately
+        has no content parameter. Never raises (DB failures are logged).
+
+        Args:
+            category: Detection category (``"jailbreak"``, ``"prompt_leakage"``).
+            severity: Highest severity of the detection.
+            score: Optional model/matcher score in ``[0, 1]``.
+            user_id: Requesting user, ``"anonymous"`` when unknown.
+            session_id: Session, ``"unknown"`` when unknown.
+            chatbot_id: Bot identifier.
+            counts: Non-content counters (e.g. ``{"matched_segments": 2}``).
+        """
+        user_id = user_id or "anonymous"
+        session_id = session_id or "unknown"
+        counts = dict(counts or {})
+        severity_str = severity.value if hasattr(severity, "value") else str(severity)
+        self.logger.warning(
+            "SECURITY: %s detected | Severity: %s | Score: %s | User: %s | " "Session: %s | Bot: %s | Counts: %s",
+            category,
+            severity_str.upper(),
+            score,
+            user_id,
+            session_id,
+            chatbot_id,
+            counts,
+        )
+        if not self.db_pool:
+            return
+        try:
+            query = """
+            INSERT INTO navigator.security_events (
+                event_type,
+                user_id,
+                session_id,
+                chatbot_id,
+                severity,
+                threat_details,
+                original_input,
+                sanitized_input,
+                metadata,
+                created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            """
+            async with await self.db_pool.acquire() as conn:
+                await conn.execute(
+                    query,
+                    category,
+                    user_id,
+                    session_id,
+                    chatbot_id,
+                    severity_str,
+                    {"score": score, "counts": counts},
+                    None,
+                    None,
+                    {},
+                    datetime.now(timezone.utc),
+                )
+        except Exception as e:  # noqa: BLE001 - never raise, never echo content
+            self.logger.error("Failed to log %s security event to database: %s", category, type(e).__name__)
+
     async def _log_to_database(
         self,
         user_id: str,

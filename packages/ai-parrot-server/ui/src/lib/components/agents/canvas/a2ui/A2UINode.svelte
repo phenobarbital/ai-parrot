@@ -16,6 +16,7 @@
 	import InfographicTimelineBlock from '../infographic/blocks/InfographicTimelineBlock.svelte';
 	import InfographicHeroCardBlock from '../infographic/blocks/InfographicHeroCardBlock.svelte';
 	import A2UIGraph from './A2UIGraph.svelte';
+	import A2UIMermaidDiagram, { type MermaidDiagramProperties } from './A2UIMermaidDiagram.svelte';
 	import A2UINode from './A2UINode.svelte';
 	import { LINKED_LANE_CONTEXT, FILTER_CONTEXT, type LinkedLane, type FilterController } from './linked';
 
@@ -247,6 +248,8 @@
 	     below, same as any other unknown component (spec: no $ref from
 	     viz-core to Basic/Parrot). -->
 	<A2UIGraph properties={resolved as unknown as GraphProperties} {dataModel} />
+{:else if component === 'MermaidDiagram'}
+	<A2UIMermaidDiagram properties={resolved as unknown as MermaidDiagramProperties} />
 {:else if component === 'HtmlDocument'}
 	<section class="a2ui-html-document">
 		{#if resolved.title}<h3 class="text-sm font-semibold mb-1">{resolved.title}</h3>{/if}
