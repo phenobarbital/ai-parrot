@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,7 +16,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from scripts.sdd.closeout_builtins import run_builtin
 from scripts.sdd.closeout_hooks_config import (
+    _FEAT_ID_RE,
     EVENTS,
+    Defaulting,
     HookContext,
     HookKind,
     HookResult,
@@ -39,12 +42,10 @@ class EventOutcome(BaseModel):
     evidence_md: str = ""
 
 
-class _Defaulting(dict[str, Any]):
-    """Format-map values that render unknown fields as an empty string."""
-
-    def __missing__(self, key: str) -> str:
-        """Return an empty value for an unavailable template field."""
-        return ""
+def _validate_feat_id(feat_id: str) -> None:
+    """Reject feat_id values that could escape the artifact root."""
+    if not _FEAT_ID_RE.fullmatch(feat_id):
+        raise ValueError(f"invalid feat_id: {feat_id!r}")
 
 
 def artifact_root() -> Path:
@@ -55,6 +56,7 @@ def artifact_root() -> Path:
 
 def _outcome_path(feat_id: str, event: str) -> Path:
     """Return the durable outcome path for one feature event."""
+    _validate_feat_id(feat_id)
     return artifact_root() / feat_id / f"{event}.json"
 
 
@@ -73,7 +75,7 @@ def _write_output_log(hook_dir: Path, output: str) -> str:
 
 def _glob_artifacts(hook_dir: Path, pattern: str | None) -> list[str]:
     """Return absolute file artifacts matching a hook's configured pattern."""
-    if not pattern:
+    if not pattern or ".." in pattern or os.path.isabs(pattern):
         return []
     return sorted(str(path.resolve()) for path in hook_dir.glob(pattern) if path.is_file())
 
@@ -83,7 +85,21 @@ def _persist(outcome: EventOutcome) -> None:
     outcome.evidence_md = render_evidence(outcome)
     path = _outcome_path(outcome.feat_id, outcome.event)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(outcome.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    closed = False
+    try:
+        os.write(fd, (outcome.model_dump_json(indent=2) + "\n").encode("utf-8"))
+        os.close(fd)
+        closed = True
+        os.replace(tmp, path)
+    except BaseException:
+        if not closed:
+            os.close(fd)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _load_outcome(event: str, feat_id: str) -> EventOutcome:
@@ -149,14 +165,26 @@ def _run_command(hook: HookSpec, ctx: HookContext, ctx_path: Path, hook_dir: Pat
         )
 
 
-def run_event(event: str, ctx: HookContext, cfg: HooksConfig, root: Path, ctx_path: Path) -> EventOutcome:
-    """Run every enabled hook for ``event`` in declaration order."""
-    del root
+def run_event(event: str, ctx: HookContext, cfg: HooksConfig, ctx_path: Path) -> EventOutcome:
+    """Run every enabled hook for ``event`` in declaration order.
+
+    Short-circuits after a blocking ``pre_pr`` failure: remaining hooks are
+    skipped once a blocker fails or times out.
+    """
     outcome = EventOutcome(event=event, feat_id=ctx.feat_id)
+    short_circuit = False
     for hook in cfg.for_event(event):
         hook_dir = artifact_root() / ctx.feat_id / hook.name
         hook_dir.mkdir(parents=True, exist_ok=True)
-        if ctx.dry_run and event in {"post_pr", "on_failure"}:
+        if short_circuit:
+            result = HookResult(
+                name=hook.name,
+                kind=hook.kind,
+                status="skipped",
+                blocking=hook.blocking,
+                summary="skipped after blocking failure",
+            )
+        elif ctx.dry_run and event in {"post_pr", "on_failure"}:
             result = HookResult(
                 name=hook.name,
                 kind=hook.kind,
@@ -169,7 +197,7 @@ def run_event(event: str, ctx: HookContext, cfg: HooksConfig, root: Path, ctx_pa
         elif hook.kind is HookKind.BUILTIN:
             result = run_builtin(hook, ctx, hook_dir)
         else:
-            prompt_data = _Defaulting(ctx.model_dump())
+            prompt_data = Defaulting(ctx.model_dump())
             prompt_data["artifact_dir"] = str(hook_dir.resolve())
             try:
                 prompt = (hook.prompt or "").format_map(prompt_data)
@@ -200,6 +228,8 @@ def run_event(event: str, ctx: HookContext, cfg: HooksConfig, root: Path, ctx_pa
                 )
         result.artifacts = _glob_artifacts(hook_dir, hook.artifacts)
         outcome.results.append(result)
+        if event == "pre_pr" and result.blocking and result.status in {"fail", "timeout"}:
+            short_circuit = True
     _recompute_blocking_failed(outcome)
     _persist(outcome)
     return outcome
@@ -290,7 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             context = HookContext.model_validate_json(args.context.read_text(encoding="utf-8"))
             if args.dry_run:
                 context = context.model_copy(update={"dry_run": True})
-            outcome = run_event(args.event, context, load_hooks(args.root), args.root, args.context)
+            outcome = run_event(args.event, context, load_hooks(args.root), args.context)
     except (HooksConfigError, OSError, ValidationError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE

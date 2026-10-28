@@ -16,10 +16,18 @@ NON_BLOCKING_EVENTS: frozenset[str] = frozenset({"post_pr", "on_failure"})
 KNOWN_BUILTINS: frozenset[str] = frozenset({"jira.transition", "telegram.send", "push.send", "webhook.post"})
 PUSH_PROVIDERS: frozenset[str] = frozenset({"ntfy", "gotify"})
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_FEAT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class HooksConfigError(ValueError):
     """Raised when .parrot/sdd_hooks.toml is malformed."""
+
+
+class Defaulting(dict[str, Any]):
+    """Format-map dict that renders unknown template fields as empty strings."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
 
 
 class HookKind(str, Enum):

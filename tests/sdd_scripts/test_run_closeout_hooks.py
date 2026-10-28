@@ -284,3 +284,75 @@ def test_agent_prompt_with_literal_braces_fails_hook_not_event(
     assert code == 0
     assert out["results"][0]["status"] == "fail"
     assert "invalid prompt template" in out["results"][0]["summary"]
+
+
+# --- FEAT-766 hardening tests ---
+
+
+def test_outcome_path_rejects_traversal() -> None:
+    """A feat_id containing '..' is rejected by _outcome_path."""
+    with pytest.raises(ValueError, match="invalid feat_id"):
+        run_closeout_hooks._outcome_path("../../etc", "pre_pr")
+
+
+def test_outcome_path_rejects_absolute() -> None:
+    """A feat_id starting with '/' is rejected."""
+    with pytest.raises(ValueError, match="invalid feat_id"):
+        run_closeout_hooks._outcome_path("/etc/passwd", "pre_pr")
+
+
+def test_outcome_path_accepts_valid_feat_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A normal feat_id like 'FEAT-766' passes validation."""
+    monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path))
+    path = run_closeout_hooks._outcome_path("FEAT-766", "pre_pr")
+    assert "FEAT-766" in str(path)
+
+
+def test_glob_artifacts_rejects_traversal(tmp_path: Path) -> None:
+    """Glob patterns containing '..' return an empty list."""
+    assert run_closeout_hooks._glob_artifacts(tmp_path, "../*.py") == []
+
+
+def test_glob_artifacts_rejects_absolute(tmp_path: Path) -> None:
+    """Absolute glob patterns return an empty list."""
+    assert run_closeout_hooks._glob_artifacts(tmp_path, "/etc/*.conf") == []
+
+
+def test_pre_pr_short_circuits_after_blocking_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After a blocking pre_pr failure, subsequent hooks are skipped."""
+    monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    _config(
+        tmp_path,
+        f"""[[hooks.pre_pr]]
+name = "blocker"
+kind = "command"
+run = "{sys.executable} -c \\\"raise SystemExit(1)\\\""
+blocking = true
+
+[[hooks.pre_pr]]
+name = "after-blocker"
+kind = "command"
+run = "{sys.executable} -c \\\"raise SystemExit(0)\\\""
+""",
+    )
+    code = _run(tmp_path, context_path)
+    out = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert out["results"][0]["status"] == "fail"
+    assert out["results"][1]["status"] == "skipped"
+    assert "blocking failure" in out["results"][1]["summary"]
+
+
+def test_persist_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """_persist uses os.replace for atomicity — the file appears complete or not at all."""
+    monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    outcome = run_closeout_hooks.EventOutcome(event="pre_pr", feat_id="FEAT-766")
+    run_closeout_hooks._persist(outcome)
+    path = tmp_path / "art" / "FEAT-766" / "pre_pr.json"
+    assert path.exists()
+    data = json.loads(path.read_text())
+    assert data["feat_id"] == "FEAT-766"
+    no_tmp = [f for f in path.parent.iterdir() if f.suffix == ".tmp"]
+    assert no_tmp == []
