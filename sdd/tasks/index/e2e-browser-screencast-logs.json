@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T21:36:53.176481+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-28T00:17:41+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -40,7 +40,7 @@
       "feature_id": "FEAT-762",
       "feature": "e2e-browser-screencast-logs",
       "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -48,8 +48,9 @@
       "parallelism_notes": "No task dependencies. Uses isolated Obscura process, unused_tcp_port, and test-local output; modifies only its declared integration test, evidence report, and spec. No shared dependency manifests or conftest mutations.",
       "assigned_to": null,
       "started_at": "2026-10-27T22:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4842-e2e-active-page-screencast-spike.md"
+      "completed_at": "2026-10-28T00:17:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4842-e2e-active-page-screencast-spike.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-762",
