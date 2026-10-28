@@ -74,10 +74,10 @@
       "feature_id": "FEAT-762",
       "feature": "e2e-browser-screencast-logs",
       "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
-      "status": "pending",
+      "status": "done",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-10-28T00:06:32+00:00",
       "parallel": true,
       "id": "TASK-4865",
       "slug": "e2e-record-on-anomaly",
@@ -88,7 +88,8 @@
         "TASK-4864"
       ],
       "parallelism_notes": "imports start_screencast/stop_screencast/ScreencastSession from TASK-4864 and modifies the same screencast.py + test_screencast.py.",
-      "file": "sdd/tasks/active/TASK-4865-e2e-record-on-anomaly.md"
+      "file": "sdd/tasks/completed/TASK-4865-e2e-record-on-anomaly.md",
+      "verification": "verified"
     },
     {
       "feature_id": "FEAT-762",

@@ -230,4 +230,6 @@ the real `obscura` on PATH; a skip is not acceptance evidence.
 
 ## Completion Note
 
-Owned by the finalization tool after verified acceptance.
+**Completed**: 2026-10-28 — delivered by gpt-5.6-sol (attempt 3; attempts 1-2 gpt-5.6-terra). Merged manually (`d06e5033f`): engine task-tier validation reported `validation_failed: 0 failure(s)` (attempt had no execution_id).
+**Verification**: 13 passed (8 M1 + 3 M2 unit + real-Obscura `test_record_on_anomaly_real_obscura`, executed not skipped). Engine merge-tier verdict was `failed` only because its first sweep (`-m 'not integration'`) deselected the sole integration test (pytest exit 5); the second sweep ran it green. Not engine-green by the strict rule — recorded here, not hidden.
+**Notes**: ruff clean on the three files; AnomalyRecorder never raises from `__aexit__`.
