@@ -33,12 +33,14 @@ async def test_no_match_returns_empty(provider: MetricSuggestionProvider) -> Non
     """No stashed match → empty list."""
     token = bind_metric_match(None)
     try:
-        suggestions = await provider.suggest(SuggestionContext(
-            question="show me worked hours",
-            response=None,
-            output_mode=None,
-            bot=None,
-        ))
+        suggestions = await provider.suggest(
+            SuggestionContext(
+                question="show me worked hours",
+                response=None,
+                output_mode=None,
+                bot=None,
+            )
+        )
         assert suggestions == []
     finally:
         reset_metric_match(token)
@@ -52,12 +54,14 @@ async def test_metric_suggestion_provider_chips(
     """Match with 2 dimensions + previous_period → compare chip, 2 dimension chips, shape chips, total ≤ max_chips."""
     token = bind_metric_match(worked_hours_match)
     try:
-        suggestions = await provider.suggest(SuggestionContext(
-            question="show me worked hours",
-            response=None,
-            output_mode=None,
-            bot=None,
-        ))
+        suggestions = await provider.suggest(
+            SuggestionContext(
+                question="show me worked hours",
+                response=None,
+                output_mode=None,
+                bot=None,
+            )
+        )
 
         # Should have: compare, 2 dimensions, 2 other shapes (KPICard is current)
         assert len(suggestions) == 5
@@ -105,12 +109,14 @@ async def test_comparison_none_skips_compare_chip(
 
     token = bind_metric_match(match)
     try:
-        suggestions = await provider.suggest(SuggestionContext(
-            question="show me worked hours",
-            response=None,
-            output_mode=None,
-            bot=None,
-        ))
+        suggestions = await provider.suggest(
+            SuggestionContext(
+                question="show me worked hours",
+                response=None,
+                output_mode=None,
+                bot=None,
+            )
+        )
 
         # Should have: 2 dimensions, 2 other shapes (no compare chip)
         assert len(suggestions) == 4
