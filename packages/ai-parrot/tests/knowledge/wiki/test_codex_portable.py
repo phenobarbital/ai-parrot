@@ -117,32 +117,95 @@ def test_mcp_local_relative_config_resolves_against_root(root: Path, tmp_path: P
     assert "memory" in result.output
 
 
-@pytest.mark.parametrize("args", [["--config", ".parrot/mcp-toolkits.yaml", "--list"], ["--list"]])
-def test_mcp_local_from_a_subdirectory_finds_the_repo_config(
-    root: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+def _list_from(cwd: Path, monkeypatch: pytest.MonkeyPatch, *args: str) -> Any:
+    monkeypatch.chdir(cwd)
+    monkeypatch.delenv("PARROT_PROJECT", raising=False)
+    result = CliRunner().invoke(mcp_local, [*args, "--list"])
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+@pytest.mark.parametrize("marker", [".git", ".git-file", ".mcp.json", ".codex/config.toml"])
+@pytest.mark.parametrize("args", [("--config", ".parrot/mcp-toolkits.yaml"), ()])
+def test_mcp_local_from_a_subdirectory_finds_the_project_config(
+    root: Path, monkeypatch: pytest.MonkeyPatch, marker: str, args: tuple[str, ...]
 ) -> None:
     """FEAT-633 S3: Claude Code starts stdio servers in its launch directory, which may be a project subdirectory.
 
-    The portable entry's relative ``--config`` must still resolve, by walking up to the enclosing git root.
+    The portable entry's relative ``--config`` still resolves, by walking up to the project marker. That marker can be
+    a git checkout (``.git`` dir), a linked worktree (``.git`` file) or a non-git project holding the host config.
     """
-    (root / ".git").mkdir()
+    if marker == ".git-file":
+        (root / ".git").write_text("gitdir: /nonexistent/worktrees/x\n")
+    elif marker == ".git":
+        (root / ".git").mkdir()
+    else:
+        (root / marker).parent.mkdir(parents=True, exist_ok=True)
+        (root / marker).write_text("{}")
     sub = root / "pkg" / "deep"
+    sub.mkdir(parents=True)
+    assert "memory" in _list_from(sub, monkeypatch, *args)
+
+
+def test_mcp_local_never_walks_past_the_project_marker(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A config above the project (e.g. a dotfiles repo in $HOME) is never used, git or not."""
+    (root / ".git").mkdir()  # the outer directory is a repo WITH a config
+    for marker in (".mcp.json", ".git"):
+        project = root / f"proj{len(marker)}"
+        (project / "src").mkdir(parents=True)
+        if marker == ".git":
+            (project / ".git").mkdir()
+        else:
+            (project / marker).write_text("{}")
+        output = _list_from(project / "src", monkeypatch)
+        assert "memory" not in output and "No toolkits resolvable" in output, output
+
+
+def test_mcp_local_relative_config_with_dotdot_is_not_walked(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (root / ".git").mkdir()
+    sub = root / "a" / "b"
     sub.mkdir(parents=True)
     monkeypatch.chdir(sub)
     monkeypatch.delenv("PARROT_PROJECT", raising=False)
-    result = CliRunner().invoke(mcp_local, args)
+    result = CliRunner().invoke(mcp_local, ["--config", "../.parrot/mcp-toolkits.yaml", "--list"])
+    assert "memory" not in result.output  # resolved against cwd only: root/a/.parrot/... does not exist
+
+
+def test_mcp_local_parrot_project_wins_over_the_walk(root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (root / ".git").mkdir()
+    other = tmp_path / "other"
+    (other / ".parrot").mkdir(parents=True)
+    (other / ".parrot" / "mcp-toolkits.yaml").write_text("toolkits: {}\n")
+    sub = root / "pkg"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    monkeypatch.setenv("PARROT_PROJECT", str(other))
+    result = CliRunner().invoke(mcp_local, ["--config", ".parrot/mcp-toolkits.yaml", "--list"])
     assert result.exit_code == 0, result.output
-    assert "memory" in result.output
+    assert "memory" not in result.output
 
 
-def test_mcp_local_walk_never_leaves_the_repository(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A nested repo without its own config does not pick up the outer directory's config."""
-    inner = root / "vendor" / "other"
-    (inner / ".git").mkdir(parents=True)
-    (inner / "src").mkdir()
-    monkeypatch.chdir(inner / "src")
+def test_mcp_local_serve_from_a_subdirectory_chdirs_to_the_root(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The serve path gets the absolute project config and runs from the project root, like a baked ``cwd``."""
+    import parrot.mcp.toolkit_server as toolkit_server
+
+    (root / ".git").mkdir()
+    sub = root / "pkg"
+    sub.mkdir()
+    seen: dict[str, Any] = {}
+
+    def fake_create(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs, cwd=Path.cwd())
+        raise SystemExit(0)
+
+    monkeypatch.setattr(toolkit_server, "create_toolkit_mcp_server", fake_create)
+    monkeypatch.chdir(sub)
     monkeypatch.delenv("PARROT_PROJECT", raising=False)
-    assert "memory" not in CliRunner().invoke(mcp_local, ["--list"]).output
+    CliRunner().invoke(mcp_local, ["memory", "--config", ".parrot/mcp-toolkits.yaml"])
+    assert seen["cwd"] == root.resolve()
+    assert seen["config_path"] == root.resolve() / ".parrot" / "mcp-toolkits.yaml"
 
 
 def test_remote_does_not_reset_portable_mode(root: Path) -> None:

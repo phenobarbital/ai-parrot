@@ -75,8 +75,8 @@ Findings:
    - `wikitoolkit mcp` walks up, so it is unaffected.
    - Portable `parrot mcp-local … --config .parrot/mcp-toolkits.yaml` resolved the relative config against the cwd and
      failed from a subdirectory (`ValueError: Toolkit config file not found`).
-   - Fixed in this branch: `mcp/local_cli.py::_project_root_for` walks up to the nearest ancestor that holds the config,
-     bounded by the enclosing git root.
+   - Fixed in this branch: `mcp/local_cli.py::_project_root_for` walks up to the nearest ancestor that holds the config, never
+     past the nearest project marker (`.mcp.json`, `.codex/config.toml`, `.git`), and then changes into that root as a baked `cwd` would.
    - Baked entries pin an absolute `--config` and `cwd`, so they were never affected.
 3. With the cwd walk fixed, the Claude rule stays: **portable = omit `cwd` and `PARROT_PROJECT`**.
 

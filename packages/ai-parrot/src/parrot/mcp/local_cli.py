@@ -110,13 +110,21 @@ def _configure_stderr_logging() -> None:
     root_logger.setLevel(logging.WARNING)
 
 
+#: Files that mark a project root for the walk in ``_project_root_for``: the host configs a portable entry is
+#: written into (``.mcp.json``, ``.codex/config.toml``) and the git work tree marker.
+_PROJECT_MARKERS: tuple[str, ...] = (".mcp.json", ".codex/config.toml", ".git")
+
+
 def _project_root_for(cwd: Path, relative: Path) -> Path:
-    """Return the nearest ancestor of ``cwd`` holding ``relative``, bounded by the enclosing git root.
+    """Return the ancestor of ``cwd`` that holds ``relative``, never walking past the nearest project marker.
 
     Claude Code finds a project ``.mcp.json`` by walking up from the directory it was launched in, but starts
     its stdio servers in that launch directory. So a portable entry's relative ``--config`` must be looked up
-    the same way (FEAT-633 S3). The walk never leaves the enclosing repository: with no ``.git`` above
-    ``cwd``, or no ancestor up to that root holding ``relative``, ``cwd`` is returned unchanged.
+    the same way (FEAT-633 S3). The walk checks ``cwd`` and its ancestors and stops at the first one carrying a
+    project marker (``_PROJECT_MARKERS``). Portable entries only live in those host configs, so the project
+    that registered the server is always that boundary. A config further up (e.g. a dotfiles repo in ``$HOME``)
+    is never used. ``cwd`` is returned unchanged when no ancestor up to the boundary holds ``relative``, when
+    there is no boundary at all, or when ``relative`` climbs with ``..``.
 
     Args:
         cwd: The process working directory.
@@ -125,13 +133,15 @@ def _project_root_for(cwd: Path, relative: Path) -> Path:
     Returns:
         The directory to treat as the project root.
     """
+    if ".." in relative.parts:
+        return cwd
     try:
         current = cwd.resolve()
         chain = (current, *current.parents)
-        git_root = next((p for p in chain if (p / ".git").exists()), None)
-        if git_root is None:
+        boundary = next((p for p in chain if any((p / m).exists() for m in _PROJECT_MARKERS)), None)
+        if boundary is None:
             return cwd
-        for candidate in chain[: chain.index(git_root) + 1]:
+        for candidate in chain[: chain.index(boundary) + 1]:
             if (candidate / relative).is_file():
                 return candidate
     except OSError:
@@ -203,9 +213,10 @@ def mcp_local(
     """Serve NAME as a local stdio MCP server.
 
     The project root is ``$PARROT_PROJECT`` when set, else the current working directory or its nearest
-    ancestor (inside the enclosing git repository) that holds the config — the MCP host (Claude Code,
+    ancestor (up to the nearest project marker) that holds the config — the MCP host (Claude Code,
     Codex, ...) starts this process in the directory it was launched from, which may be a subdirectory
-    of the project, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to the root.
+    of the project, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to the root. The process then
+    changes into the root, as a baked entry's ``cwd`` would.
 
     \b
     Examples:
