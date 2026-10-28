@@ -117,6 +117,34 @@ def test_mcp_local_relative_config_resolves_against_root(root: Path, tmp_path: P
     assert "memory" in result.output
 
 
+@pytest.mark.parametrize("args", [["--config", ".parrot/mcp-toolkits.yaml", "--list"], ["--list"]])
+def test_mcp_local_from_a_subdirectory_finds_the_repo_config(
+    root: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    """FEAT-633 S3: Claude Code starts stdio servers in its launch directory, which may be a project subdirectory.
+
+    The portable entry's relative ``--config`` must still resolve, by walking up to the enclosing git root.
+    """
+    (root / ".git").mkdir()
+    sub = root / "pkg" / "deep"
+    sub.mkdir(parents=True)
+    monkeypatch.chdir(sub)
+    monkeypatch.delenv("PARROT_PROJECT", raising=False)
+    result = CliRunner().invoke(mcp_local, args)
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
+
+
+def test_mcp_local_walk_never_leaves_the_repository(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A nested repo without its own config does not pick up the outer directory's config."""
+    inner = root / "vendor" / "other"
+    (inner / ".git").mkdir(parents=True)
+    (inner / "src").mkdir()
+    monkeypatch.chdir(inner / "src")
+    monkeypatch.delenv("PARROT_PROJECT", raising=False)
+    assert "memory" not in CliRunner().invoke(mcp_local, ["--list"]).output
+
+
 def test_remote_does_not_reset_portable_mode(root: Path) -> None:
     """[rev 0.5] D7: --remote decides only the wikitoolkit table; the mode comes from the parrot-* tables."""
     install_codex_integration(root, gitignore=False, bookstore=False, portable=True)

@@ -110,6 +110,35 @@ def _configure_stderr_logging() -> None:
     root_logger.setLevel(logging.WARNING)
 
 
+def _project_root_for(cwd: Path, relative: Path) -> Path:
+    """Return the nearest ancestor of ``cwd`` holding ``relative``, bounded by the enclosing git root.
+
+    Claude Code finds a project ``.mcp.json`` by walking up from the directory it was launched in, but starts
+    its stdio servers in that launch directory. So a portable entry's relative ``--config`` must be looked up
+    the same way (FEAT-633 S3). The walk never leaves the enclosing repository: with no ``.git`` above
+    ``cwd``, or no ancestor up to that root holding ``relative``, ``cwd`` is returned unchanged.
+
+    Args:
+        cwd: The process working directory.
+        relative: The relative toolkit config path to look for.
+
+    Returns:
+        The directory to treat as the project root.
+    """
+    try:
+        current = cwd.resolve()
+        chain = (current, *current.parents)
+        git_root = next((p for p in chain if (p / ".git").exists()), None)
+        if git_root is None:
+            return cwd
+        for candidate in chain[: chain.index(git_root) + 1]:
+            if (candidate / relative).is_file():
+                return candidate
+    except OSError:
+        return cwd
+    return cwd
+
+
 def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     """Print resolvable toolkit names, enabled state, and class path.
 
@@ -173,9 +202,10 @@ def mcp_local(
 ) -> None:
     """Serve NAME as a local stdio MCP server.
 
-    The project root is ``$PARROT_PROJECT`` when set, else the current working directory — the MCP host
-    (Claude Code, Codex, ...) starts this process inside the project
-    directory, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to it.
+    The project root is ``$PARROT_PROJECT`` when set, else the current working directory or its nearest
+    ancestor (inside the enclosing git repository) that holds the config — the MCP host (Claude Code,
+    Codex, ...) starts this process in the directory it was launched from, which may be a subdirectory
+    of the project, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to the root.
 
     \b
     Examples:
@@ -183,7 +213,12 @@ def mcp_local(
       parrot mcp-local scraping --include scrape_url --include list_plans
       parrot mcp-local --list
     """
-    root = Path(os.environ.get("PARROT_PROJECT") or Path.cwd())
+    pinned = os.environ.get("PARROT_PROJECT")
+    if pinned:
+        root = Path(pinned)
+    else:
+        relative = config_path if config_path is not None else Path(".parrot") / "mcp-toolkits.yaml"
+        root = Path.cwd() if relative.is_absolute() else _project_root_for(Path.cwd(), relative)
     if config_path is not None and not config_path.is_absolute():
         config_path = root / config_path
 

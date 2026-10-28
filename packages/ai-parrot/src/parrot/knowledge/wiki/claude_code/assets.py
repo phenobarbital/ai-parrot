@@ -88,7 +88,8 @@ MCP_JSON_ENTRY: dict = {
 }
 
 #: Relative toolkit config used by portable toolkit entries (FEAT-633). Resolved by
-#: ``parrot mcp-local`` against the process cwd (mcp/local_cli.py:183).
+#: ``parrot mcp-local`` against ``$PARROT_PROJECT``, else the nearest ancestor of the process cwd
+#: that holds it, bounded by the git root (mcp/local_cli.py::_project_root_for).
 PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
 
 
