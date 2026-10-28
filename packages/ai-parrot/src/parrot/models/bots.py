@@ -310,7 +310,9 @@ class BotModel(Model):
     suggest_followups: bool = Field(
         default=False, required=False, ui_help="Also ask the lightweight LLM for follow-up questions (one extra call)."
     )
-    suggestion_timeout_s: float = Field(default=4.0, required=False, ui_help="Timeout in seconds for the LLM chip call.")
+    suggestion_timeout_s: float = Field(
+        default=4.0, required=False, ui_help="Timeout in seconds for the LLM chip call."
+    )
     max_suggestions: int = Field(default=6, required=False, ui_help="Maximum number of chips per answer.")
     suggestion_model: Optional[str] = Field(
         default=None, required=False, ui_help="Optional model for the chip call (defaults to the lightweight model)."

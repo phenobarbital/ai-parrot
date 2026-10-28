@@ -10,6 +10,7 @@ Kept separate from ``parrot.server.ui.status`` (TASK-2524) because it
 describes a different endpoint (``/api/v1/bots``, not
 ``/api/v1/admin/status``) and has no runtime consumer of its own.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
