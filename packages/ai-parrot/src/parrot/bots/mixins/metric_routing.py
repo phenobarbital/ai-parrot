@@ -54,13 +54,24 @@ class MetricRoutingMixin:
             return False
         return True
 
+    @staticmethod
+    def _metric_caller_id(ctx: Any) -> Optional[str]:
+        """Return the calling user's id from the request context, so private metrics stay owner-only."""
+        if ctx is None:
+            return None
+        user_id = getattr(ctx, "user_id", None)
+        kwargs = getattr(ctx, "kwargs", None)
+        if not user_id and isinstance(kwargs, dict):
+            user_id = kwargs.get("user_id")
+        return str(user_id) if user_id else None
+
     async def _resolve_output_mode(self, query: str, ctx: Any) -> Optional[OutputMode]:
         resolved = await super()._resolve_output_mode(query, ctx)  # type: ignore[misc]
         if resolved is not None or self.metric_registry is None:
             return resolved
         try:
             tenant = resolve_metric_tenant(None, ctx)
-            match = await self.metric_registry.resolve(query, tenant=tenant)
+            match = await self.metric_registry.resolve(query, tenant=tenant, user_id=self._metric_caller_id(ctx))
             if match is None:
                 return None
             if self.metric_route_threshold is not None and match.score < self.metric_route_threshold:

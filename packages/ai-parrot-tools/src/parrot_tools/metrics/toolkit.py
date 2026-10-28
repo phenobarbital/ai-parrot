@@ -10,7 +10,6 @@ from datetime import date
 from typing import Any, Literal
 
 from parrot.metrics.context import resolve_metric_tenant
-from parrot.metrics.errors import MetricNotFound
 from parrot.metrics.models import (
     ChartShape,
     DataTableShape,
@@ -99,30 +98,19 @@ class MetricsToolkit(AbstractToolkit):
             user_id = kwargs.get("user_id")
         return str(user_id) if user_id else None
 
-    def _is_visible(self, definition: MetricDefinition) -> bool:
-        """Hide ``private`` definitions from everyone but their owner."""
-        if definition.visibility != "private":
-            return True
-        caller = self._caller_id()
-        return caller is not None and definition.owner == caller
-
     async def _describe(self, metric_id: str) -> MetricDefinition:
-        """Return one effective, caller-visible metric or raise ``MetricNotFound``."""
-        definition = await self.registry.describe(metric_id, tenant=self._call_tenant)
-        if not self._is_visible(definition):
-            raise MetricNotFound(metric_id)
-        return definition
+        """Return one effective, caller-visible metric or raise ``MetricNotFound``.
+
+        The registry hides ``private`` definitions from everyone but their owner.
+        """
+        return await self.registry.describe(metric_id, tenant=self._call_tenant, user_id=self._caller_id())
 
     async def list_metrics(self, search: str | None = None, program: str | None = None) -> list[MetricSummary]:
         """List the metrics visible in this tenant.
 
         ``search`` filters name, aliases, and description case-insensitively.
         """
-        definitions = [
-            definition
-            for definition in await self.registry.list(tenant=self._call_tenant, program=program)
-            if self._is_visible(definition)
-        ]
+        definitions = await self.registry.list(tenant=self._call_tenant, program=program, user_id=self._caller_id())
         needle = search.casefold().strip() if search else ""
         if needle:
             definitions = [

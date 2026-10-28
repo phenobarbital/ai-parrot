@@ -197,7 +197,13 @@ class MetricDefinition(BaseModel):
     source: MetricSource
     owner: str | None = None
     visibility: Visibility = "tenant"
-    allowed_groups: list[str] = Field(default_factory=list)
+    allowed_groups: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Reserved. Group-scoped visibility is not supported in v1 (``Visibility`` has no ``groups`` level), "
+            "so this must stay empty; the column is persisted only for forward compatibility."
+        ),
+    )
     global_only: bool = False
     version: int = 1
     created_at: datetime | None = None
@@ -210,6 +216,10 @@ class MetricDefinition(BaseModel):
             self.tenant = validate_tenant_id(self.tenant)
         if self.visibility == "public" and self.tenant is not None:
             raise ValueError("Public metric definitions cannot have a tenant")
+        if self.visibility == "private" and self.tenant is None:
+            raise ValueError("Private metric definitions require a tenant; global metrics are visible to every tenant")
+        if self.allowed_groups:
+            raise ValueError("allowed_groups is reserved: group-scoped metric visibility is not supported")
 
         fields = self.source.fields if isinstance(self.source, QuerySlugSource) else []
         if isinstance(self.source, TransformerSource):

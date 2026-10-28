@@ -87,3 +87,19 @@ def test_lazy_exports() -> None:
     assert pm.MetricDefinition is MetricDefinition
     with pytest.raises(AttributeError):
         pm.DoesNotExist  # noqa: B018
+
+
+def test_global_private_metric_rejected(worked_hours_def: MetricDefinition) -> None:
+    """A global row cannot be private: no list path would ever expose it."""
+    payload = worked_hours_def.model_dump(mode="json") | {"tenant": None, "visibility": "private", "owner": "u1"}
+    with pytest.raises(ValidationError, match="require a tenant"):
+        MetricDefinition.model_validate(payload)
+    tenant_private = payload | {"tenant": "acme"}
+    assert MetricDefinition.model_validate(tenant_private).visibility == "private"
+
+
+def test_allowed_groups_is_reserved(worked_hours_def: MetricDefinition) -> None:
+    """Group-scoped visibility is not supported, so allowed_groups must stay empty."""
+    payload = worked_hours_def.model_dump(mode="json") | {"tenant": "acme", "allowed_groups": ["finance"]}
+    with pytest.raises(ValidationError, match="allowed_groups is reserved"):
+        MetricDefinition.model_validate(payload)
