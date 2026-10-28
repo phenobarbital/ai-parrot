@@ -1733,6 +1733,10 @@ class BaseBot(AbstractBot):
                 # runs for every output_mode (supersedes the old 4-chat-mode-only
                 # channel-egress scrub branch above).
                 response = await self._run_output_pipeline(response, method="ask")
+                # FEAT-752: follow-up chips, attached once the answer is final.
+                response = await self._attach_suggestions(
+                    question, response, output_mode=output_mode, user_id=user_id, session_id=session_id
+                )
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
@@ -2299,6 +2303,10 @@ class BaseBot(AbstractBot):
                             user_id=current_user_id.get(),
                             session_id=current_session_id.get(),
                         )
+                    )
+                    # FEAT-752: chips travel only in the final AIMessage (final stream envelope), never in text chunks.
+                    ai_message = await self._attach_suggestions(
+                        question, ai_message, output_mode=output_mode, user_id=user_id, session_id=session_id
                     )
                     yield ai_message
 
