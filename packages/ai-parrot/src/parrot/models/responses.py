@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import base64
 import mimetypes
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator, model_validator
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
 from .suggestions import Suggestion
@@ -223,6 +223,9 @@ class AIMessage(BaseModel):
             "Follow-up chips produced by the agent after the answer (FEAT-752). " "Empty unless the agent opts in."
         ),
     )
+    # FEAT-752 rev 0.3: running chip task for the stream trailer (set by ask_stream(defer_suggestions=True)).
+    # Private — never serialised, never part of the wire.
+    _suggestions_task: Any = PrivateAttr(default=None)
 
     # Allow arbitrary types for output field (pandas DataFrames, etc.)
     model_config = ConfigDict(arbitrary_types_allowed=True)

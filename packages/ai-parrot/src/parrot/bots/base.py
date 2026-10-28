@@ -1942,6 +1942,8 @@ class BaseBot(AbstractBot):
             # Maintain turn identifier generation for parity with ask()
             _turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
+            # FEAT-752 rev 0.3: stream trailer — compute chips after the final envelope (handler opt-in).
+            _defer_suggestions = bool(kwargs.pop("defer_suggestions", False))
 
             # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
             _trace_ctx_stream = trace_context or TraceContext.new_root()
@@ -2304,10 +2306,16 @@ class BaseBot(AbstractBot):
                             session_id=current_session_id.get(),
                         )
                     )
-                    # FEAT-752: chips travel only in the final AIMessage (final stream envelope), never in text chunks.
-                    ai_message = await self._attach_suggestions(
+                    # FEAT-752: chips travel only in the final AIMessage (final stream envelope), never in text
+                    # chunks. With defer_suggestions the handler sends them later as a trailer frame (rev 0.3).
+                    _attach = self._attach_suggestions(
                         question, ai_message, output_mode=output_mode, user_id=user_id, session_id=session_id
                     )
+                    if _defer_suggestions:
+                        # create_task copies the current context: turn skill + tenant ContextVars stay bound.
+                        ai_message._suggestions_task = asyncio.create_task(_attach)
+                    else:
+                        ai_message = await _attach
                     yield ai_message
 
         except asyncio.CancelledError:
