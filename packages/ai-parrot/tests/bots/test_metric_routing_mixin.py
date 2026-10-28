@@ -126,7 +126,7 @@ async def test_metric_routing_mixin_after_router_abstain(worked_hours_def, monke
     assert ctx.kwargs["metric_match"] is match
     assert current_metric_match() is match
     assert ctx.intent_score == match.score
-    registry.resolve.assert_awaited_once_with("worked hours this month", tenant="acme")
+    registry.resolve.assert_awaited_once_with("worked hours this month", tenant="acme", user_id=None)
 
 
 async def test_metric_routing_mixin_not_inline_returns_none(worked_hours_def, monkeypatch):
@@ -206,3 +206,14 @@ async def test_metric_turn_precedence(worked_hours_def, monkeypatch):
     assert resolved == OutputMode.TEXT
     assert len(router.queries) == 2
     assert registry.resolve.await_count == 1
+
+
+async def test_metric_routing_mixin_passes_caller_to_registry(worked_hours_def):
+    """The routing lane resolves as the caller, so the registry can hide others' private metrics."""
+    registry = AsyncMock()
+    registry.resolve.return_value = None
+    agent = _Agent(metric_registry=registry)
+    ctx = _Ctx(tenant="acme", user_id="u1")
+
+    assert await agent._resolve_output_mode("worked hours this month", ctx) is None
+    registry.resolve.assert_awaited_once_with("worked hours this month", tenant="acme", user_id="u1")

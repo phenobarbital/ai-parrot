@@ -337,6 +337,25 @@
       "completed_at": "2026-10-27T23:45:06+00:00",
       "file": "sdd/tasks/completed/TASK-4856-metrics-wiring-and-docs.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-4873",
+      "slug": "metric-registry-review-leftovers",
+      "title": "Metric registry review leftovers (visibility, cache TTL, mixin filtering)",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "assigned_to": "agent:sdd-fix",
+      "discovered_from": "issue:a262cacba885",
+      "started_at": "2026-10-28T00:33:59+00:00",
+      "completed_at": "2026-10-28T00:33:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4873-metric-registry-review-leftovers.md",
+      "verification": "verified"
     }
   ]
 }

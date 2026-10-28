@@ -35,6 +35,11 @@ def resolve_metric_tenant(
 
     Resolution order is explicit tenant, ``ctx.kwargs["tenant"]``, the
     request-local skill tenant, and finally the supplied default.
+
+    ``explicit`` is for trusted host code only. The model-facing lanes never
+    forward a tenant from tool arguments: ``MetricsToolkit`` and
+    ``MetricRoutingMixin`` both call this with ``explicit=None``, so their
+    tenant comes from the request context, the skill tenant, or the default.
     """
     ctx_tenant = None
     ctx_kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None

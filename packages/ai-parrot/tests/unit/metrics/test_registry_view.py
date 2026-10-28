@@ -98,3 +98,54 @@ async def test_registry_resolve_never_raises(
     monkeypatch.setattr(matcher, "match", raise_match)
 
     assert await registry.resolve("hours worked this month") is None
+
+
+async def test_registry_hides_private_metrics_from_non_owners(worked_hours_def: MetricDefinition) -> None:
+    """Private metrics are listed, described and resolved only for their owner."""
+    private = worked_hours_def.model_copy(update={"tenant": "acme", "visibility": "private", "owner": "u1"})
+    registry = MetricRegistry(
+        InMemoryMetricStore([private]), matcher=MetricMatcher(enable_embeddings=False), default_tenant="acme"
+    )
+
+    assert await registry.list(user_id="u2") == []
+    assert await registry.list() == []
+    with pytest.raises(MetricNotFound):
+        await registry.describe("worked_hours", user_id="u2")
+    assert await registry.resolve("hours worked this month", user_id="u2") is None
+
+    assert [d.id for d in await registry.list(user_id="u1")] == ["worked_hours"]
+    assert (await registry.describe("worked_hours", user_id="u1")) == private
+    match = await registry.resolve("hours worked this month", user_id="u1")
+    assert match is not None and match.metric == private
+    assert await registry.resolve("hours worked this month", user_id="u2") is None
+
+
+async def test_registry_view_cache_expires_after_ttl(
+    worked_hours_def: MetricDefinition, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Definitions written after the first read appear once cache_ttl elapses."""
+    import parrot.metrics.registry as registry_module
+
+    clock = [1000.0]
+    monkeypatch.setattr(registry_module.time, "monotonic", lambda: clock[0])
+    store = InMemoryMetricStore()
+    registry = MetricRegistry(store, cache_ttl=30.0)
+
+    assert await registry.list() == []
+    await store.save(worked_hours_def)
+    clock[0] += 10
+    assert await registry.list() == []
+    clock[0] += 25
+    assert [d.id for d in await registry.list()] == ["worked_hours"]
+
+
+async def test_registry_invalidate_drops_cached_views(worked_hours_def: MetricDefinition) -> None:
+    """invalidate() forces a reload even without a TTL."""
+    store = InMemoryMetricStore()
+    registry = MetricRegistry(store, cache_ttl=None, default_tenant="acme")
+
+    assert await registry.list() == []
+    await store.save(worked_hours_def)
+    assert await registry.list() == []
+    registry.invalidate("acme")
+    assert [d.id for d in await registry.list()] == ["worked_hours"]

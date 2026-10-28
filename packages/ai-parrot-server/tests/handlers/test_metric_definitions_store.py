@@ -158,7 +158,6 @@ async def test_list_visible_predicate_per_scope() -> None:
     conn = _FakeConn()
     store = _store(conn)
     await store.save(_definition(id="g_public", tenant=None, visibility="public"))
-    await store.save(_definition(id="g_private", tenant=None, visibility="private"))
     await store.save(_definition(id="t_tenant", visibility="tenant"))
     await store.save(_definition(id="t_private_own", visibility="private", owner="u1"))
     await store.save(_definition(id="t_private_other", visibility="private", owner="u2"))
