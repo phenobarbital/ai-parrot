@@ -177,10 +177,15 @@ No new test file (docs task). The example is validated by the manual command abo
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4871
+- Feature: sdd-done-closeout-hooks
+- Implementation SHA: 8ff5083c719ec2752e34025a239c3813e2d66a63
+- Closed at (UTC): 2026-10-28T00:27:47+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 224s · Tokens: n/a |
