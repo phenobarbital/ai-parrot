@@ -41,12 +41,12 @@ class SuggestionEngine:
         """Caps and timeouts.
 
         ``timeout_s`` caps each provider (every lane, not only the LLM one); ``total_timeout_s`` is the deadline
-        for the whole ``collect()`` call and defaults to ``timeout_s``, so slow providers cannot stack.
+        for the whole ``collect()`` call and defaults to ``2 * timeout_s``, so slow providers cannot stack.
         """
         self.max_suggestions = max_suggestions
         self.max_llm_suggestions = max_llm_suggestions
         self.timeout_s = timeout_s
-        self.total_timeout_s = timeout_s if total_timeout_s is None else total_timeout_s
+        self.total_timeout_s = 2 * timeout_s if total_timeout_s is None else total_timeout_s
         self.logger = logger or logging.getLogger(__name__)
         self._providers: list[SuggestionProvider] = []
 
