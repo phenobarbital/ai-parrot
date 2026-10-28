@@ -62,12 +62,12 @@ def test_command_pass_and_env_vars(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "command"
 kind = "command"
 run = "{sys.executable} -c \\\"import os, pathlib; pathlib.Path(os.environ['SDD_HOOK_ARTIFACT_DIR']).joinpath('x.txt').write_text(os.environ['SDD_FEAT_ID'])\\\""
 artifacts = "*.txt"
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 0
     assert (tmp_path / "art" / "FEAT-764" / "command" / "x.txt").read_text() == "FEAT-764"
@@ -81,12 +81,12 @@ def test_command_fail_exit_code(
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "fail"
 kind = "command"
 run = "{sys.executable} -c \\\"raise SystemExit(4)\\\""
 blocking = {blocking}
-''',
+""",
     )
     assert _run(tmp_path, context_path) == expected
 
@@ -96,13 +96,13 @@ def test_command_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contex
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "slow"
 kind = "command"
 run = "{sys.executable} -c \\\"import time; time.sleep(2)\\\""
 timeout_s = 1
 blocking = true
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 1
     outcome = json.loads((tmp_path / "art" / "FEAT-764" / "pre_pr.json").read_text())
@@ -114,7 +114,7 @@ def test_dry_run_runs_pre_pr_skips_post_pr(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "pre"
 kind = "command"
 run = "{sys.executable} -c \\\"raise SystemExit(0)\\\""
@@ -123,12 +123,15 @@ run = "{sys.executable} -c \\\"raise SystemExit(0)\\\""
 name = "post"
 kind = "command"
 run = "{sys.executable} -c \\\"raise SystemExit(9)\\\""
-''',
+""",
     )
     assert _run(tmp_path, context_path, "--dry-run") == 0
-    assert run_closeout_hooks.main(
-        ["--event", "post_pr", "--root", str(tmp_path), "--context", str(context_path), "--dry-run"]
-    ) == 0
+    assert (
+        run_closeout_hooks.main(
+            ["--event", "post_pr", "--root", str(tmp_path), "--context", str(context_path), "--dry-run"]
+        )
+        == 0
+    )
     outcome = json.loads((tmp_path / "art" / "FEAT-764" / "post_pr.json").read_text())
     assert outcome["results"][0]["status"] == "skipped"
 
@@ -140,18 +143,32 @@ def test_agent_pending_exit_3_then_record_finalize(
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        '''[[hooks.pre_pr]]
+        """[[hooks.pre_pr]]
 name = "agent"
 kind = "agent"
 agent = "reviewer"
 prompt = "Review {feat_id} in {artifact_dir}"
 blocking = true
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 3
-    record_args = ["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--record", "agent", "--status", "pass"]
+    record_args = [
+        "--event",
+        "pre_pr",
+        "--root",
+        str(tmp_path),
+        "--feat-id",
+        "FEAT-764",
+        "--record",
+        "agent",
+        "--status",
+        "pass",
+    ]
     assert run_closeout_hooks.main(record_args) == 0
-    assert run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"]) == 0
+    assert (
+        run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"])
+        == 0
+    )
 
 
 def test_finalize_unrecorded_pending_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path) -> None:
@@ -159,16 +176,19 @@ def test_finalize_unrecorded_pending_fails(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        '''[[hooks.pre_pr]]
+        """[[hooks.pre_pr]]
 name = "agent"
 kind = "agent"
 agent = "reviewer"
 prompt = "Review {feat_id}"
 blocking = true
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 3
-    assert run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"]) == 1
+    assert (
+        run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"])
+        == 1
+    )
 
 
 def test_artifacts_globbed_and_in_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path) -> None:
@@ -176,12 +196,12 @@ def test_artifacts_globbed_and_in_evidence(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "evidence"
 kind = "command"
 run = "{sys.executable} -c \\\"import os, pathlib; pathlib.Path(os.environ['SDD_HOOK_ARTIFACT_DIR']).joinpath('evidence.txt').write_text('ok')\\\""
 artifacts = "*.txt"
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 0
     outcome = json.loads((tmp_path / "art" / "FEAT-764" / "pre_pr.json").read_text())
@@ -190,9 +210,7 @@ artifacts = "*.txt"
     assert artifact in outcome["evidence_md"]
 
 
-def test_builtin_dispatch_uses_run_builtin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path
-) -> None:
+def test_builtin_dispatch_uses_run_builtin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path) -> None:
     """Builtin hooks call the shared builtin dispatcher."""
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(tmp_path, '[[hooks.pre_pr]]\nname = "builtin"\nkind = "builtin"\nbuiltin = "telegram.send"')
@@ -209,12 +227,14 @@ def test_builtin_dispatch_uses_run_builtin(
     assert called == ["builtin"]
 
 
-def test_end_to_end_pre_pr_with_agent_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path) -> None:
+def test_end_to_end_pre_pr_with_agent_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path
+) -> None:
     """A real command and agent record complete the full pre-PR protocol."""
     monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
     _config(
         tmp_path,
-        f'''[[hooks.pre_pr]]
+        f"""[[hooks.pre_pr]]
 name = "command"
 kind = "command"
 run = "{sys.executable} -c \\\"raise SystemExit(0)\\\""
@@ -224,10 +244,27 @@ name = "agent"
 kind = "agent"
 agent = "reviewer"
 prompt = "Review {{feat_id}}"
-''',
+""",
     )
     assert _run(tmp_path, context_path) == 3
-    assert run_closeout_hooks.main(
-        ["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--record", "agent", "--status", "pass"]
-    ) == 0
-    assert run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"]) == 0
+    assert (
+        run_closeout_hooks.main(
+            [
+                "--event",
+                "pre_pr",
+                "--root",
+                str(tmp_path),
+                "--feat-id",
+                "FEAT-764",
+                "--record",
+                "agent",
+                "--status",
+                "pass",
+            ]
+        )
+        == 0
+    )
+    assert (
+        run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"])
+        == 0
+    )
