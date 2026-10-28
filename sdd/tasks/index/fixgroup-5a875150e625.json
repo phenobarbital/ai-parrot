@@ -12,12 +12,14 @@
       "feature_id": "FEAT-766",
       "feature": "fixgroup-5a875150e625",
       "title": "Closeout hooks Python hardening",
-      "file": "sdd/tasks/active/TASK-4874-closeout-hooks-python-hardening.md",
-      "status": "in-progress",
+      "file": "sdd/tasks/completed/TASK-4874-closeout-hooks-python-hardening.md",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
-      "started_at": "2026-10-28T00:48:29.828818+00:00"
+      "started_at": "2026-10-28T00:48:29.828818+00:00",
+      "completed_at": "2026-10-28T00:51:11+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4875",
