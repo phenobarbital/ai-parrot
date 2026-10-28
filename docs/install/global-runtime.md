@@ -155,8 +155,8 @@ parrot sdd uninstall --dry-run
 - `test_command`: when set (non-blank), `cache_test_contract` in `/sdd-task` and `select_tests` / `test_report`
   in `/sdd-done` are skipped and the command runs once from the repo root; a non-zero exit blocks the merge and
   a run that executed zero tests is reported as "not run", never as passing. When null, the ai-parrot selection
-  steps apply and, if the FEAT-699 kernel cannot be loaded, they stop with a one-line message. `parrot sdd
-  install` warns when it is null.
+  steps apply and, if the FEAT-699 kernel cannot be loaded or the planned test runner (e.g. `pytest`) is not
+  installed, they stop with a one-line message. `parrot sdd install` warns when it is null.
 - `sdd/CONVENTIONS.md` is a seed with `## Repository layout` and `## Project areas`; created once, never
   overwritten. `/sdd-insight` is not installed.
 

@@ -62,6 +62,59 @@ def test_select_tests_fails_cleanly_without_kernel(no_kernel: None, capsys: pyte
     _assert_one_line_error(capsys, rc)
 
 
+def _missing_runner_plan(monkeypatch: pytest.MonkeyPatch, distributions: tuple[str, ...]) -> None:
+    """Plan one invocation per distribution, all with a runner that is not on PATH."""
+    kernel = select_tests._load_kernel()
+    from test_scope.datatypes import Invocation, ScopePlan
+
+    plan = ScopePlan(
+        tier="merge",
+        invocations=tuple(
+            Invocation(distribution=d, argv=("parrot-no-such-runner-r2", "-q"), targets=()) for d in distributions
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    monkeypatch.setattr(kernel, "changed_files", lambda worktree, base_ref: [])
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_kwargs: plan)
+
+
+def test_select_tests_run_without_runner_fails_cleanly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--run` whose planned runner is not on PATH reports ONE line (even across invocations), exit 1 (FEAT-633 R2)."""
+    _missing_runner_plan(monkeypatch, ("a", "b"))
+    rc = select_tests.main(["--tier", "merge", "--worktree", str(tmp_path), "--base", "HEAD", "--run"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "Traceback" not in err
+    assert len(err.strip().splitlines()) == 1, err
+    assert "parrot-no-such-runner-r2" in err and "not run" in err and "test_command" in err
+
+
+def test_select_tests_run_without_runner_is_recorded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With an owner, the unstarted invocation is recorded as a failed suite, so the report can never render it green."""
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(tmp_path / "reports"))
+    _missing_runner_plan(monkeypatch, ("a",))
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    rc = select_tests.main(
+        ["--tier", "merge", "--worktree", str(worktree), "--base", "HEAD", "--run",
+         "--feature", "FEAT-9", "--report-task", "TASK-9", "--no-baseline"]
+    )
+    capsys.readouterr()
+    assert rc == 1
+    from test_scope import report
+
+    records, _notes = report.load_records("FEAT-9")
+    suites = [s for record in records.values() for s in record.suites]
+    assert suites and all(s.status == "no_junit" and s.exit_code == 127 for s in suites), suites
+
+
 def test_test_report_fails_cleanly_without_kernel(
     no_kernel: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

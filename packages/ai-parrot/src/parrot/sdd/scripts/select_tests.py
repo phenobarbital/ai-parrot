@@ -458,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
     suites: list[object] = []
     failed_nodeids: list[str] = []
     unclassified_failure = False
+    unstartable: set[str] = set()
     for ordinal, invocation in enumerate(plan.invocations):
         # FEAT-617: bound each test so a hang fails loudly, named, instead of stalling
         # the whole merge gate. Build a local argv -- invocation.argv is read elsewhere
@@ -485,7 +486,41 @@ def main(argv: list[str] | None = None) -> int:
             except OSError:
                 junit = None
         started = time.monotonic()
-        result = subprocess.run(argv, cwd=worktree)
+        try:
+            result = subprocess.run(argv, cwd=worktree)
+        except OSError as exc:
+            # A repo without the planned runner (no pytest in a foreign repo's environment) must
+            # stop with one line per runner, never a traceback (FEAT-633 rev 0.5 D2 / C21).
+            if argv[0] not in unstartable:
+                unstartable.add(argv[0])
+                print(  # noqa: T201 - CLI output
+                    f"error: not run - could not start test runner {argv[0]!r} ({exc.strerror or exc}); "
+                    "set `test_command` in sdd/config.json to run your own test command instead",
+                    file=sys.stderr,
+                )
+            if report_mod is not None and junit is not None:
+                # Record the invocation so `test_report` never renders a run that did not execute as green.
+                _record_suite(
+                    report_mod,
+                    args,
+                    report_mod.SuiteResult(
+                        suite=report_mod.suite_name(invocation),
+                        tests=0,
+                        passed=0,
+                        failed=0,
+                        errors=0,
+                        skipped=0,
+                        duration_s=0.0,
+                        exit_code=127,
+                        argv=tuple(argv),
+                        status="no_junit",
+                    ),
+                    head_sha=head_sha,
+                    base_ref=base_ref,
+                )
+            exit_code = 1
+            unclassified_failure = True
+            continue
         suite = None
         if report_mod is not None and junit is not None:
             suite = report_mod.parse_junit(
