@@ -101,7 +101,9 @@ evidence").
 
 ## Exploration process
 
-1. Start the declared target and read its `RunState.endpoint` — for
+1. Start the declared target and use its explicitly configured endpoint
+   (`RunState.endpoint` is not populated by `up`, so do not read it; use the
+   plan/target's known port) — for
    `browser` this is Obscura's own reachable CDP endpoint (a loopback
    `http://127.0.0.1:PORT` address); for `ui` it is the built/served admin
    UI's own base URL:
@@ -114,6 +116,40 @@ evidence").
    unexpected console errors or 5xx network responses (spec integration
    test `test_ui_browser_console_network`'s intent, exploratory-scale here).
    Capture a screenshot on any unexpected finding.
+
+   **Operational screencast (FEAT-762).** A video of follow-up investigation is
+   possible only from a Playwright script you write and run with Bash: Obscura
+   isolates pages per CDP connection, so neither a DevTools MCP connection nor a
+   separate process can be recorded. Wrap the investigation in
+   `parrot.e2e.screencast.record_on_anomaly`; it starts at the first console
+   error or HTTP 5xx on that page and always stops when the block exits
+   (requires the `ai-parrot-server[screencast]` extra). Create the page you
+   investigate last (Obscura 0.2.2 only lets the newest page run JS):
+   ```python
+   import asyncio
+   from pathlib import Path
+   from playwright.async_api import async_playwright
+   from parrot.e2e.screencast import record_on_anomaly
+
+   async def main() -> None:
+       out_dir = Path("artifacts/logs/e2e/browser-explore")
+       async with async_playwright() as pw:
+           browser = await pw.chromium.connect_over_cdp("http://127.0.0.1:<PORT>")
+           context = browser.contexts[0] if browser.contexts else await browser.new_context()
+           page = await context.new_page()
+           async with record_on_anomaly(page, out_dir, run_id="browser-explore") as rec:
+               await page.goto("<declared URL>")
+               # ... drive the declared interaction ...
+           print(rec.triggered, rec.path, rec.error)
+           await browser.close()
+
+   asyncio.run(main())
+   ```
+   Add `rec.path` to the observation's `evidence_refs` only when it is not
+   `None`; report `rec.error` as an `unavailable` note and continue. The video
+   is post-detection evidence of follow-up investigation or reproduction, never
+   of events before the anomaly. The script must exit before
+   `parrot e2e down`.
 3. If no such tool is available, fall back to `curl` against the `ui`
    target's HTTP endpoint for basic reachability only, and clearly label
    this in your report as reduced coverage (see Preconditions §2) — never
@@ -145,7 +181,7 @@ field"):
     {
       "target_id": "browser",
       "summary": "Navigated to /admin/dashboard; no unexpected console errors or 5xx responses observed",
-      "evidence_refs": ["artifacts/logs/e2e/browser-explore/screenshot.png"]
+      "evidence_refs": ["artifacts/logs/e2e/browser-explore/screenshot.png", "artifacts/logs/e2e/browser-explore/screencast.webm"]
     }
   ],
   "reproduction_commands": [

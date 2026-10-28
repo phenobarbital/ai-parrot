@@ -1052,24 +1052,62 @@ def _install_post_merge_hook(root: Path) -> str:
     return _install_managed_git_hook(root, "post-merge", "post-merge")
 
 
+def _replace_marker_block(text: str, begin: str, end: str, block: str) -> str | None:
+    """Return ``text`` with its first marker block replaced, or ``None`` for unbalanced markers."""
+    begin_index = text.find(begin)
+    if begin_index == -1:
+        return None
+    end_index = text.find(end, begin_index + len(begin))
+    if end_index == -1:
+        return None
+    line_end = text.find("\n", end_index + len(end))
+    suffix_index = len(text) if line_end == -1 else line_end + 1
+    return text[:begin_index] + block + text[suffix_index:]
+
+
 def _install_ledger_hooks(root: Path) -> list[str]:
-    """Install the ``parrot-ledger`` block on every event of :data:`assets.LEDGER_HOOK_EVENTS`."""
-    return [
-        _install_managed_git_hook(
-            root,
-            event,
-            f"{event} ledger",
-            block=assets.ledger_hook_block(root, event),
-            new_file=assets.ledger_hook_new_file(root, event),
-            begin_marker=assets.LEDGER_HOOK_BEGIN,
-            manual_hint=(
-                "wikitoolkit ledger export-log --stage --quiet"
-                if event == "pre-commit"
-                else "wikitoolkit ledger import-log --quiet"
-            ),
+    """Install or upgrade the ``parrot-ledger`` block on every configured hook event."""
+    actions: list[str] = []
+    for event in assets.LEDGER_HOOK_EVENTS:
+        block = assets.ledger_hook_block(root, event)
+        hook_path = _git_hook_path(root, event)
+        if hook_path is not None and hook_path.exists():
+            text = hook_path.read_text(encoding="utf-8")
+            if assets.LEDGER_HOOK_BEGIN in text:
+                updated = _replace_marker_block(
+                    text,
+                    assets.LEDGER_HOOK_BEGIN,
+                    assets.LEDGER_HOOK_END,
+                    block,
+                )
+                if updated is None:
+                    actions.append(
+                        f"git {event} ledger hook — skipped " "(unbalanced parrot-ledger markers; fix manually)"
+                    )
+                elif updated == text:
+                    actions.append(f"git {event} ledger hook — already installed")
+                else:
+                    mode = hook_path.stat().st_mode
+                    hook_path.write_text(updated, encoding="utf-8")
+                    hook_path.chmod(mode)
+                    actions.append(f"git {event} ledger hook — upgraded")
+                continue
+        actions.append(
+            _install_managed_git_hook(
+                root,
+                event,
+                f"{event} ledger",
+                block=block,
+                new_file=assets.ledger_hook_new_file(root, event),
+                begin_marker=assets.LEDGER_HOOK_BEGIN,
+                manual_hint=(
+                    "nothing (FEAT-758: pre-commit no longer exports ledger events)"
+                    if event == "pre-commit"
+                    else "wikitoolkit ledger import-log --quiet"
+                ),
+            )
         )
-        for event in assets.LEDGER_HOOK_EVENTS
-    ]
+    return actions
 
 
 def _uninstall_ledger_hooks(root: Path) -> list[str]:

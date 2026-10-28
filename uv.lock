@@ -232,6 +232,7 @@ dependencies = [
     { name = "python-statemachine" },
     { name = "pyyaml" },
     { name = "questionary" },
+    { name = "rapidfuzz" },
     { name = "regex" },
     { name = "requests" },
     { name = "rich" },
@@ -559,7 +560,6 @@ google = [
     { name = "google-cloud-texttospeech" },
 ]
 graphindex = [
-    { name = "rapidfuzz" },
     { name = "tree-sitter" },
 ]
 graphindex-postgres = [
@@ -635,7 +635,6 @@ manuals = [
     { name = "bm25s" },
     { name = "pymupdf" },
     { name = "pymupdf4llm" },
-    { name = "rapidfuzz" },
     { name = "tree-sitter" },
 ]
 mcp = [
@@ -757,7 +756,6 @@ wiki = [
     { name = "ast-grep-py" },
     { name = "leidenalg" },
     { name = "python-igraph" },
-    { name = "rapidfuzz" },
     { name = "tree-sitter" },
     { name = "tree-sitter-javascript" },
     { name = "tree-sitter-luau" },
@@ -1030,7 +1028,7 @@ requires-dist = [
     { name = "querysource", marker = "extra == 'integrations'", specifier = ">=5.1.2" },
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "rank-bm25", marker = "extra == 'retrieval'", specifier = "==0.2.2" },
-    { name = "rapidfuzz", marker = "extra == 'graphindex'", specifier = ">=3.0" },
+    { name = "rapidfuzz", specifier = ">=3.0" },
     { name = "regex", specifier = ">=2023.0" },
     { name = "requests", specifier = ">=2.33,<2.34" },
     { name = "requests-oauthlib", marker = "extra == 'agents'", specifier = "==2.0.0" },

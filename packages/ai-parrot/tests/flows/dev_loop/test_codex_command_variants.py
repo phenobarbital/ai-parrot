@@ -100,3 +100,15 @@ def test_review_profiles_never_bypass_hook_trust(dispatcher):
     assert "--dangerously-bypass-hook-trust" not in cmd
     resume_cmd = _cmd(dispatcher, CodexAdversarialReviewProfile(resume_last=True))
     assert "--dangerously-bypass-hook-trust" not in resume_cmd
+
+
+def test_dev_dispatch_emits_model_reasoning_effort(dispatcher):
+    cmd = _cmd(dispatcher, CodexCodeDispatchProfile(reasoning_effort="high"))
+    i = cmd.index("approval_policy=never")
+    assert cmd[i - 1] == "-c"
+    assert cmd[i + 1 : i + 3] == ["-c", "model_reasoning_effort=high"]
+
+
+def test_dev_dispatch_without_effort_has_no_override(dispatcher):
+    cmd = _cmd(dispatcher, CodexCodeDispatchProfile())
+    assert not any("model_reasoning_effort" in part for part in cmd)

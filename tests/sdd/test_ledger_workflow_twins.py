@@ -115,12 +115,30 @@ class TestDoneTwins:
             content = read_workflow_file(path)
             assert "ledger blockers" in content, path
 
-    def test_snapshot_uses_throwaway_worktree_and_excludes_hotfix(self):
-        """Snapshot runs from a throwaway base-branch worktree; hotfixes skip it."""
+    def test_delivery_uses_outbox_for_every_flow(self):
+        """Every twin delivers through the outbox, to dev, without rotation or a hotfix skip (FEAT-758)."""
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
-            assert "ledger export" in content, path
-            assert "hotfix" in content.lower(), path
+            assert "ledger outbox prepare" in content, path
+            assert "ledger outbox integrate" in content, path
+            assert "origin/dev" in content, path
+            assert "rotate-log" not in content, path
+            assert "export-log" not in content, path
+            assert "Skip the snapshot entirely for hotfixes" not in content, path
+
+    def test_pending_delivery_blocks_cleanup(self):
+        """Every twin retains the worktree and reports an exact retry when delivery remains pending."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "ledger outbox integrate --repo-root" in content, path
+            assert "ledger delivery pending" in content.lower(), path
+
+    def test_contamination_is_reported_not_dropped(self):
+        """Every twin reports legacy contamination and delegates reviewed recovery to the outbox guide."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "ledger outbox status" in content, path
+            assert "docs/sdd/ledger-outbox.md" in content, path
 
     def test_closes_issues_resolved_by_verified_tasks(self):
         """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""

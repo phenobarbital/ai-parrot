@@ -599,6 +599,15 @@
       ]
     },
     {
+      "source": "sdd/sdd_templates/sdd_hooks.example.toml",
+      "target": "sdd/templates/sdd_hooks.example.toml",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
       "source": "sdd/sdd_templates/spec.md",
       "target": "sdd/templates/spec.md",
       "hosts": [

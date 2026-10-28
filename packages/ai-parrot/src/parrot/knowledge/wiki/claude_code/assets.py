@@ -250,7 +250,7 @@ def git_hook_new_file(root: Path) -> str:
 
 
 def ledger_hook_block(root: Path, hook_name: str) -> str:
-    """Build the managed ledger-sync block for one hook event (no linked-worktree guard).
+    """Build the managed ledger block (import-only post hooks; no-op pre-commit).
 
     Args:
         root: Repository root (used to resolve the wikitoolkit binary).
@@ -261,13 +261,20 @@ def ledger_hook_block(root: Path, hook_name: str) -> str:
     """
     if hook_name not in LEDGER_HOOK_EVENTS:
         raise ValueError(f"unknown ledger hook event: {hook_name!r}")
+    if hook_name == "pre-commit":
+        return (
+            f"{LEDGER_HOOK_BEGIN}\n"
+            f"# FEAT-758: ledger events no longer travel in commits. /sdd-done delivers them to\n"
+            f"# origin/dev with `wikitoolkit ledger outbox prepare|integrate`. Intentionally a no-op.\n"
+            f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
+            f"{LEDGER_HOOK_END}\n"
+        )
     wt_bin = _sh_path(resolve_wikitoolkit_bin(root))
-    sub = "ledger export-log --stage --quiet" if hook_name == "pre-commit" else "ledger import-log --quiet"
     return (
         f"{LEDGER_HOOK_BEGIN}\n"
         f"# Sync the shared SDD ledger event log (FEAT-694).\n"
         f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
-        f"{wt_bin} {sub} >/dev/null 2>&1 || true\n"
+        f"{wt_bin} ledger import-log --quiet >/dev/null 2>&1 || true\n"
         f"{LEDGER_HOOK_END}\n"
     )
 

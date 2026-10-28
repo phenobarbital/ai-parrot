@@ -467,6 +467,12 @@ class CodexCodeDispatcher:
             "-o",
             output_path,
         ]
+        reasoning_effort = getattr(profile, "reasoning_effort", None)
+        if reasoning_effort:
+            cmd[cmd.index("--output-schema"):cmd.index("--output-schema")] = [
+                "-c",
+                f"model_reasoning_effort={reasoning_effort}",
+            ]
         if profile.ignore_user_config:
             cmd.append("--ignore-user-config")
         else:

@@ -402,6 +402,13 @@ The JSON report lists each linked issue with `outcome`: `closed` /
 ### 8. Push the Feature Branch
 If the worktree branch hasn't been pushed yet:
 ```bash
+wikitoolkit ledger outbox status --repo-root "<worktree-path>" --json
+STATUS_RC=$?
+if (( STATUS_RC == 4 )); then
+    echo "⚠️  Legacy ledger contamination detected. Report contaminated_paths from the status output."
+    echo "See docs/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
+fi
+# Contamination is reported, not repaired here, and does not block the code PR.
 git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
 ```
 
@@ -436,70 +443,36 @@ if [[ "$MERGE_FLAG" == "--merge" ]]; then
 fi
 ```
 
-### 9.1. Snapshot Ledger Issues (FEAT-566)
+### 9.1. Deliver Ledger Events (FEAT-758)
 
-For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl`, export the
-shared `sdd/ledger/events.jsonl`, and rotate old terminal events from a throwaway
-worktree at `origin/<BASE_BRANCH>`; commit/push the resulting ledger snapshot directly to
-`base_branch` when it changed — never from an active worktree, never on the
-feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
-
-The export **reconciles** against the committed snapshot (FEAT-671): rows for
-issues this checkout's ledger has never seen are carried forward unchanged and
-local state wins for issues it knows, so a run from a machine whose event log
-is behind never drops other people's issues. `wikitoolkit ledger export
---no-reconcile` is the explicit, destructive opt-out — `/sdd-done` never uses it.
+Ledger events never travel in the feature PR. Deliver every pending local event to `origin/dev` through the
+durable outbox — for **every** flow type, hotfixes included (ledger data never goes to `main`). The integrator
+works in its own temporary checkout of `origin/dev`, retries a rejected push on a fresh base (max 3), never
+force-pushes and never rotates logs. See `docs/sdd/ledger-outbox.md`.
 
 ```bash
-if [[ "$TYPE" != "hotfix" ]]; then
-    git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-
-    TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
-    git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
-    # No --force: the throwaway checkout only ever touches sdd/ledger, so
-    # restoring and cleaning that directory leaves it clean and a plain remove succeeds
-    # (a detached, unpushed snapshot commit does not block `worktree remove`).
-    cleanup_snapshot_worktree() {
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
-        git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
-    }
-    trap cleanup_snapshot_worktree EXIT
-
-    ATTEMPT=1
-    MAX_ATTEMPTS=3
-    while (( ATTEMPT <= MAX_ATTEMPTS )); do
-        EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
-        LOG_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export-log 2>&1)
-        ROTATE_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger rotate-log --older-than-days 30 2>&1)
-        if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* && "$ROTATE_OUTPUT" != *"Rotated"* ]]; then
-            echo "📝 Ledger snapshot unchanged — nothing to commit."
-            break
-        fi
-
-        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl
-        [ -d "$TEMP_WORKTREE/sdd/ledger/archive" ] && git -C "$TEMP_WORKTREE" add sdd/ledger/archive
-        git -C "$TEMP_WORKTREE" commit -q -m "sdd: ledger snapshot for $FEAT_ID"
-        if git -C "$TEMP_WORKTREE" push origin "HEAD:$BASE_BRANCH" >/dev/null 2>&1; then
-            echo "📝 Ledger snapshot updated with changed issues."
-            break
-        fi
-
-        # Rejected push: re-sync the throwaway worktree only, re-export, retry.
-        git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
-        ATTEMPT=$((ATTEMPT + 1))
-        if (( ATTEMPT > MAX_ATTEMPTS )); then
-            echo "⚠️  Ledger snapshot push failed after $MAX_ATTEMPTS attempts — continuing without failing /sdd-done."
-        fi
-    done
-
-    cleanup_snapshot_worktree
-    trap - EXIT
+LEDGER_DELIVERY_PENDING=0
+wikitoolkit ledger outbox prepare --repo-root "<worktree-path>"
+PREP_RC=$?
+wikitoolkit ledger outbox integrate --repo-root "<worktree-path>"
+INTEG_RC=$?
+if (( PREP_RC != 0 || INTEG_RC != 0 )); then
+    LEDGER_DELIVERY_PENDING=1
+    case "$INTEG_RC" in
+        2) echo "⚠️  Ledger delivery pending: I/O, lock, or push retry exhaustion." ;;
+        3) echo "⚠️  Ledger delivery blocked by conflict or invalid content; review is required." ;;
+        4) echo "⚠️  Ledger delivery source or destination is unsupported or contaminated." ;;
+        *) echo "⚠️  Ledger preparation or delivery did not complete." ;;
+    esac
+    echo "Retain the reported batch location and batch id."
+    echo 'Retry: wikitoolkit ledger outbox integrate --repo-root "<worktree-path>" --batch-id <id>'
+    echo "Closeout will stay incomplete; an existing code PR remains open and is not rolled back."
+else
+    echo "Ledger delivery succeeded; report the receipt and any remaining pending events."
 fi
 ```
+
+Pending delivery does NOT undo the code PR; it blocks Step 11 cleanup only.
 
 ### 9.2. Integrate Feature Branch (FEAT-145, flow-aware)
 
@@ -815,9 +788,24 @@ done
 ```
 
 ### 11. Cleanup the Worktree
+
+First run one more delivery pass to capture closures recorded after Step 9.1, including post-merge closures:
 ```bash
-git worktree remove .claude/worktrees/feat-<FEAT-ID>-<slug>
+wikitoolkit ledger outbox prepare --repo-root "<worktree-path>"
+FINAL_PREP_RC=$?
+wikitoolkit ledger outbox integrate --repo-root "<worktree-path>"
+FINAL_INTEG_RC=$?
+# Shell state does not persist between Bash calls: treat an unset flag as unknown and re-check.
+wikitoolkit ledger outbox status --repo-root "<worktree-path>" --json | grep -q '"pending_batches": 0' && STILL_PENDING=0 || STILL_PENDING=1
+if (( FINAL_PREP_RC != 0 || FINAL_INTEG_RC != 0 || ${LEDGER_DELIVERY_PENDING:-0} != 0 || STILL_PENDING != 0 )); then
+    echo '⚠️  Closeout incomplete: ledger delivery pending — retry with wikitoolkit ledger outbox integrate --repo-root "<worktree-path>" --batch-id <id>'
+    # Retain the worktree and batch; do not run the removal block below.
+else
+    echo "Ledger delivery complete; removing the worktree."
+    git worktree remove .claude/worktrees/feat-<FEAT-ID>-<slug>
+fi
 ```
+The removal runs ONLY inside the `else` above, i.e. when both delivery passes exited 0 and nothing is pending.
 If there are uncommitted changes in the worktree, warn:
 ```
 ⚠️  Worktree has uncommitted changes. Force remove? (y/N)
