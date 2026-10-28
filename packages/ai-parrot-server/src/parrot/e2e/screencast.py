@@ -11,6 +11,7 @@ import asyncio
 import base64
 import io
 import logging
+import multiprocessing
 import os
 import uuid
 from concurrent.futures import ProcessPoolExecutor
@@ -74,8 +75,11 @@ def _validate_webm(path: str) -> int:
 async def _run_in_worker(function: Callable[..., int], *args: Any) -> int:
     """Run one picklable encoder operation in an isolated worker process."""
     loop = asyncio.get_running_loop()
-    with ProcessPoolExecutor(max_workers=1) as pool:
+    pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+    try:
         return await loop.run_in_executor(pool, function, *args)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)  # never block the event loop, even when cancelled
 
 
 @dataclass
@@ -183,9 +187,15 @@ async def stop_screencast(session: ScreencastSession) -> Path:
             ack_results = await asyncio.gather(*session.ack_tasks, return_exceptions=True)
             cleanup_errors.extend(result for result in ack_results if isinstance(result, BaseException))
         if cleanup_errors:
-            raise E2EScreencastError(
-                "Failed to finalize CDP capture.", reason_code="capture_failed"
-            ) from cleanup_errors[0]
+            # Late ack / stop / detach failures (e.g. page closed in the body) must not discard
+            # a fully buffered recording; only a capture with no frames is a failure.
+            if not session.frames:
+                raise E2EScreencastError(
+                    "Failed to finalize CDP capture.", reason_code="capture_failed"
+                ) from cleanup_errors[0]
+            logger.warning(
+                "Ignoring %d CDP finalize error(s) with buffered frames: %s", len(cleanup_errors), cleanup_errors[0]
+            )
 
         if session.overflow:
             raise E2EScreencastError("Screencast frame buffer overflowed.", reason_code="frame_overflow")
@@ -209,12 +219,13 @@ async def stop_screencast(session: ScreencastSession) -> Path:
 
         if encoded_count < 1 or decoded_count < 1 or not temp_path.is_file() or temp_path.stat().st_size < 1:
             raise E2EScreencastError("Screencast output is empty or invalid.", reason_code="invalid_output")
-        if session.out_path.exists():
+        try:
+            os.link(temp_path, session.out_path)  # atomic create-or-fail: never overwrites
+        except FileExistsError as exc:
             raise E2EScreencastError(
                 f"Screencast output already exists: {session.out_path}",
                 reason_code="output_exists",
-            )
-        os.replace(temp_path, session.out_path)
+            ) from exc
         session.result = session.out_path
         return session.result
     except E2EScreencastError as exc:
@@ -224,6 +235,9 @@ async def stop_screencast(session: ScreencastSession) -> Path:
         error = E2EScreencastError("Failed to publish screencast output.", reason_code="capture_failed")
         session.error = error
         raise error from exc
+    except BaseException:  # cancellation: leave a typed error so later stop calls are not misleading
+        session.error = E2EScreencastError("Screencast stop was interrupted.", reason_code="capture_failed")
+        raise
     finally:
         if temp_path.exists():
             temp_path.unlink()

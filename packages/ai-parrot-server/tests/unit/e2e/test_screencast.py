@@ -377,3 +377,16 @@ async def test_record_on_anomaly_stops_on_exception_and_cancel(
     assert recorder.error is stop_error
     assert stop_calls == [session]
     assert page.handlers == {"console": [], "response": []}
+
+
+async def test_stop_screencast_keeps_buffered_frames_when_finalize_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A late detach/stop failure with buffered frames still publishes the recording."""
+    monkeypatch.setattr(screencast, "_run_in_worker", _inline_worker)
+    monkeypatch.setattr(screencast, "_encode_webm", _successful_encoder)
+    monkeypatch.setattr(screencast, "_validate_webm", lambda path: 1)
+    session = await screencast.start_screencast(FakePage(FakeCDPSession(fail_method="detach")), tmp_path)
+    session.cdp.emit("Page.screencastFrame", _frame())
+    assert await screencast.stop_screencast(session) == session.out_path
+    assert session.out_path.exists()
