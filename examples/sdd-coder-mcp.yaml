@@ -48,6 +48,18 @@ toolkits:
   sdd-coder:
     class: parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit
     kwargs:
+      # Optional per-seat reasoning effort (commented; shipped behaviour is unchanged).
+      #   Add `effort: <v>` to a roster seat or to a complexity.strong_models entry, e.g.
+      #     - {label: gpt-5.6-sol, kind: mcp, backend: codex, model: gpt-5.6-sol, effort: medium}
+      #   Vocabulary: none | minimal | low | medium | high | xhigh | max. A typo fails at start-up.
+      #   Precedence per attempt: the matching strong_models[].effort (only for complex/unknown
+      #   tasks), then the seat's `effort`, then the backend default (env / ~/.codex/config.toml).
+      #   Supported: codex (minimal..xhigh), zai, moonshot, google-compat (none|low|medium|high),
+      #   google_coding (low|medium|high), native seats (low|medium|high|xhigh|max, passed by
+      #   sdd-worker to the Agent tool; strong_models match them as backend `native`). nova, grok
+      #   and claude-code ignore it with a WARNING; a value the backend does not accept is skipped
+      #   with a WARNING.
+      #   Adding `effort` to strong_models changes policy_sha256 once (cached evidence is recomputed).
       roster:
         - {label: qwen,        kind: mcp,    backend: nova,          model: qwen.qwen3-coder-480b-a35b-instruct}
         - {label: gemini,      kind: mcp,    backend: google-compat, model: gemini-3.5-flash}

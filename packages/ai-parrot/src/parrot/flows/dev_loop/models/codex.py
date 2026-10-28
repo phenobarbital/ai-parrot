@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,13 @@ class CodexCodeDispatchProfile(BaseModel):
     sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     approval_policy: Literal["untrusted", "on-request", "never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    reasoning_effort: Optional[Literal["minimal", "low", "medium", "high", "xhigh"]] = Field(
+        default=None,
+        description=(
+            "Emitted as ``-c model_reasoning_effort=<x>``. None keeps the operator's "
+            "~/.codex/config.toml value."
+        ),
+    )
     ignore_user_config: bool = Field(
         default=False,
         description=(
