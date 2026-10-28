@@ -116,3 +116,27 @@ class TestHtmlDocumentUnderPdf:
         doc, degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(env)
         assert '<a href="https://x/infographic-a.html">Doc</a>' in doc
         assert any("HtmlDocument" in d.get("reason", "") for d in degraded)
+
+
+class TestMermaidDiagramUnderPdf:
+    """FEAT-753: PDFRenderer inherits SSRHTMLRenderer's MermaidDiagram degradation (pdf.py unchanged)."""
+
+    async def test_pdf_inherits_mermaid_degradation(self):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[
+                Component(
+                    id="root",
+                    component="MermaidDiagram",
+                    source='flowchart TD\n    a["a < b & c"] --> b\n',
+                    diagramType="flowchart",
+                )
+            ],
+            dataModel={},
+        )
+        doc, degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(env)
+        assert '<pre class="a2ui-mermaid-source"><code class="language-mermaid"' in doc
+        assert "a &lt; b &amp; c" in doc
+        mermaid = [d for d in degraded if "Mermaid" in d.get("reason", "")]
+        assert len(mermaid) == 1

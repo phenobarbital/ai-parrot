@@ -1,0 +1,328 @@
+{
+  "feature": "metric-definition-registry",
+  "feature_id": "FEAT-756",
+  "spec": "sdd/specs/metric-definition-registry.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T18:00:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-tools/tests/querysource/test_execute_slug.py",
+          "packages/ai-parrot-tools/tests/querysource/test_build_linked_surface_tool.py",
+          "packages/ai-parrot-tools/tests/querysource/test_build_linked_python_transform.py",
+          "packages/ai-parrot-tools/tests/querysource/test_models.py",
+          "packages/ai-parrot-server/tests/handlers/test_ui_surfaces_handler.py",
+          "packages/ai-parrot-server/tests/handlers/test_ui_surfaces_store.py",
+          "packages/ai-parrot-server/tests/handlers/test_ui_surfaces_scope.py",
+          "packages/ai-parrot/tests/bots/test_intent_router_output_mode.py",
+          "packages/ai-parrot/tests/bots/test_intent_router_no_regression.py",
+          "packages/ai-parrot/tests/bots/test_resolve_output_mode_noop.py",
+          "packages/ai-parrot/tests/unit/test_skill_tenancy.py",
+          "packages/ai-parrot/tests/unit/test_skill_tenant_mixin.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:a179562f4517fcec3e3eef9cf66dd7d8628b8fca102d685e11b3fbd9fba0e1c9"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4843",
+      "slug": "metric-definition-models",
+      "title": "Metric definition models, errors and lazy package exports",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task: creates parrot/metrics/{__init__,errors,models}.py and tests/unit/metrics/conftest.py; __init__ is a lazy map so no later task edits it",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4843-metric-definition-models.md"
+    },
+    {
+      "id": "TASK-4844",
+      "slug": "metric-store-and-yaml-loader",
+      "title": "MetricStore protocol, InMemoryMetricStore and metrics.yaml loader",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4843"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports MetricDefinition from TASK-4843 (parrot/metrics/models.py) and uses its conftest fixture worked_hours_def",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4844-metric-store-and-yaml-loader.md"
+    },
+    {
+      "id": "TASK-4845",
+      "slug": "kpi-table-importer",
+      "title": "Flex kpi-table.md importer",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4843"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports RecipeSource/KPICardShape/ChartShape/DataTableShape/MapShape/TimeSpec/PeriodBinding/DimensionSpec from TASK-4843 (parrot/metrics/models.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4845-kpi-table-importer.md"
+    },
+    {
+      "id": "TASK-4846",
+      "slug": "metric-context-and-matcher",
+      "title": "Metric match context, tenant resolution and MetricMatcher",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4843"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports MetricMatch/DimensionSpec/PeriodPreset from TASK-4843 (parrot/metrics/models.py) and its stub_encoder conftest fixture",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4846-metric-context-and-matcher.md"
+    },
+    {
+      "id": "TASK-4847",
+      "slug": "metric-registry-and-view",
+      "title": "MetricView + MetricRegistry (tenant overlay, list/describe/resolve)",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4844",
+        "TASK-4846"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports MetricStore/InMemoryMetricStore from TASK-4844 (parrot/metrics/store.py) and MetricMatcher from TASK-4846 (parrot/metrics/matching.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4847-metric-registry-and-view.md"
+    },
+    {
+      "id": "TASK-4848",
+      "slug": "pg-metric-definition-store",
+      "title": "Postgres MetricDefinition store (navigator.metric_definitions)",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4843"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports MetricDefinition from TASK-4843 (parrot/metrics/models.py) to build/validate rows in handlers/models/metric_definitions.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4848-pg-metric-definition-store.md"
+    },
+    {
+      "id": "TASK-4849",
+      "slug": "metric-periods",
+      "title": "Metric periods — preset resolution, comparison window, series buckets",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4843"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports ResolvedPeriod/ComparisonPolicy/PeriodPreset/Grain from TASK-4843 (parrot/metrics/models.py); owns parrot_tools/metrics/__init__.py lazy map so later tasks never edit it",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4849-metric-periods.md"
+    },
+    {
+      "id": "TASK-4850",
+      "slug": "metric-shape-emitter",
+      "title": "Metric shape emitter — KPI figures, KPICard props, baked and linked envelopes",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4849"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs the parrot_tools/metrics package __init__.py created by TASK-4849 (the shapes names are mapped there); uses MetricDefinition/shape models from TASK-4843 transitively",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4850-metric-shape-emitter.md"
+    },
+    {
+      "id": "TASK-4851",
+      "slug": "metric-source-executors",
+      "title": "Metric source executors — query_slug, transformer, recipe",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4849"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs the parrot_tools/metrics package __init__.py from TASK-4849 (executors names mapped there) and ResolvedPeriod.udf_keywords semantics defined by TASK-4849 periods.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4851-metric-source-executors.md"
+    },
+    {
+      "id": "TASK-4852",
+      "slug": "metrics-toolkit",
+      "title": "MetricsToolkit — list, describe, query and explain metrics",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4847",
+        "TASK-4850",
+        "TASK-4851"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports MetricRegistry from TASK-4847 (parrot/metrics/registry.py); build_metric_envelope/build_linked_metric_envelope/figures from TASK-4850 (shapes.py); executor_for/SourceFrame from TASK-4851 (executors.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4852-metrics-toolkit.md"
+    },
+    {
+      "id": "TASK-4853",
+      "slug": "metric-routing-mixin",
+      "title": "MetricRoutingMixin — metric default-shape slot in _resolve_output_mode",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4846",
+        "TASK-4847"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports bind_metric_match/resolve_metric_tenant from TASK-4846 (parrot/metrics/context.py) and MetricRegistry from TASK-4847 (parrot/metrics/registry.py); FEAT-755 route_labels already on dev",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4853-metric-routing-mixin.md"
+    },
+    {
+      "id": "TASK-4854",
+      "slug": "metric-suggestion-provider",
+      "title": "MetricSuggestionProvider (FEAT-752 deterministic provider)",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4846"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports current_metric_match from TASK-4846 (parrot/metrics/context.py); cross-feature BLOCKED until FEAT-752 TASK-4794 (parrot/models/suggestions.py) and TASK-4797 (parrot/bots/suggestions/protocol.py) merge to dev",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4854-metric-suggestion-provider.md"
+    },
+    {
+      "id": "TASK-4855",
+      "slug": "metric-definitions-handler",
+      "title": "MetricDefinitionsHandler — /api/v1/metrics REST lane",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4848"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports PgMetricDefinitionStore (get/save/list_visible) from TASK-4848 (handlers/models/metric_definitions.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4855-metric-definitions-handler.md"
+    },
+    {
+      "id": "TASK-4856",
+      "slug": "metrics-wiring-and-docs",
+      "title": "Wire metrics toolkit, mixin and routes; document the registry",
+      "feature_id": "FEAT-756",
+      "feature": "metric-definition-registry",
+      "spec": "sdd/specs/metric-definition-registry.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4852",
+        "TASK-4853",
+        "TASK-4855"
+      ],
+      "parallel": true,
+      "parallelism_notes": "registers MetricsToolkit from TASK-4852 (parrot_tools/metrics/toolkit.py) in TOOL_REGISTRY; exports MetricRoutingMixin from TASK-4853 (bots/mixins/metric_routing.py); mounts MetricDefinitionsHandler from TASK-4855 (handlers/metric_definitions.py) in manager.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4856-metrics-wiring-and-docs.md"
+    }
+  ]
+}

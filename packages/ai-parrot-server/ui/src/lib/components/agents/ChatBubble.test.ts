@@ -5,7 +5,22 @@
 // navigator source — verbatim per the copy-in doctrine — so there is no
 // call site to assert against; see this task's Completion Note).
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { features } = vi.hoisted(() => ({
+  features: {
+    voice: true,
+    avatar: true,
+    maps: true,
+    charts: true,
+    canvas: true,
+    infographic: true,
+    datasets: true,
+    richEditor: true,
+    a2ui: true,
+  },
+}));
+vi.mock("$lib/features", () => ({ features }));
 
 // These flagged-surface targets ship from TASK-2595/2596 and don't exist
 // in this worktree yet; ChatBubble only reaches them via a runtime-gated
@@ -20,6 +35,41 @@ vi.mock("$lib/components/visualizations/ECharts.svelte", () => ({ default: {} })
 
 import ChatBubble from "./ChatBubble.svelte";
 import type { AgentMessage } from "$lib/types/agent";
+import type { A2UIEnvelope } from "$lib/components/agents/canvas/a2ui/a2ui-types";
+
+const inlineEnvelope: A2UIEnvelope = {
+  version: "v1.0",
+  createSurface: {
+    surfaceId: "inline-kpi",
+    components: [
+      {
+        id: "root",
+        component: "KPICard",
+        label: "Worked hours",
+        value: "42h",
+      },
+    ],
+    metadata: {
+      extensions: {
+        parrot_presentation: {
+          kind: "widget",
+          inline: true,
+          origin: "chat_turn",
+          component: "KPICard",
+        },
+      },
+    },
+  },
+};
+
+const dashboardEnvelope: A2UIEnvelope = {
+  ...inlineEnvelope,
+  createSurface: {
+    ...inlineEnvelope.createSurface,
+    surfaceId: "dashboard-kpi",
+    metadata: undefined,
+  },
+};
 
 function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
@@ -39,6 +89,11 @@ function makeMessage(overrides: Partial<AgentMessage> = {}): AgentMessage {
 }
 
 describe("ChatBubble", () => {
+  beforeEach(() => {
+    features.a2ui = true;
+    features.charts = true;
+  });
+
   it("renders markdown and sanitizes raw script tags", async () => {
     const { container } = render(ChatBubble, {
       message: makeMessage({
@@ -100,6 +155,56 @@ describe("ChatBubble", () => {
     });
     await fireEvent.click(screen.getByTitle("Helpful"));
     expect(screen.getByText("What did you like?")).toBeInTheDocument();
+  });
+
+  it("mounts an inline A2UI surface when the feature is enabled", async () => {
+    render(ChatBubble, {
+      message: makeMessage({
+        output_mode: "a2ui",
+        a2ui_envelope: inlineEnvelope,
+      }),
+    });
+
+    expect(await screen.findByText("Worked hours")).toBeInTheDocument();
+    expect(screen.getByText("42h")).toBeInTheDocument();
+  });
+
+  it("leaves the bubble unchanged when the A2UI feature is disabled", () => {
+    features.a2ui = false;
+    const { container } = render(ChatBubble, {
+      message: makeMessage({
+        output_mode: "a2ui",
+        a2ui_envelope: inlineEnvelope,
+      }),
+    });
+
+    expect(container.querySelector("strong")?.textContent).toBe("world");
+    expect(container.textContent).not.toContain("Worked hours");
+  });
+
+  it("does not mount a marker-less A2UI dashboard envelope", () => {
+    const { container } = render(ChatBubble, {
+      message: makeMessage({
+        output_mode: "a2ui",
+        a2ui_envelope: dashboardEnvelope,
+      }),
+    });
+
+    expect(container.querySelector("strong")?.textContent).toBe("world");
+    expect(container.textContent).not.toContain("Worked hours");
+  });
+
+  it("keeps structured-chart rendering unchanged", () => {
+    features.charts = false;
+    render(ChatBubble, {
+      message: makeMessage({
+        output_mode: "structured_chart",
+        output: { type: "bar", title: "Existing chart", x: "month", y: ["value"] },
+      }),
+    });
+
+    expect(screen.getByText("Existing chart")).toBeInTheDocument();
+    expect(screen.getByText("Loading chart…")).toBeInTheDocument();
   });
 });
 

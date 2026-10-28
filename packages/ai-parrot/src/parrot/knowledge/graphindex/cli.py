@@ -25,6 +25,7 @@ The heavy semantic pass over docs/PDFs/media (which does use a model) lives in
 the full :class:`~parrot.knowledge.graphindex.builder.GraphIndexBuilder`
 pipeline; this CLI intentionally covers only the local code path.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,9 +57,7 @@ DEFAULT_OUTPUT_DIRNAME = "graphindex"
 _ALWAYS_SKIP: frozenset[str] = SCAN_EXCLUDE_DIRS
 
 
-def discover_python_files(
-    root: Path, ignore_spec: Optional[pathspec.PathSpec] = None
-) -> list[Path]:
+def discover_python_files(root: Path, ignore_spec: Optional[pathspec.PathSpec] = None) -> list[Path]:
     """Recursively find Python source files under ``root``.
 
     Skips well-known noise directories (``.git``, ``__pycache__``,
@@ -93,6 +92,30 @@ def discover_python_files(
     return sorted(files)
 
 
+def _load_known_prefixes(discovery_root: Path) -> frozenset[str]:
+    """Resolve the ADR prefix allowlist for ``discovery_root``.
+
+    Walks up to the nearest wiki project root so nested inputs see the
+    repository config. An unreadable or invalid ``.parrot/wiki.json`` degrades
+    to an empty allowlist (bare ADR aliases only) with a warning, so the code
+    graph build never depends on a valid wiki config.
+
+    Args:
+        discovery_root: Directory the code graph is discovered from.
+
+    Returns:
+        The effective ADR prefixes, empty when none are configured or usable.
+    """
+    from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_project_config
+
+    root = find_project_root(discovery_root) or discovery_root
+    try:
+        return load_project_config(root).decisions.effective_prefixes()
+    except WikiConfigError as exc:
+        logger.warning("Ignoring ADR prefixes; %s", exc)
+        return frozenset()
+
+
 async def build_code_graph(
     paths: Sequence[Path],
     output_dir: Path,
@@ -124,14 +147,9 @@ async def build_code_graph(
         communities.
     """
     ignore_spec: Optional[pathspec.PathSpec] = None
-    if ignore_file is not None and ignore_file.is_file():
-        ignore_spec = pathspec.PathSpec.from_lines(
-            "gitwildmatch", ignore_file.read_text(encoding="utf-8").splitlines()
-        )
-
-    extractor = CodeExtractor(
-        ignore_file=str(ignore_file) if ignore_file else None
-    )
+    if ignore_file is not None and await asyncio.to_thread(ignore_file.is_file):
+        ignore_text = await asyncio.to_thread(ignore_file.read_text, encoding="utf-8")
+        ignore_spec = pathspec.PathSpec.from_lines("gitwildmatch", ignore_text.splitlines())
 
     all_nodes: list[UniversalNode] = []
     all_edges: list[UniversalEdge] = []
@@ -141,6 +159,11 @@ async def build_code_graph(
     for base in paths:
         base = base.resolve()
         discovery_root = base if base.is_dir() else base.parent
+        known_prefixes = await asyncio.to_thread(_load_known_prefixes, discovery_root)
+        extractor = CodeExtractor(
+            ignore_file=str(ignore_file) if ignore_file else None,
+            known_prefixes=known_prefixes,
+        )
         for file_path in discover_python_files(base, ignore_spec):
             try:
                 source = file_path.read_text(encoding="utf-8", errors="replace")
@@ -158,7 +181,9 @@ async def build_code_graph(
 
     logger.info(
         "Extracted %d nodes and %d edges from %d files",
-        len(all_nodes), len(all_edges), files_indexed,
+        len(all_nodes),
+        len(all_edges),
+        files_indexed,
     )
 
     assembler = GraphAssembler(tenant_id=tenant_id)
@@ -186,7 +211,7 @@ async def build_code_graph(
         output_dir,
         communities=communities,
         analytics=analytics,
-        title=title or f"GraphIndex — {Path(paths[0]).resolve().name}",
+        title=title or f"GraphIndex — {(await asyncio.to_thread(Path(paths[0]).resolve)).name}",
         allow_cdn_fallback=allow_cdn_fallback,
     )
 
@@ -201,10 +226,7 @@ async def build_code_graph(
         "report": str(report_path),
         "god_nodes": analytics.god_nodes[:10],
         "communities": (
-            [
-                {"label": c.label or c.community_id[:8], "size": c.size}
-                for c in communities.communities[:10]
-            ]
+            [{"label": c.label or c.community_id[:8], "size": c.size} for c in communities.communities[:10]]
             if communities
             else []
         ),
@@ -223,10 +245,7 @@ def _print_summary(summary: dict, output_dir: Path) -> None:
     print(f"  nodes:       {summary['node_count']}")
     print(f"  edges:       {summary['edge_count']}")
     if summary["modularity"] is not None:
-        print(
-            f"  communities: {summary['community_count']} "
-            f"(modularity {summary['modularity']:.4f})"
-        )
+        print(f"  communities: {summary['community_count']} " f"(modularity {summary['modularity']:.4f})")
     if summary["god_nodes"]:
         print("\nGod nodes (most connected):")
         for i, node in enumerate(summary["god_nodes"][:5], start=1):
@@ -254,40 +273,41 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "path", nargs="?", default=".",
+        "path",
+        nargs="?",
+        default=".",
         help="Repository root or file to index (default: current directory).",
     )
     parser.add_argument(
-        "-o", "--output", default=None,
-        help=(
-            "Output directory for the artefacts "
-            f"(default: <path>/{DEFAULT_OUTPUT_DIRNAME})."
-        ),
+        "-o",
+        "--output",
+        default=None,
+        help=("Output directory for the artefacts " f"(default: <path>/{DEFAULT_OUTPUT_DIRNAME})."),
     )
+    parser.add_argument("--tenant", default="default", help="Tenant id for node namespacing.")
     parser.add_argument(
-        "--tenant", default="default", help="Tenant id for node namespacing."
-    )
-    parser.add_argument(
-        "--no-communities", action="store_true",
+        "--no-communities",
+        action="store_true",
         help="Skip Louvain community detection (nodes render uncoloured).",
     )
     parser.add_argument(
-        "--resolution", type=float, default=1.0,
+        "--resolution",
+        type=float,
+        default=1.0,
         help="Louvain resolution γ (>1.0 finds smaller/tighter communities).",
     )
     parser.add_argument(
-        "--ignore-file", default=None,
+        "--ignore-file",
+        default=None,
         help="Path to a .graphindexignore file (gitignore syntax).",
     )
     parser.add_argument("--title", default=None, help="Graph title for the page header.")
     parser.add_argument(
-        "--no-cdn-fallback", action="store_true",
-        help="Fail instead of referencing the ECharts CDN when the offline "
-             "asset is unavailable.",
+        "--no-cdn-fallback",
+        action="store_true",
+        help="Fail instead of referencing the ECharts CDN when the offline " "asset is unavailable.",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable debug logging."
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging.")
     return parser
 
 
