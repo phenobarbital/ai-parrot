@@ -413,7 +413,7 @@ The SDD workflow is unified across all three developer platforms:
 | `/sdd-fix [issue-id]` | `sdd-fix` | Drain the work ledger: plan-fix, claim, route to the Fast or SDD lane, close by evidence, release the rest |
 | `/sdd-fromjira` | `sdd-fromjira` | Bootstrap an SDD brainstorm from a Jira ticket |
 | `/sdd-tojira` | `sdd-tojira` | Export an SDD specification to a Jira Story and subtasks |
-| `/sdd-insight` | `sdd-insight` | Analyze collaboration transcripts and repo-level SDD process adherence |
+| `/sdd-insight` | `sdd-insight` | Analyze collaboration transcripts and repo-level SDD process adherence (ai-parrot monorepo only; `parrot sdd install` does not ship it) |
 
 ---
 

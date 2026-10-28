@@ -41,9 +41,12 @@ def add(component: str, here: bool) -> None:
 
 
 @self_group.command()
-@click.option("--version", "version", default=None, help="Exact ai-parrot version (default: latest).")
+@click.option(
+    "--version", "version", default=None,
+    help="Exact version for ai-parrot and ai-parrot-tools (default: latest ai-parrot, matching tools).",
+)
 def update(version: str | None) -> None:
-    """Upgrade ai-parrot in the managed venv."""
+    """Upgrade the base runtime (ai-parrot + ai-parrot-tools) in the managed venv."""
     from parrot.self_.components import update_runtime
 
     try:

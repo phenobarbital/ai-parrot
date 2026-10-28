@@ -26,7 +26,6 @@ through `/skills`.
 | `/sdd-next` | `$sdd-next` | Suggest unblocked tasks and ready ledger issues. |
 | `/sdd-status` | `$sdd-status` | Show the reconciled task board and worktree health. |
 | `/sdd-explain` | `$sdd-explain` | Explain a subsystem or trace its implementation. |
-| `/sdd-insight` | `$sdd-insight` | Analyze Claude transcripts and repository SDD discipline. |
 
 ## Codex adaptation contract
 
@@ -75,9 +74,6 @@ copy Claude command frontmatter into Codex skill frontmatter.
   grant permission for destructive operations. Prefer a fresh throwaway
   snapshot worktree for a retry, and remove only clean, owned, idle worktrees.
   Never load Jira credentials with shell `eval` or print them into tool output.
-- `$sdd-insight` uses a fresh `artifacts/sdd-insight.*` directory and its local
-  deterministic fallback when Claude's Workflow capability is unavailable.
-  It analyzes Claude transcripts; native Codex transcripts are unsupported.
 
 The skill directory and `SKILL.md` entry point follow the
 [official skill format](https://developers.openai.com/plugins/build/skills).

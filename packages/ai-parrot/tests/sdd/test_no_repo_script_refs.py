@@ -138,3 +138,19 @@ def test_no_monorepo_source_paths_in_shipped_files() -> None:
             if hit and (rel, line.strip()) not in _C16_ALLOWLIST:
                 offenders.append(f"{rel}:{i}: {line.strip()[:100]}")
     assert not offenders, "\n".join(offenders)
+
+
+_ASSETS = _REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets"
+
+
+def test_packaged_assets_do_not_advertise_sdd_insight() -> None:
+    """C22: `/sdd-insight` is not installed, so no packaged asset may offer it as a command.
+
+    The only allowed mention is the `sdd/WORKFLOW.md` twin's row, which says it is monorepo-only and not shipped.
+    """
+    offenders = []
+    for path in sorted(p for p in _ASSETS.rglob("*") if p.is_file() and p.suffix in {".md", ".toml"}):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "sdd-insight" in line and "does not ship it" not in line:
+                offenders.append(f"{path.relative_to(_ASSETS)}:{number}: {line.strip()}")
+    assert not offenders, "\n".join(offenders)

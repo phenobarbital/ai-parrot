@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from parrot.sdd.config import SddConfig
 from scripts.sdd.brief_meta import (
     BRIEF_BASE_BRANCHES,
     BriefMeta,
@@ -87,8 +88,11 @@ def test_base_branch_must_be_long_lived() -> None:
     with pytest.raises(ValueError, match="base_branch"):
         brief_worktree_plan(slug="fix-path-injection", key="cs-224", base_branch="feature/x")
 
+    # Pin the config: the default (no sdd/config.json, e.g. pytest run from a checkout without one) has no staging.
+    config = SddConfig(base_branch="dev", staging_branch="staging", hotfix_base="main")
     for branch in sorted(BRIEF_BASE_BRANCHES):
-        assert brief_worktree_plan(slug="s", key="k", base_branch=branch).base_ref == f"origin/{branch}"
+        plan = brief_worktree_plan(slug="s", key="k", base_branch=branch, config=config)
+        assert plan.base_ref == f"origin/{branch}"
 
 
 def test_ledger_requires_dev() -> None:

@@ -7,6 +7,7 @@ test here must pass BOTH with them absent (checks report 'unavailable' as inform
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -28,6 +29,10 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     worktrees, config, the `.gitattributes` ledger lines and the four ledger hooks."""
     from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks  # verified: installer.py:973
 
+    # Isolate from the developer's git config: a global `commit.gpgsign=true` would make the seed commits below
+    # wait on a pinentry prompt.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     origin = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(origin)], check=True)
     repo = tmp_path / "repo"
@@ -37,7 +42,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
     (repo / ".gitignore").write_text(".claude/worktrees/\n")
-    # FILL IN: wrap in TASK-4091's marker lines if review requires the marker (see the C23 note in _check_sdd)
+    # Bare lines, no installer marker block: `doctor._check_ledger_attributes` only requires the two merge=union lines.
     (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "seed")
