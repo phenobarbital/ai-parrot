@@ -254,7 +254,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -264,8 +264,9 @@
       "parallelism_notes": "reads AIMessage.suggestions / Suggestion.model_dump from TASK-4794 (models/suggestions.py) in handlers/agent.py and its tests",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4802-handler-suggestions-passthrough.md"
+      "completed_at": "2026-10-28T00:53:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4802-handler-suggestions-passthrough.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4803",

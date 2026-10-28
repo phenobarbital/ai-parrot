@@ -227,4 +227,7 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed. All four anchors re-verified in `agent.py` first. The helper sits above the `@is_authenticated()/@user_session()` decorators of `AgentTalk` (inserting it between the decorators and the class would have broken them).
+Site (2) was restructured into `a2ui_body` with the original six keys in the original order (asserted); the other three sites follow the additive `if _suggestions is not None` pattern, so a chip-less body is unchanged.
+Tests: 9 new in `test_suggestions_passthrough.py` (helper behaviour for real; the four sites by source inspection, the convention of `test_structured_envelope_passthrough.py`, because the handler cannot be driven end to end here). With `test_structured_envelope_passthrough.py` and `test_agenttalk_dual_emit.py`: 18 passed. `test_agent_a2ui_stream.py` still has the 2 pre-existing, unrelated failures (ledger issue:46f02d0469bb), identical before this task. ruff clean on agent.py.
+Limitation: no test exercises a live aiohttp request through the handler; byte-identical bodies are argued from the conditional pattern plus the key-order assertion.
