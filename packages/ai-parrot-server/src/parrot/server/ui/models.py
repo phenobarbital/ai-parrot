@@ -113,6 +113,12 @@ class BotWritePayload(BaseModel):
     memory_config: dict[str, Any] | None = None
     max_context_turns: int | None = None
     use_conversation_history: bool | None = None
+    # Follow-up suggestion chips (FEAT-752)
+    enable_suggestions: bool | None = None
+    suggest_followups: bool | None = None
+    suggestion_timeout_s: float | None = None
+    max_suggestions: int | None = None
+    suggestion_model: str | None = None
     bot_class: str | None = None
     permissions: dict[str, Any] | list[dict[str, Any]] | None = None
 
