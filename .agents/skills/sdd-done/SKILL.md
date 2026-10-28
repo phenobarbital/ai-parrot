@@ -223,6 +223,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 
 12. Integrate:
     - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
+      Before refusing, run the `on_failure` hooks (`abort_reason` = "--merge into main refused", `|| true`, exit code ignored).
     - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
       rendered `## Tests` section (`$(cat "$TEST_REPORT_MD" 2>/dev/null)`) after `<N>/<total> tasks verified.`, followed by the
       pre_pr `evidence_md` as `## Evidence` when it is non-empty.

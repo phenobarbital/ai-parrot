@@ -74,9 +74,20 @@ def test_jira_points_to_builtin() -> None:
 
 
 def test_on_failure_wired_on_every_abort_path() -> None:
-    # E2E gate (4.6), pre_pr abort (4.8), merge-blocker refusal (Step 9 / step 10).
-    assert _text(_DOC).count("--event on_failure") >= 3
-    assert _text(_TWIN).count("on_failure") >= 3
+    # Closeout-flow aborts: E2E gate (4.6), pre-push --merge-into-main gate (8),
+    # merge-blocker refusal (9), pre_pr abort (4.8), --merge-from-worktree (9.2).
+    # --sync-down exits are post-merge and intentionally excluded.
+    assert _text(_DOC).count("--event on_failure") >= 5
+    assert _text(_TWIN).count("on_failure") >= 4
+
+
+def test_write_hook_context_defined_before_first_use() -> None:
+    text = _text(_DOC)
+    definition = text.index("write_hook_context() {")
+    first_call = text.index('write_hook_context "')
+    assert definition < first_call, (
+        "write_hook_context must be defined before its first call"
+    )
 
 
 def test_evidence_in_pr_body_and_hooks_line_in_output() -> None:
