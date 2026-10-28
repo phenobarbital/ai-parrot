@@ -14,21 +14,16 @@ from typing import Any
 
 import aiohttp
 
-from scripts.sdd.closeout_hooks_config import HookContext, HookKind, HookResult, HookSpec, PUSH_PROVIDERS
+from scripts.sdd.closeout_hooks_config import Defaulting, HookContext, HookKind, HookResult, HookSpec, PUSH_PROVIDERS
 
 BuiltinFn = Callable[[HookSpec, HookContext, Path], HookResult]
 _JIRA_KEY_RE = re.compile(r"\*\*Jira\*\*: \[([A-Z]+-\d+)")
 _JIRA_FRONTMATTER_RE = re.compile(r"^jira:\s*[\"']?\[?([A-Z]+-\d+)", re.MULTILINE)
 
 
-class _Defaulting(dict):
-    def __missing__(self, key: str) -> str:
-        return ""
-
-
 def _render(template: str, ctx: HookContext) -> str:
     """Format ``template`` with context fields; unknown placeholders render empty."""
-    return template.format_map(_Defaulting(ctx.model_dump()))
+    return template.format_map(Defaulting(ctx.model_dump()))
 
 
 async def _request(
@@ -72,6 +67,7 @@ def _jira_cred(name: str) -> str | None:
 
 
 def _result(hook: HookSpec, status: str, summary: str, started: float) -> HookResult:
+    """Build a HookResult for a builtin hook with elapsed duration."""
     return HookResult(
         name=hook.name,
         kind=HookKind.BUILTIN,
@@ -194,6 +190,7 @@ def telegram_send(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> HookR
 
 
 def _push_ntfy(hook: HookSpec, ctx: HookContext, title: str, message: str, priority: str) -> tuple[str, str]:
+    """Send a push notification via the ntfy service."""
     url_env = hook.with_.get("url_env", "SDD_NTFY_URL")
     topic_env = hook.with_.get("topic_env", "SDD_NTFY_TOPIC")
     token_env = hook.with_.get("token_env", "SDD_NTFY_TOKEN")
@@ -221,6 +218,7 @@ def _push_ntfy(hook: HookSpec, ctx: HookContext, title: str, message: str, prior
 
 
 def _push_gotify(hook: HookSpec, ctx: HookContext, title: str, message: str, priority: str) -> tuple[str, str]:
+    """Send a push notification via the Gotify service."""
     url_env = hook.with_.get("url_env", "SDD_GOTIFY_URL")
     token_env = hook.with_.get("token_env", "SDD_GOTIFY_TOKEN")
 
@@ -247,7 +245,8 @@ def _push_gotify(hook: HookSpec, ctx: HookContext, title: str, message: str, pri
 
 
 _PUSH: dict[str, Callable[..., tuple[str, str]]] = {"ntfy": _push_ntfy, "gotify": _push_gotify}
-assert set(_PUSH) == set(PUSH_PROVIDERS)
+if set(_PUSH) != set(PUSH_PROVIDERS):
+    raise RuntimeError(f"_PUSH keys {set(_PUSH)} do not match PUSH_PROVIDERS {set(PUSH_PROVIDERS)}")
 
 
 def push_send(hook: HookSpec, ctx: HookContext, artifact_dir: Path) -> HookResult:
