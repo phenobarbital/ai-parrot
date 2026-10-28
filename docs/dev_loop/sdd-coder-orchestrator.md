@@ -685,15 +685,23 @@ mounts; package-manager allowlists are only early feedback. Task package source
 directories are prepended to `PYTHONPATH` so tests exercise the task checkout.
 
 The native `PreToolUse` hook also applies RTK itself. When both RTK's global hook
-and this one rewrite a Bash call, the host keeps only one rewrite, and the sandbox
-wrapper of the *original* command wins, so RTK's output compaction was lost. The
-hook therefore runs the command (after the test-scope guard, which must see the
-raw runner) through `rtk rewrite` when `rtk` is on `PATH`. It trusts only the
+and this one rewrite a Bash call, the host keeps only one rewrite and does not
+define which. Usually the sandbox wrapper of the *original* command wins, so RTK's
+output compaction is lost; sometimes RTK's rewrite wins, and that command runs
+outside the sandbox (`issue:6756c929a450`). The hook therefore runs the command
+(after the test-scope guard, which must see the raw runner) through `rtk rewrite`
+when `rtk` is on `PATH`, and RTK runs inside the sandbox. It trusts only the
 printed command, because rtk 0.45 exits 3 after a successful rewrite. Any RTK
-failure keeps the original command. For a command that runs through RTK, RTK's
-data directory (`$XDG_DATA_HOME/rtk`, default `~/.local/share/rtk`) is bound
-writable, otherwise its history write fails silently and `rtk gain` never counts
-the run. Set `PARROT_SANDBOX_RTK=0` to turn this off.
+failure keeps the original command. Set `PARROT_SANDBOX_RTK=0` to turn this off.
+Keeping RTK's global hook out of sandboxed sessions is still required, because
+any other hook that rewrites the command can drop the sandbox wrapper.
+
+RTK's data directory (`$XDG_DATA_HOME/rtk`, default `~/.local/share/rtk`) stays
+read-only. It holds `trusted_filters.json`, the trust store for project-local
+`.rtk/filters.toml`; a seat that could write it could trust its own filter and
+change what RTK shows to the orchestrator and to people outside the sandbox, for
+example hiding `FAILED` lines. RTK skips its history and `tee` writes when they
+fail, so the only cost is that `rtk gain` does not count sandboxed runs.
 
 Linux hosts require Bubblewrap (`bwrap`) and permission to create its namespaces.
 A missing executable or namespace failure stops the command; there is no
