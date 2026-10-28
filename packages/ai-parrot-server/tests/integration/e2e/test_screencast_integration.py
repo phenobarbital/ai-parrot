@@ -61,12 +61,9 @@ async def test_record_on_anomaly_real_obscura(unused_tcp_port: int, tmp_path: Pa
                 anomaly_dir = tmp_path / "anomaly"
                 async with record_on_anomaly(anomaly_page, anomaly_dir, run_id="anomaly") as recorder:
                     await anomaly_page.evaluate("console.error('controlled anomaly')")
-                    for _ in range(100):
-                        if recorder._session is not None or recorder.error is not None:
-                            break
-                        await asyncio.sleep(0.05)
-                    assert recorder._session is not None, recorder.error
-                    await asyncio.sleep(1)
+                    assert await recorder.wait_started(timeout=5.0), recorder.error
+                    assert recorder.recording
+                    await asyncio.sleep(1)  # capture some white frames before the change
                     await anomaly_page.evaluate(
                         "document.documentElement.style.background = 'red'; " "document.body.style.background = 'red'"
                     )
