@@ -409,3 +409,80 @@ async def test_supervisor_wait_reports_whether_it_waited(tmp_path: Path, monkeyp
     assert await supervisor.wait(execution_id, "req-wait", 30) is True
     status = await registry.status(execution_id, "req-wait")
     assert status.state == "finished"
+
+
+# -- 3. stdin isolation at both supervisor spawn sites (issue:995ad869e502) ------
+#
+# `ValidationSupervisor` runs inside the `parrot-sdd-coder` stdio MCP server, so
+# fd 0 of its process IS the JSON-RPC channel -- and Claude Code backs that with
+# a socketpair, not a pipe. A validation child that inherits fd 0 and shuts it
+# down EOFs the SERVER's own read (shutdown acts on the shared file description),
+# and `StdioMCPServer.start()` then leaves its serve loop and exits 0 silently.
+# Both spawn sites -- `start()`'s first invocation and `_supervise()`'s remaining
+# ones -- must pass DEVNULL, while keeping the process-group and merged-stream
+# guarantees the deadline killer and log drain depend on.
+
+
+class _AsyncioSpy:
+    """Scope a `create_subprocess_exec` spy to `background.py` alone.
+
+    Patching the global `asyncio` would also capture this module's own git
+    helpers. Rebinding the module-level `asyncio` name inside `background_module`
+    records exactly the supervisor's spawns and delegates everything else
+    (`to_thread`, `Lock`, `subprocess`, ...) to the real module untouched.
+    """
+
+    def __init__(self, sink: list[dict]) -> None:
+        self._sink = sink
+
+    def __getattr__(self, name: str):
+        return getattr(asyncio, name)
+
+    async def create_subprocess_exec(self, *args, **kwargs):
+        self._sink.append(kwargs)
+        return await asyncio.create_subprocess_exec(*args, **kwargs)
+
+
+def _multi_plan(*argvs: tuple[str, ...]):
+    """A plan with one invocation per argv, so BOTH spawn sites are exercised."""
+
+    def _plan(
+        *, worktree, changed_files, tier, declared=(), policy=None, contract=None, registry=None, **_kw
+    ) -> ScopePlan:
+        invocations = tuple(Invocation(distribution="root", argv=argv, targets=()) for argv in argvs)
+        return ScopePlan(
+            tier=tier, invocations=invocations, escalated=(), core_hits=(), skipped_escalations=(), notes=()
+        )
+
+    return _plan
+
+
+async def test_both_supervisor_spawns_isolate_stdin(
+    tmp_path: Path, git_sandbox_feature, three_seat_roster, noop_probe, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A validation child must never inherit the MCP server's JSON-RPC stdin."""
+    worktree, _branch, base_path, _index = git_sandbox_feature
+
+    noop = (sys.executable, "-c", "import sys; sys.exit(0)")
+    monkeypatch.setattr(background_module, "changed_files", lambda wt, base_ref: [])
+    monkeypatch.setattr(background_module, "plan_tests", _multi_plan(noop, noop))
+    monkeypatch.setattr(background_module, "protected_argv", _identity_protected_argv)
+
+    spawns: list[dict] = []
+    monkeypatch.setattr(background_module, "asyncio", _AsyncioSpy(spawns))
+
+    execution_id = str(uuid.uuid4())
+    engine = _engine(three_seat_roster, noop_probe, base_path, tmp_path)
+    await engine.begin_execution(FEATURE, str(worktree), execution_id)
+    handle = await _admit(engine, worktree, execution_id, sleep_s=0.0, request_id="req-stdin")
+    status = await engine.bg_wait(execution_id, handle, timeout_seconds=60)
+
+    assert status.state == "finished"
+    assert len(spawns) == 2, f"expected both spawn sites to run, saw {len(spawns)}"
+    for kwargs in spawns:
+        assert kwargs["stdin"] is asyncio.subprocess.DEVNULL
+        # The deadline killer owns a process group, and the log drain reads one
+        # merged stream -- neither may be collateral damage of the stdin fix.
+        assert kwargs["start_new_session"] is True
+        assert kwargs["stderr"] is asyncio.subprocess.STDOUT
+
