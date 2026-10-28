@@ -112,6 +112,14 @@ class PausedEnvelope(BaseModel):
     source_agent: Optional[str] = None
 
 
+def _suggestions_payload(message: Any) -> Optional[list[dict[str, Any]]]:
+    """JSON-ready follow-up chips (FEAT-752), or None when absent/empty so the key is omitted."""
+    chips = getattr(message, "suggestions", None)
+    if not chips:
+        return None
+    return [c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c) for c in chips]
+
+
 @is_authenticated()
 @user_session()
 class AgentTalk(BaseView):
@@ -2727,6 +2735,9 @@ class AgentTalk(BaseView):
                 a2ui_envelope = getattr(ai_message, "a2ui_envelope", None)
                 if a2ui_envelope is not None:
                     envelope["a2ui_envelope"] = a2ui_envelope
+                _suggestions = _suggestions_payload(ai_message)
+                if _suggestions is not None:
+                    envelope["suggestions"] = _suggestions
                 separator = b"\n\x00"
                 await stream_resp.write(separator + json_encoder(envelope).encode("utf-8"))
                 await stream_resp.drain()
@@ -2866,16 +2877,18 @@ class AgentTalk(BaseView):
                     "response_time": response_time_ms,
                 }
             )
-            return self.json_response(
-                {
-                    "input": getattr(response, "input", None),
-                    "output": response.response or "",
-                    "output_mode": OutputMode.A2UI.value,
-                    "a2ui_envelope": getattr(response, "a2ui_envelope", None),
-                    "artifact_id": getattr(response, "artifact_id", None),
-                    "metadata": a2ui_metadata,
-                }
-            )
+            a2ui_body = {
+                "input": getattr(response, "input", None),
+                "output": response.response or "",
+                "output_mode": OutputMode.A2UI.value,
+                "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                "artifact_id": getattr(response, "artifact_id", None),
+                "metadata": a2ui_metadata,
+            }
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                a2ui_body["suggestions"] = _suggestions
+            return self.json_response(a2ui_body)
 
         # FEAT-197: Infographic mode — return the documented JSON envelope
         # (or text/html for Accept: text/html / ?format=html requests).
@@ -2975,6 +2988,9 @@ class AgentTalk(BaseView):
             _a2ui_envelope = getattr(response, "a2ui_envelope", None)
             if _a2ui_envelope is not None:
                 obj_response["a2ui_envelope"] = _a2ui_envelope
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                obj_response["suggestions"] = _suggestions
             # self.logger.debug('Agent response: %s', obj_response)
 
             # Persist chat turn via ChatStorage (hot + cold)
@@ -3282,6 +3298,9 @@ class AgentTalk(BaseView):
         _a2ui_envelope = getattr(response, "a2ui_envelope", None)
         if _a2ui_envelope is not None:
             obj_response["a2ui_envelope"] = _a2ui_envelope
+        _suggestions = _suggestions_payload(response)
+        if _suggestions is not None:
+            obj_response["suggestions"] = _suggestions
         return web.json_response(
             obj_response,
             dumps=json_encoder,
