@@ -440,7 +440,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -448,8 +448,9 @@
       "parallelism_notes": "no code dependency: _build_database_bot passes kwargs AbstractBot already accepts via **kwargs; own files (models/bots.py, manager/manager.py, new migration); migration is not applied by the task",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4811-studio-suggestion-fields-backend.md"
+      "completed_at": "2026-10-28T00:42:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4811-studio-suggestion-fields-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4812",
