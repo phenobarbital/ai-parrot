@@ -2683,18 +2683,18 @@ class AgentTalk(BaseView):
         holds the WebSocket connection.  ``avatar_bifurcate`` is a no-op for
         non-streaming callers (``bot.ask`` path) — FULL mode always streams.
         """
-        stream_resp = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "text/plain; charset=utf-8",
-                "Transfer-Encoding": "chunked",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Parrot-Stream": ("chunked-aimessage+suggestions" if suggestions_trailer else "chunked-aimessage"),
-                "X-Accel-Buffering": "no",
-            },
-        )
+        stream_headers = {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Parrot-Stream": "chunked-aimessage",
+            "X-Accel-Buffering": "no",
+        }
+        if suggestions_trailer:
+            # FEAT-752 rev 0.3: opt-in framing — the literal above stays the public default.
+            stream_headers["X-Parrot-Stream"] = "chunked-aimessage+suggestions"
+        stream_resp = web.StreamResponse(status=200, reason="OK", headers=stream_headers)
         await stream_resp.prepare(self.request)
         start_time = time.perf_counter()
         ai_message: Optional[AIMessage] = None
