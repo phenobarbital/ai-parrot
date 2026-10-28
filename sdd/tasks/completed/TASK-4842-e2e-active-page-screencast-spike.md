@@ -300,4 +300,6 @@ the acceptance run. Capture failures remain visible test failures.
 
 ## Completion Note
 
-Owned by the finalization tool after verified acceptance.
+**Completed**: 2026-10-27/28 — M0 spike by the orchestrator. Result: PASS for the in-connection recorder (Playwright CDPSession); the separate-process recorder is infeasible on Obscura 0.2.2 (per-connection page isolation). Decision (a) taken by the user; spec revised and M1–M3 decomposed (TASK-4864..4866).
+**Verification**: `TestObscuraScreencastRecording::test_existing_page_produces_playable_webm` → 1 passed vs real Obscura 0.2.2 (engine merge-tier green); independent code-review findings 1-5,7,10 adopted. Evidence: `sdd/state/FEAT-762/screencast-spike.md`.
+**Deviations**: AC-1 "separate recorder" satisfied by the in-connection design per user decision; decoy created first because Obscura only lets the newest page evaluate JS.

@@ -231,6 +231,25 @@ async def test_prepare_native_writes_attempt_context(git_sandbox_feature, noop_p
     assert context.base_ref == feature_branch
 
 
+async def test_prepare_native_carries_seat_effort(git_sandbox_feature, noop_probe):
+    """issue:43d1039c2717: a native seat's effort reaches NativePrep for the sdd-worker Agent call."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native", effort="high"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
+        ]
+    )
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=fake_builder_factory({})
+    )
+    plan = await engine.plan("demo", str(worktree))
+    native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
+    prep = await engine.prepare_native("demo", str(worktree), native_id)
+    assert prep.effort == "high"
+
+
 async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noop_probe):
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     gate = asyncio.Event()
@@ -1407,3 +1426,24 @@ async def test_classify_failure_reason_empty_delivery_not_suspendable(git_sandbo
         "empty_delivery: seat a (nova/model-a) delivered no file change for TASK-0001", "EmptyDelivery"
     )
     assert reason is None
+
+
+async def test_engine_applies_seat_effort_to_profile(git_sandbox_feature, noop_probe):
+    """HOTFIX-sdd-coder-seat-effort-2: a seat's effort reaches the dispatched backend profile."""
+    from parrot.flows.dev_loop.models import CodexCodeDispatchProfile
+
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    inner = fake_builder_factory({})
+
+    def _builder(spec, **kwargs):
+        dispatcher, _ = inner(spec, **kwargs)
+        return dispatcher, CodexCodeDispatchProfile()
+
+    roster = RosterConfig(seats=[RosterSeat(label="b", backend="codex", model="model-b", effort="high")])
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=_builder
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    await engine.wait(job.job_id, 5)
+    call = next(c for d in inner.dispatchers.values() for c in d.calls)
+    assert call["profile"].reasoning_effort == "high"
