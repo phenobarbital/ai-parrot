@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import subprocess
 import sys
 from typing import Any, Sequence
 
@@ -224,7 +225,7 @@ def claude_scratch_root() -> Path:
     return root.resolve()
 
 
-def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
+def protected_argv(cwd: Path, argv: Sequence[str], *, writable: Sequence[Path] = ()) -> list[str]:
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
@@ -232,12 +233,17 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
     claim ledger issues), private temporary storage,
-    and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
-    private ``/tmp`` so a seat's scratchpad survives between commands) are
-    writable. The rest of the primary checkout and existing shared
-    environments remain read-only even when the checkout is the primary
-    repository. No host chmod or mount changes are performed. Network
-    isolation is outside this policy's scope.
+    Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
+    private ``/tmp`` so a seat's scratchpad survives between commands) and the
+    caller's ``writable`` directories are writable. The rest of the primary
+    checkout and existing shared environments remain read-only even when the
+    checkout is the primary repository. No host chmod or mount changes are
+    performed. Network isolation is outside this policy's scope.
+
+    ``writable`` holds extra directories a specific command needs, such as RTK's
+    data directory for a command rewritten by ``rtk_rewrite``. They are bound
+    before the shared environments' read-only mounts, so they can never reopen
+    an environment for writing.
     """
     if not argv:
         raise ValueError("A command is required.")
@@ -276,6 +282,8 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         command.extend(["--bind", str(git_dir), str(git_dir)])
     for ledger_dir in shared_ledger_dirs(root, git_dir):
         command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
+    for directory in writable:
+        command.extend(["--bind", str(directory), str(directory)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.
@@ -442,8 +450,71 @@ def bounded_shell_argv(command: str, tool_input: dict[str, Any]) -> list[str]:
     return [timeout_bin, "-k", str(KILL_GRACE_SECONDS), str(seconds), *argv]
 
 
+# RTK compacts command output through its own global ``PreToolUse`` hook. When
+# both hooks rewrite a Bash call, the host keeps only one ``updatedInput``, and
+# this module's wrapper of the *original* command wins, so the RTK rewrite is
+# applied here instead, inside the sandbox.
+RTK_ENV_SWITCH = "PARROT_SANDBOX_RTK"
+RTK_REWRITE_TIMEOUT_SECONDS = 5
+
+
+def rtk_rewrite(command: str) -> str | None:
+    """Return RTK's token-optimized form of ``command``, or ``None`` to keep it as is.
+
+    ``rtk rewrite`` prints the rewritten command when RTK has an equivalent and
+    prints nothing when it has none. Only that output is trusted: rtk 0.45 exits
+    3 after a successful rewrite, although its help documents 0. Every failure
+    (RTK not installed, disabled with ``PARROT_SANDBOX_RTK=0``, a timeout, a
+    crash) keeps the original command, because output compaction must never
+    block a command.
+
+    Args:
+        command: The shell text to run, after the test-scope guard.
+
+    Returns:
+        The rewritten command, or ``None`` when RTK is unavailable or has no equivalent.
+    """
+    if os.environ.get(RTK_ENV_SWITCH, "1") == "0":
+        return None
+    executable = shutil.which("rtk")
+    if executable is None:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "rewrite", command],
+            capture_output=True,
+            text=True,
+            timeout=RTK_REWRITE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rewritten = result.stdout.rstrip("\n")
+    return rewritten if rewritten.strip() else None
+
+
+def rtk_data_dir() -> Path | None:
+    """Return RTK's data directory (``$XDG_DATA_HOME/rtk``) when it exists.
+
+    RTK records every run in ``history.db`` there, which ``rtk gain`` reads, and
+    keeps the full output of failed commands under ``tee/``. The sandbox mounts
+    the home directory read-only, where those writes fail silently and the run
+    is never counted.
+
+    Returns:
+        The resolved directory, or ``None`` when it does not exist or cannot be located.
+    """
+    try:
+        base = os.environ.get("XDG_DATA_HOME", "")
+        data_home = Path(base) if os.path.isabs(base) else Path.home() / ".local" / "share"
+        directory = data_home / "rtk"
+        return directory.resolve() if directory.is_dir() else None
+    except (OSError, RuntimeError):
+        return None
+
+
 def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
-    """Wrap native Bash input and reject shared-environment file-tool writes."""
+    """Wrap native Bash input, through RTK when available, and reject shared-environment file-tool writes."""
     cwd = Path(payload["cwd"])
     tool_input = payload["tool_input"]
     output: dict[str, Any] = {"hookEventName": "PreToolUse"}
@@ -457,7 +528,13 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
             if action in ("rewrite", "verdict") and value:
                 command = value
-            wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
+            # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
+            writable: tuple[Path, ...] = ()
+            if optimized := rtk_rewrite(command):
+                command = optimized
+                data_dir = rtk_data_dir()
+                writable = (data_dir,) if data_dir is not None else ()
+            wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input), writable=writable)
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.
             output["updatedInput"] = {**tool_input, "command": shlex.join(wrapped)}

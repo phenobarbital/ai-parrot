@@ -29,6 +29,12 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.fixture(autouse=True)
+def rtk_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the wrapped command independent of whether the host has RTK installed; RTK tests opt back in."""
+    monkeypatch.setenv(policy.RTK_ENV_SWITCH, "0")
+
+
 @pytest.fixture
 def checkout(tmp_path: Path) -> tuple[Path, Path]:
     """Model a pool checkout and the primary repository's shared environment."""
@@ -679,3 +685,133 @@ def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: 
     )
     updated = response["hookSpecificOutput"]["updatedInput"]
     assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "cd /w && python v.py"]
+
+
+# ---------------------------------------------------------------------------
+# RTK: the host keeps only one hook's rewrite, and the sandbox wrapper wins, so
+# the wrapper applies RTK's rewrite itself (issue:fa2d5a89771e).
+# ---------------------------------------------------------------------------
+
+
+def _fake_rtk(tmp_path: Path, body: str) -> Path:
+    """Install a stand-in ``rtk`` executable whose ``rewrite`` behaves as ``body``."""
+    executable = tmp_path / "bin" / "rtk"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text(f"#!/bin/sh\n{body}\n")
+    executable.chmod(0o755)
+    return executable
+
+
+def _which_with_rtk(rtk: Path | None) -> Any:
+    return lambda name: (str(rtk) if rtk else None) if name == "rtk" else f"/usr/bin/{name}"
+
+
+def test_rtk_rewrite_trusts_printed_command_not_exit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """rtk 0.45 exits 3 after a successful rewrite although its help documents 0."""
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$2"; exit 3')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") == "rtk git status"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "exit 1",  # no RTK equivalent: nothing printed
+        "printf '  \\n'; exit 0",  # whitespace only
+        "echo 'thread main panicked' >&2; exit 101",  # crash
+        "sleep 5",  # hangs past the timeout
+    ],
+)
+def test_rtk_rewrite_keeps_command_without_usable_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    monkeypatch.setattr(policy, "RTK_REWRITE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(_fake_rtk(tmp_path, body)))
+    assert policy.rtk_rewrite("git status") is None
+
+
+def test_rtk_rewrite_is_skipped_when_absent_unrunnable_or_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$2"')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") is None, "PARROT_SANDBOX_RTK=0 turns the rewrite off"
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(None))
+    assert policy.rtk_rewrite("git status") is None
+    rtk.chmod(0o644)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") is None
+
+
+def test_hook_applies_rtk_after_scope_guard(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The guard must see the raw runner; RTK then rewrites the guard's scoped command."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    seen: list[tuple[str, str]] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str]:
+        seen.append(("guard", command))
+        return "rewrite", "pytest a.py"
+
+    def rewrite(command: str) -> str:
+        seen.append(("rtk", command))
+        return f"rtk {command}"
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    monkeypatch.setattr(policy, "rtk_rewrite", rewrite)
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})
+    assert seen == [("guard", "pytest"), ("rtk", "pytest a.py")]
+    assert _sandboxed_argv(response)[-3:] == ["/bin/bash", "-c", "rtk pytest a.py"]
+
+
+def test_hook_binds_rtk_data_dir_only_for_rtk_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    data_dir = tmp_path / "xdg" / "rtk"
+    data_dir.mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    payload = {"cwd": str(main), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: f"rtk {command}")
+    binds = _writable_binds(_sandboxed_argv(policy.hook_response(payload)))
+    assert binds == [scratch_root.resolve(), main.resolve(), data_dir.resolve()]
+
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
+    binds = _writable_binds(_sandboxed_argv(policy.hook_response(payload)))
+    assert binds == [scratch_root.resolve(), main.resolve()]
+
+
+def test_rtk_data_dir_follows_xdg_data_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    assert policy.rtk_data_dir() is None, "a missing directory is never bound"
+    (tmp_path / "xdg" / "rtk").mkdir(parents=True)
+    assert policy.rtk_data_dir() == (tmp_path / "xdg" / "rtk").resolve()
+    monkeypatch.setenv("XDG_DATA_HOME", "relative/ignored")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home" / ".local" / "share" / "rtk").mkdir(parents=True)
+    assert policy.rtk_data_dir() == (tmp_path / "home" / ".local" / "share" / "rtk").resolve()
+
+
+def test_real_rtk_runs_inside_sandbox_and_records_savings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """End to end with the host's real RTK: filtered output, and the run reaches RTK's history."""
+    _require_bubblewrap()
+    if shutil.which("rtk") is None:
+        pytest.skip("RTK is not installed on this host")
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    data_dir = tmp_path / "xdg" / "rtk"
+    data_dir.mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    response = policy.hook_response({"cwd": str(main), "tool_name": "Bash", "tool_input": {"command": "git status"}})
+    argv = _sandboxed_argv(response)
+    assert argv[-1].startswith("rtk "), argv[-3:]
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert (data_dir / "history.db").is_file(), "RTK's write must land on the host, not in a read-only mount"
