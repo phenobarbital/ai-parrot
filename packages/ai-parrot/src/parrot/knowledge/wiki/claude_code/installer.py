@@ -117,25 +117,33 @@ def _is_portable_toolkit_entry(entry: Any) -> bool:
     )
 
 
-def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:
-    """Portable iff ANY managed ``parrot-*`` entry is portable (the mode is sticky).
-
-    Used only when the ``wikitoolkit`` key cannot decide (http, url-only, absent or foreign); no managed
-    ``parrot-*`` entry gives ``False``.
-    """
-    managed = [
+def _managed_toolkit_entries(servers: dict[str, Any], root: Path) -> list[Any]:
+    """The ``parrot-*`` entries of ``servers`` that we wrote (foreign colliding keys excluded)."""
+    return [
         entry for key, entry in servers.items()
         if key.startswith("parrot-") and _is_managed_toolkit_entry(entry, root, key[len("parrot-"):])
     ]
-    return any(_is_portable_toolkit_entry(entry) for entry in managed)
+
+
+def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:
+    """Portable iff ANY managed ``parrot-*`` entry is portable (the mode is sticky).
+
+    Used when the ``wikitoolkit`` key cannot decide (http, url-only, absent, foreign or the ambiguous bare
+    form); no managed ``parrot-*`` entry gives ``False``.
+    """
+    return any(_is_portable_toolkit_entry(entry) for entry in _managed_toolkit_entries(servers, root))
 
 
 def _current_portable_mode(root: Path) -> bool:
     """Infer the host's current mode (FEAT-633, sticky).
 
-    A managed stdio ``wikitoolkit`` entry decides it directly (baked gives ``False``). When that entry
-    is http, url-only, absent or foreign (``--remote`` decides only that key), the mode is inferred
-    from the managed ``parrot-*`` entries. A missing ``.mcp.json`` or unparsable JSON mean ``False``.
+    A managed stdio ``wikitoolkit`` entry in the baked (absolute) form gives ``False``. Its bare form is
+    ambiguous: a baked install falls back to the bare name when no binary resolves
+    (:func:`assets.resolve_wikitoolkit_bin`), so the managed ``parrot-*`` entries (absolute vs relative
+    ``--config``) break the tie, and with none of them the bare entry means portable — the same rule as
+    ``codex.installer._current_portable_mode``. When the ``wikitoolkit`` entry is http, url-only, absent
+    or foreign (``--remote`` decides only that key), the mode is inferred from the managed ``parrot-*``
+    entries. A missing ``.mcp.json`` or unparsable JSON mean ``False``.
 
     Args:
         root: Repository root.
@@ -152,7 +160,11 @@ def _current_portable_mode(root: Path) -> bool:
         return False
     wiki = servers.get("wikitoolkit")
     if isinstance(wiki, dict) and "type" not in wiki and "url" not in wiki and _is_wikitoolkit_entry(wiki):
-        return _is_portable_wikitoolkit_entry(wiki)
+        if not _is_portable_wikitoolkit_entry(wiki):
+            return False
+        if _managed_toolkit_entries(servers, root):
+            return _portable_from_servers(servers, root)
+        return True
     return _portable_from_servers(servers, root)
 
 
