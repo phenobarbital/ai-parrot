@@ -236,4 +236,8 @@ without asking.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Delivered by gpt-5.6-sol (codex), attempt 2 (attempt 1: gpt-5.6-terra, empty_delivery). Merged by hand (`git merge --no-ff`) after `coder_merge` could not re-validate.
+
+Validation: the schema drift that failed the task-tier gate was fixed in eb4fa034f (regenerated AgentToolkitsResponse/ToolkitPersistResponse; `test_ts_codegen.py` 3 passed). Merge-tier validation then showed only two pre-existing, unrelated failures in `test_agent_a2ui_stream.py` (identical before and after this merge; filed in the ledger).
+
+NOT verified: the vitests (`fields.test.ts`, `TabsCapabilities.test.ts`). pnpm/node_modules cannot run in the sandbox (read-only store), so the coder's claim of 34 passing vitests is unconfirmed. Run `pnpm vitest run` in packages/ai-parrot-server/ui where node_modules is writable. Closed `partial`; no coder_record_review recorded.
