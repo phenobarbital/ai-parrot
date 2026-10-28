@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -13,6 +14,27 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "install" / "install-parrot.ps1"
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _flat(text: str) -> str:
+    """Normalise pwsh console output for substring checks.
+
+    pwsh renders errors with ANSI colours and wraps long messages onto continuation lines prefixed
+    with a ``|`` gutter, so a phrase like "not writable" can arrive as ``not\\n     | writable``.
+    Strip the escapes and the gutter, then collapse all whitespace to single spaces.
+    """
+    text = _ANSI.sub("", text)
+    text = re.sub(r"(?m)^\s*\|\s?", " ", text)
+    return " ".join(text.split())
+
+
+def _pwsh_env(**overrides: str) -> dict[str, str]:
+    """The current environment with plain (uncoloured) pwsh output and the given overrides."""
+    env = {k: v for k, v in os.environ.items() if k not in overrides}
+    env.update(NO_COLOR="1", **overrides)
+    return env
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
@@ -157,7 +179,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env={"PARROT_HOME": str(home), **{k: v for k, v in os.environ.items() if k != "PARROT_HOME"}},
+        env=_pwsh_env(PARROT_HOME=str(home)),
     )
     assert result.returncode == 0, result.stderr
     assert "unsupported Python" not in result.stderr
@@ -165,7 +187,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert "ai-parrot-tools==9.9.9" in result.stdout      # rev 0.5 C20: same version pin as ai-parrot
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
-    assert "never used or modified" in result.stdout and "SHA256SUMS" in result.stdout
+    assert "never used or modified" in _flat(result.stdout) and "SHA256SUMS" in result.stdout
     assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("->")
 
 
@@ -180,9 +202,9 @@ def test_global_gate_unwritable_home_exits_before_write(tmp_path: Path) -> None:
     result = subprocess.run(
         ["pwsh", "-NoProfile", "-File", str(SCRIPT), "-Global"],
         capture_output=True, text=True, check=False,
-        env={"PARROT_HOME": str(ro / ".parrot"), **{k: v for k, v in os.environ.items() if k != "PARROT_HOME"}},
+        env=_pwsh_env(PARROT_HOME=str(ro / ".parrot")),
     )
-    out = result.stderr + result.stdout
+    out = _flat(result.stderr + result.stdout)
     # On a non-x64 host the platform gate fires first; either refusal must happen before any write.
     assert result.returncode == 1 and ("not writable" in out or "unsupported platform" in out)
     assert not (ro / ".parrot").exists()

@@ -118,8 +118,8 @@ function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py) { 
   Write-Host @"
 This installer will download uv $UvVersion from $Url and verify it against $Url.sha256,
 create $Home_\{bin,venv,python} (a uv-managed Python $Py and a venv with $Spec),
-and add $Home_\bin to your USER PATH (never Machine). A uv already on your PATH is never used
-or modified. Existing $Home_ data is never touched.
+and add $Home_\bin to your USER PATH (never Machine).
+A uv already on your PATH is never used or modified. Existing $Home_ data is never touched.
 Prefer not to pipe a download into PowerShell? Invoke-WebRequest $RawBase/install-parrot.ps1 and
 $RawBase/SHA256SUMS, compare (Get-FileHash install-parrot.ps1).Hash with the SHA256SUMS line, read
 the script, then run it.
