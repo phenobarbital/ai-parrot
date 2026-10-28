@@ -211,10 +211,15 @@ def test_jira_points_to_builtin(): ...                  # "jira.transition" ment
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4870
+- Feature: sdd-done-closeout-hooks
+- Implementation SHA: 1d92d5f5619b73ceb79909433a1c9f5ac8d8421a
+- Closed at (UTC): 2026-10-28T00:30:09+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: haiku · Backend: native · Model: haiku · Attempts: 1 · Duration: 350s · Tokens: n/a. Follow-ups: .agent/workflows/sdd-done.md (Antigravity twin) still has --resolve-jira/Step 10; on_failure agent hooks (exit 3) are not dispatched by the twins. |
