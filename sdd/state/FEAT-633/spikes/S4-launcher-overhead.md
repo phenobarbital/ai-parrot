@@ -43,3 +43,35 @@ Baseline = `python -m parrot.sdd.scripts.worktree_environment --hook`; fast path
 Managed → project re-exec adds one interpreter start (~33 ms floor, see above), within the ≤ 50 ms target; functional survival is covered by `test_fast_path_survives_reexec`.
 
 Verdict: pass (Linux, Python 3.11). Re-measure on macOS/Windows during the install-matrix run.
+
+## Re-measure after the project-venv trust gate (FEAT-633 R6, measured 2026-10-28)
+Why: the trust gate (`launcher._project_venv_trusted`: an ownership `lstat` plus one `git ls-files` per
+managed→project resolution) landed after the runs above, and the full managed→project chain had never been timed
+with a real hook payload.
+
+Method: `S4-bench.py` (this directory). Linux x86_64, Python 3.12.13, git 2.53.0, run inside the Claude Code Bubblewrap
+sandbox; 30 runs after 3 warmups, `subprocess.run` wall clock. The payload is a real PreToolUse `Bash` call whose `cwd`
+is the project, so `worktree_environment --hook` does its full work. "Managed" = `PARROT_HOME/venv` symlinked to the dev
+venv. The project is a fresh git repo whose untracked `.venv/bin/<script>` re-enters the launcher, so the gate runs and
+passes. Every case is first checked for the expected path (re-exec'd or not, exit code 0) before it is timed.
+
+| Case | Median (ms) | p95 (ms) | Δ median | Within budget? |
+|---|---|---|---|---|
+| `python -c pass` (interpreter floor) | 24.0 | 25.1 | — | — |
+| `claude-hook` via old entry (non-managed) | 41.6 | 42.5 | baseline | — |
+| `claude-hook` via launcher, non-managed | 42.0 | 44.5 | +0.4 vs old entry | yes (≤ 5 ms) |
+| `claude-hook` via launcher, managed, no project venv | 41.9 | 43.8 | +0.3 vs old entry | yes |
+| `claude-hook` via launcher, managed → project re-exec | 78.2 | 80.6 | +36.2 vs launcher non-managed | yes (≤ 50 ms) |
+| sdd hook baseline: `python -m …worktree_environment --hook` | 87.0 | 89.8 | baseline | — |
+| sdd hook via launcher (`main_parrot`), non-managed | 86.7 | 89.4 | −0.3 | yes (≤ 5 ms) |
+| sdd hook via launcher, managed → project re-exec | 121.9 | 129.8 | +35.2 vs launcher non-managed | yes (≤ 50 ms) |
+| trust gate `_project_venv_trusted` (in-process, 200 calls) | 1.00 per call | — | — | — |
+| `resolve_venv` managed→project incl. gate (in-process, 200 calls) | 1.33 per call | — | — | — |
+
+Findings:
+- The trust gate costs about 1 ms of the ~36 ms re-exec hop. The rest is one more interpreter start plus the project
+  script's imports. Caching the verdict per (repo, HEAD) is not worth it: it would save under 3% of the hop.
+- The sdd hook baseline is ~87 ms here against 45.5 ms in the section above. The launcher is not the cause: the same
+  hook without a `cwd` answers in ~39 ms. The 45.5 ms run used a payload that took a short path.
+
+Verdict: pass (Linux, Python 3.12, 2026-10-28). macOS and Windows numbers still come from the install-matrix run (R7).
