@@ -13,10 +13,11 @@
       "feature": "fixgroup-5a875150e625",
       "title": "Closeout hooks Python hardening",
       "file": "sdd/tasks/active/TASK-4874-closeout-hooks-python-hardening.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-10-28T00:48:29.828818+00:00"
     },
     {
       "id": "TASK-4875",
@@ -27,7 +28,9 @@
       "status": "pending",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-4874"]
+      "depends_on": [
+        "TASK-4874"
+      ]
     }
   ]
 }
