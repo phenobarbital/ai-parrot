@@ -7,7 +7,7 @@ import mimetypes
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
-
+from .suggestions import Suggestion
 
 def _require_http_urls(v: List[str]) -> List[str]:
     """Reject any entry that is not an absolute http(s) URL.
@@ -215,6 +215,12 @@ class AIMessage(BaseModel):
             "A2UI v1.0 declarative envelope (a serialized CreateSurface) for "
             "OutputMode.A2UI responses. Carried separately from `output` so legacy "
             "consumers are unaffected (FEAT-273)."
+        ),
+    )
+    suggestions: List[Suggestion] = Field(
+        default_factory=list,
+        description=(
+            "Follow-up chips produced by the agent after the answer (FEAT-752). " "Empty unless the agent opts in."
         ),
     )
 
