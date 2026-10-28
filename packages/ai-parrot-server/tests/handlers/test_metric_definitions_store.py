@@ -41,8 +41,16 @@ class _FakeConn:
 
     async def fetchval(self, sql: str, *args: Any) -> Any:
         self.calls.append((sql, args))
-        if sql in (m._INSERT_TENANT_SQL, m._INSERT_GLOBAL_SQL, m._UPSERT_TENANT_SQL, m._UPSERT_GLOBAL_SQL):
+        if sql in (m._INSERT_TENANT_SQL, m._INSERT_GLOBAL_SQL, m._UPSERT_TENANT_SQL, m._UPSERT_GLOBAL_SQL) or sql in (
+            m._UPSERT_TENANT_VERSIONED_SQL,
+            m._UPSERT_GLOBAL_VERSIONED_SQL,
+        ):
             key = (args[1], args[0])
+            if sql in (m._UPSERT_TENANT_VERSIONED_SQL, m._UPSERT_GLOBAL_VERSIONED_SQL):
+                stored = self.rows.get(key)
+                if stored is not None and stored["version"] != args[12]:
+                    return None
+                args = args[:12]
             if key in self.rows and sql in (m._INSERT_TENANT_SQL, m._INSERT_GLOBAL_SQL):
                 return None
             cols = [c.strip() for c in m._COLUMNS.split(",")]
@@ -130,6 +138,19 @@ async def test_pg_store_sql_shapes() -> None:
     assert [d.id for d in await store.list(tenant=None)] == ["sales_total"]
     assert await store.delete("sales_total", tenant=None) is True
     assert await store.delete("sales_total", tenant=None) is False
+
+
+async def test_save_with_expected_version_is_compare_and_set() -> None:
+    """overwrite + expected_version uses the versioned upsert; a stale version raises MetricVersionConflict."""
+    conn = _FakeConn()
+    store = _store(conn)
+    await store.save(_definition(version=1))
+    assert await store.save(_definition(version=2), overwrite=True, expected_version=1) == "sales_total"
+    sql, args = conn.calls[-1]
+    assert sql == m._UPSERT_TENANT_VERSIONED_SQL and args[-1] == 1
+    with pytest.raises(m.MetricVersionConflict):
+        await store.save(_definition(version=2), overwrite=True, expected_version=1)
+    assert conn.rows[("acme", "sales_total")]["version"] == 2
 
 
 async def test_list_visible_predicate_per_scope() -> None:

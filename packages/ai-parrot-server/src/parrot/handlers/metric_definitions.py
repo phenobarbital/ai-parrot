@@ -8,10 +8,11 @@ from typing import Any
 from aiohttp import web
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
-from parrot.handlers.models.metric_definitions import PgMetricDefinitionStore
+from parrot.handlers.models.metric_definitions import MetricVersionConflict, PgMetricDefinitionStore
 from parrot.handlers.scope import RequestScope, get_scope_resolver
 from parrot.handlers.ui_surfaces import _get_user_id
 from parrot.metrics import MetricDefinition
+from parrot.metrics.registry import MetricView
 from pydantic import BaseModel, ValidationError
 
 _SERVER_SET_FIELDS = ("tenant", "owner")
@@ -82,6 +83,20 @@ class MetricDefinitionsHandler(BaseView):
         except ValidationError as exc:
             return self._error(f"Invalid metric definition: {exc.errors(include_url=False)}", status=422)
 
+    async def _effective_view(self, scope: RequestScope) -> MetricView:
+        """Compose the caller's effective view (tenant shadows global; ``global_only`` globals win)."""
+        visible = await self.store.list_visible(scope)
+        global_defs = [definition for definition in visible if definition.tenant is None]
+        tenant_defs = [definition for definition in visible if definition.tenant is not None]
+        return MetricView(global_defs, tenant_defs, tenant=scope.tenant, logger=self.logger).compose()
+
+    async def _locked_by_global(self, definition: MetricDefinition, scope: RequestScope) -> bool:
+        """Whether a tenant author targets an id reserved by a ``global_only`` global metric."""
+        if scope.tenant is None:
+            return False
+        existing = await self.store.get(definition.id, tenant=None)
+        return existing is not None and existing.global_only
+
     async def get(self) -> web.Response:
         """``/schema`` → JSON Schema; ``{metric_id}`` → 200 | 404; list → ``store.list_visible(scope, program=)``."""
         if self.request.path.rstrip("/").endswith("/schema"):
@@ -89,14 +104,13 @@ class MetricDefinitionsHandler(BaseView):
         scope = await self._scope()
         metric_id = self.request.match_info.get("metric_id")
         if metric_id:
-            visible = await self.store.list_visible(scope)
-            for definition in visible:
-                if definition.id == metric_id:
-                    return self.json_response(definition.model_dump(mode="json"))
-            return self._error("Metric not found", status=404)
+            definition = (await self._effective_view(scope)).get(metric_id)
+            if definition is None:
+                return self._error("Metric not found", status=404)
+            return self.json_response(definition.model_dump(mode="json"))
         program = self.request.query.get("program")
-        visible = await self.store.list_visible(scope, program=program)
-        return self.json_response([d.model_dump(mode="json") for d in visible])
+        view = await self._effective_view(scope)
+        return self.json_response([d.model_dump(mode="json") for d in view.list(program=program)])
 
     async def post(self) -> web.Response:
         """Create: 401/403/422 gates; tenant := scope.tenant; global needs is_superuser; 409 duplicate; 201."""
@@ -107,6 +121,8 @@ class MetricDefinitionsHandler(BaseView):
         definition = await self._parse_definition(user_id, scope)
         if not isinstance(definition, MetricDefinition):
             return definition
+        if await self._locked_by_global(definition, scope):
+            return self._error(f"Metric id {definition.id!r} is reserved by a global_only metric", status=409)
         try:
             await self.store.save(definition, overwrite=False)
         except ValueError as exc:
@@ -132,6 +148,11 @@ class MetricDefinitionsHandler(BaseView):
             return definition
         if definition.id != metric_id:
             return self._error("Body id must match the path metric_id", status=422)
+        if await self._locked_by_global(definition, scope):
+            return self._error(f"Metric id {definition.id!r} is reserved by a global_only metric", status=409)
         definition = definition.model_copy(update={"version": existing.version + 1, "owner": existing.owner or user_id})
-        await self.store.save(definition, overwrite=True)
+        try:
+            await self.store.save(definition, overwrite=True, expected_version=existing.version)
+        except MetricVersionConflict as exc:
+            return self._error(str(exc), status=409)
         return self.json_response(definition.model_dump(mode="json"), status=200)

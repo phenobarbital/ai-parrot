@@ -62,6 +62,16 @@ _UPSERT_TENANT_SQL = (
     f"INSERT INTO navigator.metric_definitions ({_COLUMNS}) VALUES ({_VALUES}) "
     f"ON CONFLICT (tenant, metric_id) DO UPDATE SET {_UPDATE_SET} RETURNING metric_id"
 )
+_UPSERT_TENANT_VERSIONED_SQL = (
+    f"INSERT INTO navigator.metric_definitions ({_COLUMNS}) VALUES ({_VALUES}) "
+    f"ON CONFLICT (tenant, metric_id) DO UPDATE SET {_UPDATE_SET} "
+    "WHERE navigator.metric_definitions.version = $13 RETURNING metric_id"
+)
+_UPSERT_GLOBAL_VERSIONED_SQL = (
+    f"INSERT INTO navigator.metric_definitions ({_COLUMNS}) VALUES ({_VALUES}) "
+    f"ON CONFLICT (metric_id) WHERE tenant IS NULL DO UPDATE SET {_UPDATE_SET} "
+    "WHERE navigator.metric_definitions.version = $13 RETURNING metric_id"
+)
 _INSERT_GLOBAL_SQL = (
     f"INSERT INTO navigator.metric_definitions ({_COLUMNS}) VALUES ({_VALUES}) "
     "ON CONFLICT (metric_id) WHERE tenant IS NULL DO NOTHING RETURNING metric_id"
@@ -124,6 +134,10 @@ def _row_groups(row: Any) -> list[str]:
     if isinstance(raw, str):
         raw = json.loads(raw)
     return list(raw or [])
+
+
+class MetricVersionConflict(ValueError):
+    """The stored row's version no longer matches the version the caller read (lost-update guard)."""
 
 
 class PgMetricDefinitionStore:
@@ -199,18 +213,33 @@ class PgMetricDefinitionStore:
                 rows = await _fetch_rows(conn, _LIST_TENANT_PROGRAM_SQL, tenant, program)
         return [_row_to_definition(row) for row in rows]
 
-    async def save(self, definition: MetricDefinition, *, overwrite: bool = False) -> str:
+    async def save(
+        self, definition: MetricDefinition, *, overwrite: bool = False, expected_version: int | None = None
+    ) -> str:
         """INSERT … ON CONFLICT DO NOTHING / DO UPDATE; returns ``definition.id``.
 
+        Args:
+            definition: Definition to persist.
+            overwrite: Replace an existing row instead of failing.
+            expected_version: With ``overwrite``, only replace the row when its stored version still equals
+                this value (atomic compare-and-set; guards concurrent PUTs against lost updates).
+
         Raises:
+            MetricVersionConflict: ``expected_version`` no longer matches the stored row.
             ValueError: the definition already exists and ``overwrite`` is ``False``.
         """
         await self._ensure_ready()
         payload = definition.model_dump(mode="json")  # native dict — NEVER json.dumps (ui_surfaces.py:524-534)
+        versioned = overwrite and expected_version is not None
         if definition.tenant is None:
-            sql = _UPSERT_GLOBAL_SQL if overwrite else _INSERT_GLOBAL_SQL
+            sql = _INSERT_GLOBAL_SQL
+            if overwrite:
+                sql = _UPSERT_GLOBAL_VERSIONED_SQL if versioned else _UPSERT_GLOBAL_SQL
         else:
-            sql = _UPSERT_TENANT_SQL if overwrite else _INSERT_TENANT_SQL
+            sql = _INSERT_TENANT_SQL
+            if overwrite:
+                sql = _UPSERT_TENANT_VERSIONED_SQL if versioned else _UPSERT_TENANT_SQL
+        extra_args: tuple[Any, ...] = (expected_version,) if versioned else ()
         now = datetime.now(UTC)
         created_at = definition.created_at or now
         updated_at = now if overwrite else (definition.updated_at or now)
@@ -230,6 +259,11 @@ class PgMetricDefinitionStore:
                 definition.version,
                 created_at,
                 updated_at,
+                *extra_args,
+            )
+        if result is None and versioned:
+            raise MetricVersionConflict(
+                f"Metric definition {definition.id!r} was modified concurrently (expected version {expected_version})"
             )
         if result is None:
             raise ValueError(f"Metric definition {definition.id!r} already exists for tenant {definition.tenant!r}")
