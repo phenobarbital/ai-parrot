@@ -925,6 +925,8 @@
               ...(context && { context }),
               ...(llm && { llm }),
               ...(kwargs && kwargs),
+              // FEAT-752 rev 0.3: chips arrive in a trailing frame; the bubble completes on the envelope.
+              suggestions_trailer: true,
               stream: true,
             };
             clearFollowup();
@@ -1035,6 +1037,28 @@
                   suggestions: agentResult.suggestions,
                 };
               }
+              // FEAT-752 rev 0.3: the envelope is complete — finish the visible bubble now instead of at EOF so a
+              // slow trailing chips frame never delays it. The after-loop block below stays the single place that
+              // saves, titles and opens canvases.
+              if (finalMessage) {
+                const completed = finalMessage;
+                messages = messages.map((m) =>
+                  m.id === pendingResponseId ? completed : m,
+                );
+                streamingMessageId = null;
+              }
+            } else if (event.type === "suggestions") {
+              // Trailing chips frame: patch the finished bubble and the local copy the after-loop save uses.
+              if (finalMessage) {
+                const withChips = {
+                  ...finalMessage,
+                  suggestions: event.suggestions,
+                };
+                finalMessage = withChips;
+                messages = messages.map((m) =>
+                  m.id === withChips.id ? withChips : m,
+                );
+              }
             }
           }
         } catch (err: unknown) {
@@ -1074,9 +1098,16 @@
           const pendingExists = messages.some(
             (m) => m.id === pendingResponseId,
           );
+          // FEAT-752 rev 0.3: the `done` event may already have swapped the pending bubble for the final message
+          // (its id is then the turn id): replace it in place instead of appending a duplicate.
+          const alreadySwapped = messages.some((m) => m.id === finalMessage!.id);
           if (pendingExists) {
             messages = messages.map((m) =>
               m.id === pendingResponseId ? finalMessage! : m,
+            );
+          } else if (alreadySwapped) {
+            messages = messages.map((m) =>
+              m.id === finalMessage!.id ? finalMessage! : m,
             );
           } else {
             messages = [...messages, finalMessage];

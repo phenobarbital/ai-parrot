@@ -109,3 +109,87 @@ it("propagates AbortError when the signal is aborted", async () => {
     }
   }).rejects.toThrow("aborted");
 });
+
+// ── FEAT-752 rev 0.3: suggestions trailer (second NUL-delimited frame) ──────────────────────────
+
+const ENVELOPE =
+  '{"input":"q","output":"o","metadata":{"session_id":"s","turn_id":"t1"},"sources":[],"tool_calls":[]}';
+
+/** A response whose body bytes are released by the test, to prove ordering across reads. */
+function controlled() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+  return {
+    response: new Response(stream, { status: 200 }),
+    push: (s: string) => controller.enqueue(enc.encode(s)),
+    close: () => controller.close(),
+  };
+}
+
+async function collect(parts: string[]) {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resp(parts)));
+  const out = [];
+  for await (const c of streamChatWithAgent("bot", { query: "q", stream: true })) out.push(c);
+  return out;
+}
+
+it("yields done before EOF when a trailer frame follows, then the suggestions chunk", async () => {
+  const body = controlled();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(body.response));
+  const it = streamChatWithAgent("bot", { query: "q", stream: true })[Symbol.asyncIterator]();
+
+  body.push(`Hi\x00${ENVELOPE}\x00`); // text + envelope + start of the trailer frame; trailer bytes not sent yet
+  expect((await it.next()).value).toEqual({ type: "chunk", text: "Hi" });
+  const done = (await it.next()).value;
+  expect(done.type).toBe("done"); // delivered while the stream is still open
+  expect(done.message.metadata.turn_id).toBe("t1");
+
+  body.push('{"suggestions":[{"label":"A","prompt":"a"}],"turn_id":"t1"}');
+  body.close();
+  const chips = (await it.next()).value;
+  expect(chips).toEqual({
+    type: "suggestions",
+    suggestions: [{ label: "A", prompt: "a" }],
+    turn_id: "t1",
+  });
+  expect((await it.next()).done).toBe(true);
+});
+
+it("handles a trailer split across reads and a separator at a read boundary", async () => {
+  const out = await collect([
+    "Hel",
+    `lo\x00${ENVELOPE.slice(0, 30)}`,
+    `${ENVELOPE.slice(30)}\x00{"suggestions":[{"label":"A",`,
+    '"prompt":"a"}],"turn_id":"t1"}',
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "chunk", "done", "suggestions"]);
+});
+
+it("ignores a trailing error frame (no suggestions, done still delivered)", async () => {
+  const out = await collect([`Hi\x00${ENVELOPE}\x00{"error":"boom"}`]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("ignores malformed trailer frames and non-array suggestions", async () => {
+  expect((await collect([`Hi\x00${ENVELOPE}\x00{not json`])).map((c) => c.type)).toEqual(["chunk", "done"]);
+  expect((await collect([`Hi\x00${ENVELOPE}\x00{"suggestions":"nope"}`])).map((c) => c.type)).toEqual([
+    "chunk",
+    "done",
+  ]);
+  expect((await collect([`Hi\x00${ENVELOPE}\x00[1,2]`])).map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("keeps single-frame streams unchanged: done is yielded at EOF, no suggestions", async () => {
+  const out = await collect([`Hi\x00${ENVELOPE}`]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("yields suggestions without a turn_id when the trailer omits it", async () => {
+  const out = await collect([`\x00${ENVELOPE}\x00{"suggestions":[]}`]);
+  const chips = out.find((c) => c.type === "suggestions") as any;
+  expect(chips).toEqual({ type: "suggestions", suggestions: [], turn_id: undefined });
+});

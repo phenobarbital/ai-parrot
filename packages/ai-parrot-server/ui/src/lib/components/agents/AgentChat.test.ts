@@ -311,3 +311,103 @@ describe("AgentChat — suggestion chips", () => {
     expect(screen.queryByTestId("suggestion-chips")).toBeNull();
   });
 });
+
+describe("AgentChat — suggestions trailer (stream)", () => {
+  const chip = {
+    label: "View as table",
+    prompt: "Show the previous answer as a table",
+    output_mode: "structured_table",
+    kind: "presentation",
+    source: "provider",
+    action: null,
+  };
+
+  function doneEvent(turnId = "t1") {
+    return {
+      type: "done",
+      message: {
+        output: "Final answer",
+        metadata: { session_id: "s1", turn_id: turnId },
+        sources: [],
+        tool_calls: [],
+      },
+    };
+  }
+
+  it("opts the agent stream in to the trailer", async () => {
+    enableStreamingFor("bot-1");
+    streamChatWithAgent.mockImplementation(async function* () {
+      yield { type: "chunk", text: "Final answer" };
+      yield doneEvent();
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    await waitFor(() => expect(streamChatWithAgent).toHaveBeenCalledTimes(1));
+    expect(streamChatWithAgent.mock.calls[0][1].suggestions_trailer).toBe(true);
+  });
+
+  it("does not opt the bot-chat stream in", async () => {
+    enableStreamingFor("bot-1");
+    streamChatWithBot.mockImplementation(async function* () {
+      yield { type: "chunk", text: "Hi" };
+      yield {
+        type: "done",
+        message: { response: "Hi", turn_id: "b1", documents: [], model: "m", provider: "p" },
+      };
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact", botMode: true });
+    await sendMessage("hi");
+
+    await waitFor(() => expect(streamChatWithBot).toHaveBeenCalledTimes(1));
+    expect("suggestions_trailer" in streamChatWithBot.mock.calls[0][1]).toBe(false);
+  });
+
+  it("finishes the bubble on done and shows the chips when the trailer arrives later", async () => {
+    enableStreamingFor("bot-1");
+    let releaseTrailer!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseTrailer = resolve;
+    });
+    streamChatWithAgent.mockImplementation(async function* () {
+      yield { type: "chunk", text: "Final answer" };
+      yield doneEvent();
+      await gate; // the trailing chips frame is still being computed server side
+      yield { type: "suggestions", suggestions: [chip], turn_id: "t1" };
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    // The answer is complete (and not duplicated) while the chips are still pending.
+    await waitFor(() => expect(screen.getAllByText("Final answer")).toHaveLength(1));
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+
+    releaseTrailer();
+    const chipButton = await screen.findByTestId("suggestion-chip");
+    expect(chipButton.textContent?.trim()).toBe("View as table");
+    expect(screen.getAllByText("Final answer")).toHaveLength(1);
+
+    // The after-loop save includes the chips (live-turn only: they are not reloaded from storage).
+    await waitFor(() => expect(chatService.saveMessage).toHaveBeenCalled());
+    const saved = chatService.saveMessage.mock.calls.map((c) => c[0] as any).find((m) => m.role === "assistant");
+    expect(saved.suggestions).toEqual([chip]);
+  });
+
+  it("renders the finished answer normally when no trailer follows", async () => {
+    enableStreamingFor("bot-1");
+    streamChatWithAgent.mockImplementation(async function* () {
+      yield { type: "chunk", text: "Final answer" };
+      yield doneEvent();
+    });
+
+    render(AgentChat, { agentId: "bot-1", variant: "compact" });
+    await sendMessage("hi");
+
+    await waitFor(() => expect(screen.getAllByText("Final answer")).toHaveLength(1));
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+    await waitFor(() => expect(chatService.saveMessage).toHaveBeenCalled());
+  });
+});
