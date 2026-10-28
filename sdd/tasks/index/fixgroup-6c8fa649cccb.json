@@ -15,7 +15,7 @@
       "feature_id": "FEAT-765",
       "feature": "fixgroup-6c8fa649cccb",
       "spec": "sdd/specs/fixgroup-6c8fa649cccb.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/active/TASK-4872-screencast-recorder-hardening.md",
       "discovered_from": "issue:c3e0c9065cce",
-      "parallelism_notes": "Single task; edits parrot/e2e/screencast.py, its unit/integration tests and the shared uv.lock."
+      "parallelism_notes": "Single task; edits parrot/e2e/screencast.py, its unit/integration tests and the shared uv.lock.",
+      "started_at": "2026-10-28T00:45:00+00:00"
     }
   ]
 }
