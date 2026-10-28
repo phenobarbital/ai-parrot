@@ -242,7 +242,7 @@ async def test_stop_screencast_refuses_overwrite_and_is_idempotent(
 
 
 async def test_frame_buffer_overflow_is_explicit_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Overflow acknowledges every frame but never publishes truncation."""
+    """Overflow stops capture once, stops acking, and never publishes truncation."""
     worker_called = False
 
     async def unexpected_worker(function: Callable[..., int], *args: Any) -> int:
@@ -254,16 +254,17 @@ async def test_frame_buffer_overflow_is_explicit_failure(tmp_path: Path, monkeyp
     session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path, max_frames=1)
     session.cdp.emit("Page.screencastFrame", _frame(1, 1.0))
     session.cdp.emit("Page.screencastFrame", _frame(2, 2.0))
+    session.cdp.emit("Page.screencastFrame", _frame(3, 3.0))
 
     with pytest.raises(E2EScreencastError) as raised:
         await screencast.stop_screencast(session)
 
     assert raised.value.reason_code == "frame_overflow"
+    assert len(session.ack_tasks) == 2  # one ack + one stop at overflow; later frames ignored
     assert not worker_called
     assert not session.out_path.exists()
     assert [call for call in session.cdp.calls if call[0] == "Page.screencastFrameAck"] == [
         ("Page.screencastFrameAck", {"sessionId": 1}),
-        ("Page.screencastFrameAck", {"sessionId": 2}),
     ]
 
 
@@ -390,3 +391,14 @@ async def test_stop_screencast_keeps_buffered_frames_when_finalize_fails(
     session.cdp.emit("Page.screencastFrame", _frame())
     assert await screencast.stop_screencast(session) == session.out_path
     assert session.out_path.exists()
+
+
+async def test_malformed_frame_event_is_ignored_and_acked(tmp_path: Path) -> None:
+    """An event missing metadata is dropped without raising, but its session is still acked."""
+    session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path)
+    session.cdp.emit("Page.screencastFrame", {"sessionId": 7, "data": "AAAA"})
+
+    assert session.frames == []
+    assert len(session.ack_tasks) == 1
+    await asyncio.gather(*session.ack_tasks)
+    assert ("Page.screencastFrameAck", {"sessionId": 7}) in session.cdp.calls
