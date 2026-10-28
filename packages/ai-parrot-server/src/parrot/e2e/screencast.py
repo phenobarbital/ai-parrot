@@ -227,3 +227,95 @@ async def stop_screencast(session: ScreencastSession) -> Path:
     finally:
         if temp_path.exists():
             temp_path.unlink()
+
+
+class AnomalyRecorder:
+    """Async context manager starting capture at the first console error / HTTP 5xx."""
+
+    def __init__(self, page: "Page", out_dir: Path, *, run_id: str, max_frames: int = 600) -> None:
+        """Bind to the caller's page; nothing is recorded until an anomaly occurs."""
+        self.page = page
+        self.out_dir = out_dir
+        self.run_id = run_id
+        self.max_frames = max_frames
+        self.triggered: bool = False
+        self.path: Optional[Path] = None
+        self.error: Optional[E2EScreencastError] = None
+        self._session: Optional[ScreencastSession] = None
+        self._start_task: Optional[asyncio.Task[None]] = None
+
+    def _on_console(self, message: Any) -> None:
+        """Trigger on console messages of type ``error``."""
+        if message.type == "error":
+            self._trigger("console error")
+
+    def _on_response(self, response: Any) -> None:
+        """Trigger on HTTP responses with status >= 500."""
+        if response.status >= 500:
+            self._trigger(f"HTTP {response.status}")
+
+    def _trigger(self, reason: str) -> None:
+        """Schedule start_screencast exactly once."""
+        if self.triggered:
+            return
+        self.triggered = True
+        logger.info("Starting anomaly screencast for run %s after %s.", self.run_id, reason)
+        self._start_task = asyncio.create_task(self._start())
+
+    async def _start(self) -> None:
+        """Start capture and retain any recorder failure for the caller."""
+        try:
+            self._session = await start_screencast(self.page, self.out_dir, max_frames=self.max_frames)
+        except E2EScreencastError as exc:
+            self.error = exc
+            logger.warning("Unable to start anomaly screencast for run %s: %s", self.run_id, exc)
+        except Exception:
+            self.error = E2EScreencastError(
+                "Unexpected failure starting anomaly screencast.",
+                reason_code="capture_failed",
+            )
+            logger.exception("Unexpected failure starting anomaly screencast for run %s.", self.run_id)
+
+    def _record_unexpected_error(self, action: str, exc: Exception) -> None:
+        """Store and log an unexpected recorder lifecycle failure."""
+        if self.error is None:
+            self.error = E2EScreencastError(
+                f"Unexpected failure {action} anomaly screencast.",
+                reason_code="capture_failed",
+            )
+        logger.exception("Unexpected failure %s anomaly screencast for run %s.", action, self.run_id, exc_info=exc)
+
+    async def __aenter__(self) -> "AnomalyRecorder":
+        """Register page listeners."""
+        self.page.on("console", self._on_console)
+        self.page.on("response", self._on_response)
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        """Remove listeners, stop capture on every exit path, never mask the body's exception."""
+        for event, handler in (("console", self._on_console), ("response", self._on_response)):
+            try:
+                self.page.remove_listener(event, handler)
+            except Exception as listener_error:
+                self._record_unexpected_error("removing listeners from", listener_error)
+
+        if self._start_task is not None:
+            try:
+                await self._start_task
+            except Exception as start_error:
+                self._record_unexpected_error("starting", start_error)
+
+        if self._session is not None:
+            try:
+                self.path = await stop_screencast(self._session)
+            except E2EScreencastError as stop_error:
+                self.error = stop_error
+                logger.warning("Unable to stop anomaly screencast for run %s: %s", self.run_id, stop_error)
+            except Exception as stop_error:
+                self._record_unexpected_error("stopping", stop_error)
+        return False
+
+
+def record_on_anomaly(page: "Page", out_dir: Path, *, run_id: str, max_frames: int = 600) -> AnomalyRecorder:
+    """Return an :class:`AnomalyRecorder` for ``async with`` use (spec §2 Public contract)."""
+    return AnomalyRecorder(page, out_dir, run_id=run_id, max_frames=max_frames)
