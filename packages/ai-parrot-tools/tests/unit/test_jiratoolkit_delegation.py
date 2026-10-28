@@ -38,6 +38,7 @@ INIT_PARAMS_BASELINE: tuple[str, ...] = (
     "verify_credentials",
     "templates_dir",
     "templates",
+    "knowledge_base",
     "kwargs",
 )
 
