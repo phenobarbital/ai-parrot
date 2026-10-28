@@ -79,7 +79,7 @@ Implement in the FEAT-765 worktree only; commit code, then close with `scripts/s
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (/sdd-fix issue:c3e0c9065cce)
+**Date**: 2026-10-28
+**Notes**: Implemented in 5d2fba199. `stop_screencast` single-flight via `ScreencastSession.finished`; `AnomalyRecorder.__aexit__` maps cancellation to a typed `capture_failed` error and re-raises; added `recording` / `wait_started()`; Google-style docstrings. Seven new unit tests (real in-process and spawned-worker PyAV encode, concurrent stop success/failure, cancel during `__aexit__`, two `wait_started` cases); five fail on the pre-fix code. Unit suite 20 passed; real-Obscura integration test passed. `uv lock` added the `screencast` extra and synced stale workspace 0.4.4 → 0.4.5 versions; the local uv 0.11.28 wrote `revision = 3`, reset by hand to the repo's existing `revision = 5` (`uv lock --check` passes). Unrelated pre-existing failure on dev: `tests/unit/e2e/test_cli.py::test_resolve_worktree_falls_back_to_start_without_a_git_ancestor` (resolves to `/tmp`).
 **Deviations from spec**: none
