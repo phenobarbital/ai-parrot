@@ -80,7 +80,8 @@ jobs:
       # download-artifact `pattern:` is a minimatch glob: braces match core-dist-* and dist-tools.
       wheel-artifact-pattern: "{core-dist-*,dist-tools}"
 
-  # The RELEASED wheel drives the SDD flow in a foreign repo; guarded until `parrot sdd` ships.
+  # The RELEASED wheel drives the SDD flow in a foreign repo. `parrot sdd` ships in this release, so a failing
+  # probe fails the job instead of skipping it.
   smoke-sdd-foreign:
     needs: [build-core]
     runs-on: ubuntu-latest
@@ -101,22 +102,13 @@ jobs:
           WHEEL=$(ls "$PWD"/dist/ai_parrot-*-cp312-*.whl | head -1)
           echo "PARROT_WHEEL_PATH=$WHEEL" >> "$GITHUB_ENV"
       - name: Probe for parrot sdd + the wheel-only test
-        id: probe
         run: |
-          if "$RUNNER_TEMP/wheelvenv/bin/parrot" sdd --help >/dev/null 2>&1 \
-             && test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
+          "$RUNNER_TEMP/wheelvenv/bin/parrot" sdd --help >/dev/null
+          test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py
       - name: Run the SDD flow from the wheel in a foreign repo
-        if: steps.probe.outputs.ready == 'true'
         run: |
-          env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV \
+          env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV -u PARROT_PROJECT -u CLAUDE_PROJECT_DIR \
             "$RUNNER_TEMP/wheelvenv/bin/python" -m pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q
-      - name: Not in this release yet
-        if: steps.probe.outputs.ready != 'true'
-        run: echo "::notice::smoke-sdd-foreign skipped - parrot sdd / wheel-only test not in this release yet"
 
   build-tools:
     runs-on: ubuntu-latest

@@ -68,11 +68,12 @@ def test_install_matrix_has_linux_aarch64_leg() -> None:
 
 
 def test_deploy_needs_sdd_foreign_smoke() -> None:
-    """C3: the wheel-only foreign-repo SDD job gates deploy, installs from the wheel (never -e) and is guarded."""
+    """C3: the wheel-only foreign-repo SDD job gates deploy, installs from the wheel (never -e) and never skips."""
     jobs = _jobs()
     job = jobs["smoke-sdd-foreign"]
     assert "smoke-sdd-foreign" in jobs["deploy"]["needs"] and "build-core" in job["needs"]
     runs = "\n".join(step.get("run", "") for step in job["steps"])
     assert "pip install dist/" in runs and " -e " not in runs and "pip install ." not in runs
-    assert "test_wheel_only_foreign_repo.py" in runs and "-u PYTHONPATH" in runs
-    assert any(step.get("if", "").startswith("steps.probe.outputs.ready") for step in job["steps"])
+    assert "test_wheel_only_foreign_repo.py" in runs and "-u PYTHONPATH" in runs and "-u CLAUDE_PROJECT_DIR" in runs
+    # `parrot sdd` ships: a failing probe must fail the job, never downgrade it to a skipped `::notice::`.
+    assert not any("if" in step for step in job["steps"]) and "::notice::" not in runs

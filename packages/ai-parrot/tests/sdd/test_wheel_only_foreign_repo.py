@@ -37,7 +37,11 @@ COMMENT_RE = re.compile(r"\s+#.*$")
 OPTIONAL_RE = re.compile(r"\[[^\]]*(?:\]|$)")
 #: Every host's install tree is scanned (AC: "all three hosts").
 INSTALLED_DIRS = (".claude", ".agents", ".agent", ".codex", "sdd")
-SCRUBBED_ENV = ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PARROT_VENV", "PARROT_PROJECT", "CONDA_PREFIX")
+#: ``CLAUDE_PROJECT_DIR`` is a launcher project pin too: inside a Claude Code session it would point the managed
+#: launcher at the outer checkout's ``.venv`` instead of the wheel under test.
+SCRUBBED_ENV = (
+    "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PARROT_VENV", "PARROT_PROJECT", "CLAUDE_PROJECT_DIR", "CONDA_PREFIX",
+)
 #: System tools the fixture PATH may expose; anything else must come from the wheel.
 TOOL_ALLOWLIST = ("git", "bash", "sh", "jq")
 GUARD_LINE = "parrot sdd run worktree_environment --hook || exit 2"
@@ -400,10 +404,9 @@ SCENARIOS: dict[str, Scenario] = {
         "<--type value>": "feature",
         "<--base-branch value>": "dev",
     }),
-    # `--run` executes the repo's own `pytest`, which a foreign repo does not have on PATH: select_tests then dies
-    # with a FileNotFoundError traceback instead of a one-line error (a helper defect outside TASK-4091's files —
-    # reported in the Completion Note), so the flag is dropped here and the plan/selection path is exercised.
-    "select_tests": Scenario(prepare=_seed_worktree, expect_exit=_ANY_CLEAN, drop_flags=("--run",)),
+    # `--run` executes the planned runner, which a foreign repo may not have: a missing runner is a one-line
+    # refusal (exit 1), never a traceback (rev 0.5 D2 / C21).
+    "select_tests": Scenario(prepare=_seed_worktree, expect_exit=_ANY_CLEAN),
     "spec_tools": Scenario(prepare=_seed_spec_tools, placeholders={
         "$DR": "<repo>/dr", "$MODEL": "gpt", "$CODEX_VERSION": "0.0", "$STARTED_AT": "2026-01-01T00:00:00Z",
         "$ENDED_AT": "2026-01-01T00:00:01Z", "$rc": "0", "$STAGE": "<repo>/stage", "$REPO_ROOT": "<repo>",
@@ -669,6 +672,13 @@ def test_c21_test_step_outcomes(managed_home: Path, tools_dir: Path, foreign_rep
     assert run("test_report", "render", "--index", index).returncode == 0
     nothing = run("select_tests", "--tier", "task", "--worktree", str(repo))
     assert nothing.returncode == 2 and "Traceback" not in nothing.stderr, nothing.stderr
+    # D2: `--run` with the declared `pytest` absent from the foreign repo's PATH is a one-line refusal.
+    no_runner = run(
+        "select_tests", "--tier", "merge", "--base", "origin/dev", "--worktree", str(repo),
+        "--task-file", "sdd/tasks/active/TASK-001-demo-task.md", "--run",
+    )
+    assert no_runner.returncode == 1 and "Traceback" not in no_runner.stderr, no_runner.stderr
+    assert "not run" in no_runner.stderr and "test_command" in no_runner.stderr, no_runner.stderr
 
 
 def test_c23_codex_install_writes_ledger_gitattributes_and_hooks(
