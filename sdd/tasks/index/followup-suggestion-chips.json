@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-27T12:26:44+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-28T01:10:45+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -318,7 +318,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -335,8 +335,9 @@
       "parallelism_notes": "documents shipped API of TASK-4800 (bot kwargs/register_suggestion_provider), wire keys of TASK-4802, UI click contract of TASK-4804, trailer frame of TASK-4807/4808, Telegram buttons of TASK-4810 and Studio fields/migration of TASK-4811/4812",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4805-followup-chips-docs.md"
+      "completed_at": "2026-10-28T01:10:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4805-followup-chips-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4806",

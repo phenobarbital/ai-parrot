@@ -171,4 +171,6 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Written directly by the worker (sequential fallback) from the SHIPPED code, not the spec: kwarg defaults and the `suggest_followups` implies `enable_suggestions` rule (abstract.py), YAML `config:` block as the kwarg route (registry `startup_config` + docs/agent_config_creation.md), engine post-processing order and caps, provider rules, LLM call parameters, `metadata["suggestions"]` shape, the four body builders, trailer frame format/header/timeouts/cancellation (agent.py) and the parser reference (stream.ts), Telegram behaviour (TTL, same user and chat, tokens not consumed), Studio group and the migration step.
+All nine sections in the required order. Verified: `test_chat_models.py` 5 passed; every imported name in the samples resolves in the worktree.
+Documented limitations (so the page does not over-promise): Teams/A2A not implemented; chips are live-turn only; `presentation_modes` is not exposed in Studio; the LLM cost record in `metadata["suggestions"]["llm"]` is per-provider-instance state and can swap between simultaneous turns.
