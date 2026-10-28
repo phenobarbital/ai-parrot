@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-756 — Metric Definition Registry
 **Spec**: `sdd/specs/metric-definition-registry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4846
@@ -184,3 +184,7 @@ async def test_comparison_none_skips_compare_chip(worked_hours_def): ...
 
 ## Completion Note
 
+Unblocked after FEAT-752 landed on dev (merged into the feature branch, 65f3a58b9). Delivered by glm (nova), attempt 1,
+merged via coder_merge; merge-tier validation green (74 passed). Review fix 4b6e0c912: the delivery omitted the
+required 40-char label truncation, added `_clip` + test. Files: `parrot/metrics/suggestions.py`,
+`tests/unit/metrics/test_suggestions.py`. Prior revert of the earlier premature merge is superseded.
