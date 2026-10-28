@@ -294,4 +294,6 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed: `bots/suggestions/providers.py` and `tests/bots/test_suggestion_providers.py`; `__init__.py` untouched (TASK-4800 re-exports).
+All three FILL INs done per spec section 7. Notes: mode lists accept strings or `OutputMode`, unknown values are ignored; the presentation provider only offers modes that have a label in `DEFAULT_MODES`; `has_tabular_data` treats a DataFrame-like object without an `empty` attribute as non-empty.
+Tests: 7 new in `test_suggestion_providers.py` (17 with the engine tests) passed. ruff and black clean. Pyright import/arg notices on the test file are stale resolution against the main checkout (same imports run fine).
