@@ -124,6 +124,7 @@ class ScreencastSession:
     result: Optional[Path] = None
     error: Optional[E2EScreencastError] = None
     stopped: bool = False
+    finished: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def out_path(self) -> Path:
@@ -142,7 +143,21 @@ async def _detach(cdp: Any) -> None:
 
 
 async def start_screencast(page: "Page", out_dir: Path, *, max_frames: int = 600) -> ScreencastSession:
-    """Begin capture of the caller's existing page without changing its state."""
+    """Begin capture of the caller's existing page without changing its state.
+
+    Args:
+        page: Playwright page to record; it stays owned by the caller and is never closed.
+        out_dir: Directory that will receive ``screencast.webm``; created when missing.
+        max_frames: Frame buffer capacity; exceeding it makes the stop fail with ``frame_overflow``.
+
+    Returns:
+        The running :class:`ScreencastSession` to pass to :func:`stop_screencast`.
+
+    Raises:
+        E2EScreencastError: ``page_closed`` for a closed page, ``frame_overflow`` for a
+            non-positive ``max_frames``, ``output_exists`` when the output file already exists,
+            or ``capture_failed`` when the CDP session cannot be opened or started.
+    """
     if page.is_closed():
         raise E2EScreencastError("Cannot record a closed page.", reason_code="page_closed")
     if max_frames < 1:
@@ -205,8 +220,26 @@ async def start_screencast(page: "Page", out_dir: Path, *, max_frames: int = 600
 
 
 async def stop_screencast(session: ScreencastSession) -> Path:
-    """Stop, encode, validate, and atomically publish a page screencast."""
+    """Stop, encode, validate, and atomically publish a page screencast.
+
+    The call is single-flight: a concurrent or later call waits for the first one to
+    finish and then returns its result or re-raises its error.
+
+    Args:
+        session: Session returned by :func:`start_screencast`.
+
+    Returns:
+        Path of the published ``screencast.webm``.
+
+    Raises:
+        E2EScreencastError: ``capture_failed`` when CDP finalization fails with no buffered
+            frames or the stop is interrupted, ``frame_overflow`` when the buffer overflowed,
+            ``invalid_output`` for an empty or undecodable recording, ``encoder_unavailable``
+            without the ``screencast`` extra, or ``output_exists`` when the output appeared
+            meanwhile.
+    """
     if session.stopped:
+        await session.finished.wait()
         if session.error is not None:
             raise session.error
         if session.result is not None:
@@ -281,8 +314,11 @@ async def stop_screencast(session: ScreencastSession) -> Path:
         session.error = E2EScreencastError("Screencast stop was interrupted.", reason_code="capture_failed")
         raise
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        finally:
+            session.finished.set()
 
 
 class AnomalyRecorder:
@@ -299,6 +335,28 @@ class AnomalyRecorder:
         self.error: Optional[E2EScreencastError] = None
         self._session: Optional[ScreencastSession] = None
         self._start_task: Optional[asyncio.Task[None]] = None
+        self._started = asyncio.Event()
+
+    @property
+    def recording(self) -> bool:
+        """Return True once an anomaly-triggered capture has started successfully."""
+        return self._session is not None
+
+    async def wait_started(self, timeout: float) -> bool:
+        """Wait until a triggered capture attempt has finished starting.
+
+        Args:
+            timeout: Maximum seconds to wait for a trigger and its start attempt.
+
+        Returns:
+            True when capture is running, False when nothing triggered in time or the start
+            failed (see :attr:`error`).
+        """
+        try:
+            await asyncio.wait_for(self._started.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return False
+        return self.recording
 
     def _on_console(self, message: Any) -> None:
         """Trigger on console messages of type ``error``."""
@@ -331,6 +389,8 @@ class AnomalyRecorder:
                 reason_code="capture_failed",
             )
             logger.exception("Unexpected failure starting anomaly screencast for run %s.", self.run_id)
+        finally:
+            self._started.set()
 
     def _record_unexpected_error(self, action: str, exc: Exception) -> None:
         """Store and log an unexpected recorder lifecycle failure."""
@@ -369,6 +429,12 @@ class AnomalyRecorder:
                 logger.warning("Unable to stop anomaly screencast for run %s: %s", self.run_id, stop_error)
             except Exception as stop_error:
                 self._record_unexpected_error("stopping", stop_error)
+            except asyncio.CancelledError:
+                # Keep a typed error for the caller, then let the cancellation propagate.
+                self.error = self._session.error or E2EScreencastError(
+                    "Anomaly screencast stop was cancelled.", reason_code="capture_failed"
+                )
+                raise
         return False
 
 

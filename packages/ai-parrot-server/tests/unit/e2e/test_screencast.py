@@ -402,3 +402,182 @@ async def test_malformed_frame_event_is_ignored_and_acked(tmp_path: Path) -> Non
     assert len(session.ack_tasks) == 1
     await asyncio.gather(*session.ack_tasks)
     assert ("Page.screencastFrameAck", {"sessionId": 7}) in session.cdp.calls
+
+
+def _jpeg_frame(color: tuple[int, int, int]) -> bytes:
+    """Encode one small solid-color JPEG frame with Pillow."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 36), color).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def _jpeg_event(color: tuple[int, int, int], timestamp: float) -> dict[str, Any]:
+    """Build a CDP screencast event carrying a real JPEG frame."""
+    import base64
+
+    return {
+        "data": base64.b64encode(_jpeg_frame(color)).decode("ascii"),
+        "metadata": {"timestamp": timestamp},
+        "sessionId": 1,
+    }
+
+
+def test_real_encoder_roundtrip_in_process(tmp_path: Path) -> None:
+    """The real PyAV/libvpx encoder writes a WebM that decodes back to frames."""
+    pytest.importorskip("av")
+    pytest.importorskip("PIL")
+    frames = [(0, _jpeg_frame((255, 0, 0))), (100, _jpeg_frame((0, 255, 0))), (200, _jpeg_frame((0, 0, 255)))]
+    out_path = tmp_path / "roundtrip.webm"
+
+    assert screencast._encode_webm(frames, str(out_path)) == 3
+    assert out_path.stat().st_size > 0
+    assert screencast._validate_webm(str(out_path)) >= 1
+
+
+async def test_stop_screencast_real_worker_publishes_playable_webm(tmp_path: Path) -> None:
+    """Stop runs the real encoder and validator in the spawned worker process."""
+    pytest.importorskip("av")
+    pytest.importorskip("PIL")
+    session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path)
+    session.cdp.emit("Page.screencastFrame", _jpeg_event((255, 0, 0), 1.0))
+    session.cdp.emit("Page.screencastFrame", _jpeg_event((0, 0, 255), 1.2))
+
+    published = await screencast.stop_screencast(session)
+
+    assert published == tmp_path / "screencast.webm"
+    assert screencast._validate_webm(str(published)) >= 1
+    assert not list(tmp_path.glob(".screencast.*"))
+
+
+async def test_concurrent_stop_screencast_is_single_flight(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A concurrent second stop waits for the first and returns the same path."""
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    worker_calls: list[str] = []
+
+    async def gated_worker(function: Callable[..., int], *args: Any) -> int:
+        worker_calls.append(function.__name__)
+        entered.set()
+        await gate.wait()
+        return function(*args)
+
+    monkeypatch.setattr(screencast, "_run_in_worker", gated_worker)
+    monkeypatch.setattr(screencast, "_encode_webm", _successful_encoder)
+    monkeypatch.setattr(screencast, "_validate_webm", lambda path: 1)
+    session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path)
+    session.cdp.emit("Page.screencastFrame", _frame())
+
+    first = asyncio.create_task(screencast.stop_screencast(session))
+    await asyncio.wait_for(entered.wait(), timeout=1.0)
+    second = asyncio.create_task(screencast.stop_screencast(session))
+    await asyncio.sleep(0)
+    assert not second.done()
+
+    gate.set()
+    results = await asyncio.gather(first, second)
+
+    assert results == [session.out_path, session.out_path]
+    assert worker_calls == ["_successful_encoder", "<lambda>"]
+
+
+async def test_concurrent_stop_screencast_shares_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A concurrent second stop re-raises the first call's typed error, not a misleading one."""
+    gate = asyncio.Event()
+
+    async def gated_worker(function: Callable[..., int], *args: Any) -> int:
+        await gate.wait()
+        return function(*args)
+
+    monkeypatch.setattr(screencast, "_run_in_worker", gated_worker)
+    monkeypatch.setattr(screencast, "_encode_webm", _successful_encoder)
+    monkeypatch.setattr(screencast, "_validate_webm", lambda path: 0)
+    session = await screencast.start_screencast(FakePage(FakeCDPSession()), tmp_path)
+    session.cdp.emit("Page.screencastFrame", _frame())
+
+    first = asyncio.create_task(screencast.stop_screencast(session))
+    await asyncio.sleep(0)
+    second = asyncio.create_task(screencast.stop_screencast(session))
+    await asyncio.sleep(0)
+    gate.set()
+    errors = await asyncio.gather(first, second, return_exceptions=True)
+
+    assert isinstance(errors[0], E2EScreencastError)
+    assert errors[0].reason_code == "invalid_output"
+    assert errors[1] is errors[0]
+    assert not session.out_path.exists()
+
+
+async def test_record_on_anomaly_cancel_during_aexit_records_typed_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancelling while __aexit__ is encoding re-raises and leaves a typed recorder error."""
+    entered = asyncio.Event()
+
+    async def blocked_worker(function: Callable[..., int], *args: Any) -> int:
+        entered.set()
+        await asyncio.Event().wait()  # never released: only cancellation ends it
+        return function(*args)
+
+    monkeypatch.setattr(screencast, "_run_in_worker", blocked_worker)
+    cdp = FakeCDPSession()
+    page = FakePage(cdp)
+    recorders: list[screencast.AnomalyRecorder] = []
+
+    async def body() -> None:
+        async with screencast.record_on_anomaly(page, tmp_path, run_id="cancelled-run") as recorder:
+            recorders.append(recorder)
+            page.emit("console", type("Message", (), {"type": "error"})())
+            assert await recorder.wait_started(timeout=1.0)
+            cdp.emit("Page.screencastFrame", _frame())
+
+    task = asyncio.create_task(body())
+    await asyncio.wait_for(entered.wait(), timeout=1.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    recorder = recorders[0]
+    assert recorder.path is None
+    assert isinstance(recorder.error, E2EScreencastError)
+    assert recorder.error.reason_code == "capture_failed"
+    assert recorder._session is not None and recorder._session.finished.is_set()
+    assert page.handlers == {"console": [], "response": []}
+    assert not list(tmp_path.glob(".screencast.*"))
+    assert not (tmp_path / "screencast.webm").exists()
+
+
+async def test_wait_started_reports_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """wait_started is False before any trigger and True once capture is running."""
+    monkeypatch.setattr(screencast, "_run_in_worker", _inline_worker)
+    monkeypatch.setattr(screencast, "_encode_webm", _successful_encoder)
+    monkeypatch.setattr(screencast, "_validate_webm", lambda path: 1)
+    cdp = FakeCDPSession()
+    page = FakePage(cdp)
+
+    async with screencast.record_on_anomaly(page, tmp_path, run_id="waited-run") as recorder:
+        assert await recorder.wait_started(timeout=0.01) is False
+        assert not recorder.recording
+        page.emit("response", type("Response", (), {"status": 503})())
+        assert await recorder.wait_started(timeout=1.0) is True
+        assert recorder.recording
+        cdp.emit("Page.screencastFrame", _frame())
+
+    assert recorder.error is None
+    assert recorder.path == tmp_path / "screencast.webm"
+
+
+async def test_wait_started_is_false_when_start_fails(tmp_path: Path) -> None:
+    """A failed start completes wait_started with False and a typed error."""
+    page = FakePage(FakeCDPSession(), closed=True)
+
+    async with screencast.record_on_anomaly(page, tmp_path, run_id="closed-run") as recorder:
+        page.emit("console", type("Message", (), {"type": "error"})())
+        assert await recorder.wait_started(timeout=1.0) is False
+        assert not recorder.recording
+
+    assert recorder.error is not None
+    assert recorder.error.reason_code == "page_closed"

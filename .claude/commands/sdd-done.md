@@ -190,6 +190,41 @@ violations in a touched file included — that is deliberate code improvement):
   Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
   blockers: they turn Step 6 into the "issues" branch. Other residue does not.
 
+#### Hook-context helper (FEAT-764)
+
+The hook-context writer is used by §4.6, §4.8 and later abort paths.
+Define it once, before the first call site:
+
+```bash
+# Hook-context writer (FEAT-764). $1 = abort_reason ("" when not aborting).
+write_hook_context() {
+  HOOKS_DIR="${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/$FEAT_ID"; mkdir -p "$HOOKS_DIR"
+  FEAT_ID="$FEAT_ID" BRANCH="$BRANCH" BASE_BRANCH="$BASE_BRANCH" WORKTREE_PATH="$WORKTREE_PATH" \
+  SPEC_PATH="${SPEC_PATH:-sdd/specs/<feature-slug>.spec.md}" TEST_REPORT_MD="${TEST_REPORT_MD:-}" \
+  GATE_JSON="${GATE_JSON:-}" PR_URL="${PR_URL:-}" MERGE_SHA="${MERGE_SHA:-}" \
+  HOOK_ABORT_REASON="$1" DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<'PY'
+import json, os, pathlib, sys
+env = os.environ
+def _text(path):
+    p = pathlib.Path(path) if path else None
+    return p.read_text(encoding="utf-8") if p and p.is_file() else None
+def _gate(raw):
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
+ctx = {
+    "feat_id": env["FEAT_ID"], "spec_path": env["SPEC_PATH"], "branch": env["BRANCH"],
+    "base_branch": env["BASE_BRANCH"], "worktree": env["WORKTREE_PATH"],
+    "pr_url": env["PR_URL"] or None, "merge_sha": env["MERGE_SHA"] or None,
+    "test_report_md": _text(env["TEST_REPORT_MD"]), "e2e_gate": _gate(env["GATE_JSON"]),
+    "abort_reason": env["HOOK_ABORT_REASON"] or None, "dry_run": env["DRY_RUN"] == "1",
+}
+pathlib.Path(sys.argv[1]).write_text(json.dumps(ctx), encoding="utf-8")
+PY
+}
+```
+
 ### 4.6. Verify E2E Evidence (FEAT-581)
 
 Before any closeout mutation — Step 5's report is descriptive, but Step 7's
@@ -233,7 +268,6 @@ JSON object: `policy`, `status`, `gate_satisfied`, `reason_codes`, `allowed`.
   it stops after Step 5 — it never proceeds to a mutating step.
   Before exiting, run the `on_failure` hooks (FEAT-764; non-blocking, never changes this abort, exit code ignored):
   `write_hook_context "E2E gate <status>"; parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`
-  (`write_hook_context` is defined in §4.8; calling it before §4.8 is safe — unknown fields are null).
 
 The decision table itself — policy resolution (a missing `e2e` key defaults to
 `optional`; a present but malformed value is never coerced to a safe default),
@@ -292,39 +326,11 @@ code; **its exit code is the contract** — do not re-derive it here. A blocking
 never bypassed by `--force`. `pre_pr` runs under `--dry-run` too. The dispatcher prints one JSON
 object on stdout (`event`, `results[]`, `pending_agents[]`, `blocking_failed`, `evidence_md`).
 
-The hook context is one JSON file written by the helper below. Step 4.6 uses the same helper for its
-abort path, before this step has run: fields not yet known (`test_report_md`, `pr_url`, `merge_sha`)
-are null.
+The hook context is one JSON file written by `write_hook_context` (defined in the
+Hook-context helper section above §4.6). Fields not yet known at early call sites
+(`test_report_md`, `pr_url`, `merge_sha`) are null.
 
 ```bash
-# Hook-context writer (FEAT-764). $1 = abort_reason ("" when not aborting).
-write_hook_context() {
-  HOOKS_DIR="${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/$FEAT_ID"; mkdir -p "$HOOKS_DIR"
-  FEAT_ID="$FEAT_ID" BRANCH="$BRANCH" BASE_BRANCH="$BASE_BRANCH" WORKTREE_PATH="$WORKTREE_PATH" \
-  SPEC_PATH="${SPEC_PATH:-sdd/specs/<feature-slug>.spec.md}" TEST_REPORT_MD="${TEST_REPORT_MD:-}" \
-  GATE_JSON="${GATE_JSON:-}" PR_URL="${PR_URL:-}" MERGE_SHA="${MERGE_SHA:-}" \
-  HOOK_ABORT_REASON="$1" DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<'PY'
-import json, os, pathlib, sys
-env = os.environ
-def _text(path):
-    p = pathlib.Path(path) if path else None
-    return p.read_text(encoding="utf-8") if p and p.is_file() else None
-def _gate(raw):
-    try:
-        return json.loads(raw) if raw else None
-    except ValueError:
-        return None
-ctx = {
-    "feat_id": env["FEAT_ID"], "spec_path": env["SPEC_PATH"], "branch": env["BRANCH"],
-    "base_branch": env["BASE_BRANCH"], "worktree": env["WORKTREE_PATH"],
-    "pr_url": env["PR_URL"] or None, "merge_sha": env["MERGE_SHA"] or None,
-    "test_report_md": _text(env["TEST_REPORT_MD"]), "e2e_gate": _gate(env["GATE_JSON"]),
-    "abort_reason": env["HOOK_ABORT_REASON"] or None, "dry_run": env["DRY_RUN"] == "1",
-}
-pathlib.Path(sys.argv[1]).write_text(json.dumps(ctx), encoding="utf-8")
-PY
-}
-
 write_hook_context ""
 HOOKS_OUT=$(parrot sdd run run_closeout_hooks --event pre_pr \
     --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" ${DRY_RUN:+--dry-run})
@@ -512,6 +518,9 @@ The JSON report lists each linked issue with `outcome`: `closed` /
 ```bash
 if [[ "$BASE_BRANCH" == "$HOTFIX_BASE" && "$MERGE_FLAG" == "--merge" ]]; then
     echo "⚠️  --merge into '$HOTFIX_BASE' is refused. /sdd-done opens the PR; merging a $HOTFIX_BASE PR is the human act." >&2
+    # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
+    write_hook_context "--merge into $HOTFIX_BASE refused"
+    parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
     exit 1
 fi
 ```
@@ -673,6 +682,9 @@ if [[ "$IN_WORKTREE" == "1" && "$MERGE_FLAG" == "--merge" ]]; then
    Either re-run /sdd-done from the main repo checked out on $BASE_BRANCH,
    or drop --merge to open a PR instead.
 EOF
+    # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
+    write_hook_context "--merge from inside worktree refused"
+    parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
     exit 1
 fi
 ```

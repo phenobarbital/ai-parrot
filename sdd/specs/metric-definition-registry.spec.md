@@ -207,6 +207,10 @@ Design decisions taken here (binding for `/sdd-task`):
   `ctx.kwargs["tenant"]` → bound ContextVar → instance default
   (`parrot/skills/mixin.py:135-150`). The registry never trusts a tenant from tool
   arguments on the HTTP lane; the handler sets it from `RequestScope.tenant`.
+  *Amended (issue:a262cacba885):* the explicit kwarg is reserved for trusted host
+  code. `MetricsToolkit` and `MetricRoutingMixin` call `resolve_metric_tenant` with
+  `explicit=None` — a tenant supplied by the model in tool arguments is never
+  honoured — so their order is `ctx.kwargs["tenant"]` → ContextVar → default.
 - **D4 — `query_slug` is the only source kind that can be *linked*.** Linked surfaces
   carry a `LinkedDataSource(kind="query_slug")` (`linked/models.py:207`); `transformer`
   rides on it as `transform.python`; `recipe` has no linked descriptor (FEAT-598
@@ -417,7 +421,7 @@ class MetricDefinition(BaseModel):
     source: MetricSource
     owner: str | None = None
     visibility: Visibility = "tenant"
-    allowed_groups: list[str] = Field(default_factory=list)
+    allowed_groups: list[str] = Field(default_factory=list)   # reserved, must be empty (issue:a262cacba885)
     global_only: bool = False              # skills semantics: a tenant tree may not shadow it
     version: int = 1
     created_at: datetime | None = None

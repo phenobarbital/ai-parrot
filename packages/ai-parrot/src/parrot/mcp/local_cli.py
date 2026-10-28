@@ -77,6 +77,9 @@ async def _serve_with_shutdown(server: "StdioMCPServer") -> None:
         except Exception:  # noqa: BLE001 -- best-effort; we exit regardless
             logger.exception("Error while shutting down mcp-local on SIGTERM")
         finally:
+            # `os._exit(0)` is indistinguishable from a crash in the host's log.
+            # One line separates "we were signalled" from "our stdin closed".
+            logger.info("mcp-local received SIGTERM; exiting immediately")
             os._exit(0)
 
     def _sigterm_callback() -> None:

@@ -133,7 +133,9 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      unavailable on Codex, so record it as unsupported: `parrot sdd run run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --record <name> --status fail --summary "agent hooks unsupported on this host"`
      (run inline instead only if the host can actually run it); then
      `parrot sdd run run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --finalize`
-     and continue on exit 0
+     and continue on exit 0; exit 1 from `--finalize` means an unrecorded
+     blocking agent hook was resolved as a failure — treat it the same as
+     a direct exit 1 (abort before step 8, run `on_failure` hooks)
    - exit 1 (a blocking pre_pr hook failed) or exit 2 (config/usage error, e.g. malformed
      `.parrot/sdd_hooks.toml`): abort before step 8. Run the `on_failure` hooks as in step 4.6
      (`--event on_failure`, `abort_reason` set, `|| true`). `--force` does not bypass this
@@ -222,6 +224,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 
 12. Integrate:
     - If `base_branch` is the `hotfix_base` (from `sdd/config.json`) and `--merge` is set, refuse before any push; merging a hotfix-base PR is the human act.
+      Before refusing, run the `on_failure` hooks (`abort_reason` = "--merge into <hotfix_base> refused", `|| true`, exit code ignored).
     - Without `--merge` (every flow, the `hotfix_base` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
       rendered `## Tests` section (`$(cat "$TEST_REPORT_MD" 2>/dev/null)`) after `<N>/<total> tasks verified.`, followed by the
       pre_pr `evidence_md` as `## Evidence` when it is non-empty.

@@ -684,7 +684,27 @@ else
 fi
 ```
 
+### 9.6. Closeout Hooks — Exit Codes
+
+`run_closeout_hooks.py` returns:
+- **Exit 0** — all hooks passed (or no hooks configured).
+- **Exit 1** — a blocking `pre_pr` hook failed or timed out.
+- **Exit 2** — configuration or usage error.
+- **Exit 3** — one or more agent hooks are **pending**. The caller must
+  dispatch them (the `pending_agents` list in the JSON output carries
+  each agent's name, prompt and artifact directory), then call
+  `--record <name> --status pass|fail` for each, and finally
+  `--finalize` to resolve any still-pending hooks as failures.
+  `--finalize` exits 1 if the resolved outcome has blocking failures.
+
 ### 10. Transition Jira Ticket (if --resolve-jira)
+
+> **Note (FEAT-766):** Jira transition is now handled by the
+> `jira.transition` builtin closeout hook (FEAT-764). When the
+> `jira.transition` hook is configured in `.parrot/sdd_hooks.toml`,
+> it runs automatically during the `pre_pr` or `post_pr` event —
+> `--resolve-jira` is no longer needed. The manual procedure below is
+> retained as a fallback reference for environments without the hook.
 
 If `--resolve-jira` is passed AND the spec has a Jira key (set by `/sdd-tojira`):
 
