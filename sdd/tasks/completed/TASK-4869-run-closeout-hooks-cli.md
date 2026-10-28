@@ -280,10 +280,15 @@ def test_end_to_end_pre_pr_with_agent_record(tmp_path, monkeypatch): ...  # inte
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4869
+- Feature: sdd-done-closeout-hooks
+- Implementation SHA: 3ede45f21fa18028c2cec905bcbda137cf5e1a0d
+- Closed at (UTC): 2026-10-28T00:22:41+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 264s · Tokens: n/a |
