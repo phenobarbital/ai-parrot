@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from typing import Any
 
 import pytest
+from parrot.conf import default_dsn
 from parrot.handlers.models import metric_definitions as m
 from parrot.handlers.scope import RequestScope
 from parrot.metrics import MetricDefinition
 
 pytestmark = pytest.mark.asyncio
-DSN = os.getenv("NAVIGATOR_PG_DSN", "")
+DSN = default_dsn
 
 
 class _FakeConnCtx:
@@ -172,7 +172,7 @@ async def test_list_visible_predicate_per_scope() -> None:
     assert ids == {"g_public"}
 
 
-@pytest.mark.skipif(not DSN, reason="NAVIGATOR_PG_DSN not set")
+@pytest.mark.skipif(not DSN, reason="parrot.conf.default_dsn is not configured")
 async def test_live_roundtrip() -> None:
     """ensure_schema, save, get, list_visible, delete against real Postgres; clean up own rows only."""
     store = m.PgMetricDefinitionStore(dsn=DSN)
@@ -185,6 +185,12 @@ async def test_live_roundtrip() -> None:
         assert got is not None and got.id == metric_id
         visible = await store.list_visible(_scope(tenant=tenant))
         assert metric_id in {d.id for d in visible}
+        # compare-and-set upsert: the right version wins, a stale one is refused
+        await store.save(_definition(id=metric_id, tenant=tenant, version=2), overwrite=True, expected_version=1)
+        with pytest.raises(m.MetricVersionConflict):
+            await store.save(_definition(id=metric_id, tenant=tenant, version=2), overwrite=True, expected_version=1)
+        updated = await store.get(metric_id, tenant=tenant)
+        assert updated is not None and updated.version == 2
     finally:
         await store.delete(metric_id, tenant=tenant)
     assert await store.get(metric_id, tenant=tenant) is None
