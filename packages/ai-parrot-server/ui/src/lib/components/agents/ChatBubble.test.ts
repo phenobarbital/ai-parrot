@@ -207,3 +207,63 @@ describe("ChatBubble", () => {
     expect(screen.getByText("Loading chart…")).toBeInTheDocument();
   });
 });
+
+describe("ChatBubble — suggestion chips", () => {
+  const suggestions = [
+    {
+      label: "View as table",
+      prompt: "Show the previous answer as a table",
+      output_mode: "structured_table",
+      kind: "presentation",
+      source: "provider",
+      action: null,
+    },
+    {
+      label: "Explain this",
+      prompt: "Explain this answer",
+      output_mode: null,
+      kind: "action",
+      source: "provider",
+      action: "explain",
+    },
+  ] as any;
+
+  it("renders chips under an assistant message and reports the click with its message", async () => {
+    const onSuggestion = vi.fn();
+    const message = makeMessage({ suggestions });
+    render(ChatBubble, { message, onSuggestion });
+
+    const chips = screen.getAllByTestId("suggestion-chip");
+    expect(chips).toHaveLength(2);
+    await fireEvent.click(chips[0]);
+    expect(onSuggestion).toHaveBeenCalledTimes(1);
+    expect(onSuggestion).toHaveBeenCalledWith(message, suggestions[0]);
+  });
+
+  it("renders no chips while the answer is still streaming", () => {
+    render(ChatBubble, {
+      message: makeMessage({ suggestions }),
+      onSuggestion: vi.fn(),
+      isStreaming: true,
+    });
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
+
+  it("renders no chips on a user message", () => {
+    render(ChatBubble, {
+      message: makeMessage({ role: "user", suggestions }),
+      onSuggestion: vi.fn(),
+    });
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
+
+  it("renders no chips without a handler or without suggestions", () => {
+    render(ChatBubble, { message: makeMessage({ suggestions }) });
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
+
+  it("renders no chips for an empty list", () => {
+    render(ChatBubble, { message: makeMessage({ suggestions: [] }), onSuggestion: vi.fn() });
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
+});

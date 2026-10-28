@@ -9,6 +9,9 @@ from typing import Any, Dict, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# Identical to ``models.SeatEffort``; declared here because models.py imports this module.
+_SeatEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
 
 class MetricEvidence(BaseModel):
     """Evidence snapshot for one metric family.
@@ -84,6 +87,9 @@ class StrongModelIdentity(BaseModel):
         canonical_model: The policy-level identifier (e.g., 'gpt-5.6-terra', 'sonnet-5').
         backend: The backend name that provides this model (e.g., 'codex', 'claude', 'native').
         model: The exact deployed model identifier as reported by the provider.
+        effort: Optional reasoning effort for this model. Not part of the identity key
+            (dedup stays on ``(backend, model)``). Adding the field changes
+            ``policy_sha256`` once, which invalidates cached assessments one time.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -91,6 +97,7 @@ class StrongModelIdentity(BaseModel):
     canonical_model: str
     backend: str
     model: str
+    effort: Optional[_SeatEffort] = None
 
 
 class ComplexityPolicy(BaseModel):

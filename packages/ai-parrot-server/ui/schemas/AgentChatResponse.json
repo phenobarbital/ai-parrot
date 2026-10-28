@@ -127,6 +127,59 @@
       "title": "AgentChatMetadata",
       "type": "object"
     },
+    "AgentChatSuggestion": {
+      "description": "Mirror of the core ``Suggestion`` chip model (FEAT-752) for the generated TS types.\n\nKept import-free of ``parrot.models`` like the rest of this module; ``kind`` is\n``followup | presentation | action``, ``source`` is ``llm | skill | provider`` and ``action`` is ``\"explain\"``\nwhen ``kind == \"action\"``.",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action"
+        },
+        "kind": {
+          "default": "followup",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "output_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Mode"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "source": {
+          "default": "provider",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "prompt"
+      ],
+      "title": "AgentChatSuggestion",
+      "type": "object"
+    },
     "AgentToolCall": {
       "additionalProperties": true,
       "description": "A single tool invocation as emitted by either envelope builder.\n\nMirrors the ``tool_calls`` list entries built in\n``agent.py:2574-2583`` (stream finaliser) and ``agent.py:2807-2816``\n(JSON formatter).",
@@ -267,6 +320,14 @@
         "type": "object"
       },
       "title": "Sources",
+      "type": "array"
+    },
+    "suggestions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AgentChatSuggestion"
+      },
+      "title": "Suggestions",
       "type": "array"
     },
     "tool_calls": {

@@ -9,6 +9,16 @@
       "title": "Editable",
       "type": "boolean"
     },
+    "failed": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Failed",
+      "type": "array"
+    },
     "reason": {
       "anyOf": [
         {

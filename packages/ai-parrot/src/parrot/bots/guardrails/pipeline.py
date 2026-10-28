@@ -70,7 +70,8 @@ class PipelineOutcome(BaseModel):
         blocked: Whether a guardrail issued (or errored into) a BLOCK.
         reason: The BLOCK category label, populated when ``blocked`` is
             True. Never the offending content.
-        flag_reports: FLAG reports keyed by guardrail name.
+        flag_reports: Reports keyed by guardrail name — from FLAG, and from
+            any other action that attached one.
         telemetry: One entry per guardrail actually executed, in
             execution order.
     """
@@ -106,6 +107,9 @@ class GuardrailPipeline:
                 must never break a guardrail run.
         """
         self._guardrails: list[Guardrail] = []
+        # Per-stage execution order, built lazily from `priority_for(stage)`
+        # and invalidated on every `add()` (FEAT-761 per-stage priority).
+        self._order_cache: dict[GuardrailStage, tuple[Guardrail, ...]] = {}
         self._on_telemetry = on_telemetry
         self.logger = logging.getLogger(__name__)
 
@@ -116,7 +120,16 @@ class GuardrailPipeline:
             guardrail: The guardrail instance to add.
         """
         self._guardrails.append(guardrail)
-        self._guardrails.sort(key=lambda g: g.priority)
+        self._guardrails.sort(key=lambda g: g.priority_for(None))
+        self._order_cache.clear()
+
+    def _ordered_for(self, stage: GuardrailStage) -> tuple[Guardrail, ...]:
+        """Return guardrails in execution order for ``stage`` (cached, stable for ties)."""
+        cached = self._order_cache.get(stage)
+        if cached is None:
+            cached = tuple(sorted(self._guardrails, key=lambda guardrail: guardrail.priority_for(stage)))
+            self._order_cache[stage] = cached
+        return cached
 
     @property
     def has_guardrails(self) -> bool:
@@ -155,7 +168,7 @@ class GuardrailPipeline:
         flag_reports: dict[str, dict[str, Any]] = {}
         telemetry: list[GuardrailTelemetryEntry] = []
 
-        for guardrail in self._guardrails:
+        for guardrail in self._ordered_for(ctx.stage):
             start = time.perf_counter()
             try:
                 result = await guardrail.check(working_content, ctx)
@@ -193,9 +206,15 @@ class GuardrailPipeline:
             elif result.action == GuardrailAction.TRANSFORM:
                 if result.content is not None:
                     working_content = result.content
+                # FEAT-761 (S1): a TRANSFORM may carry a non-content report
+                # (e.g. TOOL_OUTPUT injection wrap, leakage redaction counts).
+                if result.report:
+                    flag_reports[guardrail.name] = result.report
             elif result.action == GuardrailAction.FLAG:
                 flag_reports[guardrail.name] = result.report or {}
-            # PASS: no-op, working_content unchanged
+            elif result.report:
+                # PASS with a (non-content) report — surfaced the same way.
+                flag_reports[guardrail.name] = result.report
 
         return PipelineOutcome(
             content=None if blocked else working_content,

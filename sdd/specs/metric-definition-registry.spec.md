@@ -17,7 +17,7 @@ tags: [metrics, kpicard, a2ui, output-mode, querysource, tenancy]
 **Feature ID**: FEAT-756
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 **Source**: Jira NAV-10382 review (2026-10-27). No accepted exploration document — see §9. Sibling specs written the same day: FEAT-755 `inline-a2ui-component-routing` (hint channel this feature plugs into), FEAT-752 `followup-suggestion-chips` (provider protocol this feature implements).
 
@@ -207,6 +207,10 @@ Design decisions taken here (binding for `/sdd-task`):
   `ctx.kwargs["tenant"]` → bound ContextVar → instance default
   (`parrot/skills/mixin.py:135-150`). The registry never trusts a tenant from tool
   arguments on the HTTP lane; the handler sets it from `RequestScope.tenant`.
+  *Amended (issue:a262cacba885):* the explicit kwarg is reserved for trusted host
+  code. `MetricsToolkit` and `MetricRoutingMixin` call `resolve_metric_tenant` with
+  `explicit=None` — a tenant supplied by the model in tool arguments is never
+  honoured — so their order is `ctx.kwargs["tenant"]` → ContextVar → default.
 - **D4 — `query_slug` is the only source kind that can be *linked*.** Linked surfaces
   carry a `LinkedDataSource(kind="query_slug")` (`linked/models.py:207`); `transformer`
   rides on it as `transform.python`; `recipe` has no linked descriptor (FEAT-598
@@ -417,7 +421,7 @@ class MetricDefinition(BaseModel):
     source: MetricSource
     owner: str | None = None
     visibility: Visibility = "tenant"
-    allowed_groups: list[str] = Field(default_factory=list)
+    allowed_groups: list[str] = Field(default_factory=list)   # reserved, must be empty (issue:a262cacba885)
     global_only: bool = False              # skills semantics: a tenant tree may not shadow it
     version: int = 1
     created_at: datetime | None = None
@@ -1463,3 +1467,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 review; verified against `b9417f4a0` |
+| 0.2 | 2026-10-27 | Jesus Lara | Approved for `/sdd-task`. Q1 resolved: FEAT-755 is on `dev` — hook returns `set_output_shape(ctx, OutputShape(OutputMode.A2UI, component))` (`registry/routing/route_labels.py:97`). Q2 pinned to the FEAT-752 spec's `SuggestionProvider` (provider task blocked until FEAT-752 merges). Q3–Q7 take the spec defaults (POST/PUT now; `is_superuser` for globals; keep Proximity row; `parrot/metrics/`; no default mix into `PandasAgent`). |

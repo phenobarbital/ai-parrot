@@ -45,7 +45,10 @@ class RequestScope:
         tenant: The caller's single tenant, or ``None``.
         groups: Opaque group memberships.
         is_superuser: Sees every record of ``tenant`` regardless of visibility.
-        may_author: Host gate for authoring operations.
+        may_author: Host gate for authoring operations. Defaults to ``True`` for
+            backward compatibility, which grants authoring to every caller of the
+            scope; a host that installs a ``ScopeResolver`` MUST set it explicitly
+            (the metric, surface and studio write lanes trust it as-is).
         may_administer: Host gate granting tenant-wide administration.
         studio_enabled: Host gate for the Agent Studio surface.
     """

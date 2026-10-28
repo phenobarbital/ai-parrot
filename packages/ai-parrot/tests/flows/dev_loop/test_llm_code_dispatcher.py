@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any, Sequence
 from unittest.mock import AsyncMock
 
@@ -1870,3 +1874,181 @@ async def test_run_command_guard_exception_runs_unchanged(monkeypatch, tmp_path)
     result = await dispatcher._tool_run_command(str(tmp_path), {"argv": ["pytest"]}, LLMCodeDispatchProfile())
     assert calls == [["pytest"]]
     assert result["ok"] is True
+
+
+# -- stdin isolation (issue:995ad869e502) ---------------------------------------
+#
+# A stdio MCP server's fd 0 *is* its JSON-RPC channel, and Claude Code backs it
+# with a socketpair rather than a pipe. A child that inherits fd 0 and shuts it
+# down EOFs the SERVER's own read, because shutdown() acts on the shared file
+# description, not on one descriptor. `StdioMCPServer.start()` then leaves its
+# serve loop and exits 0 silently -- the `Connection closed` / `has disconnected`
+# failure, observed four times before the launcher was fixed.
+
+
+def _read_sync_stdout_until_any(stream: Any, markers: Sequence[bytes]) -> bytes:
+    """Drain a ``subprocess.Popen`` stdout pipe until one of *markers* appears.
+
+    Importing the full ``parrot`` package tree prints unrelated ANSI-colored
+    framework debug lines to this same stdout, so scan for the exact markers
+    rather than assuming they are the next line. Returns the marker that was
+    seen so the caller can assert on WHICH outcome occurred.
+    """
+    while True:
+        line = stream.readline()
+        if not line:
+            raise AssertionError(f"stream closed before any of {markers!r} was seen")
+        stripped = line.strip()
+        if stripped in markers:
+            return stripped
+
+
+class TestRunArgvStdinIsolation:
+    """`LLMCodeDispatcher._run_argv` must never hand fd 0 to a child."""
+
+    @staticmethod
+    def _dispatcher() -> LLMCodeDispatcher:
+        return LLMCodeDispatcher(max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300)
+
+    @pytest.fixture
+    def _captured_spawn(self, monkeypatch):
+        """Capture the spawn kwargs and stop before a real child is created."""
+        captured: dict[str, Any] = {}
+
+        async def _fake_exec(*args: Any, **kwargs: Any):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            raise FileNotFoundError("stop before spawning")
+
+        monkeypatch.setattr(llm_module, "protected_argv", lambda cwd, argv: list(argv))
+        monkeypatch.setattr(llm_module.asyncio, "create_subprocess_exec", _fake_exec)
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_run_argv_without_payload_uses_devnull(self, _captured_spawn, tmp_path):
+        result = await self._dispatcher()._run_argv(["ls"], cwd=str(tmp_path), timeout=5)
+
+        assert _captured_spawn["kwargs"]["stdin"] is asyncio.subprocess.DEVNULL
+        assert result["exit_code"] == 127  # the FileNotFoundError branch, not a crash
+
+    @pytest.mark.asyncio
+    async def test_run_argv_with_payload_still_uses_pipe(self, _captured_spawn, tmp_path):
+        """DEVNULL must not cost us the ability to feed a child real stdin."""
+        await self._dispatcher()._run_argv(["patch", "-p1"], cwd=str(tmp_path), timeout=5, stdin="a payload")
+
+        assert _captured_spawn["kwargs"]["stdin"] is asyncio.subprocess.PIPE
+
+    @pytest.mark.asyncio
+    async def test_child_cannot_eof_parents_socketpair_stdin(self, tmp_path):
+        """Integration regression for issue:995ad869e502.
+
+        A harness process puts a ``socket.socketpair()`` end on its own fd 0 --
+        exactly the shape Claude Code gives a stdio MCP server -- and spawns a
+        real child through the PRODUCTION ``_run_argv``. The child shuts fd 0
+        down. The harness's own read on fd 0 must still find the description
+        open (``BlockingIOError``); pre-fix it returned ``b""`` and that EOF is
+        what made the server exit.
+
+        The harness is pinned to the source tree THIS session imported: an
+        absolute ``PYTHONPATH`` plus a ``samefile`` guard. Importing ``parrot``
+        makes navconfig ``chdir`` to the primary checkout, so a *relative*
+        ``PYTHONPATH=packages/ai-parrot/src`` (the worktree convention) silently
+        re-resolves inside the harness and would exercise the pre-fix code --
+        that was the root cause of issue:bde3a98caed2 in the Codex twin of this
+        test.
+        """
+        child_script = tmp_path / "child.py"
+        child_script.write_text(
+            "import socket\n"
+            "try:\n"
+            "    s = socket.socket(fileno=0)\n"
+            "except OSError:\n"
+            "    print('CHILD_NOT_A_SOCKET', flush=True)\n"
+            "else:\n"
+            "    try:\n"
+            "        s.shutdown(socket.SHUT_RDWR)\n"
+            "    finally:\n"
+            "        s.detach()\n"
+            "    print('CHILD_SHUTDOWN_DONE', flush=True)\n"
+        )
+
+        harness_script = tmp_path / "harness.py"
+        harness_script.write_text(
+            "import os\n"
+            "import socket\n"
+            "import sys\n"
+            "import uvloop\n"
+            "async def main():\n"
+            "    import parrot.flows.dev_loop.dispatchers.llm as llm_module\n"
+            "    from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher\n"
+            "    if not os.path.samefile(llm_module.__file__, sys.argv[2]):\n"
+            "        sys.stderr.write('HARNESS_WRONG_CODE ' + llm_module.__file__ + '\\n')\n"
+            "        sys.exit(3)\n"
+            # `peer` is held open and never written, so a read on fd 0 can only
+            # block -- unless the description itself was shut down.
+            "    peer, own = socket.socketpair()\n"
+            "    os.dup2(own.fileno(), 0)\n"
+            "    own.close()\n"
+            "    llm_module.protected_argv = lambda cwd, argv: list(argv)\n"
+            "    d = LLMCodeDispatcher(max_concurrent=1, redis_url='redis://localhost', stream_ttl_seconds=300)\n"
+            "    print('HARNESS_READY', flush=True)\n"
+            "    await d._run_argv([sys.executable, sys.argv[1]], cwd=os.path.dirname(sys.argv[1]), timeout=60)\n"
+            "    os.set_blocking(0, False)\n"
+            "    try:\n"
+            "        data = os.read(0, 1)\n"
+            "    except BlockingIOError:\n"
+            "        print('PARENT_STDIN_ALIVE', flush=True)\n"
+            "    else:\n"
+            "        print('PARENT_STDIN_EOF' if data == b'' else 'PARENT_STDIN_ALIVE', flush=True)\n"
+            "    peer.close()\n"
+            # uvloop.run (not asyncio.run) for the same reason as the Codex twin:
+            # importing `parrot` rebinds the global policy to uvloop's, and a
+            # stdlib loop created before that import cannot spawn subprocesses
+            # under it.
+            "uvloop.run(main())\n"
+        )
+
+        module_under_test = Path(llm_module.__file__).resolve()
+        source_root = module_under_test.parents[4]
+        inherited = [e for e in os.environ.get("PYTHONPATH", "").split(os.pathsep) if e and os.path.isabs(e)]
+        harness_env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(source_root), *inherited])}
+
+        harness = await asyncio.to_thread(
+            subprocess.Popen,
+            [sys.executable, str(harness_script), str(child_script), str(module_under_test)],
+            env=harness_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            start_new_session=True,
+        )
+        try:
+            # Import/bootstrap time is deliberately outside the verdict budget.
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(_read_sync_stdout_until_any, harness.stdout, [b"HARNESS_READY"]),
+                    timeout=90,
+                )
+            except AssertionError as exc:
+                harness.wait(timeout=30)
+                tail = harness.stderr.read().decode(errors="replace")[-2000:]
+                raise AssertionError(f"harness exited {harness.returncode} before READY: {tail}") from exc
+
+            verdict = await asyncio.wait_for(
+                asyncio.to_thread(
+                    _read_sync_stdout_until_any, harness.stdout, [b"PARENT_STDIN_ALIVE", b"PARENT_STDIN_EOF"]
+                ),
+                timeout=60,
+            )
+            assert verdict == b"PARENT_STDIN_ALIVE", "the child EOF'd its parent's stdin -- fd 0 was inherited"
+
+            await asyncio.wait_for(asyncio.to_thread(harness.wait), timeout=30)
+            assert harness.returncode == 0
+        finally:
+            if harness.poll() is None:
+                harness.kill()
+                harness.wait()
+            for stream in (harness.stdin, harness.stdout, harness.stderr):
+                if stream is not None:
+                    stream.close()
