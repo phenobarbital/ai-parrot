@@ -251,4 +251,4 @@ See the test blueprint above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 118s. No-op pre-commit ledger block + in-place upgrade of managed hook block; merge-tier validation green (40 passed). Diff reviewed, no corrections (review fb coder-review:8c30fe328d3e4f0208d1a8bc).

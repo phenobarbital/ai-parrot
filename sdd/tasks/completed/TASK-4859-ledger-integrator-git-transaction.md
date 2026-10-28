@@ -310,4 +310,4 @@ See the test blueprint above. Save the pytest log under `artifacts/logs/` per CL
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 226s. LedgerIntegrator in integration.py + tests; merge-tier validation green (43 passed, 1 skipped). Diff reviewed, no corrections.

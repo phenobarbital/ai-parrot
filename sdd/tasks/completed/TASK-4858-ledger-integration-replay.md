@@ -338,4 +338,4 @@ See the test blueprint above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 84s. integration.py + tests; merge-tier validation green (35 passed, 1 skipped). Diff reviewed, no corrections (fb coder-review recorded).

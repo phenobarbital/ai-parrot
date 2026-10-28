@@ -319,4 +319,4 @@ See the `TestDoneTwins` blueprint above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seats: gpt-5.6-terra x2, gpt-5.6-sol x1 (3 attempts, codex). Claude/Antigravity done hosts, worker/coder prompts and twins tests delivered by the seats; all three attempts left `.agents/skills/sdd-done/SKILL.md` and `.codex/agents/sdd-worker.toml` untouched (likely sandbox protection of dot-directories; not recorded as model feedback). Orchestrator finished both in 40bfe7b. Merge-tier green (29 passed).
