@@ -275,7 +275,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -285,8 +285,9 @@
       "parallelism_notes": "imports the generated AgentChatSuggestion type produced by TASK-4801 (types/generated/AgentChatResponse.d.ts)",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4803-ui-suggestion-chips-component.md"
+      "completed_at": "2026-10-28T01:03:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4803-ui-suggestion-chips-component.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4804",
