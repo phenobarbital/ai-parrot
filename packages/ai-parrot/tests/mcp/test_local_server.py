@@ -1,12 +1,16 @@
 import asyncio
+import contextlib
 import json
+import logging
+import os
+import signal
 import sys
 
 import pytest
 from pydantic import BaseModel, Field
 
 from parrot.tools.abstract import AbstractTool
-from parrot.mcp import local_server
+from parrot.mcp import local_cli, local_server
 from parrot.mcp.local_server import StdioMCPServer, LocalMCPServerBase
 from parrot.mcp.server_base import LocalServerConfig
 
@@ -180,3 +184,78 @@ class TestStdioMCPServerConcurrency:
 
         await asyncio.wait_for(server.start(), timeout=5)
         assert not server._inflight
+
+
+class _RecordSink(logging.Handler):
+    """Collect a server's own log records.
+
+    `StdioMCPServer.__init__` attaches its own stderr handler and sets
+    `propagate = False` (local_server.py:50-51), and the logger defaults to
+    WARNING -- so `caplog`, which listens on the root logger, sees nothing from
+    it. Attaching here is the only way to assert on what the server logged.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def _capture_server_logs(server) -> _RecordSink:
+    sink = _RecordSink()
+    server.logger.addHandler(sink)
+    server.logger.setLevel(logging.INFO)
+    return sink
+
+
+class TestSilentExitsAreLogged:
+    """Neither exit path said a word, which is why four `Connection closed`
+    disconnects (issue:995ad869e502) left no trace in the host log at all."""
+
+    @pytest.mark.asyncio
+    async def test_stdin_eof_is_logged_with_the_inflight_count(self, monkeypatch):
+        server = StdioMCPServer(LocalServerConfig(name="test"))
+        sink = _capture_server_logs(server)
+        monkeypatch.setattr(sys, "stdin", _ScriptedStdin([]))
+
+        await asyncio.wait_for(server.start(), timeout=5)
+
+        eof_lines = [m for m in sink.messages if "stdin reached EOF" in m]
+        assert len(eof_lines) == 1, sink.messages
+        assert "0 request handler(s) in flight" in eof_lines[0]
+        # Distinguishable from the end-of-drain marker, which states no reason.
+        assert any("Stdio MCP server stopped" in m for m in sink.messages), sink.messages
+
+    @pytest.mark.asyncio
+    async def test_sigterm_is_logged_before_the_immediate_exit(self, monkeypatch, caplog):
+        """`os._exit(0)` is indistinguishable from a crash unless it announces itself."""
+        stopped = asyncio.Event()
+
+        class _StubServer:
+            async def start(self) -> None:
+                await asyncio.Event().wait()
+
+            async def stop(self) -> None:
+                stopped.set()
+
+        exits: list[int] = []
+        monkeypatch.setattr(local_cli.os, "_exit", lambda code: exits.append(code))
+
+        with caplog.at_level(logging.INFO):
+            serve = asyncio.ensure_future(local_cli._serve_with_shutdown(_StubServer()))
+            await asyncio.sleep(0.05)
+            # Only raise a real SIGTERM once the loop owns it -- otherwise the
+            # default disposition would kill the test session itself.
+            assert signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL
+            os.kill(os.getpid(), signal.SIGTERM)
+            await asyncio.wait_for(stopped.wait(), timeout=5)
+            await asyncio.sleep(0.05)
+            serve.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await serve
+
+        assert exits == [0], "the handler must still force the exit"
+        assert any("received SIGTERM" in r.getMessage() for r in caplog.records), caplog.text
+
