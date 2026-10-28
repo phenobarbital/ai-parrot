@@ -323,7 +323,8 @@ Agent(guardrails=[{"name": "prompt_injection", "scan_tool_output": True},
   (MIT, own export) · gravitee Prompt Guard 2 86M **fp32 only** (llama4,
   conditional attribution; int8 excluded — its own eval shows F1
   0.98→0.89) · enguard potion (MIT); 0din and NC-licensed models excluded;
-  winner = highest combined ES+EN F1 s.t. 0 ES-benign FPs and p50 ≤ 30 ms
+  winner = highest combined ES+EN F1 s.t. 0 ES-benign FPs and p50 ≤ 45 ms
+  (amended from 30 ms on 2026-10-28 by operator decision, after the first run)
   CPU @ 512 tokens, ties → permissive license, then size. 0din embeddings
   may still be *measured* (local eval) to inform any future licensing
   conversation, flagged non-eligible in the manifest. Output: pinned
@@ -487,6 +488,21 @@ tests:
 - packages/ai-parrot/tests/unit/test_guardrails_secrets.py
 - packages/ai-parrot/tests/integration/test_guardrails_output.py
 - packages/ai-parrot/tests/integration/test_guardrails_injection_onnx.py
+- packages/ai-parrot/tests/unit/test_guardrails_stage_priority_reports.py
+- packages/ai-parrot/tests/unit/test_guardrails_security_preset.py
+- packages/ai-parrot/tests/unit/test_guardrails_engine_chassis.py
+- packages/ai-parrot/tests/unit/test_guardrails_engine_chassis_embedding.py
+- packages/ai-parrot/tests/unit/test_security_category_events.py
+- packages/ai-parrot/tests/knowledge/contracts/test_dependency_boundary.py
+- packages/ai-parrot/tests/unit/test_guardrails_scan_tool_output.py
+- packages/ai-parrot/tests/unit/test_guardrails_retrieval_scan.py
+- packages/ai-parrot/tests/unit/test_guardrails_jailbreak.py
+- packages/ai-parrot/tests/unit/test_guardrails_prompt_leakage.py
+- packages/ai-parrot/tests/unit/test_guardrails_rendered_prompt.py
+- packages/ai-parrot/tests/integration/test_security_guardrails_e2e.py
+- tests/benchmarks/test_jailbreak_bakeoff_harness.py
+- tests/benchmarks/test_jailbreak_bakeoff_manifest.py
+- tests/benchmarks/test_injection_guardrail_metrics.py
 markers: none
 
 ### Test Data / Fixtures
@@ -800,7 +816,8 @@ Verified against: `4e3ba6289`
   `sheltron-ai/prompt-guard-68m` (CC-BY-NC), any protectai model (ES-FP
   baseline only). **Pre-registered decision rule**: winner = highest
   combined ES+EN F1 subject to (a) 0 Spanish-benign FPs at the selected
-  threshold and (b) p50 ≤ 30 ms CPU @ 512 tokens; ties → more permissive
+  threshold and (b) p50 ≤ 45 ms CPU @ 512 tokens (amended from 30 ms on
+  2026-10-28 by operator decision, after the first measurement run); ties → more permissive
   license (apache/MIT over llama4), then smaller artifact. M3 commits the
   numbers + manifest; §5 gate unchanged.
 - [x] **Reference attack corpus** — *Resolved 2026-10-27*: moot for v1 —

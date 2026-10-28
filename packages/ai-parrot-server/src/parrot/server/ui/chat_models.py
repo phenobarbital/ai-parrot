@@ -64,6 +64,22 @@ class AgentChatMetadata(BaseModel):
     is_error: bool | None = None
 
 
+class AgentChatSuggestion(BaseModel):
+    """Mirror of the core ``Suggestion`` chip model (FEAT-752) for the generated TS types.
+
+    Kept import-free of ``parrot.models`` like the rest of this module; ``kind`` is
+    ``followup | presentation | action``, ``source`` is ``llm | skill | provider`` and ``action`` is ``"explain"``
+    when ``kind == "action"``.
+    """
+
+    label: str
+    prompt: str
+    output_mode: str | None = None
+    kind: str = "followup"
+    source: str = "provider"
+    action: str | None = None
+
+
 class AgentChatResponse(BaseModel):
     """The ``AgentTalk`` response envelope (stream finaliser + JSON path).
 
@@ -86,5 +102,6 @@ class AgentChatResponse(BaseModel):
     sources: list[dict[str, Any]] = []
     tool_calls: list[AgentToolCall] = []
     a2ui_envelope: dict[str, Any] | list[dict[str, Any]] | None = None
+    suggestions: list[AgentChatSuggestion] = []  # FEAT-752 — omitted from bodies when empty
     audio_base64: str | None = None  # voice path
     audio_format: str | None = None

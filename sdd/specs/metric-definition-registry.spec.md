@@ -17,7 +17,7 @@ tags: [metrics, kpicard, a2ui, output-mode, querysource, tenancy]
 **Feature ID**: FEAT-756
 **Date**: 2026-10-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 **Source**: Jira NAV-10382 review (2026-10-27). No accepted exploration document — see §9. Sibling specs written the same day: FEAT-755 `inline-a2ui-component-routing` (hint channel this feature plugs into), FEAT-752 `followup-suggestion-chips` (provider protocol this feature implements).
 
@@ -1463,3 +1463,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-27 | Jesus Lara | Initial draft from the NAV-10382 review; verified against `b9417f4a0` |
+| 0.2 | 2026-10-27 | Jesus Lara | Approved for `/sdd-task`. Q1 resolved: FEAT-755 is on `dev` — hook returns `set_output_shape(ctx, OutputShape(OutputMode.A2UI, component))` (`registry/routing/route_labels.py:97`). Q2 pinned to the FEAT-752 spec's `SuggestionProvider` (provider task blocked until FEAT-752 merges). Q3–Q7 take the spec defaults (POST/PUT now; `is_superuser` for globals; keep Proximity row; `parrot/metrics/`; no default mix into `PandasAgent`). |

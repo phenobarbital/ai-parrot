@@ -463,6 +463,13 @@ class AdaptiveCardsRenderer(AbstractA2UIRenderer):
             extensions = node.metadata.extensions.root
             role = extensions.get("parrot_role")
 
+        if role == "mermaid-source":
+            # FEAT-753: Adaptive Cards cannot run mermaid.js — monospace source, recorded once.
+            state.degradations.append(
+                degradation_record(node, "adaptive_cards has no Mermaid engine; source shown as monospace text")
+            )
+            return TextBlock(text=str(props.get("text") or ""), font_type="Monospace", wrap=True)
+
         if role == "html_document":
             # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
             # HTML — adaptive_cards cannot embed it either, so it ALWAYS

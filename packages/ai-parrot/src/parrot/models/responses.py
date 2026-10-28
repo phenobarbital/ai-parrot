@@ -4,9 +4,10 @@ from datetime import datetime
 from dataclasses import dataclass
 import base64
 import mimetypes
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr, field_validator, model_validator, model_serializer
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
+from .suggestions import Suggestion
 
 
 def _require_http_urls(v: List[str]) -> List[str]:
@@ -217,9 +218,24 @@ class AIMessage(BaseModel):
             "consumers are unaffected (FEAT-273)."
         ),
     )
+    suggestions: List[Suggestion] = Field(
+        default_factory=list,
+        description="Follow-up chips produced by the agent after the answer (FEAT-752). Empty unless the agent opts in.",
+    )
+    # FEAT-752 rev 0.3: running chip task for the stream trailer (set by ask_stream(defer_suggestions=True)).
+    # Private — never serialised, never part of the wire.
+    _suggestions_task: Any = PrivateAttr(default=None)
 
     # Allow arbitrary types for output field (pandas DataFrames, etc.)
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_suggestions(self, handler: Any) -> Dict[str, Any]:
+        """Drop an empty ``suggestions`` list so non-opted-in agents serialize byte-identically to pre-FEAT-752."""
+        data = handler(self)
+        if isinstance(data, dict) and not data.get("suggestions", True):
+            data.pop("suggestions", None)
+        return data
 
     @property
     def content(self) -> Any:

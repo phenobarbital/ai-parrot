@@ -45,9 +45,9 @@ _DOCSTRING_NODE_TYPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.
 
 @dataclass(frozen=True)
 class Citation:
-    """One resolved ``ADR-<n>`` reference in a Python source file."""
+    """One canonical ADR alias reference in a Python source file."""
 
-    alias: str  # canonical "ADR-42"
+    alias: str  # canonical "ADR-42" or "FS-ADR-42"
     rel_path: str
     line: int  # 1-based line the reference text sits on
     page_id: str  # sym:<rel>#<qualname>, or file:<rel> for module scope
@@ -89,8 +89,12 @@ def _owner_for_line(ranges: list[tuple[str, int, int]], line: int) -> tuple[str,
     return min(containing, key=lambda r: r[2] - r[1])
 
 
-def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation], list[DecisionDiagnostic]]:
-    """Find ADR references in comments and docstrings of one Python file.
+def extract_python_citations(
+    rel_path: str,
+    source: str,
+    known_prefixes: frozenset[str] | None = None,
+) -> tuple[list[Citation], list[DecisionDiagnostic]]:
+    """Find configured ADR aliases in comments and docstrings of one Python file.
 
     Module-level comments attach to the file and are reported as file scope
     (``page_id='file:<rel>'``, ``qualname=None``) — spec §2.
@@ -144,7 +148,7 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
         for token in tokens:
             if token.type != tokenize.COMMENT:
                 continue
-            alias = normalize_adr_alias(token.string)
+            alias = normalize_adr_alias(token.string, known_prefixes)
             if alias is None:
                 continue
             citations.append(_make_citation(alias, token.start[0], "comment"))
@@ -157,7 +161,7 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
         docstring = ast.get_docstring(node)
         if not docstring:
             continue
-        alias = normalize_adr_alias(docstring)
+        alias = normalize_adr_alias(docstring, known_prefixes)
         if alias is None:
             continue
         if isinstance(node, ast.Module):

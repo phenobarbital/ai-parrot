@@ -7,7 +7,7 @@ for the full design.
 """
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -110,7 +110,8 @@ class Guardrail(ABC):
         name: Unique identifier for this guardrail (used in telemetry and
             ``AIMessage.metadata["guardrails"]`` report keys).
         stages: The set of stages at which this guardrail runs.
-        priority: Execution order within a stage; lower runs first.
+        priority: Execution order within a stage; lower runs first. May be a
+            mapping that assigns a distinct priority to each stage.
         on_error: Error-handling policy for unhandled exceptions raised by
             ``check()``. ``"fail_open"`` (default) logs and continues as if
             the guardrail returned PASS; ``"fail_closed"`` treats the error
@@ -118,8 +119,33 @@ class Guardrail(ABC):
     """
     name: str
     stages: set[GuardrailStage]
-    priority: int
+    priority: int | dict[GuardrailStage, int]
     on_error: Literal["fail_open", "fail_closed"] = "fail_open"
+
+    #: Set True by OUTPUT guardrails that compare against the turn's rendered
+    #: system prompt (FEAT-761 prompt leakage); seams only populate
+    #: ``ctx.extras["system_prompt"]`` when a registered guardrail asks for it.
+    requires_system_prompt: ClassVar[bool] = False
+
+    def priority_for(self, stage: GuardrailStage | None) -> int:
+        """Resolve this guardrail's effective priority for ``stage``.
+
+        A scalar ``priority`` applies to every stage (pre-FEAT-761 behavior).
+        A ``{stage: int}`` mapping lets one guardrail sit in different bands
+        per stage; a stage missing from the mapping (or ``stage=None``)
+        resolves to the mapping's lowest value.
+
+        Args:
+            stage: The stage being ordered, or ``None`` for a stage-agnostic order.
+
+        Returns:
+            The integer priority (lower runs first).
+        """
+        if isinstance(self.priority, int):
+            return self.priority
+        if stage is not None and stage in self.priority:
+            return self.priority[stage]
+        return min(self.priority.values())
 
     @abstractmethod
     async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:

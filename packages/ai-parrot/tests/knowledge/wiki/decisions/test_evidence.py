@@ -73,6 +73,30 @@ class TestPythonCitations:
     def test_no_reference_yields_nothing(self):
         assert extract_python_citations("pkg/x.py", "# plain comment\n") == ([], [])
 
+    def test_prefixed_comments_and_docstrings(self) -> None:
+        """Allowlisted prefixes propagate without changing source attribution."""
+        source = '''\
+# FS-ADR-8 is module scope; ADR-1 is deliberately the second reference.
+def chosen():
+    """FS-ADR-9 is the first reference; ADR-2 remains unreported."""
+    value = "FS-ADR-10 is executable data"
+    return value
+'''
+        prefixed, diagnostics = extract_python_citations("pkg/prefixed.py", source, frozenset({"FS"}))
+        assert diagnostics == []
+        assert [(citation.alias, citation.qualname) for citation in prefixed] == [
+            ("FS-ADR-8", None),
+            ("FS-ADR-9", "chosen"),
+        ]
+        assert all(citation.alias != "FS-ADR-10" for citation in prefixed)
+
+        unconfigured, diagnostics = extract_python_citations("pkg/prefixed.py", source)
+        assert diagnostics == []
+        assert [(citation.alias, citation.qualname) for citation in unconfigured] == [
+            ("ADR-8", None),
+            ("ADR-9", "chosen"),
+        ]
+
 
 class TestEvidence:
     def test_span_excerpt_and_hash_are_exact(self):

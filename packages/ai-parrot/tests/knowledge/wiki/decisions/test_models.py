@@ -54,6 +54,26 @@ class TestDecisionConfig:
         with pytest.raises(ValidationError):
             DecisionConfig(**{field: value})
 
+    def test_effective_prefixes_includes_local(self) -> None:
+        """The local prefix joins the immutable allowlist without changing fields."""
+        config = DecisionConfig(local_prefix="fs", known_prefixes=["parrot", "FS"])
+        assert config.local_prefix == "FS"
+        assert config.known_prefixes == ["PARROT", "FS"]
+        assert config.effective_prefixes() == frozenset({"FS", "PARROT"})
+        assert DecisionConfig().effective_prefixes() == frozenset()
+        assert DecisionConfig.model_validate(config.model_dump()) == config
+
+    @pytest.mark.parametrize("bad", ["1FS", "F S", "", "ADR1", "adr00001", "RFC2119"])
+    def test_reserved_and_invalid_prefixes(self, bad: str) -> None:
+        """Both prefix fields reject invalid and compact-citation names."""
+        with pytest.raises(ValidationError):
+            DecisionConfig(local_prefix=bad)
+        with pytest.raises(ValidationError):
+            DecisionConfig(known_prefixes=[bad])
+        accepted = DecisionConfig(local_prefix="adr123456", known_prefixes=["fs"])
+        assert accepted.local_prefix == "ADR123456"
+        assert accepted.known_prefixes == ["FS"]
+
 
 class TestEvidenceRef:
     def test_rejects_inverted_range(self):

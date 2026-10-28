@@ -27,17 +27,22 @@ from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
+from ..registry.routing.route_bank import resolve_route_banks
+from ..registry.routing.route_labels import OutputShape, get_component_hint, is_inline_component, set_output_shape
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..outputs.a2ui.artifacts import attach_structured_artifact
+from ..outputs.a2ui.catalog._model import component_model
+from ..outputs.a2ui.inline.emitter import emit_inline_component
+from ..outputs.a2ui.inline.prompt import build_component_prompt
 from ..memory.abstract import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
     current_session_id,
     current_user_id,
 )
-from ..conf import STATIC_DIR
+from ..conf import AGENTS_DIR, STATIC_DIR
 from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -331,6 +336,78 @@ DEFAULT_OUTPUT_MODE_ROUTES: Dict[str, List[str]] = {
         "dibuja un mapa",
         "renderiza un mapa",
         "muéstralo geográficamente",
+    ],
+    "a2ui:KPICard": [
+        "show me total worked hours this month",
+        "what is the total revenue",
+        "give me the KPI for customer retention",
+        "how many visits did we get this week",
+        "show the average order value",
+        "what is our conversion rate",
+        "display the monthly sales target progress",
+        "give me the key performance indicator for churn",
+        "dame las horas trabajadas este mes",
+        "cuál es el total de ventas",
+        "muéstrame el KPI de retención de clientes",
+        "cuántas visitas tuvimos esta semana",
+        "dame el valor medio de los pedidos",
+        "cuál es nuestra tasa de conversión",
+        "muestra el progreso de la meta mensual de ventas",
+        "dame el indicador clave de abandono",
+    ],
+    "a2ui:InfoCard": [
+        "tell me about this customer",
+        "show a summary of the project",
+        "give me the profile for account 42",
+        "what details do we have for this employee",
+        "summarize the product information",
+        "show the key facts about this order",
+        "give me an overview of the supplier",
+        "display the details for this record",
+        "háblame de este cliente",
+        "muéstrame un resumen del proyecto",
+        "dame el perfil de la cuenta 42",
+        "qué detalles tenemos de este empleado",
+        "resume la información del producto",
+        "muestra los datos clave de este pedido",
+        "dame una visión general del proveedor",
+        "muestra los detalles de este registro",
+    ],
+    "a2ui:Timeline": [
+        "show the timeline of releases this quarter",
+        "when did these events happen",
+        "display the project milestones in order",
+        "show the history of status changes",
+        "give me a chronological view of customer activity",
+        "map out the deployment sequence",
+        "show the schedule from start to finish",
+        "list the product launches over time",
+        "muestra la línea de tiempo de lanzamientos de este trimestre",
+        "cuándo ocurrieron estos eventos",
+        "muestra los hitos del proyecto en orden",
+        "muestra el historial de cambios de estado",
+        "dame una vista cronológica de la actividad del cliente",
+        "detalla la secuencia de despliegue",
+        "muestra el calendario de principio a fin",
+        "lista los lanzamientos de productos a lo largo del tiempo",
+    ],
+    "a2ui:Graph": [
+        "diagram the approval flow",
+        "show the dependencies between services",
+        "draw the organization relationships",
+        "map the workflow connections",
+        "visualize how these systems are linked",
+        "show the network of related accounts",
+        "create a graph of task dependencies",
+        "display the process flow",
+        "diagrama el flujo de aprobación",
+        "muestra las dependencias entre servicios",
+        "dibuja las relaciones de la organización",
+        "mapea las conexiones del flujo de trabajo",
+        "visualiza cómo están conectados estos sistemas",
+        "muestra la red de cuentas relacionadas",
+        "crea un grafo de dependencias de tareas",
+        "muestra el flujo del proceso",
     ],
 }
 
@@ -896,10 +973,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # and encoding the phrase bank is CPU-bound, so it runs off the event
         # loop and only when explicitly enabled.
         if self._output_routing_enabled or self._output_routing_config is not None:
-            router_cfg = self._output_routing_config or IntentRouterConfig(
-                enable_output_mode_routing=True,
-                output_mode_routes=DEFAULT_OUTPUT_MODE_ROUTES,
-            )
+            router_cfg = self._output_routing_config
+            if router_cfg is None:
+                banks = await asyncio.to_thread(
+                    resolve_route_banks,
+                    AGENTS_DIR.joinpath(self.agent_id),
+                    defaults=DEFAULT_OUTPUT_MODE_ROUTES,
+                    tenant_based=getattr(self, "tenant_based", False),
+                )
+                router_cfg = IntentRouterConfig(
+                    enable_output_mode_routing=True,
+                    output_mode_routes=banks.routes,
+                    tenant_output_mode_routes=banks.tenant_routes,
+                    output_mode_threshold=banks.threshold if banks.threshold is not None else 0.85,
+                    discrepancy_margin=banks.margin if banks.margin is not None else 0.05,
+                )
             await asyncio.to_thread(self.configure_output_router, router_cfg)
 
         # Cache data after configuration
@@ -1322,6 +1410,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             kwargs["temperature"] = 0.0
 
         try:
+            a2ui_component = kwargs.pop("a2ui_component", None)
+
             # Get conversation history (no vector search for PandasAgent)
             conversation_history = None
             rendered_history = []
@@ -1346,12 +1436,34 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # after the None->DEFAULT normalization above and only when the
             # caller did not specify a mode (precedence: explicit > router >
             # default). No-op unless a routing mixin (IntentRouterMixin) is present.
-            if output_mode == OutputMode.DEFAULT:
+            if ctx is not None:
+                # ask() owns ctx.a2ui_component: a reused context must not leak a previous turn's hint.
+                ctx.a2ui_component = None
+            if a2ui_component and not (isinstance(a2ui_component, str) and is_inline_component(a2ui_component)):
+                # G3: an unknown / action-bearing component must never reach the
+                # prompt/model builders (they raise KeyError); degrade to the
+                # normal flow instead.
+                self.logger.warning(
+                    "a2ui_component=%r is not an inline-capable component; ignoring the hint", a2ui_component
+                )
+                a2ui_component = None
+            if a2ui_component and output_mode in (OutputMode.DEFAULT, OutputMode.A2UI):
+                # A hint implies A2UI when the mode is unspecified, and agrees with an explicit A2UI mode.
+                output_mode = set_output_shape(ctx, OutputShape(OutputMode.A2UI, a2ui_component))
+            elif a2ui_component:
+                # G2: an explicit non-A2UI output_mode is never overridden by the hint.
+                self.logger.info(
+                    "a2ui_component=%r ignored: explicit output_mode=%s takes precedence", a2ui_component, output_mode
+                )
+                a2ui_component = None
+            elif output_mode == OutputMode.DEFAULT:
                 _resolved_mode = await self._resolve_output_mode(question, ctx)
                 if _resolved_mode is not None:
                     output_mode = _resolved_mode
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
+
+            component_hint = get_component_hint(ctx) or a2ui_component
 
             # Apply agent-level default (e.g. output_mode=TEXT in constructor)
             # when neither the caller nor the router resolved a specific mode.
@@ -1417,6 +1529,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if output_mode != OutputMode.TABLE:
                     if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
                         system_prompt += system_prompt_addon
+
+                if output_mode == OutputMode.A2UI and component_hint:
+                    system_prompt += build_component_prompt(component_hint)
 
                 if output_mode == OutputMode.MSTEAMS:
                     system_prompt += (
@@ -1509,9 +1624,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # chart config; advertising StructuredChartConfig (incl. the
                     # fast-path JSON addendum below) makes it reliably emit the
                     # config + embedded data rows.
-                    _forced_output_type = (
-                        StructuredChartConfig if output_mode == OutputMode.STRUCTURED_CHART else PandasAgentResponse
-                    )
+                    if output_mode == OutputMode.A2UI and component_hint:
+                        _forced_output_type = component_model(component_hint)
+                    elif output_mode == OutputMode.STRUCTURED_CHART:
+                        _forced_output_type = StructuredChartConfig
+                    else:
+                        _forced_output_type = PandasAgentResponse
                     llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=_forced_output_type)
 
                 # Fast-path optimization for clients that split tools +
@@ -1951,6 +2069,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         len(explanation or ""),
                     )
                     return response  # skip formatter + structured reformat
+
+                if (
+                    output_mode == OutputMode.A2UI
+                    and component_hint
+                    and getattr(response, "a2ui_envelope", None) is None
+                ):
+                    outcome = emit_inline_component(
+                        response,
+                        component_hint,
+                        frame=response.data if isinstance(response.data, pd.DataFrame) else None,
+                    )
+                    if outcome.status == "degraded":
+                        self.logger.info("Inline A2UI emit degraded (%s): %s", component_hint, outcome.reason)
+                    else:
+                        return response
 
                 # A2UI was requested but nothing rendered a surface this turn
                 # (toolkit not registered, or the LLM answered in prose). There
@@ -2865,7 +2998,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         for file_path in files:
             path = Path(file_path)
 
-            if not path.exists():
+            if not await asyncio.to_thread(path.exists):
                 raise FileNotFoundError(f"File not found: {path}")
 
             # Determine file type and load
