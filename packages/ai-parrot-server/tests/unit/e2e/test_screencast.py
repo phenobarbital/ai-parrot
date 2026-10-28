@@ -66,6 +66,20 @@ class FakePage:
         self.context.pages.append(self)
         self._closed = closed
         self.close_calls = 0
+        self.handlers: dict[str, list[Callable[[Any], None]]] = {}
+
+    def on(self, event: str, handler: Callable[[Any], None]) -> None:
+        """Register a page event listener."""
+        self.handlers.setdefault(event, []).append(handler)
+
+    def remove_listener(self, event: str, handler: Callable[[Any], None]) -> None:
+        """Remove a page event listener."""
+        self.handlers[event].remove(handler)
+
+    def emit(self, event: str, payload: Any) -> None:
+        """Deliver a page event to a stable snapshot of its listeners."""
+        for handler in list(self.handlers.get(event, [])):
+            handler(payload)
 
     def is_closed(self) -> bool:
         """Return the page's current closed state."""
@@ -272,3 +286,98 @@ async def test_missing_encoder_extra_is_typed_error(tmp_path: Path, monkeypatch:
     with pytest.raises(E2EScreencastError) as repeated:
         await screencast.stop_screencast(session)
     assert repeated.value is raised.value
+
+
+async def test_record_on_anomaly_clean_run_creates_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clean run never starts a session or creates an output directory."""
+    page = FakePage(FakeCDPSession())
+    start_calls = 0
+
+    async def unexpected_start(page: FakePage, out_dir: Path, *, max_frames: int) -> screencast.ScreencastSession:
+        nonlocal start_calls
+        start_calls += 1
+        raise AssertionError("clean run started capture")
+
+    monkeypatch.setattr(screencast, "start_screencast", unexpected_start)
+
+    async with screencast.record_on_anomaly(page, tmp_path / "clean", run_id="clean-run") as recorder:
+        page.emit("console", type("Message", (), {"type": "warning"})())
+        page.emit("response", type("Response", (), {"status": 499})())
+
+    assert start_calls == 0
+    assert not recorder.triggered
+    assert recorder.path is None
+    assert recorder.error is None
+    assert not (tmp_path / "clean").exists()
+    assert page.handlers == {"console": [], "response": []}
+
+
+async def test_record_on_anomaly_starts_once_on_first_anomaly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent console and response anomalies start and stop one capture."""
+    page = FakePage(FakeCDPSession())
+    session = object()
+    start_calls: list[tuple[FakePage, Path, int]] = []
+    stop_calls: list[object] = []
+    result = tmp_path / "anomaly" / screencast.SCREENCAST_FILENAME
+
+    async def fake_start(page: FakePage, out_dir: Path, *, max_frames: int) -> Any:
+        start_calls.append((page, out_dir, max_frames))
+        await asyncio.sleep(0)
+        return session
+
+    async def fake_stop(received: object) -> Path:
+        stop_calls.append(received)
+        return result
+
+    monkeypatch.setattr(screencast, "start_screencast", fake_start)
+    monkeypatch.setattr(screencast, "stop_screencast", fake_stop)
+
+    async with screencast.record_on_anomaly(
+        page, tmp_path / "anomaly", run_id="anomaly-run", max_frames=12
+    ) as recorder:
+        page.emit("response", type("Response", (), {"status": 503})())
+        page.emit("console", type("Message", (), {"type": "error"})())
+        page.emit("response", type("Response", (), {"status": 504})())
+
+    assert recorder.triggered
+    assert recorder.path == result
+    assert recorder.error is None
+    assert start_calls == [(page, tmp_path / "anomaly", 12)]
+    assert stop_calls == [session]
+
+
+@pytest.mark.parametrize("body_error", [RuntimeError("body failed"), asyncio.CancelledError("cancelled")])
+async def test_record_on_anomaly_stops_on_exception_and_cancel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body_error: BaseException
+) -> None:
+    """Recorder stop failures never replace body exceptions or cancellation."""
+    page = FakePage(FakeCDPSession())
+    session = object()
+    stop_calls: list[object] = []
+    stop_error = E2EScreencastError("encoder failed", reason_code="invalid_output")
+
+    async def fake_start(page: FakePage, out_dir: Path, *, max_frames: int) -> Any:
+        return session
+
+    async def fake_stop(received: object) -> Path:
+        stop_calls.append(received)
+        raise stop_error
+
+    monkeypatch.setattr(screencast, "start_screencast", fake_start)
+    monkeypatch.setattr(screencast, "stop_screencast", fake_stop)
+
+    with pytest.raises(type(body_error)) as raised:
+        async with screencast.record_on_anomaly(page, tmp_path, run_id="failed-run") as recorder:
+            page.emit("console", type("Message", (), {"type": "error"})())
+            raise body_error
+
+    assert raised.value is body_error
+    assert recorder.triggered
+    assert recorder.path is None
+    assert recorder.error is stop_error
+    assert stop_calls == [session]
+    assert page.handlers == {"console": [], "response": []}
