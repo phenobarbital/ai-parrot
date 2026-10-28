@@ -288,9 +288,7 @@ async def test_missing_encoder_extra_is_typed_error(tmp_path: Path, monkeypatch:
     assert repeated.value is raised.value
 
 
-async def test_record_on_anomaly_clean_run_creates_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_record_on_anomaly_clean_run_creates_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A clean run never starts a session or creates an output directory."""
     page = FakePage(FakeCDPSession())
     start_calls = 0
@@ -314,9 +312,7 @@ async def test_record_on_anomaly_clean_run_creates_nothing(
     assert page.handlers == {"console": [], "response": []}
 
 
-async def test_record_on_anomaly_starts_once_on_first_anomaly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_record_on_anomaly_starts_once_on_first_anomaly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Concurrent console and response anomalies start and stop one capture."""
     page = FakePage(FakeCDPSession())
     session = object()

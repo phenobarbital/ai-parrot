@@ -269,7 +269,7 @@ class AnomalyRecorder:
         except E2EScreencastError as exc:
             self.error = exc
             logger.warning("Unable to start anomaly screencast for run %s: %s", self.run_id, exc)
-        except Exception as exc:
+        except Exception:
             self.error = E2EScreencastError(
                 "Unexpected failure starting anomaly screencast.",
                 reason_code="capture_failed",

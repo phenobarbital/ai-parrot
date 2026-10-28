@@ -68,8 +68,7 @@ async def test_record_on_anomaly_real_obscura(unused_tcp_port: int, tmp_path: Pa
                     assert recorder._session is not None, recorder.error
                     await asyncio.sleep(1)
                     await anomaly_page.evaluate(
-                        "document.documentElement.style.background = 'red'; "
-                        "document.body.style.background = 'red'"
+                        "document.documentElement.style.background = 'red'; " "document.body.style.background = 'red'"
                     )
                     await asyncio.sleep(2)
 
