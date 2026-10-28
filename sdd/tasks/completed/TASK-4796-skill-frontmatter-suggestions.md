@@ -221,4 +221,6 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Delivered by gpt-5.6-luna (codex), attempt 1, via the coder pool. The engine's merge of the branch was left unfinished when the MCP server disconnected; it was concluded by an unrelated commit (3132ec314) and then audited by hand.
+Verified: `test_skill_suggestions_frontmatter.py` 3 passed; ruff clean; changed files match the task's three-file list; 70 existing skills tests pass (same on base).
+No coder_record_review recorded (engine unavailable).
