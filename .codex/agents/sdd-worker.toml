@@ -29,7 +29,7 @@ Cardinal rules:
    missing, or acceptance criteria are ambiguous.
 7. Ledger findings (FEAT-758): record deferred findings with `wikitoolkit ledger open` (or the `ledger_open`
    MCP tool) carrying task/review attribution. Never append to, edit or stage `sdd/ledger/events.jsonl` or
-   `sdd/ledger/issues.jsonl`; `$sdd-done` delivers events to `origin/dev` through the outbox.
+   `sdd/ledger/issues.jsonl`; `$sdd-done` delivers events to the ledger branch (`sdd/config.json`) through the outbox.
 
 ## Shared environment policy
 

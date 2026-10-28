@@ -13,6 +13,7 @@ from parrot.sdd.config import (
     SddConfigError,
     default_sdd_config,
     find_repo_root,
+    ledger_destination,
     load_sdd_config,
     write_default_config,
 )
@@ -188,3 +189,12 @@ def test_brief_cli_unknown_subcommand_exits_2() -> None:
     with pytest.raises(SystemExit) as exc:
         brief_meta.main(["bogus"])
     assert exc.value.code == 2
+
+
+def test_ledger_destination_follows_base_branch_unless_set() -> None:
+    """FEAT-758 outbox: ``ledger_branch`` wins, else ``base_branch``; the default stays ``dev``."""
+    assert ledger_destination(default_sdd_config()) == "dev"
+    assert ledger_destination(SddConfig(base_branch="develop")) == "develop"
+    assert ledger_destination(SddConfig(base_branch="develop", ledger_branch="ledger")) == "ledger"
+    with pytest.raises(ValidationError):
+        SddConfig(ledger_branch="origin/dev")

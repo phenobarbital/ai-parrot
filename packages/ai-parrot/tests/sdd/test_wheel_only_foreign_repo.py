@@ -149,6 +149,20 @@ def _seed_worktree(clone: Path) -> None:
     _git(clone, "worktree", "add", "-q", f".claude/worktrees/feat-{FEAT}-{SLUG}", "-b", f"feat-{FEAT}-{SLUG}", "origin/dev")
 
 
+def _seed_hook_context(clone: Path) -> None:
+    """``_seed_worktree`` plus the closeout-hook context JSON that ``/sdd-done`` writes (FEAT-764)."""
+    _seed_worktree(clone)
+    hooks = clone / "hooks"
+    hooks.mkdir()
+    (hooks / "context.json").write_text(json.dumps({
+        "feat_id": FEAT,
+        "spec_path": f"sdd/specs/{SLUG}.spec.md",
+        "branch": f"feat-{FEAT}-{SLUG}",
+        "base_branch": "dev",
+        "worktree": str(clone / f".claude/worktrees/feat-{FEAT}-{SLUG}"),
+    }))
+
+
 def _seed_on_dev(clone: Path) -> None:
     """``_seed_feature`` with ``dev`` checked out (tracking origin/dev), as /sdd-spec and /sdd-task run."""
     _seed_feature(clone)
@@ -368,6 +382,19 @@ SCENARIOS: dict[str, Scenario] = {
     ),
     # a minimal fixture has no per-feature settlement index: exit 3 is the helper's controlled refusal
     "review_checkpoint": Scenario(prepare=_seed_worktree, expect_exit=(0, 1, 2, 3)),
+    # no `.parrot/sdd_hooks.toml` in the fixture: every event runs zero hooks; --record/--finalize need prior state
+    "run_closeout_hooks": Scenario(
+        prepare=_seed_hook_context,
+        expect_exit=_ANY_CLEAN,
+        placeholders={
+            "<ctx>": "<repo>/hooks/context.json",
+            "$HOOKS_DIR": "<repo>/hooks",
+            "<name>": "demo-hook",
+            "${DRY_RUN:+--dry-run}": "",  # the documented optional flag, expanded as when --dry-run is not given
+            "pass|fail": "fail",
+            "<one line>": "demo summary",
+        },
+    ),
     "sdd_meta": Scenario(prepare=_seed_proposal, placeholders={
         "<brainstorm-or-proposal-path>": "<repo>/sdd/proposals/demo.brainstorm.md",
         "<--type value>": "feature",

@@ -191,14 +191,14 @@ _NON_FF_MARKERS: tuple[str, ...] = ("non-fast-forward", "fetch first", "[rejecte
 
 
 class LedgerIntegrator:
-    """Deliver immutable batches to origin/dev without touching active checkouts."""
+    """Deliver immutable batches to the configured ledger branch without touching active checkouts."""
 
     def __init__(self, repo_root: Path, outbox: LedgerOutbox, *, remote: str = "origin") -> None:
-        """Bind repository identity and local outbox; destination is origin/dev."""
+        """Bind repository identity and local outbox; destination is the outbox's ledger branch."""
         self.repo_root = Path(repo_root).resolve()
         self.outbox = outbox
         self.remote = remote
-        self.branch = "dev"
+        self.branch = outbox.branch
         self.logger = logging.getLogger(__name__)
 
     async def _primary_root(self) -> Path:

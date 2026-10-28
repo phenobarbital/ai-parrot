@@ -172,3 +172,16 @@ async def test_second_preparer_is_locked_out(ledger_dir: Path, tmp_path: Path) -
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         with pytest.raises(OutboxLockedError):
             await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc")
+
+
+async def test_batch_carries_configured_branch(ledger_dir: Path, tmp_path: Path) -> None:
+    """The sealed batch records the outbox's destination branch (``sdd/config.json``), default ``dev``."""
+    log = LedgerLog(str(ledger_dir / "events.jsonl"))
+    log.append(_event(1))
+    assert LedgerOutbox(ledger_dir).branch == "dev"
+    outbox = LedgerOutbox(ledger_dir, branch="develop")
+
+    batch = await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc")
+
+    assert batch is not None
+    assert batch.branch == "develop"

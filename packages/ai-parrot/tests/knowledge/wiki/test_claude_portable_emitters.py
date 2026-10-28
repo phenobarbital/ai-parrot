@@ -122,6 +122,9 @@ def test_hook_bodies_quote_and_use_forward_slashes(tmp_path: Path, monkeypatch: 
     want = "'C:/Users/A B/.venv/Scripts/wikitoolkit.exe'"
     assert f"    {want} upsert --changed" in assets.git_hook_block(tmp_path)
     for event in assets.LEDGER_HOOK_EVENTS:
+        if event == "pre-commit":  # FEAT-758: an intentional no-op block, it runs no binary
+            assert want not in assets.ledger_hook_block(tmp_path, event)
+            continue
         assert assets.ledger_hook_block(tmp_path, event).splitlines()[3].startswith(f"{want} ledger ")
     monkeypatch.setattr(assets, "resolve_wikitoolkit_bin", lambda root: "/opt/repo/.venv/bin/wikitoolkit")
     assert "    /opt/repo/.venv/bin/wikitoolkit upsert --changed" in assets.git_hook_block(tmp_path)

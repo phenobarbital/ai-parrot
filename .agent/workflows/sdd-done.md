@@ -445,9 +445,9 @@ fi
 
 ### 9.1. Deliver Ledger Events (FEAT-758)
 
-Ledger events never travel in the feature PR. Deliver every pending local event to `origin/dev` through the
-durable outbox — for **every** flow type, hotfixes included (ledger data never goes to `main`). The integrator
-works in its own temporary checkout of `origin/dev`, retries a rejected push on a fresh base (max 3), never
+Ledger events never travel in the feature PR. Deliver every pending local event to the ledger branch (`ledger_branch` in `sdd/config.json`, else its `base_branch`) through the
+durable outbox — for **every** flow type, hotfixes included (ledger data never goes to the `hotfix_base`). The integrator
+works in its own temporary checkout of the ledger branch, retries a rejected push on a fresh base (max 3), never
 force-pushes and never rotates logs. See `docs/sdd/ledger-outbox.md`.
 
 ```bash

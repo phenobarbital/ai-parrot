@@ -3695,6 +3695,16 @@ def _outbox_source(repo_root: str, ledger_dir: str | None) -> Path | None:
     return Path(LedgerService.from_root(Path(repo_root)).log.path).parent
 
 
+def _outbox_branch(repo_root: str) -> str:
+    """Resolve the ledger delivery branch from ``sdd/config.json`` (``ledger_branch``, else ``base_branch``)."""
+    from parrot.sdd.config import SddConfigError, ledger_destination, load_sdd_config
+
+    try:
+        return ledger_destination(load_sdd_config(Path(repo_root)))
+    except SddConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def _unsupported(json_output: bool, reason: str) -> None:
     """Emit an unsupported-source result and exit with the documented code."""
     payload = {"status": "unsupported", "error_code": reason}
@@ -3735,7 +3745,7 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     integrator = LedgerIntegrator(Path(repo_root), outbox)
     try:
         source_ref = subprocess.run(
@@ -3793,7 +3803,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     integrator = LedgerIntegrator(Path(repo_root), outbox)
     remote_fresh = True
     try:
@@ -3847,7 +3857,7 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     try:
         batches = _run(outbox.pending())
     except StrictLedgerReadError as exc:

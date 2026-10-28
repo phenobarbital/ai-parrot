@@ -36,7 +36,7 @@ class LedgerBatch(BaseModel):
     events_sha256: str
     event_ids: list[str]
     remote: str = "origin"
-    branch: Literal["dev"] = "dev"
+    branch: str = "dev"
     prepared_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -202,9 +202,15 @@ def _remove_temp_batch(path: Path) -> None:
 class LedgerOutbox:
     """Own durable pending batches beside one resolved local event journal."""
 
-    def __init__(self, ledger_dir: Path) -> None:
-        """Bind an existing local ledger directory without selecting another checkout."""
+    def __init__(self, ledger_dir: Path, *, branch: str = "dev") -> None:
+        """Bind an existing local ledger directory without selecting another checkout.
+
+        Args:
+            ledger_dir: Local ledger directory holding ``events.jsonl``.
+            branch: Remote branch that sealed batches are destined for (``sdd/config.json``).
+        """
         self.ledger_dir = Path(ledger_dir).resolve()
+        self.branch = branch
         self.source_path = self.ledger_dir / "events.jsonl"
         self.root = self.ledger_dir / OUTBOX_DIRNAME
         self.pending_dir = self.root / "pending"
@@ -312,6 +318,7 @@ class LedgerOutbox:
                     source_sha256=_sha256(self.source_path.read_bytes()[: source.end_offset]),
                     events_sha256=_sha256(raw_events),
                     event_ids=[event.event_id for _, event in selected],
+                    branch=self.branch,
                 )
                 temp_dir.mkdir()
                 try:

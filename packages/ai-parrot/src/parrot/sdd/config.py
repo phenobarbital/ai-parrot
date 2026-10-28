@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 CONFIG_PATH = Path("sdd/config.json")
-_BRANCH_FIELDS = ("base_branch", "staging_branch", "hotfix_base")
+_BRANCH_FIELDS = ("base_branch", "staging_branch", "hotfix_base", "ledger_branch")
 
 
 class SddConfigError(ValueError):
@@ -24,6 +24,8 @@ class SddConfig(BaseModel):
     base_branch: str = "dev"
     staging_branch: str | None = None
     hotfix_base: str = "main"
+    #: Destination of ledger-event delivery (FEAT-758 outbox); ``None`` follows ``base_branch``.
+    ledger_branch: str | None = None
     issue_tracker: Literal["jira", "none"] = "none"
     jira_host: str | None = None
     reviewer: Literal["codex", "none"] = "none"
@@ -76,6 +78,11 @@ class SddConfig(BaseModel):
         if self.issue_tracker == "jira" and not self.jira_host:
             raise ValueError("issue_tracker='jira' requires jira_host")
         return self
+
+
+def ledger_destination(config: SddConfig) -> str:
+    """Return the branch the ledger outbox delivers to: ``ledger_branch``, else ``base_branch``."""
+    return config.ledger_branch or config.base_branch
 
 
 def default_sdd_config() -> SddConfig:

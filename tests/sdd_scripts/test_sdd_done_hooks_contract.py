@@ -1,7 +1,7 @@
 """Text contract for the FEAT-764 closeout hooks in both `/sdd-done` twins (TASK-4870).
 
 Both the Claude command and the Codex skill must call the same dispatcher
-(`scripts.sdd.run_closeout_hooks`) for `pre_pr`, `post_pr` and `on_failure`,
+(`parrot sdd run run_closeout_hooks`, FEAT-633) for `pre_pr`, `post_pr` and `on_failure`,
 must no longer offer `--resolve-jira`, and must never let `--force` bypass a
 blocking hook. Every dispatcher flag the twins reference is checked against the
 dispatcher's own argparse definitions.
@@ -15,7 +15,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 _DOC = _ROOT / ".claude/commands/sdd-done.md"
 _TWIN = _ROOT / ".agents/skills/sdd-done/SKILL.md"
-_DISPATCHER = _ROOT / "scripts/sdd/run_closeout_hooks.py"
+_DISPATCHER = _ROOT / "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py"
 _TWINS = (_DOC, _TWIN)
 
 
@@ -33,7 +33,7 @@ def test_all_three_events_invoked_in_both_twins() -> None:
         text = _text(path)
         for event in ("pre_pr", "post_pr", "on_failure"):
             assert f"--event {event}" in text, (path.name, event)
-        assert "scripts.sdd.run_closeout_hooks" in text, path.name
+        assert "parrot sdd run run_closeout_hooks" in text, path.name
 
 
 def test_pre_pr_between_test_report_and_report() -> None:

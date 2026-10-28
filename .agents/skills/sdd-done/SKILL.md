@@ -209,7 +209,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - If `--force`, warn but proceed with merge
 
 11. Deliver ledger events (FEAT-758), for every flow type including hotfixes:
-    - Ledger events never travel in the feature PR; the destination is always `origin/dev`, never `main`,
+    - Ledger events never travel in the feature PR; the destination is always the ledger branch (`ledger_branch` in `sdd/config.json`, else its `base_branch`), never the `hotfix_base`,
       regardless of `<BASE_BRANCH>`
     - Run `wikitoolkit ledger outbox prepare --repo-root <worktree>` then
       `wikitoolkit ledger outbox integrate --repo-root <worktree>`
@@ -217,7 +217,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - Exit 2/3/4: set `LEDGER_DELIVERY_PENDING=1`, print the batch location and the exact retry command
       `wikitoolkit ledger outbox integrate --repo-root <worktree> --batch-id <id>`; an already-open code PR
       stays open, nothing is rolled back
-    - The integrator works in its own temporary checkout of `origin/dev`, retries a rejected push on a fresh
+    - The integrator works in its own temporary checkout of the ledger branch, retries a rejected push on a fresh
       base (max 3), never force-pushes and never rotates logs (rotation is an explicit maintenance command)
 
 12. Integrate:
