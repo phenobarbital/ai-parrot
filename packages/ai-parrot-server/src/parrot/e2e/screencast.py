@@ -32,6 +32,28 @@ _CDP_TIMEOUT_S = 10.0
 _EXTRA_HINT = "install the optional extra: pip install 'ai-parrot-server[screencast]'"
 
 
+class _EncoderUnavailable(Exception):
+    """Raised in the worker when PyAV / Pillow or the libvpx encoder is missing."""
+
+
+def _load_codec_deps() -> tuple[Any, Any]:
+    """Import PyAV and Pillow, verifying the libvpx encoder is present.
+
+    Raises:
+        _EncoderUnavailable: A dependency is not installed or libvpx is not compiled in.
+    """
+    try:
+        import av
+        from PIL import Image
+    except ImportError as exc:
+        raise _EncoderUnavailable(f"missing dependency: {exc}") from exc
+    try:
+        av.codec.Codec("libvpx", "w")
+    except Exception as exc:
+        raise _EncoderUnavailable("libvpx encoder is not available in this PyAV build") from exc
+    return av, Image
+
+
 def _encode_webm(frames: list[tuple[int, bytes]], out_path: str) -> int:
     """Encode timestamped JPEG frames to VP8 WebM in a worker process.
 
@@ -42,17 +64,23 @@ def _encode_webm(frames: list[tuple[int, bytes]], out_path: str) -> int:
     Returns:
         Number of frames encoded.
     """
-    import av
-    from PIL import Image
+    av, Image = _load_codec_deps()
+
+    # Size comes from the first frame (even dimensions required by yuv420p); never distort the viewport.
+    with Image.open(io.BytesIO(frames[0][1])) as first:
+        width, height = first.size
+    width, height = max(2, width - width % 2), max(2, height - height % 2)
 
     with av.open(out_path, "w", format="webm") as container:
         stream = container.add_stream("libvpx", rate=10)
         stream.pix_fmt = "yuv420p"
         stream.time_base = Fraction(1, 1000)
-        stream.width, stream.height = 1280, 720
+        stream.width, stream.height = width, height
         last_pts = -1
         for timestamp_ms, jpeg_data in frames:
-            image = Image.open(io.BytesIO(jpeg_data)).convert("RGB").resize((1280, 720))
+            image = Image.open(io.BytesIO(jpeg_data)).convert("RGB")
+            if image.size != (width, height):
+                image = image.resize((width, height))
             frame = av.VideoFrame.from_image(image)
             frame.pts = max(timestamp_ms, last_pts + 1)
             frame.time_base = stream.time_base
@@ -66,7 +94,7 @@ def _encode_webm(frames: list[tuple[int, bytes]], out_path: str) -> int:
 
 def _validate_webm(path: str) -> int:
     """Decode ``path`` fully and return the number of decoded frames."""
-    import av
+    av, _ = _load_codec_deps()
 
     with av.open(path) as container:
         return sum(1 for _ in container.decode(video=0))
@@ -132,13 +160,27 @@ async def start_screencast(page: "Page", out_dir: Path, *, max_frames: int = 600
         session = ScreencastSession(page=page, cdp=cdp, out_dir=out_dir, max_frames=max_frames)
 
         def on_frame(event: dict[str, Any]) -> None:
-            ack = asyncio.create_task(_send(cdp, "Page.screencastFrameAck", {"sessionId": event["sessionId"]}))
-            session.ack_tasks.append(ack)
+            if session.overflow:
+                return  # capture already stopped; neither ack nor buffer further frames
+            try:
+                session_id = event["sessionId"]
+                timestamp_ms = int(event["metadata"]["timestamp"] * 1000)
+                data = base64.b64decode(event["data"])
+            except (KeyError, TypeError, ValueError):
+                logger.warning("Ignoring malformed screencast frame event.", exc_info=True)
+                if isinstance(event, dict) and event.get("sessionId") is not None:
+                    session.ack_tasks.append(
+                        asyncio.create_task(_send(cdp, "Page.screencastFrameAck", {"sessionId": event["sessionId"]}))
+                    )
+                return
             if len(session.frames) >= session.max_frames:
                 session.overflow = True
+                session.ack_tasks.append(asyncio.create_task(_send(cdp, "Page.stopScreencast")))
                 return
-            timestamp_ms = int(event["metadata"]["timestamp"] * 1000)
-            session.frames.append((timestamp_ms, base64.b64decode(event["data"])))
+            session.ack_tasks.append(
+                asyncio.create_task(_send(cdp, "Page.screencastFrameAck", {"sessionId": session_id}))
+            )
+            session.frames.append((timestamp_ms, data))
 
         cdp.on("Page.screencastFrame", on_frame)
         await _send(
@@ -207,9 +249,9 @@ async def stop_screencast(session: ScreencastSession) -> Path:
         try:
             encoded_count = await _run_in_worker(_encode_webm, frames, str(temp_path))
             decoded_count = await _run_in_worker(_validate_webm, str(temp_path))
-        except ImportError as exc:
+        except (_EncoderUnavailable, ImportError) as exc:
             raise E2EScreencastError(
-                f"Screencast encoder unavailable; {_EXTRA_HINT}.",
+                f"Screencast encoder unavailable ({exc}); {_EXTRA_HINT}.",
                 reason_code="encoder_unavailable",
             ) from exc
         except E2EScreencastError:
