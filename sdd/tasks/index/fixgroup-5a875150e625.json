@@ -1,0 +1,33 @@
+{
+  "feature": "fixgroup-5a875150e625",
+  "feature_id": "FEAT-766",
+  "spec": "sdd/specs/fixgroup-5a875150e625.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-28T01:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4874",
+      "feature_id": "FEAT-766",
+      "feature": "fixgroup-5a875150e625",
+      "title": "Closeout hooks Python hardening",
+      "file": "sdd/tasks/active/TASK-4874-closeout-hooks-python-hardening.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-4875",
+      "feature_id": "FEAT-766",
+      "feature": "fixgroup-5a875150e625",
+      "title": "Closeout hooks workflow twin updates",
+      "file": "sdd/tasks/active/TASK-4875-closeout-hooks-twin-updates.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": ["TASK-4874"]
+    }
+  ]
+}
