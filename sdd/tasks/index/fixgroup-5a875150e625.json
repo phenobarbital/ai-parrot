@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-28T01:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-28T00:52:26+00:00",
   "tasks": [
     {
       "id": "TASK-4874",
@@ -26,14 +26,16 @@
       "feature_id": "FEAT-766",
       "feature": "fixgroup-5a875150e625",
       "title": "Closeout hooks workflow twin updates",
-      "file": "sdd/tasks/active/TASK-4875-closeout-hooks-twin-updates.md",
-      "status": "in-progress",
+      "file": "sdd/tasks/completed/TASK-4875-closeout-hooks-twin-updates.md",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
         "TASK-4874"
       ],
-      "started_at": "2026-10-28T00:51:24.270942+00:00"
+      "started_at": "2026-10-28T00:51:24.270942+00:00",
+      "completed_at": "2026-10-28T00:52:26+00:00",
+      "verification": "verified"
     }
   ]
 }
