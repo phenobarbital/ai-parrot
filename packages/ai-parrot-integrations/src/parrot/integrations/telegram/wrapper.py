@@ -4056,7 +4056,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     async def _send_suggestion_keyboard(self, message: Message, session: Any, response: Any) -> None:
         """FEAT-752: send the reply's non-action chips as an inline keyboard. Never raises."""
-        if self._suggestion_buttons is None:
+        # getattr: a wrapper built without __init__ (tests, subclasses) has no store; chips must not break the turn.
+        if getattr(self, "_suggestion_buttons", None) is None:
             return
         chips = getattr(response, "suggestions", None) or []
         if not chips:
