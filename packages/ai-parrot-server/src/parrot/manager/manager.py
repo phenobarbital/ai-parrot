@@ -568,6 +568,12 @@ class BotManager:
             memory_config=bot_model.memory_config,
             max_context_turns=bot_model.max_context_turns,
             use_conversation_history=bot_model.use_conversation_history,
+            # Follow-up suggestion chips (FEAT-752)
+            enable_suggestions=getattr(bot_model, "enable_suggestions", False),
+            suggest_followups=getattr(bot_model, "suggest_followups", False),
+            suggestion_timeout_s=getattr(bot_model, "suggestion_timeout_s", 4.0),
+            max_suggestions=getattr(bot_model, "max_suggestions", 6),
+            suggestion_model=getattr(bot_model, "suggestion_model", None),
             # Security and permissions
             permissions=bot_permissions,
             # Metadata

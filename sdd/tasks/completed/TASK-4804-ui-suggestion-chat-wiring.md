@@ -233,4 +233,8 @@ verified`). A wrapper skip (no `pnpm`/`node_modules`) is NOT a pass — run vite
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed; all anchors re-verified first (every line number in the contract was still exact), Svelte 5 runes only, props kept in the existing `$props` destructure.
+Done per the blueprint: `AgentMessage.suggestions`; `ChatBubble` renders `SuggestionChips` only for `!isUser && !isStreaming && onSuggestion && suggestions.length`; `AgentChat` copies `suggestions` in the stream, non-stream and voice mappings and routes clicks: `kind == "action"` + `action == "explain"` reuses `handleExplain(message.id, message.data)`, any other action is ignored (never sent as a chat turn), everything else is `handleSend(prompt, undefined, output_mode)`.
+Tests RAN FOR REAL: baseline `ChatBubble.test.ts` + `AgentChat.test.ts` = 11 passed before my edits; after: ChatBubble 5 new + AgentChat 4 new, with `SuggestionChips.test.ts` = **25 passed, no unhandled errors** (a first run surfaced a Svelte keyed-each duplicate because my mock reused turn id `t1`; fixed in the test by a per-turn id). Verified via `vitest run --configLoader runner` with a scratchpad wrapper config and the main checkout's `node_modules` symlinked in (gitignored), because `pnpm` cannot write in this sandbox. The pytest wrapper `tests/ui/test_vitest_suggestion_chat_wiring.py` is therefore not run green here (it calls `pnpm exec`); same sandbox limitation as TASK-4803.
+No type-check gate exists in this project (no svelte-check / `check` script), so vitest is the only UI gate.
+Cross-feature note: FEAT-755 TASK-4769 also edits `ChatBubble.svelte`/`ChatBubble.test.ts`; hunks are disjoint (insertions after the sources block / appended describe), so a later merge with `dev` should keep both.

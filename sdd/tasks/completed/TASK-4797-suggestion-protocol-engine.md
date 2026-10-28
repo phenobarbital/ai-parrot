@@ -335,4 +335,6 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed: `bots/suggestions/{__init__,protocol,engine}.py` and `tests/bots/test_suggestion_engine.py`.
+`register`/`collect` filled per the Implementation Notes (renderer check -> casefold dedupe -> llm cap -> total cap). One deliberate structural choice: per-provider timing/status live in a `_run_provider` helper that returns `(chips, status, elapsed_ms)`, so no timing state is kept on the shared engine instance (a bot-level engine serves concurrent requests); a concurrent-collect test covers it. `collect` wraps the loop and post-processing in a defensive try/except.
+Tests: 10 passed (spec's five plus lane order, llm cost copy, external provider, prepend, concurrency). ruff and black clean. Pyright import notices on the test file are stale resolution against the main checkout.

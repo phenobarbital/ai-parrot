@@ -248,4 +248,8 @@ database.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Delivered by the native sonnet seat, attempt 1; merged by hand (sequential fallback, MCP server disconnected).
+Verified on the attempt branch: `test_botmodel_suggestion_fields.py` + `manager/test_build_database_bot_tools.py` + `test_botmodel_tooling_fields.py` = 12 passed; ruff clean; four task files only (a stray foreign `sdd/ledger/events.jsonl` line auto-staged by the pre-commit hook was already on the branch and produced no net change on merge).
+Deviation (accepted): `_build_database_bot` reads the five new fields with `getattr(bot_model, "<f>", <default>)` because the existing test builds the bot model from a SimpleNamespace; defaults equal the `BotModel` defaults.
+Not re-checked: the task's note about the pre-existing `use_kb` drop. The SQL migration was not run against any database.
+No coder_record_review recorded (engine unavailable).

@@ -261,4 +261,8 @@ it in ranges.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed (wrapper.py is read in ranges; every anchor re-verified, including that `config` is the `__init__` parameter and `Optional` is imported).
+Per the blueprint: store + `sg` registration placed before `discover_from_agent` and `_register_handlers()` (so the callback_query route exists even for agents without `@telegram_callback` methods); `_send_suggestion_keyboard` called once after `_send_parsed_response` in `handle_message` (private path only) and never raises; `_on_suggestion_press` validates token, user, chat and `_is_authorized`, maps `output_mode` with a TELEGRAM fallback, replays through `_invoke_agent` under `telegram_chat_scope`, then sends the reply and a fresh keyboard. Verified that `_resolve_agent_for_request`/`_initialize_user_context`/`_send_parsed_response` only read `message.chat.id`, so passing the callback's (bot-authored) message is safe; the session comes from `query.from_user`.
+Behavioural notes: a token is not consumed on press (re-pressing replays again, as the spec describes); a refusal is sent as `reply_text` because `already_answered=True` suppresses toasts; with the feature disabled a stray `sg:` press cannot occur (prefix unregistered), and the handler still degrades to 'expired' if called.
+Tests: 12 new in `test_suggestion_buttons_wrapper.py` (owner replay, mode fallback, refusals for other user/chat/expired/no message/unauthorised/disabled, new keyboard after replay, keyboard gating and action-chip exclusion, send failure swallowed, registration order, registry routing, handle_message ordering). With `test_tenant_binding.py`: 27 passed incl. TASK-4809's suite. ruff and black clean.
+Not exercised: a real aiogram Bot/dispatcher round trip (the wrapper is built with `object.__new__` as in test_tenant_binding.py).

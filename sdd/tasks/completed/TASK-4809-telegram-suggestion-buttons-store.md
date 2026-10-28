@@ -252,4 +252,7 @@ files, `scripts/sdd/close_task.sh TASK-4809 followup-suggestion-chips verified`)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed; anchors in models.py re-verified.
+DEVIATION from the blueprint (deliberate, small): the token is `"s" + secrets.token_urlsafe(8)` (still 12 URL-safe chars) instead of a bare `secrets.token_urlsafe(9)`. `CallbackData.decode` runs `json.loads` on the part after the separator, so a purely numeric token (about 2e-10 per token, but real) would decode to an int instead of `{"raw": token}`, breaking the acceptance criterion and TASK-4810's handler. A letter prefix makes JSON parsing impossible; a test asserts it over 2000 tokens and documents the hazard.
+Also: `get()` returns None for corrupt JSON and for non-dict JSON; `build_suggestion_keyboard` skips chips without a label/prompt and reads chips duck-typed (dicts or models).
+Tests: 8 new in `test_suggestion_buttons.py` plus `packages/ai-parrot/tests/test_callbacks.py` = 12 passed. ruff and black clean.

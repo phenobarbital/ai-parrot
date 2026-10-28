@@ -328,4 +328,7 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed. All anchors re-verified (abstract.py:556/:4191, base.py:1735/:2303) before editing.
+`_get_suggestion_engine` and `_attach_suggestions` filled per the notes; imports are lazy inside the methods (the `SuggestionEngine`/`SuggestionProvider` names are under `TYPE_CHECKING`). Opt-in guarantee: with only the skill lane and no turn-skill suggestions the response is returned untouched and the engine is not even built (asserted).
+Tests: 8 new in `test_suggestion_bot_wiring.py` (spec's four plus lanes, deterministic-only, never-raises, `suggestion_model` reaches the LLM provider). With `test_linked_surface_lifting.py`, `test_resolve_output_mode_noop.py` and the other suggestion suites: 47 passed. A real `Chatbot(enable_suggestions=True, max_suggestions=3, presentation_modes=["card"])` constructs and reports the right lanes.
+Lint: ruff reports 8 pre-existing findings in `base.py` (E402 at lines 65-77, F841 at 151-155), none in the edited regions; I did not touch them. black was not run on abstract.py/base.py to avoid unrelated reformatting.

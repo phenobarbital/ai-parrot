@@ -246,4 +246,8 @@ Follow `sdd/templates/task.md` § Agent Instructions (worktree via `ensure_workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). All anchors re-verified (line numbers had shifted +8 after TASK-4802).
+Done per the blueprint: flag popped in `post` and forwarded; header `chunked-aimessage+suggestions` when on; `defer_suggestions=suggestions_trailer` passed to `bot.ask_stream`; envelope omits `suggestions` on the trailer path; `_write_suggestions_trailer` awaits the shielded task under `suggestion_timeout_s + 1`, cancels it on timeout/error and writes `\n\x00{suggestions, turn_id}` only when the list is non-empty; new static `_cancel_suggestions_task` is called from both the CancelledError and generic except branches. Black-formatted.
+DEVIATION (flag for review): I also edited `tests/handlers/test_suggestions_passthrough.py` (TASK-4802's file, not in this task's list). Two of its source assertions were stricter than the design allows once the trailer exists (exactly 5 `_suggestions_payload(` mentions; an unconditional `if _suggestions is not None:` guard on the stream envelope). They now accept the extra call and the optional `and not suggestions_trailer`. No other behaviour was loosened; the acceptance criterion 'TASK-4802 tests stay green' required this.
+Tests: 7 new in `test_suggestions_trailer.py`, driving the real `_handle_stream_response` with a fake StreamResponse/bot (flag off = v1 wire and `defer_suggestions=False`; flag on = 3 frames, envelope without suggestions, trailer keys; empty list; timeout cancels the task; failing task; cancel helper; flag never forwarded). Handler suites together: 32 passed; the only failures are the 2 pre-existing `test_agent_a2ui_stream.py` ones (issue:46f02d0469bb, unchanged).
+Not exercised: a real aiohttp client disconnect mid-trailer (the cancel helper and the except-branch wiring are covered separately).

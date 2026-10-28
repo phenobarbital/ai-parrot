@@ -203,4 +203,7 @@ real before closing, and record the result in the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented directly by the worker (sequential fallback). Files exactly as listed; the component and the pytest wrapper are verbatim from the blueprint (Svelte 5 runes, callback prop, no Svelte 4 patterns, generated type imported, not hand-written).
+Tests: the vitest file has 5 tests (the spec's three plus data-kind/title exposure and the disabled state). RAN FOR REAL: **5 passed**. The sandbox cannot run `pnpm` (read-only store), so I ran `node_modules/.bin/vitest run --configLoader runner --config <scratchpad wrapper>` with the main checkout's `node_modules` symlinked in (gitignored) and `cacheDir` redirected to the scratchpad; the wrapper config just re-exports `vitest.config.ts`.
+The pytest wrapper `tests/ui/test_vitest_suggestion_chips.py` was NOT run green here: with `node_modules` present it executes `pnpm exec vitest`, which fails on the read-only store (EROFS/Corepack). That is a sandbox limitation, not a code failure; in a normal environment it follows the same pattern as the other `test_vitest_*` wrappers.
+One test detail: the disabled-state test uses `HTMLElement.click()` instead of `fireEvent.click`, because `fireEvent` dispatches events to disabled buttons in jsdom while a real click does not.
