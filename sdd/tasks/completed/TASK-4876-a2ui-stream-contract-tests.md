@@ -65,7 +65,7 @@ Implement in the FEAT-767 worktree only; commit code, then close with `scripts/s
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Code (/sdd-fix issue:46f02d0469bb)
+**Date**: 2026-10-28
+**Notes**: Implemented in f7da5ffbe. Root cause: `black` rewrote `parrot/handlers/agent.py` to double quotes; the contract code was intact. The header, separator and final-dict envelope assertions now use a `_has()` regex helper where `{q}` matches either quote. Reproduced 2 failed / 3 passed before; 5 passed after. Checked each pattern matches the real handler and fails when its contract snippet is mutated. ruff and black clean. `parrot/handlers/agent.py` untouched.
+**Deviations from spec**: none

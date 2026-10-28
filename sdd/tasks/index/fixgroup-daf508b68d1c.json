@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-28T00:55:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-28T00:52:56+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -15,16 +15,18 @@
       "feature_id": "FEAT-767",
       "feature": "fixgroup-daf508b68d1c",
       "spec": "sdd/specs/fixgroup-daf508b68d1c.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4876-a2ui-stream-contract-tests.md",
+      "file": "sdd/tasks/completed/TASK-4876-a2ui-stream-contract-tests.md",
       "discovered_from": "issue:46f02d0469bb",
       "parallelism_notes": "Single task; edits one test file in ai-parrot-server.",
-      "started_at": "2026-10-28T00:58:00+00:00"
+      "started_at": "2026-10-28T00:58:00+00:00",
+      "completed_at": "2026-10-28T00:52:56+00:00",
+      "verification": "verified"
     }
   ]
 }
