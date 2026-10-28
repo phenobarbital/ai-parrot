@@ -408,7 +408,7 @@
       "feature_id": "FEAT-752",
       "feature": "followup-suggestion-chips",
       "spec": "sdd/specs/followup-suggestion-chips.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -418,8 +418,9 @@
       "parallelism_notes": "tests build parrot.models.Suggestion from TASK-4794 (models/suggestions.py); own files only (telegram/suggestion_buttons.py, telegram/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-27T15:14:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4809-telegram-suggestion-buttons-store.md"
+      "completed_at": "2026-10-28T00:58:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4809-telegram-suggestion-buttons-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4810",
