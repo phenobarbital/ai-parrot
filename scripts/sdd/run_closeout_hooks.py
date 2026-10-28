@@ -171,22 +171,33 @@ def run_event(event: str, ctx: HookContext, cfg: HooksConfig, root: Path, ctx_pa
         else:
             prompt_data = _Defaulting(ctx.model_dump())
             prompt_data["artifact_dir"] = str(hook_dir.resolve())
-            result = HookResult(
-                name=hook.name,
-                kind=HookKind.AGENT,
-                status="pending",
-                blocking=hook.blocking,
-                summary="Agent hook pending",
-            )
-            outcome.pending_agents.append(
-                {
-                    "name": hook.name,
-                    "agent": hook.agent,
-                    "prompt": (hook.prompt or "").format_map(prompt_data),
-                    "artifact_dir": str(hook_dir.resolve()),
-                    "blocking": hook.blocking,
-                }
-            )
+            try:
+                prompt = (hook.prompt or "").format_map(prompt_data)
+            except (KeyError, IndexError, ValueError) as exc:
+                result = HookResult(
+                    name=hook.name,
+                    kind=HookKind.AGENT,
+                    status="fail",
+                    blocking=hook.blocking,
+                    summary=f"invalid prompt template: {type(exc).__name__}: {exc}",
+                )
+            else:
+                result = HookResult(
+                    name=hook.name,
+                    kind=HookKind.AGENT,
+                    status="pending",
+                    blocking=hook.blocking,
+                    summary="Agent hook pending",
+                )
+                outcome.pending_agents.append(
+                    {
+                        "name": hook.name,
+                        "agent": hook.agent,
+                        "prompt": prompt,
+                        "artifact_dir": str(hook_dir.resolve()),
+                        "blocking": hook.blocking,
+                    }
+                )
         result.artifacts = _glob_artifacts(hook_dir, hook.artifacts)
         outcome.results.append(result)
     _recompute_blocking_failed(outcome)

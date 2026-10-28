@@ -268,3 +268,19 @@ prompt = "Review {{feat_id}}"
         run_closeout_hooks.main(["--event", "pre_pr", "--root", str(tmp_path), "--feat-id", "FEAT-764", "--finalize"])
         == 0
     )
+
+
+def test_agent_prompt_with_literal_braces_fails_hook_not_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, context_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed prompt template fails that hook only; the event still persists and exits cleanly."""
+    monkeypatch.setenv("SDD_HOOKS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    _config(
+        tmp_path,
+        '[[hooks.pre_pr]]\nname = "ag"\nkind = "agent"\nagent = "x"\nprompt = \'emit {"k": 1} for {feat_id}\'\n',
+    )
+    code = _run(tmp_path, context_path)
+    out = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert out["results"][0]["status"] == "fail"
+    assert "invalid prompt template" in out["results"][0]["summary"]
