@@ -27,12 +27,13 @@
       "feature": "fixgroup-5a875150e625",
       "title": "Closeout hooks workflow twin updates",
       "file": "sdd/tasks/active/TASK-4875-closeout-hooks-twin-updates.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
         "TASK-4874"
-      ]
+      ],
+      "started_at": "2026-10-28T00:51:24.270942+00:00"
     }
   ]
 }
