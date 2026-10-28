@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Protocol, Sequence, runtime_checkable
 
 from parrot.models.outputs import OutputMode
@@ -24,6 +24,9 @@ class SuggestionContext:
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     tenant: Optional[str] = None
+    # Per-collect scratch space (one context per turn). Providers use it to hand per-call results, such as the LLM
+    # cost record, back to the engine without keeping them on a provider instance that every request shares.
+    scratch: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
 
 @runtime_checkable

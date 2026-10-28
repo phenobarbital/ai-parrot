@@ -77,13 +77,25 @@ class SuggestionEngine:
                 meta["providers"][provider.name] = {"status": status, "count": len(chips), "elapsed_ms": elapsed_ms}
                 collected.extend(chips)
                 if status == "ok" and provider.lane == "llm" and meta["llm"] is None:
-                    meta["llm"] = getattr(provider, "last_cost", None)
+                    meta["llm"] = self._provider_cost(provider, ctx)
             collected = self._post_process(collected)
         except Exception as exc:  # defensive: collect must never raise
             self.logger.warning("Suggestion engine failed: %s", exc)
             collected = []
         meta["count"] = len(collected)
         return collected, meta
+
+    @staticmethod
+    def _provider_cost(provider: SuggestionProvider, ctx: SuggestionContext) -> Optional[dict[str, Any]]:
+        """Cost record of the call that just ran for ``ctx``.
+
+        A provider that declares ``per_call_cost = True`` reports it through ``ctx.scratch["llm_cost"]`` (safe under
+        concurrency: one context per turn). Other providers fall back to the ``last_cost`` attribute, which is
+        instance state shared by every request on the bot and can therefore race.
+        """
+        if getattr(provider, "per_call_cost", False):
+            return ctx.scratch.get("llm_cost")
+        return getattr(provider, "last_cost", None)
 
     async def _run_provider(
         self, provider: SuggestionProvider, ctx: SuggestionContext

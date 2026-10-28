@@ -26,11 +26,12 @@ def _wrapper_class():
 def _wrapper(*, enabled=True, authorized=True):
     wrapper = object.__new__(_wrapper_class())
     wrapper.logger = MagicMock()
+    wrapper.config = SimpleNamespace(force_authentication=False)
     wrapper._suggestion_buttons = SuggestionButtonStore() if enabled else None
     wrapper._callback_registry = CallbackRegistry()
     wrapper._is_authorized = lambda chat_id: authorized
     wrapper._get_or_create_memory = lambda chat_id: "memory"
-    wrapper._get_user_session = lambda query: SimpleNamespace(telegram_id=query.from_user.id)
+    wrapper._get_user_session = lambda query: SimpleNamespace(telegram_id=query.from_user.id, authenticated=True)
     wrapper._invoke_agent = AsyncMock(return_value=SimpleNamespace(suggestions=[]))
     wrapper._parse_response = lambda r: r
     wrapper._send_parsed_response = AsyncMock()
@@ -202,3 +203,36 @@ def test_handle_message_sends_keyboard_after_reply_source():
     source = inspect.getsource(_wrapper_class().handle_message)
     assert source.count("_send_suggestion_keyboard(") == 1
     assert source.index("_send_parsed_response(message, parsed)") < source.index("_send_suggestion_keyboard(")
+
+
+@pytest.mark.asyncio
+async def test_press_refused_when_session_no_longer_authenticated():
+    """A token outlives a logout/expired session; a press must not run the agent for a signed-out user."""
+    wrapper = _wrapper()
+    wrapper.config = SimpleNamespace(force_authentication=True)
+    wrapper._get_user_session = lambda query: SimpleNamespace(telegram_id=query.from_user.id, authenticated=False)
+    token = await wrapper._suggestion_buttons.put(prompt="Why?", output_mode=None, chat_id=10, user_id=7)
+
+    result = await wrapper._on_suggestion_press(_context(token))
+
+    assert "/login" in result.reply_text
+    wrapper._invoke_agent.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_press_allowed_when_forced_auth_and_session_authenticated():
+    wrapper = _wrapper()
+    wrapper.config = SimpleNamespace(force_authentication=True)
+    token = await wrapper._suggestion_buttons.put(prompt="Why?", output_mode=None, chat_id=10, user_id=7)
+    result = await wrapper._on_suggestion_press(_context(token))
+    wrapper._invoke_agent.assert_awaited_once()
+    assert result.reply_text is None
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_press_allowed_when_auth_not_forced():
+    wrapper = _wrapper()
+    wrapper._get_user_session = lambda query: SimpleNamespace(telegram_id=query.from_user.id, authenticated=False)
+    token = await wrapper._suggestion_buttons.put(prompt="Why?", output_mode=None, chat_id=10, user_id=7)
+    await wrapper._on_suggestion_press(_context(token))
+    wrapper._invoke_agent.assert_awaited_once()

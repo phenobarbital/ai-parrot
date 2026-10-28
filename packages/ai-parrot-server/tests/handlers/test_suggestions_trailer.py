@@ -218,3 +218,19 @@ def test_flag_is_popped_and_forwarded_in_post():
     assert "defer_suggestions=suggestions_trailer," in source
     stream_call = source.split("async for chunk in bot.ask_stream(", 1)[1].split("):", 1)[0]
     assert "suggestions_trailer=" not in stream_call
+
+
+_PRE_FEAT_752_ENVELOPE_KEYS = {"input", "output", "metadata", "sources", "tool_calls"}
+
+
+@pytest.mark.parametrize("trailer", [False, True])
+async def test_chipless_stream_envelope_keeps_the_pre_feature_key_set(monkeypatch, trailer):
+    """Golden check through the real handler: no chips means no `suggestions` key and no second frame."""
+    bot = _Bot(_message(), chips=[])
+    resp = await _run(monkeypatch, bot, trailer=trailer)
+
+    frames = _frames(resp)
+    assert len(frames) == 2  # text + envelope only
+    envelope = json.loads(frames[1])
+    assert set(envelope) == _PRE_FEAT_752_ENVELOPE_KEYS
+    assert "suggestions" not in envelope["metadata"]

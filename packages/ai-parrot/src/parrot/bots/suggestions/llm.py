@@ -37,6 +37,7 @@ class LLMSuggestionProvider:
 
     name = "llm"
     lane = "llm"
+    per_call_cost = True  # cost travels in ctx.scratch["llm_cost"]; `last_cost` is kept for direct callers only
 
     def __init__(
         self,
@@ -58,12 +59,17 @@ class LLMSuggestionProvider:
 
     @property
     def last_cost(self) -> Optional[dict[str, Any]]:
-        """Cost record of the most recent successful call, or None."""
+        """Cost record of the most recent successful call, or None.
+
+        Instance state shared by every request on the bot: concurrent turns can overwrite each other. The engine
+        does not use it (it reads ``ctx.scratch["llm_cost"]``); it exists for callers that run a single turn.
+        """
         return self._last_cost
 
     async def suggest(self, ctx: SuggestionContext) -> Sequence[Suggestion]:
         """Ask the lightweight model for follow-ups; return ``[]`` on any failure (never raises)."""
         self._last_cost = None
+        ctx.scratch.pop("llm_cost", None)
         prompt = SUGGESTION_PROMPT.format(
             max_items=self.max_items,
             question=ctx.question,
@@ -99,13 +105,16 @@ class LLMSuggestionProvider:
                 )
                 for item in output.suggestions[: self.max_items]
             ]
-            self._last_cost = {
+            cost = {
                 "model": result.model,
                 "usage": result.usage.model_dump(),
                 "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
             }
+            self._last_cost = cost
+            ctx.scratch["llm_cost"] = cost
         except Exception as exc:  # noqa: BLE001 — a malformed batch must not break the answer
             logger.warning("LLM suggestion output rejected: %s", exc)
             self._last_cost = None
+            ctx.scratch.pop("llm_cost", None)
             return []
         return chips

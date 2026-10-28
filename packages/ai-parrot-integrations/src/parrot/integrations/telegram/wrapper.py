@@ -207,7 +207,6 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         self._callback_registry = CallbackRegistry()
         self._state_manager = IntegrationStateManager()
 
-        # We need the orchestrator if this is a managed environment
         # FEAT-752: follow-up chips as inline buttons (opt-in). Registered before _register_handlers() so the
         # callback_query route is installed even when the agent has no @telegram_callback methods.
         self._suggestion_buttons: Optional[SuggestionButtonStore] = None
@@ -217,6 +216,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 SUGGESTION_PREFIX, self._on_suggestion_press, "Replay a follow-up suggestion chip"
             )
 
+        # We need the orchestrator if this is a managed environment
         discovered = self._callback_registry.discover_from_agent(self.agent)
         if discovered:
             self.logger.info(
@@ -4099,6 +4099,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # _get_user_session reads only `.from_user`: the callback query's (the clicker), never msg.from_user (the bot).
         session = self._get_user_session(query)
+        # Same gate as handle_message (`_check_authentication`): a token outlives a logout or an expired session for up
+        # to `suggestion_button_ttl_s`, so a press must not run the agent for a user who is no longer signed in.
+        if self.config.force_authentication and not session.authenticated:
+            return CallbackResult(reply_text="⛔ You must sign in with /login to talk to me.")
         memory = self._get_or_create_memory(context.chat_id)
         with telegram_chat_scope(context.chat_id):
             response = await self._invoke_agent(

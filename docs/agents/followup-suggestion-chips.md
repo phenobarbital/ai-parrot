@@ -237,8 +237,10 @@ agents:
 `status` is `ok`, `timeout`, `error` or `skipped` (lane not enabled). `llm` is `null` unless the LLM provider ran
 successfully.
 
-Known limitation: the LLM cost record is read from the provider instance, so two simultaneous turns on the same agent
-can swap their `metadata["suggestions"]["llm"]` cost records. The chips themselves are not affected.
+The built-in LLM provider reports its cost through the per-turn context (`ctx.scratch["llm_cost"]`), so simultaneous
+turns on the same agent keep their own `metadata["suggestions"]["llm"]` record. A custom provider that instead exposes a
+`last_cost` attribute is read from instance state shared by every request, and two simultaneous turns can swap those
+records; set `per_call_cost = True` on the provider and write the record to `ctx.scratch["llm_cost"]` to avoid that.
 
 ## 8. Stream trailer
 

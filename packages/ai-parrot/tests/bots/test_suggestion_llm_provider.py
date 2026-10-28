@@ -115,3 +115,55 @@ async def test_llm_provider_cost_reset_between_calls():
     bot._client = FakeClient(exc=RuntimeError("boom"))
     await provider.suggest(_ctx(None))
     assert provider.last_cost is None
+
+
+class _SlowEchoClient:
+    """invoke() reports a question-dependent model after a fixed delay."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def invoke(self, prompt, **kw):
+        import asyncio
+
+        tag = "A" if "Question: qA" in prompt else "B"
+        # Equal delays: both calls complete in the same loop iteration, so with instance-level cost state the second
+        # writer would be visible to the first turn's engine read.
+        await asyncio.sleep(0.02)
+        batch = SuggestionBatch(suggestions=[Suggestion(label=f"chip {tag}", prompt=f"p {tag}")])
+        return InvokeResult(output=batch, output_type=SuggestionBatch, model=f"model-{tag}", usage=CompletionUsage())
+
+
+async def test_concurrent_turns_on_a_shared_engine_keep_their_own_cost():
+    import asyncio
+
+    from parrot.bots.suggestions import SuggestionEngine
+
+    engine = SuggestionEngine(timeout_s=2.0)
+    engine.register(LLMSuggestionProvider(FakeBot(_SlowEchoClient())))  # one provider shared by every request
+
+    def ctx_for(question):
+        msg = AIMessage(input=question, output="answer", model="m", provider="p", usage=CompletionUsage())
+        return SuggestionContext(question=question, response=msg, output_mode=OutputMode.DEFAULT, bot=None)
+
+    (chips_a, meta_a), (chips_b, meta_b) = await asyncio.gather(
+        engine.collect(ctx_for("qA"), lanes=frozenset({"llm"})),
+        engine.collect(ctx_for("qB"), lanes=frozenset({"llm"})),
+    )
+
+    assert [c.label for c in chips_a] == ["chip A"] and meta_a["llm"]["model"] == "model-A"
+    assert [c.label for c in chips_b] == ["chip B"] and meta_b["llm"]["model"] == "model-B"
+
+
+async def test_failed_call_leaves_no_cost_in_the_context():
+    from parrot.bots.suggestions import SuggestionEngine
+
+    engine = SuggestionEngine(timeout_s=2.0)
+    engine.register(LLMSuggestionProvider(FakeBot(FakeClient(exc=RuntimeError("boom")))))
+    msg = AIMessage(input="q", output="a", model="m", provider="p", usage=CompletionUsage())
+    ctx = SuggestionContext(question="q", response=msg, output_mode=OutputMode.DEFAULT, bot=None)
+    chips, meta = await engine.collect(ctx, lanes=frozenset({"llm"}))
+    assert chips == [] and meta["llm"] is None and "llm_cost" not in ctx.scratch
