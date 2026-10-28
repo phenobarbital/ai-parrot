@@ -190,3 +190,26 @@ async def test_concurrent_collect_reports_independent_timings(ctx):
     for chips, meta in results:
         assert [c.label for c in chips] == ["A"]
         assert meta["providers"]["ok"]["elapsed_ms"] >= 0.0
+
+
+async def test_engine_total_timeout_bounds_stacked_providers(ctx):
+    """Slow providers must not stack: collect() is bounded by the total deadline."""
+
+    class Sleepy:
+        lane = "deterministic"
+
+        def __init__(self, name):
+            self.name = name
+
+        async def suggest(self, ctx):
+            await asyncio.sleep(0.15)
+            return []
+
+    eng = SuggestionEngine(timeout_s=0.2, total_timeout_s=0.25)
+    for n in ("a", "b", "c"):
+        eng.register(Sleepy(n))
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    _, meta = await eng.collect(ctx, lanes=frozenset({"deterministic"}))
+    assert loop.time() - started < 0.45
+    assert meta["providers"]["c"]["status"] == "timeout"

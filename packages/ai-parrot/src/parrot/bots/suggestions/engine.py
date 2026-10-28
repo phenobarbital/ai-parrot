@@ -35,12 +35,18 @@ class SuggestionEngine:
         max_suggestions: int = 6,
         max_llm_suggestions: int = 4,
         timeout_s: float = 4.0,
+        total_timeout_s: Optional[float] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
-        """Caps and per-provider timeout. ``timeout_s`` applies to every provider, not only the LLM lane."""
+        """Caps and timeouts.
+
+        ``timeout_s`` caps each provider (every lane, not only the LLM one); ``total_timeout_s`` is the deadline
+        for the whole ``collect()`` call and defaults to ``timeout_s``, so slow providers cannot stack.
+        """
         self.max_suggestions = max_suggestions
         self.max_llm_suggestions = max_llm_suggestions
         self.timeout_s = timeout_s
+        self.total_timeout_s = timeout_s if total_timeout_s is None else total_timeout_s
         self.logger = logger or logging.getLogger(__name__)
         self._providers: list[SuggestionProvider] = []
 
@@ -68,12 +74,13 @@ class SuggestionEngine:
             "llm": None,
         }
         collected: list[Suggestion] = []
+        deadline = time.perf_counter() + self.total_timeout_s
         try:
             for provider in self.providers:
                 if provider.lane not in lanes:
                     meta["providers"][provider.name] = {"status": "skipped", "count": 0, "elapsed_ms": 0.0}
                     continue
-                chips, status, elapsed_ms = await self._run_provider(provider, ctx)
+                chips, status, elapsed_ms = await self._run_provider(provider, ctx, deadline)
                 meta["providers"][provider.name] = {"status": status, "count": len(chips), "elapsed_ms": elapsed_ms}
                 collected.extend(chips)
                 if status == "ok" and provider.lane == "llm" and meta["llm"] is None:
@@ -98,16 +105,19 @@ class SuggestionEngine:
         return getattr(provider, "last_cost", None)
 
     async def _run_provider(
-        self, provider: SuggestionProvider, ctx: SuggestionContext
+        self, provider: SuggestionProvider, ctx: SuggestionContext, deadline: Optional[float] = None
     ) -> tuple[list[Suggestion], str, float]:
-        """Run one provider under the timeout; return ``(chips, status, elapsed_ms)`` and never raise."""
+        """Run one provider under min(per-provider timeout, time left to ``deadline``); return ``(chips, status, elapsed_ms)`` and never raise."""
         started = time.perf_counter()
         status = "ok"
         chips: list[Suggestion] = []
+        budget = self.timeout_s
+        if deadline is not None:
+            budget = min(budget, max(deadline - started, 0.0))
         try:
-            chips = list(await asyncio.wait_for(provider.suggest(ctx), self.timeout_s) or [])
+            chips = list(await asyncio.wait_for(provider.suggest(ctx), budget) or [])
         except asyncio.TimeoutError:
-            self.logger.warning("Suggestion provider %r timed out after %ss", provider.name, self.timeout_s)
+            self.logger.warning("Suggestion provider %r timed out after %.2fs", provider.name, budget)
             status = "timeout"
         except Exception as exc:
             self.logger.warning("Suggestion provider %r failed: %s", provider.name, exc)
