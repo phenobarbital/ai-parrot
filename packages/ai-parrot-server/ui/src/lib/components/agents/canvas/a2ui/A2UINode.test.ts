@@ -18,6 +18,13 @@ const { features } = vi.hoisted(() => ({
   },
 }));
 vi.mock('$lib/features', () => ({ features }));
+vi.mock('mermaid', () => ({
+  default: {
+    initialize: vi.fn(),
+    parse: vi.fn().mockResolvedValue(true),
+    render: vi.fn().mockResolvedValue({ svg: '<svg data-testid="mermaid-svg"></svg>' }),
+  },
+}));
 
 import A2UINode from './A2UINode.svelte';
 import { VIZ_CORE_CATALOG_ID } from './a2ui-types';
@@ -234,6 +241,21 @@ describe('A2UINode', () => {
       surfaceCatalogId: VIZ_CORE_CATALOG_ID,
     });
     expect(screen.getByRole('img', { name: 'Surface-scoped graph' })).toBeInTheDocument();
+  });
+
+  it('dispatches MermaidDiagram', async () => {
+    const source = 'flowchart TD\n a --> b\n';
+    const { container } = render(A2UINode, {
+      descriptor: {
+        component: 'MermaidDiagram',
+        properties: { source, diagramType: 'flowchart' },
+      },
+      dataModel: {},
+    });
+    expect(await screen.findByTestId('mermaid-svg')).toBeInTheDocument();
+    expect(screen.getByText('Mermaid source')).toBeInTheDocument();
+    expect(container.querySelector('details code')?.textContent).toBe(source);
+    expect(screen.queryByText(/not supported/i)).toBeNull();
   });
 
   it('rejects a bare Graph on a Parrot-default surface (unsupported placeholder)', () => {

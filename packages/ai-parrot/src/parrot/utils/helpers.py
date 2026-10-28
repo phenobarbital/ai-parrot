@@ -40,6 +40,10 @@ class RequestContext:
         # a potential import cycle.
         self.output_mode = None
         self.intent_score = None
+        #: FEAT-755 — A2UI component hint ("KPICard", "Timeline", ...) set by a composite
+        #: route win (route_labels.set_output_shape) or by an explicit ask(a2ui_component=)
+        #: kwarg. None means "no component hint"; the emitter is skipped.
+        self.a2ui_component: Optional[str] = None
 
     async def __aenter__(self):
         return self

@@ -10,7 +10,7 @@ tags: [ledger, outbox, concurrency, worktrees, git-hooks, sdd]
 **Feature ID**: FEAT-758
 **Date**: 2026-10-27
 **Author**: Jesus Lara (with Codex)
-**Status**: draft
+**Status**: approved
 **Target version**: Next release; version unassigned
 
 ## 1. Motivation & Business Requirements
@@ -407,10 +407,11 @@ tests:
 - tests/knowledge/wiki/test_installer_ledger_hooks.py
 - tests/sdd/test_ledger_workflow_twins.py
 - packages/ai-parrot/tests/knowledge/wiki/test_ledger_export_snapshot.py
+- packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py
 markers: none
 
-The first four operands are CREATE deliverables, not existing tests. Freeze concrete node IDs during sdd-task.
-Existing root-level tests are edited in place; new tests live with their distribution. No LLM/network fixture.
+> The first four operands are CREATE deliverables, not existing tests. Freeze concrete node IDs during sdd-task.
+> Existing root-level tests are edited in place; new tests live with their distribution. No LLM/network fixture.
 
 ### Test Data / Fixtures
 

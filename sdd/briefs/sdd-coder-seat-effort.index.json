@@ -1,0 +1,51 @@
+{
+  "feature": "sdd-coder-seat-effort",
+  "feature_id": "BRIEF-sdd-coder-seat-effort",
+  "spec": "sdd/briefs/sdd-coder-seat-effort.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-27",
+  "completed_at": "2026-10-27T22:50:51+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-sdd-coder-seat-effort-1",
+      "slug": "effort-schema-and-codex",
+      "title": "Effort fields on RosterSeat / StrongModelIdentity + codex reasoning_effort",
+      "feature_id": "BRIEF-sdd-coder-seat-effort",
+      "feature": "sdd-coder-seat-effort",
+      "spec": "sdd/briefs/sdd-coder-seat-effort.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": "2026-10-27T22:48:40+00:00",
+      "completed_at": "2026-10-27T22:48:40+00:00",
+      "file": "sdd/briefs/sdd-coder-seat-effort/tasks/HOTFIX-sdd-coder-seat-effort-1-effort-schema-and-codex.md"
+    },
+    {
+      "id": "HOTFIX-sdd-coder-seat-effort-2",
+      "slug": "resolve-and-apply-effort",
+      "title": "Resolve seat/strong-model effort and apply it to the dispatch profile",
+      "feature_id": "BRIEF-sdd-coder-seat-effort",
+      "feature": "sdd-coder-seat-effort",
+      "spec": "sdd/briefs/sdd-coder-seat-effort.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-sdd-coder-seat-effort-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "needs the schema fields from task 1",
+      "assigned_to": null,
+      "started_at": "2026-10-27T22:50:51+00:00",
+      "completed_at": "2026-10-27T22:50:51+00:00",
+      "file": "sdd/briefs/sdd-coder-seat-effort/tasks/HOTFIX-sdd-coder-seat-effort-2-resolve-and-apply-effort.md"
+    }
+  ]
+}
