@@ -1,0 +1,322 @@
+{
+  "command": "PARROT_TEST_REAL_LLM=1 python sdd/state/FEAT-746/spikes/G4-mount-prompt-cache/spike.py",
+  "date": "2026-10-30",
+  "code": "main checkout dev client packages (ai-parrot-client-anthropic/openai/google), no PYTHONPATH mixing",
+  "cold_runs": [
+    [
+      {
+        "provider": "anthropic",
+        "client": "AnthropicClient",
+        "model": "None",
+        "run_nonce": "9055f8bf79bc4cc790aeb32e27fef953",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 3783,
+              "input": 330
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3783,
+              "cache_write": 0,
+              "input": 330
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 3996,
+              "input": 330
+            }
+          }
+        ]
+      },
+      {
+        "provider": "openai",
+        "client": "OpenAIClient",
+        "model": "gpt-4.1-mini",
+        "run_nonce": "9055f8bf79bc4cc790aeb32e27fef953",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 0,
+              "input": 3393
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3328,
+              "cache_write": 0,
+              "input": 3393
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 2816,
+              "cache_write": 0,
+              "input": 3486
+            }
+          }
+        ]
+      },
+      {
+        "provider": "google",
+        "client": "GoogleGenAIClient",
+        "model": "None",
+        "run_nonce": "9055f8bf79bc4cc790aeb32e27fef953",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 0,
+              "input": 4084
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3726,
+              "cache_write": 0,
+              "input": 4084
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3756,
+              "cache_write": 0,
+              "input": 4483
+            }
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "provider": "anthropic",
+        "client": "AnthropicClient",
+        "model": "None",
+        "run_nonce": "5c95c49c363644d9b7956588db543adb",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 3783,
+              "input": 330
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3783,
+              "cache_write": 0,
+              "input": 330
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 3996,
+              "input": 330
+            }
+          }
+        ]
+      },
+      {
+        "provider": "openai",
+        "client": "OpenAIClient",
+        "model": "gpt-4.1-mini",
+        "run_nonce": "5c95c49c363644d9b7956588db543adb",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 0,
+              "input": 3392
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3328,
+              "cache_write": 0,
+              "input": 3392
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 0,
+              "input": 3485
+            }
+          }
+        ]
+      },
+      {
+        "provider": "google",
+        "client": "GoogleGenAIClient",
+        "model": "None",
+        "run_nonce": "5c95c49c363644d9b7956588db543adb",
+        "turns": [
+          {
+            "turn": 1,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 0,
+              "cache_write": 0,
+              "input": 4086
+            }
+          },
+          {
+            "turn": 2,
+            "tool_count": 6,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3726,
+              "cache_write": 0,
+              "input": 4086
+            }
+          },
+          {
+            "turn": 3,
+            "tool_count": 9,
+            "tool_calls": 0,
+            "usage": {
+              "cache_read": 3756,
+              "cache_write": 0,
+              "input": 4485
+            }
+          }
+        ]
+      }
+    ]
+  ],
+  "pre_nonce_first_run": [
+    {
+      "provider": "anthropic",
+      "client": "AnthropicClient",
+      "model": "None",
+      "turns": [
+        {
+          "turn": 1,
+          "tool_count": 6,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 3760,
+            "input": 330
+          }
+        },
+        {
+          "turn": 2,
+          "tool_count": 6,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 3760,
+            "cache_write": 0,
+            "input": 330
+          }
+        },
+        {
+          "turn": 3,
+          "tool_count": 9,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 3973,
+            "input": 330
+          }
+        }
+      ]
+    },
+    {
+      "provider": "openai",
+      "client": "OpenAIClient",
+      "error": "BadRequestError('Error code: 400 - {\\'error\\': {\\'message\\': \"Unsupported parameter: \\'max_tokens\\' is not supported with this model. Use \\'max_completion_tokens\\' instead.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'max_tokens\\', \\'code\\': \\'unsupported_parameter\\'}}')",
+      "turns": []
+    },
+    {
+      "provider": "google",
+      "client": "GoogleGenAIClient",
+      "model": "None",
+      "turns": [
+        {
+          "turn": 1,
+          "tool_count": 6,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 4052
+          }
+        },
+        {
+          "turn": 2,
+          "tool_count": 6,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 3723,
+            "cache_write": 0,
+            "input": 4052
+          }
+        },
+        {
+          "turn": 3,
+          "tool_count": 9,
+          "tool_calls": 0,
+          "usage": {
+            "cache_read": 2815,
+            "cache_write": 0,
+            "input": 4451
+          }
+        }
+      ]
+    }
+  ],
+  "note": "pre_nonce_first_run predates the per-run nonce and the OpenAI model pin (OpenAI errored); later pre-nonce runs are excluded because providers served turn 3 from a 9-tool prefix cached by an earlier run"
+}
