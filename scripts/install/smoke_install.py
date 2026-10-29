@@ -138,7 +138,11 @@ def _run(cmd: list[str], cwd: Path | None = None, timeout: float = 1800.0) -> su
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
 
 
-_SDIST_RE = re.compile(r"(?:Failed to build|failed to build|building)[`'\s]+([A-Za-z0-9_.\-]+)", re.IGNORECASE)
+#: uv's resolver form under ``--no-build``: "Wheels are required for `pkg` because building from source is disabled".
+_WHEELS_REQUIRED_RE = re.compile(r"Wheels are required for `([A-Za-z0-9_.\-]+)`", re.IGNORECASE)
+_SDIST_RE = re.compile(
+    r"(?:Failed to build|building)(?! from source)[`'\s]+([A-Za-z0-9_.\-]+)", re.IGNORECASE
+)
 _NO_BUILD_RE = re.compile(r"`?([A-Za-z0-9_.\-]+)[=<>!~@ ][^\n]*?(?:no source distribution|--no-build|sdist)", re.IGNORECASE)
 
 
@@ -149,7 +153,7 @@ def parse_sdist_failures(stderr: str) -> list[str]:
         lowered = line.lower()
         if "no-build" not in lowered and "build" not in lowered and "sdist" not in lowered:
             continue
-        for regex in (_SDIST_RE, _NO_BUILD_RE):
+        for regex in (_WHEELS_REQUIRED_RE, _SDIST_RE, _NO_BUILD_RE):
             match = regex.search(line)
             if match and match.group(1) not in found:
                 found.append(match.group(1))

@@ -105,10 +105,13 @@ jobs:
         run: |
           "$RUNNER_TEMP/wheelvenv/bin/parrot" sdd --help >/dev/null
           test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py
+      # --noconftest: the repo's conftest.py files put the checkout's sources on sys.path and import navconfig,
+      # which needs an env/<env>/.env the wheel venv does not have. This test brings its own fixtures and must
+      # exercise the wheel alone.
       - name: Run the SDD flow from the wheel in a foreign repo
         run: |
           env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV -u PARROT_PROJECT -u CLAUDE_PROJECT_DIR \
-            "$RUNNER_TEMP/wheelvenv/bin/python" -m pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q
+            "$RUNNER_TEMP/wheelvenv/bin/python" -m pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q --noconftest
 
   build-tools:
     runs-on: ubuntu-latest

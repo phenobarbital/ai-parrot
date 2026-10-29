@@ -9,9 +9,14 @@
 ## Results (fill from the run)
 | OS | Run URL | install_ok | sdist_failures | tools deps wheel-only (PyGithub → cryptography/pynacl, ruamel-yaml) | parrot | wikitoolkit | bookstore | mcp_ok |
 |---|---|---|---|---|---|---|---|---|
-| ubuntu-latest (x64) | | | | | | | | |
-| macos-latest (arm64) | | | | | | | | |
-| windows-latest (x64) | | | | | | | | |
+| ubuntu-latest (x64) | [run](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936) | true | [] | yes | ok | ok | ok | true |
+| ubuntu-24.04-arm (aarch64) | [run](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936) | **false** | python-datamodel (first blocker) | not reached | — | — | — | false |
+| macos-latest (arm64) | [run](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936) | **false** | python-datamodel (first blocker) | not reached | — | — | — | false |
+| windows-latest (x64) | [run](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936) | **false** | navigator-auth (first blocker) | not reached | — | — | — | false |
+
+The run is a `release.yml` dispatch at `ac5211118` (2026-10-29); `deploy` was skipped. The `sdist_failures` column
+in the uploaded JSON reads `["from"]`: `parse_sdist_failures` matched "building **from** source" in uv's resolver
+hint. That parser was fixed afterwards on this branch, and the names above come from uv's error text.
 
 ## Decision rule (spec §3 M0)
 - All three legs green ⇒ S1 passes; bootstrap (TASK-4074/4075) may proceed in any order vs TASK-4094.
@@ -26,7 +31,42 @@
   installed without a compiler (none of them in `sdist_failures`) — rev 0.5 C20.
 
 ## Verdict
-<!-- pass | fail — with date and run URLs -->
+**FAIL (2026-10-29, [run 40813681936](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936)).** ubuntu x64 is green. The other three legs cannot install
+without a compiler. ai-parrot's own wheels were built for every platform (`build-core` was green on all four), so
+the failures are all in dependencies.
+
+uv stops at its first blocker, so the full set comes from resolving the core + tools wheels for each platform
+(`uv pip compile --python-platform …`, 227–228 pins) and checking PyPI for a cp312, abi3 or `py3-none-any` wheel per
+pin. The pins without one are:
+
+| Package (version resolved) | macOS arm64 | Linux aarch64 | Windows x64 | Pulled in by | Owner |
+|---|---|---|---|---|---|
+| python-datamodel 0.11.0 | no wheel | no wheel | ok | ai-parrot | phenobarbital |
+| navconfig 3.0.0 | no wheel | no wheel | ok | ai-parrot | phenobarbital |
+| navigator-api 4.0.1 | no wheel | no wheel | ok | ai-parrot | phenobarbital |
+| navigator-auth 0.28.9 | no wheel | no wheel | **no wheel** | ai-parrot | phenobarbital |
+| asyncdb 2.16.3 | ok | no wheel | ok | ai-parrot, navigator-api | phenobarbital |
+| pytomlpp 1.1.0 | ok | no wheel | ok | navconfig | third party |
+| uvloop 0.23.0 | ok | ok | **unsupported** | proxylists (unguarded `uvloop>=0.19.0`) | phenobarbital (proxylists) |
+
+The ai-parrot-tools dependencies (PyGithub → cryptography/pynacl, ruamel-yaml) all have wheels on every leg
+(rev 0.5 C20).
+
+Proposed remedies are upstream, outside this repository:
+1. Add cibuildwheel legs for macOS arm64 and Linux aarch64 to python-datamodel, navconfig, navigator-api,
+   navigator-auth and asyncdb, plus Windows for navigator-auth.
+2. Guard uvloop in proxylists with `uvloop>=0.19.0; sys_platform != 'win32'`. uvloop does not support Windows, so
+   no wheel can fix that leg.
+3. In navconfig, replace pytomlpp with `tomllib` (stdlib on Python ≥ 3.11), or keep pytomlpp only where a wheel
+   exists.
+
+Tracked as `issue:d725faabd9a8`. Until then the bootstrap supports Linux x86_64 only, or any platform with a C toolchain (`--allow-build`). Per the
+decision rule this is a TASK-4094 blocker, but the fix lies in the upstream packages, not in this repository's core
+wheel matrix.
+
+`smoke-sdd-foreign` also failed in this run, but in the harness. Pytest loaded the checkout's `conftest.py`, which
+imports navconfig without an `env/`. It now runs with `--noconftest` and passes 6/6 locally against this run's own
+cp312 wheel.
 
 ## Local Linux evidence (TASK-4068, 2026-10-26, `--allow-build`, Python 3.12, PyPI ai-parrot + ai-parrot-tools)
 - `install_ok=true`, `sdist_failures=[]`, `wikitoolkit` / `bookstore` `--help` OK, `mcp_ok=true`

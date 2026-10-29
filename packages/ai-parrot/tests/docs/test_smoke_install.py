@@ -84,3 +84,15 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 def test_parse_sdist_failures(smoke):
     err = "error: Failed to build `faiss-cpu==1.9.0`\n  Caused by: Building source distributions is disabled (--no-build)"
     assert "faiss-cpu" in smoke.parse_sdist_failures(err)
+
+
+def test_parse_sdist_failures_uv_resolver_no_wheels(smoke):
+    """uv's resolver form (install-matrix, macOS arm64): the package name, never the word after "building"."""
+    err = (
+        "error: No solution found when resolving dependencies\n"
+        "  cause: Because python-datamodel>=0.10.17 has no usable wheels and ai-parrot==1.2.5 depends on "
+        "python-datamodel>=0.10.17, we can conclude that ai-parrot==1.2.5 cannot be used.\n"
+        "hint: Wheels are required for `python-datamodel` because building from source is disabled for all "
+        "packages (i.e., with `--no-build`)"
+    )
+    assert smoke.parse_sdist_failures(err) == ["python-datamodel"]
