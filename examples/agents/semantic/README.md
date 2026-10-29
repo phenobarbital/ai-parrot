@@ -1,6 +1,6 @@
 # Semantic Agent example
 
-Run `python examples/semantic/agent_semantic_example.py` with the DuckDB extra. The scripted mode requires no LLM call or network access.
+Run `python examples/agents/semantic/agent_semantic_example.py` with the DuckDB extra. The scripted mode requires no LLM call or network access.
 
 The example creates a deterministic DuckDB warehouse and a governed model in a temporary directory that is removed afterwards; nothing is written under the current directory. PBAC is enforced through the core `DataPlanePolicyGuard` with an explicit `ExamplePolicyEvaluator`: only an `analyst` may connect to DuckDB and read `sales.orders`, and the model policy grants only `revenue`, `region`, and `sales.orders.region`. No gate is forced open. The warehouse connection is exposed through `connection_env()`, which restores the environment on exit. It binds a trusted `SemanticRequestIdentity` around each call, publishes a result through `SemanticLayerToolkit`, then reads it only through a per-owner `GuardedDatasetFacade`.
 
