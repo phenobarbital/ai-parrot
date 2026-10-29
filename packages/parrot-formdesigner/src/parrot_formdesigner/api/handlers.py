@@ -1181,6 +1181,7 @@ class FormAPIHandler:
             A streaming NDJSON response or a validation error response.
         """
         tenant = self._get_tenant(request)
+        await self._rbac_shadow_gate(request, "export_forms")
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
@@ -1217,9 +1218,36 @@ class FormAPIHandler:
         from ..services.a2ui_export import A2UIExportService
 
         service = A2UIExportService(self.registry, dialect=dialect.value, locale=locale)
+
+        def _is_visible(form: FormSchema) -> bool:
+            """Skip forms this caller may not read.
+
+            Parity with the ``list_forms`` inline-surface loop, which applies the
+            same guard per form before rendering. This route is mounted
+            ``tenant="required"``, so ``requires_tenant`` has already run the
+            identical authorization — the predicate is defence in depth against
+            a future remount as ``tenant="public"``, not a live bypass fix.
+
+            Args:
+                form: A tenant-scoped form the exporter is about to render.
+
+            Returns:
+                ``True`` when the caller may read this form.
+            """
+            try:
+                enforce_membership_unless_public(request, form, tenant)
+            except TenantForbiddenError:
+                return False
+            return True
+
         response = web.StreamResponse(status=200, headers={"Content-Type": "application/x-ndjson"})
         await response.prepare(request)
-        async for row in service.export_tenant(tenant, form_uids=form_uids, published_only=published_only):
+        async for row in service.export_tenant(
+            tenant,
+            form_uids=form_uids,
+            published_only=published_only,
+            is_visible=_is_visible,
+        ):
             await response.write((json.dumps(row.model_dump(mode="json")) + "\n").encode("utf-8"))
         await response.write_eof()
         return response

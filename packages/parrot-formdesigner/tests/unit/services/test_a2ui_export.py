@@ -189,3 +189,51 @@ async def test_real_a2ui_renderer(registry: FormRegistry) -> None:
 
     assert rows
     assert all(row.envelope and "createSurface" in row.envelope for row in rows)
+
+
+async def test_export_tenant_without_predicate_yields_everything(registry: FormRegistry) -> None:
+    """``is_visible=None`` keeps today's behaviour — the CLI exporter is unaffected.
+
+    ``cli.py`` calls ``export_tenant`` with no request to authorize against, so
+    the default must never filter.
+    """
+    service = A2UIExportService(registry, renderer=_FakeRenderer())
+
+    rows = [row async for row in service.export_tenant("t1", is_visible=None)]
+
+    assert sorted(row.form_id for row in rows) == ["a", "b"]
+
+
+async def test_export_tenant_skips_forms_rejected_by_predicate(registry: FormRegistry) -> None:
+    """A rejected form yields NO row at all — not an error row."""
+    service = A2UIExportService(registry, renderer=_FakeRenderer())
+
+    rows = [row async for row in service.export_tenant("t1", is_visible=lambda form: form.form_id == "a")]
+
+    assert [row.form_id for row in rows] == ["a"]
+    assert all(row.error is None for row in rows)
+
+
+async def test_export_tenant_predicate_runs_before_rendering(registry: FormRegistry) -> None:
+    """A skipped form is never rendered, so a failing renderer cannot surface it."""
+    service = A2UIExportService(registry, renderer=_FakeRenderer(fail_for="b"))
+
+    rows = [row async for row in service.export_tenant("t1", is_visible=lambda form: form.form_id != "b")]
+
+    assert [row.form_id for row in rows] == ["a"]
+
+
+async def test_export_tenant_predicate_composes_with_other_filters(registry: FormRegistry) -> None:
+    """The visibility predicate narrows the set the uid/published filters then select from."""
+    service = A2UIExportService(registry, renderer=_FakeRenderer())
+
+    rows = [
+        row
+        async for row in service.export_tenant(
+            "t1",
+            published_only=True,
+            is_visible=lambda form: form.form_id == "a",
+        )
+    ]
+
+    assert rows == []
