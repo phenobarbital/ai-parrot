@@ -359,6 +359,8 @@ No pin test may initialize or call an LLM provider (S3).
 
 tests:
 - packages/ai-parrot-semantic/tests/test_example_agent.py
+- packages/ai-parrot-semantic/tests/test_example_fixtures.py
+- packages/ai-parrot-semantic/tests/test_example_common.py
 - packages/ai-parrot-semantic/tests/test_example_llm_metrics.py
 - packages/ai-parrot-semantic/tests/test_example_mcp_local.py
 - packages/ai-parrot-semantic/tests/test_example_masked_policy.py
@@ -606,17 +608,33 @@ No new dependency is added.
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Should M6 ship the `governed: false` compile leg, or stop at the denial?**
+- [x] **Q1 — Should M6 ship the `governed: false` compile leg, or stop at the denial?**
+  **Resolved 2026-10-29 at `/sdd-task` time: option (b)** — M6 ships the compile leg,
+  labelled as the compiler surface. The fixture therefore gains
+  `examples/agents/semantic/models_ungoverned/` (a separate directory: the loader keys
+  models by name into one dict, `loader.py:163-166`, so a second `orders` beside the first
+  would silently overwrite it). Implemented by TASK-4883; fixture by TASK-4878.
   *Owner*: Jesus Lara. Design research S1 (verified) proved the governed path cannot authorize
   a cross-model join. Options: **a)** show grains + the governed denial only; **b)** also show
   the same join compiling under an explicitly `governed: false` model, labelled as the compiler
   surface; **c)** drop M6 and file a ledger issue proposing qualified-member authorization in
   the library. §2 currently assumes (b). Adding qualified-member authorization is a §1 non-goal
   either way.
-- [ ] **Q2 — Sequencing (S10).** Ship M1+M2+M3+M4 as one PR and M5+M6 as a follow-up, or all
+- [x] **Q2 — Sequencing (S10).** **Resolved 2026-10-29: all seven modules in one flow.**
+  With Q1 answered, M6 is no longer gated, and the task graph already dispatches M3–M6
+  concurrently, so a split PR bought no parallelism. Decomposed as TASK-4877..TASK-4884.
+  *(original question below)* Ship M1+M2+M3+M4 as one PR and M5+M6 as a follow-up, or all
   seven at once? *Owner*: tbd. M6 is the only module gated on Q1, so a split keeps the first PR unblocked.
-- [ ] **Q3 — Does the committed fixture need a second connection** so M6 can also show a
-  cross-connection refusal, or does one DuckDB connection cover all four examples? *Owner*: spec author.
+- [x] **Q3 — Does the committed fixture need a second connection?** **Resolved 2026-10-29:
+  yes — but as an ISOLATION demo, not a refusal.** The question's premise did not survive
+  verification: there is **no cross-connection refusal** in the library. `connection` is read
+  only from the root model's policy (`toolkit.py:315,485`, `engines/__init__.py:23`) and is
+  never compared against a joined model's; no error code names one and no test asserts one.
+  A cross-model query is refused earlier, by `member_not_granted` (S1). The fixture therefore
+  pins `customers` to a second named connection (`semantic_dim`, TASK-4878) and M6 gains a
+  leg that runs a governed query rooted at `customers` against a second DuckDB file
+  (TASK-4883), demonstrating that the connection is resolved **per root model**
+  (`execution.py:26-49`). No example may present this as a refusal. *Owner*: spec author.
 
 ### Resolved
 
@@ -687,3 +705,4 @@ Summary: **10** confirmed · **0** rejected · **1** escalated to §8 (the M6 re
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-29 | Jesus Lara | Initial draft from the accepted FEAT-769 proposal; M6 re-scoped after design-research S1 was verified empirically |
+| 0.2 | 2026-10-29 | Jesus Lara | §8 Q1/Q2/Q3 resolved at `/sdd-task` time; Q3's cross-connection refusal premise disproved against source and re-scoped to per-model connection isolation; §4 Validation Contract gains `test_example_fixtures.py` and `test_example_common.py` |
