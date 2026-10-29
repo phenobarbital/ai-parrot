@@ -276,7 +276,9 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
         env["PYTHONPATH"] = python_path
     scratch_root = _we.claude_scratch_root()
     configured = os.environ.get(CACHE_DIR_ENV)
-    cache_root = _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{os.getuid()}"
+    cache_root = (
+        _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{os.getuid()}"
+    )
     if not _is_within(cache_root, scratch_root):
         cache_root = scratch_root / "parrot-sdd-cache" / f"shared-{os.getuid()}"
     env["XDG_CACHE_HOME"] = str(cache_root / "xdg")
