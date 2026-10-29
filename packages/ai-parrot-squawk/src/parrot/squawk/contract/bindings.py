@@ -21,7 +21,7 @@ class LLMBackedSpec(BaseModel):
 
     @model_validator(mode="after")
     def _allowlist_is_cap_ids(self) -> LLMBackedSpec:
-        bad = [t for t in self.tool_allowlist if not re.match(CAP_ID_PATTERN, t)]
+        bad = [t for t in self.tool_allowlist if not re.fullmatch(CAP_ID_PATTERN, t)]
         if bad:
             raise ValueError(f"tool_allowlist must contain cap_ids, got {bad}")
         return self

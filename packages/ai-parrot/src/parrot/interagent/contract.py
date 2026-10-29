@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from parrot.interagent.descriptors import MediaType
 
-CAP_ID_PATTERN = r"^[a-z0-9_]+(\.[a-z0-9_]+)+$"
+# Segments are snake_case words joined by single underscores: no "__" and no
+# leading/trailing "_", so tool_name_for ("." -> "__") is a bijection with cap_id_for.
+CAP_ID_PATTERN = r"^[a-z0-9]+(_[a-z0-9]+)*(\.[a-z0-9]+(_[a-z0-9]+)*)+$"
 
 
 class ReturnsSpec(BaseModel):

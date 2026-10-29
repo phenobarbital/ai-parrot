@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Callable
 
-from parrot.interagent.contract import SquawkCapability
+from parrot.interagent.contract import CAP_ID_PATTERN, SquawkCapability
 from parrot.interagent.descriptors import MediaType
 from parrot.tools.manager import ToolDefinition
 
@@ -17,8 +18,18 @@ def tool_name_for(cap_id: str) -> str:
 
 
 def cap_id_for(tool_name: str) -> str:
-    """Convert a provider-safe tool name back into a capability id."""
-    return tool_name.replace("__", ".")
+    """Convert a provider-safe tool name back into a capability id.
+
+    Exact inverse of :func:`tool_name_for` because ``CAP_ID_PATTERN`` forbids
+    ``__`` and edge underscores inside a segment.
+
+    Raises:
+        ValueError: If the name does not map back to a valid capability id.
+    """
+    cap_id = tool_name.replace("__", ".")
+    if not re.fullmatch(CAP_ID_PATTERN, cap_id) or tool_name_for(cap_id) != tool_name:
+        raise ValueError(f"not a Squawk tool name: {tool_name!r}")
+    return cap_id
 
 
 def affordances_for(media_type: MediaType | None) -> tuple[str, ...]:

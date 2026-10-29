@@ -1,6 +1,11 @@
 """Tests for compiling Squawk capabilities into core tool definitions."""
 
+import re
+
+import pytest
+
 from parrot.interagent import (
+    CAP_ID_PATTERN,
     MediaType,
     PolicyAnnotations,
     ReturnsSpec,
@@ -100,3 +105,16 @@ def test_compiled_tools_produce_schemas_for_supported_providers() -> None:
 
     for provider_format in (ToolFormat.OPENAI, ToolFormat.ANTHROPIC, ToolFormat.GOOGLE, ToolFormat.GROQ):
         assert len(manager.get_tool_schemas(provider_format)) == 3
+
+
+@pytest.mark.parametrize("bad", ["a__b.c", "a_.b", "_a.b", "a.b_", "a.__b"])
+def test_ambiguous_cap_ids_are_rejected(bad: str) -> None:
+    """Ids whose tool name would not round-trip are refused at the pattern."""
+    assert re.fullmatch(CAP_ID_PATTERN, bad) is None
+
+
+@pytest.mark.parametrize("name", ["a__b__c__", "a___b", "a", "a__b_"])
+def test_cap_id_for_rejects_non_bijective_names(name: str) -> None:
+    """A model-emitted name that does not map back exactly is refused."""
+    with pytest.raises(ValueError):
+        cap_id_for(name)
