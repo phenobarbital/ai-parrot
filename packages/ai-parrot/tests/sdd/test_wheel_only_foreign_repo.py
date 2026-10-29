@@ -456,9 +456,6 @@ def managed_home(wheel: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     (home / "bin").mkdir()
     for name in ("parrot", "wikitoolkit", "bookstore"):
         os.symlink(home / "venv/bin" / name, home / "bin" / name)
-    # navconfig derives its project root from the venv's parent and refuses to start without env/<env>/.env
-    (home / "env/dev").mkdir(parents=True)
-    (home / "env/dev/.env").write_text("", encoding="utf-8")
     return home
 
 
@@ -634,12 +631,8 @@ def test_installed_hook_project_venv_only(
     subprocess.run(["uv", "venv", str(venv), "--python", _python_for(wheel)], check=True, capture_output=True)
     subprocess.run(["uv", "pip", "install", "--python", str(venv / "bin/python"), str(wheel)], check=True, capture_output=True)
     home = tmp_path / "no-managed-home"
-    (home / "env/dev").mkdir(parents=True)  # navconfig needs env/<env>/.env next to the venv's parent
-    (home / "env/dev/.env").write_text("", encoding="utf-8")
+    home.mkdir()
     env = _env(home, tools_dir, with_launcher=False)
-    # navconfig derives its root from the venv's parent: give the repo its own env tree (ignored, untracked).
-    (repo / "env/dev").mkdir(parents=True)
-    (repo / "env/dev/.env").write_text("", encoding="utf-8")
     subprocess.run([str(venv / "bin/parrot"), "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True, capture_output=True)
     front = (repo / ".claude/agents/sdd-worker.md").read_text(encoding="utf-8").split("---", 2)[1]
     line = next(ln for ln in front.splitlines() if "worktree_environment --hook" in ln)

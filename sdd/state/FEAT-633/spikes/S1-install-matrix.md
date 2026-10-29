@@ -55,3 +55,9 @@ is not on the default branch, so it cannot be dispatched by itself. The route is
 `{core-dist-*,dist-tools}` wheels, and its `deploy` job is gated on `github.event_name == 'release'`, so nothing is
 published:
 `gh workflow run release.yml --repo phenobarbital/ai-parrot --ref feat-FEAT-633-parrot-installer`.
+
+**F2 resolution (FEAT-633 R9, 2026-10-28).** The owner's decision: navconfig and its `env/<env>/.env` are mandatory
+for ai-parrot, because credentials live there. But the shipped SDD helpers need no credentials. They crashed only
+because the `parrot.flows.dev_loop` and `dev_loop.sdd_coder` package `__init__` files eagerly imported the runner
+and the roster, which pulled in navconfig. Both packages now resolve their public names lazily (PEP 562). The
+wheel-only foreign-repo test (C3) no longer scaffolds `env/dev/.env` and passes 6/6.
