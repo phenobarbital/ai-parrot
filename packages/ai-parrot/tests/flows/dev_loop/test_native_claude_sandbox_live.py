@@ -241,8 +241,11 @@ def _session_command(
             "--verbose",
             *[item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)],
         ]
-        return command, qual.env, _version(Path(executable), qual.env), native.native_sandbox_settings(
-            qual.feature, allowed_domains=allowed_domains
+        return (
+            command,
+            qual.env,
+            _version(Path(executable), qual.env),
+            native.native_sandbox_settings(qual.feature, allowed_domains=allowed_domains),
         )
 
     dispatcher = ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://localhost:6379/0", stream_ttl_seconds=60)
@@ -278,7 +281,12 @@ def _session_command(
 
 
 def _record(
-    scenario: str, qual: QualificationRepo, command: list[str], result: SessionResult, settings: dict[str, Any], version: str
+    scenario: str,
+    qual: QualificationRepo,
+    command: list[str],
+    result: SessionResult,
+    settings: dict[str, Any],
+    version: str,
 ) -> None:
     """Persist one credential-free scenario result, never a raw transcript."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -288,7 +296,9 @@ def _record(
         "scenario": scenario,
         "command": [part.replace(root, "<qualification-worktree>") for part in command if part != "-p"],
         "exit_status": result.exit_status,
-        "canaries_unchanged": {name: path.read_text(encoding="utf-8") == "UNTOUCHED\n" for name, path in qual.protected.items()},
+        "canaries_unchanged": {
+            name: path.read_text(encoding="utf-8") == "UNTOUCHED\n" for name, path in qual.protected.items()
+        },
         "settings_sha256": digest,
         "allow_all_unix_sockets": settings["sandbox"]["network"]["allowAllUnixSockets"],
         "cli_version": version,
@@ -298,9 +308,7 @@ def _record(
     (LOG_DIR / f"{scenario}.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _probe(
-    qual: QualificationRepo, scenario: str, prompt: str, allowed_domains: tuple[str, ...] = ()
-) -> SessionResult:
+def _probe(qual: QualificationRepo, scenario: str, prompt: str, allowed_domains: tuple[str, ...] = ()) -> SessionResult:
     """Spend one admitted session, assert strict compilation, and write its result record."""
     global HOST_NOT_QUALIFIED
     if HOST_NOT_QUALIFIED is not None:
