@@ -237,8 +237,6 @@ Use `ServedLedger(LocalHMACSigner())` with no sink; feed 25 llm_backed + 3 deter
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 (salvaged, 81 turns) · Duration: 402s · Tokens: 3723k/17k (attempt 274671d421b24084a346c43054475cea).
+Review fix 25617e188: render_envelope mislabelled inline bytes as detail= and dropped msg.detail; dumped the full HandleDescriptor (preview rows = payload). Feedback recorded (pattern fill-in-ignored-constraint).
+Merge-tier validation b7e2c4a1:chunk2:merge: task tests green (squawk 60 passed; ai-parrot 138 passed). Only red: 4 pre-existing repl_worker sandbox /tmp failures in files this feature never touches.

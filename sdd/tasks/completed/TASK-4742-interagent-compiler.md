@@ -219,8 +219,5 @@ def test_roundtrip_and_wording():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 106s · Tokens: n/a (attempt bf8b29924f0540958ac03d0786a1b605). Review: no corrections.
+Merge-tier validation b7e2c4a1:chunk2:merge: task tests green (squawk 60 passed; ai-parrot 138 passed). Only red: 4 pre-existing repl_worker sandbox /tmp failures in files this feature never touches.
