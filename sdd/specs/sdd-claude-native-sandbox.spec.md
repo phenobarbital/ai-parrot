@@ -111,8 +111,13 @@ file tools ─ retained hook → existing environment check + native write-polic
 4. **Command behavior.** Keep guard → RTK → bounded shell ordering and original timeout/background
    fields. Native mode omits only `protected_argv`. Preserve `UV_NO_SYNC=1`,
    `PYTHONDONTWRITEBYTECODE=1`, worktree `packages/*/src` precedence in `PYTHONPATH`, writable isolated
-   cache locations, and scratchpad continuity. Recompute import paths for the actual task cwd, not
-   just the worker's initial cwd. Keep the timeout margin and background semantics. Competing hooks
+   cache locations, and scratchpad continuity. Compute import paths for the command's task cwd:
+   the hook payload `cwd` is always the parent session's (preflight Q2), so in native mode a command
+   that starts with exactly `cd <absolute path> &&` uses that path as its task cwd when it resolves
+   inside the allowed roots of policy 1; any other `cd` target, a relative path or an unparseable
+   prefix denies; commands without the prefix use the session cwd. The native `sdd-coder` seat
+   prefixes every Bash command with `cd <its sub-worktree> &&`, because `cd` does not persist between
+   child Bash calls. Keep the timeout margin and background semantics. Competing hooks
    may still replace operational rewrites; native isolation does not make those rewrites atomic.
 5. **Temporary storage.** Allocate session-specific cache directories under native writable temporary
    storage; do not grant general host `/tmp` write access. Preserve the existing per-user scratchpad
@@ -131,6 +136,9 @@ file tools ─ retained hook → existing environment check + native write-polic
 7. **Settings authority.** Keep `_effective_setting_sources` excluding `user`. Use CLI-injected
    strict settings; verify effective project/local settings cannot widen writes/domains, disable
    isolation, or add exclusions. Empty arrays are not presumed to replace inherited arrays.
+   Preflight (2.1.312, relaxed sockets) found no widening even when the CLI omitted path/domain keys,
+   but did not isolate why; the compiler still emits every key explicitly, and M4 repeats the matrix
+   strictly on both executables.
    If the tested runtime cannot enforce the compiled boundary, refuse the configuration and block
    rollout; do not accept a weaker effective policy. The interactive launcher rejects caller
    `--settings`, `--add-dir`, security-disabling options, and alternate `--agent` values; preserve
@@ -147,6 +155,12 @@ file tools ─ retained hook → existing environment check + native write-polic
    WSL and native Windows are not certified by this feature.
    Qualification records the actual executable used on each path: an SDK-bundled CLI must not be
    treated as equivalent to the interactive `claude` found on PATH merely because one passed.
+   Decision: the dispatcher keeps the SDK-bundled CLI (no `cli_path` override) and the launcher uses
+   PATH `claude`; each is qualified separately, at its exact version. A version change of either
+   (CLI update or `claude-agent-sdk` bump) invalidates that path's qualification until the live gate
+   is re-run. The initial strict host is the maintainer workstation (elementary OS 8.1, Ubuntu 24.04
+   base) after the operator installs an AppArmor profile permitting Claude's seccomp helper; its
+   current unprofiled state is the restricted-host failure evidence.
 
 ### Integration Points
 
@@ -194,6 +208,9 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
 
 def validate_native_write_path(cwd: Path, path: Path) -> None:
     """Reject writes outside native allowances or into protected environment/control paths."""
+
+def native_task_cwd(session_cwd: Path, command: str) -> Path:
+    """Return the absolute `cd <path> &&` prefix target inside allowed roots, else session_cwd; raise ValueError for a disallowed or malformed prefix."""
 
 # modifies: packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py:502
 def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
@@ -281,6 +298,7 @@ async def test_live_native_rewrite_and_child_boundary(tmp_path: Path) -> None:
 - **Interface Skeleton**: documentation-only contract is the exact launcher CLI above; document
   its errors, tested version/host matrix, domain configuration, supported Git sequence, residual
   trusted surfaces and rollback. Remove contradictory `push -u` guidance for native sessions.
+  `sdd-coder.md` tells the native seat to prefix every Bash command with `cd <sub-worktree> &&`.
 
 ## 4. Test Specification
 
@@ -292,6 +310,7 @@ async def test_live_native_rewrite_and_child_boundary(tmp_path: Path) -> None:
 | Domain input | Empty default; normalization/deduplication; wildcard/URL/IP/port refusal |
 | Hooks | Native omits bwrap; legacy keeps it; malformed mode/input denies; guard then RTK then timeout |
 | Environment | Per-task source roots; no shared cache writes; auth map unmodified; concurrent seats do not leak paths |
+| Task cwd | Leading `cd <abs> &&` inside allowed roots selects that worktree's paths; relative, outside-root, quoted-trick and malformed prefixes deny; no prefix uses session cwd |
 | File tools | Shared venv aliases, Git configuration/hooks and policy files denied; task edits allowed |
 | Dispatcher | Both SDD profiles inject settings and env; user sources excluded; all other profiles unchanged |
 | Launcher | Existing model/argument behavior; forbidden overrides in split/equals forms; spaces safely forwarded |
@@ -447,6 +466,7 @@ Counts are fixed-string full-line counts, verified at the base commit above. Rec
 | `packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox_live.py` | CREATE | — | — | — |
 | `docs/dev_loop/claude-native-sandbox.md` | CREATE | — | — | — |
 | `sdd/state/FEAT-768/native-sandbox-qualification.md` | CREATE | — | — | — |
+| `sdd/state/FEAT-768/native-sandbox-preflight.md` | EXISTS | preflight evidence for §8; read, do not rewrite | — | — |
 
 ## 7. Implementation Notes & Constraints
 
@@ -490,12 +510,25 @@ precedence. Feature-specific policy and acceptance requirements above are our de
 - [x] Non-Claude execution? Preserve existing Bubblewrap behavior.
 - [x] Network default? Empty exact-host list, operator-configured per launch/profile; HTTPS operations only in v1.
 - [x] Git configuration protection? Read-only config/hooks; host owns setup, workers push without `-u`.
-- [ ] Which exact CLI/SDK/host combination passes all strict probes? Owner: M4 implementer; record in qualification report before completion.
-- [ ] Does native Agent inheritance preserve required task-cwd and guard behavior? Owner: M4 implementer; failed proof blocks rollout.
-- [ ] Can the runtime enforce the compiled path/domain bounds against all loaded project/local settings?
-  Owner: M1/M4 implementer; stop and revise this spec if additional settings locks or source restrictions are required.
+- [x] Which exact CLI/SDK/host combination? Target: the maintainer workstation (elementary OS 8.1 /
+  Ubuntu 24.04 base, bwrap 0.9.0, socat 1.8.0.0) with an operator-installed AppArmor profile for
+  Claude's seccomp helper; interactive PATH `claude` 2.1.312 and the dispatcher's SDK-bundled CLI
+  2.1.301 (`claude-agent-sdk` 0.2.168), qualified separately — no `cli_path` pinning (policy 9).
+  Without the profile, strict mode fails closed on this host (restricted-host evidence).
+  *Remaining M4 gate:* strict runs on both executables after the profile is installed.
+- [x] Does native Agent inheritance preserve task-cwd and guard behavior? Guards and sandbox: yes, on
+  both executables — children inherit the boundary, the hook fires with `agent_id`, a competing
+  rewrite stays sandboxed, nested bwrap fails. Task cwd: no — payload and shell start at the parent
+  session cwd and `cd` does not persist. Resolved by the leading `cd <abs> &&` rule (policy 4).
+  *Remaining M4 gate:* strict re-run, plus the native seat running tests in its own sub-worktree.
+- [x] Can project/local settings widen the compiled bounds? Not on 2.1.312 in preflight: project
+  `allowWrite`/`excludedCommands`/`allowedDomains` and local `enabled:false` had no effect, even
+  with the CLI omitting those keys. No extra settings lock is needed. *Remaining M4 gate:* strict
+  re-run on 2.1.312 and the first run on 2.1.301.
 
-These are explicit qualification gates, not permission to implement weakened substitutes.
+Evidence: `sdd/state/FEAT-768/native-sandbox-preflight.md` (relaxed sockets; not the qualification
+report). The remaining gates above are qualification gates, not permission to implement weakened
+substitutes.
 
 ## 9. Design Research Cross-Check
 
@@ -521,3 +554,4 @@ The original probe report and current source were reviewed; no independent revie
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-29 | Jesus Lara / Codex | Initial draft from issue:e57a19d91778 with strict adoption and compatibility gates |
+| 0.2 | 2026-10-29 | Jesus Lara / Claude | Resolve §8 with preflight probes: target host + AppArmor, both CLIs qualified separately, leading-`cd` task cwd, no settings widening observed |
