@@ -254,10 +254,14 @@ async def test_toolkit_query_respects_the_grant() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: ai-parrot-75 (session 9c6edc), after a partial `sdd-worker` run
+**Date**: 2026-10-29
+**Notes**: `query()` raises `GrantDenied(receiver.name)` before `engine.open()` or any `_pending` entry, mirroring `request()`'s check; the docstring now documents it. Scope probe used: the receiver's **name** (so a grant of `["hr*"]` admits a query to `hr` and denies one to `payroll`), since `query()` takes a free-form `question` and no `cap_id`. Covered by a direct test and by a `RoostToolkit.send("query", …)` test built on a real endpoint.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Validation**: `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/roost/ -q` => **119 passed**; `ruff check` on the four touched files => All checks passed.
 
-**Deviations from spec**: none | describe if any
+**Code commit**: `572db7599` — the three tasks share ONE code commit (deviation from "one task = one commit"): their edits interleave in `endpoint.py` and could not be split non-interactively.
+
+**Process note**: the `sdd-worker` run that produced the code could execute no Bash (headless permission denial), so validation, fixtures, the two missing tests, commits and closure were completed by the parent session.
+
+**Deviations from spec**: see Notes above.

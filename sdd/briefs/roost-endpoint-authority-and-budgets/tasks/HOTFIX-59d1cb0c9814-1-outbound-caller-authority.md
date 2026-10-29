@@ -314,10 +314,14 @@ bug — update it to assert the propagated context.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: ai-parrot-75 (session 9c6edc), after a partial `sdd-worker` run
+**Date**: 2026-10-29
+**Notes**: `RoostEndpoint.__init__` gained `permission_context` / `auth_token`; `_caller_authority()` returns the constructor value when set, else `parrot.auth.context._pctx_var.get()` (imported inside the method so `roost/` keeps its narrow import surface). Both fields are stamped on the `RoostMessage` built in `send()` and on the `request()` / `query()` openers. `reply()` was left alone — it already propagates inbound authority. `make_endpoint` in test_endpoint.py now defaults to a `CALLER_CTX` stand-in and the old `permission_context is None` assertion is replaced.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Validation**: `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/roost/ -q` => **119 passed**; `ruff check` on the four touched files => All checks passed.
 
-**Deviations from spec**: none | describe if any
+**Code commit**: `572db7599` — the three tasks share ONE code commit (deviation from "one task = one commit"): their edits interleave in `endpoint.py` and could not be split non-interactively.
+
+**Process note**: the `sdd-worker` run that produced the code could execute no Bash (headless permission denial), so validation, fixtures, the two missing tests, commits and closure were completed by the parent session.
+
+**Deviations from spec**: see Notes above.

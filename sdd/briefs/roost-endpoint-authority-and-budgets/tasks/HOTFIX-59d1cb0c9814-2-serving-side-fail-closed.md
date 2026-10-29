@@ -327,10 +327,16 @@ async def test_directed_request_is_not_broadcast() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: ai-parrot-75 (session 9c6edc), after a partial `sdd-worker` run
+**Date**: 2026-10-29
+**Notes**: `_run_tool` resolves the authority once and refuses with `failure(POLICY)` when it is `None`; a new `_advertised_tool()` pins the served tool to an advertised capability and `_refuse()` sends the typed failure (logging instead when the message has no explicit receiver to reply to). `request()` builds `{**args, "tool": cap}` so `args["tool"]` cannot shadow the capability.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviation (approved):** the blueprint said to derive the tool from `capability_filter` alone and ignore `content["tool"]`. That is not viable — `_deliver_outbound` broadcasts to every carrier whenever `capability_filter` is set, so carrying the capability there turns a directed request into a broadcast (the task file warned about exactly this). `_advertised_tool` therefore reads `capability_filter` when present and `content["tool"]` otherwise, requiring an EXACT match against `config.capabilities` in both cases (exact rather than fnmatch, to fail closed on glob filters). An endpoint with `config is None` or no capabilities now serves nothing, per Assumption A3; the `test_salary_flow_end_to_end.py` fixture was updated to bind a context rather than weaken the gate.
 
-**Deviations from spec**: none | describe if any
+**Validation**: `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/roost/ -q` => **119 passed**; `ruff check` on the four touched files => All checks passed.
+
+**Code commit**: `572db7599` — the three tasks share ONE code commit (deviation from "one task = one commit"): their edits interleave in `endpoint.py` and could not be split non-interactively.
+
+**Process note**: the `sdd-worker` run that produced the code could execute no Bash (headless permission denial), so validation, fixtures, the two missing tests, commits and closure were completed by the parent session.
+
+**Deviations from spec**: see Notes above.
