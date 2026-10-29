@@ -1,0 +1,25 @@
+# Policy for the `orders` model. One policy side-file per model (loader.py:111-115).
+governed: true
+connection: semantic_example
+limits: {default: 1000, max: 10000}
+roles:
+  analyst: {metrics: [revenue, order_count], dimensions: [region, order_date], usage: [sales.orders.region]}
+  admin: {metrics: "*", dimensions: "*", usage: "*"}
+rls:
+  - {driver: duckdb, table: sales.orders, predicate_template: "region IN (:subject.programs)", subject_attribute: programs}
+masks:
+  # `analyst` is deliberately NOT in projection_roles, so an analyst sees the masked value
+  # while `admin` is exempt (policy.py:105-110). Both may still USE the column in filters
+  # and RLS, because a mask replaces the ordinary `usage:` grant for its column.
+  sales.orders.region:
+    strategy: "null"
+    projection_roles: [admin]
+    usage_roles: [analyst, admin]
+saved_queries:
+  - name: monthly_revenue
+    description: Revenue by calendar month. Reviewed for the analyst role.
+    verified_by: data-governance
+    verified_at: 2026-10-29
+    query:
+      metrics: [revenue]
+      time_dimensions: [{name: order_date, grain: month}]
