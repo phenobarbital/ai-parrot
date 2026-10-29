@@ -26,11 +26,12 @@ def make_endpoint(
     working_memory: MagicMock | None = None,
     wake: AsyncMock | None = None,
     registry: MagicMock | None = None,
+    engine: ProtocolEngine | None = None,
 ) -> RoostEndpoint:
     """Build an endpoint with deterministic mocks for external agent services."""
     tool_manager = MagicMock()
     tool_manager.execute_tool = AsyncMock(return_value=tool_result)
-    engine = ProtocolEngine()
+    engine = engine or ProtocolEngine()
     dispatcher = GatingDispatcher(
         self_name=name,
         config=config,
@@ -249,3 +250,53 @@ async def test_expired_conversation_emits_failure_timeout_to_the_requester() -> 
     finally:
         await caller.stop()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_hop_limit_on_the_caller_side_fails_the_query_instead_of_returning_a_result() -> None:
+    """A reply that trips the caller's own hop limit raises HOP_LIMIT, never a result."""
+    carrier = InProcessCarrier()
+
+    async def wake(msg, dispatch):
+        return msg.reply(Performative.INFORM, content={"answer": 42})
+
+    srv = make_endpoint(
+        "srv",
+        carrier,
+        config=RoostAgentConfig(capabilities=["s.x"]),
+        wake=wake,
+        engine=ProtocolEngine(default_hop_limit=99),
+    )
+    caller = make_endpoint("caller", carrier, config=GRANTED, engine=ProtocolEngine(default_hop_limit=4))
+    await srv.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.query("how much?", receiver=AgentAddress(name="srv"), timeout=2, hops=5)
+        assert exc_info.value.failure.code is FailureCode.HOP_LIMIT
+    finally:
+        await caller.stop()
+        await srv.stop()
+
+
+@pytest.mark.asyncio
+async def test_hop_limit_on_the_caller_side_fails_the_request_instead_of_timing_out() -> None:
+    """The REQUEST path surfaces HOP_LIMIT, not the TIMEOUT it used to degrade into."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint(
+        "hr",
+        carrier,
+        config=RoostAgentConfig(capabilities=["hr.x"], backing="deterministic"),
+        tool_result={"salary": 100},
+        engine=ProtocolEngine(default_hop_limit=99),
+    )
+    caller = make_endpoint("caller", carrier, config=GRANTED, engine=ProtocolEngine(default_hop_limit=4))
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=2, hops=5)
+        assert exc_info.value.failure.code is FailureCode.HOP_LIMIT
+    finally:
+        await caller.stop()
+        await hr.stop()

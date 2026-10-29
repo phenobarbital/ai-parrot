@@ -118,11 +118,21 @@ class RoostEndpoint:
         transitions = self.engine.expire()
         for transition in transitions:
             for emitted in transition.emit:
-                if emitted.is_addressed_to(self.agent_name):
-                    await self._resolve_pending(emitted)
-                else:
-                    await self._send_reply(emitted)
+                await self._route_emitted(emitted)
         return len(transitions)
+
+    async def _route_emitted(self, emitted: RoostMessage) -> None:
+        """Deliver an engine-emitted message: locally when it names this agent, else over a carrier.
+
+        A budget that trips on the side which opened the conversation produces a failure
+        addressed to this agent; that message is what the pending ``request``/``query`` future is
+        waiting for, so it must resolve the waiter instead of going out over a carrier and
+        arriving back on an already-terminal conversation.
+        """
+        if emitted.is_addressed_to(self.agent_name):
+            await self._resolve_pending(emitted)
+        else:
+            await self._send_reply(emitted)
 
     async def _on_message(self, msg: RoostMessage) -> None:
         """Audit, dispatch, and execute an inbound Roost message."""
@@ -130,7 +140,7 @@ class RoostEndpoint:
         await self.ledger.record(msg, direction="served", self_name=self.agent_name)
         dispatch = self.dispatcher.dispatch(msg)
         for emitted in dispatch.emit:
-            await self._send_reply(emitted)
+            await self._route_emitted(emitted)
 
         if dispatch.decision is DispatchDecision.IGNORE:
             return
@@ -158,7 +168,7 @@ class RoostEndpoint:
                     exhausted = self.engine.charge(msg.conversation_id, response.tokens)
                     if exhausted is not None:
                         for emitted in exhausted.emit:
-                            await self._send_reply(emitted)
+                            await self._route_emitted(emitted)
             await self._resolve_pending(msg)
             return
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
