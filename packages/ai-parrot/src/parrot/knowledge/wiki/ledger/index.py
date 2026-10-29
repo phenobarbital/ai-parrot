@@ -71,10 +71,14 @@ def _decode_issue_body(body: str | None) -> dict[str, Any] | None:
     """
     if not body or not body.startswith(_STATE_PREFIX):
         return None
-    end = body.find(_STATE_SUFFIX)
+    # The header is always the first line; search only there so that a
+    # literal "-->" inside the JSON payload (e.g. Mermaid syntax "A-->B")
+    # does not trick find() into truncating the header early.
+    first_line, _, _ = body.partition("\n")
+    end = first_line.rfind(_STATE_SUFFIX)
     if end == -1:
         return None
-    raw = body[len(_STATE_PREFIX) : end].strip()
+    raw = first_line[len(_STATE_PREFIX) : end].strip()
     try:
         decoded = json.loads(raw)
     except json.JSONDecodeError:
