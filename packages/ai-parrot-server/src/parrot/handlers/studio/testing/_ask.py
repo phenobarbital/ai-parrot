@@ -73,9 +73,11 @@ class _StudioTestingAskMixin:
 
         The history is already keyed ``(chatbot, user, session)``, but the runtime caches one bot instance per
         ``(agent, session)``: the caller's id in the sid keeps two users who send the same id on separate instances.
+        The separator is ``.``, which a conversation id cannot hold (``CLIENT_SESSION_PATTERN``), so no other
+        (user, conversation) pair gives the same sid; ``-`` can be in both, and ``:`` already splits the storage keys.
         """
         user = await self._get_user()
-        return f"c-{user.user_id}-{conversation}"
+        return f"c.{user.user_id}.{conversation}"
 
     @staticmethod
     def _studio_session_id(session: Any, key: StudioAgentKey) -> str:
