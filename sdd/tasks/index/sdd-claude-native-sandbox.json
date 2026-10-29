@@ -174,7 +174,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: spends the bounded provider budget and needs the operator-remediated host; runs test_native_claude_sandbox_live.py from TASK-4890",
       "assigned_to": null,
-      "started_at": "2026-10-29T22:46:55+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4891-run-native-qualification.md"
     },
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallel": true,
       "parallelism_notes": "documents the launch_worker.sh CLI from TASK-4889 and copies the version/host matrix from TASK-4891's native-sandbox-qualification.md",
       "assigned_to": null,
-      "started_at": "2026-10-29T22:46:55+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4892-native-sandbox-docs.md"
     }
