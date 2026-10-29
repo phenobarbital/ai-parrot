@@ -721,7 +721,15 @@ def test_native_hook_retains_operational_guards(tmp_path: Path, monkeypatch: pyt
     assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
         f"PYTHONPATH={feature / 'packages' / 'test-package' / 'src'}"
     )
-    assert command[-7:] == ["/usr/bin/timeout", "-k", "5", "38", "/bin/bash", "-c", "rtk pytest tests/test_native.py -q"]
+    assert command[-7:] == [
+        "/usr/bin/timeout",
+        "-k",
+        "5",
+        "38",
+        "/bin/bash",
+        "-c",
+        "rtk pytest tests/test_native.py -q",
+    ]
 
 
 def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
