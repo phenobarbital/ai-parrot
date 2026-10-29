@@ -12,7 +12,7 @@ base_branch: main
 Fill in the issue key before creating the worktree.*
 **Date**: 2026-09-03
 **Author**: Jesus Lara
-**Status**: approved
+**Status**: superseded by `sdd/specs/openai-client-fixes.spec.md` (FEAT-770, 2026-10-30) — never implemented
 **Target version**: 0.28.1
 
 ---
