@@ -79,13 +79,20 @@ def _passthrough_decorator_factory(*_args: Any, **_kwargs: Any):
     return _decorator
 
 
-def _form(form_id: str, *, tenant: str = "navigator", published: str | None = None) -> FormSchema:
+def _form(
+    form_id: str,
+    *,
+    tenant: str = "navigator",
+    published: str | None = None,
+    is_public: bool = False,
+) -> FormSchema:
     """Build a minimal form for the supplied tenant."""
     return FormSchema(
         form_id=form_id,
         title={"en": form_id},
         tenant=tenant,
         published_version=published,
+        is_public=is_public,
         sections=[
             FormSection(
                 section_id="main",
@@ -123,12 +130,32 @@ async def client(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[tuple[FormAPI
     _RENDERERS.update(snapshot)
 
 
-async def _post(handler: FormAPIHandler, body: Any) -> Any:
-    """Call the real handler with precisely the request fields it consumes."""
+def _request(body: Any, *, programs: tuple[str, ...] = ("navigator",), superuser: bool = False) -> Any:
+    """Build a request double carrying the session fields the handler reads.
+
+    ``export_forms`` is mounted ``tenant="required"``, so by the time its body
+    runs ``requires_tenant`` has already authorized the caller against this same
+    session. The default therefore models a tenant MEMBER — anything else would
+    be a request that could not have reached the handler in production.
+
+    Args:
+        body: Parsed JSON body the handler should see.
+        programs: Tenant slugs the session declares membership in.
+        superuser: Whether the session declares the caller a superuser.
+
+    Returns:
+        A ``web.Request`` double accepted by ``FormAPIHandler.export_forms``.
+    """
     request = MagicMock(spec=web.Request)
     request.json = AsyncMock(return_value=body)
     request.get = MagicMock(side_effect=lambda key, default=None: "navigator" if key == "tenant" else default)
-    return await handler.export_forms(request)
+    request.session = {"session": {"programs": list(programs), "superuser": superuser}}
+    return request
+
+
+async def _post(handler: FormAPIHandler, body: Any, **kwargs: Any) -> Any:
+    """Call the real handler with precisely the request fields it consumes."""
+    return await handler.export_forms(_request(body, **kwargs))
 
 
 async def _lines(response: _FakeStreamResponse) -> list[dict[str, Any]]:
@@ -189,3 +216,68 @@ async def test_bad_body_unknown_dialect_and_missing_renderer(
     assert "supported" in json.loads(unknown.body)
     assert unavailable.status == 415
     assert "supported" in json.loads(unavailable.body)
+
+
+async def test_export_forms_calls_rbac_shadow_gate(client: tuple[FormAPIHandler, list[FormSchema]]) -> None:
+    """The bulk export is gated with the ``export_forms`` codename (ledger 3e191d955d4c).
+
+    It was the only ``/forms`` route carrying no permission codename at all, so
+    an operator running ``rbac_enforcing=True`` got no gate here and an operator
+    in shadow mode got no log line attributing the export.
+    """
+    handler, _forms = client
+    gate = AsyncMock()
+    handler._rbac_shadow_gate = gate
+
+    response = await _post(handler, {"dialect": "a2ui"})
+
+    gate.assert_awaited_once()
+    assert gate.await_args.args[1] == "export_forms"
+    assert len(await _lines(response)) == 3
+
+
+async def test_export_forms_gate_runs_before_body_validation(
+    client: tuple[FormAPIHandler, list[FormSchema]],
+) -> None:
+    """The gate is evaluated before the body is parsed, so a 400 cannot skip it."""
+    handler, _forms = client
+    gate = AsyncMock()
+    handler._rbac_shadow_gate = gate
+
+    rejected = await _post(handler, ["not", "an", "object"])
+
+    assert rejected.status == 400
+    gate.assert_awaited_once()
+
+
+async def test_export_forms_skips_forms_failing_membership(
+    client: tuple[FormAPIHandler, list[FormSchema]],
+) -> None:
+    """Per-form membership filtering, in parity with the ``list_forms`` loop.
+
+    DEFENCE IN DEPTH, NOT A CLOSED EXPLOIT. This route is mounted
+    ``tenant="required"``, so ``requires_tenant`` has already run the identical
+    ``_authorize`` check and a caller reaching the handler body can never be
+    rejected by this predicate in production. The test drives the handler
+    directly, bypassing that decorator, purely to pin the wiring so that
+    remounting the route as ``tenant="public"`` later cannot open a bulk hole.
+    It does NOT demonstrate a cross-tenant leak that previously existed.
+    """
+    handler, _forms = client
+    await handler.registry.register(_form("open", is_public=True), tenant="navigator")
+
+    response = await _post(handler, {"dialect": "a2ui"}, programs=())
+
+    assert response.status == 200
+    assert [row["form_id"] for row in await _lines(response)] == ["open"]
+
+
+async def test_export_forms_superuser_sees_every_form(
+    client: tuple[FormAPIHandler, list[FormSchema]],
+) -> None:
+    """A superuser session is exempt from the per-form guard, as it is elsewhere."""
+    handler, _forms = client
+
+    response = await _post(handler, {"dialect": "a2ui"}, programs=(), superuser=True)
+
+    assert {row["form_id"] for row in await _lines(response)} == {"draft", "published", "third"}
