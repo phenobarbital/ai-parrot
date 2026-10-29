@@ -679,6 +679,133 @@ def test_scope_guard_verdict_is_returned_unchanged(
     assert policy._scope_guard("pytest x.py", checkout[1]) == ("verdict", verdict)
 
 
+def _native_hook_worktrees(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create linked session and task worktrees accepted by native hook helpers."""
+    main = tmp_path / "main"
+    feature = main / ".claude" / "worktrees" / "feature"
+    task = main / ".claude" / "worktrees" / "task"
+    for name, worktree in (("feature", feature), ("task", task)):
+        admin = main / ".git" / "worktrees" / name
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+        worktree.mkdir(parents=True)
+        (worktree / ".git").write_text(f"gitdir: {admin}\n")
+        (worktree / "packages" / "test-package" / "src").mkdir(parents=True)
+    environment = main / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    feature.joinpath(".venv").symlink_to(environment, target_is_directory=True)
+    task.joinpath(".venv").symlink_to(environment, target_is_directory=True)
+    return feature, task, main
+
+
+def test_native_hook_retains_operational_guards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scope/RTK/backstop/environment behavior without an inserted bwrap wrapper."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[tuple[str, Path]] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str]:
+        seen.append((command, cwd))
+        return "rewrite", "pytest tests/test_native.py -q"
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: f"rtk {command}")
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "pytest", "timeout": 30_000}},
+        backend="claude-native",
+    )
+    command = shlex.split(response["hookSpecificOutput"]["updatedInput"]["command"])
+    assert seen == [("pytest", feature.resolve())]
+    assert command[0] == "env"
+    assert "bwrap" not in command
+    assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
+        f"PYTHONPATH={feature / 'packages' / 'test-package' / 'src'}"
+    )
+    assert command[-7:] == [
+        "/usr/bin/timeout",
+        "-k",
+        "5",
+        "38",
+        "/bin/bash",
+        "-c",
+        "rtk pytest tests/test_native.py -q",
+    ]
+
+
+def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cd <pool worktree> && pytest x` uses the task worktree for guards and PYTHONPATH."""
+    feature, task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[Path] = []
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: (seen.append(cwd), ("allow", None))[1])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}},
+        backend="claude-native",
+    )
+    command = shlex.split(response["hookSpecificOutput"]["updatedInput"]["command"])
+    assert seen == [task.resolve()]
+    assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
+        f"PYTHONPATH={task / 'packages' / 'test-package' / 'src'}"
+    )
+
+
+def test_legacy_hook_output_unchanged(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The omitted backend and explicit Bubblewrap backend produce identical output."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    payload = {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    implicit = policy.hook_response(payload)
+    explicit = policy.hook_response(payload, backend="bubblewrap")
+    assert implicit == explicit
+    assert "bwrap" in explicit["hookSpecificOutput"]["updatedInput"]["command"]
+
+
+@pytest.mark.parametrize("backend", ["", "none", "CLAUDE-NATIVE", "docker"])
+def test_unknown_backend_denies(checkout: tuple[Path, Path], backend: str) -> None:
+    """Only the explicit native backend value opts out of Bubblewrap."""
+    response = policy.hook_response(
+        {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}}, backend=backend
+    )
+    assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_native_file_tool_denies_control_paths(tmp_path: Path) -> None:
+    """Native file tools allow task files but reject Git, environment, and hook controls."""
+    feature, _task, main = _native_hook_worktrees(tmp_path)
+    allowed = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Write", "tool_input": {"file_path": "task.py"}}, backend="claude-native"
+    )
+    assert "permissionDecision" not in allowed["hookSpecificOutput"]
+    denied_paths = [
+        main / ".git" / "config",
+        feature / ".venv" / "editable.pth",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "worktree_environment.py",
+    ]
+    for target in denied_paths:
+        response = policy.hook_response(
+            {"cwd": str(feature), "tool_name": "Edit", "tool_input": {"file_path": str(target)}},
+            backend="claude-native",
+        )
+        assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
+    """The standalone hook selects native wrapping solely from its child environment."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    environment = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native", policy.RTK_ENV_SWITCH: "0"}
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, "-S", policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    command = shlex.split(json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"])
+    assert command[0] == "env"
+    assert "bwrap" not in command
+
+
 def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
     monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("verdict", "cd /w && python v.py"))
