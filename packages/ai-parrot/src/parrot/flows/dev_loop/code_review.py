@@ -14,15 +14,11 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, get_args
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Type, get_args
 
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.flows.dev_loop.dispatchers import (
-    ClaudeCodeDispatcher,
-    CodexCodeDispatcher,
-)
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
     ClaudeCodeDispatchProfile,
@@ -38,6 +34,11 @@ from parrot.flows.dev_loop.models import (
     default_judge_panel,
 )
 from parrot.flows.dev_loop.session_state import JudgeVerdictRecorded, SessionHost
+
+if TYPE_CHECKING:
+    # Annotation-only: importing the dispatchers package at runtime closes a cycle
+    # (dispatchers/mantle.py imports this module) when code_review is imported first.
+    from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher, CodexCodeDispatcher
 
 # Signature: ``(key, fallback) -> Any`` (mirrors ``agent_builder.ConfigGetter``)
 # — kept local rather than imported to avoid a module-level dependency on

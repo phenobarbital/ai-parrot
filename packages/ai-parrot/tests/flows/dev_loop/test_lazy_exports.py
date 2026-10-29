@@ -46,3 +46,42 @@ def test_helpers_import_without_navconfig_env(tmp_path: Path) -> None:
     env = {**os.environ, "SITE_ROOT": str(tmp_path)}
     result = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr[-2000:]
+
+
+def test_export_sets_are_pinned() -> None:
+    """The lazy tables keep exactly the names the eager ``__init__`` files exported (72 + 31)."""
+    dev_loop = importlib.import_module("parrot.flows.dev_loop")
+    sdd_coder = importlib.import_module("parrot.flows.dev_loop.sdd_coder")
+    assert len(dev_loop.__all__) == len(set(dev_loop.__all__)) == 72
+    assert len(sdd_coder.__all__) == len(set(sdd_coder.__all__)) == 31
+    assert set(dev_loop.__all__) == set(dev_loop._LAZY_EXPORTS)
+    assert set(sdd_coder.__all__) == set(sdd_coder._LAZY_EXPORTS)
+
+
+#: Modules on known import cycles. The eager ``__init__`` always entered ``dispatchers`` first, which masked
+#: the ``code_review`` <-> ``dispatchers.mantle`` cycle; each must import cleanly as the FIRST dev_loop import.
+#: (A full scan of all 115 dev_loop submodules passed when the packages went lazy; too slow for every run.)
+FIRST_IMPORTS = (
+    "parrot.flows.dev_loop.code_review",
+    "parrot.flows.dev_loop.nodes.qa",
+    "parrot.flows.dev_loop.dispatchers",
+    "parrot.flows.dev_loop.dispatchers.mantle",
+    "parrot.flows.dev_loop.runner",
+    "parrot.flows.dev_loop.commands",
+    "parrot.flows.dev_loop.flow",
+    "parrot.flows.dev_loop.factories",
+    "parrot.flows.dev_loop.sdd_coder.engine",
+    "parrot.flows.dev_loop.sdd_coder.toolkit",
+)
+
+
+def test_cycle_modules_import_first_in_a_fresh_interpreter() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    def probe(module: str) -> tuple[str, int, str]:
+        result = subprocess.run([sys.executable, "-c", f"import {module}"], capture_output=True, text=True, timeout=120)
+        return module, result.returncode, (result.stderr.strip().splitlines() or [""])[-1]
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        failures = [r for r in pool.map(probe, FIRST_IMPORTS) if r[1] != 0]
+    assert not failures, failures

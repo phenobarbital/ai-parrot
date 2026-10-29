@@ -59,7 +59,39 @@ _LAZY_EXPORTS: dict[str, str] = {
     "SddCoderToolkit": "toolkit",
 }
 
-__all__ = list(_LAZY_EXPORTS)
+__all__ = [
+    "ERROR_CODES",
+    "AttemptRecord",
+    "CleanupReport",
+    "CoderError",
+    "CoderJob",
+    "CoderPlan",
+    "CoderResult",
+    "NativePrep",
+    "OrphanBranch",
+    "PlanChunk",
+    "PlannedTask",
+    "RosterConfig",
+    "RosterSeat",
+    "SeatKind",
+    "SeatProbeResult",
+    "TaskOutcome",
+    "TaskResult",
+    "CoderPlanArgs",
+    "CoderRunChunkArgs",
+    "CoderPrepareNativeArgs",
+    "CoderMergeArgs",
+    "CoderWaitArgs",
+    "CoderStatusArgs",
+    "CoderCleanupArgs",
+    "ChunkAssigner",
+    "RosterProbe",
+    "available_seats",
+    "CoderFailure",
+    "SddCoderEngine",
+    "AttemptTelemetryCollector",
+    "SddCoderToolkit",
+]
 
 
 def __getattr__(name: str) -> Any:

@@ -39,7 +39,7 @@ def _restore(saved: dict) -> None:
 
 
 def test_import_does_not_pull_in_claude_agent_sdk():
-    """``import parrot.flows.dev_loop`` MUST NOT load claude_agent_sdk."""
+    """``import parrot.flows.dev_loop`` (and resolving its exports) MUST NOT load claude_agent_sdk."""
     # Save originals so we can restore them after the test — purging
     # without restoring replaces module objects and breaks isinstance /
     # patch() for every later test that imported names at collection time.
@@ -56,7 +56,11 @@ def test_import_does_not_pull_in_claude_agent_sdk():
     try:
         pre_existing = set(sys.modules)
 
-        importlib.import_module("parrot.flows.dev_loop")
+        package = importlib.import_module("parrot.flows.dev_loop")
+        # The package resolves its exports lazily (PEP 562, FEAT-633 R9): touch every public name so the
+        # guard still covers the whole graph the old eager __init__ loaded, not just the empty package.
+        for name in package.__all__:
+            getattr(package, name)
 
         assert "claude_agent_sdk" not in sys.modules, (
             "Importing parrot.flows.dev_loop must not trigger "
