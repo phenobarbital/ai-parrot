@@ -85,7 +85,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -95,8 +95,9 @@
       "parallelism_notes": "build_toolkit loads the models/ fixture TASK-4878 commits, and its pin test asserts the two named connections resolved from those policy files.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4879-semantic-example-common.md"
+      "completed_at": "2026-10-29T23:02:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4879-semantic-example-common.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4880",
