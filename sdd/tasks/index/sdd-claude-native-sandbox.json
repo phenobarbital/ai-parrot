@@ -47,7 +47,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -55,8 +55,9 @@
       "parallelism_notes": "no dependencies: creates native_claude_sandbox.py and its test file, both new; only reads worktree_environment.py helpers",
       "assigned_to": null,
       "started_at": "2026-10-29T22:46:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4885-native-sandbox-policy-compiler.md"
+      "completed_at": "2026-10-29T23:00:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4885-native-sandbox-policy-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4886",
