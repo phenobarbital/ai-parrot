@@ -90,7 +90,8 @@ def test_render_envelope_result():
     assert "status=OK" in out
     assert "transfer=none" in out
     assert "cost=50ms/5+10tok" in out
-    assert "detail=<" in out and "bytes sha256:" in out
+    assert "inline=<" in out and "bytes sha256:" in out
+    assert "detail123" not in out
     assert "trace=trace1" in out
 
 

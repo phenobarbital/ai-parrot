@@ -37,13 +37,16 @@ def render_envelope(payload: dict[str, Any]) -> str:
     if isinstance(msg, CallMessage):
         return f"CALL {msg.cap_id} hash={msg.contract_hash[:19]} args={_bytes_repr(msg.args)} budget={msg.budget.model_dump()} corr={msg.correlation_id} idem={msg.idempotency_key} trace={msg.trace_id}"
     if isinstance(msg, ResultMessage):
+        status = msg.status if isinstance(msg.status, str) else msg.status.value
         handle_str = "-"
         if msg.handle:
-            handle_str = f"{msg.handle.key or '-'}:{msg.handle.descriptor or '-'}"
+            # Bounded summary only: the descriptor's summary may carry preview rows (payload data).
+            handle_str = f"{msg.handle.key[:19]}…({msg.handle.media_type.value},{msg.handle.byte_size}B)"
         return (
-            f"RESULT status={msg.status} transfer={msg.transfer} "
-            f"key={handle_str} cost={msg.cost.duration_ms}ms/{msg.cost.tokens_in}+{msg.cost.tokens_out}tok "
-            f"detail={_bytes_repr(msg.inline)} trace={msg.trace_id}"
+            f"RESULT status={status} transfer={msg.transfer} "
+            f"handle={handle_str} inline={_bytes_repr(msg.inline)} "
+            f"cost={msg.cost.duration_ms}ms/{msg.cost.tokens_in}+{msg.cost.tokens_out}tok "
+            f"detail={msg.detail or '-'} trace={msg.trace_id}"
         )
     if isinstance(msg, ProgressMessage):
         return f"PROGRESS op={msg.op_id} phase={msg.phase} frame#{msg.frame_index} {_bytes_repr(msg.frame)} last={msg.is_last}"
