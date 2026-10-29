@@ -33,28 +33,31 @@ adapter behavior rather than treating the key's presence as a rejection.
 
 ## Live-provider status
 
-Run 2026-10-30 (orchestrator review, `PARROT_TEST_REAL_LLM=1`, each client's default model, one tool-forcing `ask()` each):
+Run 2026-10-30, `PARROT_TEST_REAL_LLM=1`, one tool-forcing `ask()` per provider:
 
-| Provider | Result | Evidence |
+| Provider | Model | Result |
 | --- | --- | --- |
-| Anthropic | PASS | 1 tool call, known name, dict args |
-| Google | PASS | 1 tool call, known name, dict args |
-| OpenAI | FAIL (not schema) | 400 `Unsupported parameter: 'max_tokens' ... Use 'max_completion_tokens'` — the client's request parameters for its default model, before any tool schema is judged |
-| Groq | FAIL (not schema) | 400 `'model' : doesn't match any schema from 'anyOf'` — the client's default model id is rejected |
+| Anthropic | client default | PASS — 1 tool call, known name, dict args |
+| Google | client default | PASS — 1 tool call, known name, dict args |
+| OpenAI | `gpt-4.1-mini` (`SQUAWK_G3_MODEL_OPENAI`) | PASS — 1 tool call |
+| Groq | `openai/gpt-oss-120b` (`SQUAWK_G3_MODEL_GROQ`) | PASS — 1 tool call |
 
-Neither failure names a tool schema, so the G3 tool-definition question is
-answered only for Anthropic and Google live; OpenAI/Groq must be re-run with an
-explicitly valid model once their client defaults are fixed (out of scope here).
-The first review run also exposed a spike bug — `ask()` on an unopened client
-(`self.client is None`) aborted the whole run; each call now runs inside
-`async with client:` and a provider exception is recorded as `failed`, never
-raised.
+All four providers accept the compiled schemas and call the tool with valid
+arguments. The client defaults were not usable, for reasons unrelated to tool
+definitions (filed as client defects in the ledger):
+
+- `OpenAIClient` default `gpt-5-mini` → 400: the client sends `max_tokens`, which that
+  model rejects (`max_completion_tokens` required).
+- `GroqClient` default `llama-3.3-70b-versatile` → 404 (model no longer available).
+  The first run's "`'model'` doesn't match any schema" came from the spike passing the
+  `GroqModel` enum object; the spike now sends `.value`.
+
+The spike opens each client with `async with client:` and records a provider error as
+`failed` instead of aborting the run.
 
 ## Amendment
 
-**No wording change to `compile_capability` is proposed.** The measured offline
-schemas preserve the current descriptions for inline results, artifact handles,
-and the LLM-backed input-as-data boundary, while all four `ToolSchemaAdapter`
-formats satisfy their current structural constraints. A live-provider failure,
-if one is recorded later, must name the provider and its rejected schema before
-proposing a wording-only amendment.
+**No wording change to `compile_capability` is proposed.** The schemas pass offline
+for all four formats and live on all four providers. M7 should note that
+`SquawkRemoteToolkit` inherits whatever model its host client resolves, so the two
+client defects above block OpenAI/Groq defaults until fixed.

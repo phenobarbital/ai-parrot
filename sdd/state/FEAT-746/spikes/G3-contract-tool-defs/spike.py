@@ -209,9 +209,14 @@ async def real_call_results() -> list[dict[str, Any]]:
             # Clients are lazy: the provider SDK handle only exists inside the async context.
             async with client:
                 schemas = manager.get_tool_schemas(client._resolve_tool_format())
+                # Model enums (e.g. GroqModel) must be sent as their string value;
+                # SQUAWK_G3_MODEL_<PROVIDER> overrides the client default.
+                model = os.environ.get(f"SQUAWK_G3_MODEL_{label.upper()}") or getattr(
+                    client.model, "value", client.model
+                )
                 message = await client.ask(
                     prompt="Use hr__reports__manager_of for employee_id E-001. Call the tool.",
-                    model=client.model,
+                    model=model,
                     tools=schemas,
                     use_tools=True,
                 )
@@ -225,7 +230,14 @@ async def real_call_results() -> list[dict[str, Any]]:
             and "_error" not in getattr(call, "arguments", {})
             for call in calls
         )
-        results.append({"provider": label, "status": "passed" if valid else "failed", "tool_calls": len(calls)})
+        results.append(
+            {
+                "provider": label,
+                "model": str(model),
+                "status": "passed" if valid else "failed",
+                "tool_calls": len(calls),
+            }
+        )
     return results
 
 
