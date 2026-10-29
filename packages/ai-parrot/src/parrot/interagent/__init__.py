@@ -42,6 +42,7 @@ __all__ = [
     "ArtifactHandle",
     "Budget",
     "BusPayloadSerializer",
+    "CAP_ID_PATTERN",
     "CallCost",
     "CallMessage",
     "CancelMessage",
