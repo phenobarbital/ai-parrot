@@ -250,10 +250,8 @@ def test_live_compatibility(qual_repo) -> None: ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-30
+**Notes**: Created test_native_claude_sandbox_live.py: skipped unless PARROT_TEST_REAL_LLM=1, with a process-wide session/cost budget guard (8 sessions, USD 5). Merge-tier validation green (207 passed, 10 skipped). Live probes were NOT executed in this run (they spend provider budget); orchestrator read the gating and budget code only.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
