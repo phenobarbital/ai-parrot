@@ -708,9 +708,9 @@ def _which_with_rtk(rtk: Path | None) -> Any:
 
 
 def test_rtk_rewrite_trusts_printed_command_not_exit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """rtk 0.45 exits 3 after a successful rewrite although its help documents 0."""
+    """Exit 3 is RTK's "ask" verdict, not a failure: the printed rewrite is still used."""
     monkeypatch.delenv(policy.RTK_ENV_SWITCH)
-    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$2"; exit 3')
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$3"; exit 3')
     monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
     assert policy.rtk_rewrite("git status") == "rtk git status"
 
@@ -736,7 +736,7 @@ def test_rtk_rewrite_keeps_command_without_usable_output(
 def test_rtk_rewrite_is_skipped_when_absent_unrunnable_or_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$2"')
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$3"')
     monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
     assert policy.rtk_rewrite("git status") is None, "PARROT_SANDBOX_RTK=0 turns the rewrite off"
     monkeypatch.delenv(policy.RTK_ENV_SWITCH)
@@ -745,6 +745,23 @@ def test_rtk_rewrite_is_skipped_when_absent_unrunnable_or_disabled(
     rtk.chmod(0o644)
     monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
     assert policy.rtk_rewrite("git status") is None
+
+
+def test_rtk_rewrite_ends_rtk_options_before_the_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The command follows ``--``, so a fake RTK sees it as the third argument."""
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    rtk = _fake_rtk(tmp_path, '[ "$2" = "--" ] || exit 64; printf "rtk %s\\n" "$3"')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") == "rtk git status"
+
+
+def test_real_rtk_reads_dash_leading_command_as_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without ``--``, ``rtk rewrite --help`` printed RTK's help, which the hook would have run as the command."""
+    if shutil.which("rtk") is None:
+        pytest.skip("RTK is not installed on this host")
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    assert policy.rtk_rewrite("--help") is None
+    assert policy.rtk_rewrite("git status") == "rtk git status"
 
 
 def test_hook_applies_rtk_after_scope_guard(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:

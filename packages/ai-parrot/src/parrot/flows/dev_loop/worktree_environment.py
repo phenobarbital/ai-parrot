@@ -464,8 +464,12 @@ def rtk_rewrite(command: str) -> str | None:
     """Return RTK's token-optimized form of ``command``, or ``None`` to keep it as is.
 
     ``rtk rewrite`` prints the rewritten command when RTK has an equivalent and
-    prints nothing when it has none. Only that output is trusted: rtk 0.45 exits
-    3 after a successful rewrite, although its help documents 0. Every failure
+    prints nothing when it has none. Only that output is trusted, because the
+    exit status is RTK's permission verdict against the Claude settings: 0 when
+    an allow rule matches, 3 when the host should ask, 2 (with no output) when a
+    deny rule matches. This hook grants no approval, so 0 and 3 are equivalent
+    here. ``--`` ends RTK's own options, so a command that starts with ``-`` is
+    rewritten as text instead of being parsed as an RTK flag. Every failure
     (RTK not installed, disabled with ``PARROT_SANDBOX_RTK=0``, a timeout, a
     crash) keeps the original command, because output compaction must never
     block a command.
@@ -483,7 +487,7 @@ def rtk_rewrite(command: str) -> str | None:
         return None
     try:
         result = subprocess.run(
-            [executable, "rewrite", command],
+            [executable, "rewrite", "--", command],
             capture_output=True,
             text=True,
             timeout=RTK_REWRITE_TIMEOUT_SECONDS,

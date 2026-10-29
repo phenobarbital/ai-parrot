@@ -691,8 +691,10 @@ output compaction is lost; sometimes RTK's rewrite wins, and that command runs
 outside the sandbox (`issue:6756c929a450`). The hook therefore runs the command
 (after the test-scope guard, which must see the raw runner) through `rtk rewrite`
 when `rtk` is on `PATH`, and RTK runs inside the sandbox. It trusts only the
-printed command, because rtk 0.45 exits 3 after a successful rewrite. Any RTK
-failure keeps the original command. Set `PARROT_SANDBOX_RTK=0` to turn this off.
+printed command: the exit status is RTK's permission verdict (0 allow-listed,
+3 ask, 2 denied with no output), and this hook grants no approval. The command
+is passed after `--`, so one that starts with `-` is never read as an RTK
+option. Any RTK failure keeps the original command. Set `PARROT_SANDBOX_RTK=0` to turn this off.
 Keeping RTK's global hook out of sandboxed sessions is still required, because
 any other hook that rewrites the command can drop the sandbox wrapper.
 
