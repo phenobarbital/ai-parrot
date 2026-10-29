@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+
 class ClaudeCodeDispatchProfile(BaseModel):
     """Declarative profile consumed by ``ClaudeCodeDispatcher.dispatch()``.
 

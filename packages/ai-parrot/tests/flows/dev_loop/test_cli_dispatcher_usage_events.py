@@ -193,7 +193,7 @@ async def test_pool_worker_seat_reaches_ledger(monkeypatch, brief, linked_worktr
     assert rec.node_id == "development"
 
 
-async def test_no_usage_no_event(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
+async def test_no_usage_no_event(monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger):
     """No harvest -> no event. '—' is honest; 0 is a lie."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
@@ -208,13 +208,15 @@ async def test_no_usage_no_event(monkeypatch, brief, _patch_worktree_base, run_r
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="qa",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
 
     assert ledger.records == []
 
 
-async def test_usage_as_object_and_as_dict(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
+async def test_usage_as_object_and_as_dict(
+    monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger
+):
     """The harvest docstring promises both shapes are supported."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
@@ -228,7 +230,7 @@ async def test_usage_as_object_and_as_dict(monkeypatch, brief, _patch_worktree_b
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="qa",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
 
     (rec,) = ledger.records
@@ -236,7 +238,7 @@ async def test_usage_as_object_and_as_dict(monkeypatch, brief, _patch_worktree_b
     assert rec.output_tokens == 8
 
 
-async def test_telemetry_failure_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base):
+async def test_telemetry_failure_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base, linked_worktree):
     """A raising registry must not fail the dispatch."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
@@ -255,12 +257,12 @@ async def test_telemetry_failure_does_not_break_dispatch(monkeypatch, brief, _pa
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="qa",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
     assert result is not None
 
 
-async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base):
+async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base, linked_worktree):
     """A dispatcher not owned by a DevLoopRunner (no resolver ever wired)
     must dispatch successfully — no event emitted, no error."""
     messages = [
@@ -275,7 +277,7 @@ async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _pa
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="qa",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
     assert result is not None
 
@@ -289,7 +291,9 @@ async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _pa
 # ---------------------------------------------------------------------------
 
 
-async def test_timeout_failure_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
+async def test_timeout_failure_reaches_ledger(
+    monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger
+):
     """A wall-clock timeout must still produce a failed ledger record."""
     import asyncio
 
@@ -327,7 +331,7 @@ async def test_timeout_failure_reaches_ledger(monkeypatch, brief, _patch_worktre
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="qa",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
 
     (rec,) = ledger.records
@@ -336,7 +340,7 @@ async def test_timeout_failure_reaches_ledger(monkeypatch, brief, _patch_worktre
 
 
 async def test_session_failure_reaches_ledger_with_partial_usage(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+    monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger
 ):
     """A session failure after a usage-bearing ResultMessage must retain
     BOTH the tokens burned and the failure — two ledger records, since
@@ -371,7 +375,7 @@ async def test_session_failure_reaches_ledger_with_partial_usage(
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="qa",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
 
     assert len(ledger.records) == 2
@@ -383,7 +387,7 @@ async def test_session_failure_reaches_ledger_with_partial_usage(
 
 
 async def test_result_error_without_raise_reaches_ledger(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+    monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger
 ):
     """An is_error ResultMessage the SDK doesn't raise on must still fail
     the ledger record, not just the dispatch."""
@@ -413,7 +417,7 @@ async def test_result_error_without_raise_reaches_ledger(
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="qa",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
 
     (rec,) = ledger.records
@@ -421,7 +425,9 @@ async def test_result_error_without_raise_reaches_ledger(
     assert rec.error_type == "ResultError"
 
 
-async def test_output_validation_failure_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
+async def test_output_validation_failure_reaches_ledger(
+    monkeypatch, brief, _patch_worktree_base, linked_worktree, run_registry, ledger
+):
     """A successful stream whose final payload fails JSON/schema
     validation must still reach the ledger as a failure."""
     messages = [_AssistantMessage(content=[_TextBlock("not valid json")])]
@@ -449,7 +455,7 @@ async def test_output_validation_failure_reaches_ledger(monkeypatch, brief, _pat
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="qa",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
 
     (rec,) = ledger.records
@@ -457,7 +463,7 @@ async def test_output_validation_failure_reaches_ledger(monkeypatch, brief, _pat
     assert rec.error_type == "DispatchOutputValidationError"
 
 
-async def test_after_call_forwards_to_global_registry(monkeypatch, brief, _patch_worktree_base):
+async def test_after_call_forwards_to_global_registry(monkeypatch, brief, _patch_worktree_base, linked_worktree):
     """A successful dispatch's usage event must reach the GLOBAL registry
     too (explicit forward_to_global), not only the per-run one — the
     per-run registry is forward_to_global=False by design."""
@@ -488,7 +494,7 @@ async def test_after_call_forwards_to_global_registry(monkeypatch, brief, _patch
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="qa",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
         for _ in range(3):
             await asyncio.sleep(0)  # let the forward_to_global task run
