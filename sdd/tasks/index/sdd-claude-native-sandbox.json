@@ -65,7 +65,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -73,8 +73,9 @@
       "parallelism_notes": "exclusive: adds a fixture to packages/ai-parrot/tests/flows/dev_loop/conftest.py, which every dev-loop test loads",
       "assigned_to": null,
       "started_at": "2026-10-29T22:46:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4886-linked-worktree-test-fixtures.md"
+      "completed_at": "2026-10-29T22:53:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4886-linked-worktree-test-fixtures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4887",
