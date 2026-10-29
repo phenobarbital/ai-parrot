@@ -83,7 +83,7 @@ def test_handle_key_and_model_validation() -> None:
     invalid_handle["key"] = "invalid"
     with pytest.raises(ValidationError):
         ArtifactHandle(**invalid_handle)
-    with pytest.raises(ValidationError, match="summary JSON exceeds 1500 characters"):
+    with pytest.raises(ValidationError, match="summary JSON exceeds 1000 characters"):
         HandleDescriptor(media_type=MediaType.GENERIC, byte_size=1, summary={"value": "x" * 1500})
 
 

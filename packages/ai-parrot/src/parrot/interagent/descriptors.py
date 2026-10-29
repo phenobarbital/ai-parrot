@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-MAX_SUMMARY_CHARS = 1500
+MAX_SUMMARY_CHARS = 1000
 
 
 class MediaType(str, Enum):

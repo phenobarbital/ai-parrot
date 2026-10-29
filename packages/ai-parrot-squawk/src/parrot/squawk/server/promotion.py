@@ -38,12 +38,12 @@ class PromotionAnalyzer:
             PromotionCandidate(
                 cap_id=c,
                 args_digest=d,
-                llm_backed_calls=l,
-                deterministic_calls=k,
-                ratio=l / (l + k) if (l + k) > 0 else 0.0,
+                llm_backed_calls=n_llm,
+                deterministic_calls=n_det,
+                ratio=n_llm / (n_llm + n_det) if (n_llm + n_det) > 0 else 0.0,
             )
-            for (c, d), (l, k) in counts.items()
-            if l >= self._min
+            for (c, d), (n_llm, n_det) in counts.items()
+            if n_llm >= self._min
         ]
         return sorted(out, key=lambda x: x.llm_backed_calls, reverse=True)
 
