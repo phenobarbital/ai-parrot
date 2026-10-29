@@ -414,3 +414,39 @@ class Main(AppHandler):
         """
         if manager := app.get('o365_auth_manager'):
             await manager.shutdown()
+        await self._shutdown_default_executor()
+
+    @staticmethod
+    async def _shutdown_default_executor(timeout: float = 3.0) -> None:
+        """Retire the event loop's default ``ThreadPoolExecutor`` while the loop lives.
+
+        Blocking work offloaded with ``run_in_executor(None, ...)`` /
+        ``asyncio.to_thread`` spawns non-daemon pool workers (``uvloop_0`` under
+        uvloop). Navigator closes the loop without ``asyncio.run``'s
+        ``shutdown_default_executor()`` step, so an idle worker outlives the
+        server and is reported as a shutdown survivor. An *idle* one is
+        harmless, but one still running a blocking call would stall the
+        interpreter's non-daemon join — so drain the pool here, bounded, while
+        the loop is still running and can await it.
+        """
+        import asyncio
+        import logging
+
+        loop = asyncio.get_running_loop()
+        try:
+            # Both bounds are load-bearing under uvloop. Its
+            # shutdown_default_executor() awaits the pool join UNBOUNDED, so
+            # wait_for supplies the outer bound; and its own `timeout`
+            # argument governs the thread.join() that runs in the `finally`
+            # as that cancellation unwinds, which is otherwise unbounded too.
+            # Worst case is therefore ~2x timeout. A worker stuck in a
+            # blocking call cannot be killed either way — run.py's hard exit
+            # reaps it — but the wait stays bounded and the cause gets named.
+            await asyncio.wait_for(
+                loop.shutdown_default_executor(timeout=timeout), timeout
+            )
+        except TimeoutError:
+            logging.getLogger(__name__).warning(
+                "Default executor did not drain in %ss; leaving it to process exit.",
+                timeout,
+            )
