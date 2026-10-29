@@ -1,4 +1,5 @@
 """Tests for server/render.py."""
+
 from __future__ import annotations
 
 import hashlib

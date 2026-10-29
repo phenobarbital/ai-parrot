@@ -1,4 +1,5 @@
 """Promotion loop: LLM-backed call patterns → drafted deterministic capability → human approval (Q10, D12)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -51,7 +52,14 @@ class PromotionAnalyzer:
         cap = current.model_copy(update={"backing": "deterministic", "version": current.version + 1})
         return CapabilityBinding(capability=cap, tool_name=tool_name)
 
-    async def approve(self, contract: SquawkContract, bindings: Sequence[CapabilityBinding], draft: CapabilityBinding, *, approver: str) -> SquawkContract:
+    async def approve(
+        self,
+        contract: SquawkContract,
+        bindings: Sequence[CapabilityBinding],
+        draft: CapabilityBinding,
+        *,
+        approver: str,
+    ) -> SquawkContract:
         """Human act: replace the capability, rebuild (re-hash) the contract, ledger the approval."""
         new = [b for b in bindings if b.capability.cap_id != draft.capability.cap_id] + [draft]
         promoted = build_contract(new, agent_id=contract.agent_id, major=contract.major)

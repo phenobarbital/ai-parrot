@@ -1,4 +1,5 @@
 """Tests for server/promotion.py."""
+
 from __future__ import annotations
 
 import hashlib
@@ -12,6 +13,7 @@ from parrot.squawk.server.promotion import PromotionAnalyzer, PromotionCandidate
 
 def test_candidates_threshold():
     from parrot.security.audit_ledger import LocalHMACSigner
+
     ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
     entries = [
         ServedLedgerEntry(
@@ -44,6 +46,7 @@ def test_candidates_threshold():
 
 def test_candidates_below_threshold():
     from parrot.security.audit_ledger import LocalHMACSigner
+
     ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
     entries = [
         ServedLedgerEntry(
@@ -81,7 +84,9 @@ def test_draft_flips_backing_and_bumps_version():
         version=1,
     )
     analyzer = PromotionAnalyzer(ledger=None, min_calls=20)
-    candidate = PromotionCandidate(cap_id="cat1.cap1", args_digest="digest1", llm_backed_calls=25, deterministic_calls=3, ratio=25 / 28)
+    candidate = PromotionCandidate(
+        cap_id="cat1.cap1", args_digest="digest1", llm_backed_calls=25, deterministic_calls=3, ratio=25 / 28
+    )
     binding = analyzer.draft(candidate, cap, tool_name="tool1")
     assert binding.capability.backing == "deterministic"
     assert binding.capability.version == 2
@@ -92,20 +97,41 @@ def test_draft_flips_backing_and_bumps_version():
 async def test_approve_rehashes_category_and_appends_one_entry():
     from parrot.interagent import SquawkContract, SquawkCapability, ReturnsSpec
     from parrot.security.audit_ledger import LocalHMACSigner
+
     ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
     analyzer = PromotionAnalyzer(ledger, min_calls=20)
-    cap1 = SquawkCapability(cap_id="cat1.cap1", category="cat1", description="Test 1", input_schema={}, returns=ReturnsSpec(kind="inline", schema={}), backing="llm_backed", version=1)
-    cap2 = SquawkCapability(cap_id="cat2.cap2", category="cat2", description="Test 2", input_schema={}, returns=ReturnsSpec(kind="inline", schema={}), backing="llm_backed", version=1)
+    cap1 = SquawkCapability(
+        cap_id="cat1.cap1",
+        category="cat1",
+        description="Test 1",
+        input_schema={},
+        returns=ReturnsSpec(kind="inline", schema={}),
+        backing="llm_backed",
+        version=1,
+    )
+    cap2 = SquawkCapability(
+        cap_id="cat2.cap2",
+        category="cat2",
+        description="Test 2",
+        input_schema={},
+        returns=ReturnsSpec(kind="inline", schema={}),
+        backing="llm_backed",
+        version=1,
+    )
     from parrot.squawk.contract import LLMBackedSpec
+
     bindings = [
         CapabilityBinding(capability=cap1, llm_backed=LLMBackedSpec(system_prompt="prompt1", output_schema={})),
         CapabilityBinding(capability=cap2, llm_backed=LLMBackedSpec(system_prompt="prompt2", output_schema={})),
     ]
     from parrot.interagent import CapabilityCategory
+
     cat1 = CapabilityCategory(name="cat1", capabilities=(cap1,))
     cat2 = CapabilityCategory(name="cat2", capabilities=(cap2,))
     contract = SquawkContract(agent_id="agent1", major=1, categories=(cat1, cat2))
-    candidate = PromotionCandidate(cap_id="cat1.cap1", args_digest="digest1", llm_backed_calls=25, deterministic_calls=3, ratio=25 / 28)
+    candidate = PromotionCandidate(
+        cap_id="cat1.cap1", args_digest="digest1", llm_backed_calls=25, deterministic_calls=3, ratio=25 / 28
+    )
     draft = analyzer.draft(candidate, cap1, tool_name="tool1")
     promoted = await analyzer.approve(contract, bindings, draft, approver="approver1")
     assert promoted.agent_id == "agent1"
