@@ -1,0 +1,31 @@
+{
+  "feature": "e2e-explorer-write-scope",
+  "feature_id": "BRIEF-e009ded74983",
+  "spec": "sdd/briefs/e2e-explorer-write-scope.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-30",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-e009ded74983-1",
+      "slug": "write-guard-hook",
+      "title": "PreToolUse write guard for E2E exploration agents",
+      "feature_id": "BRIEF-e009ded74983",
+      "feature": "e2e-explorer-write-scope",
+      "spec": "sdd/briefs/e2e-explorer-write-scope.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/e2e-explorer-write-scope/tasks/HOTFIX-e009ded74983-1-write-guard-hook.md"
+    }
+  ]
+}
