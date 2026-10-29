@@ -15,6 +15,7 @@ from parrot.roost.performatives import CarrierKind, FailureCode, InteractionProt
 from parrot.roost.protocols import ProtocolEngine
 
 GRANTED = RoostAgentConfig(grant=InterAgentGrant(scopes=["*"]))
+CALLER_CTX = object()  # opaque stand-in for a PermissionContext
 
 
 def make_endpoint(
@@ -26,6 +27,7 @@ def make_endpoint(
     working_memory: MagicMock | None = None,
     wake: AsyncMock | None = None,
     registry: MagicMock | None = None,
+    permission_context: object = CALLER_CTX,
 ) -> RoostEndpoint:
     """Build an endpoint with deterministic mocks for external agent services."""
     tool_manager = MagicMock()
@@ -48,6 +50,7 @@ def make_endpoint(
         working_memory=working_memory,
         wake=wake,
         registry=registry,
+        permission_context=permission_context,
     )
 
 
@@ -74,7 +77,7 @@ async def test_request_returns_native_object_and_uses_manager_guard() -> None:
         )
         assert output is result
         hr.tool_manager.execute_tool.assert_awaited_once()
-        assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is None
+        assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is CALLER_CTX
         assert len(caller.ledger.entries()) == 3
         assert len(hr.ledger.entries()) == 3
     finally:
@@ -213,6 +216,97 @@ async def test_request_with_receiver_outside_grant_is_denied() -> None:
         await make_endpoint("bare", carrier).request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=1)
 
 
+HR_CONFIG = RoostAgentConfig(capabilities=["hr.people.salary"], backing="deterministic")
+
+
+@pytest.mark.asyncio
+async def test_request_falls_back_to_pctx_var() -> None:
+    """With no constructor override the bound ContextVar supplies the authority."""
+    from parrot.auth.context import _pctx_var
+
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result=1)
+    caller = make_endpoint("caller", carrier, config=GRANTED, permission_context=None)
+    await hr.start()
+    await caller.start()
+    ctx = object()
+    token = _pctx_var.set(ctx)
+    try:
+        await caller.request("hr.people.salary", {}, receiver=AgentAddress(name="hr"), timeout=1)
+    finally:
+        _pctx_var.reset(token)
+        await caller.stop()
+        await hr.stop()
+    assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is ctx
+
+
+@pytest.mark.asyncio
+async def test_request_without_authority_is_refused_with_policy_failure() -> None:
+    """No authority on the wire: the tool never runs and the caller gets failure(POLICY)."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG)
+    caller = make_endpoint("caller", carrier, config=GRANTED, permission_context=None)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.people.salary", {}, receiver=AgentAddress(name="hr"), timeout=1)
+        assert exc_info.value.failure.code is FailureCode.POLICY
+        hr.tool_manager.execute_tool.assert_not_awaited()
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_unadvertised_capability_is_refused() -> None:
+    """A tool the serving agent does not advertise is refused even with authority."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.people.delete", {}, receiver=AgentAddress(name="hr"), timeout=1)
+        assert exc_info.value.failure.code is FailureCode.POLICY
+        hr.tool_manager.execute_tool.assert_not_awaited()
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_args_cannot_override_the_requested_tool() -> None:
+    """args['tool'] never changes the tool the serving side runs."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result=1)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await hr.start()
+    await caller.start()
+    try:
+        await caller.request(
+            "hr.people.salary", {"tool": "admin_wipe"}, receiver=AgentAddress(name="hr"), timeout=1
+        )
+        assert hr.tool_manager.execute_tool.await_args.args[0] == "hr_people_salary"
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_query_outside_grant_is_denied() -> None:
+    """A query to an agent outside the caller's grant never leaves the endpoint."""
+    from parrot.roost.grant import GrantDenied
+
+    carrier = InProcessCarrier()
+    caller = make_endpoint("caller", carrier, config=RoostAgentConfig(grant=InterAgentGrant(scopes=["hr.*"])))
+    with pytest.raises(GrantDenied):
+        await caller.query({"q": 1}, receiver=AgentAddress(name="payroll"), timeout=1)
+    assert not caller._pending
+    assert not caller.engine._states
+
+
 @pytest.mark.asyncio
 async def test_hop_limit_is_enforced_on_the_wire() -> None:
     """A request seeded beyond the hop limit is answered with failure(HOP_LIMIT)."""
@@ -249,3 +343,24 @@ async def test_expired_conversation_emits_failure_timeout_to_the_requester() -> 
     finally:
         await caller.stop()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_query_carries_the_caller_authority() -> None:
+    """A query opener is stamped with the caller authority exactly like a request."""
+    carrier = InProcessCarrier()
+    served = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result="answer")
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await served.start()
+    await caller.start()
+    try:
+        sent = await caller.send(
+            Performative.QUERY,
+            receivers=[AgentAddress(name="hr")],
+            content="how much?",
+            protocol=InteractionProtocol.QUERY,
+        )
+        assert sent.permission_context is CALLER_CTX
+    finally:
+        await caller.stop()
+        await served.stop()
