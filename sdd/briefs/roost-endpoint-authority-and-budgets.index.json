@@ -1,0 +1,91 @@
+{
+  "feature": "roost-endpoint-authority-and-budgets",
+  "feature_id": "BRIEF-59d1cb0c9814",
+  "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-29",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-59d1cb0c9814-1",
+      "slug": "outbound-caller-authority",
+      "title": "Stamp the caller PermissionContext on every outbound Roost message",
+      "feature_id": "BRIEF-59d1cb0c9814",
+      "feature": "roost-endpoint-authority-and-budgets",
+      "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "First mover on endpoint.py: adds constructor arguments and _caller_authority(), shifting every line below __init__. Nothing may run beside it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-1-outbound-caller-authority.md"
+    },
+    {
+      "id": "HOTFIX-59d1cb0c9814-2",
+      "slug": "serving-side-fail-closed",
+      "title": "Fail closed without authority and pin the served tool to an advertised capability",
+      "feature_id": "BRIEF-59d1cb0c9814",
+      "feature": "roost-endpoint-authority-and-budgets",
+      "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-59d1cb0c9814-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites _run_tool and request()'s wire content, and needs task 1's authority already on the wire or every message would be refused.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-2-serving-side-fail-closed.md"
+    },
+    {
+      "id": "HOTFIX-59d1cb0c9814-3",
+      "slug": "grant-on-query",
+      "title": "Enforce the inter-agent grant on query(receiver=...)",
+      "feature_id": "BRIEF-59d1cb0c9814",
+      "feature": "roost-endpoint-authority-and-budgets",
+      "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-59d1cb0c9814-2"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits query() and the shared roost test modules task 2 just rewrote; a concurrent run would conflict in test_endpoint.py and test_toolkit.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-3-grant-on-query.md"
+    },
+    {
+      "id": "HOTFIX-59d1cb0c9814-4",
+      "slug": "runtime-budget-gates",
+      "title": "Wire the remaining runtime budget gates (hops, token charge, closed-dispatch resolution)",
+      "feature_id": "BRIEF-59d1cb0c9814",
+      "feature": "roost-endpoint-authority-and-budgets",
+      "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-59d1cb0c9814-3"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits _on_message and _resolve_pending, whose CLOSED/refusal paths task 2 reshaped; its end-to-end tests assume tasks 1-3 are already in place.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-4-runtime-budget-gates.md"
+    }
+  ]
+}
