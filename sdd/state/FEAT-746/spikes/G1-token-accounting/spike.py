@@ -56,7 +56,7 @@ def descriptor_payload(df: pd.DataFrame, *, preview_rows: int, summary_chars: in
         if len(summary["preview"]) > 0:
             summary["preview"] = summary["preview"][:-1]
         elif len(summary["null_counts"]) > 0:
-            summary["null_counts"] = {k: v for k, v in summary["null_counts"].items() if v > 0}
+            summary["null_counts"] = {}
         else:
             break
         text = json.dumps(summary, separators=(",", ":"))

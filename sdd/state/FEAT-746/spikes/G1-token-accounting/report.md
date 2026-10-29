@@ -9,7 +9,7 @@ This spike measures the token cost of a descriptor path vs inline JSON for a 10,
 - python: 3.12.7
 - pandas: 3.0.6
 - pyarrow: 26.0.0
-- tiktoken: absent (heuristic only)
+- tiktoken: 0.14.0 (cl100k_base)
 - numpy: 2.2.1
 
 ## Reproduction
