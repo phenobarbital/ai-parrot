@@ -84,12 +84,23 @@ def doctor(sdd_scope: bool, runtime_only: bool) -> None:
 
 
 @self_group.command()
-def env() -> None:
+@click.option(
+    "--init", "init_credentials", is_flag=True, default=False,
+    help="Create the managed runtime's credentials file (~/.parrot/env/.env, mode 0600) if missing, then exit.",
+)
+def env(init_credentials: bool) -> None:
     """Print the venv the launcher resolves, the rule that picked it, and versions."""
     from parrot.launcher import resolve_venv  # TASK-4071
-    from parrot.self_.components import managed_venv
+    from parrot.self_.components import ensure_credentials_file, managed_venv
     from parrot.self_.doctor import installed_version
 
+    if init_credentials:
+        try:
+            path, created = ensure_credentials_file()
+        except (OSError, ValueError) as exc:
+            raise click.ClickException(f"could not create the credentials file: {exc}") from exc
+        click.echo(f"{'created' if created else 'kept existing'} credentials file: {path}")
+        return
     venv, rule = resolve_venv("parrot", argv=sys.argv[1:], env=os.environ, cwd=Path.cwd())
     click.echo(f"venv: {venv}")
     click.echo(f"rule: {rule}")

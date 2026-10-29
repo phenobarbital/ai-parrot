@@ -119,6 +119,7 @@ function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py) { 
 This installer will download uv $UvVersion from $Url and verify it against $Url.sha256,
 create $Home_\{bin,venv,python} (a uv-managed Python $Py and a venv with $Spec),
 and add $Home_\bin to your USER PATH (never Machine).
+If missing, it writes a commented-out credentials file $Home_\env\.env.
 A uv already on your PATH is never used or modified. Existing $Home_ data is never touched.
 Prefer not to pipe a download into PowerShell? Invoke-WebRequest $RawBase/install-parrot.ps1 and
 $RawBase/SHA256SUMS, compare (Get-FileHash install-parrot.ps1).Hash with the SHA256SUMS line, read
@@ -228,6 +229,14 @@ function Install-Global {
         if ($LASTEXITCODE) { throw "parrot self doctor --runtime-only failed (exit $LASTEXITCODE) — see its suggested fixes above" }
       } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
     }
+    # Credentials live in navconfig's env\.env under the parrot home (user data: never overwritten, kept by uninstall).
+    try {
+      Run -Why "create the credentials file under the parrot home's env folder (kept if present)" -Cmd {
+        $env:PARROT_VENV = $venv
+        try { & (Join-Path $bin 'parrot.exe') self env --init } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
+      }
+    }
+    catch { Write-Warning "no credentials file was created: $($_.Exception.Message) (needs an ai-parrot release with 'parrot self env --init'; after 'parrot self update', run 'parrot self env --init')" }
     # The base runtime is verified: a failing component warns and exits non-zero, never rolls it back (as install-parrot.sh).
     foreach ($c in ($With -split ',' | Where-Object { $_ })) {
       try { Run -Why "add component $c (parrot self add $c)" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c } }

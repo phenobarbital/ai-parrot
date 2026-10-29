@@ -68,6 +68,13 @@ wheel matrix.
 imports navconfig without an `env/`. It now runs with `--noconftest` and passes 6/6 locally against this run's own
 cp312 wheel.
 
+**Re-run (2026-10-29, [run 40881419521](https://github.com/phenobarbital/ai-parrot/actions/runs/40881419521) at
+`aaf26f82c`).**
+- `smoke-sdd-foreign` is green in CI.
+- `smoke-core` matches the first run: ubuntu x64 green; macOS arm64, Linux aarch64 and Windows fail.
+- The fixed parser now names the blockers in the uploaded reports: `["python-datamodel"]` for macOS and aarch64,
+  `["navigator-auth"]` for Windows.
+
 ## Local Linux evidence (TASK-4068, 2026-10-26, `--allow-build`, Python 3.12, PyPI ai-parrot + ai-parrot-tools)
 - `install_ok=true`, `sdist_failures=[]`, `wikitoolkit` / `bookstore` `--help` OK, `mcp_ok=true`
   (`initialize` + `tools/list` holding `wiki_query`).

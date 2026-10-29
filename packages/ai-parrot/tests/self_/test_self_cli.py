@@ -44,3 +44,28 @@ def test_uninstall_without_yes_prompts_and_aborts() -> None:
         result = CliRunner().invoke(cli, ["self", "uninstall"], input="n\n")
     assert result.exit_code == 0, result.output
     uninstall.assert_not_called()
+
+
+def test_self_env_init_creates_then_keeps(tmp_path: Path, monkeypatch) -> None:
+    """`self env --init` creates the credentials file once and reports it; a rerun keeps it."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("ENV", raising=False)
+    first = CliRunner().invoke(cli, ["self", "env", "--init"])
+    assert first.exit_code == 0, first.output
+    target = tmp_path / "home" / "env" / ".env"
+    assert f"created credentials file: {target}" in first.output and target.is_file()
+    second = CliRunner().invoke(cli, ["self", "env", "--init"])
+    assert second.exit_code == 0 and f"kept existing credentials file: {target}" in second.output
+
+
+def test_self_env_init_reports_errors(tmp_path: Path, monkeypatch) -> None:
+    """A refused ENV or an unwritable home exits non-zero with the reason, never a traceback."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ENV", "../escape")
+    result = CliRunner().invoke(cli, ["self", "env", "--init"])
+    assert result.exit_code == 1 and "could not create the credentials file" in result.output
+    monkeypatch.delenv("ENV")
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "env").write_text("not a directory", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["self", "env", "--init"])
+    assert result.exit_code == 1 and "could not create the credentials file" in result.output

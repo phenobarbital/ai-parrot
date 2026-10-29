@@ -222,3 +222,14 @@ def test_component_failure_warns_and_exits_nonzero_without_rollback() -> None:
     """A failing `parrot self add` warns, keeps the base runtime and exits 1 (parity with install-parrot.sh)."""
     assert "$script:ComponentFailed = $true" in _TEXT
     assert "if ($script:ComponentFailed) { exit 1 }" in _TEXT
+
+
+def test_credentials_step_after_runtime_doctor_and_warn_only() -> None:
+    """`self env --init` runs after the runtime doctor, pinned to the managed venv, and a failure only warns."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert body.index("self doctor --runtime-only") < body.index("self env --init") < body.index("self add $c")
+    step = body[body.index("create the credentials file") : body.index("self add $c")]
+    assert "$env:PARROT_VENV = $venv" in step and "Remove-Item Env:PARROT_VENV" in step
+    # its own try/catch swallows the failure; the rollback catch only comes after the component loop
+    assert "catch { Write-Warning \"no credentials file was created" in step and "rolling back" not in step
+    assert body.index("self add $c") < body.index("rolling back what this run created")

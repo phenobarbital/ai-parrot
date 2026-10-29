@@ -227,8 +227,13 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
 _PARROT_RUNTIME_BROKEN = "#!/bin/sh\necho 'uv: missing — fix: rerun the bootstrap'; exit 1\n"
 _PARROT_REPO_NOT_READY = (
     "#!/bin/sh\n"
-    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; esac\n'
+    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; "self env --init") exit 0;; esac\n'
     "echo 'gh: not authenticated — fix: gh auth login'; echo 'ledger: uncommitted'; exit 1\n"
+)
+_PARROT_ENV_INIT_FAILS = (
+    "#!/bin/sh\n"
+    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; esac\n'
+    "echo 'Error: could not create the credentials file' >&2; exit 1\n"
 )
 
 
@@ -280,3 +285,28 @@ def test_download_dir_is_private_and_unpredictable(tmp_path: Path) -> None:
     modes = (tmp_path / "fixtures" / "dlmode").read_text(encoding="utf-8").split()
     assert modes[0] == "700"
     assert "parrot-uv." in modes[1] and modes[1].rsplit("parrot-uv.", 1)[1] != str(os.getpid())
+
+
+_PARROT_RECORDING = '#!/bin/sh\necho "$*" >> "$PARROT_HOME/calls.log"\nexit 0\n'
+
+
+def test_global_install_creates_credentials_after_runtime_check(tmp_path: Path) -> None:
+    """The credentials step runs after the runtime doctor, pinned to the managed venv; its failure only warns."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RECORDING)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (tmp_path / "home" / ".parrot" / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.index("self doctor --runtime-only") < calls.index("self env --init")
+    assert any("PARROT_VENV=" in line and "self env --init" in line for line in result.stdout.splitlines())
+
+
+def test_global_install_credentials_failure_keeps_runtime(tmp_path: Path) -> None:
+    """A failing `parrot self env --init` never rolls the verified runtime back; it only warns."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_ENV_INIT_FAILS)
+    assert result.returncode == 0, result.stderr
+    assert "after 'parrot self update', run 'parrot self env --init'" in result.stderr
+    assert (tmp_path / "home" / ".parrot" / "venv").exists()
+
+
+def test_global_dry_run_announces_credentials(tmp_path: Path) -> None:
+    result = _run_global(tmp_path)
+    assert "self env --init" in result.stdout and "credentials file" in result.stdout

@@ -25,6 +25,7 @@ its plan, which reads:
 This installer will download uv 0.11.28 from <url> and verify it against <url>.sha256,
 create $PARROT_HOME/{bin,venv,python} (a uv-managed Python 3.12 and a venv with <ai-parrot spec>),
 and add $PARROT_HOME/bin to PATH via a marker block in your shell profile.
+If missing, it writes a commented-out credentials file $PARROT_HOME/env/.env (mode 0600).
 A uv already on your PATH is never used or modified. Existing $PARROT_HOME data is never touched.
 Prefer not to pipe a download into bash? Fetch <raw>/install-parrot.sh and
 <raw>/SHA256SUMS, run 'sha256sum -c --ignore-missing SHA256SUMS', read the script, then run it.
@@ -32,6 +33,23 @@ Prefer not to pipe a download into bash? Fetch <raw>/install-parrot.sh and
 
 After installing it runs `parrot self doctor --runtime-only`. Only runtime failures (uv, Python, entry points,
 PATH) roll the run back; repository readiness never does.
+
+Then it runs `parrot self env --init`, which creates the credentials file if none exists. A failure here only
+prints a warning.
+
+## Credentials (`$PARROT_HOME/env/.env`)
+
+ai-parrot reads its credentials through navconfig. For the managed runtime, navconfig's project root is
+`$PARROT_HOME`, and it reads `env/.env` there while `ENV` is unset, or `env/<ENV>/.env` when you `export ENV=<name>`.
+
+The installer writes that file owner-only: mode `0600` on Linux and macOS, an ACL granting only your user on
+Windows. It lists the variables the bundled LLM clients read
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, ...), all commented out, so you only uncomment and fill
+the ones you use.
+
+`parrot self env --init` creates the file at any time; it is a no-op when the file exists. The file is never
+overwritten by a re-install or `self update`, and `self uninstall` keeps it.
+If you export `SITE_ROOT`, navconfig uses that directory as its root instead, and reads `$SITE_ROOT/env/...`.
 
 ## Install (Linux / macOS)
 
@@ -60,6 +78,7 @@ Flags: `--version <X>` pins `ai-parrot` and `ai-parrot-tools`, `--python <v>` pi
 ## Managing the runtime
 
 <!-- verify: cli-verb=self env -->
+<!-- verify: flag=self env:--init -->
 <!-- verify: cli-verb=self doctor -->
 <!-- verify: flag=self doctor:--sdd -->
 <!-- verify: flag=self doctor:--runtime-only -->
@@ -71,6 +90,7 @@ Flags: `--version <X>` pins `ai-parrot` and `ai-parrot-tools`, `--python <v>` pi
 <!-- verify: flag=self uninstall:--yes -->
 ```bash
 parrot self env
+parrot self env --init        # create $PARROT_HOME/env/.env if missing
 parrot self doctor            # runtime + host configs + components (+ SDD readiness when sdd/ exists)
 parrot self doctor --sdd      # SDD readiness checks forced
 parrot self add scraping
@@ -79,7 +99,8 @@ parrot self update
 parrot self uninstall --yes
 ```
 
-- `self env` prints the venv the launcher resolves, the rule that picked it, and versions.
+- `self env` prints the venv the launcher resolves, the rule that picked it, and versions. `--init` creates the
+  credentials file instead (see above).
 - `self doctor` diagnoses the runtime, host configs and toolkit requirements; it exits 1 only when a
   non-informational check in the selected scope fails. `--sdd` forces the repository-readiness checks (origin
   remote, base branch, committed ledger, worktrees ignore, `.gitattributes` block, ledger git hooks, `gh` auth,
@@ -88,7 +109,8 @@ parrot self uninstall --yes
 - `self add <component>` installs a component's packages (and post-install step) into the managed venv.
   `--here` installs into the project venv instead, and is the only way a dependency enters a project venv.
 - `self update` upgrades `ai-parrot` in the managed venv; `--version` pins an exact release.
-- `self uninstall` removes `bin/`, `venv/` and `python/`; wikis, library, skills, brains and `parrot.db` stay.
+- `self uninstall` removes `bin/`, `venv/` and `python/`; wikis, library, skills, brains, `parrot.db` and `env/`
+  (credentials) stay.
 
 ## Which venv runs? (launcher resolution)
 

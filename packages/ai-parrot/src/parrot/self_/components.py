@@ -26,9 +26,97 @@ TOOLS_DIST: str = "ai-parrot-tools"
 BASE_DISTS: tuple[str, ...] = (CORE_DIST, TOOLS_DIST)
 
 
+#: Starter credentials file written by ``ensure_credentials_file``. Every value is commented out: the file only names
+#: the variables the bundled LLM clients read, so a fresh install has nothing to edit but uncommenting.
+CREDENTIALS_TEMPLATE: str = """\
+# ai-parrot credentials -- read by navconfig when parrot runs from the managed runtime (~/.parrot/venv).
+# Keep this file private (mode 0600) and never commit it. Uncomment and fill only what you use.
+# navconfig reads env/.env while ENV is unset; with `export ENV=<name>` it reads env/<name>/.env instead.
+
+# --- LLM providers ---
+# ANTHROPIC_API_KEY=
+# OPENAI_API_KEY=
+# GOOGLE_API_KEY=
+# GROQ_API_KEY=
+# OPENROUTER_API_KEY=
+# XAI_API_KEY=
+# MOONSHOT_API_KEY=
+# NVIDIA_API_KEY=
+# HUGGINGFACEHUB_API_TOKEN=
+
+# --- Integrations (optional) ---
+# GITHUB_TOKEN=
+# JIRA_API_TOKEN=
+"""
+
+
 def managed_venv() -> Path:
     """Return ``parrot_home()/'venv'`` (the managed venv)."""
     return parrot_home() / "venv"
+
+
+def credentials_file() -> Path:
+    """Return the ``.env`` navconfig reads for the managed runtime.
+
+    navconfig takes its project root from the venv's parent (``parrot_home()`` for ``~/.parrot/venv``) and reads
+    ``env/<ENV>/.env``, which is ``env/.env`` while ``ENV`` is unset.
+
+    Raises:
+        ValueError: ``ENV`` is not a plain directory name (a separator, ``..`` or an absolute path would place the
+            file outside ``parrot_home()/'env'``).
+    """
+    name = os.environ.get("ENV", "")
+    if name and (name in (".", "..") or Path(name).name != name or "/" in name or "\\" in name):
+        raise ValueError(f"ENV={name!r} is not a plain environment name; credentials stay under {parrot_home()}")
+    return parrot_home() / "env" / name / ".env"
+
+
+def _restrict_to_owner(path: Path) -> None:
+    """Windows only: drop inherited ACEs and grant the current user alone (mode bits are ignored there)."""
+    user = os.environ.get("USERNAME")
+    if os.name != "nt" or not user:
+        return
+    result = subprocess.run(
+        ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"], capture_output=True, text=True, check=False
+    )
+    if result.returncode:
+        logger.warning("could not restrict %s to %s: %s", path, user, (result.stderr or result.stdout).strip())
+
+
+def ensure_credentials_file() -> tuple[Path, bool]:
+    """Create ``credentials_file()`` from ``CREDENTIALS_TEMPLATE`` unless it already exists.
+
+    An existing file (or symlink) is never read, followed, rewritten or re-permissioned. A new file is created
+    exclusively, owner-only: mode ``0600`` on POSIX, an owner-only ACL on Windows. Each directory this call creates
+    under ``parrot_home()`` gets ``0700``. A write that fails midway removes the partial file.
+
+    Returns:
+        ``(path, created)``.
+
+    Raises:
+        ValueError: ``ENV`` is not a plain environment name (see ``credentials_file``).
+        OSError: the file or its directories cannot be created.
+    """
+    path = credentials_file()
+    if path.is_symlink() or path.exists():
+        return path, False
+    directory = parrot_home()
+    for part in path.parent.relative_to(directory).parts:
+        directory = directory / part
+        if not directory.exists():
+            directory.mkdir(mode=0o700, parents=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return path, False
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(CREDENTIALS_TEMPLATE)
+    except OSError:
+        path.unlink(missing_ok=True)
+        raise
+    _restrict_to_owner(path)
+    return path, True
 
 
 def bundled_uv() -> Path:
