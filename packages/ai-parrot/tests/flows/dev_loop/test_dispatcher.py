@@ -130,9 +130,8 @@ def dispatcher(monkeypatch):
 
 
 class TestProfileResolution:
-    def test_dispatch_profile_to_run_options(
-        self, dispatcher, linked_worktree
-    ):
+
+    def test_dispatch_profile_to_run_options(self, dispatcher, linked_worktree):
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-worker",
             allowed_tools=["Read", "Edit", "Bash"],
@@ -152,9 +151,7 @@ class TestProfileResolution:
         # wiring up connectors (e.g. the claude.ai Design MCP connector).
         assert opts.strict_mcp_config is True
 
-    def test_prefer_subscription_blanks_key_when_login_present(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_prefer_subscription_blanks_key_when_login_present(self, dispatcher, monkeypatch, linked_worktree):
         """Default policy: subscription detected → blank the key so the
         subprocess uses the claude.ai login instead of API billing."""
         monkeypatch.setattr(
@@ -163,14 +160,10 @@ class TestProfileResolution:
             raising=False,
         )
         monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert opts.env == {"ANTHROPIC_API_KEY": ""}
 
-    def test_prefer_subscription_falls_back_to_api_key(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_prefer_subscription_falls_back_to_api_key(self, dispatcher, monkeypatch, linked_worktree):
         """No subscription login → inherit ANTHROPIC_API_KEY (API fallback)."""
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
@@ -180,15 +173,11 @@ class TestProfileResolution:
         monkeypatch.setattr(
             dispatcher, "_subscription_available", lambda: False
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         # env None/empty means "inherit parent env unchanged".
         assert not opts.env
 
-    def test_api_key_mode_never_blanks(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_api_key_mode_never_blanks(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "api-key",
@@ -196,14 +185,10 @@ class TestProfileResolution:
         )
         # Even with a subscription present, api-key mode inherits the key.
         monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert not opts.env
 
-    def test_subscription_mode_forces_blank(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_subscription_mode_forces_blank(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "subscription",
@@ -212,9 +197,7 @@ class TestProfileResolution:
         monkeypatch.setattr(
             dispatcher, "_subscription_available", lambda: False
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert opts.env == {"ANTHROPIC_API_KEY": ""}
 
     def test_subscription_available_reads_credentials(
@@ -639,9 +622,7 @@ class TestDispatchSessionFailure:
 
 class TestSemaphore:
     @pytest.mark.asyncio
-    async def test_caps_concurrent_dispatches(
-        self, monkeypatch, _patch_worktree_base, linked_worktree
-    ):
+    async def test_caps_concurrent_dispatches(self, monkeypatch, _patch_worktree_base, linked_worktree):
         disp = ClaudeCodeDispatcher(
             max_concurrent=2,
             redis_url="redis://localhost:6379/0",
@@ -713,9 +694,7 @@ class TestMaxTurnsCap:
     """
 
     def test_profile_cap_forwarded_to_run_options(self, dispatcher, linked_worktree):
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(max_turns=30), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(max_turns=30), str(linked_worktree))
         assert opts.max_turns == 30
 
     def test_uncapped_by_default(self, dispatcher, monkeypatch, linked_worktree):
@@ -724,35 +703,25 @@ class TestMaxTurnsCap:
             0,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
         assert opts.max_turns is None
 
-    def test_conf_default_applies_when_profile_is_silent(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_conf_default_applies_when_profile_is_silent(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
             50,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
         assert opts.max_turns == 50
 
-    def test_profile_cap_wins_over_conf_default(
-        self, dispatcher, monkeypatch, linked_worktree
-    ):
+    def test_profile_cap_wins_over_conf_default(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
             50,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(max_turns=10), str(linked_worktree)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(max_turns=10), str(linked_worktree))
         assert opts.max_turns == 10
 
     @pytest.mark.asyncio
