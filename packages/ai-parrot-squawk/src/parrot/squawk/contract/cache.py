@@ -11,13 +11,20 @@ class ContractCache:
     """In-memory client-side contract cache."""
 
     def __init__(self) -> None:
+        """Start with an empty cache; filled by handshake deltas."""
         self._categories: dict[str, CapabilityCategory] = {}
 
     @property
     def known_hashes(self) -> dict[str, str]:
+        """Return ``{category: hash}`` to send as ``known_hashes`` in the handshake."""
         return {n: c.hash for n, c in self._categories.items()}
 
     def apply(self, delta: ContractDelta) -> None:
+        """Apply a handshake delta: upsert changed categories, drop removed ones.
+
+        Args:
+            delta: Delta returned in ``WelcomeMessage``.
+        """
         for c in delta.changed:
             self._categories[c.name] = c
         for n in delta.removed:
@@ -28,12 +35,15 @@ class ContractCache:
         self._categories[category.name] = category
 
     def category(self, name: str) -> CapabilityCategory | None:
+        """Return a cached category by name, or ``None``."""
         return self._categories.get(name)
 
     def categories(self) -> list[CapabilityCategory]:
+        """Return every cached category sorted by name."""
         return sorted(self._categories.values(), key=lambda c: c.name)
 
     def find(self, cap_id: str) -> SquawkCapability | None:
+        """Return a cached capability by id, or ``None``."""
         for c in self._categories.values():
             for cap in c.capabilities:
                 if cap.cap_id == cap_id:

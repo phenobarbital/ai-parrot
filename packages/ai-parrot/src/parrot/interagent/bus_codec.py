@@ -73,6 +73,9 @@ class BusPayloadSerializer:
         Returns:
             The deserialized bus message.
 
+        Any ``caller`` in the payload is discarded: the server sets it from the
+        handshake / envelope metadata, so a peer cannot assert another identity.
+
         Raises:
             SquawkError: If kind or version is unknown, or validation fails.
         """
@@ -85,6 +88,8 @@ class BusPayloadSerializer:
             v = data.get(f)
             if isinstance(v, dict) and "__b64__" in v:
                 data[f] = base64.b64decode(v["__b64__"])
+        # Caller identity comes from the authenticated session/envelope, never the payload.
+        data.pop("caller", None)
         try:
             return cls.model_validate(data)
         except Exception as exc:  # pydantic.ValidationError and friends

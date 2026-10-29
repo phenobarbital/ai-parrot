@@ -13,10 +13,7 @@ pytestmark = pytest.mark.skipif(
     reason="spike: set PARROT_SPIKE=1",
 )
 pytest.importorskip("biscuit_auth")
-SPIKE = (
-    Path(__file__).resolve().parents[4]
-    / "sdd/state/FEAT-746/spikes/G5-biscuit-attenuation/spike.py"
-)
+SPIKE = Path(__file__).resolve().parents[4] / "sdd/state/FEAT-746/spikes/G5-biscuit-attenuation/spike.py"
 
 
 def test_issue_attenuate_refuse() -> None:

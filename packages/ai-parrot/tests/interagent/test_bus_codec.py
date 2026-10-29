@@ -228,3 +228,32 @@ def test_payload_json_serializable() -> None:
     # And should be valid JSON
     parsed = json.loads(json_str)
     assert parsed["kind"] == "CallMessage"
+
+
+def test_from_payload_discards_caller_identity() -> None:
+    """A peer cannot assert a caller identity through the bus payload."""
+    from parrot.interagent import CallerIdentity
+
+    msg = CallMessage(
+        envelope_id="e1",
+        cap_id="hr.reports.x",
+        contract_hash="sha256:" + "0" * 64,
+        args=b"\x00",
+        trace_id="t" * 32,
+        correlation_id="c",
+        idempotency_key="k",
+        caller=CallerIdentity(agent_id="admin", network="local", subject="admin"),
+    )
+    ser = BusPayloadSerializer()
+    back = ser.from_payload(json.loads(json.dumps(ser.to_payload(msg))))
+    assert back.caller is None
+
+
+def test_descriptor_rejects_non_serializable_summary() -> None:
+    """A non-JSON summary is a validation error, not a TypeError."""
+    from pydantic import ValidationError
+
+    from parrot.interagent import HandleDescriptor, MediaType
+
+    with pytest.raises(ValidationError):
+        HandleDescriptor(media_type=MediaType.ARROW, byte_size=1, summary={"x": object()})

@@ -236,3 +236,10 @@ async def test_received_ledger_no_sink():
     entries = ledger.recent()
     assert len(entries) == 1
     assert entries[0] == entry
+
+
+def test_recent_with_non_positive_limit_returns_nothing():
+    """limit=0 must not slice to the whole window."""
+    from parrot.squawk.client import ReceivedLedger
+
+    assert ReceivedLedger().recent(limit=0) == []

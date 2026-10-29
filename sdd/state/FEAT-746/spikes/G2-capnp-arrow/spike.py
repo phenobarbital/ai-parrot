@@ -256,7 +256,7 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
                 raise AssertionError(f"received frame {index} after {len(received)} frames")
             received.append(bytes(data))
             if cancel_at_frame is not None and index == cancel_at_frame:
-                while client_op is None:
+                while client_op is None:  # noqa: ASYNC110 - spike: yields until the caller binds its op handle
                     await asyncio.sleep(0)
                 await client_op.cancel()
 

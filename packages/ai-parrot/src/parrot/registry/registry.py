@@ -108,6 +108,10 @@ class BotMetadata:
         This implements lazy instantiation - instances are only created when needed.
         For singleton bots, the same instance is returned on subsequent calls.
         """
+        if self.kind != AgentKind.LOCAL:
+            raise RemoteAgentNotInstantiable(
+                f"{self.name} is a {self.kind.value} agent at {self.endpoint}; use the protocol client"
+            )
         # Singleton path
         if self.singleton and self._instance is not None:
             return self._instance
@@ -890,6 +894,10 @@ class AgentRegistry:
         Create a factory function that instantiates an agent from BotConfig.
         Handles the translation from declarative config to AbstractBot arguments.
         """
+        if config.kind != AgentKind.LOCAL:
+            raise RemoteAgentNotInstantiable(
+                f"{config.name} is a {config.kind.value} agent at {config.endpoint}; use the protocol client"
+            )
         # Import module and class dynamically
         try:
             module = importlib.import_module(config.module)
@@ -1163,6 +1171,12 @@ class AgentRegistry:
             "startup_config": config.startup_config,
             "priority": config.priority,
         }
+
+        if config.kind != AgentKind.LOCAL:
+            # Remote entries round-trip their protocol identity; class_name/module stay None.
+            agent_section["kind"] = config.kind.value
+            agent_section["endpoint"] = config.endpoint
+            agent_section["contract_categories"] = list(config.contract_categories)
 
         if config.vector_store is not None:
             store = config.vector_store

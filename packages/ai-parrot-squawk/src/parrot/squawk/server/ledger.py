@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 from collections import deque
 from datetime import datetime
 from typing import Any, Awaitable, Callable
@@ -12,6 +14,7 @@ from parrot.interagent import ServedLedgerEntry
 from parrot.security.audit_ledger import AbstractKMSSigner
 
 Sink = Callable[[str], Awaitable[None]]
+_TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 class LedgerUnavailable(Exception):
@@ -83,11 +86,19 @@ def postgres_ledger_sink(dsn_or_pool: str | Any, *, table: str = "squawk_served_
         table: Destination table created by ``squawk_served_ledger.sql``.
 
     Returns:
-        An asynchronous JSON storage callable.
+        An asynchronous JSON storage callable. It exposes ``sink.aclose()``, which
+        closes the pool only when this sink created it from a DSN.
+
+    Raises:
+        ValueError: If ``table`` is not a plain (optionally schema-qualified) identifier.
     """
     import asyncpg
 
-    state: dict[str, Any] = {"pool": None if isinstance(dsn_or_pool, str) else dsn_or_pool}
+    if not _TABLE_RE.fullmatch(table):
+        raise ValueError(f"invalid ledger table identifier: {table!r}")
+    owns_pool = isinstance(dsn_or_pool, str)
+    state: dict[str, Any] = {"pool": None if owns_pool else dsn_or_pool}
+    pool_lock = asyncio.Lock()
     query = f"""
         INSERT INTO {table} (
             entry_id, created_at, caller, cap_id, category, contract_hash,
@@ -104,7 +115,9 @@ def postgres_ledger_sink(dsn_or_pool: str | Any, *, table: str = "squawk_served_
     async def sink(payload: str) -> None:
         """Insert one serialized ``ServedLedgerEntry`` into PostgreSQL."""
         if state["pool"] is None:
-            state["pool"] = await asyncpg.create_pool(dsn_or_pool)
+            async with pool_lock:
+                if state["pool"] is None:
+                    state["pool"] = await asyncpg.create_pool(dsn_or_pool)
         row = json.loads(payload)
         async with state["pool"].acquire() as connection:
             await connection.execute(
@@ -127,4 +140,11 @@ def postgres_ledger_sink(dsn_or_pool: str | Any, *, table: str = "squawk_served_
                 payload,
             )
 
+    async def aclose() -> None:
+        """Close the pool if this sink created it; a caller-supplied pool is left open."""
+        pool, state["pool"] = state["pool"], None
+        if owns_pool and pool is not None:
+            await pool.close()
+
+    sink.aclose = aclose  # type: ignore[attr-defined]
     return sink

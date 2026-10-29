@@ -12,6 +12,8 @@ from parrot.interagent import CallCost
 
 
 class ReceivedLedgerEntry(BaseModel):
+    """One result received from a remote agent, and what the local LLM did with it."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     remote_agent: str
     cap_id: str
@@ -24,12 +26,25 @@ class ReceivedLedgerEntry(BaseModel):
 
 
 class ReceivedLedger:
+    """Bounded client-side record of received results (best-effort, unlike the served ledger)."""
+
     def __init__(self, *, sink: Callable[[str], Awaitable[None]] | None = None, max_entries: int = 10_000) -> None:
+        """Initialize the ledger.
+
+        Args:
+            sink: Optional async JSON sink; failures are logged, never raised.
+            max_entries: Size of the in-memory recent window.
+        """
         self._sink = sink
         self._recent: deque[ReceivedLedgerEntry] = deque(maxlen=max_entries)
         self.logger = logging.getLogger(__name__)
 
     async def append(self, entry: ReceivedLedgerEntry) -> None:
+        """Record an entry and forward it to the sink.
+
+        Args:
+            entry: Received-result record.
+        """
         self._recent.append(entry)
         if self._sink is not None:
             try:
@@ -38,9 +53,12 @@ class ReceivedLedger:
                 self.logger.exception("ReceivedLedger: sink failed")
 
     def note_follow_up(self, handle_key: str, tool_name: str) -> None:
-        """Record that a local affordance consumed the handle."""
-        # Find the latest entry with handle_key, replace it with model_copy(update={"follow_ups": (*e.follow_ups, tool_name)})
-        # No-op when absent
+        """Record that a local affordance consumed the handle (no-op when the handle is unknown).
+
+        Args:
+            handle_key: Handle key of the received artifact.
+            tool_name: Local tool that consumed it.
+        """
         for i in range(len(self._recent) - 1, -1, -1):
             entry = self._recent[i]
             if entry.handle_key == handle_key:
@@ -49,4 +67,14 @@ class ReceivedLedger:
                 return
 
     def recent(self, *, limit: int = 100) -> list[ReceivedLedgerEntry]:
+        """Return up to ``limit`` most recent entries, oldest first.
+
+        Args:
+            limit: Maximum entries; ``0`` or less returns none.
+
+        Returns:
+            The most recent entries.
+        """
+        if limit <= 0:
+            return []
         return list(self._recent)[-limit:]

@@ -223,7 +223,41 @@ def test_check_version_rules_type_changes():
     assert len(violations) == 1
     assert "schema or return type changed without major version bump" in violations[0]
 
-    # Change with major bump is allowed
+    # Major bump alone is not enough: the change must be announced (spec §M2: bump + deprecated_until)
     cand_contract_v2 = build_contract([b1_mod, b2], agent_id="hr_agent", major=2)
     violations = check_version_rules(prev_contract, cand_contract_v2)
-    assert violations == []
+    assert len(violations) == 1 and "deprecated_until" in violations[0]
+
+    # Announced in the previous contract + major bump is allowed
+    announced = cap1.model_copy(update={"deprecated_until": date(2027, 1, 1)})
+    prev_announced = build_contract(
+        [CapabilityBinding(capability=announced, tool_name="t1"), b2], agent_id="hr_agent", major=1
+    )
+    assert check_version_rules(prev_announced, cand_contract_v2) == []
+
+
+def test_check_version_rules_policy_and_deprecation():
+    """Policy changes need a major bump; type changes on a major bump need deprecated_until."""
+    from parrot.interagent import PolicyAnnotations
+
+    cap1, cap2, _ = hr_capabilities()
+    prev = build_contract(
+        [CapabilityBinding(capability=cap1, tool_name="t1"), CapabilityBinding(capability=cap2, tool_name="t2")],
+        agent_id="hr_agent",
+        major=1,
+    )
+    strict = cap1.model_copy(update={"policy": PolicyAnnotations(data_class="pii")})
+    cand = build_contract(
+        [CapabilityBinding(capability=strict, tool_name="t1"), CapabilityBinding(capability=cap2, tool_name="t2")],
+        agent_id="hr_agent",
+        major=1,
+    )
+    assert any("policy changed" in v for v in check_version_rules(prev, cand))
+
+    retyped = cap1.model_copy(update={"input_schema": {"type": "object", "properties": {"x": {"type": "integer"}}}})
+    cand_v2 = build_contract(
+        [CapabilityBinding(capability=retyped, tool_name="t1"), CapabilityBinding(capability=cap2, tool_name="t2")],
+        agent_id="hr_agent",
+        major=2,
+    )
+    assert any("deprecated_until" in v for v in check_version_rules(prev, cand_v2))

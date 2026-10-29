@@ -41,9 +41,13 @@ class HandleDescriptor(BaseModel):
             The validated descriptor.
 
         Raises:
-            ValueError: If the serialized summary exceeds 1,500 characters.
+            ValueError: If the summary is not JSON-serializable or its JSON exceeds
+                ``MAX_SUMMARY_CHARS`` (the G1-frozen cap that keeps a descriptor under 250 tokens).
         """
-        serialized = json.dumps(self.summary, sort_keys=True)
+        try:
+            serialized = json.dumps(self.summary, sort_keys=True)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("summary must be JSON-serializable") from exc
         if len(serialized) > MAX_SUMMARY_CHARS:
             raise ValueError(f"summary JSON exceeds {MAX_SUMMARY_CHARS} characters")
         return self

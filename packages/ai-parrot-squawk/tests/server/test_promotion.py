@@ -144,3 +144,63 @@ async def test_approve_rehashes_category_and_appends_one_entry():
     assert e.cap_id == "squawk.promotion.approve"
     assert e.backing == "deterministic"
     assert e.status == "OK"
+
+
+def test_candidates_ignore_failed_calls():
+    """Error entries are not evidence for promotion."""
+    from parrot.interagent import SquawkErrorCode
+    from parrot.security.audit_ledger import LocalHMACSigner
+
+    ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
+    entries = [
+        ServedLedgerEntry(
+            entry_id=f"e{i}",
+            created_at=datetime(2025, 1, 1, 12, 0, i, tzinfo=timezone.utc),
+            caller=CallerIdentity(agent_id="agent1", network="net1", subject="subj1"),
+            cap_id="cap1",
+            category="cat1",
+            contract_hash="h1",
+            args_digest="digest1",
+            result_kind="error",
+            cost=CallCost(duration_ms=1),
+            backing="llm_backed",
+            status=SquawkErrorCode.UPSTREAM_FAILED,
+            trace_id=f"trace{i}",
+            signature=f"sig{i}",
+        )
+        for i in range(25)
+    ]
+    assert PromotionAnalyzer(ledger, min_calls=20).candidates(entries) == []
+
+
+async def test_approve_rejects_unknown_or_retyped_draft():
+    """Approval refuses a draft that targets an unknown cap or changes its I/O."""
+    import pytest
+
+    from parrot.interagent import CapabilityCategory, ReturnsSpec, SquawkCapability, SquawkContract
+    from parrot.security.audit_ledger import LocalHMACSigner
+    from parrot.squawk.contract import LLMBackedSpec
+
+    ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
+    analyzer = PromotionAnalyzer(ledger)
+    cap = SquawkCapability(
+        cap_id="cat1.cap1",
+        category="cat1",
+        description="T",
+        input_schema={},
+        returns=ReturnsSpec(kind="inline", schema={}),
+        backing="llm_backed",
+        version=1,
+    )
+    bindings = [CapabilityBinding(capability=cap, llm_backed=LLMBackedSpec(system_prompt="p", output_schema={}))]
+    contract = SquawkContract(agent_id="a", major=1, categories=(CapabilityCategory(name="cat1", capabilities=(cap,)),))
+    cand = PromotionCandidate(cap_id="cat1.cap1", args_digest="d", llm_backed_calls=20, deterministic_calls=0, ratio=1)
+    draft = analyzer.draft(cand, cap, tool_name="t")
+    retyped = CapabilityBinding(
+        capability=draft.capability.model_copy(update={"input_schema": {"type": "object"}}), tool_name="t"
+    )
+    with pytest.raises(ValueError):
+        await analyzer.approve(contract, bindings, retyped, approver="h")
+    with pytest.raises(ValueError):
+        await analyzer.approve(contract, [], draft, approver="h")
+    assert ledger.recent(limit=10) == []

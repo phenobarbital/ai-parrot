@@ -165,7 +165,6 @@ async def test_malformed_keys_are_refused_without_touching_disk(tmp_path: Path, 
         await store.delete(bad_key, owner=_owner())
 
 
-
 async def _raising_frames() -> AsyncIterator[bytes]:
     """Yield one chunk then fail, as a cancelled/broken upstream would."""
     yield b"partial"

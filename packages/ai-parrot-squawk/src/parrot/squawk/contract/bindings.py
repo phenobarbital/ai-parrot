@@ -43,8 +43,6 @@ class CapabilityBinding(BaseModel):
         elif self.capability.backing == "llm_backed":
             if self.tool_name is not None or self.llm_backed is None:
                 raise ValueError("llm_backed capability requires llm_backed set and tool_name None")
-        else:
-            raise ValueError(f"unknown backing mode: {self.capability.backing}")
         return self
 
 
@@ -65,7 +63,19 @@ def build_contract(bindings: Sequence[CapabilityBinding], *, agent_id: str, majo
 
 
 def check_version_rules(previous: SquawkContract, candidate: SquawkContract) -> list[str]:
-    """Violations of D8 versioning: removals / type changes need a major bump + deprecated_until; additions do not."""
+    """Return violations of D8 versioning between two contracts.
+
+    Removals and input/return type changes need a major bump and a
+    ``deprecated_until`` announced in the previous contract; policy changes
+    need a major bump; additions need neither.
+
+    Args:
+        previous: The currently published contract.
+        candidate: The contract proposed to replace it.
+
+    Returns:
+        Human-readable violations; empty when the candidate is compatible.
+    """
     violations: list[str] = []
 
     prev_caps: dict[str, SquawkCapability] = {}
@@ -105,5 +115,12 @@ def check_version_rules(previous: SquawkContract, candidate: SquawkContract) -> 
         if p_cap.input_schema != c_cap.input_schema or p_cap.returns != c_cap.returns:
             if not is_major_bump:
                 violations.append(f"Capability '{cap_id}' schema or return type changed without major version bump")
+            elif p_cap.deprecated_until is None:
+                violations.append(
+                    f"Capability '{cap_id}' changed its type on a major bump without deprecated_until "
+                    "announced in the previous contract"
+                )
+        if p_cap.policy != c_cap.policy and not is_major_bump:
+            violations.append(f"Capability '{cap_id}' policy changed without major version bump")
 
     return violations

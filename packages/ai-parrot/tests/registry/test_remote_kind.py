@@ -40,3 +40,25 @@ def test_yaml_remote_definition(tmp_path):
     )
     assert reg.load_agent_definition_file(f) is True
     assert reg.get_metadata("hr").kind == AgentKind.SQUAWK
+
+
+async def test_remote_metadata_and_factory_refuse_instantiation(tmp_path):
+    """Every instantiation path raises the typed error for a remote entry."""
+    reg = AgentRegistry(agents_dir=tmp_path)
+    reg.register_remote(_cfg())
+    with pytest.raises(RemoteAgentNotInstantiable):
+        await reg.get_metadata("hr").get_instance()
+    with pytest.raises(RemoteAgentNotInstantiable):
+        reg.create_agent_factory(_cfg())
+
+
+def test_remote_definition_round_trips_through_yaml(tmp_path):
+    """create_agent_definition keeps kind, endpoint and contract categories."""
+    reg = AgentRegistry(agents_dir=tmp_path)
+    path = reg.create_agent_definition(_cfg())
+    reloaded = AgentRegistry(agents_dir=tmp_path)
+    assert reloaded.load_agent_definition_file(path) is True
+    meta = reloaded.get_metadata("hr")
+    assert meta.kind == AgentKind.SQUAWK
+    assert meta.endpoint == "squawk://hr:7470"
+    assert meta.contract_categories == ["hr.reports"]

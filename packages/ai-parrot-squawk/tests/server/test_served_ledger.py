@@ -158,3 +158,11 @@ async def test_postgres_sink_inserts_all_ddl_columns_with_fake_pool() -> None:
     assert json.loads(args[10]) == signed.cost.model_dump(mode="json")
     assert args[14] == signed.signature
     assert json.loads(args[15])["entry_id"] == signed.entry_id
+
+
+def test_postgres_sink_rejects_unsafe_table_identifier() -> None:
+    """The table name is interpolated into SQL, so it must be a plain identifier."""
+    pytest.importorskip("asyncpg")
+    with pytest.raises(ValueError):
+        postgres_ledger_sink("postgresql://x", table="ledger; DROP TABLE x")
+    assert callable(postgres_ledger_sink("postgresql://x", table="audit.squawk_served_ledger").aclose)
