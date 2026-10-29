@@ -95,7 +95,7 @@ async def test_admin_is_exempt_and_sees_the_raw_value(example: ModuleType, gover
 @pytest.mark.asyncio
 async def test_saved_query_expands_and_runs(example: ModuleType, governed) -> None:
     """The reviewed query executes by name and returns the monthly revenue shape."""
-    identity = example._common.example_identity("analyst-1", "session-1", "eu")
+    identity = example._common.example_identity("admin-1", "session-2", "eu", roles=frozenset({"admin"}))
     result = await example.run_saved_query(governed, identity)
     assert "revenue" in result.columns
     assert any("order_date" in column for column in result.columns)

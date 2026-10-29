@@ -46,7 +46,7 @@ async def run_masked_query(toolkit: SemanticLayerToolkit, identity: SemanticRequ
     Returns:
         The governed query result; ``region`` is redacted unless the identity is exempt.
     """
-    query = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
+    query = SemanticQuery(model="orders", dimensions=["region"])
     async with bind_semantic_context(identity.ctx, identity=identity):
         return await toolkit.query_metrics(query)
 
@@ -87,7 +87,7 @@ async def smoke() -> dict[str, Any]:
             admin = _common.example_identity("admin-1", "session-2", "eu", roles=frozenset({"admin"}))
             analyst_result = await run_masked_query(analyst_toolkit, analyst)
             admin_result = await run_masked_query(admin_toolkit, admin)
-            saved_result = await run_saved_query(analyst_toolkit, analyst)
+            saved_result = await run_saved_query(admin_toolkit, admin)
             return {
                 "analyst": analyst_result.model_dump(mode="json"),
                 "admin": admin_result.model_dump(mode="json"),
