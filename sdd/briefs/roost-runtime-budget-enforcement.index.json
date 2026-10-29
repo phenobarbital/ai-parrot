@@ -1,0 +1,51 @@
+{
+  "feature": "roost-runtime-budget-enforcement",
+  "feature_id": "BRIEF-5e3bcfe4ea4b",
+  "spec": "sdd/briefs/roost-runtime-budget-enforcement.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-29",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-5e3bcfe4ea4b-1",
+      "slug": "route-emitted-failures-locally",
+      "title": "Route engine-emitted failures to the local waiter",
+      "feature_id": "BRIEF-5e3bcfe4ea4b",
+      "feature": "roost-runtime-budget-enforcement",
+      "spec": "sdd/briefs/roost-runtime-budget-enforcement.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Both tasks modify roost/endpoint.py; run sequentially.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-runtime-budget-enforcement/tasks/HOTFIX-5e3bcfe4ea4b-1-route-emitted-failures-locally.md"
+    },
+    {
+      "id": "HOTFIX-5e3bcfe4ea4b-2",
+      "slug": "token-budget-contract-and-warning",
+      "title": "Document the wake token contract and warn on an unfed token budget",
+      "feature_id": "BRIEF-5e3bcfe4ea4b",
+      "feature": "roost-runtime-budget-enforcement",
+      "spec": "sdd/briefs/roost-runtime-budget-enforcement.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-5e3bcfe4ea4b-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on _route_emitted from task 1.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/roost-runtime-budget-enforcement/tasks/HOTFIX-5e3bcfe4ea4b-2-token-budget-contract-and-warning.md"
+    }
+  ]
+}
