@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import hashlib
 from datetime import datetime, timezone
-from typing import AsyncIterator
+from typing import AsyncIterator, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,6 +45,51 @@ def _authorize(meta: BlobMeta, owner: HandleOwner, grantee: str | None, *, now: 
         raise HandleClaimError()
 
 
+def owner_slug(owner: HandleOwner) -> str:
+    """Return the stable storage namespace for one owner tuple.
+
+    Blob keys are content addresses, so identical bytes from two owners share a
+    key. Each owner keeps its own record (TTL, grants, data class, encryption)
+    under ``<key>/<owner_slug>`` so no owner can read, extend or replace another's.
+
+    Args:
+        owner: Full owner tuple.
+
+    Returns:
+        A 32-hex-character digest of the owner tuple.
+    """
+    return hashlib.sha256(owner.model_dump_json().encode()).hexdigest()[:32]
+
+
+def select_record(
+    records: Iterable[BlobMeta], owner: HandleOwner, grantee: str | None, *, now: datetime | None = None
+) -> BlobMeta:
+    """Pick the record a caller may read: its own, else one that granted ``grantee``.
+
+    Args:
+        records: Every owner record stored for one key.
+        owner: Full owner tuple asserted by the caller.
+        grantee: Agent identity used for explicit grant access.
+        now: Optional current time for deterministic checks.
+
+    Returns:
+        The authorized, unexpired record.
+
+    Raises:
+        HandleClaimError: If no record authorizes the caller.
+    """
+    current_time = now or datetime.now(timezone.utc)
+    candidates = list(records)
+    for meta in candidates:
+        if meta.owner == owner and meta.expires_at > current_time:
+            return meta
+    if grantee is not None:
+        for meta in candidates:
+            if grantee in meta.grants and meta.expires_at > current_time:
+                return meta
+    raise HandleClaimError()
+
+
 class SquawkBlobStore(ABC):
     """Define content-addressed blob storage with shared ACL and TTL semantics."""
 
@@ -61,12 +107,12 @@ class SquawkBlobStore(ABC):
         """Hash while writing and publish only after digest verification."""
 
     @abstractmethod
-    async def has(self, key: str) -> bool:
-        """Return whether metadata exists for a blob key."""
+    async def has(self, key: str, *, owner: HandleOwner | None = None) -> bool:
+        """Return whether an unexpired record exists (for ``owner`` when given)."""
 
     @abstractmethod
-    async def meta(self, key: str) -> BlobMeta | None:
-        """Return metadata for a blob key when present."""
+    async def meta(self, key: str, *, owner: HandleOwner | None = None) -> BlobMeta | None:
+        """Return ``owner``'s record for a key, or any unexpired record when ``owner`` is None."""
 
     @abstractmethod
     async def open_read(
@@ -88,7 +134,7 @@ class SquawkBlobStore(ABC):
 
     @abstractmethod
     async def delete(self, key: str, *, owner: HandleOwner) -> bool:
-        """Delete a blob when requested by its owner."""
+        """Delete the caller's own record for a blob."""
 
     @abstractmethod
     async def sweep(self, now: datetime | None = None) -> int:

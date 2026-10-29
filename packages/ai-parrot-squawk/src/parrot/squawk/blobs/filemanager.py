@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -16,7 +17,7 @@ from typing import Any, AsyncIterator
 from cryptography.fernet import Fernet
 
 from parrot.interagent import HandleClaimError, HandleOwner, MediaType, SquawkError, SquawkErrorCode
-from parrot.squawk.blobs.store import BlobMeta, SquawkBlobStore, _authorize
+from parrot.squawk.blobs.store import BlobMeta, SquawkBlobStore, owner_slug, select_record
 
 CHUNK = 1024 * 1024
 _KEY_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -37,6 +38,7 @@ class FileManagerBlobStore(SquawkBlobStore):
         prefix: str = "squawk/blobs",
         encrypt_classes: frozenset[str] = frozenset({"hr", "pii"}),
         key_env: str = "SQUAWK_BLOB_KEY",
+        orphan_grace_s: int = 3600,
     ) -> None:
         """Initialize file-manager-backed blob storage.
 
@@ -45,6 +47,8 @@ class FileManagerBlobStore(SquawkBlobStore):
             prefix: Object-name prefix reserved for Squawk blobs.
             encrypt_classes: Data classes encrypted before publication.
             key_env: Environment variable containing the Fernet key.
+            orphan_grace_s: Age after which a ``.bin`` without metadata is swept (when
+                the manager reports a modification time).
 
         Raises:
             SquawkError: If encryption is configured without a key.
@@ -56,16 +60,18 @@ class FileManagerBlobStore(SquawkBlobStore):
         if encrypt_classes and not key:
             raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
         self._fernet = Fernet(key.encode()) if key else None
+        self._orphan_grace_s = orphan_grace_s
+        self._meta_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
-    def _names(self, key: str) -> tuple[str, str]:
-        """Return binary and metadata object names for a content key.
+    def _base(self, key: str) -> str:
+        """Return the object-name prefix holding every owner record for a key.
 
         Args:
             key: SHA-256-prefixed blob key.
 
         Returns:
-            Binary and metadata object names.
+            The per-key prefix (no trailing slash).
 
         Raises:
             HandleClaimError: If the key is malformed.
@@ -73,8 +79,70 @@ class FileManagerBlobStore(SquawkBlobStore):
         if not _KEY_RE.fullmatch(key):
             raise HandleClaimError()
         hex_digest = key.split(":", 1)[1]
-        base = f"{self._prefix}/{hex_digest[:2]}/{hex_digest}"
+        return f"{self._prefix}/{hex_digest[:2]}/{hex_digest}"
+
+    def _names(self, key: str, owner: HandleOwner) -> tuple[str, str]:
+        """Return binary and metadata object names for one owner's record of a key.
+
+        Args:
+            key: SHA-256-prefixed blob key.
+            owner: Owner tuple.
+
+        Returns:
+            Binary and metadata object names.
+        """
+        base = f"{self._base(key)}/{owner_slug(owner)}"
         return f"{base}.bin", f"{base}.meta.json"
+
+    async def _read_meta(self, name: str) -> BlobMeta | None:
+        """Download and parse one metadata object, tolerating corruption and races.
+
+        Args:
+            name: Metadata object name.
+
+        Returns:
+            Parsed metadata, or ``None`` when missing or unparseable.
+        """
+        try:
+            if not await self._exists(name):
+                return None
+            return BlobMeta.model_validate_json(await self._download(name))
+        except Exception:  # noqa: BLE001 - one corrupt or vanished record must not stall reads or sweeps
+            self.logger.warning("FileManagerBlobStore: unreadable metadata %s", name, exc_info=True)
+            return None
+
+    async def _write_meta(self, name: str, metadata: BlobMeta) -> None:
+        """Publish a metadata object in a single ``create_from_bytes`` call.
+
+        Args:
+            name: Metadata object name.
+            metadata: Record to persist.
+
+        Raises:
+            SquawkError: If the manager declines the write.
+        """
+        written = await self._fm.create_from_bytes(name, metadata.model_dump_json().encode())
+        if written is False:
+            raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "metadata_publish_failed")
+
+    async def _records(self, key: str) -> list[BlobMeta]:
+        """Load every readable owner record stored for a key.
+
+        Args:
+            key: SHA-256-prefixed blob key.
+
+        Returns:
+            Parsed records.
+        """
+        found = await self._fm.find_files(prefix=self._base(key) + "/")
+        records: list[BlobMeta] = []
+        for file_metadata in found or ():
+            name = str(getattr(file_metadata, "path", ""))
+            if name.endswith(".meta.json"):
+                meta = await self._read_meta(name)
+                if meta is not None:
+                    records.append(meta)
+        return records
 
     async def _download(self, name: str) -> bytes:
         """Download a complete object into memory.
@@ -117,7 +185,13 @@ class FileManagerBlobStore(SquawkBlobStore):
         expected_digest: str | None = None,
         data_class: str = "internal",
     ) -> BlobMeta:
-        """Hash plaintext frames and publish the binary before its metadata.
+        """Hash plaintext frames and publish the binary before its metadata, for ``owner``.
+
+        Dedup is per owner: an unexpired record of the same owner and data class
+        is reused (expiry extended to the later of the two); otherwise the record
+        is republished. Other owners' records are never returned or modified.
+        The duck contract only uploads from ``bytes``, so the staged object is
+        read into memory once for upload.
 
         Args:
             frames: Plaintext byte chunks.
@@ -128,62 +202,73 @@ class FileManagerBlobStore(SquawkBlobStore):
             data_class: Policy class controlling encryption at rest.
 
         Returns:
-            Published or deduplicated metadata.
+            Published or deduplicated metadata owned by ``owner``.
 
         Raises:
             SquawkError: If the digest differs or publication cannot be verified.
         """
         digest = hashlib.sha256()
         byte_size = 0
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_path = Path(temp_file.name)
-            async for chunk in frames:
-                digest.update(chunk)
-                await asyncio.to_thread(temp_file.write, chunk)
-                byte_size += len(chunk)
-
+        temp_path = Path(tempfile.gettempdir()) / f"squawk-{uuid.uuid4().hex}.part"
+        temp_file = await asyncio.to_thread(temp_path.open, "wb")
         try:
+            try:
+                async for chunk in frames:
+                    digest.update(chunk)
+                    await asyncio.to_thread(temp_file.write, chunk)
+                    byte_size += len(chunk)
+            finally:
+                await asyncio.to_thread(temp_file.close)
+
             key = f"sha256:{digest.hexdigest()}"
             if expected_digest is not None and expected_digest != key:
                 raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "digest_mismatch")
 
-            bin_name, meta_name = self._names(key)
-            if await self._exists(meta_name):
-                existing = await self.meta(key)
-                if existing is not None:
+            bin_name, meta_name = self._names(key, owner)
+            now = datetime.now(timezone.utc)
+            new_expiry = now + timedelta(seconds=ttl_s)
+            encrypted = data_class in self._encrypt
+            async with self._meta_lock:
+                existing = await self._read_meta(meta_name)
+                if (
+                    existing is not None
+                    and existing.expires_at > now
+                    and existing.data_class == data_class
+                    and existing.encrypted == encrypted
+                    and await self._exists(bin_name)
+                ):
+                    if new_expiry > existing.expires_at:
+                        existing = existing.model_copy(update={"expires_at": new_expiry})
+                        await self._write_meta(meta_name, existing)
                     return existing
 
-            payload = await asyncio.to_thread(temp_path.read_bytes)
-            encrypted = data_class in self._encrypt
-            if encrypted:
-                if self._fernet is None:
-                    raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
-                payload = await asyncio.to_thread(self._fernet.encrypt, payload)
+                payload = await asyncio.to_thread(temp_path.read_bytes)
+                if encrypted:
+                    if self._fernet is None:
+                        raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
+                    payload = await asyncio.to_thread(self._fernet.encrypt, payload)
 
-            try:
-                await self._publish_binary(bin_name, payload)
-            except Exception:
                 try:
-                    await self._fm.delete_file(bin_name)
-                except Exception:  # noqa: BLE001 - cleanup must not mask publication failure
-                    self.logger.warning("Could not clean up unverified blob %s", bin_name)
-                raise
+                    await self._publish_binary(bin_name, payload)
+                except Exception:
+                    try:
+                        await self._fm.delete_file(bin_name)
+                    except Exception:  # noqa: BLE001 - cleanup must not mask publication failure
+                        self.logger.warning("Could not clean up unverified blob %s", bin_name)
+                    raise
 
-            now = datetime.now(timezone.utc)
-            metadata = BlobMeta(
-                key=key,
-                media_type=media_type,
-                byte_size=byte_size,
-                created_at=now,
-                expires_at=now + timedelta(seconds=ttl_s),
-                owner=owner,
-                encrypted=encrypted,
-                data_class=data_class,
-            )
-            written = await self._fm.create_from_bytes(meta_name, metadata.model_dump_json().encode())
-            if written is False:
-                raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "metadata_publish_failed")
-            return metadata
+                metadata = BlobMeta(
+                    key=key,
+                    media_type=media_type,
+                    byte_size=byte_size,
+                    created_at=now,
+                    expires_at=new_expiry,
+                    owner=owner,
+                    encrypted=encrypted,
+                    data_class=data_class,
+                )
+                await self._write_meta(meta_name, metadata)
+                return metadata
         finally:
             await asyncio.to_thread(temp_path.unlink, missing_ok=True)
 
@@ -198,30 +283,34 @@ class FileManagerBlobStore(SquawkBlobStore):
         """
         return bool(await self._fm.exists(name))
 
-    async def has(self, key: str) -> bool:
-        """Return whether metadata exists for a blob key.
+    async def has(self, key: str, *, owner: HandleOwner | None = None) -> bool:
+        """Return whether an unexpired record exists for the key.
 
         Args:
             key: Content-addressed blob key.
+            owner: Restrict the check to this owner's record when given.
 
         Returns:
-            Whether metadata exists.
+            Whether a usable (unexpired) record exists.
         """
-        return await self._exists(self._names(key)[1])
+        meta = await self.meta(key, owner=owner)
+        return meta is not None and meta.expires_at > datetime.now(timezone.utc)
 
-    async def meta(self, key: str) -> BlobMeta | None:
-        """Load metadata for a blob key.
+    async def meta(self, key: str, *, owner: HandleOwner | None = None) -> BlobMeta | None:
+        """Load a record for a blob key.
 
         Args:
             key: Content-addressed blob key.
+            owner: Return this owner's record (expired or not); when ``None``,
+                return any unexpired record.
 
         Returns:
             Parsed metadata, or ``None`` when absent.
         """
-        meta_name = self._names(key)[1]
-        if not await self._exists(meta_name):
-            return None
-        return BlobMeta.model_validate_json(await self._download(meta_name))
+        if owner is not None:
+            return await self._read_meta(self._names(key, owner)[1])
+        now = datetime.now(timezone.utc)
+        return next((m for m in await self._records(key) if m.expires_at > now), None)
 
     async def open_read(
         self,
@@ -232,7 +321,7 @@ class FileManagerBlobStore(SquawkBlobStore):
         offset: int = 0,
         length: int | None = None,
     ) -> AsyncIterator[bytes]:
-        """Download the object and yield an authorized plaintext byte range.
+        """Download the authorized record's object and yield a plaintext byte range.
 
         Args:
             key: Content-addressed blob key.
@@ -250,12 +339,11 @@ class FileManagerBlobStore(SquawkBlobStore):
         """
         if offset < 0 or (length is not None and length < 0):
             raise ValueError("offset and length must be non-negative")
-        metadata = await self.meta(key)
-        if metadata is None:
+        metadata = select_record(await self._records(key), owner, grantee)
+        bin_name = self._names(key, metadata.owner)[0]
+        if not await self._exists(bin_name):
             raise HandleClaimError()
-        _authorize(metadata, owner, grantee)
-
-        payload = await self._download(self._names(key)[0])
+        payload = await self._download(bin_name)
         if metadata.encrypted:
             if self._fernet is None:
                 raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
@@ -266,7 +354,7 @@ class FileManagerBlobStore(SquawkBlobStore):
             yield selected[position : position + CHUNK]
 
     async def grant(self, key: str, *, owner: HandleOwner, grantee: str) -> BlobMeta:
-        """Grant read access when requested by the blob owner.
+        """Grant read access on the caller's own record (idempotent).
 
         Args:
             key: Content-addressed blob key.
@@ -277,42 +365,42 @@ class FileManagerBlobStore(SquawkBlobStore):
             Updated metadata.
 
         Raises:
-            HandleClaimError: If the blob is missing or the caller is not its owner.
+            HandleClaimError: If the caller holds no record for the key.
         """
-        metadata = await self.meta(key)
-        if metadata is None or metadata.owner != owner:
-            raise HandleClaimError()
-        updated = metadata.model_copy(update={"grants": (*metadata.grants, grantee)})
-        written = await self._fm.create_from_bytes(self._names(key)[1], updated.model_dump_json().encode())
-        if written is False:
-            raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "metadata_publish_failed")
-        return updated
+        meta_name = self._names(key, owner)[1]
+        async with self._meta_lock:
+            metadata = await self._read_meta(meta_name)
+            if metadata is None:
+                raise HandleClaimError()
+            if grantee in metadata.grants:
+                return metadata
+            updated = metadata.model_copy(update={"grants": (*metadata.grants, grantee)})
+            await self._write_meta(meta_name, updated)
+            return updated
 
     async def delete(self, key: str, *, owner: HandleOwner) -> bool:
-        """Delete an object pair when requested by its owner.
+        """Delete the caller's own record for a key.
 
         Args:
             key: Content-addressed blob key.
             owner: Full owner tuple asserted by the caller.
 
         Returns:
-            Whether the blob existed.
-
-        Raises:
-            HandleClaimError: If the caller is not the blob owner.
+            Whether the caller had a record.
         """
-        metadata = await self.meta(key)
-        if metadata is None:
-            return False
-        if metadata.owner != owner:
-            raise HandleClaimError()
-        bin_name, meta_name = self._names(key)
-        await self._fm.delete_file(bin_name)
-        await self._fm.delete_file(meta_name)
-        return True
+        bin_name, meta_name = self._names(key, owner)
+        async with self._meta_lock:
+            if not await self._exists(meta_name):
+                return False
+            await self._fm.delete_file(bin_name)
+            await self._fm.delete_file(meta_name)
+            return True
 
     async def sweep(self, now: datetime | None = None) -> int:
-        """Delete every object pair expired at the supplied cutoff.
+        """Delete every record expired at the cutoff and stale orphan binaries.
+
+        A corrupt or concurrently deleted object is logged and skipped, never
+        aborting the pass.
 
         Args:
             now: Optional expiry cutoff, defaulting to current UTC time.
@@ -321,17 +409,24 @@ class FileManagerBlobStore(SquawkBlobStore):
             Number of expired metadata records removed.
         """
         cutoff = now or datetime.now(timezone.utc)
-        found = await self._fm.find_files(prefix=self._prefix)
+        orphan_cutoff = datetime.now(timezone.utc) - timedelta(seconds=self._orphan_grace_s)
+        found = list(await self._fm.find_files(prefix=self._prefix) or ())
+        names = {str(getattr(f, "path", "")) for f in found}
         removed = 0
-        for file_metadata in found or ():
-            meta_name = str(getattr(file_metadata, "path", ""))
-            if not meta_name.endswith(".meta.json"):
-                continue
-            metadata = BlobMeta.model_validate_json(await self._download(meta_name))
-            if metadata.expires_at > cutoff:
-                continue
-            bin_name = meta_name.removesuffix(".meta.json") + ".bin"
-            await self._fm.delete_file(bin_name)
-            await self._fm.delete_file(meta_name)
-            removed += 1
+        for file_metadata in found:
+            name = str(getattr(file_metadata, "path", ""))
+            try:
+                if name.endswith(".meta.json"):
+                    metadata = await self._read_meta(name)
+                    if metadata is None or metadata.expires_at > cutoff:
+                        continue
+                    await self._fm.delete_file(name.removesuffix(".meta.json") + ".bin")
+                    await self._fm.delete_file(name)
+                    removed += 1
+                elif name.endswith(".bin") and name.removesuffix(".bin") + ".meta.json" not in names:
+                    modified = getattr(file_metadata, "modified", None) or getattr(file_metadata, "updated", None)
+                    if isinstance(modified, datetime) and modified.tzinfo is not None and modified < orphan_cutoff:
+                        await self._fm.delete_file(name)
+            except Exception:  # noqa: BLE001 - one bad object must not stall the sweep
+                self.logger.warning("FileManagerBlobStore: sweep skipped %s", name, exc_info=True)
         return removed

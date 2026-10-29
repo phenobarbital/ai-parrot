@@ -67,10 +67,11 @@ async def test_blob_dedup_and_digest_mismatch(tmp_path: Path, blob_key: str) -> 
     first = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
     second = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=owner, ttl_s=120)
 
-    assert first == second
+    assert (second.key, second.owner, second.created_at) == (first.key, first.owner, first.created_at)
+    assert second.expires_at > first.expires_at  # same owner, longer TTL: expiry extended
     assert first.key == handle_key(data)
-    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*.bin"))) == 1
-    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*.meta.json"))) == 1
+    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*/*.bin"))) == 1
+    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*/*.meta.json"))) == 1
 
     with pytest.raises(SquawkError) as exc_info:
         await store.put_stream(
@@ -84,7 +85,7 @@ async def test_blob_dedup_and_digest_mismatch(tmp_path: Path, blob_key: str) -> 
     assert exc_info.value.code is SquawkErrorCode.UPSTREAM_FAILED
     assert exc_info.value.detail == "digest_mismatch"
     assert list((tmp_path / ".tmp").iterdir()) == []
-    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*.bin"))) == 1
+    assert len(list(tmp_path.glob("[0-9a-f][0-9a-f]/*/*.bin"))) == 1
 
 
 @pytest.mark.asyncio
@@ -120,7 +121,7 @@ async def test_encryption_round_trip_and_range_read(tmp_path: Path, blob_key: st
         ttl_s=60,
         data_class="hr",
     )
-    bin_path = store._paths(metadata.key)[0]
+    bin_path = store._paths(metadata.key, metadata.owner)[0]
 
     assert metadata.encrypted is True
     assert data not in bin_path.read_bytes()
@@ -163,3 +164,92 @@ async def test_malformed_keys_are_refused_without_touching_disk(tmp_path: Path, 
     with pytest.raises(HandleClaimError):
         await store.delete(bad_key, owner=_owner())
 
+
+
+async def _raising_frames() -> AsyncIterator[bytes]:
+    """Yield one chunk then fail, as a cancelled/broken upstream would."""
+    yield b"partial"
+    raise RuntimeError("upstream broke")
+
+
+@pytest.mark.asyncio
+async def test_cross_owner_dedup_keeps_records_isolated(tmp_path: Path, blob_key: str) -> None:
+    """Identical bytes from two owners never share TTL, ACL or ownership."""
+    store = LocalDiskBlobStore(tmp_path)
+    alice, bob = _owner("alice"), _owner("bob")
+    data = b"same report bytes"
+
+    a_meta = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=alice, ttl_s=1)
+    await store.grant(a_meta.key, owner=alice, grantee="friend")
+    b_meta = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=bob, ttl_s=100)
+
+    assert b_meta.owner == bob and b_meta.expires_at > a_meta.expires_at
+    assert await _read_all(store, b_meta.key, owner=bob) == data
+    assert await _read_all(store, a_meta.key, owner=alice) == data
+    assert await _read_all(store, a_meta.key, owner=_owner("friend"), grantee="friend") == data
+    assert (await store.meta(a_meta.key, owner=alice)).grants == ("friend",)
+    with pytest.raises(HandleClaimError):
+        await store.grant(a_meta.key, owner=_owner("mallory"), grantee="mallory")
+    assert await store.delete(a_meta.key, owner=_owner("mallory")) is False
+    assert await _read_all(store, a_meta.key, owner=alice) == data
+
+
+@pytest.mark.asyncio
+async def test_expired_or_reclassified_record_is_republished(tmp_path: Path, blob_key: str) -> None:
+    """An expired record or a stricter data class republishes instead of deduping."""
+    store = LocalDiskBlobStore(tmp_path)
+    owner = _owner()
+    data = b"sensitive rows"
+    plain = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
+    assert plain.encrypted is False
+
+    hr = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=owner, ttl_s=60, data_class="hr")
+    assert hr.encrypted is True and hr.data_class == "hr"
+    assert store._paths(hr.key, owner)[0].read_bytes() != data
+    assert await _read_all(store, hr.key, owner=owner) == data
+
+
+@pytest.mark.asyncio
+async def test_has_is_expiry_aware_and_grant_idempotent(tmp_path: Path, blob_key: str) -> None:
+    """``has`` ignores expired records; repeated grants do not duplicate grantees."""
+    store = LocalDiskBlobStore(tmp_path)
+    owner = _owner()
+    meta = await store.put_stream(_frames(b"x"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
+    await store.grant(meta.key, owner=owner, grantee="r")
+    again = await store.grant(meta.key, owner=owner, grantee="r")
+    assert again.grants == ("r",)
+    assert await store.has(meta.key, owner=owner) is True
+
+    meta_path = store._paths(meta.key, owner)[1]
+    expired = meta.model_copy(update={"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)})
+    meta_path.write_text(expired.model_dump_json())
+    assert await store.has(meta.key) is False
+    assert await store.has(meta.key, owner=owner) is False
+
+
+@pytest.mark.asyncio
+async def test_sweep_survives_corrupt_metadata_and_removes_orphans(tmp_path: Path, blob_key: str) -> None:
+    """A truncated meta file is skipped; stale orphan binaries are removed."""
+    store = LocalDiskBlobStore(tmp_path, orphan_grace_s=0)
+    owner = _owner()
+    keep = await store.put_stream(_frames(b"keep"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
+    gone = await store.put_stream(_frames(b"gone"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
+    bad_dir = tmp_path / "ab" / ("ab" + "0" * 62)
+    bad_dir.mkdir(parents=True)
+    (bad_dir / "x.meta.json").write_text('{"key": "sha256:trunc')
+    orphan = bad_dir / "y.bin"
+    orphan.write_bytes(b"orphan")
+
+    removed = await store.sweep(now=datetime.now(timezone.utc) + timedelta(seconds=120))
+    assert removed == 2
+    assert not orphan.exists()
+    assert await store.has(keep.key) is False and await store.has(gone.key) is False
+
+
+@pytest.mark.asyncio
+async def test_failed_stream_leaves_no_temp_file(tmp_path: Path, blob_key: str) -> None:
+    """A raising frame iterator never leaks its staging file."""
+    store = LocalDiskBlobStore(tmp_path)
+    with pytest.raises(RuntimeError):
+        await store.put_stream(_raising_frames(), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
+    assert list((tmp_path / ".tmp").iterdir()) == []

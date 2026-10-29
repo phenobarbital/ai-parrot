@@ -127,7 +127,8 @@ async def test_blob_dedup_digest_mismatch_and_publish_order(blob_key: str) -> No
     first_calls = list(manager.calls)
     second = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=owner, ttl_s=120)
 
-    assert first == second
+    assert (second.key, second.owner, second.created_at) == (first.key, first.owner, first.created_at)
+    assert second.expires_at > first.expires_at  # same owner, longer TTL: expiry extended
     assert first.key == handle_key(data)
     assert len([path for path in manager.storage if path.endswith(".bin")]) == 1
     assert len([path for path in manager.storage if path.endswith(".meta.json")]) == 1
@@ -249,3 +250,56 @@ async def test_malformed_keys_are_refused(blob_key: str, bad_key: str) -> None:
     with pytest.raises(HandleClaimError):
         await store.delete(bad_key, owner=_owner())
     assert manager.calls == []
+
+
+async def _raising_frames() -> AsyncIterator[bytes]:
+    """Yield one chunk then fail, as a cancelled/broken upstream would."""
+    yield b"partial"
+    raise RuntimeError("upstream broke")
+
+
+async def _fm_read(store: FileManagerBlobStore, key: str, *, owner: HandleOwner, grantee: str | None = None) -> bytes:
+    """Collect a full blob read into bytes."""
+    return b"".join([c async for c in store.open_read(key, owner=owner, grantee=grantee)])
+
+
+@pytest.mark.asyncio
+async def test_cross_owner_dedup_keeps_records_isolated(blob_key: str) -> None:
+    """Identical bytes from two owners never share TTL, ACL or ownership."""
+    store = FileManagerBlobStore(_FakeFileManager())
+    alice, bob = _owner("alice"), _owner("bob")
+    data = b"same report bytes"
+    a_meta = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=alice, ttl_s=1)
+    await store.grant(a_meta.key, owner=alice, grantee="friend")
+    b_meta = await store.put_stream(_frames(data), media_type=MediaType.GENERIC, owner=bob, ttl_s=100)
+
+    assert b_meta.owner == bob and b_meta.expires_at > a_meta.expires_at
+    assert await _fm_read(store, b_meta.key, owner=bob) == data
+    assert await _fm_read(store, a_meta.key, owner=_owner("friend"), grantee="friend") == data
+    assert (await store.meta(a_meta.key, owner=alice)).grants == ("friend",)
+    with pytest.raises(HandleClaimError):
+        await store.grant(a_meta.key, owner=_owner("mallory"), grantee="mallory")
+
+
+@pytest.mark.asyncio
+async def test_sweep_survives_corrupt_metadata(blob_key: str) -> None:
+    """A truncated meta object is skipped and does not abort the sweep."""
+    manager = _FakeFileManager()
+    store = FileManagerBlobStore(manager)
+    meta = await store.put_stream(_frames(b"x"), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
+    manager.storage["squawk/blobs/ab/" + "ab" + "0" * 62 + "/z.meta.json"] = b'{"key": "sha256:trunc'
+    removed = await store.sweep(now=datetime.now(timezone.utc) + timedelta(seconds=120))
+    assert removed == 1
+    assert await store.has(meta.key) is False
+
+
+@pytest.mark.asyncio
+async def test_failed_stream_leaves_no_temp_file(blob_key: str, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A raising frame iterator never leaks its staging file."""
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    store = FileManagerBlobStore(_FakeFileManager())
+    with pytest.raises(RuntimeError):
+        await store.put_stream(_raising_frames(), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
+    assert list(tmp_path.iterdir()) == []
