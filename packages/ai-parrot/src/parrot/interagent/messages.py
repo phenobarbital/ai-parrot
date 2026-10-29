@@ -66,7 +66,9 @@ class CallMessage(BaseModel):
     correlation_id: str
     idempotency_key: str
     reply_to: str | None = None
-    caller: CallerIdentity | None = None  # set by the server from the handshake / envelope metadata, never trusted from the payload
+    caller: CallerIdentity | None = (
+        None  # set by the server from the handshake / envelope metadata, never trusted from the payload
+    )
 
     @property
     def trace(self) -> TraceContext:
