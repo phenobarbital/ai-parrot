@@ -339,6 +339,13 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_models.py
 - packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py
 - tests/sdd/test_launch_worker.py
+- packages/ai-parrot/tests/flows/dev_loop/test_cli_dispatcher_usage_events.py
+- packages/ai-parrot/tests/flows/dev_loop/test_dual_publish.py
+- packages/ai-parrot/tests/flows/dev_loop/integration/test_concurrency.py
+- packages/ai-parrot/tests/flows/dev_flow/test_ideation_graph_search.py
+- packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py
+- tests/sdd_scripts/test_feat722_doc_contract.py
+- tests/sdd_scripts/test_pr_policy_wording_contract.py
 markers: none
 
 ### Live qualification gate (separate from the Validation Contract)
@@ -555,3 +562,4 @@ The original probe report and current source were reviewed; no independent revie
 |---|---|---|---|
 | 0.1 | 2026-10-29 | Jesus Lara / Codex | Initial draft from issue:e57a19d91778 with strict adoption and compatibility gates |
 | 0.2 | 2026-10-29 | Jesus Lara / Claude | Resolve §8 with preflight probes: target host + AppArmor, both CLIs qualified separately, leading-`cd` task cwd, no settings widening observed |
+| 0.3 | 2026-10-29 | Jesus Lara / Claude | /sdd-task: Validation Contract adds the dispatcher tests that policy 2 forces onto linked worktrees and the agent-twin/doc-contract tests M5 must keep green |
