@@ -24,6 +24,17 @@ if TYPE_CHECKING:
     from parrot.tools.manager import ToolManager
     from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 
+#: Wakes the host agent for one turn.
+#:
+#: The returned :class:`RoostMessage` MUST carry ``tokens`` — the tokens the host actually
+#: spent on this turn. Roost cannot observe a provider's usage, so a response left at the
+#: default ``tokens=0`` leaves the conversation effectively unbudgeted: ``token_budget`` is
+#: never reached and ``FailureCode.TOKEN_BUDGET`` never fires. The endpoint logs a warning
+#: once per conversation when a budgeted conversation reports 0 tokens.
+#:
+#: Report usage through the reply itself::
+#:
+#:     return msg.reply(Performative.INFORM, content=answer, tokens=usage.total_tokens)
 WakeCallback = Callable[[RoostMessage, Dispatch], Awaitable[Optional[RoostMessage]]]
 
 
@@ -66,6 +77,7 @@ class RoostEndpoint:
         self._sweep_interval = sweep_interval
         self._sweeper: Optional[asyncio.Task[None]] = None
         self._metrics = {"messages_in": 0, "messages_out": 0, "wakes": 0, "not_understood": 0, "stored": 0}
+        self._token_budget_warned: set[str] = set()
 
     def address(self) -> AgentAddress:
         """Return this endpoint's configured transport address."""
@@ -166,9 +178,12 @@ class RoostEndpoint:
                 if response is not None:
                     await self._send_reply(response)
                     exhausted = self.engine.charge(msg.conversation_id, response.tokens)
+                    if response.tokens == 0:
+                        self._warn_unfed_token_budget(msg.conversation_id)
                     if exhausted is not None:
                         for emitted in exhausted.emit:
                             await self._route_emitted(emitted)
+                    self._forget_if_closed(msg.conversation_id)
             await self._resolve_pending(msg)
             return
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
@@ -212,6 +227,32 @@ class RoostEndpoint:
         )
         self._metrics["stored"] += 1
 
+    def _warn_unfed_token_budget(self, conversation_id: str) -> None:
+        """Warn once per conversation that a declared token budget is receiving no usage.
+
+        A wake callback that leaves ``RoostMessage.tokens`` at 0 makes the budget
+        unenforceable; this surfaces the misintegration without changing the turn. A
+        conversation that declares no budget is legitimately unbudgeted and stays silent.
+        """
+        state = self.engine.state(conversation_id)
+        if state is None or state.budget.token_budget is None:
+            return
+        if conversation_id in self._token_budget_warned:
+            return
+        self._token_budget_warned.add(conversation_id)
+        self.logger.warning(
+            "Roost conversation %s declares a token budget of %s but its wake response reported 0 tokens; "
+            "the WakeCallback must set RoostMessage.tokens or the budget cannot be enforced",
+            conversation_id,
+            state.budget.token_budget,
+        )
+
+    def _forget_if_closed(self, conversation_id: str) -> None:
+        """Drop per-conversation bookkeeping once the conversation is terminal."""
+        state = self.engine.state(conversation_id)
+        if state is None or state.terminal is not None:
+            self._token_budget_warned.discard(conversation_id)
+
     async def _resolve_pending(self, msg: RoostMessage) -> None:
         """Complete the request waiter after a terminal inbound outcome."""
         future = self._pending.get(msg.conversation_id)
@@ -224,6 +265,7 @@ class RoostEndpoint:
         elif msg.performative in (Performative.REFUSE, Performative.FAILURE):
             failure = msg.failure or FailureInfo(code=FailureCode.POLICY, detail="request refused")
             future.set_exception(RoostFailure(failure))
+        self._token_budget_warned.discard(msg.conversation_id)
 
     async def _send_reply(self, msg: RoostMessage) -> RoostMessage:
         """Send a preconstructed reply while retaining its protocol metadata."""
