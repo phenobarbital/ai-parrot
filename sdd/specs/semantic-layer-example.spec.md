@@ -10,7 +10,7 @@ tags: [semantic-layer, examples, agents, mcp-local, governance, duckdb]
 **Feature ID**: FEAT-769
 **Date**: 2026-10-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 **Source**: `sdd/proposals/semantic-layer-example.proposal.md` (accepted 2026-10-29)
 **Research audit**: `sdd/state/FEAT-769/`
