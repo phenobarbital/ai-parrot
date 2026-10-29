@@ -205,13 +205,19 @@ async def real_call_results() -> list[dict[str, Any]]:
         if client is None:
             results.append({"provider": label, "status": "skipped", "reason": "not configured"})
             continue
-        schemas = manager.get_tool_schemas(client._resolve_tool_format())
-        message = await client.ask(
-            prompt="Use hr__reports__manager_of for employee_id E-001. Call the tool.",
-            model=client.model,
-            tools=schemas,
-            use_tools=True,
-        )
+        try:
+            # Clients are lazy: the provider SDK handle only exists inside the async context.
+            async with client:
+                schemas = manager.get_tool_schemas(client._resolve_tool_format())
+                message = await client.ask(
+                    prompt="Use hr__reports__manager_of for employee_id E-001. Call the tool.",
+                    model=client.model,
+                    tools=schemas,
+                    use_tools=True,
+                )
+        except Exception as exc:  # noqa: BLE001 — one provider's failure is a recorded verdict, not a crash
+            results.append({"provider": label, "status": "failed", "error": f"{type(exc).__name__}: {exc}"[:300]})
+            continue
         calls = list(getattr(message, "tool_calls", None) or [])
         valid = bool(calls) and all(
             getattr(call, "name", None) in manager.list_tools()

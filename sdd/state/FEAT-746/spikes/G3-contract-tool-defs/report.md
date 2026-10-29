@@ -33,13 +33,22 @@ adapter behavior rather than treating the key's presence as a rejection.
 
 ## Live-provider status
 
-No real-provider call was made in this worktree: `PARROT_TEST_REAL_LLM` was
-not enabled. When enabled, the spike discovers the installed OpenAI,
-Anthropic, Google, and Groq client classes, calls only classes whose
-`has_server_credentials()` returns true, and records every unconfigured target
-as `skipped`, never `passed`. Each configured provider receives one tool-
-forcing `ask()` call and passes only if it produces tool calls with known tool
-names and dictionary arguments without a parsing error.
+Run 2026-10-30 (orchestrator review, `PARROT_TEST_REAL_LLM=1`, each client's default model, one tool-forcing `ask()` each):
+
+| Provider | Result | Evidence |
+| --- | --- | --- |
+| Anthropic | PASS | 1 tool call, known name, dict args |
+| Google | PASS | 1 tool call, known name, dict args |
+| OpenAI | FAIL (not schema) | 400 `Unsupported parameter: 'max_tokens' ... Use 'max_completion_tokens'` — the client's request parameters for its default model, before any tool schema is judged |
+| Groq | FAIL (not schema) | 400 `'model' : doesn't match any schema from 'anyOf'` — the client's default model id is rejected |
+
+Neither failure names a tool schema, so the G3 tool-definition question is
+answered only for Anthropic and Google live; OpenAI/Groq must be re-run with an
+explicitly valid model once their client defaults are fixed (out of scope here).
+The first review run also exposed a spike bug — `ask()` on an unopened client
+(`self.client is None`) aborted the whole run; each call now runs inside
+`async with client:` and a provider exception is recorded as `failed`, never
+raised.
 
 ## Amendment
 
