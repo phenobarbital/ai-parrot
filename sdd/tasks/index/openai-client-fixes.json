@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-30T00:50:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-29T23:47:17+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -41,11 +41,11 @@
     {
       "id": "TASK-4894",
       "slug": "openai-completion-params",
-      "title": "Adapt OpenAI completion params \u2014 max_completion_tokens + fixed temperature",
+      "title": "Adapt OpenAI completion params — max_completion_tokens + fixed temperature",
       "feature_id": "FEAT-770",
       "feature": "openai-client-fixes",
       "spec": "sdd/specs/openai-client-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -53,8 +53,9 @@
       "parallelism_notes": "single task",
       "assigned_to": null,
       "started_at": "2026-10-30T00:55:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4894-openai-completion-params.md"
+      "completed_at": "2026-10-29T23:47:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4894-openai-completion-params.md",
+      "verification": "verified"
     }
   ]
 }
