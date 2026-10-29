@@ -13,9 +13,7 @@ from parrot.semantic.models import SemanticQuery
 
 pytest.importorskip("duckdb")
 
-_EXAMPLE_PATH = (
-    Path(__file__).resolve().parents[3] / "examples" / "agents" / "semantic" / "masked_policy_agent.py"
-)
+_EXAMPLE_PATH = Path(__file__).resolve().parents[3] / "examples" / "agents" / "semantic" / "masked_policy_agent.py"
 
 
 @pytest.fixture(scope="module")
