@@ -315,8 +315,18 @@ serving-side test does not cover. Always `await caller.stop()` / `await srv.stop
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Opus 5 (session 75cf9533)
+**Date**: 2026-10-29
+**Notes**: Applied the blueprint as written. `_route_emitted` added next to `sweep()`, used
+at all three emit sites (`sweep`, the `_on_message` dispatch emits, the `charge()` exhausted
+emits). `protocols.py` untouched. `make_endpoint` gained an optional `engine` keyword.
 
-**Deviations from spec**: none | describe if any
+Both regression tests were confirmed to fail without the fix and pass with it — reverting
+`endpoint.py` alone gives `2 failed` (`DID NOT RAISE RoostFailure` for the query variant,
+and `TIMEOUT != HOP_LIMIT` for the request variant), which is why each asserts the specific
+`FailureCode` rather than merely that a `RoostFailure` was raised.
+
+`pytest packages/ai-parrot/tests/roost/ -q` → 114 passed (112 baseline + 2 new).
+`ruff check` clean on both files.
+
+**Deviations from spec**: none
