@@ -361,7 +361,7 @@ def _make_dispatcher(monkeypatch) -> ClaudeCodeDispatcher:
     return disp
 
 
-async def _run_dispatch(dispatcher, monkeypatch, tmp_path, *, session_host=None):
+async def _run_dispatch(dispatcher, monkeypatch, tmp_path, linked_worktree, *, session_host=None):
     messages = [
         _AssistantMessage(content=[_TextBlock(_research_payload())]),
         _ResultMessage(success=True),
@@ -384,20 +384,20 @@ async def _run_dispatch(dispatcher, monkeypatch, tmp_path, *, session_host=None)
         output_model=ResearchOutput,
         run_id=RUN_ID,
         node_id="research",
-        cwd=str(tmp_path),
+        cwd=str(linked_worktree),
         session_host=session_host,
     )
 
 
 @pytest.mark.asyncio
-async def test_legacy_envelope_unchanged_with_shim_active(monkeypatch, tmp_path):
+async def test_legacy_envelope_unchanged_with_shim_active(monkeypatch, tmp_path, linked_worktree):
     disp_legacy = _make_dispatcher(monkeypatch)
-    await _run_dispatch(disp_legacy, monkeypatch, tmp_path, session_host=None)
+    await _run_dispatch(disp_legacy, monkeypatch, tmp_path, linked_worktree, session_host=None)
     legacy_calls = disp_legacy._fake_redis.xadd.await_args_list
 
     disp_with_host = _make_dispatcher(monkeypatch)
     host = SessionHost(RUN_ID)
-    await _run_dispatch(disp_with_host, monkeypatch, tmp_path, session_host=host)
+    await _run_dispatch(disp_with_host, monkeypatch, tmp_path, linked_worktree, session_host=host)
     shimmed_calls = disp_with_host._fake_redis.xadd.await_args_list
 
     # Same number of legacy XADD calls, same args (stream key, fields dict
@@ -421,11 +421,11 @@ async def test_legacy_envelope_unchanged_with_shim_active(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_dispatch_folds_events_into_host_when_present(monkeypatch, tmp_path):
+async def test_dispatch_folds_events_into_host_when_present(monkeypatch, tmp_path, linked_worktree):
     disp = _make_dispatcher(monkeypatch)
     host = SessionHost(RUN_ID)
 
-    result = await _run_dispatch(disp, monkeypatch, tmp_path, session_host=host)
+    result = await _run_dispatch(disp, monkeypatch, tmp_path, linked_worktree, session_host=host)
 
     assert isinstance(result, ResearchOutput)
     dispatch_state = host.state.nodes["research"].dispatch
@@ -434,7 +434,7 @@ async def test_dispatch_folds_events_into_host_when_present(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_actions_xadd_failure_does_not_break_legacy(monkeypatch, tmp_path):
+async def test_actions_xadd_failure_does_not_break_legacy(monkeypatch, tmp_path, linked_worktree):
     """A broken SessionHost must never break the dispatch or its legacy XADD."""
     disp = _make_dispatcher(monkeypatch)
 
@@ -442,7 +442,7 @@ async def test_actions_xadd_failure_does_not_break_legacy(monkeypatch, tmp_path)
         def apply(self, action):
             raise RuntimeError("session-state fold blew up")
 
-    result = await _run_dispatch(disp, monkeypatch, tmp_path, session_host=_BrokenHost())
+    result = await _run_dispatch(disp, monkeypatch, tmp_path, linked_worktree, session_host=_BrokenHost())
 
     assert isinstance(result, ResearchOutput)
     # Legacy publish still fired for every event (queued/started/2 messages/completed).
@@ -450,16 +450,16 @@ async def test_actions_xadd_failure_does_not_break_legacy(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_dispatch_without_session_host_is_legacy_only(monkeypatch, tmp_path):
+async def test_dispatch_without_session_host_is_legacy_only(monkeypatch, tmp_path, linked_worktree):
     disp = _make_dispatcher(monkeypatch)
-    result = await _run_dispatch(disp, monkeypatch, tmp_path, session_host=None)
+    result = await _run_dispatch(disp, monkeypatch, tmp_path, linked_worktree, session_host=None)
 
     assert isinstance(result, ResearchOutput)
     assert disp._fake_redis.xadd.await_count == 5
 
 
 @pytest.mark.asyncio
-async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(monkeypatch, tmp_path):
+async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(monkeypatch, tmp_path, linked_worktree):
     """Two concurrent dispatch() calls on the SAME instance never cross-contaminate hosts."""
     import asyncio
 
@@ -492,7 +492,7 @@ async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(m
             output_model=ResearchOutput,
             run_id=run_id,
             node_id="research",
-            cwd=str(tmp_path),
+            cwd=str(linked_worktree),
             session_host=host,
         )
 

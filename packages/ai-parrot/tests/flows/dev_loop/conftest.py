@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -134,6 +135,38 @@ def temp_worktree_base(tmp_path, monkeypatch) -> Iterator[str]:
         except AttributeError:  # pragma: no cover - attribute may not exist
             pass
     yield base
+
+
+@pytest.fixture
+def linked_worktree(tmp_path, monkeypatch) -> Path:
+    """Return a fake linked SDD worktree under a pinned worktree base path.
+
+    FEAT-768 native launches refuse primary checkouts and non-repositories, so
+    sandboxed ``sdd-worker``/``sdd-coder`` dispatch tests need a linked
+    worktree as their cwd.
+    """
+    main = tmp_path / "main"
+    admin = main / ".git" / "worktrees" / "feat"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = main / ".claude" / "worktrees" / "feat"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    base = str(tmp_path)
+    for target in (
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.gemini.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.google_coding.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.nodes.research.conf.DEV_LOOP_REPO_BASE_PATH",
+    ):
+        try:
+            monkeypatch.setattr(target, base)
+        except AttributeError:  # pragma: no cover - attribute may not exist
+            pass
+    return worktree
 
 
 @pytest.fixture
