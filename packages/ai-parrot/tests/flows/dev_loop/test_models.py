@@ -135,6 +135,15 @@ class TestDispatchProfile:
         assert profile.setting_sources == ["project"]
         assert profile.model == "claude-sonnet-4-6"
         assert profile.timeout_seconds == 1800
+        assert profile.sandbox_allowed_domains == []
+
+    def test_sandbox_domains_normalize_and_reject_broad_values(self):
+        profile = ClaudeCodeDispatchProfile(sandbox_allowed_domains=["API.Example.COM.", "api.example.com"])
+        assert profile.sandbox_allowed_domains == ["api.example.com"]
+
+        for invalid_domain in ("https://example.com", "*.example.com", "example.com:443", "127.0.0.1"):
+            with pytest.raises(ValidationError):
+                ClaudeCodeDispatchProfile(sandbox_allowed_domains=[invalid_domain])
 
     def test_generic_session_when_subagent_none(self):
         profile = ClaudeCodeDispatchProfile(subagent=None, system_prompt_override="be terse")
