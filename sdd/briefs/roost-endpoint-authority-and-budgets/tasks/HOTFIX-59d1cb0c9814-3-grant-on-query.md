@@ -244,6 +244,11 @@ async def test_toolkit_query_respects_the_grant() -> None:
 5. **Implement**, run the Validation Commands, `ruff check --fix`.
 6. **Commit only this task's files**: `fix(roost): HOTFIX-59d1cb0c9814-3 — enforce the grant on query(receiver=…)`.
 7. **Mark `done`**, fill in the Completion Note (including which scope probe you used), commit the SDD state.
+8. **This is the last task of the brief.** Close the ledger issue:
+   `wikitoolkit ledger close issue:59d1cb0c9814 --resolved-by commit:<sha> --reason "<what landed>"`.
+   Do NOT close `issue:5e3bcfe4ea4b` — it belongs to the
+   `fix-5e3bcfe4ea4b-roost-runtime-budget-enforcement` lane.
+9. Run `/sdd-done 59d1cb0c9814` to verify the brief's tasks and open the PR against `dev`.
 
 ---
 

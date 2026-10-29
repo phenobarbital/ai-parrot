@@ -16,15 +16,23 @@ created: "2026-10-29"
 
 <!-- FEAT-698. One brief = one fix. Task files live in sdd/briefs/<slug>/tasks/. -->
 
-Covers two ledger issues, folded by owner decision:
+Covers one ledger issue: `issue:59d1cb0c9814` (vulnerability / critical) —
+"Roost endpoint does not propagate the caller PermissionContext and does not
+enforce the grant on explicit-receiver paths (AC-12/13/35)". Found by the
+FEAT-747 code review (`spec:FEAT-747`, completed 2026-10-27).
 
-| Ledger issue | Kind / severity | Title |
-|---|---|---|
-| `issue:59d1cb0c9814` | vulnerability / critical | Roost endpoint does not propagate the caller PermissionContext and does not enforce the grant on explicit-receiver paths (AC-12/13/35) |
-| `issue:5e3bcfe4ea4b` | bug / critical | Roost endpoint never enforces hop limit, token budget or deadline at runtime (AC-5) |
-
-Both were found by the FEAT-747 code review (`spec:FEAT-747`, completed 2026-10-27)
-and both land in `packages/ai-parrot/src/parrot/roost/endpoint.py`.
+> **Concurrent lane — read before starting.** The sibling critical issue
+> `issue:5e3bcfe4ea4b` (hop limit / token budget / deadline, AC-5) was briefed
+> independently and in parallel by another session as
+> `.claude/worktrees/fix-5e3bcfe4ea4b-roost-runtime-budget-enforcement`
+> (branch pushed, tasks `HOTFIX-5e3bcfe4ea4b-1..2`). The owner initially asked
+> to fold it into this brief; that lane was discovered immediately afterwards
+> and is further along, so the fold was reverted — **this brief does not touch
+> the budget gates**. Both lanes edit
+> `packages/ai-parrot/src/parrot/roost/endpoint.py`, so expect a conflict
+> window: whichever merges second must rebase. Their task 1 adds
+> `_route_emitted` and changes `_on_message`'s emit handling, which is the same
+> method this brief's task 4 would have touched.
 
 ## Problem
 
@@ -202,6 +210,11 @@ whoever takes them should expect `endpoint.py` to have moved):
   conversations (AC-3).
 - `issue:94019af6bc24` — `docs/roost` incomplete (AC-31); module-level roost
   imports in registry/AgentTool.
+- `issue:5e3bcfe4ea4b` — hop limit / token budget / deadline (AC-5). **Owned by
+  the `fix-5e3bcfe4ea4b-roost-runtime-budget-enforcement` lane**, which has
+  verified with probes that the hop limb and the expiry sweep are already
+  fixed on dev and that the live residue is emitted-failure routing plus an
+  unfed `RoostMessage.tokens`. Do not re-scope it here.
 
 **Audit direction smell (observed, not in scope).** `_on_message` records
 `direction="served"` for inbound (`endpoint.py:130`) while `_deliver_outbound`
@@ -229,8 +242,11 @@ From the owner's Q&A round (2026-10-29):
    advertised `config.capabilities` entry, refusing with `FailureCode.POLICY`
    otherwise. On the caller side, stop `args` from being able to override the
    tool name.
-4. **Scope** — fold `issue:5e3bcfe4ea4b` into this brief (task 4) and close both
-   ledger issues from this worktree.
+4. **Scope** — the owner asked to fold `issue:5e3bcfe4ea4b` in as a fourth task.
+   That decision was taken before the concurrent
+   `fix-5e3bcfe4ea4b-roost-runtime-budget-enforcement` lane was found; the task
+   was written and then removed rather than ship a duplicate. This brief closes
+   `issue:59d1cb0c9814` only. Revisit only if the other lane is abandoned.
 
 ## Assumptions
 
@@ -259,7 +275,7 @@ Unresolved decisions, recorded rather than guessed at implementation time:
 
 ## Fix plan
 
-Four tasks, chained (each depends on the previous) because all four edit
+Three tasks, chained (each depends on the previous) because all three edit
 `packages/ai-parrot/src/parrot/roost/endpoint.py`; the per-brief index is
 `parallel_semantics: exclusive`.
 
@@ -275,11 +291,6 @@ Four tasks, chained (each depends on the previous) because all four edit
 3. **HOTFIX-59d1cb0c9814-3 — enforce the grant on `query(receiver=…)`.**
    Mirror `endpoint.py:318` in `query()`, raising `GrantDenied`; cover the
    `RoostToolkit.send("query", …)` path.
-4. **HOTFIX-59d1cb0c9814-4 — runtime budget gates (folded `issue:5e3bcfe4ea4b`).**
-   Thread `hops` from the message into `dispatcher.dispatch(...)`; make the
-   token charge carry a real count and document the `wake` contract; resolve a
-   `CLOSED` dispatch's pending waiter from the transition's failure instead of
-   the original inbound message.
 
 ## Validation commands
 

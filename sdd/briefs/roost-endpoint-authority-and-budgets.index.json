@@ -66,26 +66,6 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-3-grant-on-query.md"
-    },
-    {
-      "id": "HOTFIX-59d1cb0c9814-4",
-      "slug": "runtime-budget-gates",
-      "title": "Wire the remaining runtime budget gates (hops, token charge, closed-dispatch resolution)",
-      "feature_id": "BRIEF-59d1cb0c9814",
-      "feature": "roost-endpoint-authority-and-budgets",
-      "spec": "sdd/briefs/roost-endpoint-authority-and-budgets.brief.md",
-      "status": "pending",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "HOTFIX-59d1cb0c9814-3"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Edits _on_message and _resolve_pending, whose CLOSED/refusal paths task 2 reshaped; its end-to-end tests assume tasks 1-3 are already in place.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/briefs/roost-endpoint-authority-and-budgets/tasks/HOTFIX-59d1cb0c9814-4-runtime-budget-gates.md"
     }
   ]
 }

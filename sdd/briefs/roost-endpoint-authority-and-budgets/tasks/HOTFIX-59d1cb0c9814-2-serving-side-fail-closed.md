@@ -56,7 +56,9 @@ every message.
 
 **NOT in scope**:
 - The grant check on `query()` — HOTFIX-59d1cb0c9814-3.
-- Budget gates — HOTFIX-59d1cb0c9814-4.
+- Budget gates (hop limit / token budget / deadline) — owned by the separate
+  `fix-5e3bcfe4ea4b-roost-runtime-budget-enforcement` lane; that lane also
+  reshapes `_on_message`'s emit handling, so keep this task out of it.
 - Changing `PBACToolCallGuardrail` or any file under `bots/guardrails/`.
 - Minting or verifying `auth_token`.
 
