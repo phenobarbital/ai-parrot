@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-3e191d955d4c",
       "feature": "forms-export-rbac-gate",
       "spec": "sdd/briefs/forms-export-rbac-gate.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task; both modified source files share one test surface.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T01:08:49.614764+00:00",
       "completed_at": null,
       "file": "sdd/briefs/forms-export-rbac-gate/tasks/HOTFIX-3e191d955d4c-1-export-rbac-and-membership-parity.md"
     }
