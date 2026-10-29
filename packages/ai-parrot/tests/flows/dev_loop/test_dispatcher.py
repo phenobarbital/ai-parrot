@@ -7,6 +7,7 @@ can run without ``claude-agent-sdk`` or a live Redis.
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, AsyncIterator, List
 from unittest.mock import AsyncMock
@@ -129,15 +130,14 @@ def dispatcher(monkeypatch):
 
 
 class TestProfileResolution:
-    def test_dispatch_profile_to_run_options(
-        self, dispatcher, _patch_worktree_base
-    ):
+
+    def test_dispatch_profile_to_run_options(self, dispatcher, linked_worktree):
         profile = ClaudeCodeDispatchProfile(
             subagent="sdd-worker",
             allowed_tools=["Read", "Edit", "Bash"],
             permission_mode="acceptEdits",
         )
-        cwd = str(_patch_worktree_base)
+        cwd = str(linked_worktree)
         opts = dispatcher._resolve_run_options(profile, cwd)
         assert opts.cwd == cwd
         assert opts.permission_mode == "acceptEdits"
@@ -151,9 +151,7 @@ class TestProfileResolution:
         # wiring up connectors (e.g. the claude.ai Design MCP connector).
         assert opts.strict_mcp_config is True
 
-    def test_prefer_subscription_blanks_key_when_login_present(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_prefer_subscription_blanks_key_when_login_present(self, dispatcher, monkeypatch, linked_worktree):
         """Default policy: subscription detected → blank the key so the
         subprocess uses the claude.ai login instead of API billing."""
         monkeypatch.setattr(
@@ -162,14 +160,10 @@ class TestProfileResolution:
             raising=False,
         )
         monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert opts.env == {"ANTHROPIC_API_KEY": ""}
 
-    def test_prefer_subscription_falls_back_to_api_key(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_prefer_subscription_falls_back_to_api_key(self, dispatcher, monkeypatch, linked_worktree):
         """No subscription login → inherit ANTHROPIC_API_KEY (API fallback)."""
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
@@ -179,15 +173,11 @@ class TestProfileResolution:
         monkeypatch.setattr(
             dispatcher, "_subscription_available", lambda: False
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         # env None/empty means "inherit parent env unchanged".
         assert not opts.env
 
-    def test_api_key_mode_never_blanks(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_api_key_mode_never_blanks(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "api-key",
@@ -195,14 +185,10 @@ class TestProfileResolution:
         )
         # Even with a subscription present, api-key mode inherits the key.
         monkeypatch.setattr(dispatcher, "_subscription_available", lambda: True)
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert not opts.env
 
-    def test_subscription_mode_forces_blank(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_subscription_mode_forces_blank(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "subscription",
@@ -211,9 +197,7 @@ class TestProfileResolution:
         monkeypatch.setattr(
             dispatcher, "_subscription_available", lambda: False
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert opts.env == {"ANTHROPIC_API_KEY": ""}
 
     def test_subscription_available_reads_credentials(
@@ -380,7 +364,7 @@ class TestOutputExtraction:
 class TestDispatchHappyPath:
     @pytest.mark.asyncio
     async def test_publishes_three_events_on_success(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         # Fake assistant emits the full ResearchOutput JSON in one block.
         messages = [
@@ -406,7 +390,7 @@ class TestDispatchHappyPath:
             output_model=ResearchOutput,
             run_id="run-1",
             node_id="research",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
         assert isinstance(result, ResearchOutput)
         assert result.jira_issue_key == "OPS-1"
@@ -419,7 +403,7 @@ class TestDispatchHappyPath:
 class TestDispatchValidationFailure:
     @pytest.mark.asyncio
     async def test_invalid_payload_publishes_output_invalid(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         messages = [
             _AssistantMessage(content=[_TextBlock('{"foo":"bar"}')]),
@@ -445,7 +429,7 @@ class TestDispatchValidationFailure:
                 output_model=ResearchOutput,
                 run_id="run-2",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
 
         # The xadd calls are: queued + started + 2 messages + output_invalid
@@ -455,7 +439,7 @@ class TestDispatchValidationFailure:
 class TestDispatchTimeout:
     @pytest.mark.asyncio
     async def test_timeout_emits_dispatch_failed_and_reraises(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         """Spec §2 — ``profile.timeout_seconds`` caps the wall clock.
 
@@ -502,7 +486,7 @@ class TestDispatchTimeout:
                 output_model=ResearchOutput,
                 run_id="run-timeout",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
         # queued + started + dispatch.failed = 3
         assert dispatcher._fake_redis.xadd.await_count == 3
@@ -511,7 +495,7 @@ class TestDispatchTimeout:
 class TestDispatchSessionFailure:
     @pytest.mark.asyncio
     async def test_session_exception_emits_dispatch_failed_and_reraises(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         class _BoomClient:
             async def stream_messages(self, prompt: str, *, run_options: Any):
@@ -537,14 +521,14 @@ class TestDispatchSessionFailure:
                 output_model=ResearchOutput,
                 run_id="run-3",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
         # queued + started + dispatch.failed = 3
         assert dispatcher._fake_redis.xadd.await_count == 3
 
     @pytest.mark.asyncio
     async def test_api_error_status_surfaced_when_sdk_raises(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         """The opaque SDK ProcessError is replaced with the real diagnosis.
 
@@ -588,7 +572,7 @@ class TestDispatchSessionFailure:
                 output_model=ResearchOutput,
                 run_id="run-401",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
         msg = str(excinfo.value)
         assert "401" in msg
@@ -597,7 +581,7 @@ class TestDispatchSessionFailure:
 
     @pytest.mark.asyncio
     async def test_error_result_without_raise_still_fails(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         """An ``is_error`` result must fail the dispatch even if the SDK
         closes the stream cleanly (no exception) — never fall through to
@@ -627,7 +611,7 @@ class TestDispatchSessionFailure:
                 output_model=ResearchOutput,
                 run_id="run-529",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
 
 
@@ -638,9 +622,7 @@ class TestDispatchSessionFailure:
 
 class TestSemaphore:
     @pytest.mark.asyncio
-    async def test_caps_concurrent_dispatches(
-        self, monkeypatch, _patch_worktree_base
-    ):
+    async def test_caps_concurrent_dispatches(self, monkeypatch, _patch_worktree_base, linked_worktree):
         disp = ClaudeCodeDispatcher(
             max_concurrent=2,
             redis_url="redis://localhost:6379/0",
@@ -688,7 +670,7 @@ class TestSemaphore:
                 output_model=ResearchOutput,
                 run_id=f"run-{idx}",
                 node_id="research",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
 
         # Start 4 dispatches but only 2 should be in stream_messages at once.
@@ -711,52 +693,40 @@ class TestMaxTurnsCap:
     keeps looking busy forever on a task with no natural stopping point.
     """
 
-    def test_profile_cap_forwarded_to_run_options(self, dispatcher, _patch_worktree_base):
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(max_turns=30), str(_patch_worktree_base)
-        )
+    def test_profile_cap_forwarded_to_run_options(self, dispatcher, linked_worktree):
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(max_turns=30), str(linked_worktree))
         assert opts.max_turns == 30
 
-    def test_uncapped_by_default(self, dispatcher, monkeypatch, _patch_worktree_base):
+    def test_uncapped_by_default(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
             0,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
         assert opts.max_turns is None
 
-    def test_conf_default_applies_when_profile_is_silent(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_conf_default_applies_when_profile_is_silent(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
             50,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
         assert opts.max_turns == 50
 
-    def test_profile_cap_wins_over_conf_default(
-        self, dispatcher, monkeypatch, _patch_worktree_base
-    ):
+    def test_profile_cap_wins_over_conf_default(self, dispatcher, monkeypatch, linked_worktree):
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
             50,
             raising=False,
         )
-        opts = dispatcher._resolve_run_options(
-            ClaudeCodeDispatchProfile(max_turns=10), str(_patch_worktree_base)
-        )
+        opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(max_turns=10), str(linked_worktree))
         assert opts.max_turns == 10
 
     @pytest.mark.asyncio
     async def test_exhausted_cap_names_itself_in_the_error(
-        self, dispatcher, monkeypatch, _patch_worktree_base
+        self, dispatcher, monkeypatch, _patch_worktree_base, linked_worktree
     ):
         """The failure must name the cap, not the unparseable payload it left."""
         truncated = _ResultMessage(success=True)
@@ -784,7 +754,7 @@ class TestMaxTurnsCap:
                 output_model=ResearchOutput,
                 run_id="run-1",
                 node_id="synthesis",
-                cwd=str(_patch_worktree_base),
+                cwd=str(linked_worktree),
             )
 
 
@@ -835,3 +805,99 @@ class TestSandboxedSettingSources:
         argv = transport_mod.SubprocessCLITransport(prompt="x", options=sdk_options)._build_command()
         flags = [arg for arg in argv if arg.startswith("--setting-sources")]
         assert flags == ["--setting-sources=project"]
+
+
+class TestNativeSandboxDispatch:
+    """FEAT-768 native sandbox settings and isolated dispatch state."""
+
+    @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
+    def test_sandboxed_profile_gets_strict_settings(self, dispatcher, linked_worktree, subagent):
+        options = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(subagent=subagent, sandbox_allowed_domains=["API.Example.COM."]),
+            str(linked_worktree),
+        )
+
+        settings = json.loads(options.extra_args["settings"])
+        assert settings["sandbox"]["enabled"] is True
+        assert settings["sandbox"]["failIfUnavailable"] is True
+        assert settings["sandbox"]["network"]["allowedDomains"] == ["api.example.com"]
+        assert settings["hooks"]["PreToolUse"]
+        assert options.env["PARROT_SDD_SANDBOX_BACKEND"] == "claude-native"
+        assert "PARROT_SDD_CACHE_DIR" in options.env
+
+    def test_backend_env_overrides_inherited_value(self, dispatcher, linked_worktree, monkeypatch):
+        monkeypatch.setenv("PARROT_SDD_SANDBOX_BACKEND", "bubblewrap")
+
+        options = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
+        assert options.env["PARROT_SDD_SANDBOX_BACKEND"] == "claude-native"
+
+    def test_cached_auth_env_not_mutated(self, dispatcher, linked_worktree, monkeypatch):
+        dispatcher._cached_dispatch_env = {"AUTH": "cached"}
+
+        first = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+        second = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
+        assert dispatcher._cached_dispatch_env == {"AUTH": "cached"}
+        assert first.env["AUTH"] == second.env["AUTH"] == "cached"
+        assert first.env["PARROT_SDD_CACHE_DIR"] != second.env["PARROT_SDD_CACHE_DIR"]
+
+    def test_primary_checkout_refused_even_with_waiver(self, dispatcher, linked_worktree):
+        primary_checkout = linked_worktree.parents[2]
+        profile = ClaudeCodeDispatchProfile(allow_project_root_cwd=True)
+
+        with pytest.raises(DispatchExecutionError, match="primary checkout"):
+            dispatcher._resolve_run_options(profile, str(primary_checkout))
+
+    def test_non_sandboxed_profiles_unchanged(self, dispatcher, _patch_worktree_base):
+        for subagent in ("sdd-qa", "sdd-planner", None):
+            options = dispatcher._resolve_run_options(
+                ClaudeCodeDispatchProfile(subagent=subagent), str(_patch_worktree_base)
+            )
+            assert options.extra_args is None
+            assert options.env == (dispatcher._resolve_dispatch_env() or None)
+
+    def test_final_cli_argv_carries_settings(self, dispatcher, linked_worktree):
+        sdk_types = pytest.importorskip("claude_agent_sdk.types")
+        transport_mod = pytest.importorskip("claude_agent_sdk._internal.transport.subprocess_cli")
+        options = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+        sdk_options = sdk_types.ClaudeAgentOptions(
+            cli_path="/bin/true",
+            cwd=str(linked_worktree),
+            extra_args=options.extra_args,
+        )
+
+        argv = transport_mod.SubprocessCLITransport(prompt="x", options=sdk_options)._build_command()
+
+        settings_index = argv.index("--settings")
+        settings = json.loads(argv[settings_index + 1])
+        assert settings["sandbox"]["enabled"] is True
+        assert settings["hooks"]["PreToolUse"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_removes_owned_cache_directory(self, dispatcher, linked_worktree, monkeypatch, tmp_path):
+        scratch_root = tmp_path / "claude-scratch"
+        monkeypatch.setattr("parrot.flows.dev_loop.worktree_environment.CLAUDE_SCRATCH_ROOT", scratch_root)
+
+        class _CacheWritingClient:
+            async def stream_messages(self, prompt: str, *, run_options: Any):
+                Path(run_options.env["PARROT_SDD_CACHE_DIR"]).mkdir(parents=True)
+                yield _AssistantMessage(content=[_TextBlock(_make_research_payload())])
+                yield _ResultMessage(success=True)
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+            lambda *args, **kwargs: _CacheWritingClient(),
+        )
+
+        result = await dispatcher.dispatch(
+            brief=ResearchOutput.model_validate_json(_make_research_payload()),
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="development",
+            cwd=str(linked_worktree),
+        )
+
+        assert isinstance(result, ResearchOutput)
+        assert not list((scratch_root / "parrot-sdd-cache").iterdir())
