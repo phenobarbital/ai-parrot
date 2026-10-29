@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-29T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-29T23:22:08+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -190,7 +190,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -203,8 +203,9 @@
       "parallelism_notes": "Exclusive: it mutates docs/tools/semantic-layer.md, which packages/ai-parrot-semantic/tests/test_mcp_local.py parses as an API (exactly-one-fence selectors). That test is in the feature's merge-tier validation contract, so any task running concurrently could observe a half-edited doc. It also documents all four examples, so it depends on TASK-4880, TASK-4881, TASK-4882 and TASK-4883, and it rewrites the README that TASK-4877 moved.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4884-semantic-examples-docs.md"
+      "completed_at": "2026-10-29T23:22:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4884-semantic-examples-docs.md",
+      "verification": "verified"
     }
   ]
 }
