@@ -128,3 +128,40 @@ async def test_find_agents_without_a_registry_returns_empty() -> None:
     endpoint.registry = None
 
     assert await RoostToolkit(endpoint).find_agents("summary") == []
+
+
+@pytest.mark.asyncio
+async def test_send_query_outside_the_grant_is_denied() -> None:
+    """A model-chosen receiver outside the caller's grant cannot be queried (AC-12)."""
+    from parrot.roost.carriers.inprocess import InProcessCarrier
+    from parrot.roost.directory import InterAgentGrant, RoostAgentConfig
+    from parrot.roost.endpoint import RoostEndpoint
+    from parrot.roost.gating import GatingDispatcher, HandlerRegistry
+    from parrot.roost.grant import GrantDenied, GrantPolicy
+    from parrot.roost.performatives import CarrierKind
+    from parrot.roost.protocols import ProtocolEngine
+
+    config = RoostAgentConfig(grant=InterAgentGrant(scopes=["hr*"]))
+    engine = ProtocolEngine()
+    endpoint = RoostEndpoint(
+        agent_name="caller",
+        config=config,
+        engine=engine,
+        dispatcher=GatingDispatcher(
+            self_name="caller",
+            config=config,
+            engine=engine,
+            handlers=HandlerRegistry(),
+            grant=GrantPolicy(),
+        ),
+        carriers={CarrierKind.IN_PROCESS: InProcessCarrier()},
+        tool_manager=MagicMock(),
+        permission_context=object(),
+    )
+    toolkit = RoostToolkit(endpoint)
+
+    with pytest.raises(GrantDenied):
+        await toolkit.send("query", "payroll", "how much?")
+
+    assert not endpoint._pending
+    assert engine.state("payroll") is None
