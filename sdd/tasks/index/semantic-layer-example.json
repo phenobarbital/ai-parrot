@@ -45,14 +45,14 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: first task of the feature. Creates examples/agents/semantic/ with git mv and edits test_example_agent.py:21; no other task touches that test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4877-relocate-semantic-example.md"
     },
@@ -63,7 +63,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,7 +72,7 @@
       "parallel": true,
       "parallelism_notes": "Writes into examples/agents/semantic/models{,_ungoverned}/, inside the directory TASK-4877 creates with git mv.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4878-semantic-example-fixtures.md"
     },
@@ -83,7 +83,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -92,7 +92,7 @@
       "parallel": true,
       "parallelism_notes": "build_toolkit loads the models/ fixture TASK-4878 commits, and its pin test asserts the two named connections resolved from those policy files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4879-semantic-example-common.md"
     },
@@ -103,7 +103,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -112,7 +112,7 @@
       "parallel": true,
       "parallelism_notes": "Imports build_warehouse, connection_env, build_toolkit and example_identity from _common.py (TASK-4879). Shares no file with TASK-4881/4882/4883.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4880-llm-metrics-agent.md"
     },
@@ -123,7 +123,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -132,7 +132,7 @@
       "parallel": true,
       "parallelism_notes": "Imports _common.py (TASK-4879) for the models dir. Writes only mcp_local_agent.py and its own pin test; it reads docs/tools/semantic-layer.md but never edits it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4881-mcp-local-agent.md"
     },
@@ -143,7 +143,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -152,7 +152,7 @@
       "parallel": true,
       "parallelism_notes": "Needs build_toolkit/example_identity from _common.py (TASK-4879) and reads the masks:/saved_queries: blocks TASK-4878 commits, reached transitively through TASK-4879.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4882-masked-policy-agent.md"
     },
@@ -163,7 +163,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -172,7 +172,7 @@
       "parallel": true,
       "parallelism_notes": "Needs MODELS_UNGOVERNED_DIR, build_dim_warehouse and the two-argument connection_env from _common.py (TASK-4879); the ungoverned fixture it compiles comes from TASK-4878 transitively.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4883-governed-joins-agent.md"
     },
@@ -183,7 +183,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -195,7 +195,7 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: it mutates docs/tools/semantic-layer.md, which packages/ai-parrot-semantic/tests/test_mcp_local.py parses as an API (exactly-one-fence selectors). That test is in the feature's merge-tier validation contract, so any task running concurrently could observe a half-edited doc. It also documents all four examples, so it depends on TASK-4880, TASK-4881, TASK-4882 and TASK-4883, and it rewrites the README that TASK-4877 moved.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-29T22:47:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4884-semantic-examples-docs.md"
     }
