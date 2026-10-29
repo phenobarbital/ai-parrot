@@ -249,8 +249,8 @@ See the blueprint test (offline only).
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 266s · Tokens: n/a (attempt da07d5c41bdd45bf9191acd5341eb088).
+Review fix 428df256b: real-LLM path called ask() on an unopened client and had no per-provider error capture (feedback pattern unexercised-optional-path).
+PARTIAL: offline gate PASS for all 4 formats (3 schemas each, zero violations); amendment = "no wording change". Live: Anthropic PASS, Google PASS; OpenAI and Groq FAIL with 400s on the clients' default request params/model (max_tokens vs max_completion_tokens; Groq default model id rejected) — not tool-schema rejections; re-run those two with explicit valid models.
+Note: task contract said Groq forbids additionalProperties, but ToolSchemaAdapter._clean_for_groq emits additionalProperties:false; the spike validates actual adapter behaviour (documented in report).
+Validation: PARROT_SPIKE=1 test 2 passed; merge-tier only red on the 4 pre-existing repl_worker sandbox failures.

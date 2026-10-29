@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-26T00:59:23.268174+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-29T23:05:56+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -117,7 +117,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -128,8 +128,9 @@
       "parallelism_notes": "imports compile_capability from TASK-4742 (parrot/interagent/compiler.py); the parrot.squawk.contract.compiler mention is in Does NOT Exist (TASK-4743's package), not a use",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4733-g3-contract-tool-defs-spike.md"
+      "completed_at": "2026-10-29T23:05:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4733-g3-contract-tool-defs-spike.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4734",
