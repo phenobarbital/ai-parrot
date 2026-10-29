@@ -572,10 +572,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker via coder seat
+**Date**: 2026-10-29
+**Notes**: Native sonnet delivery after fixture fix (analyst usage grants widened, user-approved). compile_ungoverned_join binds admin identity because the ungoverned twin policy grants only admin. 10 tests passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -169,7 +169,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -179,8 +179,9 @@
       "parallelism_notes": "Needs MODELS_UNGOVERNED_DIR, build_dim_warehouse and the two-argument connection_env from _common.py (TASK-4879); the ungoverned fixture it compiles comes from TASK-4878 transitively.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4883-governed-joins-agent.md"
+      "completed_at": "2026-10-29T23:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4883-governed-joins-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4884",
