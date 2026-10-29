@@ -2,7 +2,7 @@
 
 **Feature**: BRIEF-3e191d955d4c — Gate POST /forms/export with RBAC and per-form membership parity
 **Spec**: `sdd/briefs/forms-export-rbac-gate.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -349,7 +349,14 @@ error status).
 - `pytest packages/parrot-formdesigner/tests/unit/api/test_export_forms.py -q`
 - `pytest packages/parrot-formdesigner/tests/unit/services/test_a2ui_export.py -q`
 - `pytest packages/parrot-formdesigner/tests/unit/test_api_feat302.py -q`
-- `ruff check packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py packages/parrot-formdesigner/src/parrot_formdesigner/services/a2ui_export.py`
+
+Lint is an acceptance criterion, not a validation command — `check_task_graph`
+rejects a non-pytest entry in this list as invisible to `select_tests.py`:
+
+```bash
+ruff check packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py \
+           packages/parrot-formdesigner/src/parrot_formdesigner/services/a2ui_export.py
+```
 
 Run pytest with `PYTHONPATH=packages/parrot-formdesigner/src` from the worktree
 root — the shared `.venv` is editable-installed against the MAIN checkout, so a
@@ -439,10 +446,42 @@ async def test_export_forms_skips_forms_failing_membership(handler, request_stub
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: ai-parrot-11 [1038e5] (Claude Opus 5)
+**Date**: 2026-10-29
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+All six contract anchors re-verified unchanged before implementation.
 
-**Deviations from spec**: none | describe if any
+- `services/a2ui_export.py` — `Callable` added to the `collections.abc` import;
+  `export_tenant` gained keyword-only `is_visible: Callable[[FormSchema], bool]
+  | None = None`, documented in `Args:`, applied as the first filter in the loop
+  so a skipped form never reaches `_render`.
+- `api/handlers.py` — `await self._rbac_shadow_gate(request, "export_forms")`
+  added directly after `tenant = self._get_tenant(request)`; `_is_visible`
+  predicate added and passed to `export_tenant`.
+
+AC1-AC6 all met. 18 tests pass in the two task modules (10 before), 38 more in
+`test_api_feat302.py`, `test_cli.py` and `test_a2ui_dialect_roundtrip.py`.
+`ruff check` and `black --check` clean on all four files.
+
+**One finding worth recording.** Adding the predicate initially broke three
+existing API tests. The cause was in the test double, not the change: `_post`
+built a `MagicMock(spec=web.Request)` with no `session`, so `_authorize` saw no
+programs and rejected every private form. That double modelled an *unauthorized*
+caller — a request that cannot reach `export_forms`' body in production, because
+`requires_tenant` would have raised first. `_post` was therefore split into
+`_request(body, *, programs=("navigator",), superuser=False)` + `_post`, so the
+default models a tenant member and the parity tests opt out explicitly with
+`programs=()`. No production behaviour was changed to make a test pass.
+
+Two tests beyond the task's scaffold were added where they were cheap and
+load-bearing: `test_export_forms_gate_runs_before_body_validation` (a 400 body
+must not skip the gate) and `test_export_tenant_predicate_runs_before_rendering`
+(a skipped form is never rendered). Also
+`test_export_forms_superuser_sees_every_form`, since `_authorize` exempts
+superusers and that branch was otherwise uncovered here.
+
+**Deviations from spec**: none. The out-of-scope items were left alone —
+no `_rbac_require`, no body-size/413 check (`issue:bf978b6bae8a`), no CLI
+changes (`issue:e963c78a05de`), no change to `published_only`, the route's auth
+mode, or `is_public` semantics.
