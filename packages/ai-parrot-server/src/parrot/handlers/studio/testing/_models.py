@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 
 SESSION_PREFIX = "_studio_test:"
 
+#: A conversation the client names (``session_id`` on ``test/ask`` and on the test ``DELETE``).
+CLIENT_SESSION_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+
 
 class _ServerManagedDepsError(Exception):
     """Raised when a tool's constructor requires deps this endpoint can't supply."""
@@ -33,11 +36,16 @@ class TestAskRequest(BaseModel):
         key_source: ``"server"`` or ``"byok"`` (PA-2). Required (``409 key_source_required``) when BOTH a server
             key and a stored personal key exist for the provider; a source that does not exist is
             ``422 key_source_unavailable``. An explicit source wins over ``use_byok``.
+        session_id: Optional conversation the client names (``CLIENT_SESSION_PATTERN``). Each one keeps its own
+            history, so a client can hold several conversations with one agent and come back to any of them while
+            the conversation backend keeps it. Without it, the caller's one test session (``studio_test:``) is used.
+            Database mode only; the legacy path ignores it.
     """
 
     query: str
     use_byok: bool = True
     key_source: Literal["server", "byok"] | None = None
+    session_id: str | None = Field(default=None, pattern=CLIENT_SESSION_PATTERN)
 
 
 class ToolExecuteRequest(BaseModel):
