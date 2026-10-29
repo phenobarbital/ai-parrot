@@ -202,3 +202,24 @@ def test_uninstall_keeps_credentials(fake_managed_home: Path, monkeypatch) -> No
     path, _ = components.ensure_credentials_file()
     components.uninstall_runtime(yes=True)
     assert path.read_text(encoding="utf-8") == components.CREDENTIALS_TEMPLATE
+
+
+def test_navconfig_ini_created_empty(fake_managed_home: Path) -> None:
+    """Owner decision: an empty etc/config.ini under PARROT_HOME silences navconfig's missing-INI warning."""
+    path, created = components.ensure_navconfig_ini()
+    assert created and path == fake_managed_home / "etc" / "config.ini"
+    assert path.read_bytes() == b""
+
+
+def test_navconfig_ini_never_overwritten(fake_managed_home: Path) -> None:
+    existing = fake_managed_home / "etc" / "config.ini"
+    existing.parent.mkdir()
+    existing.write_text("[general]\nDEBUG = true\n", encoding="utf-8")
+    assert components.ensure_navconfig_ini() == (existing, False)
+    assert existing.read_text(encoding="utf-8") == "[general]\nDEBUG = true\n"
+
+
+def test_uninstall_keeps_navconfig_ini(fake_managed_home: Path) -> None:
+    path, _ = components.ensure_navconfig_ini()
+    components.uninstall_runtime(yes=True)
+    assert path.is_file()

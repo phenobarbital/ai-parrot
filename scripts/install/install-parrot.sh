@@ -160,7 +160,8 @@ print_plan() {  # C14a — first output of global mode; no side effects; printed
 This installer will download uv $UV_VERSION from $1 and verify it against $1.sha256,
 create $PARROT_HOME/{bin,venv,python} (a uv-managed Python $PYTHON and a venv with $2),
 and add $PARROT_HOME/bin to PATH via a marker block in your shell profile.
-If missing, it writes a commented-out credentials file $PARROT_HOME/env/.env (mode 0600).
+If missing, it writes a commented-out credentials file $PARROT_HOME/env/.env (mode 0600)
+and an empty navconfig $PARROT_HOME/etc/config.ini.
 A uv already on your PATH is never used or modified. Existing $PARROT_HOME data is never touched.
 Prefer not to pipe a download into bash? Fetch $RAW_BASE/install-parrot.sh and
 $RAW_BASE/SHA256SUMS, run 'sha256sum -c --ignore-missing SHA256SUMS', read the script, then run it.
@@ -286,8 +287,9 @@ global_install() {
   run "remove the scratch download dir" rm -rf "$dl"
   # The base runtime is verified: a failing component must never roll it back (warn, then exit non-zero).
   trap - EXIT
-  # Credentials live in navconfig's env/.env under PARROT_HOME (user data: never overwritten, kept by uninstall).
-  if ! run "create the credentials file under $PARROT_HOME/env (mode 0600, kept if present)" \
+  # navconfig's env/.env (credentials) and an empty etc/config.ini under PARROT_HOME (user data: never overwritten,
+  # kept by uninstall).
+  if ! run "create the credentials file and etc/config.ini under $PARROT_HOME (kept if present)" \
       env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self env --init; then
     echo "warning: no credentials file was created under $PARROT_HOME/env (needs an ai-parrot release with" \
       "'parrot self env --init'; after 'parrot self update', run 'parrot self env --init')" >&2

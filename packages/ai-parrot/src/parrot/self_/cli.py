@@ -86,12 +86,15 @@ def doctor(sdd_scope: bool, runtime_only: bool) -> None:
 @self_group.command()
 @click.option(
     "--init", "init_credentials", is_flag=True, default=False,
-    help="Create the managed runtime's credentials file (~/.parrot/env/.env, mode 0600) if missing, then exit.",
+    help=(
+        "Create the managed runtime's navconfig files if missing, then exit: the credentials file "
+        "(~/.parrot/env/.env, owner-only) and an empty ~/.parrot/etc/config.ini."
+    ),
 )
 def env(init_credentials: bool) -> None:
     """Print the venv the launcher resolves, the rule that picked it, and versions."""
     from parrot.launcher import resolve_venv  # TASK-4071
-    from parrot.self_.components import ensure_credentials_file, managed_venv
+    from parrot.self_.components import ensure_credentials_file, ensure_navconfig_ini, managed_venv
     from parrot.self_.doctor import installed_version
 
     if init_credentials:
@@ -100,6 +103,11 @@ def env(init_credentials: bool) -> None:
         except (OSError, ValueError) as exc:
             raise click.ClickException(f"could not create the credentials file: {exc}") from exc
         click.echo(f"{'created' if created else 'kept existing'} credentials file: {path}")
+        try:
+            ini, ini_created = ensure_navconfig_ini()
+        except OSError as exc:
+            raise click.ClickException(f"could not create the navconfig INI file: {exc}") from exc
+        click.echo(f"{'created' if ini_created else 'kept existing'} navconfig INI file: {ini}")
         return
     venv, rule = resolve_venv("parrot", argv=sys.argv[1:], env=os.environ, cwd=Path.cwd())
     click.echo(f"venv: {venv}")

@@ -54,8 +54,11 @@ def test_self_env_init_creates_then_keeps(tmp_path: Path, monkeypatch) -> None:
     assert first.exit_code == 0, first.output
     target = tmp_path / "home" / "env" / ".env"
     assert f"created credentials file: {target}" in first.output and target.is_file()
+    ini = tmp_path / "home" / "etc" / "config.ini"
+    assert f"created navconfig INI file: {ini}" in first.output and ini.read_bytes() == b""
     second = CliRunner().invoke(cli, ["self", "env", "--init"])
     assert second.exit_code == 0 and f"kept existing credentials file: {target}" in second.output
+    assert f"kept existing navconfig INI file: {ini}" in second.output
 
 
 def test_self_env_init_reports_errors(tmp_path: Path, monkeypatch) -> None:

@@ -119,6 +119,38 @@ def ensure_credentials_file() -> tuple[Path, bool]:
     return path, True
 
 
+def navconfig_ini() -> Path:
+    """Return navconfig's INI file for the managed runtime: ``parrot_home()/'etc'/'config.ini'``.
+
+    navconfig reads ``CONFIG_FILE`` (default ``etc/config.ini``) relative to its root and falls back to
+    ``etc/config.ini`` when that file is missing; without it every bootstrap logs "INI file doesn't exists".
+    """
+    return parrot_home() / "etc" / "config.ini"
+
+
+def ensure_navconfig_ini() -> tuple[Path, bool]:
+    """Create an empty ``navconfig_ini()`` unless it already exists (owner decision, FEAT-633).
+
+    An empty INI silences navconfig's missing-file warning and changes no setting. An existing file (or symlink)
+    is never touched. It holds settings, not secrets, so it gets the default permissions.
+
+    Returns:
+        ``(path, created)``.
+
+    Raises:
+        OSError: the file or its directory cannot be created.
+    """
+    path = navconfig_ini()
+    if path.is_symlink() or path.exists():
+        return path, False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+    except FileExistsError:
+        return path, False
+    return path, True
+
+
 def bundled_uv() -> Path:
     """Return the pinned uv placed by the ``--global`` bootstrap.
 
