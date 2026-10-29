@@ -1,4 +1,5 @@
 """G1 regression — descriptor path stays under 250 heuristic tokens (opt-in)."""
+
 from __future__ import annotations
 
 import importlib.util

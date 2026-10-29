@@ -1,4 +1,5 @@
 """G1 — token accounting: descriptor path vs inline JSON for a 10k-row frame (FEAT-746)."""
+
 from __future__ import annotations
 
 import json
