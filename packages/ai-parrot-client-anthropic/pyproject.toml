@@ -14,8 +14,10 @@ authors = [
 ]
 dependencies = [
     "ai-parrot>=1.2.6",
-    "anthropic[aiohttp,aws]>=1.0.0,<2.0.0",
-    "claude-agent-sdk>=0.1.68",
+    # 2.x = API version 2026-10-21 (no temperature/top_p/top_k; Bedrock
+    # backend needs Claude 4.7+). See AnthropicClient._sanitize_payload_for_model.
+    "anthropic[aiohttp,aws]>=2.3.0,<3.0.0",
+    "claude-agent-sdk>=0.2.174",
     # NOT declared here: `ai-parrot-client-amazon` — AnthropicClient's
     # `backend="bedrock"` mode lazily imports
     # `parrot.clients.amazon.models.translate` (backends.py) only when

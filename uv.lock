@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux'",
@@ -1118,7 +1118,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1133,7 +1133,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1144,13 +1144,13 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "anthropic", extras = ["aiohttp", "aws"], specifier = ">=1.0.0,<2.0.0" },
-    { name = "claude-agent-sdk", specifier = ">=0.1.68" },
+    { name = "anthropic", extras = ["aiohttp", "aws"], specifier = ">=2.3.0,<3.0.0" },
+    { name = "claude-agent-sdk", specifier = ">=0.2.174" },
 ]
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1165,7 +1165,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1180,7 +1180,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1195,7 +1195,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1210,7 +1210,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1225,7 +1225,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1236,7 +1236,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1247,7 +1247,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1258,7 +1258,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1269,7 +1269,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1280,7 +1280,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1306,7 +1306,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1317,7 +1317,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1332,7 +1332,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1796,7 +1796,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.4.5"
+version = "0.4.6"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -3152,7 +3152,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "1.15.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3164,9 +3164,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/37/5a2a4316df8babd28f096477a707cd75f240b4264c97fb128c32375105d6/anthropic-1.15.0.tar.gz", hash = "sha256:90caa9df83e2fc8bddb4ddeb83b7191bce255f635c03eae055deec521741df08", size = 1726101, upload-time = "2026-10-15T19:45:34.635Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/ba/4c91947e0d0062d66d371db371597287153f7685fbed512d3294d0cde3c7/anthropic-2.3.0.tar.gz", hash = "sha256:edfdea1e3fa7b3ce25df1511953408b2f03bfa61eb6f6268f766101a9e18ad53", size = 1869656, upload-time = "2026-10-23T23:18:47.649Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/65/54437e7edea49a3be9ef56f6b5965999bfdc52b9dadc9b448124ca51a594/anthropic-1.15.0-py3-none-any.whl", hash = "sha256:10189a7993c5c71a0a2d4bb80020ca6a2fd27679f51e627405da37251d15ff49", size = 2047755, upload-time = "2026-10-15T19:45:32.951Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/29/eb3558ab6bf252a07ac41c76ac5b0ea24a0aa0c23f87a40aaf31a5f8dba4/anthropic-2.3.0-py3-none-any.whl", hash = "sha256:aa6a3984f9276f307933d42dc6f58b6efc821a5ecafbc8d1bb5993a066767622", size = 2216980, upload-time = "2026-10-23T23:18:45.779Z" },
 ]
 
 [package.optional-dependencies]
@@ -4524,7 +4524,7 @@ wheels = [
 
 [[package]]
 name = "claude-agent-sdk"
-version = "0.2.168"
+version = "0.2.174"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -4532,10 +4532,10 @@ dependencies = [
     { name = "mcp" },
     { name = "sniffio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9a/ee/31e159daf956f0c5503eac67d02743da692c0999fef046cdde3cc52702b9/claude_agent_sdk-0.2.168.tar.gz", hash = "sha256:80388054a09c137d76fc29caa6e46bc90d2ae2ef09fac5ee1c38fc36d2762fda", size = 371591, upload-time = "2026-10-15T20:20:43.683Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/e2/bdfaa2332b92492a8c056b7650348280e3394d1993879ea2656d95c36270/claude_agent_sdk-0.2.174.tar.gz", hash = "sha256:2380f28ad19c9f95d2de01d75ad4eeffa1ec2008cb4e35e5bc569de6279d85f9", size = 398744, upload-time = "2026-10-24T00:21:40.502Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/5a/26e587846f14f67f3353f96811b86931263a9c7e264d17a691d9577e4da5/claude_agent_sdk-0.2.168-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:77ae66b10edfd07b6ea3dec2af106ad47a9d616f8eb52d4f9b385e1b00bb2a27", size = 114030032, upload-time = "2026-10-15T20:20:56.813Z" },
-    { url = "https://files.pythonhosted.org/packages/00/03/09d347dcddbbab4becd41fef3a811967eddf24135b2d62dac9e321c81537/claude_agent_sdk-0.2.168-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:be197be92549909ec62a2cee04c27f4b0a38c80f723735538a3efc352507f81d", size = 114443626, upload-time = "2026-10-15T20:21:01.794Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/f1/58aa5f772dd370fd764948641a4a87b1e7661adb0772d73a219276f59514/claude_agent_sdk-0.2.174-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:0d46be4e858418227d1d455c7787335f4bed073899f48b657c01cc210683803f", size = 125627582, upload-time = "2026-10-24T00:21:54.903Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/f6/6f63561fbb79d9d2bd26219dffe1458c99b59ee5ae78bb9dac808c22d546/claude_agent_sdk-0.2.174-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:728592effdfe63e96fbad7ba3b2ddf642e3aad344e73692b429898fbfcb33f12", size = 125972029, upload-time = "2026-10-24T00:21:59.907Z" },
 ]
 
 [[package]]
@@ -9680,7 +9680,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.2.5"
+version = "1.2.6"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
