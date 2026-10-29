@@ -522,10 +522,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker via coder seat
+**Date**: 2026-10-29
+**Notes**: Delivered by codex seat, merged by engine; task validation tests green (17 passed across 4880-4882).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

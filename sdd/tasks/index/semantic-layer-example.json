@@ -106,7 +106,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -116,8 +116,9 @@
       "parallelism_notes": "Imports build_warehouse, connection_env, build_toolkit and example_identity from _common.py (TASK-4879). Shares no file with TASK-4881/4882/4883.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4880-llm-metrics-agent.md"
+      "completed_at": "2026-10-29T23:15:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4880-llm-metrics-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4881",
@@ -126,7 +127,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -136,8 +137,9 @@
       "parallelism_notes": "Imports _common.py (TASK-4879) for the models dir. Writes only mcp_local_agent.py and its own pin test; it reads docs/tools/semantic-layer.md but never edits it.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4881-mcp-local-agent.md"
+      "completed_at": "2026-10-29T23:15:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4881-mcp-local-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4882",
@@ -146,7 +148,7 @@
       "feature_id": "FEAT-769",
       "feature": "semantic-layer-example",
       "spec": "sdd/specs/semantic-layer-example.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -156,8 +158,9 @@
       "parallelism_notes": "Needs build_toolkit/example_identity from _common.py (TASK-4879) and reads the masks:/saved_queries: blocks TASK-4878 commits, reached transitively through TASK-4879.",
       "assigned_to": null,
       "started_at": "2026-10-29T22:47:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4882-masked-policy-agent.md"
+      "completed_at": "2026-10-29T23:15:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4882-masked-policy-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4883",
