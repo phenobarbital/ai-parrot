@@ -87,7 +87,7 @@ Findings:
 A human ran these outside the sandbox on Linux with Claude Code 2.1.312, Codex CLI 0.163.0 and Antigravity CLI
 (`agy`) 1.4.9. The lab was the same layout as above: a throwaway repo `repo/`, a linked worktree `wt/`, and
 `repo/sub/deep`. A launch marker was written before each host start and matched to the probe records by time and
-label. Raw data is 15 launches and 24 probe starts. Every host config was restored afterwards: Codex and Gemini are
+label. Raw data is 18 launches and 27 probe starts, including the Antigravity re-run. Every host config was restored afterwards: Codex and Gemini are
 byte-identical to their backups, and `claude mcp list` / `codex mcp list` / `agy mcp list` show no probe.
 
 - **Claude Code user scope:** `claude mcp add --scope user … -e 'PARROT_PROJECT=${PWD}'`, then `claude -p`.
@@ -96,8 +96,9 @@ byte-identical to their backups, and `claude mcp list` / `codex mcp list` / `agy
 - **Codex user scope:** `codex mcp add … --env 'PARROT_PROJECT=${PWD}'`, then `codex exec`.
 - **Antigravity user-global:** `agy mcp add -e 'PARROT_PROJECT=${workspaceFolder}' …`, then `agy --print`. This writes
   `~/.gemini/config/mcp_config.json`.
-  - Every `agy` run exited 1 on an account eligibility check ("account is not eligible for Antigravity").
-  - The MCP servers had already started before that check, so the cwd/env rows below are real, but no agent session ran.
+  - The first pass exited 1 on an account eligibility check, after the MCP servers had already started.
+  - It was re-run with an eligible account the same day: all three launches exited 0 and the agent answered.
+  - Both passes recorded the same cwd and env (3 + 3 probe starts).
   - The Antigravity IDE (`~/.gemini/antigravity/mcp_config.json`) was not exercised.
 
 The probe records only `CLAUDE_PROJECT_DIR`, `VIRTUAL_ENV`, `PARROT_PROJECT`, `PWD`, `CODEX_HOME` and `GEMINI_*`.
@@ -114,9 +115,9 @@ The probe records only `CLAUDE_PROJECT_DIR`, `VIRTUAL_ENV`, `PARROT_PROJECT`, `P
 | Codex | user | repo root | repo | absent | absent | `${PWD}`, **literal** | absent | project server also started |
 | Codex | user | linked worktree | wt | absent | absent | `${PWD}`, **literal** | absent | project server also started |
 | Codex | user | `repo/sub/deep` | **repo/sub/deep** | absent | absent | `${PWD}`, **literal** | absent | project server also started |
-| Antigravity CLI | user-global | repo root | repo | absent | repo | `${workspaceFolder}`, **literal** | absent | eligibility failure after server start |
-| Antigravity CLI | user-global | linked worktree | wt | absent | wt | `${workspaceFolder}`, **literal** | absent | same |
-| Antigravity CLI | user-global | `repo/sub/deep` | **repo/sub/deep** | absent | repo/sub/deep | `${workspaceFolder}`, **literal** | absent | same |
+| Antigravity CLI | user-global | repo root | repo | absent | repo | `${workspaceFolder}`, **literal** | absent | session exit 0 |
+| Antigravity CLI | user-global | linked worktree | wt | absent | wt | `${workspaceFolder}`, **literal** | absent | session exit 0 |
+| Antigravity CLI | user-global | `repo/sub/deep` | **repo/sub/deep** | absent | repo/sub/deep | `${workspaceFolder}`, **literal** | absent | session exit 0 |
 
 Findings:
 4. **All three hosts start the server in the launch directory.** No host moves it to the project root, so the Claude
@@ -144,7 +145,7 @@ Portable rule for all three hosts: **omit `cwd` and `PARROT_PROJECT`; consumers 
 the Claude, Codex and Gemini installers already emit.
 - Claude Code 2.1.312: project and user scope.
 - Codex CLI 0.163.0: project and user scope.
-- Antigravity CLI 1.4.9: user-global; agent session blocked by account eligibility, server spawn verified.
+- Antigravity CLI 1.4.9: user-global.
 
 No installer change is needed beyond the R8 cwd walk already on this branch. Re-check if a host adds variable
 expansion, or a project-root cwd, in a later release.
