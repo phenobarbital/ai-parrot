@@ -2,7 +2,7 @@
 
 **Feature**: issue:6756c929a450 — SDD sandbox bypass: a competing PreToolUse updatedInput replaces the bwrap wrapper
 **Spec**: `sdd/briefs/sdd-sandbox-user-hook-isolation.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -67,9 +67,7 @@ our own bwrap wrapper (nested bwrap) is undocumented. Decision: research only.
 
 ## Validation Commands
 
-```bash
-test -s sdd/state/6756c929a450/native-sandbox-research.md
-```
+- `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py -q`
 
 ## Agent Instructions
 
@@ -77,4 +75,7 @@ Experiments only. Never run anything that writes outside the throwaway worktree.
 
 ## Completion Note
 
-_(fill on close)_
+Verified. Report: `sdd/state/6756c929a450/native-sandbox-research.md`. Verdict: adopt-with-limits.
+A rewritten command stays inside the native sandbox, and the unsandboxed retry is refused.
+Our bwrap cannot nest inside it (ENOSPC). On this host the sandbox needs `allowAllUnixSockets` because
+AppArmor's userns restriction blocks the seccomp helper. Follow-up opened: issue:e57a19d91778.

@@ -2,7 +2,7 @@
 
 **Feature**: issue:6756c929a450 — SDD sandbox bypass: a competing PreToolUse updatedInput replaces the bwrap wrapper
 **Spec**: `sdd/briefs/sdd-sandbox-user-hook-isolation.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -89,9 +89,7 @@ Decision (brief § Decisions): docs + launcher. Accepted cost: user permissions,
 
 ## Validation Commands
 
-```bash
-pytest tests/sdd/test_launch_worker.py -q
-```
+- `pytest tests/sdd/test_launch_worker.py -q`
 
 ## Agent Instructions
 
@@ -99,4 +97,16 @@ Read the brief first. Implement exactly the scope; commit code only.
 
 ## Completion Note
 
-_(fill on close)_
+Verified. `scripts/sdd/launch_worker.sh` (+ `tests/sdd/test_launch_worker.py`, 6 passed).
+Launch lines updated in CLAUDE.md, docs/sdd/GUIDE.md, docs/sdd/PLATFORM.md, /sdd-brief, /sdd-task and
+its `.agent/workflows` twin. The sdd-autopilot agent (4 identical-edit copies incl. `_subagent_data`)
+shells out to `claude --agent sdd-worker -p ...` itself, so those calls got the explicit
+`--setting-sources project,local` flag. That launch path was not listed in the task but is a real exposure.
+Rule twins (`.claude/rules/worktree-management.md` §4, `.agent/skills/worktree-management/SKILL.md`) updated after merging
+origin/dev, which brought in PR #1858's wording. Contract/parity tests: 248 passed, 1 skipped.
+Manual check: `scripts/sdd/launch_worker.sh --model haiku -p ... --output-format stream-json` from
+this worktree. The init message listed only builtin plugins (no user plugins such as GitKraken).
+`touch /home/jesuslara/proyectos/ai-parrot/.probe_6756c929a450` returned "Sistema de archivos de solo
+lectura" (read-only filesystem) → READONLY, so the Bash call ran under the agent-file bwrap hook, and
+no file was created. Not covered: `claude --agent sdd-autopilot` itself still loads user settings; it
+is an orchestrator that shells out, not a sandboxed seat.

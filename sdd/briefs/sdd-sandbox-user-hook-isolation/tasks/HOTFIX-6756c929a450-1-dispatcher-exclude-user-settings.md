@@ -2,7 +2,7 @@
 
 **Feature**: issue:6756c929a450 — SDD sandbox bypass: a competing PreToolUse updatedInput replaces the bwrap wrapper
 **Spec**: `sdd/briefs/sdd-sandbox-user-hook-isolation.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -109,10 +109,8 @@ Test fixtures already in `test_dispatcher.py`: `dispatcher`, `_patch_worktree_ba
 
 ## Validation Commands
 
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py -q
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_models.py -q
-```
+- `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py -q`
+- `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_models.py -q`
 
 ## Agent Instructions
 
@@ -120,4 +118,10 @@ Read the brief first. Implement exactly the scope; commit code only.
 
 ## Completion Note
 
-_(fill on close)_
+Verified. `_effective_setting_sources()` + `_SANDBOXED_SUBAGENTS` in `dispatchers/claude.py`:
+sdd-worker/sdd-coder always forward an explicit list without `user` (empty → `["project"]`, warning
+logged when `user` is dropped); other subagents unchanged. 12 new tests in `test_dispatcher.py`
+(`TestSandboxedSettingSources`), including one that builds the real SDK CLI argv
+(`SubprocessCLITransport._build_command()`, no process spawned) and asserts `--setting-sources=project`.
+`test_dispatcher.py` + `test_models.py`: 64 passed. Ruff: 4 pre-existing B023 errors in the same file
+(loop variable `usage`, present on origin/dev before this change), none from this task.
