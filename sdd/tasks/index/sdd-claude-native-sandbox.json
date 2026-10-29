@@ -85,7 +85,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "imports native_task_cwd/native_command_environment/validate_native_write_path from TASK-4885 (native_claude_sandbox.py); modifies test_worktree_environment.py after TASK-4886 migrated a test in it",
       "assigned_to": null,
       "started_at": "2026-10-29T22:46:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4887-native-hook-backend.md"
+      "completed_at": "2026-10-29T23:07:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4887-native-hook-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4888",
