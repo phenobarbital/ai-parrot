@@ -6,11 +6,15 @@ Standard library only: the SDD PreToolUse hook imports this module as a script s
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 from pathlib import Path
 import re
 import shlex
+import shutil
+import sys
 from typing import Any, Sequence
+import uuid
 
 if __package__:
     from . import worktree_environment as _we
@@ -284,3 +288,175 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
     env["XDG_CACHE_HOME"] = str(cache_root / "xdg")
     env["UV_CACHE_DIR"] = str(cache_root / "uv")
     return env
+
+
+_REJECTED_OPTIONS = ("--settings", "--add-dir")
+_DEFAULT_MODEL = "sonnet"
+
+
+def _option_value(argv: Sequence[str], index: int, option: str) -> tuple[str, int]:
+    """Return a split option value and the index after it.
+
+    Args:
+        argv: Launcher arguments.
+        index: Index of ``option``.
+        option: Option whose value is required.
+
+    Returns:
+        The option value and next unconsumed argument index.
+
+    Raises:
+        ValueError: If the option has no value.
+    """
+    if index + 1 >= len(argv) or not argv[index + 1] or argv[index + 1].startswith("--"):
+        raise ValueError(f"{option} requires a value")
+    return argv[index + 1], index + 2
+
+
+def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], bool, bool]:
+    """Validate launcher arguments and separate policy-only domain grants.
+
+    Args:
+        argv: Arguments intended for Claude Code.
+
+    Returns:
+        Allowed domains, forwarded arguments, model presence and setting-source presence.
+
+    Raises:
+        ValueError: If an argument attempts to override launcher policy.
+    """
+    domains: list[str] = []
+    forwarded: list[str] = []
+    has_model = False
+    has_sources = False
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--":
+            forwarded.extend(argv[index:])
+            break
+        if argument == "--sandbox-allow-domain":
+            domain, index = _option_value(argv, index, argument)
+            domains.append(domain)
+            continue
+        if argument.startswith("--sandbox-allow-domain="):
+            domain = argument.partition("=")[2]
+            if not domain:
+                raise ValueError("--sandbox-allow-domain requires a value")
+            domains.append(domain)
+            index += 1
+            continue
+        if any(argument == option or argument.startswith(f"{option}=") for option in _REJECTED_OPTIONS):
+            raise ValueError(f"{argument.split('=', 1)[0]} is controlled by the native launcher")
+        if argument == "--agent":
+            agent, index = _option_value(argv, index, argument)
+            if agent != "sdd-worker":
+                raise ValueError("--agent must be sdd-worker")
+            continue
+        if argument.startswith("--agent="):
+            if argument.partition("=")[2] != "sdd-worker":
+                raise ValueError("--agent must be sdd-worker")
+            index += 1
+            continue
+        if argument == "--setting-sources":
+            sources, next_index = _option_value(argv, index, argument)
+            if any(source.strip() == "user" for source in sources.split(",")):
+                raise ValueError("--setting-sources must not include user")
+            has_sources = True
+            forwarded.extend((argument, sources))
+            index = next_index
+            continue
+        if argument.startswith("--setting-sources="):
+            sources = argument.partition("=")[2]
+            if not sources:
+                raise ValueError("--setting-sources requires a value")
+            if any(source.strip() == "user" for source in sources.split(",")):
+                raise ValueError("--setting-sources must not include user")
+            has_sources = True
+        if argument == "--model":
+            model, next_index = _option_value(argv, index, argument)
+            has_model = True
+            forwarded.extend((argument, model))
+            index = next_index
+            continue
+        if argument.startswith("--model="):
+            if not argument.partition("=")[2]:
+                raise ValueError("--model requires a value")
+            has_model = True
+        forwarded.append(argument)
+        index += 1
+    return domains, forwarded, has_model, has_sources
+
+
+def _process_is_alive(pid: int) -> bool:
+    """Return whether a process exists or cannot safely be inspected."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _allocate_session_cache() -> Path:
+    """Remove dead launcher-owned caches and allocate one for this process."""
+    cache_root = _we.claude_scratch_root() / "parrot-sdd-cache"
+    cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for candidate in cache_root.iterdir():
+        owner_file = candidate / "owner.pid"
+        if candidate.is_symlink() or not candidate.is_dir() or not owner_file.is_file():
+            continue
+        try:
+            cache_id = uuid.UUID(candidate.name)
+            owner_pid = int(owner_file.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            continue
+        if cache_id.version != 4 or str(cache_id) != candidate.name:
+            continue
+        if owner_pid > 0 and not _process_is_alive(owner_pid):
+            try:
+                shutil.rmtree(candidate)
+            except FileNotFoundError:
+                pass
+    session_cache = cache_root / str(uuid.uuid4())
+    session_cache.mkdir(mode=0o700)
+    (session_cache / "owner.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return session_cache
+
+
+def launch_worker(argv: Sequence[str]) -> int:
+    """Launch sdd-worker with strict settings; return policy or host errors."""
+    try:
+        domains, forwarded, has_model, has_sources = _parse_launch_arguments(argv)
+        settings = native_sandbox_settings(Path.cwd(), allowed_domains=domains)
+    except ValueError as exc:
+        print(f"launch_worker: {exc}", file=sys.stderr)
+        return 2
+    missing = [name for name in ("claude", "bwrap", "socat") if shutil.which(name) is None]
+    if missing:
+        print(f"launch_worker: missing host prerequisite(s): {', '.join(missing)}", file=sys.stderr)
+        return 1
+    env = dict(os.environ)
+    env[BACKEND_ENV] = BACKEND_NATIVE
+    env[CACHE_DIR_ENV] = str(_allocate_session_cache())
+    command = [shutil.which("claude") or "claude", "--agent", "sdd-worker"]
+    if not has_sources:
+        command += ["--setting-sources", "project,local"]
+    if not has_model:
+        command += ["--model", _DEFAULT_MODEL]
+    command += ["--settings", json.dumps(settings), *forwarded]
+    os.execvpe(command[0], command, env)
+    return 1
+
+
+def main() -> None:
+    """Serve the launch-worker subcommand, forwarding the child exit status."""
+    if len(sys.argv) < 2 or sys.argv[1] != "launch-worker":
+        print("usage: native_claude_sandbox.py launch-worker [args...]", file=sys.stderr)
+        raise SystemExit(2)
+    raise SystemExit(launch_worker(sys.argv[2:]))
+
+
+if __name__ == "__main__":
+    main()
