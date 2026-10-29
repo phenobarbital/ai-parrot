@@ -33,24 +33,37 @@ throughput in MiB/s for both a complete and a cancelled run.
 
 ## Criteria
 
+Measured 2026-10-30 on loopback mTLS (Python 3.12.3, pycapnp 2.2.4, pyarrow 26.0.0),
+`python sdd/state/FEAT-746/spikes/G2-capnp-arrow/spike.py 1500000`:
+
 | Criterion | Result | Evidence |
 |---|---|---|
-| Arrow frames stay within the configured 4 MiB limit | FAIL | The spike uses a 1 MiB operational ceiling and standalone Arrow IPC streams, but the loopback server cannot start in this sandbox. |
-| Cancellation leaves valid partial data | FAIL | `Op.cancel()` and `Sink.done("PARTIAL")` are implemented, but the loopback server cannot start in this sandbox. |
-| mTLS SAN and Hello token are available server-side | FAIL | The server parses the TLS peer certificate's `URI:squawk://external/caller` SAN, but no TLS connection can be made in this sandbox. |
-| pycapnp cooperates with asyncio | FAIL | The server and client are implemented under the active asyncio loop inside `capnp.kj_loop()`, but the loopback listener is denied. |
+| Arrow frames stay within the configured 4 MiB limit | PASS | Full run: 106 frames, max 1,048,512 B (1 MiB ceiling), 109,733,536 B at ~222 MiB/s; every frame is an independently readable Arrow IPC stream. |
+| Cancellation leaves valid partial data | PASS | Cancel at frame 10 → `Sink.done("PARTIAL")`, 11 valid frames (11,083,752 B). |
+| mTLS SAN and Hello token are available server-side | PASS | Server read peer SAN `squawk://external/caller` from the TLS transport; `hello` echoed the same SAN and the Hello token/agent id were observed. |
+| pycapnp cooperates with asyncio | PASS | Server and client run on the stdlib asyncio loop inside `capnp.kj_loop()`; whole run 1.13 s wall, 485 MiB max RSS. |
+
+`PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g2_capnp_arrow.py` passes (cancel path, 80k rows).
+
+### Why the first run reported FAIL
+
+The earlier "loopback bind denied" verdict was produced in a sandbox that refused
+binds; once binds were available three spike defects surfaced and were fixed:
+
+1. `main()` called `capnp.run(...)`, which in pycapnp 2.2.4 returns an un-awaited
+   coroutine (nothing ran); `run()` already enters `kj_loop()`, so `asyncio.run` is used.
+2. `_peer_san` read `_AsyncIoStream.protocol`, a private (`cdef`) attribute. The server
+   now builds the listener with `loop.create_server` and pycapnp's own
+   `AsyncIoStream._connect` factory, keeping the protocol whose `transport` is
+   `cdef public`, and reads the peer certificate from it.
+3. Teardown closed the listener before the client connection; since Python 3.12
+   `Server.wait_closed()` waits for open connections, so it hung. The client side is
+   closed first now.
 
 ## Amendment
 
-**FAIL — gate evidence is unavailable in this execution environment.** The
-required loopback bind fails before the server starts with
-`PermissionError: [Errno 1] Operation not permitted`; the same result occurs
-with a raw Python `socket.bind(("127.0.0.1", 0))` probe. The opt-in regression
-skips only for that explicit sandbox restriction and otherwise fails normally.
-
-Until an operator runs the reproduced command on a host that permits loopback
-listeners, M3/M4 must use the specified gRPC fallback: retain the same
-transport-neutral `Hello`, `Call`, `Result`, `Progress`, and `Error` message
-set, map Arrow IPC data to opaque `bytes` fields, map `ProgressSink` to server
-streaming, and map `Operation.cancel` to RPC cancellation. This is an
-environmental gate failure, not evidence that pycapnp itself is incompatible.
+**PASS — Cap'n Proto RPC over mTLS with Arrow IPC framing meets G2.** No gRPC
+fallback is needed (consistent with AC17: no `grpcio`). M3/M4 may build on
+`pycapnp` with: a 1 MiB operational frame ceiling under the 4 MiB limit;
+peer identity taken from the TLS transport of the connection's protocol (not a
+private stream attribute); client-first teardown.

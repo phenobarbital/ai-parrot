@@ -220,9 +220,14 @@ def build_frame(rows: int) -> pd.DataFrame:
     return pd.DataFrame({f"c{i}": rng.random(rows) for i in range(8)} | {"label": rng.choice(["a", "b", "c"], rows)})
 
 
-def _peer_san(stream: capnp.AsyncIoStream) -> str:
-    """Extract the client URI SAN from the server-side TLS transport."""
-    ssl_object = stream.protocol.transport.get_extra_info("ssl_object")
+def _peer_san(transport: asyncio.BaseTransport) -> str:
+    """Extract the client URI SAN from the server-side TLS transport.
+
+    pycapnp 2.2.4 keeps ``_AsyncIoStream.protocol`` private (``cdef``), so the
+    transport is taken from the connection's ``_PyAsyncIoStreamProtocol``, whose
+    ``transport`` attribute is ``cdef public`` (see ``create_server`` below).
+    """
+    ssl_object = transport.get_extra_info("ssl_object")
     if ssl_object is None:
         raise RuntimeError("mTLS transport has no SSL object")
     certificate = ssl_object.getpeercert(binary_form=True)
@@ -271,17 +276,28 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
         server_context, client_context = make_certs(Path(temp_dir))
         server_instances: list[capnp.TwoPartyServer] = []
 
-        async def on_connection(stream: capnp.AsyncIoStream) -> None:
+        async def on_connection(stream: capnp.AsyncIoStream, transport: asyncio.BaseTransport) -> None:
             """Bootstrap one authenticated Cap'n Proto RPC connection."""
-            peer_san = _peer_san(stream)
+            peer_san = _peer_san(transport)
             observations["peer_san"] = peer_san
             server = capnp.TwoPartyServer(stream, bootstrap=SpikeImpl(peer_san, observations))
             server_instances.append(server)
             await server.on_disconnect()
 
         async with capnp.kj_loop():
-            listener = await capnp.AsyncIoStream.create_server(
-                on_connection,
+
+            def protocol_factory() -> asyncio.BaseProtocol:
+                """Same factory pycapnp's create_server uses, keeping the protocol for its TLS transport."""
+                holder: dict[str, asyncio.BaseProtocol] = {}
+
+                async def connected(stream: capnp.AsyncIoStream) -> None:
+                    await on_connection(stream, holder["protocol"].transport)
+
+                holder["protocol"] = capnp.AsyncIoStream._connect(connected)
+                return holder["protocol"]
+
+            listener = await asyncio.get_running_loop().create_server(
+                protocol_factory,
                 "127.0.0.1",
                 0,
                 ssl=server_context,
@@ -303,10 +319,12 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
             operation = await remote.stream(rows=rows, maxFrameBytes=DEFAULT_FRAME, sink=sink)
             client_op = operation.op
             await asyncio.wait_for(done.wait(), timeout=30)
-            listener.close()
-            await listener.wait_closed()
-            stream.close()
+            # Close the client side first: since Python 3.12 Server.wait_closed()
+            # waits for every open connection, so closing the listener first hangs.
             client.close()
+            stream.close()
+            listener.close()
+            await asyncio.wait_for(listener.wait_closed(), timeout=10)
     elapsed = time.perf_counter() - started
     frame_sizes = [len(frame) for frame in received]
     frames_valid = all(pa.ipc.open_stream(frame).read_all().num_rows > 0 for frame in received)
@@ -336,8 +354,8 @@ def main() -> int:
     """Run full and cancelled G2 measurements and emit a JSON summary."""
     rows = int(sys.argv[1]) if len(sys.argv) > 1 else 1_500_000
     out = {
-        "full": capnp.run(run(rows, None)),
-        "cancelled": capnp.run(run(rows, 10)),
+        "full": asyncio.run(run(rows, None)),
+        "cancelled": asyncio.run(run(rows, 10)),
     }
     print(json.dumps(out, indent=2, default=str))
     return 0
