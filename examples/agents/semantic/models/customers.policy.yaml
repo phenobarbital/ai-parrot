@@ -10,5 +10,5 @@ governed: true
 connection: semantic_dim
 limits: {default: 1000, max: 10000}
 roles:
-  analyst: {metrics: [customer_count], dimensions: [email], usage: [dim.customers.email]}
+  analyst: {metrics: [customer_count], dimensions: [email], usage: [dim.customers.email, dim.customers.id]}
   admin: {metrics: "*", dimensions: "*", usage: "*"}
