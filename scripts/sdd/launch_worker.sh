@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# launch_worker.sh — start an interactive `sdd-worker` session that never loads
-# the `user` setting source.
+# launch_worker.sh — start an interactive `sdd-worker` session in the strict
+# native Claude sandbox (FEAT-768), without loading the `user` setting source.
 #
 # Why (issue:6756c929a450): the sdd-worker agent file installs a PreToolUse hook
 # that wraps every Bash call in Bubblewrap by returning `updatedInput`. A
@@ -12,45 +12,23 @@
 # ~/.claude/CLAUDE.md are not loaded in this session.
 #
 # Usage (from inside the feature worktree):
-#   scripts/sdd/launch_worker.sh [extra claude args...]
+#   scripts/sdd/launch_worker.sh [--sandbox-allow-domain HOST] [extra claude args...]
 #
 # Defaults: --model sonnet (unless the caller passes --model) and
 # --setting-sources project,local (unless the caller passes its own, which must
 # not include `user`).
 #
 # Exit codes:
-#   2  the caller asked for the `user` setting source
+#   1  a host prerequisite is missing
+#   2  caller input violates the native sandbox policy
 
 set -euo pipefail
 
-has_model=0
-has_sources=0
-expect_sources=0
-for arg in "$@"; do
-  if [[ $expect_sources -eq 1 ]]; then
-    sources="$arg"
-    expect_sources=0
-  else
-    case "$arg" in
-      --model | --model=*) has_model=1; continue ;;
-      --setting-sources) has_sources=1; expect_sources=1; continue ;;
-      --setting-sources=*) has_sources=1; sources="${arg#--setting-sources=}" ;;
-      *) continue ;;
-    esac
-  fi
-  if [[ ",${sources}," == *",user,"* ]]; then
-    echo "launch_worker.sh: refusing --setting-sources '${sources}': the 'user' source loads" \
-      "~/.claude PreToolUse hooks that can bypass the Bubblewrap sandbox (issue:6756c929a450)" >&2
-    exit 2
-  fi
-done
-
-cmd=(claude --agent sdd-worker)
-if [[ $has_sources -eq 0 ]]; then
-  cmd+=(--setting-sources project,local)
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+python_bin="$(command -v python3 || true)"
+if [[ -z "$python_bin" ]]; then
+  echo "launch_worker.sh: python3 is required (activate the repository venv)" >&2
+  exit 1
 fi
-if [[ $has_model -eq 0 ]]; then
-  cmd+=(--model sonnet)
-fi
-
-exec "${cmd[@]}" "$@"
+exec "$python_bin" "$repo_root/packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py" \
+  launch-worker "$@"
