@@ -1,23 +1,52 @@
 """Served-side telemetry: one CapabilityCallEvent + one recorder call per capability call (FEAT-746 M12, D13)."""
+
 from __future__ import annotations
 
 import logging
 from typing import Literal
 
-from parrot.core.events.lifecycle import EventRegistry, TraceContext, get_global_registry  # verified: core/events/lifecycle/__init__.py:21-22
+from parrot.core.events.lifecycle import (
+    EventRegistry,
+    TraceContext,
+    get_global_registry,
+)  # verified: core/events/lifecycle/__init__.py:21-22
 from parrot.core.events.lifecycle.events import CapabilityCallEvent
 from parrot.interagent import CallCost, SquawkCapability
 from parrot.observability.recorders import AbstractLogger, CapabilityCallRecord
 
 
-def record_from_call(*, side: Literal["served", "received"], agent: str, peer: str, cap: SquawkCapability, status: str, cost: CallCost,
-                     trace_id: str, correlation_id: str | None = None, policy_applied: tuple[str, ...] = ()) -> CapabilityCallRecord:
+def record_from_call(
+    *,
+    side: Literal["served", "received"],
+    agent: str,
+    peer: str,
+    cap: SquawkCapability,
+    status: str,
+    cost: CallCost,
+    trace_id: str,
+    correlation_id: str | None = None,
+    policy_applied: tuple[str, ...] = (),
+) -> CapabilityCallRecord:
     """Tokens only for llm_backed capabilities; never provider/model fields."""
     llm = cap.backing == "llm_backed"
-    return CapabilityCallRecord(side=side, agent=agent, peer_agent=peer, cap_id=cap.cap_id, category=cap.category, backing=cap.backing,
-                                status=status, duration_ms=float(cost.duration_ms), rows=cost.rows, bytes=cost.bytes,
-                                tokens_in=cost.tokens_in if llm else 0, tokens_out=cost.tokens_out if llm else 0, cost_usd=cost.cost_usd,
-                                policy_applied=policy_applied, trace_id=trace_id, correlation_id=correlation_id)
+    return CapabilityCallRecord(
+        side=side,
+        agent=agent,
+        peer_agent=peer,
+        cap_id=cap.cap_id,
+        category=cap.category,
+        backing=cap.backing,
+        status=status,
+        duration_ms=float(cost.duration_ms),
+        rows=cost.rows,
+        bytes=cost.bytes,
+        tokens_in=cost.tokens_in if llm else 0,
+        tokens_out=cost.tokens_out if llm else 0,
+        cost_usd=cost.cost_usd,
+        policy_applied=policy_applied,
+        trace_id=trace_id,
+        correlation_id=correlation_id,
+    )
 
 
 class ServedTelemetry:

@@ -1,4 +1,5 @@
 """Client-side received ledger (D13 level 2): what came back, from whom, under which contract, and what the LLM did with it."""
+
 from __future__ import annotations
 
 import logging

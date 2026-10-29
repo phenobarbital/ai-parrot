@@ -128,9 +128,9 @@ async def test_served_telemetry_emit_success():
     """Test that ServedTelemetry.emit publishes event and records successfully."""
     fake_registry = FakeRegistry()
     fake_recorder = FakeRecorder()
-    
+
     telemetry = ServedTelemetry(registry=fake_registry, recorder=fake_recorder)
-    
+
     # Create a simple test record
     record = CapabilityCallRecord(
         side="served",
@@ -142,15 +142,15 @@ async def test_served_telemetry_emit_success():
         status="OK",
         trace_id="test-trace",
     )
-    
+
     await telemetry.emit(record)
-    
+
     # Check that event was published
     assert len(fake_registry.events) == 1
     event = fake_registry.events[0]
     assert isinstance(event, CapabilityCallEvent)
     assert event.record == record
-    
+
     # Check that record was stored
     assert len(fake_recorder.records) == 1
     assert fake_recorder.records[0] == record
@@ -161,10 +161,10 @@ async def test_served_telemetry_emit_registry_failure(caplog):
     """Test that ServedTelemetry.emit handles registry failure gracefully."""
     failing_registry = AsyncMock()
     failing_registry.emit.side_effect = RuntimeError("Registry failure")
-    
+
     fake_recorder = FakeRecorder()
     telemetry = ServedTelemetry(registry=failing_registry, recorder=fake_recorder)
-    
+
     record = CapabilityCallRecord(
         side="served",
         agent="test-agent",
@@ -175,14 +175,14 @@ async def test_served_telemetry_emit_registry_failure(caplog):
         status="OK",
         trace_id="test-trace",
     )
-    
+
     # Should not raise despite registry failure
     await telemetry.emit(record)
-    
+
     # Recorder should still work
     assert len(fake_recorder.records) == 1
     assert fake_recorder.records[0] == record
-    
+
     # Should log the exception
     assert "ServedTelemetry: event publish failed" in caplog.text
 
@@ -193,9 +193,9 @@ async def test_served_telemetry_emit_recorder_failure(caplog):
     fake_registry = FakeRegistry()
     failing_recorder = AsyncMock()
     failing_recorder.record_capability.side_effect = RuntimeError("Recorder failure")
-    
+
     telemetry = ServedTelemetry(registry=fake_registry, recorder=failing_recorder)
-    
+
     record = CapabilityCallRecord(
         side="served",
         agent="test-agent",
@@ -206,16 +206,16 @@ async def test_served_telemetry_emit_recorder_failure(caplog):
         status="OK",
         trace_id="test-trace",
     )
-    
+
     # Should not raise despite recorder failure
     await telemetry.emit(record)
-    
+
     # Event should still be published
     assert len(fake_registry.events) == 1
     event = fake_registry.events[0]
     assert isinstance(event, CapabilityCallEvent)
     assert event.record == record
-    
+
     # Should log the exception
     assert "ServedTelemetry: recorder failed" in caplog.text
 
@@ -225,7 +225,7 @@ async def test_served_telemetry_emit_no_recorder():
     """Test that ServedTelemetry.emit works without a recorder."""
     fake_registry = FakeRegistry()
     telemetry = ServedTelemetry(registry=fake_registry, recorder=None)
-    
+
     record = CapabilityCallRecord(
         side="served",
         agent="test-agent",
@@ -236,9 +236,9 @@ async def test_served_telemetry_emit_no_recorder():
         status="OK",
         trace_id="test-trace",
     )
-    
+
     await telemetry.emit(record)
-    
+
     # Event should be published
     assert len(fake_registry.events) == 1
     event = fake_registry.events[0]
@@ -251,7 +251,7 @@ async def test_served_telemetry_uses_global_registry():
     """Test that ServedTelemetry uses global registry when none provided."""
     fake_recorder = FakeRecorder()
     telemetry = ServedTelemetry(recorder=fake_recorder)  # No registry provided
-    
+
     record = CapabilityCallRecord(
         side="served",
         agent="test-agent",
@@ -262,9 +262,9 @@ async def test_served_telemetry_uses_global_registry():
         status="OK",
         trace_id="test-trace",
     )
-    
+
     # This should not raise - it will use the global registry
     await telemetry.emit(record)
-    
+
     # Recorder should still work
     assert len(fake_recorder.records) == 1
