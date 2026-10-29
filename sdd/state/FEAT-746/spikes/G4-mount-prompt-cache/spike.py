@@ -9,6 +9,7 @@ import os
 import sys
 from typing import Any
 
+from parrot.bots.prompts.segments import CacheableSegment
 from parrot.clients.base import AbstractClient
 from parrot.tools.manager import ToolDefinition, ToolManager
 
@@ -154,27 +155,43 @@ async def run_provider(client: AbstractClient, label: str) -> dict[str, Any]:
         tool_manager.register_tool(tool=definition)
 
     turns: list[dict[str, Any]] = []
-    for turn in range(1, 4):
-        if turn == 3:
-            for definition in extra_tools(3):
-                tool_manager.register_tool(tool=definition)
+    # SQUAWK_G4_MODEL_<PROVIDER> overrides a client default; enums are sent by value.
+    model = os.environ.get(f"SQUAWK_G4_MODEL_{label.upper()}") or getattr(client.model, "value", client.model)
+    try:
+        # Clients are lazy: the provider SDK handle only exists inside the async context.
+        async with client:
+            for turn in range(1, 4):
+                if turn == 3:
+                    for definition in extra_tools(3):
+                        tool_manager.register_tool(tool=definition)
 
-        schemas = tool_manager.get_tool_schemas(client._resolve_tool_format())
-        message = await client.ask(
-            prompt=PROMPT,
-            system_prompt=PAD,
-            tools=schemas,
-            use_tools=True,
-        )
-        turns.append(
-            {
-                "turn": turn,
-                "tool_count": len(schemas),
-                "usage": cache_fields(_usage_for(message)),
-            }
-        )
+                schemas = tool_manager.get_tool_schemas(client._resolve_tool_format())
+                message = await client.ask(
+                    prompt=PROMPT,
+                    # The production path (AbstractBot) sends CacheableSegments; Anthropic only
+                    # emits cache_control blocks for a segment list, never for a plain string.
+                    system_prompt=[CacheableSegment(text=PAD, cacheable=True)],
+                    model=model,
+                    tools=schemas,
+                    use_tools=True,
+                )
+                turns.append(
+                    {
+                        "turn": turn,
+                        "tool_count": len(schemas),
+                        "usage": cache_fields(_usage_for(message)),
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001 - one provider's failure is a recorded verdict, not a crash
+        return {
+            "provider": label,
+            "client": type(client).__name__,
+            "model": str(model),
+            "error": f"{type(exc).__name__}: {exc}"[:300],
+            "turns": turns,
+        }
 
-    return {"provider": label, "client": type(client).__name__, "turns": turns}
+    return {"provider": label, "client": type(client).__name__, "model": str(model), "turns": turns}
 
 
 def _configured_clients() -> list[tuple[str, AbstractClient]]:
