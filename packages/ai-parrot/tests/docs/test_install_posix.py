@@ -312,13 +312,25 @@ def test_global_dry_run_announces_credentials(tmp_path: Path) -> None:
     assert "self env --init" in result.stdout and "credentials file" in result.stdout
 
 
-@pytest.mark.parametrize("machine, warned", [("x86_64", False), ("aarch64", True)])
-def test_global_dry_run_warns_off_the_official_platform(tmp_path: Path, machine: str, warned: bool) -> None:
-    """Owner decision 2026-10-29: only Linux x86_64 is official; elsewhere the gate warns but never blocks."""
-    path = _fake_bin(tmp_path, scripts={"uname": f'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo {machine};; esac\n'})
+@pytest.mark.parametrize("system, machine, warned", [("Linux", "x86_64", False), ("Darwin", "arm64", True)])
+def test_global_dry_run_warns_off_the_official_platform(tmp_path: Path, system: str, machine: str, warned: bool) -> None:
+    """Owner decision 2026-10-29: only Linux x86_64 is official; macOS arm64 gets a warning but is never blocked."""
+    uname = f'#!/bin/sh\ncase "$1" in -s) echo {system};; -m) echo {machine};; esac\n'
+    path = _fake_bin(tmp_path, scripts={"uname": uname})
     env = {**os.environ, "HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"),
            "SHELL": "/bin/bash", "PATH": path}
     result = subprocess.run(["bash", str(SCRIPT), "--global", "--dry-run"], capture_output=True, text=True,
                             check=False, env=env)
     assert result.returncode == 0, result.stderr
     assert ("not officially supported (official: Linux x86_64)" in result.stderr) is warned
+
+
+@pytest.mark.parametrize("machine", ["aarch64", "arm64"])
+def test_gate_refuses_linux_arm(tmp_path: Path, machine: str) -> None:
+    """Owner decision 2026-10-29: Linux aarch64 is dropped — the gate refuses it before writing anything."""
+    path = _fake_bin(tmp_path, scripts={"uname": f'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo {machine};; esac\n'})
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1
+    assert f"preflight: unsupported platform Linux-{machine}" in result.stderr and "ARM Linux is not supported" in result.stderr
+    assert not (tmp_path / "home").exists()

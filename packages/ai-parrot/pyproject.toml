@@ -1082,7 +1082,8 @@ build = "cp3{11,12,13}-*"
 skip = "pp* *-musllinux* *-manylinux_i686 *-win32"
 
 [tool.cibuildwheel.linux]
-archs = ["auto64"]
+# Linux aarch64 dropped (FEAT-633, owner decision 2026-10-29): x86_64 only.
+archs = ["x86_64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]

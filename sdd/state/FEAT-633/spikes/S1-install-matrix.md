@@ -40,6 +40,14 @@ hint. That parser was fixed afterwards on this branch, and the names above come 
 - `docs/getting-started.md` and `docs/install/global-runtime.md` state the policy.
 - Revisit when the upstream wheels land (`issue:d725faabd9a8`).
 
+**Owner decision (2026-10-29, later): Linux aarch64 is dropped.** There are no plans to support ARM servers, and this
+supersedes rev 0.5 C24.
+- The `build-core` and `build-parrot-codec` aarch64 legs and the `ubuntu-24.04-arm` smoke leg are removed.
+- `[tool.cibuildwheel.linux] archs = ["x86_64"]`.
+- `install-parrot.sh` refuses `Linux-aarch64` / `Linux-arm64` at the preflight gate.
+- Remaining best-effort platforms are macOS arm64 (warning) and Windows x64 (warning; expected to fail).
+- This also removes release run 40911216555's only unrelated failure (`issue:98728e0b2e8d`, parrot-codec on PyPy 3.12).
+
 **FAIL (2026-10-29, [run 40813681936](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936)).** ubuntu x64 is green. The other three legs cannot install
 without a compiler. ai-parrot's own wheels were built for every platform (`build-core` was green on all four), so
 the failures are all in dependencies.

@@ -182,10 +182,11 @@ reachable() {  # reachable <url> — HEAD request; used only by the network gate
 preflight() {  # C14b — read-only checks, in order; never calls run(); never creates PARROT_HOME
   local anc free h
   case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64|Linux-aarch64|Linux-arm64|Darwin-arm64) ;;
-    *) gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64" ;;
+    Linux-x86_64|Darwin-arm64) ;;
+    # Linux aarch64 dropped (owner decision 2026-10-29): no core wheel is published for it.
+    *) gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a Linux x86_64 machine (official) or macOS arm64; ARM Linux is not supported" ;;
   esac
-  uv_target >/dev/null 2>&1 || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64"
+  uv_target >/dev/null 2>&1 || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a Linux x86_64 machine (official) or macOS arm64; ARM Linux is not supported"
   # Officially supported: Linux x86_64 (owner decision 2026-10-29). Elsewhere some dependencies publish no wheel,
   # so uv builds them from source: warn, never block — a machine with a C toolchain may still succeed.
   [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || echo "warning: $(uname -s)-$(uname -m) is not officially supported \

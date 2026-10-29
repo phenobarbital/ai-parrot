@@ -31,10 +31,10 @@ def _cibw() -> dict[str, Any]:
 
 
 def test_core_matrix_covers_all_platforms() -> None:
-    """linux x86_64 + aarch64, windows AMD64 and macOS arm64 — one leg each."""
+    """linux x86_64, windows AMD64 and macOS arm64 — one leg each (Linux aarch64 dropped, owner decision 2026-10-29)."""
     pairs = {(leg["platform"], leg["archs"]) for leg in _core_legs()}
-    assert pairs == {("linux", "x86_64"), ("linux", "aarch64"), ("windows", "AMD64"), ("macos", "arm64")}
-    assert len(_core_legs()) == 4, "redundant build-core legs are back"
+    assert pairs == {("linux", "x86_64"), ("windows", "AMD64"), ("macos", "arm64")}
+    assert len(_core_legs()) == 3, "redundant build-core legs are back"
 
 
 def test_no_cp314_while_requires_python_excludes_it() -> None:
@@ -45,10 +45,10 @@ def test_no_cp314_while_requires_python_excludes_it() -> None:
         assert not re.search(r"CIBW_BUILD:.*14", RELEASE.read_text(encoding="utf-8"))
 
 
-def test_aarch64_not_skipped_and_macos_declared() -> None:
-    """manylinux aarch64 is no longer skipped; the macOS table targets arm64."""
+def test_linux_is_x86_64_only_and_macos_declared() -> None:
+    """Linux builds x86_64 only (aarch64 dropped, owner decision 2026-10-29); the macOS table targets arm64."""
     cibw = _cibw()
-    assert "manylinux_aarch64" not in cibw["skip"]
+    assert cibw["linux"]["archs"] == ["x86_64"]
     assert cibw["macos"]["archs"] == ["arm64"]
 
 
@@ -61,10 +61,14 @@ def test_deploy_needs_smoke_gate() -> None:
     assert "build-tools" in jobs["smoke-core"]["needs"]   # rev 0.5 C20: ai-parrot-tools wheel installed alongside core
 
 
-def test_install_matrix_has_linux_aarch64_leg() -> None:
-    """rev 0.5 C24: install-matrix smoke-tests the aarch64 core wheel on a linux ARM runner."""
+def test_no_linux_aarch64_anywhere_in_the_release() -> None:
+    """Owner decision 2026-10-29 (supersedes rev 0.5 C24): no Linux aarch64 build or smoke leg is left."""
     oses = yaml.safe_load(INSTALL_MATRIX.read_text(encoding="utf-8"))["jobs"]["smoke"]["strategy"]["matrix"]["os"]
-    assert any(os_.startswith("ubuntu") and "arm" in os_ for os_ in oses), oses
+    assert not any("arm" in os_ for os_ in oses if os_.startswith("ubuntu")), oses
+    jobs = _jobs()
+    for name in ("build-navrules", "build-parrot-codec"):
+        targets = [leg["target"] for leg in jobs[name]["strategy"]["matrix"]["include"]]
+        assert "aarch64-unknown-linux-gnu" not in targets, (name, targets)
 
 
 def test_deploy_needs_sdd_foreign_smoke() -> None:
