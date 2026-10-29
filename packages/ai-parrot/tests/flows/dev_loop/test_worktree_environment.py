@@ -290,11 +290,11 @@ def test_standalone_loader_resolves_kernel_by_path() -> None:
 
 
 @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
-def test_programmatic_claude_protection_does_not_depend_on_project_settings(tmp_path: Path, subagent: str) -> None:
+def test_programmatic_claude_protection_does_not_depend_on_project_settings(linked_worktree: Path, subagent: str) -> None:
     """Programmatic prompts lose frontmatter, so protection must be injected."""
     dispatcher = ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://unused", stream_ttl_seconds=1)
     profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=[])
-    options = dispatcher._resolve_run_options(profile, str(tmp_path))
+    options = dispatcher._resolve_run_options(profile, str(linked_worktree))
     hook = json.loads(options.extra_args["settings"])["hooks"]["PreToolUse"][0]
     assert "Bash" in hook["matcher"]
     command = hook["hooks"][0]["command"]

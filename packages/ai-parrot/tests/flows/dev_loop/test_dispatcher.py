@@ -808,9 +808,9 @@ class TestSandboxedSettingSources:
             (["local", "user"], ["local"]),
         ],
     )
-    def test_sandboxed_subagent_sources(self, dispatcher, _patch_worktree_base, subagent, requested, expected):
+    def test_sandboxed_subagent_sources(self, dispatcher, linked_worktree, subagent, requested, expected):
         profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=requested)
-        opts = dispatcher._resolve_run_options(profile, str(_patch_worktree_base))
+        opts = dispatcher._resolve_run_options(profile, str(linked_worktree))
         assert opts.setting_sources == expected
 
     def test_non_sandboxed_subagent_unchanged(self, dispatcher, _patch_worktree_base):
@@ -819,18 +819,18 @@ class TestSandboxedSettingSources:
         user = ClaudeCodeDispatchProfile(subagent="sdd-qa", setting_sources=["user", "project"])
         assert dispatcher._resolve_run_options(user, str(_patch_worktree_base)).setting_sources == ["user", "project"]
 
-    def test_cli_argv_excludes_user_source(self, dispatcher, _patch_worktree_base):
+    def test_cli_argv_excludes_user_source(self, dispatcher, linked_worktree):
         """The CLI command a sandboxed seat runs carries an explicit
         ``--setting-sources`` flag without ``user`` (no flag = CLI default,
         which loads ~/.claude hooks)."""
         sdk_types = pytest.importorskip("claude_agent_sdk.types")
         transport_mod = pytest.importorskip("claude_agent_sdk._internal.transport.subprocess_cli")
         profile = ClaudeCodeDispatchProfile(subagent="sdd-coder", setting_sources=[])
-        opts = dispatcher._resolve_run_options(profile, str(_patch_worktree_base))
+        opts = dispatcher._resolve_run_options(profile, str(linked_worktree))
         sdk_options = sdk_types.ClaudeAgentOptions(
             setting_sources=opts.setting_sources,
             cli_path="/bin/true",
-            cwd=str(_patch_worktree_base),
+            cwd=str(linked_worktree),
         )
         argv = transport_mod.SubprocessCLITransport(prompt="x", options=sdk_options)._build_command()
         flags = [arg for arg in argv if arg.startswith("--setting-sources")]

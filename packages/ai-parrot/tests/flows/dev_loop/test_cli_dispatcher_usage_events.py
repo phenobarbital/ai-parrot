@@ -143,7 +143,7 @@ def _dispatcher(monkeypatch, messages, *, registry=None) -> ClaudeCodeDispatcher
 
 
 async def test_claude_dispatch_emits_after_call_with_model(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+    monkeypatch, brief, linked_worktree, run_registry, ledger
 ):
     """Out-of-process usage must reach the ledger with its real model."""
     messages = [
@@ -161,7 +161,7 @@ async def test_claude_dispatch_emits_after_call_with_model(
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="development",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
 
     (rec,) = ledger.records
@@ -171,7 +171,7 @@ async def test_claude_dispatch_emits_after_call_with_model(
     assert rec.seat == "development"
 
 
-async def test_pool_worker_seat_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
+async def test_pool_worker_seat_reaches_ledger(monkeypatch, brief, linked_worktree, run_registry, ledger):
     """Regression guard for FEAT-479 Finding 3: 'development.w1' cannot
     validate against the closed NodeId Literal, so _apply_to_session_host
     swallowed it at DEBUG and all fan-out usage was lost."""
@@ -187,7 +187,7 @@ async def test_pool_worker_seat_reaches_ledger(monkeypatch, brief, _patch_worktr
         output_model=ResearchOutput,
         run_id="run-1",
         node_id="development.w1",
-        cwd=str(_patch_worktree_base),
+        cwd=str(linked_worktree),
     )
 
     (rec,) = ledger.records
