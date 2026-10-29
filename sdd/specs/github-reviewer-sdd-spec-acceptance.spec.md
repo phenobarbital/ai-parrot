@@ -220,7 +220,7 @@ class GitToolkit(AbstractToolkit):  # AbstractToolkit verified: parrot/tools/__i
 
 ### Module 1: Feature-ID extraction
 - **Path**: `packages/ai-parrot/src/parrot/bots/github_reviewer.py`
-- **Responsibility**: Find an SDD `FEAT-<NNN>` id in PR title/body, independently of (and only tried after) the Jira ticket key.
+- **Responsibility**: Find an SDD `FEAT-<NNN>` id in the PR head branch, then the PR title — never the PR body (amended 2026-10-29, see rev 0.5) — independently of (and only tried after) the Jira ticket key. When neither carries an id, fall back to the SDD files the PR itself changes (`sdd/tasks/index/*.json` `feature_id`, `sdd/specs/*.spec.md` `**Feature ID**`) read at `head_sha`.
 - **Depends on**: none
 - **Interface Skeleton**:
   ```python
@@ -742,3 +742,4 @@ design-research seat only runs over an **accepted** exploration doc, per
 | 0.2 | 2026-10-27 | Codex | Address review: validate search candidates at target ref, preserve Jira precedence on fetch failure, expose source in public outcomes, reject complete template boilerplate, verify existing webhook base_ref contract, and specify regression coverage. |
 | 0.3 | 2026-10-27 | Codex | Record owner approval of `enable_sdd_spec_fallback=True` as the default and close the remaining open question. |
 | 0.4 | 2026-10-27 | Codex | Include the M2 directory-listing regression test file in the feature validation contract. |
+| 0.5 | 2026-10-29 | Jesus Lara | Ledger `issue:8f1846d3a545` (`Trocdigital/fieldsync` PR #586 reviewed against the parent FEAT-787 cited first in the PR body instead of FEAT-827 from branch/title): id resolution order is now head branch → title → SDD files in the PR diff; the PR body is never a source, for Jira keys and feature ids alike. `_fetch_pr_payload` now carries `head_ref`/`branch`. |
