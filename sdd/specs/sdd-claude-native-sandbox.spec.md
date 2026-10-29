@@ -10,7 +10,7 @@ tags: [sandbox, claude-code, sdd-coder, security, worktrees]
 **Feature ID**: FEAT-768
 **Date**: 2026-10-29
 **Author**: Jesus Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: Next release after compatibility qualification; no package version bump in this feature.
 **Source**: ledger `issue:e57a19d91778`; parent `issue:6756c929a450`; user request to include the sandbox evaluation recommendations.
 
