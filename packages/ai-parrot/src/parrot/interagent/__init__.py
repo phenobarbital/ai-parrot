@@ -37,11 +37,14 @@ from parrot.interagent.messages import (
     PROTOCOL_MAJOR,
 )
 from parrot.interagent.bus_codec import BusPayloadSerializer
+from parrot.interagent.compiler import affordances_for, cap_id_for, compile_capability, tool_name_for
 
 __all__ = [
     "ArtifactHandle",
+    "affordances_for",
     "Budget",
     "BusPayloadSerializer",
+    "cap_id_for",
     "CAP_ID_PATTERN",
     "CallCost",
     "CallMessage",
@@ -69,6 +72,8 @@ __all__ = [
     "SquawkErrorCode",
     "WelcomeMessage",
     "category_hash",
+    "compile_capability",
     "contract_delta",
     "handle_key",
+    "tool_name_for",
 ]
