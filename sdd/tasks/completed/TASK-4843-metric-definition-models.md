@@ -432,4 +432,4 @@ def test_lazy_exports():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, merged at 21025611a. Files match the task list exactly (models, errors, lazy __init__, conftest, test_models). Merge-tier validation green (74 + 20 passed). Reviewed by worker against file list; no fix commits.

@@ -81,6 +81,7 @@ class _MinimalReviewer:
             raise ValueError("max_spec_scan_files must be a positive integer")
         self.max_spec_scan_files = max_spec_scan_files
         self.max_ticket_bytes = max_ticket_bytes
+        self.max_diff_bytes = 50_000
         self._ac_field_id = ac_field_id
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
         self._jira_strict_fields = ",".join(sorted({"summary", "description", "status", "assignee", ac_field_id}))
@@ -123,6 +124,15 @@ class _MinimalReviewer:
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
     _extract_feature_id = GitHubReviewer._extract_feature_id
+    _requirement_sources = staticmethod(GitHubReviewer._requirement_sources)
+    _resolve_requirement = GitHubReviewer._resolve_requirement
+    # Already bound to GitHubReviewer as a classmethod — assign it as-is.
+    _sdd_paths_in_diff = GitHubReviewer._sdd_paths_in_diff
+    _feature_id_from_sdd_file = GitHubReviewer._feature_id_from_sdd_file
+    _feature_id_from_pr_files = GitHubReviewer._feature_id_from_pr_files
+    _SDD_FEATURE_FILE_RE = GitHubReviewer._SDD_FEATURE_FILE_RE
+    _SPEC_FEATURE_HEADER_RE = GitHubReviewer._SPEC_FEATURE_HEADER_RE
+    _fetch_diff = GitHubReviewer._fetch_diff
     _is_valid_spec_content = staticmethod(GitHubReviewer._is_valid_spec_content)
     _is_direct_spec_path = staticmethod(GitHubReviewer._is_direct_spec_path)
     _filter_spec_acceptance_criteria = staticmethod(GitHubReviewer._filter_spec_acceptance_criteria)
@@ -263,6 +273,21 @@ def _wire_reviewer(**overrides: Any) -> _MinimalReviewer:
     r.jira_toolkit = MagicMock()
     r._wrapper = None
     return r
+
+
+def _sdd_file(
+    path: str, content: Optional[str], *, exists: bool = True, error: Optional[str] = None
+) -> FileContentResult:
+    """Build a ``FileContentResult`` for an SDD index or spec read at a PR head."""
+    return FileContentResult(
+        exists=exists,
+        path=path,
+        ref="abc123",
+        repository="owner/repo",
+        content=content if exists and error is None else None,
+        encoding="utf-8" if exists else None,
+        error=error,
+    )
 
 
 class TestWikiLifecycle:
@@ -648,7 +673,7 @@ class TestWikiBoundedWait:
         reviewer._ask_llm_for_review = fake_ask
         reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
         out = await reviewer.review_pull_request(
-            {"repository": "owner/repo", "pr_number": 3, "pr_body": "NAV-3", "pr_title": ""}
+            {"repository": "owner/repo", "pr_number": 3, "pr_body": "", "pr_title": "NAV-3"}
         )
         assert out["status"] == "reviewed"
         assert events == ["enter", "ask:True", "exit"]
@@ -725,6 +750,101 @@ class TestSDDReviewerFoundations:
         assert custom._extract_feature_id("first SDD+-42", "SDD+-43") == "SDD+-42"
         assert custom._extract_feature_id("", "") is None
 
+    def test_requirement_sources_are_branch_then_title_never_body(self) -> None:
+        """Ids come from the head branch first, then the title; the PR body is never a source."""
+        reviewer = _MinimalReviewer()
+        payload = {
+            "head_ref": "feat-FEAT-827-template-v3",
+            "pr_title": "FEAT-828 title",
+            "pr_body": "FEAT-787 parent",
+        }
+
+        assert reviewer._requirement_sources(payload) == ("feat-FEAT-827-template-v3", "FEAT-828 title")
+        assert reviewer._requirement_sources({"branch": "hotfix-NAV-7-x", "pr_body": "NAV-9"}) == ("hotfix-NAV-7-x", "")
+        assert reviewer._requirement_sources({"pr_body": "FEAT-1", "head_ref": None}) == ("", "")
+
+    def test_sdd_paths_in_diff_keeps_only_index_and_spec_files(self) -> None:
+        """Only per-spec indexes and specs name a feature; order is kept and duplicates dropped."""
+        diff = "\n".join(
+            [
+                "diff --git a/sdd/tasks/index/template-v3.json b/sdd/tasks/index/template-v3.json",
+                "--- a/sdd/tasks/index/template-v3.json",
+                "diff --git a/src/app.py b/src/app.py",
+                "diff --git a/sdd/specs/template-v3.spec.md b/sdd/specs/template-v3.spec.md",
+                "diff --git a/sdd/tasks/index/template-v3.json b/sdd/tasks/index/template-v3.json",
+                "diff --git a/sdd/tasks/active/TASK-1-x.md b/sdd/tasks/active/TASK-1-x.md",
+                "diff --git a/docs/sdd/specs/other.spec.md b/docs/sdd/specs/other.spec.md",
+            ]
+        )
+
+        assert _MinimalReviewer._sdd_paths_in_diff(diff) == [
+            "sdd/tasks/index/template-v3.json",
+            "sdd/specs/template-v3.spec.md",
+        ]
+        assert _MinimalReviewer._sdd_paths_in_diff("") == []
+
+    def test_feature_id_from_sdd_file_reads_index_and_spec_headers(self) -> None:
+        """A per-spec index yields ``feature_id``; a spec yields its ``**Feature ID**`` header; junk yields None."""
+        reviewer = _MinimalReviewer()
+        index_path = "sdd/tasks/index/x.json"
+        spec_path = "sdd/specs/x.spec.md"
+
+        index = _sdd_file(index_path, '{"feature": "x", "feature_id": "FEAT-827"}')
+        spec = _sdd_file(spec_path, "# Title\n\n**Feature ID**: FEAT-827\n\n## 5. Acceptance Criteria\n")
+        assert reviewer._feature_id_from_sdd_file(index_path, index) == "FEAT-827"
+        assert reviewer._feature_id_from_sdd_file(spec_path, spec) == "FEAT-827"
+
+        assert reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, "{not json")) is None
+        assert (
+            reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, '{"feature_id": "XFEAT-1"}')) is None
+        )
+        assert reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, '["FEAT-1"]')) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, "# No header\nFEAT-827\n")) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, None, exists=False)) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, "x", error="boom")) is None
+
+    async def test_feature_id_from_pr_files_requires_every_file_to_agree(self) -> None:
+        """One feature across the PR's SDD files resolves; two different ones select nothing."""
+        index_path = "sdd/tasks/index/x.json"
+        spec_path = "sdd/specs/x.spec.md"
+        diff = f"diff --git a/{index_path} b/{index_path}\n+x\ndiff --git a/{spec_path} b/{spec_path}\n+y\n"
+        payload = {"pr_number": 42, "head_sha": "abc123"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_diff = AsyncMock(return_value=(diff, False, True))
+        contents = {
+            index_path: _sdd_file(index_path, '{"feature_id": "FEAT-827"}'),
+            spec_path: _sdd_file(spec_path, "**Feature ID**: FEAT-827\n"),
+        }
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=lambda p, ref, repository: contents[p])
+
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) == "FEAT-827"
+        reviewer._fetch_diff.assert_awaited_once_with("owner/repo", 42)
+        assert reviewer.git_toolkit.get_file_content_at_ref.await_args_list[0].args == (index_path, "abc123")
+
+        contents[spec_path] = _sdd_file(spec_path, "**Feature ID**: FEAT-900\n")
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) is None
+        reviewer.logger.warning.assert_called()
+
+        reviewer._fetch_diff = AsyncMock(return_value=("", False, False))
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) is None
+        assert await reviewer._feature_id_from_pr_files("owner/repo", {"pr_number": 42}) is None
+
+    async def test_resolve_requirement_takes_the_jira_key_from_a_hotfix_branch(self) -> None:
+        """A Jira key in the branch wins over feature ids anywhere, and the spec lookup never runs."""
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock()
+        payload = {"head_ref": "hotfix-NAV-77-login", "pr_title": "FEAT-5 thing", "pr_body": "NAV-1"}
+
+        assert await reviewer._resolve_requirement("owner/repo", payload) == ("NAV-77", "jira", None)
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+
+        disabled = _wire_reviewer(enable_sdd_spec_fallback=False)
+        disabled._fetch_spec_requirement = AsyncMock()
+        payload = {"head_ref": "feat-FEAT-5-thing", "pr_title": "thing"}
+        assert await disabled._resolve_requirement("owner/repo", payload) == (None, "jira", None)
+        disabled._fetch_spec_requirement.assert_not_awaited()
+
     def test_source_defaults_and_scan_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Default to Jira on results and enabled bounded SDD lookup on reviewers."""
         monkeypatch.setattr(github_reviewer.Agent, "__init__", lambda self, **kwargs: None)
@@ -790,7 +910,7 @@ class TestSDDReviewIntegration:
     @pytest.mark.asyncio
     async def test_jira_fetch_failure_never_uses_spec(self) -> None:
         """A Jira key wins even if a feature identifier is also present."""
-        payload = {**_PAYLOAD, "pr_body": "Fixes NAV-1 and FEAT-9001"}
+        payload = {**_PAYLOAD, "pr_title": "Fixes NAV-1 and FEAT-9001"}
 
         reviewer = _wire_reviewer()
         reviewer._fetch_ticket = AsyncMock(return_value=None)
@@ -819,7 +939,12 @@ class TestSDDReviewIntegration:
     @pytest.mark.asyncio
     async def test_review_outcomes_expose_selected_requirement_source(self) -> None:
         """The selected source overwrites untrusted source metadata from the LLM."""
-        payload = {**_PAYLOAD, "pr_body": "Implements FEAT-9001", "base_ref": "release/next"}
+        payload = {
+            **_PAYLOAD,
+            "pr_title": "feat: thing",
+            "head_ref": "feat-FEAT-9001-thing",
+            "base_ref": "release/next",
+        }
         requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
         result = PRReviewResult(jira_key="wrong", summary="ready", approve=True, requirement_source="jira")
 
@@ -849,6 +974,109 @@ class TestSDDReviewIntegration:
         assert strict._ask_llm_for_review.return_value.requirement_source == "sdd_spec"
         strict._fetch_ticket.assert_not_awaited()
         assert strict.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+    @pytest.mark.asyncio
+    async def test_branch_feature_id_beats_the_parent_feature_cited_in_the_body(self) -> None:
+        """fieldsync#586 regression: the body cites the parent FEAT first; the branch names the real one."""
+        payload = {
+            **_PAYLOAD,
+            "pr_title": "feat(file-scheduling-template-v3): FEAT-827 — bulk template v3",
+            "head_ref": "feat-FEAT-827-file-scheduling-template-v3",
+            "pr_body": "Client feedback on the File Scheduling bulk template (FEAT-787). Extends FEAT-787.",
+            "base_ref": "dev",
+        }
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._fetch_diff = AsyncMock(return_value=("diff", False, True))
+        reviewer._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "dev")
+        reviewer._fetch_ticket.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        strict._fetch_ticket = AsyncMock()
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        strict._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "dev")
+        strict._fetch_ticket.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_title_feature_id_is_used_when_the_branch_has_none_and_the_body_is_ignored(self) -> None:
+        """Without an id in the branch, the title decides; a different id in the body is never retried."""
+        payload = {**_PAYLOAD, "head_ref": "my-branch", "pr_title": "FEAT-827 bulk template", "pr_body": "FEAT-787"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=None)
+        reviewer._fetch_diff = AsyncMock(return_value=("", False, True))
+        reviewer._notify_missing_ticket = AsyncMock(return_value=None)
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["status"] == "no_ticket"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "")
+        reviewer._fetch_diff.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_body_only_feature_id_falls_back_to_the_sdd_files_in_the_pr(self) -> None:
+        """With no id in branch or title, the per-spec index the PR commits names the feature."""
+        index_path = "sdd/tasks/index/template-v3.json"
+        payload = {
+            **_PAYLOAD,
+            "head_ref": "my-branch",
+            "pr_title": "bulk template v3",
+            "pr_body": "Follow-up to FEAT-787",
+            "head_sha": "abc123",
+        }
+        diff = f'diff --git a/{index_path} b/{index_path}\n+  "status": "done"\n'
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_diff = AsyncMock(return_value=(diff, False, True))
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            return_value=_sdd_file(index_path, '{"feature": "template-v3", "feature_id": "FEAT-827"}')
+        )
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        reviewer.git_toolkit.get_file_content_at_ref.assert_awaited_once_with(
+            index_path, "abc123", repository="owner/repo"
+        )
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "")
+
+    async def test_fetch_pr_payload_includes_head_ref(self) -> None:
+        """The on-demand payload carries the PR branch like the webhook payload does."""
+        reviewer = _MinimalReviewer()
+        reviewer.git_toolkit = MagicMock()
+        reviewer.git_toolkit.get_pull_request = AsyncMock(
+            return_value={"title": "PR", "head": {"sha": "head123", "ref": "feat-FEAT-827-x"}}
+        )
+
+        payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+
+        assert payload is not None
+        assert payload["head_ref"] == "feat-FEAT-827-x"
+        assert payload["branch"] == "feat-FEAT-827-x"
+
+        reviewer.git_toolkit.get_pull_request = AsyncMock(return_value={"title": "PR", "head": {"sha": "head123"}})
+        payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+        assert payload is not None
+        assert payload["head_ref"] == ""
+        assert payload["branch"] == ""
 
     def test_webhook_payloads_keep_the_base_ref_for_review_events(self) -> None:
         """Opened, reopened and synchronized payloads retain the supplied base branch."""
@@ -1261,8 +1489,8 @@ class TestReviewPullRequestDedup:
                 "repository": "owner/repo",
                 "pr_number": 42,
                 "head_sha": "abc123",
-                "pr_body": "Implements NAV-1",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Implements NAV-1",
             }
         )
         assert out["status"] == "already_reviewed"
@@ -1300,8 +1528,8 @@ class TestReviewPullRequestDedup:
                 "repository": "Owner/Repo",
                 "pr_number": 9,
                 "head_sha": "deadbeef",
-                "pr_body": "Fixes NAV-9",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-9",
             }
         )
         assert out["status"] == "reviewed"
@@ -1356,8 +1584,8 @@ class TestReviewPullRequestDedup:
                 "repository": "owner/repo",
                 "pr_number": 5,
                 "head_sha": "cap-sha",
-                "pr_body": "Fixes NAV-5",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-5",
             }
         )
         # max_iterations must be max_review_tool_calls + 1 as specified.
@@ -1410,7 +1638,7 @@ class TestNoTicketComment:
         assert "@octocat" in body
         assert "NAV-<number>" in body
         assert "NAV-123" in body
-        assert "title or description" in body
+        assert "branch name or title" in body
 
     def test_format_handles_missing_author(self):
         r = _MinimalReviewer(jira_project="PARROT")
@@ -1716,8 +1944,8 @@ class TestReviewPullRequestTicketNotFound:
                 "repository": "owner/repo",
                 "pr_number": 576,
                 "head_sha": "abc123",
-                "pr_body": "Fixes NAV-999",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-999",
                 "author": "dev1",
             }
         )
@@ -1737,8 +1965,8 @@ class TestReviewPullRequestTicketNotFound:
                 "repository": "owner/repo",
                 "pr_number": 576,
                 "head_sha": "abc123",
-                "pr_body": "Fixes NAV-999",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-999",
             }
         )
         assert out["status"] == "ticket_not_found"
@@ -1760,8 +1988,8 @@ class TestReviewPullRequestLLMCrash:
                 "repository": "owner/repo",
                 "pr_number": 576,
                 "head_sha": "abc123",
-                "pr_body": "Fixes NAV-42",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-42",
             }
         )
         assert out["status"] == "error"
@@ -1782,8 +2010,8 @@ class TestReviewPullRequestLLMCrash:
                 "repository": "owner/repo",
                 "pr_number": 576,
                 "head_sha": "abc123",
-                "pr_body": "Fixes NAV-42",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-42",
             }
         )
         assert out["status"] == "error"
@@ -2576,7 +2804,8 @@ class TestReviewToolCallingLoop:
         "repository": "owner/repo",
         "pr_number": 42,
         "pr_title": "feat: add logging",
-        "pr_body": "Fixes NAV-100",
+        "pr_body": "Closes the logging gap.",
+        "head_ref": "hotfix-NAV-100-add-logging",
         "pr_url": "https://github.com/owner/repo/pull/42",
         "head_sha": "abc123",
     }
@@ -2778,7 +3007,8 @@ class TestIntegrationToolAssistedReview:
         "repository": "owner/repo",
         "pr_number": 99,
         "pr_title": "feat: refactor login handler",
-        "pr_body": "Implements NAV-200",
+        "pr_body": "Reworks the login handler.",
+        "head_ref": "hotfix-NAV-200-login-handler",
         "pr_url": "https://github.com/owner/repo/pull/99",
         "head_sha": "feedcafe",
     }
@@ -4509,8 +4739,8 @@ def _wire_strict(
 _PAYLOAD = {
     "repository": "owner/repo",
     "pr_number": 42,
-    "pr_title": "feat: thing",
-    "pr_body": "Implements NAV-1",
+    "pr_title": "feat: thing (NAV-1)",
+    "pr_body": "Implements the thing.",
     "pr_url": "https://github.com/owner/repo/pull/42",
     "head_sha": "sha",
     "author": "octocat",
@@ -5018,10 +5248,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "t",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -5039,10 +5269,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "https://github.com/owner/repo/pull/42",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "octocat"},
             }
         )
@@ -5059,10 +5289,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -5445,10 +5675,10 @@ class TestDeferredReviewReportsTheComparison:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-10333",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-10333-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -5486,10 +5716,10 @@ class TestDeferredReviewReportsTheComparison:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "t",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )

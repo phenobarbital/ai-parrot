@@ -62,6 +62,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "materialize_widget": "parrot_tools.materialize_widget.MaterializeWidgetTool",
     "math": "parrot_tools.math.MathTool",
     "metadata": "parrot_tools.metadata.MetadataTool",
+    "metrics": "parrot_tools.metrics.toolkit.MetricsToolkit",
     "word_to_markdown": "parrot_tools.msword.WordToMarkdownTool",
     "navigator": "parrot_tools.navigator.toolkit.NavigatorToolkit",
     "notification": "parrot_tools.notification.NotificationTool",
