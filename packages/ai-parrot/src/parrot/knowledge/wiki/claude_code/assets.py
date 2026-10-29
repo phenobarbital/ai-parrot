@@ -135,7 +135,7 @@ def hook_command(root: Path, *, portable: bool = False) -> str:
 def mcp_json_entry(root: Path, *, portable: bool = False) -> dict:
     """Build the ``.mcp.json`` entry (absolute path, or portable bare command)."""
     if portable:
-        # Spike S3 (TASK-4069) recorded no host variable-expansion evidence, so no
+        # Spike S3 (TASK-4069): no host expands a project variable in ``env``, so no
         # PARROT_PROJECT pin is emitted; the host's cwd scopes the project.
         return {"command": MCP_JSON_ENTRY["command"], "args": list(MCP_JSON_ENTRY["args"]), "env": {}}
     return {
@@ -194,8 +194,8 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection, *, po
         "env": dict(section.env)}``.
     """
     if portable:
-        # No PARROT_PROJECT pin: spike S3 has no variable-expansion evidence, so the
-        # host's cwd (project root) is relied on.
+        # No PARROT_PROJECT pin: spike S3 found no host expands a project variable in
+        # ``env``. ``mcp-local`` walks up from the host's cwd to the project root.
         return {
             "command": "parrot",
             "args": ["mcp-local", name, "--config", PORTABLE_TOOLKIT_CONFIG],

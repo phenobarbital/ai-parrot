@@ -80,7 +80,7 @@ def wikitoolkit_mcp_entry(root: Path, *, portable: bool = False) -> dict[str, An
 
     Portable (FEAT-633): ``{"command": "wikitoolkit", "args": ["mcp"]}`` — no absolute ``cwd``,
     so the USER-GLOBAL config holds one entry valid for every repository. No project pin is
-    emitted: variable expansion by the host is not verified (spike S3), and an env value would
+    emitted: Antigravity passes ``${workspaceFolder}`` through unexpanded (spike S3), and an env value would
     have to be root-specific, breaking byte-identity across roots.
     """
     if portable:
@@ -109,7 +109,7 @@ def toolkit_mcp_entries(
         entry: dict[str, Any] = {"command": parrot_bin, "args": ["mcp-local", name, "--config", config_path]}
         if not portable:
             entry["cwd"] = str(root.resolve())
-        # No portable project pin: see wikitoolkit_mcp_entry (spike S3 unverified).
+        # No portable project pin: see wikitoolkit_mcp_entry (spike S3: no expansion).
         if section.env:
             entry["env"] = dict(section.env)
         entries[f"parrot-{name}"] = entry
