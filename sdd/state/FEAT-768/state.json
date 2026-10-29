@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "feature_id": "FEAT-768",
+  "slug": "semantic-layer-example",
+  "phase": "proposal_drafted",
+  "mode": "enrichment",
+  "started_at": "2026-10-29T00:00:00Z",
+  "updated_at": "2026-10-29T00:00:00Z",
+  "base_branch": "dev",
+  "type": "feature",
+  "wiki_available": true,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-768/source.md",
+    "summary_oneline": "Create a couple of runnable example agents under examples/agents/semantic that use the FEAT-704 Semantic Layer"
+  },
+  "budget": {
+    "files_read": 100,
+    "grep_calls": 60,
+    "git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900,
+    "profile": "loose"
+  },
+  "consumed": {
+    "files_read": 39,
+    "grep_calls": 17,
+    "git_calls": 17,
+    "depth_reached": 1
+  },
+  "phases": {
+    "plan": {
+      "status": "completed",
+      "approved_by_user": true,
+      "path": "sdd/state/FEAT-768/research_plan.json",
+      "query_count": 15
+    },
+    "research": {
+      "status": "completed",
+      "parallel": {
+        "enabled": true,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "prefix": "FC",
+            "findings": 9,
+            "files_read": 24,
+            "grep_calls": 12,
+            "git_calls": 0
+          },
+          "git": {
+            "status": "completed",
+            "prefix": "FG",
+            "findings": 4,
+            "files_read": 0,
+            "grep_calls": 0,
+            "git_calls": 17
+          },
+          "wiki": {
+            "status": "completed",
+            "prefix": "FW",
+            "findings": 8,
+            "files_read": 15,
+            "grep_calls": 5,
+            "git_calls": 0
+          }
+        },
+        "merge": {
+          "input_count": 21,
+          "output_count": 15,
+          "merged_count": 6,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "truncated": false
+    },
+    "synthesis": {
+      "status": "completed",
+      "lint": "pass",
+      "overall_confidence": "high"
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 5,
+      "questions_answered": 5
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/semantic-layer-example.proposal.md"
+    },
+    "citation_probe": {
+      "status": "completed",
+      "checks": 57,
+      "verified": 54,
+      "stale": 1,
+      "resolved_inline": 1,
+      "head": "7e6741f13"
+    }
+  },
+  "errors": [],
+  "pre_resolved": {
+    "location_decision": "move+extend: relocate examples/semantic/* into examples/agents/semantic/ and add the new examples beside it; update the pinning test path"
+  }
+}
