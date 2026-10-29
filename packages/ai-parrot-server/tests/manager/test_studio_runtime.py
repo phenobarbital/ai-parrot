@@ -460,6 +460,32 @@ async def test_evict_session_retires_only_that_session(repos, tmp_path):
     assert s1.cleanup.await_count == 1 and base.cleanup.await_count == s2.cleanup.await_count == 0
 
 
+async def test_trim_sessions_retires_only_the_owners_least_recently_used(repos, tmp_path):
+    rt, _ = _runtime(repos, tmp_path)
+    await _create(repos)
+
+    def mine(sid):
+        return sid.startswith("u1-")
+
+    for sid in ("u2-a", "u1-a", "u1-b", "u1-c"):               # created in this order: "u2-a" idles the longest
+        await rt.get_session(_key(), sid)
+    assert rt.trim_sessions(_key(), same_owner=mine, keep=2, current="u1-d") == 2
+    live = {sid for sid in ("u2-a", "u1-a", "u1-b", "u1-c") if rt._cache.session(_key().qualified, sid)}
+    assert live == {"u2-a", "u1-c"}                             # room for "u1-d"; another owner is never touched
+    assert rt.trim_sessions(_key(), same_owner=mine, keep=2, current="u1-c") == 0  # the current one is not counted
+
+
+async def test_trim_sessions_skips_a_session_in_use(repos, tmp_path):
+    rt, _ = _runtime(repos, tmp_path)
+    await _create(repos)
+    for sid in ("u1-a", "u1-b"):
+        await rt.get_session(_key(), sid)
+    async with rt.use(_key(), session_id="u1-a"):
+        assert rt.trim_sessions(_key(), same_owner=lambda sid: True, keep=1, current="u1-c") == 1
+    assert rt._cache.session(_key().qualified, "u1-a") is not None   # leased: kept, the next one went instead
+    assert rt._cache.session(_key().qualified, "u1-b") is None
+
+
 async def test_clean_is_idempotent_per_entry(repos, tmp_path):
     rt, _ = _runtime(repos, tmp_path)
     await _create(repos)

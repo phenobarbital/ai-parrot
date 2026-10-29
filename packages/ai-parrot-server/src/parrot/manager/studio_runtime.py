@@ -9,7 +9,7 @@ import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Optional
 
 from navconfig import config
 
@@ -311,6 +311,27 @@ class StudioAgentRuntime:
             return False
         self._cache.retire(entry, now=time.monotonic())
         return True
+
+    def trim_sessions(self, key: StudioAgentKey, *, same_owner: Callable[[str], bool], keep: int, current: str) -> int:
+        """Make room for ``current``: retire the least recently used unleased sessions of ``key`` whose id
+        ``same_owner`` accepts, until at most ``keep`` of them stay live counting ``current``. Other sessions are
+        untouched, so one caller never pushes out another's.
+
+        Never cleans immediately (a lease may be held). Returns how many were retired.
+        """
+        others = [
+            e for e in self._cache.live_sessions()          # oldest ``last_used`` first
+            if e.qualified == key.qualified and e.session_id != current and same_owner(e.session_id)
+        ]
+        excess, retired, now = len(others) - (keep - 1), 0, time.monotonic()
+        for entry in others:
+            if excess <= 0:
+                break
+            if entry.leases == 0:
+                self._cache.retire(entry, now=now)
+                excess -= 1
+                retired += 1
+        return retired
 
     # ---- lifecycle --------------------------------------------------------------------------------------------
     async def start(self) -> None:

@@ -13,6 +13,28 @@ SESSION_PREFIX = "_studio_test:"
 #: A conversation the client names (``session_id`` on ``test/ask`` and on the test ``DELETE``).
 CLIENT_SESSION_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
 
+#: How many conversations one caller keeps live per agent; beyond it their least recently used one is retired.
+CLIENT_SESSIONS_PER_AGENT = 10
+
+
+def client_session_id(user_id: Any, conversation: str) -> str:
+    """The test session id of a conversation the client names, scoped to the caller: ``c.<user_id>.<conversation>``.
+
+    The history is already keyed ``(chatbot, user, session)``, but the runtime caches one bot instance per
+    ``(agent, session)``: the caller's id in the sid keeps two users who send the same id on separate instances.
+    The separator is ``.``, which a conversation id cannot hold (``CLIENT_SESSION_PATTERN``), so the LAST ``.``
+    always ends the owner part and no other (user, conversation) pair gives the same sid, whatever ``user_id`` holds.
+    """
+    return f"c.{user_id}.{conversation}"
+
+
+def client_session_owner(sid: str) -> str | None:
+    """``c.<user_id>`` of a sid built by ``client_session_id``; ``None`` for any other sid."""
+    owner, dot, _ = sid.rpartition(".")
+    if not dot or not owner.startswith("c."):
+        return None
+    return owner
+
 
 class _ServerManagedDepsError(Exception):
     """Raised when a tool's constructor requires deps this endpoint can't supply."""

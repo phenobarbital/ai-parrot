@@ -15,6 +15,7 @@ from parrot.bots.basic import BasicBot
 from parrot.handlers.studio import agents as agents_module
 from parrot.registry import registry as registry_module
 from parrot.handlers.studio import conversation
+from parrot.handlers.studio.testing._models import CLIENT_SESSIONS_PER_AGENT
 
 from ._scripted_llm import PROVIDER, ScriptedClient, history_seen
 from .test_testing_db_mode import BASE, KEY, _app, pool  # noqa: F401  (pool is a fixture)
@@ -187,6 +188,10 @@ async def test_client_sid_is_unambiguous(aiohttp_client, pool, scripted):
     assert await _ask_in(client, "one", "2-aaaaaaaa", user="1") == 0
     assert await _ask_in(client, "one", "aaaaaaaa", user="1-2") == 0
     assert await _ask_in(client, "two", "2-aaaaaaaa", user="1") == 2
+    # the history is keyed by user too, so only the instances tell a shared sid apart: two callers, two instances
+    runtime = client.app["bot_manager"].studio
+    first, second = (runtime._cache.session(KEY.qualified, sid) for sid in ("c.1.2-aaaaaaaa", "c.1-2.aaaaaaaa"))
+    assert first is not None and second is not None and first is not second
 
 
 async def test_client_conversation_leaves_the_default_session_alone(aiohttp_client, pool, scripted):
@@ -213,6 +218,30 @@ async def test_ending_one_conversation_keeps_the_others(aiohttp_client, pool, sc
     assert (await client.delete(f"{BASE}/agents/alpha/test", params={"session_id": S1})).status == 200
     assert await _ask_in(client, "two", S1) == 0  # ended: starts empty
     assert await _ask_in(client, "two", S2) == 2
+
+
+async def test_conversations_per_caller_are_capped_without_touching_other_callers(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    runtime = client.app["bot_manager"].studio
+    assert await _ask_in(client, "one", S1, user="u2") == 0  # another caller's conversation, idle the longest
+    ids = [f"conversation{n:04d}" for n in range(CLIENT_SESSIONS_PER_AGENT + 1)]
+    for conversation_id in ids:
+        assert await _ask_in(client, "one", conversation_id) == 0
+    live = [cid for cid in ids if runtime._cache.session(KEY.qualified, f"c.u1.{cid}") is not None]
+    assert live == ids[1:]  # u1 keeps CLIENT_SESSIONS_PER_AGENT: their least recently used one went
+    assert runtime._cache.session(KEY.qualified, f"c.u2.{S1}") is not None
+
+
+async def test_ending_a_conversation_of_a_legacy_agent_tears_down_its_test_bot(aiohttp_client, pool, scripted):
+    client = await aiohttp_client(_app(pool))
+    manager = client.app["bot_manager"]
+    manager.registry.register("legacy-one", _LegacyScripted)
+    manager._botdef["legacy-one"] = _LegacyScripted
+    assert await _ask(client, "first", name="legacy-one") == 0
+    assert manager._bots
+    resp = await client.delete(f"{BASE}/agents/legacy-one/test", params={"session_id": S1})
+    assert resp.status == 200
+    assert not manager._bots  # the legacy teardown ran, not a no-op "conversation ended"
 
 
 async def test_redis_backend_resumes_a_client_conversation_on_another_worker(
