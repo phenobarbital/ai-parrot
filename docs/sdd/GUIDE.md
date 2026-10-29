@@ -460,11 +460,11 @@ intervención, lanza `sdd-worker` dentro del worktree:
 
 ```bash
 cd .claude/worktrees/feat-150-agent-tracing
-claude --agent sdd-worker --model sonnet --verbose
+scripts/sdd/launch_worker.sh --verbose
 
 # En background:
 tmux new -s feat-150 \
-  "claude --agent sdd-worker --model sonnet --verbose"
+  "scripts/sdd/launch_worker.sh --verbose"
 # Ctrl+B, D para detach; tmux attach -t feat-150 para volver
 ```
 
