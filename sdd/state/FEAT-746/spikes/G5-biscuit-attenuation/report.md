@@ -29,6 +29,14 @@ G5 demonstrates that biscuit-python can issue capability-scoped tokens, attenuat
 
 All four cases match the expected table from spec G5.
 
+**Update 2026-10-30.** The capability check no longer hard-codes `"hr.reports."`: each
+verified `capability_glob("x.y.*")` in the token's authority block becomes an
+authorizer fact `capability_prefix("x.y.")`, and the check is
+`check if capability($c), capability_prefix($p), $c.starts_with($p)`. A second-glob
+regression (`finance.ledger.*`) allows `finance.ledger.balance` and refuses
+`hr.reports.headcount_by_dept` and `finance.ledgerx.balance`.
+`PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g5_biscuit_attenuation.py` → 2 passed.
+
 ---
 
 ## biscuit-python API

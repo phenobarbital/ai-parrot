@@ -21,7 +21,6 @@ from biscuit_auth import (
 )
 
 ROOT_GLOB = "hr.reports.*"
-GLOB_PREFIX = "hr.reports."
 
 
 def extract_facts_from_source(source: str) -> list[str]:
@@ -34,10 +33,10 @@ def extract_facts_from_source(source: str) -> list[str]:
     return facts
 
 
-def issue_root(kp: KeyPair, *, caller: str, ttl_h: int = 24) -> Biscuit:
+def issue_root(kp: KeyPair, *, caller: str, ttl_h: int = 24, glob: str = ROOT_GLOB) -> Biscuit:
     """Root token: capability_glob, caller, expires."""
     exp = int((datetime.now(timezone.utc) + timedelta(hours=ttl_h)).timestamp())
-    builder = BiscuitBuilder(f'capability_glob("{ROOT_GLOB}"); caller("{caller}"); expires({exp});')
+    builder = BiscuitBuilder(f'capability_glob("{glob}"); caller("{caller}"); expires({exp});')
     return builder.build(kp.private_key)
 
 
@@ -63,13 +62,19 @@ def authorize(
     # Facts from the call
     ab.add_fact(Fact(f'capability("{cap_id}")'))
     ab.add_fact(Fact(f'peer("{caller}")'))
-    ab.add_fact(Fact(f'time({now})'))
+    ab.add_fact(Fact(f"time({now})"))
 
-    # Extract facts from token's authority block
+    # Extract facts from token's authority block (signature already verified by from_bytes)
     authority_source = token.block_source(0)
     fact_strings = extract_facts_from_source(authority_source)
     for fs in fact_strings:
         ab.add_fact(Fact(fs))
+    # Datalog has no glob matching, so each verified capability_glob("x.y.*") becomes a
+    # capability_prefix("x.y.") fact — derived from the token, never a hard-coded constant.
+    for glob in re.findall(r'capability_glob\("([^"]*)"\)', authority_source):
+        if not glob.endswith(".*"):
+            raise ValueError(f"unsupported capability_glob (must end in '.*'): {glob!r}")
+        ab.add_fact(Fact(f'capability_prefix("{glob[:-1]}")'))
 
     # Checks from the token
     # Verify caller matches
@@ -77,7 +82,7 @@ def authorize(
     # Verify not expired
     ab.add_check(Check("check if expires($e), time($t), $t < $e"))
     # Verify capability matches glob - using starts_with for glob prefix matching
-    ab.add_check(Check(f'check if capability($c), capability_glob($g), $c.starts_with("{GLOB_PREFIX}")'))
+    ab.add_check(Check("check if capability($c), capability_prefix($p), $c.starts_with($p)"))
 
     ab.add_policy(Policy("allow if true"))
     a = ab.build(token)
