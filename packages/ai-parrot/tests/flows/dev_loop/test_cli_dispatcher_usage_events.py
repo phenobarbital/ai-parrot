@@ -142,9 +142,7 @@ def _dispatcher(monkeypatch, messages, *, registry=None) -> ClaudeCodeDispatcher
     return disp
 
 
-async def test_claude_dispatch_emits_after_call_with_model(
-    monkeypatch, brief, linked_worktree, run_registry, ledger
-):
+async def test_claude_dispatch_emits_after_call_with_model(monkeypatch, brief, linked_worktree, run_registry, ledger):
     """Out-of-process usage must reach the ledger with its real model."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
