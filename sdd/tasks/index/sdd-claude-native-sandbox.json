@@ -107,7 +107,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -119,8 +119,9 @@
       "parallelism_notes": "calls native_sandbox_settings/validate_allowed_domains from TASK-4885; modifies test_dispatcher.py after TASK-4886 and uses its linked_worktree fixture; sets the PARROT_SDD_SANDBOX_BACKEND contract that TASK-4887's hook consumes",
       "assigned_to": null,
       "started_at": "2026-10-29T22:46:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4888-dispatcher-native-sandbox.md"
+      "completed_at": "2026-10-29T23:16:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4888-dispatcher-native-sandbox.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4889",
