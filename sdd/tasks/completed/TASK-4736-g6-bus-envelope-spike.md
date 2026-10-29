@@ -237,8 +237,7 @@ See blueprint test (memory backend only).
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 267s · Tokens: n/a (attempt 09970ac4a09849088592a681a987974f). Review: no corrections.
 
-**Deviations from spec**: none | describe if any
+PARTIAL: memory-backend criteria PASS (correlation round-trip, 1 MiB + \x00\xff bytes intact, dedup 2 executions / 3 calls, DLQ callback); base64 overhead 33.4%; change request text recorded. The Redis Streams run (durable DLQ) was NOT executed — no Redis reachable on this host (localhost:6379 refused). Rerun `SQUAWK_SPIKE_REDIS_URL=... python sdd/state/FEAT-746/spikes/G6-bus-envelope/spike.py` against operator Redis before M11 (SquawkBusCarrier) relies on the gate.
+Validation: PARROT_SPIKE=1 test 1 passed. Merge-tier handle b7e2c4a1:TASK-4736:merge only red on the 4 pre-existing repl_worker sandbox /tmp failures (files untouched by this feature).

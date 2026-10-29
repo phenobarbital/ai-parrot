@@ -180,7 +180,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -191,8 +191,9 @@
       "parallelism_notes": "imports BusPayloadSerializer/CallMessage from TASK-4741 (parrot/interagent/bus_codec.py, messages.py); exclusive: needs a shared Redis Streams instance; test file lives in packages/ai-parrot-squawk/tests/spikes created by TASK-4737",
       "assigned_to": null,
       "started_at": "2026-10-26T12:36:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4736-g6-bus-envelope-spike.md"
+      "completed_at": "2026-10-29T22:49:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4736-g6-bus-envelope-spike.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4737",
