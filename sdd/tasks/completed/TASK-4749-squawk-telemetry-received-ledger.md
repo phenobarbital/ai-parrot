@@ -234,8 +234,5 @@ Fake recorder subclassing `AbstractLogger` with a list; fake registry object exp
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 115s · Tokens: 1034k/8.7k (attempt ff0b7362dbcf43fd98fc8c6344842e8a). Review: no corrections.
+Merge-tier validation (handle b7e2c4a1:chunk0:merge): this task's tests green (squawk 53 passed/1 skipped; interagent+registry 135 passed). 4 failures in repl_worker/test_transport.py + test_strict_worker_transport.py are pre-existing sandbox /tmp allowlist errors ('output_dir escapes allowed directories'), in files this feature never touches.

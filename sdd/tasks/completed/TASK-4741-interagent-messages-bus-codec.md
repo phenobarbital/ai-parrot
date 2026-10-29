@@ -284,8 +284,6 @@ def test_bytes_roundtrip():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 274s · Tokens: 768k/10k (attempt 0fcb95ccf1724e399689fef425cbf51b).
+Review fix d25b86739: restored CAP_ID_PATTERN in __all__ (dropped by delivery). Feedback coder-feedback:bc99878906be538b347c7362.
+Merge-tier validation (handle b7e2c4a1:chunk0:merge): this task's tests green (squawk 53 passed/1 skipped; interagent+registry 135 passed). 4 failures in repl_worker/test_transport.py + test_strict_worker_transport.py are pre-existing sandbox /tmp allowlist errors ('output_dir escapes allowed directories'), in files this feature never touches.
