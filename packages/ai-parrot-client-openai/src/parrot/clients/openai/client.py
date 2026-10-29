@@ -105,6 +105,11 @@ class OpenAIClient(OpenAIBaseClient):
     _lightweight_model: str = "gpt-4.1"
     # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
     _min_cache_tokens: int = 1024
+    # FEAT-770: OpenAI accepts ``max_completion_tokens`` on every chat model and
+    # reasoning models (gpt-5*, o-series) reject ``max_tokens``; the same models
+    # only accept their default temperature.
+    _uses_max_completion_tokens: bool = True
+    _fixed_temperature_prefixes: tuple[str, ...] = ("gpt-5", "o1", "o3", "o4")
 
     def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", **kwargs):
         # FEAT-438: resolve the OpenAI-specific API-key env default here,
@@ -1528,9 +1533,11 @@ class OpenAIClient(OpenAIBaseClient):
         else:
             response_format = {"type": "json_object"}
 
-        response = await self.client.chat.completions.create(
+        # FEAT-770: through the funnel so reasoning-model params are adapted.
+        response = await self._chat_completion(
             model=model,
             messages=messages,
+            use_tools=True,
             max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=response_format,
@@ -2045,9 +2052,11 @@ class OpenAIClient(OpenAIBaseClient):
 
         # --- call OpenAI ---
         messages = [{"role": "user", "content": content_blocks}]
-        response = await self.client.chat.completions.create(
+        # FEAT-770: through the funnel so reasoning-model params are adapted.
+        response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
+            use_tools=True,
             max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=resp_format,
