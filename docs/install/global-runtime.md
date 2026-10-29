@@ -8,11 +8,19 @@ uv-managed Python 3.12, `~/.parrot/venv` (`ai-parrot` plus `ai-parrot-tools` at 
 (`wikis.json`, `library/`, `skills/`, `brains/`, `parrot.db`) is never touched; the installer only adds
 `bin/`, `venv/` and `python/`, and a failed run removes only what it created.
 
+> **Supported platforms.** The global install is officially supported on **Linux x86_64** only. On Linux aarch64,
+> macOS arm64 and Windows x64 the installer runs but prints a warning. Several dependencies (python-datamodel,
+> navconfig, navigator-api, navigator-auth, asyncdb, pytomlpp) publish no wheel for those platforms, so the install
+> compiles them and needs a C toolchain. On Windows it currently fails: navigator-auth has no Windows wheel, and
+> uvloop, which proxylists requires, does not run on Windows. This affects a project install on
+> Windows too.
+
 ## What the installer checks and prints
 
 Before writing anything the installer runs a read-only gate, in this order:
 
-1. platform: Linux x86_64 / aarch64, macOS arm64 (Windows x64 for the PowerShell installer);
+1. platform: Linux x86_64 / aarch64, macOS arm64 (Windows x64 for the PowerShell installer); anything but Linux
+   x86_64 only prints a "not officially supported" warning (see above);
 2. a download tool (`curl` or `wget`) and a checksum tool (`sha256sum` or `shasum`; `Get-FileHash` on Windows);
 3. `git`;
 4. a writable `PARROT_HOME` (its nearest existing ancestor) with at least 2 GiB free;

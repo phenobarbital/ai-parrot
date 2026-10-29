@@ -130,6 +130,8 @@ the script, then run it.
 function Test-Preflight([string]$Home_) {  # C14b — read-only gate, in order; never creates PARROT_HOME
   $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
   if ("$arch" -ne 'X64') { Write-Error "preflight: unsupported platform windows-$arch — fix: -Global needs an x64 Windows (no windows-$arch core wheel yet); use a project install"; exit 1 }
+  # Officially supported: Linux x86_64 only (owner decision 2026-10-29): warn, never block.
+  Write-Warning 'Windows is not officially supported yet (official: Linux x86_64): navigator-auth has no Windows wheel and uvloop (required by proxylists) does not run on Windows, so the install is expected to fail'
   foreach ($c in @('Invoke-WebRequest', 'Get-FileHash')) { if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Write-Error "preflight: $c unavailable — fix: use Windows PowerShell 5.1+ or PowerShell 7"; exit 1 } }
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Error 'preflight: git not found — fix: install Git for Windows (the SDD flow and parrot self doctor need it)'; exit 1 }
   $anc = $Home_; while (-not (Test-Path $anc)) { $anc = Split-Path -Parent $anc }   # nearest existing ancestor

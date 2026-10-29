@@ -71,3 +71,14 @@ def test_installer_scripts_are_pinned_to_lf() -> None:
             cwd=REPO_ROOT, capture_output=True, text=True, check=True,
         ).stdout
         assert out.strip().endswith("eol: lf"), out
+
+
+def test_only_the_official_smoke_leg_blocks_a_release() -> None:
+    """Owner decision 2026-10-29: Linux x86_64 is the only official platform; other legs run but never fail the job."""
+    import yaml
+
+    wf = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "install-matrix.yml").read_text(encoding="utf-8"))
+    smoke = wf["jobs"]["smoke"]
+    official = [e["os"] for e in smoke["strategy"]["matrix"]["include"] if e.get("official")]
+    assert official == ["ubuntu-latest"]
+    assert smoke["continue-on-error"] == "${{ matrix.official != true }}"

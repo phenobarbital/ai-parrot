@@ -233,3 +233,10 @@ def test_credentials_step_after_runtime_doctor_and_warn_only() -> None:
     # its own try/catch swallows the failure; the rollback catch only comes after the component loop
     assert "catch { Write-Warning \"no credentials file was created" in step and "rolling back" not in step
     assert body.index("self add $c") < body.index("rolling back what this run created")
+
+
+def test_windows_warns_not_officially_supported() -> None:
+    """Owner decision 2026-10-29: the PowerShell preflight warns (never blocks) that Windows is not official yet."""
+    gate = _TEXT[_TEXT.index("function Test-Preflight") :]
+    gate = gate[: gate.index("\n}\n")]
+    assert "Write-Warning 'Windows is not officially supported yet (official: Linux x86_64)" in gate

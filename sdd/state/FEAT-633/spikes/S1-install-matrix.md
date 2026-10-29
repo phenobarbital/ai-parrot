@@ -31,6 +31,15 @@ hint. That parser was fixed afterwards on this branch, and the names above come 
   installed without a compiler (none of them in `sdist_failures`) — rev 0.5 C20.
 
 ## Verdict
+**Owner decision (2026-10-29): officially supported platform = Linux x86_64.**
+- Windows x64 is x86_64 too, but it cannot install while uvloop, which proxylists requires, does not run on Windows.
+  A wheel cannot fix that leg.
+- `install-matrix.yml` marks the ubuntu x64 leg `official`. The other legs still run and upload their `SmokeReport`,
+  but they are `continue-on-error`, so they no longer block `deploy` in `release.yml`.
+- Both installers print a "not officially supported" warning off Linux x86_64 and never block.
+- `docs/getting-started.md` and `docs/install/global-runtime.md` state the policy.
+- Revisit when the upstream wheels land (`issue:d725faabd9a8`).
+
 **FAIL (2026-10-29, [run 40813681936](https://github.com/phenobarbital/ai-parrot/actions/runs/40813681936)).** ubuntu x64 is green. The other three legs cannot install
 without a compiler. ai-parrot's own wheels were built for every platform (`build-core` was green on all four), so
 the failures are all in dependencies.

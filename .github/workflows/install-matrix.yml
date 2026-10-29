@@ -16,6 +16,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        # Officially supported: Linux x86_64 only (owner decision 2026-10-29). The other legs keep running and
+        # uploading their SmokeReport, but cannot block a release until the upstream wheels exist
+        # (issue:d725faabd9a8: python-datamodel, navconfig, navigator-api, navigator-auth, asyncdb, pytomlpp,
+        # uvloop via proxylists on Windows).
+        include:
+          - os: ubuntu-latest
+            official: true
+    continue-on-error: ${{ matrix.official != true }}
     runs-on: ${{ matrix.os }}
     env:
       UV_PYTHON_PREFERENCE: only-managed

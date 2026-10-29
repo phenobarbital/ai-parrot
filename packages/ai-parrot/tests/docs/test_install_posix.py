@@ -310,3 +310,15 @@ def test_global_install_credentials_failure_keeps_runtime(tmp_path: Path) -> Non
 def test_global_dry_run_announces_credentials(tmp_path: Path) -> None:
     result = _run_global(tmp_path)
     assert "self env --init" in result.stdout and "credentials file" in result.stdout
+
+
+@pytest.mark.parametrize("machine, warned", [("x86_64", False), ("aarch64", True)])
+def test_global_dry_run_warns_off_the_official_platform(tmp_path: Path, machine: str, warned: bool) -> None:
+    """Owner decision 2026-10-29: only Linux x86_64 is official; elsewhere the gate warns but never blocks."""
+    path = _fake_bin(tmp_path, scripts={"uname": f'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo {machine};; esac\n'})
+    env = {**os.environ, "HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"),
+           "SHELL": "/bin/bash", "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global", "--dry-run"], capture_output=True, text=True,
+                            check=False, env=env)
+    assert result.returncode == 0, result.stderr
+    assert ("not officially supported (official: Linux x86_64)" in result.stderr) is warned

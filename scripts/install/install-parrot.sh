@@ -186,6 +186,11 @@ preflight() {  # C14b — read-only checks, in order; never calls run(); never c
     *) gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64" ;;
   esac
   uv_target >/dev/null 2>&1 || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64"
+  # Officially supported: Linux x86_64 (owner decision 2026-10-29). Elsewhere some dependencies publish no wheel,
+  # so uv builds them from source: warn, never block — a machine with a C toolchain may still succeed.
+  [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || echo "warning: $(uname -s)-$(uname -m) is not officially supported \
+(official: Linux x86_64); some dependencies have no wheel here, so the install compiles them, needs a C toolchain \
+and may fail" >&2
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || gate_fail "no download tool" "install curl or wget"
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || gate_fail "no checksum tool" "install coreutils (sha256sum) or perl (shasum)"
   command -v mktemp >/dev/null 2>&1 || gate_fail "no mktemp" "install coreutils (mktemp)"

@@ -136,6 +136,14 @@ Instead of a per-project venv you can install AI-Parrot once per machine. One co
 `$PARROT_HOME`): a pinned `uv`, a uv-managed Python 3.12 and a venv holding `ai-parrot` together with
 `ai-parrot-tools` at the same version (`wikitoolkit mcp` needs it). It needs no system Python.
 
+> **Supported platforms.** The global install is officially supported on **Linux x86_64** only. On Linux aarch64,
+> macOS arm64 and Windows x64 the installer runs but prints a warning. Several dependencies (python-datamodel,
+> navconfig, navigator-api, navigator-auth, asyncdb, pytomlpp) publish no wheel for those platforms, so the install
+> compiles them and needs a C toolchain. On Windows it currently fails: navigator-auth has no Windows wheel, and
+> uvloop, which proxylists requires, does not run on Windows. This affects a project install on
+> Windows too.
+> Details: [docs/install/global-runtime.md](install/global-runtime.md).
+
 **Linux / macOS:**
 
 ```bash
