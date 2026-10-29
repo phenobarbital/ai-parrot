@@ -11,9 +11,9 @@ Workflow:
 * On ``github.pr_opened`` / ``pr_reopened`` / ``pr_synchronize`` events
   emitted by :class:`~parrot.core.hooks.github_webhook.GitHubWebhookHook`,
   :meth:`handle_hook_event` is invoked by the orchestrator. It extracts the
-  ``NAV-xxx`` (or any configured project prefix) key from the PR body /
-  title, pulls the ticket from Jira, fetches the PR diff, asks the LLM for a
-  structured comparison and either submits a ``REQUEST_CHANGES`` review
+  ``NAV-xxx`` (or any configured project prefix) key from the PR head
+  branch / title (never the PR body), pulls the ticket from Jira, fetches
+  the PR diff, asks the LLM for a structured comparison and either submits a ``REQUEST_CHANGES`` review
   with Telegram alerts (when discrepancies are found) or posts an
   ``APPROVE`` review (when all acceptance criteria are satisfied).
   Re-deliveries with the same ``head_sha`` are deduplicated in-memory so
@@ -507,9 +507,9 @@ class GitHubReviewer(Agent):
         repository: Target GitHub repository in ``"owner/name"`` format.
         jira_project: Jira project key whose tickets the PRs reference
             (default ``"NAV"``). Used to build the regex that extracts the
-            ticket key from the PR body / title.
+            ticket key from the PR head branch / title.
         sdd_feature_prefix: Prefix used to extract SDD feature identifiers
-            from PR titles and bodies. Defaults to ``"FEAT"``.
+            from PR head branches and titles. Defaults to ``"FEAT"``.
         enable_sdd_spec_fallback: Whether later review integration may use
             an SDD specification when no Jira key is present. Defaults to
             ``True``.
@@ -1554,6 +1554,119 @@ class GitHubReviewer(Agent):
                 return match.group(0)
         return None
 
+    # SDD files whose content names the feature a branch implements: the
+    # per-spec task index (``feature_id``) and the spec (``**Feature ID**``).
+    _SDD_FEATURE_FILE_RE = re.compile(r"^sdd/(?:tasks/index/[^/]+\.json|specs/[^/]+\.spec\.md)$")
+    _SPEC_FEATURE_HEADER_RE = re.compile(r"^\s*\*\*Feature ID\*\*:\s*(\S+)\s*$", re.MULTILINE)
+
+    @staticmethod
+    def _requirement_sources(payload: Dict[str, Any]) -> Tuple[str, str]:
+        """Return the texts trusted for ticket / feature resolution, most authoritative first.
+
+        The head branch comes first: the SDD tooling generates it from the
+        reserved id (``feat-FEAT-<NNN>-<slug>``, ``hotfix-<KEY>-<slug>``), so
+        it is the one source no human types. The PR title is the fallback.
+        The PR body is never consulted — it routinely cites a parent or
+        related feature before the one under review, which sends the review
+        against the wrong acceptance criteria.
+        """
+        return (
+            str(payload.get("head_ref") or payload.get("branch") or ""),
+            str(payload.get("pr_title") or ""),
+        )
+
+    async def _resolve_requirement(
+        self, repo: str, payload: Dict[str, Any]
+    ) -> Tuple[Optional[str], Literal["jira", "sdd_spec"], Optional[Dict[str, Any]]]:
+        """Pick the requirement a pull request is reviewed against.
+
+        Returns ``(ticket_key, requirement_source, ticket)``. A Jira key in
+        the head branch or title always wins; the caller fetches it later, so
+        ``ticket`` is ``None``. Otherwise, with the SDD fallback enabled, the
+        feature id is taken from the branch, then the title, then the SDD
+        files the PR itself changes, and ``ticket`` carries the validated spec
+        requirement. ``(None, "jira", None)`` means nothing reviewable was
+        referenced.
+        """
+        sources = self._requirement_sources(payload)
+        ticket_key = self._extract_ticket_key(*sources)
+        if ticket_key or not self.enable_sdd_spec_fallback:
+            return ticket_key, "jira", None
+        feature_id = self._extract_feature_id(*sources)
+        if feature_id is None:
+            feature_id = await self._feature_id_from_pr_files(repo, payload)
+        if feature_id is None:
+            return None, "jira", None
+        ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
+        if ticket is None:
+            return None, "jira", None
+        return feature_id, "sdd_spec", ticket
+
+    @classmethod
+    def _sdd_paths_in_diff(cls, diff_text: str) -> List[str]:
+        """Return the SDD index / spec paths a unified diff touches, in order, without duplicates."""
+        paths: List[str] = []
+        for match in re.finditer(r"^diff --git a/(?P<old>\S+) b/(?P<new>\S+)$", diff_text, re.MULTILINE):
+            new_path = match.group("new")
+            if cls._SDD_FEATURE_FILE_RE.match(new_path) and new_path not in paths:
+                paths.append(new_path)
+        return paths
+
+    def _feature_id_from_sdd_file(self, path: str, content: FileContentResult) -> Optional[str]:
+        """Return the feature id an SDD per-spec index or spec file declares, if it is a valid one."""
+        if not content.exists or content.error is not None or not isinstance(content.content, str):
+            return None
+        candidate: Any = None
+        if path.endswith(".json"):
+            try:
+                data = json.loads(content.content)
+            except ValueError:
+                return None
+            if isinstance(data, dict):
+                candidate = data.get("feature_id")
+        else:
+            match = self._SPEC_FEATURE_HEADER_RE.search(content.content)
+            candidate = match.group(1) if match else None
+        if isinstance(candidate, str) and self._feature_id_regex.fullmatch(candidate.strip()):
+            return candidate.strip()
+        return None
+
+    async def _feature_id_from_pr_files(self, repo: str, payload: Dict[str, Any]) -> Optional[str]:
+        """Resolve the feature id from the SDD files a PR changes, read at its head SHA.
+
+        An SDD feature branch commits its per-spec index and usually its spec,
+        so the diff names them even when neither the branch nor the title
+        carries the id. The id is returned only when every such file agrees.
+        """
+        pr_number = payload.get("pr_number")
+        head_sha = str(payload.get("head_sha") or "")
+        if self.git_toolkit is None or pr_number is None or not head_sha:
+            return None
+        diff_text, _truncated, available = await self._fetch_diff(repo, int(pr_number))
+        if not available:
+            return None
+        candidates: Dict[str, str] = {}
+        for sdd_path in self._sdd_paths_in_diff(diff_text):
+            try:
+                content = await self.git_toolkit.get_file_content_at_ref(sdd_path, head_sha, repository=repo)
+            except GitToolkitError as exc:
+                self.logger.warning("GitHubReviewer: unable to read %s at %s: %s", sdd_path, head_sha, exc)
+                continue
+            feature_id = self._feature_id_from_sdd_file(sdd_path, content)
+            if feature_id:
+                candidates[sdd_path] = feature_id
+        distinct = set(candidates.values())
+        if len(distinct) == 1:
+            return distinct.pop()
+        if distinct:
+            self.logger.warning(
+                "GitHubReviewer: PR %s#%s changes SDD files of several features (%s); no spec selected.",
+                repo,
+                pr_number,
+                ", ".join(f"{p}={f}" for p, f in sorted(candidates.items())),
+            )
+        return None
+
     async def review_pull_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Run a single PR review and return a summary dict.
 
@@ -1561,8 +1674,9 @@ class GitHubReviewer(Agent):
         entry point for manual triggering / tests.
 
         Args:
-            payload: Mapping with at least ``pr_number``, ``pr_body``,
-                ``pr_title``, ``pr_url``, ``repository`` and ``head_sha``.
+            payload: Mapping with at least ``pr_number``, ``pr_title``,
+                ``pr_url``, ``repository`` and ``head_sha``; ``head_ref`` (the
+                PR branch) is the preferred source of the ticket / feature id.
 
         Returns:
             A dict with ``status`` and the relevant artifacts (jira key,
@@ -1590,16 +1704,7 @@ class GitHubReviewer(Agent):
                 "head_sha": head_sha,
             }
 
-        ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
-        requirement_source = "jira"
-        ticket = None
-        if not ticket_key and self.enable_sdd_spec_fallback:
-            feature_id = self._extract_feature_id(payload.get("pr_body") or "", payload.get("pr_title") or "")
-            if feature_id:
-                ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
-                if ticket is not None:
-                    ticket_key = feature_id
-                    requirement_source = "sdd_spec"
+        ticket_key, requirement_source, ticket = await self._resolve_requirement(repo, payload)
         if not ticket_key:
             self.logger.info(
                 "PR %s#%s does not reference a %s ticket; skipping.",
@@ -1777,13 +1882,13 @@ class GitHubReviewer(Agent):
         return (
             f"### Automated review skipped — no Jira ticket referenced\n\n"
             f"{salutation}This pull request does not reference a "
-            f"`{self.jira_project}-<number>` Jira ticket in its title or "
-            f"description, so the automated reviewer cannot compare the "
+            f"`{self.jira_project}-<number>` Jira ticket in its branch name or "
+            f"title, so the automated reviewer cannot compare the "
             f"changes against the acceptance criteria.\n\n"
-            f"**To unblock review**, edit the PR title or description to "
+            f"**To unblock review**, edit the PR title to "
             f"include a key from the `{self.jira_project}` project — for "
             f"example `{self.jira_project}-123` — and push a new commit "
-            f"to re-trigger the reviewer.\n\n"
+            f"to re-trigger the reviewer. The PR description is not scanned.\n\n"
             f"_Posted by the GitHubReviewer agent._"
         )
 
@@ -2562,6 +2667,8 @@ class GitHubReviewer(Agent):
             "pr_body": pr.get("body") or "",
             "pr_url": pr.get("html_url") or "",
             "head_sha": ((pr.get("head") or {}).get("sha")) or "",
+            "head_ref": ((pr.get("head") or {}).get("ref")) or "",
+            "branch": ((pr.get("head") or {}).get("ref")) or "",
             "base_ref": ((pr.get("base") or {}).get("ref")) or "",
             "base_sha": ((pr.get("base") or {}).get("sha")) or "",
             "author": ((pr.get("user") or {}).get("login")) or "",
@@ -3026,7 +3133,7 @@ class GitHubReviewer(Agent):
 
         Args:
             payload: Review payload — ``repository``, ``pr_number``,
-                ``pr_title``, ``pr_body``, ``pr_url``, ``head_sha``,
+                ``pr_title``, ``head_ref``, ``pr_url``, ``head_sha``,
                 ``author``.
 
         Returns:
@@ -3039,16 +3146,7 @@ class GitHubReviewer(Agent):
             return {"status": "error", "reason": "missing pr_number"}
         repo = payload.get("repository") or self.repository
 
-        ticket_key = self._extract_ticket_key(payload.get("pr_body") or "", payload.get("pr_title") or "")
-        requirement_source = "jira"
-        ticket = None
-        if not ticket_key and self.enable_sdd_spec_fallback:
-            feature_id = self._extract_feature_id(payload.get("pr_body") or "", payload.get("pr_title") or "")
-            if feature_id:
-                ticket = await self._fetch_spec_requirement(repo, feature_id, str(payload.get("base_ref") or ""))
-                if ticket is not None:
-                    ticket_key = feature_id
-                    requirement_source = "sdd_spec"
+        ticket_key, requirement_source, ticket = await self._resolve_requirement(repo, payload)
         if not ticket_key:
             outcome: Dict[str, Any] = {"status": "no_ticket", "repository": repo, "pr_number": pr_number}
             comment = await self._notify_missing_ticket(repo=repo, pr_number=pr_number, payload=payload)
@@ -3347,7 +3445,7 @@ class GitHubReviewer(Agent):
 
         if status == "no_ticket":
             return (
-                f"🤷 {head}\n\nNo `{self.jira_project}-<number>` ticket is referenced in the title or body, "
+                f"🤷 {head}\n\nNo `{self.jira_project}-<number>` ticket is referenced in the branch name or title, "
                 f"so there is nothing to compare the PR against. I left a comment on the PR saying so."
             )
         if status == "ticket_not_found":
