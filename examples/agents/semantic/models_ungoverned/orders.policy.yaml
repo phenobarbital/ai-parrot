@@ -1,0 +1,6 @@
+# Ungoverned twin of ../models/orders.policy.yaml.
+# `governed: false` makes this fixture the compiler surface, not a governance bypass.
+# No `connection:` is needed because this model is compiled, never executed.
+governed: false
+roles:
+  admin: {metrics: "*", dimensions: "*", usage: "*"}

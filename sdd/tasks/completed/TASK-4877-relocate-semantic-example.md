@@ -241,10 +241,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat gpt-5.6-sol, codex; attempt 2 after attempt 1 empty_delivery on gpt-5.6-terra)
+**Date**: 2026-10-29
+**Notes**: git mv of example + README to examples/agents/semantic/ (R100 / R92), README line 3 repointed, _EXAMPLE_PATH updated. Orchestrator committed the old-path deletions (gate flagged them as undeclared) and merged by hand because engine task-tier validation was unavailable (attempt had no execution_id). test_example_agent.py: 15 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

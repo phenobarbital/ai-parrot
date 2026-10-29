@@ -597,10 +597,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker via coder seat
+**Date**: 2026-10-29
+**Notes**: Shared _common.py helpers + test_example_common.py by gpt-5.6-terra; merged by engine; common+agent tests green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

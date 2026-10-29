@@ -296,10 +296,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker via coder seat
+**Date**: 2026-10-29
+**Notes**: README merged and docs/tools/semantic-layer.md updated by minimax seat; engine-merged; all FEAT-769 example tests green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
