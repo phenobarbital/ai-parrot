@@ -130,7 +130,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,8 +141,9 @@
       "parallelism_notes": "modifies native_claude_sandbox.py created by TASK-4885 (same file, serialized) and calls native_sandbox_settings; child env selects TASK-4887's native hook branch",
       "assigned_to": null,
       "started_at": "2026-10-29T22:46:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4889-interactive-native-launcher.md"
+      "completed_at": "2026-10-29T23:16:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4889-interactive-native-launcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4890",
