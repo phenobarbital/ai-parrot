@@ -11,6 +11,7 @@ import uuid
 from typing import Any
 
 from navigator_eventbus import EventBus
+from navigator_eventbus.backends import RedisStreamsBackend
 
 from parrot.interagent import Budget, BusPayloadSerializer, CallCost, CallMessage, ResultMessage
 
@@ -18,6 +19,10 @@ SER = BusPayloadSerializer()
 PREFIX = "squawk:"
 _LOCAL_REPLY_BUSES: dict[str, EventBus] = {}
 _DLQ: list[dict[str, Any]] = []
+_STREAMS_MODE = False
+# Run-scoped topics: Streams persist, and a fresh group starts at id "0", so a
+# rerun against the same Redis would otherwise replay earlier runs' calls.
+_RUN = {"calls": f"{PREFIX}server:calls", "dlq": f"{PREFIX}caller:replies:undeliverable"}
 
 
 def _record_dlq(envelope: Any, **details: Any) -> None:
@@ -25,18 +30,46 @@ def _record_dlq(envelope: Any, **details: Any) -> None:
     _DLQ.append({"topic": envelope.topic, "attempts": details["attempts"]})
 
 
-def make_bus(url: str | None) -> EventBus:
+def make_bus(url: str | None, role: str = "node") -> EventBus:
     """Create a dedicated Streams bus, or an in-memory fallback for the spike.
+
+    Each role gets its own consumer group and consumer name: with the
+    backend defaults, two buses in one process share ``<hostname>-<pid>`` in
+    one group, and group delivery hands each entry to only ONE of them (a
+    call consumed by the caller bus is silently dropped); the event_id dedup
+    keys are likewise namespaced per node. A short stream
+    refresh lets the per-call reply streams be discovered within the wait.
 
     Args:
         url: Redis URL for the Streams backend. ``None`` selects memory.
+        role: Distinct node role (``caller`` / ``server``) for group isolation.
 
     Returns:
         An EventBus isolated under Squawk's channel prefix.
     """
+    if url:
+        run_id = uuid.uuid4().hex[:8]
+        backend = RedisStreamsBackend(
+            url,
+            group=f"squawk-g6-{role}-{run_id}",
+            consumer_name=f"{role}-{os.getpid()}",
+            stream_refresh_interval=0.2,
+            block_ms=200,
+            # event_id dedup keys are global per prefix: with the shared default,
+            # whichever group consumes an entry first marks it and the other node
+            # skips it. Real nodes are separate deployments with their own prefix.
+            dedup_prefix=f"squawk:g6:dedup:{role}-{run_id}:",
+        )
+        return EventBus(
+            backend=backend,
+            publish_only=False,
+            channel_prefix=PREFIX,
+            retry_attempts=1,
+            on_dlq=_record_dlq,
+        )
     return EventBus(
         redis_url=url,
-        transport="streams" if url else "memory",
+        transport="memory",
         publish_only=False,
         channel_prefix=PREFIX,
         retry_attempts=1,
@@ -106,7 +139,10 @@ async def serve(bus: EventBus, executed: list[str], seen: set[str]) -> str:
             detail=None,
             current_category=None,
         )
-        reply_bus = _LOCAL_REPLY_BUSES.get(call.reply_to or "", bus)
+        # Memory fallback only: buses do not share a transport, so the reply is
+        # injected into the caller bus. With Streams the server publishes on its
+        # OWN bus, so the reply must cross Redis to reach the caller.
+        reply_bus = bus if _STREAMS_MODE else _LOCAL_REPLY_BUSES.get(call.reply_to or "", bus)
         await _emit(
             reply_bus,
             call.reply_to or "",
@@ -120,17 +156,17 @@ async def serve(bus: EventBus, executed: list[str], seen: set[str]) -> str:
         )
 
     await bus.connect()
-    return bus.subscribe(f"{PREFIX}server:calls", handle)
+    return bus.subscribe(_RUN["calls"], handle)
 
 
 async def _wait_for(queue: asyncio.Queue[ResultMessage], count: int) -> list[ResultMessage]:
     """Collect a bounded number of asynchronous results from the caller bus."""
-    return [await asyncio.wait_for(queue.get(), timeout=2) for _ in range(count)]
+    return [await asyncio.wait_for(queue.get(), timeout=10) for _ in range(count)]
 
 
 async def _wait_for_dlq() -> None:
     """Wait until EventBus records the deliberately failed result delivery."""
-    for _ in range(40):
+    for _ in range(200):
         if _DLQ:
             return
         await asyncio.sleep(0.05)
@@ -146,10 +182,15 @@ async def run(url: str | None) -> dict[str, Any]:
     Returns:
         Measured and asserted gate evidence.
     """
+    global _STREAMS_MODE
+    _STREAMS_MODE = bool(url)
+    run_id = uuid.uuid4().hex[:8]
+    _RUN["calls"] = f"{PREFIX}server:calls:{run_id}"
+    _RUN["dlq"] = f"{PREFIX}caller:replies:undeliverable:{run_id}"
     _DLQ.clear()
     _LOCAL_REPLY_BUSES.clear()
-    caller_bus = make_bus(url)
-    server_bus = make_bus(url)
+    caller_bus = make_bus(url, "caller")
+    server_bus = make_bus(url, "server")
     big = secrets.token_bytes(1024 * 1024)
     calls = [new_call("idem-A", big), new_call("idem-A", big), new_call("idem-B", b"\x00\xff" * 8)]
     executed: list[str] = []
@@ -171,7 +212,7 @@ async def run(url: str | None) -> dict[str, Any]:
         for call in calls:
             _LOCAL_REPLY_BUSES[call.reply_to or ""] = caller_bus
             caller_bus.subscribe(call.reply_to or "", receive)
-        bad_topic = f"{PREFIX}caller:replies:undeliverable"
+        bad_topic = _RUN["dlq"]
         caller_bus.subscribe(bad_topic, reject_result)
         await serve(server_bus, executed, set())
 
@@ -182,7 +223,7 @@ async def run(url: str | None) -> dict[str, Any]:
             publisher = caller_bus if url else server_bus
             await _emit(
                 publisher,
-                f"{PREFIX}server:calls",
+                _RUN["calls"],
                 SER.to_payload(call),
                 correlation_id=call.correlation_id,
                 metadata={
@@ -209,8 +250,10 @@ async def run(url: str | None) -> dict[str, Any]:
             detail=None,
             current_category=None,
         )
+        # Published by the SERVER node so, under Streams, the failing caller-side
+        # subscriber can only receive it through Redis (no local-dispatch shortcut).
         await _emit(
-            caller_bus,
+            server_bus if url else caller_bus,
             bad_topic,
             SER.to_payload(bad_result),
             correlation_id=bad_result.correlation_id,

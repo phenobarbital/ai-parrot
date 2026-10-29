@@ -2,10 +2,10 @@
 
 ## Environment
 
-- Python: 3.12.7
-- navigator-eventbus: 0.4.0
+- Python: 3.12.3
+- navigator-eventbus: 0.4.0; Redis 7.4.11 (Streams run) — plus the in-process `MemoryBackend` regression
 - Core payload codec: `parrot.interagent.BusPayloadSerializer` (TASK-4741)
-- Redis URL: optional `SQUAWK_SPIKE_REDIS_URL`; no URL was supplied for this recorded run, so the in-process `MemoryBackend` fallback was used.
+- Redis URL: `SQUAWK_SPIKE_REDIS_URL` (Streams); unset ⇒ memory fallback
 
 ## Verified API calls
 
@@ -26,17 +26,33 @@ await bus.emit(
 
 ## Results
 
+Redis Streams run 2026-10-30 against Redis 7.4.11 (throwaway container), navigator-eventbus 0.4.0,
+`SQUAWK_SPIKE_REDIS_URL=redis://127.0.0.1:56379/0`; 4/4 consecutive runs identical:
+
 | Criterion | Result | Evidence |
 |---|---|---|
-| Call reaches server and result returns to its correlation-specific reply topic | PASS (memory fallback) | Two replies were decoded as `ResultMessage`; their `correlation_id`s matched the two executed calls. |
-| Bytes survive JSON transport | PASS (memory fallback) | The 1 MiB random payload and the `b"\\x00\\xff" * 8` payload were equal after `BusPayloadSerializer` encode/decode. |
-| Consumer idempotency deduplication | PASS (memory fallback) | Three calls containing two identical `idempotency_key` values executed exactly twice. |
-| Undeliverable result reaches DLQ handling | PASS (memory fallback) | A deliberately failing reply subscriber exhausted one retry and invoked the configured EventBus `on_dlq` callback with `squawk:caller:replies:undeliverable`. |
-| Redis Streams distributed request/reply and durable DLQ table | FAIL / not run | No `SQUAWK_SPIKE_REDIS_URL` was provided. This must be rerun against operator Redis before declaring the Streams gate passed. |
+| Call reaches server and result returns to its correlation-specific reply topic | PASS (Streams) | Calls published by the caller node, consumed by the server node's group; replies published by the server node on per-correlation streams (`evb:stream:squawk:caller:replies:<corr>`) and consumed by the caller node — both hops cross Redis. |
+| Bytes survive JSON transport | PASS (Streams) | 1 MiB random payload and `b"\x00\xff" * 8` equal after `BusPayloadSerializer` encode/decode. |
+| Consumer idempotency deduplication | PASS (Streams) | 3 calls, two sharing an `idempotency_key` → 2 executions. |
+| Undeliverable result reaches DLQ handling | PASS (Streams) | Published by the server node so it can only arrive via Redis; the caller subscriber fails, retry exhausts (1 attempt) and `on_dlq` records the run-scoped undeliverable topic. |
 
-For the 1 MiB frame, the measured full JSON-wrapper overhead was **33.4%**.
-Base64 itself expands bytes by approximately 33.3%; the small difference is
-the serializer envelope.
+Base64 overhead on the 1 MiB frame: 33.4% (base64 itself ≈ 33.3%).
+
+### Required node configuration (findings)
+
+The first Streams run timed out. Squawk nodes on one Redis must not share:
+
+1. **Consumer group / consumer name.** Defaults are one group and `<hostname>-<pid>`;
+   group delivery hands each entry to ONE consumer, so a call consumed by the caller node
+   was dropped. Each node gets its own group.
+2. **Dedup prefix.** `event_id` dedup keys are global per `dedup_prefix`; whichever node
+   consumed an entry first marked it and the other skipped it. Each node gets its own prefix.
+3. **Reused topics across runs.** A fresh group starts at id `0`, replaying earlier
+   entries; the spike uses run-scoped call/DLQ topics (production uses stable groups, so
+   this only matters for test reruns).
+
+Also: the spike's memory fallback injects replies into the caller bus; in Streams mode
+the server now publishes on its own bus, so a pass proves transport delivery.
 
 ## Reproduction
 
