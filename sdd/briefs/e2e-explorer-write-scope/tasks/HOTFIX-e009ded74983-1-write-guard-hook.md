@@ -2,7 +2,7 @@
 
 **Feature**: e2e-explorer-write-scope (BRIEF-e009ded74983)
 **Spec**: sdd/briefs/e2e-explorer-write-scope.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -56,3 +56,10 @@
 - `pytest tests/sdd/test_e2e_exploration_write_guard.py -q`
 
 ## Completion Note
+Implemented as specified (commit af6d21c23). `.claude/hooks/e2e-exploration-write-guard.sh` (bash wrapper
+around an inline python3 check) allows only `sdd/state/FEAT-*/e2e/exploration/<file>` after realpath
+resolution; both agents wire it as a frontmatter PreToolUse hook (`Write|Edit|MultiEdit|NotebookEdit`) and
+state in their Report contract that Bash writes remain prompt-discipline only.
+Verification: `pytest tests/sdd/test_e2e_exploration_write_guard.py -q` → 14 passed (allowed, traversal,
+symlink escape, absolute-outside, directory itself, empty/unparseable/missing-path fail-closed).
+Known limit: `Bash` is unrestricted (documented). The hook file is under git-excluded `.claude/`, added with `git add -f`.
