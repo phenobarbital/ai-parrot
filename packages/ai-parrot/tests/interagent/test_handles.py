@@ -161,3 +161,21 @@ def test_squawk_error_exposes_typed_fields() -> None:
     assert error.code is SquawkErrorCode.STALE_CONTRACT
     assert error.detail == "refresh"
     assert error.payload == {"category": "hr"}
+
+
+@pytest.mark.asyncio
+async def test_identical_bytes_from_two_owners_never_share_a_record() -> None:
+    """A second owner putting the same key cannot evict, reset or revoke the first."""
+    store = InMemoryHandleStore()
+    alice, bob = _owner("alice"), _owner("bob")
+    a = _handle(alice)
+    await store.put(a)
+    await store.grant(a.key, owner=alice, grantee="friend")
+    await store.put(_handle(bob))
+
+    claimed = await store.claim(a.key, owner=alice)
+    assert claimed.owner == alice and claimed.grants == ("friend",)
+    assert (await store.claim(a.key, owner=bob)).owner == bob
+    assert (await store.claim(a.key, owner=_owner("friend"), grantee="friend")).owner == alice
+    again = await store.grant(a.key, owner=alice, grantee="friend")
+    assert again.grants == ("friend",)

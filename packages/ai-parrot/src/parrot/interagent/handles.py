@@ -79,15 +79,23 @@ class HandleStore(Protocol):
 
 
 class InMemoryHandleStore:
-    """Provide a bounded, asyncio-safe handle store for one process."""
+    """Provide a bounded, asyncio-safe handle store for one process.
+
+    Records are keyed by ``(key, owner)``: handle keys are content addresses, so
+    two owners producing identical bytes share a key but never a record. One
+    owner can never replace, reset or revoke another owner's handle.
+    """
 
     def __init__(self, *, max_entries: int = 4096) -> None:
-        self._items: dict[str, ArtifactHandle] = {}
+        self._items: dict[tuple[str, HandleOwner], ArtifactHandle] = {}
         self._max = max_entries
         self._lock = asyncio.Lock()
 
     async def put(self, handle: ArtifactHandle) -> str:
-        """Store a handle, evicting the oldest entry when at capacity.
+        """Store a handle for its owner, evicting the oldest entry when at capacity.
+
+        Re-putting the same key for the same owner refreshes that owner's record
+        and keeps its existing grants; other owners' records are untouched.
 
         Args:
             handle: Handle to store.
@@ -95,15 +103,22 @@ class InMemoryHandleStore:
         Returns:
             The stored handle key.
         """
+        slot = (handle.key, handle.owner)
         async with self._lock:
-            if handle.key not in self._items and len(self._items) >= self._max:
-                oldest_key = next(iter(self._items))
-                del self._items[oldest_key]
-            self._items[handle.key] = handle
+            existing = self._items.get(slot)
+            if existing is None and len(self._items) >= self._max:
+                del self._items[next(iter(self._items))]
+            if existing is not None:
+                merged = tuple(dict.fromkeys((*existing.grants, *handle.grants)))
+                handle = handle.model_copy(update={"grants": merged})
+            self._items[slot] = handle
             return handle.key
 
     async def claim(self, key: str, *, owner: HandleOwner, grantee: str | None = None) -> ArtifactHandle:
         """Claim an unexpired handle without disclosing failure details.
+
+        The caller's own record wins; otherwise a record of another owner that
+        explicitly granted ``grantee`` is returned.
 
         Args:
             key: Content-addressed handle key.
@@ -116,15 +131,16 @@ class InMemoryHandleStore:
         Raises:
             HandleClaimError: If the handle is missing, expired, or unauthorized.
         """
+        now = datetime.now(timezone.utc)
         async with self._lock:
-            handle = self._items.get(key)
-            if (
-                handle is None
-                or handle.expires_at <= datetime.now(timezone.utc)
-                or (owner != handle.owner and grantee not in handle.grants)
-            ):
-                raise HandleClaimError()
-            return handle
+            own = self._items.get((key, owner))
+            if own is not None and own.expires_at > now:
+                return own
+            if grantee is not None:
+                for (item_key, _), handle in self._items.items():
+                    if item_key == key and grantee in handle.grants and handle.expires_at > now:
+                        return handle
+            raise HandleClaimError()
 
     async def grant(self, key: str, *, owner: HandleOwner, grantee: str) -> ArtifactHandle:
         """Grant handle access to an agent when requested by its owner.
@@ -138,12 +154,14 @@ class InMemoryHandleStore:
             The updated immutable handle.
 
         Raises:
-            HandleClaimError: If the handle is missing or the caller is not its owner.
+            HandleClaimError: If the caller holds no record for the key.
         """
         async with self._lock:
-            handle = self._items.get(key)
-            if handle is None or owner != handle.owner:
+            handle = self._items.get((key, owner))
+            if handle is None:
                 raise HandleClaimError()
+            if grantee in handle.grants:
+                return handle
             updated = handle.model_copy(update={"grants": (*handle.grants, grantee)})
-            self._items[key] = updated
+            self._items[(key, owner)] = updated
             return updated
