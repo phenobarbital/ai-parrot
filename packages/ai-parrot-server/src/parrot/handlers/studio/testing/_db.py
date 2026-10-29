@@ -10,7 +10,7 @@ from ..access import _store_record, build_tool_scope
 from ..conversation import delete_studio_conversation
 from ..key_source import KeySourceRefusal, choose_key_source, key_source_choice_enabled
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
-from ._models import CLIENT_SESSION_PATTERN, TestAskRequest
+from ._models import CLIENT_SESSION_PATTERN, CLIENT_SESSIONS_PER_AGENT, TestAskRequest, client_session_owner
 
 
 class _StudioTestingDbMixin:
@@ -47,6 +47,11 @@ class _StudioTestingDbMixin:
             raise StudioStorageUnavailable("studio runtime is not installed")
         if ask_request.session_id:
             sid = await self._client_session_id(ask_request.session_id)
+            owner = client_session_owner(sid)
+            manager.studio.trim_sessions(  # each new id builds an instance: bounded per caller, never at others' cost
+                key, same_owner=lambda other: client_session_owner(other) == owner,
+                keep=CLIENT_SESSIONS_PER_AGENT, current=sid,
+            )
         else:
             sid = self._studio_session_id(await self._resolve_session(), key)
         try:
@@ -107,7 +112,7 @@ class _StudioTestingDbMixin:
         record = _store_record("agent", rec.agent_id, rec) if rec else None
         return await self._check_record_access(await self._access(), record, "agent", name or "")
 
-    async def _db_delete_conversation(self, storage, part, agent_name: str, conversation: str):
+    async def _db_delete_conversation(self, part, agent_name: str, conversation: str, rec):
         """End one conversation the client named (``?session_id=``): its instance and its stored history."""
         if not re.fullmatch(CLIENT_SESSION_PATTERN, conversation):
             return self._error("Invalid session_id.", status=400, code="invalid_request")
@@ -115,7 +120,6 @@ class _StudioTestingDbMixin:
         sid = await self._client_session_id(conversation)
         if (runtime := getattr(self._manager(), "studio", None)) is not None:
             runtime.evict_session(key, sid)
-        rec = await storage.services.agents.get(part, agent_name)
         if rec is not None:
             await delete_studio_conversation((await self._get_user()).user_id, sid, str(rec.agent_id))
         return self.json_response({"message": f"Conversation for '{agent_name}' ended", "agent_name": agent_name})
@@ -127,7 +131,10 @@ class _StudioTestingDbMixin:
             return refused  # 404 before the session entry is touched
         conversation = self.request.query.get("session_id")
         if conversation is not None and agent_name:
-            return await self._db_delete_conversation(storage, part, agent_name, conversation)
+            rec = await storage.services.agents.get(part, agent_name)
+            # On the global partition a name without a Studio row is a legacy agent: its own teardown, below.
+            if rec is not None or part.tenant is not None:
+                return await self._db_delete_conversation(part, agent_name, conversation, rec)
         session = await self._resolve_session()
         key = StudioAgentKey(part.tenant, agent_name) if agent_name else None
         sid = session.pop(f"studio_test:{key.qualified}", None) if key and session is not None else None
