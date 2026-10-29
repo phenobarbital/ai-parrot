@@ -18,9 +18,7 @@ from parrot.semantic.models import SemanticQuery
 
 pytest.importorskip("duckdb")
 
-_EXAMPLE_PATH = (
-    Path(__file__).resolve().parents[3] / "examples" / "agents" / "semantic" / "agent_semantic_example.py"
-)
+_EXAMPLE_PATH = Path(__file__).resolve().parents[3] / "examples" / "agents" / "semantic" / "agent_semantic_example.py"
 _QUERY = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
 _FACADE_TOOLS = ("list_datasets", "describe_dataset", "query_dataset", "export_dataset", "cached_dataset")
 
