@@ -17,7 +17,7 @@ Both relevant remote branches are **0 commits ahead of `origin/dev`**
 `git log origin/dev..origin/feat-FEAT-704-semantic-layer -- examples/` is empty.
 So the branch recorded as a "salvage-only source" holds nothing `dev` does not already
 have — there is no hidden prior attempt at `examples/agents/semantic/` to recover, and
-FEAT-768 starts from a clean `dev`. The five local `--TASK-…-a1-…` branches are leftover
+FEAT-769 starts from a clean `dev`. The five local `--TASK-…-a1-…` branches are leftover
 coder-pool attempt branches and should not be mined or re-entered.
 
 ## Citations
@@ -27,4 +27,4 @@ coder-pool attempt branches and should not be mined or re-entered.
 - Latest `dev` commit touching the package: `07adb66f` (2026-10-28) `fix(semantic-layer): unpin version and update CI sync assertion in packaging test`
 
 ## Notes
-Stale sub-worktree branches exist; `/remove-worktree` territory, out of scope for FEAT-768.
+Stale sub-worktree branches exist; `/remove-worktree` territory, out of scope for FEAT-769.

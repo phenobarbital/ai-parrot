@@ -17,7 +17,7 @@ PBAC guard and unscoped env/owner checks, and a post-merge review caught it. The
 companion doc `docs/tools/semantic-layer.md` was corrected the same day by `9a953146d`
 ("test the doc's own YAML/JSON blocks and align its model format", issue `d01c24f18770`)
 because its YAML/JSON model format did not match the shipped loader.
-Implication for FEAT-768: the single existing example is both *very recent* and *already
+Implication for FEAT-769: the single existing example is both *very recent* and *already
 proven to attract correctness bugs*; new examples should be modelled on the post-`ef85c5035`
 file (never the original TASK-4702 version), and each new example should ship with its own
 pin test in the same `packages/ai-parrot-semantic/tests/` location, since that is the

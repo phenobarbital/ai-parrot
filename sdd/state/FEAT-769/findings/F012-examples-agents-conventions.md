@@ -31,7 +31,7 @@ example agent in the `AgentRegistry` so the admin UI can see it (`1016eb844`).
 
 ## Notes
 The existing semantic example lives at `examples/semantic/`, *outside* `examples/agents/`.
-The feature request asks for `examples/agents/semantic/`, so FEAT-768 either relocates or
+The feature request asks for `examples/agents/semantic/`, so FEAT-769 either relocates or
 duplicates-and-diverges — and `packages/ai-parrot-semantic/tests/test_example_agent.py`
 pins the current path, so a move breaks that test.
 [cross-lane: type=read, intent=check whether `test_example_agent.py` hardcodes `examples/semantic/agent_semantic_example.py` as a path, which decides move-vs-add]

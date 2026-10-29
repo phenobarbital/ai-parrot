@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feature_id": "FEAT-768",
+  "feature_id": "FEAT-769",
   "slug": "semantic-layer-example",
   "phase": "proposal_drafted",
   "mode": "enrichment",
@@ -12,7 +12,7 @@
   "source": {
     "kind": "inline",
     "jira_key": null,
-    "path": "sdd/state/FEAT-768/source.md",
+    "path": "sdd/state/FEAT-769/source.md",
     "summary_oneline": "Create a couple of runnable example agents under examples/agents/semantic that use the FEAT-704 Semantic Layer"
   },
   "budget": {
@@ -33,7 +33,7 @@
     "plan": {
       "status": "completed",
       "approved_by_user": true,
-      "path": "sdd/state/FEAT-768/research_plan.json",
+      "path": "sdd/state/FEAT-769/research_plan.json",
       "query_count": 15
     },
     "research": {

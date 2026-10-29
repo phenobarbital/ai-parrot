@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feature_id": "FEAT-768",
+  "feature_id": "FEAT-769",
   "mode": "enrichment",
   "overall_confidence": "high",
   "overall_confidence_rationale": "Evidence was already high (54/57 citations probe-verified at HEAD 7e6741f13, research not truncated). The medium bound was the scope hypothesis; all five unknowns were resolved at the Q&A gate, so scope is now a decision, not an estimate.",
@@ -282,7 +282,7 @@
   "hypotheses": [
     {
       "id": "H1",
-      "statement": "FEAT-768 is a documentation/example feature with a small, mechanical relocation at its core plus two NEW example agents that each demonstrate a surface the existing example does not. The relocation is 2 line edits; the value is entirely in what the new examples teach.",
+      "statement": "FEAT-769 is a documentation/example feature with a small, mechanical relocation at its core plus two NEW example agents that each demonstrate a surface the existing example does not. The relocation is 2 line edits; the value is entirely in what the new examples teach.",
       "confidence": "high",
       "supporting": [
         "F001",
