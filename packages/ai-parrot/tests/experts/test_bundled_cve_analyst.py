@@ -4,7 +4,6 @@ from parrot.bots.prompts.identity import IDENTITY_FILES
 from parrot.experts.loader import BUNDLED_EXPERTS_DIR, parse_expert_bundle
 from parrot.experts.rules import parse_rules
 
-
 BUNDLE_DIR = BUNDLED_EXPERTS_DIR / "cve-analyst"
 
 
