@@ -21,7 +21,9 @@ async def test_legacy_audit_counts() -> None:
     await redis.set("jira:oauth:slack:T:U", "token-3")
     await redis.set("oauth2:jira:1042", "principal-token")
     await redis.set("oauth2:jira:nonce:x", "nonce")
-    resolver = FakePrincipalResolver({("telegram", "1"): Principal(user_id="42", channel="telegram", channel_user_id="1")})
+    resolver = FakePrincipalResolver(
+        {("telegram", "1"): Principal(user_id="42", channel="telegram", channel_user_id="1")}
+    )
 
     counts = await audit_legacy_keys(redis, resolver, providers=["jira"])
 

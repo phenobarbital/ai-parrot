@@ -97,9 +97,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for provider in providers:
         for channel in sorted(counts.get(provider, {})):
             channel_counts = counts[provider][channel]
-            lines.append(
-                f"{provider}\t{channel}\t{channel_counts['bound']}\t{channel_counts['unbound']}\n"
-            )
+            lines.append(f"{provider}\t{channel}\t{channel_counts['bound']}\t{channel_counts['unbound']}\n")
     sys.stdout.write("".join(lines))
     return 0
 
