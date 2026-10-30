@@ -36,14 +36,14 @@
       "feature_id": "FEAT-779",
       "feature": "auth-pbac-tech-debt",
       "spec": "sdd/specs/auth-pbac-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no dependencies, touches only test_pbac_setup.py and pbac.py docstring",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude-opus-5-5 (/sdd-fix)",
+      "started_at": "2026-10-30T19:06:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4909-fix-stale-pbac-setup-tests.md"
     }
