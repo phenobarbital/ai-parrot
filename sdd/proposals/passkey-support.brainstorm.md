@@ -324,8 +324,13 @@ vanilla JS) that must stay behaviourally aligned, and one more place
   lacks WebAuthn, the page is **byte-identical** to today's.
 
 **Security page (`/account/security`).**
-- New "Account › Security" entry in the Sidebar "Workspace" section (user
-  level, not admin); requires auth like every non-login route.
+- New **"Account"** entry in the Sidebar "Workspace" section (user level, not
+  admin) that opens `/account/security`; the user's name in the Topbar becomes
+  a link to the same page. Requires auth like every non-login route.
+- After a passkey login the Topbar shows a small **"Passkey"** badge (vendored
+  shadcn `badge`) next to the identity, driven by `auth_method === "passkey"`
+  in the stored login envelope; `/account/security` also states the current
+  session's method ("Signed in with a passkey" / "password").
 - A "Passkeys" card lists the caller's credentials: label (or "Unnamed
   passkey"), device type (`single_device` / `multi_device`), "synced" badge
   when `backed_up`, relying party, created and last-used dates. Empty state
@@ -349,7 +354,10 @@ vanilla JS) that must stay behaviourally aligned, and one more place
   the SPA's `/account/security` for that.
 
 **Operator.**
-- `pip install "ai-parrot-server[passkey]"` pulls `navigator-auth[passkey]`.
+- `pip install "ai-parrot-server[passkey]"` pulls `navigator-auth[passkey]>=0.28.9`.
+- A copy-ready example file `docs/examples/passkey.settings.example` (new,
+  tracked — `settings/` and most of `env/` are git-ignored) plus the same
+  block in `docs/admin-ui.md`.
 - Documented settings: `AUTHENTICATION_BACKENDS=navigator_auth.backends.BasicAuth,navigator_auth.backends.PasskeyAuth`,
   `PASSKEY_RELYING_PARTIES` (one entry per exact origin, incl. the Vite dev
   origin), `PASSKEY_USER_VERIFICATION`, Redis ≥ 6.2 requirement, and the
@@ -425,8 +433,9 @@ vanilla JS) that must stay behaviourally aligned, and one more place
 - `passkey-sign-in`: passkey button + conditional UI on the Admin UI login page; `AuthStore.loginWithPasskey()`.
 - `passkey-enrollment-management`: `/account/security` page — list, add, rename, delete passkeys.
 - `webauthn-browser-helper`: typed JSON⇄binary conversion, capability detection, abortable ceremonies (no dependency).
-- `account-section-routing`: new `/account` SPA section (`appSections`, `SPA_SECTIONS`, nav entry).
-- `passkey-server-extra`: `ai-parrot-server[passkey]` optional extra + operator docs + example settings.
+- `account-section-routing`: new `/account` SPA section (`appSections`, `SPA_SECTIONS`, "Account" nav entry, Topbar identity link).
+- `auth-method-badge`: Topbar "Passkey" badge + session-method line on `/account/security`, read from `auth_method` in the login envelope.
+- `passkey-server-extra`: `ai-parrot-server[passkey] = ["navigator-auth[passkey]>=0.28.9"]` optional extra + operator docs + `docs/examples/passkey.settings.example`.
 - `autonomous-admin-passkey-signin`: vanilla-JS passkey sign-in in `/autonomous/admin`.
 
 ### Modified Capabilities
@@ -446,12 +455,13 @@ vanilla JS) that must stay behaviourally aligned, and one more place
 | `ui/src/lib/webauthn.ts` (new) | new | JSON⇄ArrayBuffer, capability detection, abort handling |
 | `ui/src/lib/components/auth/PasskeySignIn.svelte` (new) | new | login-page component |
 | `ui/src/pages/account/Security.svelte` (new) + components | new | passkey list / add / rename / delete |
-| `ui/src/App.svelte`, `ui/src/lib/config.ts`, `ui/src/lib/nav.ts` | modifies | route, `appSections`, nav entry |
+| `ui/src/App.svelte`, `ui/src/lib/config.ts`, `ui/src/lib/nav.ts` | modifies | route, `appSections`, "Account" nav entry |
+| `ui/src/lib/components/Topbar.svelte` | modifies | identity becomes a link to `/account/security`; "Passkey" badge when `auth_method === "passkey"` |
 | `parrot/server/ui/serving.py` + `tests/test_admin_ui_serving.py` | modifies | `SPA_SECTIONS += "/account"`, exclusion pattern tests |
 | `parrot/autonomous/admin.py` | modifies | vanilla passkey sign-in block in `_ADMIN_LOGIN_HTML` |
 | `packages/ai-parrot-server/pyproject.toml` | extends | `passkey = ["navigator-auth[passkey]>=0.28.9"]`; include in `all` |
 | `docs/admin-ui.md` | modifies | "Auth model" + quick-start settings for passkeys, dev-origin RP note |
-| `env/*` example settings (if tracked) / docs | extends | `AUTHENTICATION_BACKENDS`, `PASSKEY_RELYING_PARTIES` examples |
+| `docs/examples/passkey.settings.example` (new) | new | copy-ready `AUTHENTICATION_BACKENDS`, `PASSKEY_RELYING_PARTIES` (incl. Vite dev origin), `PASSKEY_USER_VERIFICATION` — `settings/` is git-ignored (`.gitignore:271`) |
 | Redis | depends on | ≥ 6.2 (`GETDEL`) for challenge storage — backend requirement, document only |
 | navigator-auth | depends on | `>= 0.28.9` (PasskeyAuth present in installed version); no upstream change needed |
 
@@ -608,7 +618,8 @@ EXCLUDE_DEFAULTS = ["/static/", "/api/v1/login", "/api/v1/logout", "/api/v1/forg
 - `config.tokenStorageKey = "ai_parrot_token"`, `config.sessionStorageKey = "ai_parrot_session"` — shared with `admin.py` and `parrot-formdesigner`.
 - Passkey login header value: `X-Auth-Method: PasskeyAuth` (class name, like `BasicAuth`).
 - Login-options response: `{ challenge_id: string, publicKey: PublicKeyCredentialRequestOptionsJSON }`; login body: `{ challenge_id, credential: PublicKeyCredentialJSON }`.
-- `auth_methods` entry for the passkey backend: `name: "PasskeyAuth"`, `uri: "/api/v1/login"`, `external: false`, `headers: {"x-auth-method": "PasskeyAuth"}` (derived from `backends/abstract.py:126-129`; exact header casing to confirm at implementation).
+- `auth_methods` entry for the passkey backend: `name: "PasskeyAuth"`, `uri: "/api/v1/login"`, `external: false`, `headers: {"x-auth-method": "PasskeyAuth"}` — verified: `self._service = self.__class__.__name__` (`backends/abstract.py:100`) and `self._info.headers = {"x-auth-method": self._service}` (`:130`). `ProviderButtons` filters it with the same lower-cased comparison `isBasicAuth()` uses.
+- Login envelope extras after a passkey login: `auth_method: "passkey"`, `mfa: bool`, `amr: ["hwk","user"] | ["hwk"]` (`backends/passkey.py:468-475`) — source of the Topbar badge.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`webauthn` (py_webauthn) in the shared venv~~ — only `fido2 2.2.1` is installed; `.venv/.../webauthn/__init__.py` is absent. `PasskeyAuth` raises `ConfigError` at startup without it.
@@ -622,6 +633,8 @@ EXCLUDE_DEFAULTS = ["/static/", "/api/v1/login", "/api/v1/logout", "/api/v1/forg
 - ~~a `navigator.credentials` / `PublicKeyCredential` stub in `vitest-setup.ts`~~ — jsdom provides none; tests must stub them.
 - ~~`PUBLIC_PASSKEY_ENABLED` build flag~~ — explicitly rejected (Round 1); availability is probed at runtime.
 - ~~`/api/v1/auth/methods` in the default exclude list~~ — anonymous discovery 401s (existing Login.svelte comment); not relied on for passkey visibility.
+- ~~a tracked `settings/settings.py` or `env/*` to host example settings~~ — `/settings/` is git-ignored (`.gitignore:271`), `settings/settings.py` is untracked; `docs/examples/` does not exist yet and must be created.
+- ~~`auth_method` consumed anywhere in the SPA~~ — `Topbar.svelte` only reads `name|username|user|email` from `authStore.user`.
 
 ---
 
@@ -656,8 +669,8 @@ EXCLUDE_DEFAULTS = ["/static/", "/api/v1/login", "/api/v1/logout", "/api/v1/forg
 - [x] Where does credential management live? — *Owner: Jesus Lara*: new `/account/security` section (adds `account` to `appSections` and `/account` to `SPA_SECTIONS`).
 - [x] WebAuthn JSON conversion approach? — *Owner: Jesus Lara*: native Level-3 helpers first, hand-written base64url fallback; no npm dependency.
 - [x] Cost of the probe challenge? — *Owner: Jesus Lara*: a single usernameless `login/options` call doubles as probe and conditional-UI challenge.
-- [ ] Should the Sidebar "Workspace" entry be "Account" (future-proof) or "Security" (precise), and should the Topbar also link to it? — *Owner: Jesus Lara*
-- [ ] After a successful passkey login, should the Topbar surface `auth_method`/`mfa` (e.g. a small "passkey" badge) or is that out of scope? — *Owner: Jesus Lara*
-- [ ] Which tracked example settings (if any under `env/` are committed) should carry `AUTHENTICATION_BACKENDS` + `PASSKEY_RELYING_PARTIES`, vs docs-only? `env/` contents are mostly git-ignored. — *Owner: Jesus Lara*
-- [ ] Exact `headers["x-auth-method"]` value navigator-auth advertises for `PasskeyAuth` in `/api/v1/auth/methods` (needed to filter it out of `ProviderButtons`) — verify against a running backend at `/sdd-task` time. — *Owner: implementer*
-- [ ] Should `ai-parrot-server[passkey]` pin `navigator-auth>=0.28.9` explicitly (first release containing PasskeyAuth in site-packages) or inherit the core `>=0.28.3` floor? — *Owner: Jesus Lara*
+- [x] Should the Sidebar "Workspace" entry be "Account" (future-proof) or "Security" (precise), and should the Topbar also link to it? — *Owner: Jesus Lara*: "Account" in the Sidebar (opens `/account/security`), and the Topbar identity links to the same page.
+- [x] After a successful passkey login, should the Topbar surface `auth_method`/`mfa` (e.g. a small "passkey" badge) or is that out of scope? — *Owner: Jesus Lara*: yes — a small "Passkey" badge (shadcn `badge`) in the Topbar when `auth_method === "passkey"`; `/account/security` also states the current session method.
+- [x] Which tracked example settings (if any under `env/` are committed) should carry `AUTHENTICATION_BACKENDS` + `PASSKEY_RELYING_PARTIES`, vs docs-only? `env/` contents are mostly git-ignored. — *Owner: Jesus Lara*: docs block in `docs/admin-ui.md` plus a new tracked `docs/examples/passkey.settings.example` (first choice was a commented block in `settings/settings.py`, rejected because `/settings/` is git-ignored).
+- [x] Exact `headers["x-auth-method"]` value navigator-auth advertises for `PasskeyAuth` in `/api/v1/auth/methods` (needed to filter it out of `ProviderButtons`)? — *Owner: implementer*: `"PasskeyAuth"` — the class name (`backends/abstract.py:100` sets `_service = self.__class__.__name__`, `:130` puts it in `headers["x-auth-method"]`); compare lower-cased like `isBasicAuth()`.
+- [x] Should `ai-parrot-server[passkey]` pin `navigator-auth>=0.28.9` explicitly (first release containing PasskeyAuth in site-packages) or inherit the core `>=0.28.3` floor? — *Owner: Jesus Lara*: pin `navigator-auth[passkey]>=0.28.9` explicitly.
