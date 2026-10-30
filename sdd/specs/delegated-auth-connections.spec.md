@@ -136,7 +136,7 @@ rewritten under the principal key and deleted; reads of legacy keys stop after `
 implements the RFC 6749 authorization-code exchange and refresh plus a JSON-path identity probe from the
 descriptor; `DescriptorOAuth2Provider(OAuth2Provider)` exposes it in the existing `OAuth2ProviderRegistry`.
 Post-exchange hooks are Python callables registered in a typed `PostExchangeHookRegistry` — never import paths
-loaded from YAML (S10). `O365OAuthManager` stays a hand-written subclass; `JiraOAuthManager` (M7) becomes a
+loaded from YAML (S10). `O365OAuthManager` stays a hand-written subclass with typed refresh-error classification (M2); `JiraOAuthManager` (M7) becomes a
 `StandardOAuth2Manager` subclass with the `atlassian_accessible_resources` hook (TASK-4418 helpers).
 
 **Completion.** `ConnectionEventPublisher` (M4) receives a `ConnectionEvent` (no token material) from the engine,
@@ -160,7 +160,7 @@ metadata=payload.model_dump())`; AgentTalk converts both to `AuthRequiredEnvelop
 
 **MCP.** `add_oauth_mcp_server` / `create_oauth_mcp_server` no longer require `user_id`; the per-call principal
 reaches the MCP transport through the existing `inject_broker_credential` + `header_provider(ReadonlyContext)`
-path (M9).
+path (M9), extended through the client and HTTP transport with request-local headers and principal-isolated sessions.
 
 ### Component Diagram
 
@@ -383,9 +383,9 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | M5: Unified needs-auth payload | yes | `AuthRequiredPayload` fields fixed; both exceptions gain `to_payload()`; ToolManager/AgentTalk catch both | — |
 | M6: Channel-neutral service, `/api/v1/connections`, hydration | no | — | removes `user_agent_toolkits` (production data) and changes the hydration path; thinking model owns the compatibility no-op and the migration of existing rows |
 | M7: Jira on the generic engine | no | — | production flow; legacy `jira:oauth:*` dual read and callback alias must be reasoned about, not transcribed |
-| M8: Server/integrations adapters (store, resolver, notifier adapters, BotManager registration) | yes | adapters wrap existing objects whose signatures are in §6; wiring sites are the two `JiraOAuthManager(` constructions in integrations/manager.py | — |
-| M9: MCP per-call principal | yes | `user_id` → `Optional[str]`; when `None` set `inject_broker_credential=True`; existing `header_provider(ReadonlyContext)` path | — |
-| M10: Docs + legacy-key audit command | yes | docs page outline fixed below; audit command prints counts only | — |
+| M8: Server/integrations adapters (store, resolver, notifier adapters, BotManager registration) | no | — | atomic replacement/deletion and metadata-preserving re-encryption require verified transaction and cipher APIs |
+| M9: MCP per-call principal | no | — | bearer forwarding crosses core and server transport; request and session isolation require end-to-end verification |
+| M10: Docs, audit and re-encryption | no | — | mixed-key verification and key-retirement gate require all-column checks and M8 transaction integration |
 
 ### Module 1: Principal model and resolver Protocol
 - **Path**: `packages/ai-parrot/src/parrot/auth/principal.py` (new); `packages/ai-parrot/src/parrot/auth/__init__.py` (export)
@@ -416,10 +416,19 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
   `resolve_principal` (`# verified: auth/__init__.py:36-83 lazy map`).
 
 ### Module 2: Principal-keyed `AbstractOAuth2Manager`
-- **Path**: `packages/ai-parrot/src/parrot/auth/oauth2_base.py` (modify)
+- **Path**: `packages/ai-parrot/src/parrot/auth/oauth2_base.py`, `packages/ai-parrot/src/parrot/auth/o365_oauth.py` (modify)
 - **Responsibility**: principal keys; principal binding in the nonce payload and verification at callback (S1);
   `CredentialStore` replaces `vault_writer/reader/deleter` with durable-first persistence (S2);
   typed refresh outcomes (S7); `_revoke_remote` hook; event publication (M4); legacy-key read-rewrite-delete.
+  `O365OAuthManager._refresh_request` must parse the OAuth error code: only `invalid_grant` raises
+  `InvalidGrantError`; network failures, HTTP 429 and 5xx raise `RefreshTransientError`. Other OAuth errors
+  (including `invalid_client`, malformed responses and non-grant 400/401 errors) surface as operational errors
+  without deleting the grant or emitting `refresh_failed`. Never include token values or raw token responses in errors.
+  Keep O365's subclass, endpoints and public API; the typed error change is explicitly in scope.
+  Callback replacement, refresh, revoke and re-encryption serialize on the same provider/principal lock;
+  acquire it once per operation (no nested lock in the store), re-read durable state after acquiring it,
+  and never let an in-flight refresh restore a replaced/deleted grant. Cold-cache fills must also be protected
+  against concurrent deletion/replacement. Migration must not resurrect credentials after disconnect.
 - **Depends on**: M1, M4; `parrot.security.vault_utils` for the default `VaultUtilsCredentialStore`.
 - **Interface Skeleton**:
   ```python
@@ -676,7 +685,7 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 
 ### Module 8: Server and integrations adapters
 - **Path**: `packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py` (modify → `IdentityVaultCredentialStore`), `packages/ai-parrot-server/src/parrot/services/identity_principal.py` (new), `packages/ai-parrot-server/src/parrot/manager/manager.py` (modify `_register_oauth2_providers`), `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (modify), `packages/ai-parrot-integrations/src/parrot/integrations/{telegram/jira_commands.py, slack/oauth_callback.py, msteams/oauth_callback.py}` (extend), `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` (new)
-- **Responsibility**: durable store over navigator-auth `IdentityStore` for any provider; principal resolver over
+- **Responsibility**: durable store over navigator-auth `IdentityStore` for any provider, with transactional account replacement/deletion and metadata-preserving re-sealing; principal resolver over
   `auth.user_identities`; `ChannelNotifier` adapters wrapping `TelegramOAuthNotifier`, `SlackOAuthNotifier`,
   `MSTeamsOAuthNotifier` (plus the Telegram session stamper and the Slack/Teams identity writes that
   `jira_oauth_callback` used to perform); wiring at both `JiraOAuthManager(` construction sites and in
@@ -691,9 +700,10 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
           """IdentityStore.get_by_provider(user_id, provider) → decrypt_credential → token payload dict (cold-start hydration only)."""
       async def save(self, user_id: str, provider: str, payload: Dict[str, Any], *, minted: bool,
                      principal: Optional[Principal], state_payload: Optional[Dict[str, Any]]) -> None:
-          """minted → save_linked_identity(user_id, provider, TokenResponse, userinfo); else update_tokens(identity, TokenResponse).
-          Raises on failure (callback fails closed, S2)."""                       # IdentityStore API verified: navigator_auth 0.28.7 store.py (see §6)
-      async def delete(self, user_id: str, provider: str) -> None: ...          # IdentityStore.delete(user_id, identity_id)
+          """minted → atomic provider-account replacement; refresh → update_tokens on the selected current identity.
+          Raises on failure (callback fails closed, S2). See transaction contract below."""                       # IdentityStore API verified: navigator_auth 0.28.7 store.py (see §6)
+      async def delete(self, user_id: str, provider: str) -> None:
+          """Atomically delete ALL credential identities for this principal/provider, including superseded accounts."""
 
   # packages/ai-parrot-server/src/parrot/services/identity_principal.py  (new)
   class IdentityPrincipalResolver:
@@ -719,12 +729,38 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
       OAUTH2_PROVIDERS_FILE via register_descriptor_providers(...); set_principal_resolver(IdentityPrincipalResolver(app['authdb']))."""
   ```
 
+**M8 transaction contract (AC-12).** `IdentityStore.save_linked_identity` upserts by
+`(user_id, provider, provider_user_id)`, not `(user_id, provider)`; `get_by_provider` selects the newest enabled row.
+Neither provides single-account replacement. Under the M2 principal lock, minted saves must atomically persist
+and select the new account and remove superseded credential rows for the same principal/provider. Rollback
+keeps the previous grant usable if the new write fails. Disconnect deletes every such credential row, invalidates
+the principal cache and prevents legacy fallback from restoring it during the migration window. Channel identity
+rows for other providers are untouched. Refresh updates only the still-selected account after re-reading it.
+
+The server adapter owns the transaction using the existing async DB pool and navigator-auth cipher; do not
+compose separately committed `IdentityStore` calls and claim atomicity. Before task decomposition, verify the
+transaction/sealing APIs against the upgraded navigator-auth version. If its public APIs cannot share a transaction,
+explicitly scope a server-side transaction helper in `identity_credential_sink.py` using verified DB/model APIs;
+do not invent an upstream method or add an unapproved dependency. Real-DB acceptance tests must cover rollback,
+concurrent reconnect/refresh/disconnect, and cold-cache loads after replacing A with B and after disconnect.
+
 ### Module 9: MCP per-call principal
-- **Path**: `packages/ai-parrot/src/parrot/mcp/client.py`, `packages/ai-parrot/src/parrot/mcp/integration.py`, `packages/ai-parrot/src/parrot/bots/agent.py` (modify)
+- **Path**: `packages/ai-parrot/src/parrot/mcp/client.py`, `packages/ai-parrot/src/parrot/mcp/integration.py`, `packages/ai-parrot/src/parrot/bots/agent.py`, `packages/ai-parrot-server/src/parrot/mcp/transports/http.py` (modify)
 - **Responsibility**: `user_id` becomes optional on `add_oauth_mcp_server`, `add_netsuite_mcp_server`,
   `create_oauth_mcp_server` and `MCPClientConfig`; when absent the config sets `inject_broker_credential=True` so
-  the existing per-call `header_provider(ReadonlyContext)` + `_CREDENTIAL_VAR` path supplies the bearer (S9);
-  `MCPClientConfig.user_id` is documented as M2M-only (`NetSuiteM2MAuth(user_id="m2m")`).
+  per-call `header_provider(ReadonlyContext)` + `_CREDENTIAL_VAR` resolution supplies the bearer (S9).
+  Generated `MCPToolProxy` instances must declare the configured `credential_provider` so `AbstractTool.execute`
+  actually invokes the broker; reject a delegated configuration without a provider mapping.
+  Forward immutable per-call headers through `MCPClient.call_tool` → `HttpMCPSession.call_tool` → `_send_request`,
+  including retries. Today `integration.py:442` drops `headers` and the HTTP transport has no per-call parameter;
+  the existing config flag alone is insufficient. In delegated mode a missing broker credential fails closed
+  before network I/O; it never falls back to a connection-level token. The request bearer takes precedence over
+  connection-level OAuth/token_supplier only for that request; never mutate shared headers/config/session defaults.
+  Partition initialized MCP sessions and their `Mcp-Session-Id` by principal so a server-side authenticated session
+  cannot be reused by another principal. Do not repurpose the M2M `user_id` as delegated add-time identity.
+  `MCPClientConfig.user_id` is documented as M2M-only (`NetSuiteM2MAuth(user_id="m2m")`); existing M2M flows remain supported.
+  Delegated mode on transports without request-local authentication must fail explicitly rather than silently
+  discard credentials. HTTP-level integration tests, not only config/ContextVar assertions, gate this module.
 - **Depends on**: none new (FEAT-264 M9 path).
 - **Interface Skeleton**:
   ```python
@@ -734,6 +770,10 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
       """user_id None → config.inject_broker_credential = True (client.py:242)."""
   async def add_oauth_mcp_server(self, name: str, url: str, user_id: Optional[str] = None, oauth2=None, ...) -> List[str]: ...  # verified: integration.py:1394
   async def add_netsuite_mcp_server(self, account_id: str, client_id: str, user_id: Optional[str] = None, **kwargs) -> List[str]: ...  # verified: integration.py:1706
+  # packages/ai-parrot-server/src/parrot/mcp/transports/http.py (modifies)
+  #   HttpMCPSession.call_tool(..., *, headers: Optional[Dict[str, str]] = None)
+  #   HttpMCPSession._send_request(..., *, headers: Optional[Dict[str, str]] = None)
+  #   MCPClient.call_tool forwards headers to the selected principal's session on every retry.
   # packages/ai-parrot/src/parrot/mcp/client.py  (modifies)
   #   user_id: Optional[str] = field(default=None)  # verified: client.py:236 — docstring: M2M only; per-user tokens flow via inject_broker_credential (client.py:242)
   ```
@@ -745,17 +785,24 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
   provider"); `python -m parrot.auth.oauth2.legacy_audit` prints, per provider and channel, the count of legacy
   keys with and without a resolvable principal (the U3 cutover metric) — read-only.
   **Re-encryption job** (§8, key rotation): `python -m parrot.auth.oauth2.reencrypt [--apply] [--provider P ...]`
-  re-seals every `auth.user_identities` row of a descriptor-registered provider whose `key_version` differs from the
-  active vault key (`VAULT_ACTIVE_KEY_ID`). Per row: take the M2 per-principal refresh lock (a concurrent refresh
-  must not be overwritten by older tokens) → `IdentityStore.decrypt_credential(row)` → `IdentityStore.save_linked_identity(row.user_id,
-  row.auth_provider, token, userinfo=row.auth_data)`. It must use `save_linked_identity`, not `update_tokens`: the latter
-  re-seals only `access_token`/`refresh_token` and leaves `id_token` on the old key (navigator_auth 0.28.7
-  `identity/store.py:261-278`), so retiring the old key would break `decrypt_credential` for that row. Dry-run by
-  default (counts only); a row that fails to decrypt (`IdentityCredentialError`) is counted as `failed` and left
-  untouched — it already needs a re-link. Never logs or prints token values. Ops procedure documented in
-  `docs/auth/connections.md`: add `VAULT_MASTER_KEY_v{N+1}` → set `VAULT_ACTIVE_KEY_ID=N+1` → deploy → run the job with
-  `--apply` → re-run dry-run until `stale == 0` → only then remove `VAULT_MASTER_KEY_v{N}`. Key generation, storage and
-  the cipher itself stay in navigator-auth / navigator-session.
+  scans every credential-bearing `auth.user_identities` row in the selected provider scope, including disabled rows
+  and hand-written providers such as O365. Never filter by row `key_version`: `update_tokens` stamps the active
+  version while leaving `id_token` (and any omitted refresh token) encrypted under an older key.
+  Per row: take the M2 principal lock → re-read the row → decrypt all present token columns with the full ring →
+  re-seal all present token columns under the active key in one write. Preserve identity id, account binding,
+  enabled status, profile/auth_data, scopes and token expiry; do not use `save_linked_identity` blindly because it
+  enables rows and rewrites profile fields. M8 owns a transaction helper in `identity_credential_sink.py` for this
+  metadata-preserving write, using verified navigator-auth cipher/DB APIs; M10 calls it via an injected adapter.
+  Core must not import the server package. The CLI bootstraps that adapter only in the server runtime.
+
+  Dry-run performs no writes. Classify a row as `current` only if every present token decrypts using the active
+  key alone; decrypt with the full ring to distinguish `stale` (old-key material) from `failed` (undecryptable).
+  An apply run may safely re-seal all readable rows, including rows whose row-level version already looks current.
+  Undecryptable rows remain untouched and count as `failed`; never log token values. Key retirement requires a
+  full-store verification with the active key alone, `stale == 0` AND `failed == 0`, covering all providers sharing
+  the retiring key. A provider-filtered run cannot authorize global key retirement. Document: add the new key →
+  activate it on every writer → run `--apply` → verify all token columns with only the active key → remove the old
+  key only after that gate passes. Key generation, storage and cipher ownership stay in navigator-auth/session.
 - **Depends on**: M2, M7, M8 (`IdentityVaultCredentialStore` path and the principal lock).
 - **Interface Skeleton**:
   ```python
@@ -765,10 +812,14 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
   def main(argv: Optional[Sequence[str]] = None) -> int: ...
 
   # packages/ai-parrot/src/parrot/auth/oauth2/reencrypt.py  (new)
-  async def reencrypt_identities(store: "IdentityStore", db_pool: Any, lock: Callable[[str, str], AsyncContextManager[Any]], *,
+  async def reencrypt_identities(store: "IdentityStore", db_pool: Any,
+                                 lock: Callable[[str, str], AsyncContextManager[Any]], *,
+                                 reseal_row: Callable[[Any, Any], Awaitable[None]],
+                                 verify_active: Callable[[Any], bool],
                                  providers: Sequence[str], active_key_id: int,
                                  apply: bool = False) -> Dict[str, Dict[str, int]]:
-      """{provider: {"current": n, "stale": m, "resealed": k, "failed": f}}; dry-run unless apply; never prints token values."""
+      """reseal_row(row, decrypted_token) preserves metadata; verify_active(row) checks all ciphertext with only the active key.
+      Return {provider: {"current": n, "stale": m, "resealed": k, "failed": f}}; dry-run unless apply; no token output."""
   def main(argv: Optional[Sequence[str]] = None) -> int: ...
   ```
 
@@ -785,6 +836,7 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | `test_state_binds_principal_and_callback_verifies` | M2 | nonce payload carries `nav_user_id/channel/channel_user_id`; callback without binding fails closed (S1) |
 | `test_persist_durable_first_then_redis` | M2 | store failure → `CredentialPersistenceError`, no Redis write, callback error page (S2) |
 | `test_legacy_key_read_rewrite_delete` | M2 | legacy `oauth2:{p}:{c}:{u}` read once, rewritten under principal, deleted; no read after `OAUTH2_LEGACY_KEYS_UNTIL` |
+| `test_o365_refresh_error_classification` | M2 | invalid_grant revokes/emits; network/429/5xx are transient; invalid_client, other 400/401 and malformed responses preserve grant and expose operational errors without secrets |
 | `test_refresh_invalid_grant_revokes_and_emits` | M2 | `InvalidGrantError` → revoke + `connection.refresh_failed` |
 | `test_refresh_transient_keeps_grant` | M2 | `RefreshTransientError` → grant kept, no event (S7) |
 | `test_concurrent_refresh_single_flight` | M2 | two refreshers, one token endpoint call, rotated refresh token persisted once |
@@ -807,16 +859,19 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | `test_jira_legacy_key_dual_read_bound_only` | M7 | bound telegram user: `jira:oauth:telegram:<id>` read + rewritten; unbound: `None` |
 | `test_jira_callback_alias_path` | M7 | `/api/auth/jira/callback` served by the generic handler; `jira_oauth_callback` gone |
 | `test_jiratoolkit_cache_keyed_by_principal` | M7 | two channels, one principal → one client; token change → new client |
-| `test_identity_vault_store_roundtrip_any_provider` | M8 | `save(minted)` → `save_linked_identity`; refresh → `update_tokens`; `load` decrypts; o365 payload accepted |
+| `test_identity_vault_store_roundtrip_any_provider` | M8 | `save(minted)` commits atomic replacement; refresh durably updates the selected row; `load` decrypts; o365 payload accepted; rollback preserves prior grant |
 | `test_identity_principal_resolver` | M8 | `find_user_by_provider_account(channel, id)` mapping; web passthrough |
 | `test_notifier_adapters_delegate` | M8 | Telegram/Slack/Teams adapters call the wrapped notifier with the former arguments |
 | `test_telegram_connect_jira_requires_principal` | M8 | no `nav_user_id` on session → "/login first" reply, no OAuth state |
 | `test_register_oauth2_providers_from_descriptors` | M8 | BotManager registers descriptor providers and the principal resolver |
 | `test_mcp_user_id_optional_injects_broker` | M9 | `user_id=None` → `inject_broker_credential=True`; per-call bearer from `_CREDENTIAL_VAR` |
 | `test_legacy_audit_counts` | M10 | bound/unbound counts per provider/channel; no token values in output |
-| `test_reencrypt_dry_run_counts_only` | M10 | rows on an old `key_version` are counted `stale`; no row is written without `--apply` |
+| `test_reencrypt_dry_run_counts_only` | M10 | inspect every token column using active-key-only decryption, regardless of row `key_version`; no writes without `--apply` |
 | `test_reencrypt_reseals_all_columns` | M10 | with two keys in the ring and v2 active, `--apply` leaves access/refresh/**id_token** decryptable after v1 is removed from the ring; `auth_data` preserved |
 | `test_reencrypt_undecryptable_row_counted_failed` | M10 | `IdentityCredentialError` row → `failed`, untouched; job continues; no token value in output |
+| `test_reencrypt_mixed_key_row` | M10 | refresh after activating v2 stamps row v2 but leaves v1 id_token; scan detects it, apply re-seals it, active-key-only decrypt succeeds |
+| `test_reencrypt_preserves_disabled_metadata` | M8/M10 | disabled rows stay disabled; identity id, profile/auth_data, scopes and expiry unchanged |
+| `test_reencrypt_retirement_gate` | M10 | undecryptable row or a provider-filtered scan blocks global retirement; hand-written providers included |
 | `test_reencrypt_takes_principal_lock` | M10 | a refresh holding the principal lock is not overwritten (job waits for the lock, re-reads the row) |
 
 ### Integration Tests
@@ -828,6 +883,20 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | `test_isolation_between_principals` | principal A cannot read principal B's token from any channel |
 | `test_authorization_required_roundtrip_both_signals` | toolkit `_pre_execute` and broker seam both yield `authorization_required` with the same metadata through AgentTalk |
 | `test_callback_fails_without_durable_write` | Identity Vault unavailable → error page, no Redis key, no event |
+
+### Added integration gates (required, owned by the corresponding module)
+
+- M8: real-DB replace A with B, clear Redis, verify only B loads; disconnect then clear Redis and verify neither
+  account nor legacy keys restore credentials. Force failure inside replacement and prove A survives rollback.
+  Interleave replacement, refresh and disconnect to prove stale writes cannot resurrect A.
+- M9: a local aiohttp MCP endpoint records actual Authorization headers and session ids for two concurrent
+  principals, including retries; assert correct broker bearer, distinct sessions, no shared-state mutation,
+  no request on missing credentials, and unchanged M2M authentication.
+- M10: refresh under the new key before migration; verify every token with an active-key-only ring afterward.
+
+Task decomposition must assign these new tests to package-local test files, add those exact paths to each
+module's Validation Contract, and include them in the feature gate. Existing tests below are regression coverage,
+not substitutes for these new integration gates. No implementation completion can rely solely on mocked config tests.
 
 ### Validation Contract
 
@@ -895,21 +964,21 @@ def jira_descriptor() -> OAuth2ProviderDescriptor:
 - [ ] **AC-1 (G1)** No Redis key, lock key or durable-store name produced by `AbstractOAuth2Manager` or `JiraOAuthManager` contains the channel; `grep -rn ':{channel}:' packages/ai-parrot/src/parrot/auth/` matches only the `_LEGACY_*` templates.
 - [ ] **AC-2 (G1, S1)** Every OAuth state payload carries `nav_user_id`, `channel`, `channel_user_id` (and `canonical_identity` when known); a callback whose state lacks `nav_user_id` renders the error page and writes nothing.
 - [ ] **AC-3 (G2)** A connection created with `channel="telegram"` is returned by `list_for_principal` and resolves in `OAuthCredentialResolver.resolve("web", <nav id>)` and `resolve("a2a", <email>)` for the same principal; `user_agent_toolkits` has no remaining reader or writer in `packages/`.
-- [ ] **AC-4 (G3)** `JiraOAuthManager` subclasses `StandardOAuth2Manager`; `O365OAuthManager` is unchanged; a new provider is added by a descriptor + navconfig secrets with no manager subclass (test adds a dummy provider end to end).
-- [ ] **AC-5 (G4, S2)** `_persist_token` writes the `CredentialStore` before Redis and raises `CredentialPersistenceError` on failure; with the Identity Vault store configured, a callback is successful only after `save_linked_identity`/`update_tokens` succeeded.
+- [ ] **AC-4 (G3)** `JiraOAuthManager` subclasses `StandardOAuth2Manager`; `O365OAuthManager` keeps its subclass/API but implements M2 typed refresh-error classification; a new provider is added by a descriptor + navconfig secrets with no manager subclass (test adds a dummy provider end to end).
+- [ ] **AC-5 (G4, S2)** `_persist_token` writes the `CredentialStore` before Redis and raises `CredentialPersistenceError` on failure; with the Identity Vault store configured, a callback is successful only after the M8 durable replacement transaction committed; refresh likewise requires its durable token update to succeed.
 - [ ] **AC-6 (G5, S8)** `ToolManager.execute_tool` converts both `AuthorizationRequired` and `CredentialRequired` to `ToolResult(status="authorization_required", metadata=AuthRequiredPayload)`; AgentTalk returns `AuthRequiredEnvelope` for both; device-code fields survive.
 - [ ] **AC-7 (G6, U5)** `connection.completed`, `connection.revoked`, `connection.refresh_failed` are published through `ConnectionEventPublisher`: notifier awaited, audit entry appended, bus publish when attached; a raising notifier never fails the callback; `parrot/auth/routes.py` imports nothing from `parrot.integrations`.
 - [ ] **AC-8 (G7, S4)** `/api/v1/connections` GET/POST/DELETE exist; principal from the session only; `integration:connect` and `integration:disconnect` are evaluated with the requested scopes and fail closed without a PDP.
 - [ ] **AC-9 (G8, U3)** Telegram, Slack and Teams Jira completion notifications and identity writes behave as before through the adapters; a Telegram user with a `telegram` identity row keeps the connection without re-authorizing; a Telegram user without `nav_user_id` on the session receives the "/login first" reply and no OAuth state is created.
-- [ ] **AC-10 (S7)** `InvalidGrantError` revokes and emits `refresh_failed`; `RefreshTransientError` (network, 5xx) leaves the grant and emits nothing.
-- [ ] **AC-11 (G9, S9)** `add_oauth_mcp_server` / `add_netsuite_mcp_server` / `create_oauth_mcp_server` accept `user_id=None`; the resulting config has `inject_broker_credential=True` and the per-call bearer comes from the broker ContextVar.
-- [ ] **AC-12 (S3)** v1 stores one account per provider per principal; a reconnect replaces it; `account_id` is present on `UsersIntegrationRow`, `IntegrationDescriptor` and every `ConnectionEvent`.
+- [ ] **AC-10 (S7)** Both standard and O365 managers classify `invalid_grant` as `InvalidGrantError` (revoke + `refresh_failed`); network/429/5xx become `RefreshTransientError` (keep grant, no event); other OAuth/protocol failures preserve the grant and surface operational errors without token material.
+- [ ] **AC-11 (G9, S9)** `add_oauth_mcp_server` / `add_netsuite_mcp_server` / `create_oauth_mcp_server` accept `user_id=None`; the resulting config has `inject_broker_credential=True` and generated proxies invoke the broker. Actual HTTP requests carry the correct per-call bearer through retries, concurrent principals have isolated headers and MCP sessions, missing credentials fail closed, and M2M behavior is preserved.
+- [ ] **AC-12 (S3)** v1 stores one account per provider per principal; a reconnect atomically replaces it with rollback on failure; disconnect removes all provider-account credentials without cold-cache or legacy resurrection; concurrent refresh cannot restore the prior account; `account_id` is present on `UsersIntegrationRow`, `IntegrationDescriptor` and every `ConnectionEvent`.
 - [ ] **AC-13** Legacy keys (`oauth2:{p}:{c}:{u}`, vault `oauth2_{p}_{c}_{u}`, `jira:oauth:{c}:{u}`) are read at most once per principal, rewritten and deleted; no legacy read happens after `OAUTH2_LEGACY_KEYS_UNTIL`; `python -m parrot.auth.oauth2.legacy_audit` reports bound/unbound counts without token values.
 - [ ] **AC-14** `/api/auth/jira/callback` keeps working as the registered Atlassian redirect URI (alias of the generic callback); `jira_oauth_callback` and `CredentialSink` are deleted.
 - [ ] **AC-15** `docs/auth/connections.md` exists; `docs/auth/jira-credential-ownership.md` states the Identity Vault owns every 3LO provider.
 - [ ] **AC-16** The Validation Contract passes; no `print`, no `requests`/`httpx`, Pydantic v2 only; `ruff check` clean on touched files.
 - [ ] **AC-17 (S11)** The isolation matrix passes: cross-principal read denied, unlinked-user rejection, legacy deletion, concurrent refresh single-flight, notifier-failure isolation, durable-write-required callback, `CredentialRequired` serialization.
-- [ ] **AC-18 (§8 key rotation)** `python -m parrot.auth.oauth2.reencrypt` is dry-run by default; with `--apply` every stale `auth.user_identities` row of a registered provider is re-sealed (access, refresh **and** id token) under the active key while holding the principal refresh lock, so the previous key can be removed from the ring with no decrypt failure; undecryptable rows are reported as `failed`, never modified; no token value is logged or printed.
+- [ ] **AC-18 (§8 key rotation)** `python -m parrot.auth.oauth2.reencrypt` is dry-run by default; with `--apply` every readable credential row in scope is eligible for re-sealing regardless of row `key_version`, preserving metadata and enabled status; all present token columns are re-sealed (access, refresh **and** id token) under the active key while holding the principal refresh lock, and key retirement requires full-store active-key-only verification across all providers with both `stale == 0` and `failed == 0`; undecryptable rows are reported as `failed`, never modified; no token value is logged or printed.
 - [ ] **AC-19 (§8 S-4 pre-check)** `UsersIntegrationRow` and `IntegrationDescriptor` carry `updated_at`, bumped on every save, replace-on-reconnect and status change; `GET /api/v1/connections` returns `provider`, `status` and `updated_at`; `CredentialStore` and `Principal` live in `packages/ai-parrot` with no import from `ai-parrot-server`.
 - [ ] **AC-20 (§8 R6)** Every `refresh_token` present in a token response replaces the stored one, whatever `RefreshPolicy.rotating` says; `JIRA_DESCRIPTOR.refresh_policy == RefreshPolicy(rotating=True, sliding=True, refresh_lifetime_s=7776000)`.
 
@@ -1167,7 +1236,7 @@ self.credential_resolver = credential_resolver (:1055); self._client_cache: Dict
 |---|---|---|---|
 | `Principal` binding | `AbstractOAuth2Manager.create_authorization_url` nonce payload | state dict | `oauth2_base.py:298-343` |
 | `CredentialStore.save` | `AbstractOAuth2Manager._persist_token` | awaited before Redis | `oauth2_base.py:409-426` |
-| `IdentityVaultCredentialStore` | `IdentityStore.save_linked_identity` / `update_tokens` / `get_by_provider` / `decrypt_credential` | method calls | `navigator_auth/identity/store.py` (0.28.7) |
+| `IdentityVaultCredentialStore` | `IdentityStore` read/decrypt APIs plus M8 transaction helper for replacement/deletion/re-sealing | upstream upsert is account-scoped; helper APIs must be verified against the upgraded dependency | `navigator_auth/identity/store.py` (0.28.7 baseline) |
 | `IdentityPrincipalResolver` | `IdentityStore.find_user_by_provider_account(channel, channel_user_id)` | method call | same |
 | `ConnectionEventPublisher` | `AbstractOAuth2Manager.handle_callback` / `_refresh_tokens` / `revoke` | awaited after persistence | `oauth2_base.py:354, :507, :497` |
 | `ConnectionEventPublisher` | `AuditLedger.append(user_id, channel, tool, provider, credential_material)` | method call | `audit_ledger.py:338` |
@@ -1180,7 +1249,7 @@ self.credential_resolver = credential_resolver (:1055); self._client_cache: Dict
 | `configure_tool_manager` | `list_users_integrations(user_id)` | function call | `user_objects.py:218` |
 | `BotManager._register_oauth2_providers` | `register_descriptor_providers`, `set_principal_resolver` | function calls | `manager.py:2789-2807` |
 | `JiraOAuthManager` hook | `fetch_accessible_resources`, `fetch_myself` | post-exchange hook | `jira_oauth.py:191, :214` |
-| MCP per-call bearer | `MCPClientConfig.inject_broker_credential` + `get_headers(context)` | config flag | `client.py:242, :282` |
+| MCP per-call bearer | `get_headers(context)` → `MCPClient.call_tool` → HTTP session | M9 must add forwarding and principal session isolation; currently headers are dropped | `client.py:242, :282`; `integration.py:422-442`; `transports/http.py:390, :580` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.connections`~~, ~~`ConnectionManager`~~, ~~`OAuthProviderRegistry`~~, ~~`VaultCredentialResolver`~~, ~~`CredentialVault`~~, ~~`ConnectionChannel`~~, ~~`AuthRequirement`~~, ~~`requires_auth`~~ — brainstorm names; absent in `packages/` (probe `absent`, F019). Use the names in §2/§3 instead.
@@ -1218,6 +1287,8 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 | `packages/ai-parrot/src/parrot/auth/oauth2_base.py` | MODIFY | `    async def get_valid_token(` | `oauth2_base.py:461` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2_base.py` | MODIFY | `    async def revoke(self, channel: str, user_id: str) -> None:` | `oauth2_base.py:497` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2_base.py` | MODIFY | `            except aiohttp.ClientError as exc:` | `oauth2_base.py:546` | 1 |
+| `packages/ai-parrot/src/parrot/auth/o365_oauth.py` | MODIFY | `    async def _refresh_request(self, refresh_token: str) -> Dict[str, Any]:` | `o365_oauth.py:140` | 1 |
+| `packages/ai-parrot-server/src/parrot/mcp/transports/http.py` | MODIFY | `    async def call_tool(self, tool_name: str, arguments: dict):` | `transports/http.py:580` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/descriptor.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/oauth2/events.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/oauth2/legacy_audit.py` | CREATE | — | — | — |
@@ -1294,7 +1365,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - **Callback alias** — the Atlassian app's registered redirect URI is `/api/auth/jira/callback`; the generic handler must be mounted there, otherwise every Jira link breaks. Do not change `JIRA_REDIRECT_URI`.
 - **Notifier process topology** — Telegram/Slack/Teams notifiers live on the same aiohttp app as the callback today (`app['jira_oauth_notifier']`, `app['msteams_jira_oauth_notifier']`, `app['slack_jira_oauth_notifier']`); if a deployment splits them, delivery silently stops — the registry logs a warning when no notifier is registered for `event.channel`, and the bus publication is the out-of-process fallback (S6).
 - **`IdentityStore` has no metadata-only write**; `save_linked_identity` needs an `access_token`. Channel identity rows stay with `IdentityMappingService` (identity_mapping.py:173). `TokenResponse.from_oauth_response(payload, scopes)` maps a standard token payload; `JiraTokenSet` extras go in `raw`.
-- **Single-account v1** (S3) — a reconnect with a different Atlassian site replaces the row; `account_id` is carried everywhere so v2 can add selection without a schema break.
+- **Single-account v1** (S3) — M8 atomically replaces the provider credential, including when the external account changes; raw IdentityStore upsert alone retains old accounts; `account_id` is carried everywhere so v2 can add selection without a schema break.
 - **High blast radius** in `AbstractOAuth2Manager` (O365 live path) and `ToolManager.execute_tool` (every tool). Mitigation: the Validation Contract runs `tests/auth/test_oauth2_base.py` and the AgentTalk envelope tests on every task; the `CredentialRequired` catch is gated on the exception type only.
 - **MCP** — `add_oauth_mcp_server(user_id=…)` callers in `bots/agent.py:1038-1200` keep working (optional param); `NetSuiteM2MAuth(user_id="m2m")` is M2M and untouched.
 - **Audit ledger material** — `credential_material` is fingerprinted (audit_ledger.py:338-352); pass the event kind + account id, never a token.
@@ -1333,7 +1404,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - [x] Hot-swap vs declare-once — *Resolved by research + scope*: `JiraToolkit` declares `credential_provider="jira"` (declare-once on the broker seam); removing the AgentTalk placeholder is S-3a.
 - [x] Legacy key cutover date (`OAUTH2_LEGACY_KEYS_UNTIL`) and the acceptable unbound count — *Resolved 2026-10-30 (Jesus)*: ops sets `OAUTH2_LEGACY_KEYS_UNTIL` = **S-1 prod deploy + 30 days** (every active user migrates on first token use, read-once/rewrite/delete). **No unbound-count gate**: unbound legacy keys belong to unlinked Telegram users, who re-connect by design (U3). `legacy_audit` runs before cutover and its bound/unbound counts go into the user announcement. (M10 docs, AC-13.)
 - [x] PBAC allowlist shape — *Resolved 2026-10-30 (Jesus)*: **navigator-auth PDP only**. Policies for `integration:connect` / `integration:disconnect` are authored in the PDP that `_check_pbac` already calls (service.py:490, fail-closed); parrot passes `provider` and `scopes` in the evaluation context and keeps **no** policy store or tenant allowlist of its own. `docs/auth/connections.md` (M10) ships a sample policy. (M6, AC-8.)
-- [x] Identity Vault encryption key management — *Resolved 2026-10-30 (Jesus)*: navigator-auth / navigator-session keep owning key material and the cipher (`VAULT_MASTER_KEY_v{N}` + `VAULT_ACTIVE_KEY_ID`; `key_version` stamped on every write); **S-1 adds a re-encryption job** (`python -m parrot.auth.oauth2.reencrypt`, M10) so a rotated-out key can be retired. Research finding that shaped it: `IdentityStore.update_tokens` (the refresh path) re-seals only access/refresh, never `id_token`, so rows silently stay on the old key without the job. (M10, AC-18.)
+- [x] Identity Vault encryption key management — *Resolved 2026-10-30 (Jesus)*: navigator-auth / navigator-session keep owning key material and the cipher (`VAULT_MASTER_KEY_v{N}` + `VAULT_ACTIVE_KEY_ID`; `key_version` stamped on every write); **S-1 adds a re-encryption job** (`python -m parrot.auth.oauth2.reencrypt`, M10) so a rotated-out key can be retired. Research finding that shaped it: `IdentityStore.update_tokens` (the refresh path) re-seals only access/refresh, never `id_token`, so a row can report the active key while retaining old-key ciphertext; M10 inspects every token column and preserves metadata when re-sealing. (M10, AC-18.)
 - [x] R6 provider refresh facts — *Resolved by research 2026-10-30*: verified against Atlassian, Microsoft and Oracle docs (§7 External provider facts). `RefreshPolicy` gains `sliding`; Jira descriptor = `rotating=True, sliding=True, 90 d`; a returned refresh token always replaces the stored one (Microsoft does not revoke the old one). NetSuite confidential-client lifetime is undocumented by Oracle (the "7-day" figure is community-only) — not needed in S-1. (M3, M7, AC-20.)
 - [x] navigator-auth `>=0.28.8` availability — *Resolved by research 2026-10-30*: 0.28.8 (2026-10-23 01:37 UTC) and 0.28.9 (2026-10-23 23:59 UTC) are on PyPI. The `.venv` and `uv.lock` are still on 0.28.7 and both pyproject floors say `>=0.28.3`; the operator raises both floors to `>=0.28.8` and re-locks on `dev` before the feature worktree is created (Worktree Strategy → Exclusive resources). The deployment image picks it up from the lock.
 - [x] S-4 pre-check — *Resolved by code check 2026-10-30*: (a) **gap found**: neither `UsersIntegrationRow` nor `IntegrationDescriptor` (models.py:21) had `updated_at`, and `connected_at` is first-connect only, so a CLI could not detect a completed *re*connect → `updated_at` added to both (§2 Data Models, M6, AC-19). (b) **holds**: `CredentialStore` is a Protocol in core `parrot/auth/oauth2_base.py` depending only on core `Principal`; core `persistence.py` imports only `parrot.interfaces.documentdb` and `parrot.auth.oauth2.models` — an HTTP-backed store can live outside `ai-parrot-server`. No new module in S-1.
@@ -1356,7 +1427,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 | S6 | Define cross-process notifier delivery explicitly (architecture) | CONFIRM (constraint) | U5 keeps the registry load-bearing; same-process constraint recorded, notifier failures isolated, bus is the out-of-process path; web cross-process delivery is S-3a. | §3 M4, §7 risks |
 | S7 | Distinguish invalid refresh tokens from transient failures (risk) | CONFIRM | Verified oauth2_base.py:543-549; `InvalidGrantError` vs `RefreshTransientError`. | §3 M2, AC-10 |
 | S8 | Use a superset needs-auth contract (api) | CONFIRM | `AuthRequiredPayload` union; both exceptions serialize identically in ToolManager and AgentTalk. | §3 M5, AC-6 |
-| S9 | Make MCP credential resolution genuinely per-call (architecture) | CONFIRM | Verified `inject_broker_credential` (client.py:242, :282); `user_id` optional, broker path when absent. | §3 M9, AC-11 |
+| S9 | Make MCP credential resolution genuinely per-call (architecture) | CONFIRM | Config seam verified, but review found headers dropped at integration.py:442. M9 now owns transport forwarding, proxy provider declaration and principal-isolated sessions. | §3 M9, AC-11 |
 | S10 | Keep provider-specific behavior typed before introducing YAML hooks (alternative) | CONFIRM (modified) | Typed descriptor + generic RFC 6749 manager; hooks are an in-code registry, never YAML import paths; O365 keeps its subclass. | §3 M3, §7 patterns |
 | S11 | Require a migration and isolation contract matrix before cutover (testing) | CONFIRM | Added to §4 unit + integration tests and AC-17. | §4, AC-17 |
 
@@ -1374,7 +1445,7 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
   - M6 → M1, M2, M4, M5 (`Principal`, manager signatures, events, `AuthRequiredPayload` in `AuthRequiredEnvelope`)
   - M7 → M2, M3, M4 (`StandardOAuth2Manager`, hook registry, publisher) and M8 (notifier adapters registered before the Jira route switch)
   - M8 → M1, M2, M4 (Protocols) and M3 (`register_descriptor_providers`)
-  - M9 → none (FEAT-264 path); M10 → M2, M7 (key templates, audit)
+  - M9 → none (FEAT-264 broker path plus HTTP transport forwarding); M10 → M2, M7, M8 (key templates, audit, metadata-preserving re-sealing adapter)
   - Concurrent after M1 + M4 land: M2 ∥ M5 ∥ M9; after M2: M3 ∥ M6; then M7 + M8 (serialized on shared files); M10 last.
 - **Shared files** (tasks serialized): `parrot/auth/oauth2/__init__.py` (M3, M4, M6 exports); `parrot/auth/oauth2/models.py` (M5, M6); `parrot/auth/credentials.py` (M5 only, but M1 export touches `auth/__init__.py`); `parrot/auth/jira_oauth.py` (M7 only); `ai-parrot-server manager/manager.py` (M6 routes, M8 registration); `ai-parrot-integrations integrations/manager.py` (M8 only); `tools/manager.py` (M5 only).
 - **Exclusive resources**: the `navigator-auth>=0.28.8` floor bump touches `packages/ai-parrot/pyproject.toml`, the root `pyproject.toml` constraint and `uv.lock` (locked at 0.28.7) — done by the main-checkout operator on `dev` **before** the feature worktree is created (worktree agents never lock/install, worktree-management §4); no task owns it. Otherwise none (no compiled extensions, no DB migration — `auth.user_identities` already exists; `user_agent_toolkits` removal is a code change, DocumentDB collection left in place).
@@ -1389,3 +1460,4 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from proposal FEAT-773 (accepted). S-1 scope; decisions U1–U5 + vault owner carried forward; codex design research folded (11 CONFIRM). Codebase Contract verified against `65aa79dfe`. |
 | 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Declared S-4 (CLI-based agents + MCP-based tools in a CLI) as a fifth consumer sub-spec: Non-Goals, §8 spec-count trail, S-4 pre-check item, Worktree Strategy dependency. No module or AC changes. |
 | 0.3 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Resolved all six §8 open questions. Decisions: legacy cutover = deploy + 30 d with no unbound gate; PBAC policy in the navigator-auth PDP only; S-1 adds the Identity Vault re-encryption job (M10, AC-18). Research: R6 provider facts verified (`RefreshPolicy.sliding`, Jira descriptor values, AC-20); navigator-auth 0.28.8/0.28.9 on PyPI → floor bump + re-lock as a pre-implementation step; S-4 pre-check found a missing `updated_at` (added, AC-19). |
+| 0.4 | 2026-10-30 | Codex | Resolve four design-review findings: mixed-key-safe re-encryption and retirement gate; atomic provider-account replacement/deletion; MCP request-header forwarding and session isolation; explicit O365 typed refresh errors. Strengthen regression/integration criteria and module ownership. |
