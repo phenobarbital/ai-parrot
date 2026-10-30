@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -39,6 +40,7 @@ class MergePlan(BaseModel):
     new_lines: list[bytes] = Field(default_factory=list)
     new_events: list[LedgerEvent] = Field(default_factory=list)
     duplicates: int = 0
+    redundant_closes: list[str] = Field(default_factory=list)
 
 
 def _canonical(event: LedgerEvent) -> str:
@@ -116,6 +118,37 @@ def find_transition_conflicts(
     return conflicts
 
 
+def drop_redundant_closes(remote: Sequence[LedgerEvent], plan: MergePlan) -> MergePlan:
+    """Set aside ``issue.closed`` events whose issue is already terminal.
+
+    The first close on the destination wins: closing a closed (or superseded)
+    issue changes no state, and appending it would let the reducer overwrite
+    the recorded resolution. Such events are listed in ``redundant_closes``
+    instead of being appended, so they never reach the conflict check. A
+    second close of the same issue within ``plan`` is redundant too.
+
+    Args:
+        remote: Events already on the destination log, in log order.
+        plan: The merge plan produced by :func:`merge_batch`.
+
+    Returns:
+        A new plan holding only the events to append, with the set-aside ids.
+    """
+    state: dict[str, dict[str, Any]] = {}
+    for event in remote:
+        _apply(state, event)
+    kept = MergePlan(duplicates=plan.duplicates)
+    for raw_line, event in zip(plan.new_lines, plan.new_events, strict=True):
+        current = state.get(event.subject)
+        if event.kind == "issue.closed" and current is not None and current["status"] in TERMINAL:
+            kept.redundant_closes.append(event.event_id)
+            continue
+        kept.new_lines.append(raw_line)
+        kept.new_events.append(event)
+        _apply(state, event)
+    return kept
+
+
 def _apply(state: dict[str, dict[str, Any]], event: LedgerEvent) -> None:
     """Mirror the live reducer for status, claim owner, and close evidence."""
     if not event.kind.startswith("issue."):
@@ -146,9 +179,13 @@ async def build_scratch_snapshot(merged: Sequence[bytes], *, scratch_dir: Path, 
     await asyncio.to_thread(scratch_dir.mkdir, parents=True, exist_ok=True)
     data = b"".join(line + b"\n" for line in merged)
     await asyncio.to_thread((scratch_dir / "events.jsonl").write_bytes, data)
-    service = LedgerService.from_dir(scratch_dir)
-    await service.index.sync()
-    changed = await service.export_snapshot(dest, reconcile=True)
+    try:
+        service = LedgerService.from_dir(scratch_dir)
+        await service.index.sync()
+        changed = await service.export_snapshot(dest, reconcile=True)
+    finally:
+        # The index opens a connection per transaction, so nothing holds the scratch store open.
+        await asyncio.to_thread(shutil.rmtree, scratch_dir, ignore_errors=True)
     logger.debug("Scratch ledger snapshot %s (changed=%s) from %d events", dest, changed, len(merged))
     return changed
 
@@ -270,7 +307,20 @@ class LedgerIntegrator:
                 )
             try:
                 for attempt in range(1, max_attempts + 1):
-                    report = await self._attempt(batch, attempt)
+                    try:
+                        report = await self._attempt(batch, attempt)
+                    except Exception:  # noqa: BLE001 — any failure keeps the batch pending (exit 2)
+                        self.logger.exception("ledger delivery attempt %d of %s failed", attempt, batch.batch_id)
+                        return LedgerDeliveryReport(
+                            status="pending",
+                            batch_id=batch.batch_id,
+                            attempts=attempt,
+                            remote_head=None,
+                            commit_sha=None,
+                            added=0,
+                            remaining=len(batch.event_ids),
+                            error_code="unexpected-error",
+                        )
                     if report is not None:
                         return report
                 return LedgerDeliveryReport(
@@ -355,7 +405,11 @@ class LedgerIntegrator:
                     error_code="invalid-content",
                     recovery_path=recovery,
                 )
-            conflicts = find_transition_conflicts([event for _, event in remote_log], plan.new_events)
+            remote_events = [event for _, event in remote_log]
+            plan = drop_redundant_closes(remote_events, plan)
+            for event_id in plan.redundant_closes:
+                self.logger.info("ledger delivery skipped redundant close %s (issue already terminal)", event_id)
+            conflicts = find_transition_conflicts(remote_events, plan.new_events)
             if conflicts:
                 recovery = await self._remove_if_clean(tmp)
                 return LedgerDeliveryReport(
@@ -506,7 +560,10 @@ class LedgerIntegrator:
                     recovery_path=str(tmp),
                 )
             verified_by_id = {event.event_id: _canonical(event) for _, event in verified_log}
-            expected = {event.event_id: _canonical(event) for event in sealed.events}
+            # Redundant closes were deliberately not appended; verify only the rest.
+            skipped = set(plan.redundant_closes)
+            delivered_events = [event for event in sealed.events if event.event_id not in skipped]
+            expected = {event.event_id: _canonical(event) for event in delivered_events}
             if any(verified_by_id.get(event_id) != canonical for event_id, canonical in expected.items()):
                 return LedgerDeliveryReport(
                     status="pending",
@@ -522,9 +579,14 @@ class LedgerIntegrator:
             remote_head_result = await _git("rev-parse", "HEAD", cwd=tmp)
             remote_head = remote_head_result.stdout.strip()
             verified_digest = hashlib.sha256(
-                "".join(f"{event.event_id}\0{_canonical(event)}\n" for event in sealed.events).encode("utf-8")
+                "".join(f"{event.event_id}\0{_canonical(event)}\n" for event in delivered_events).encode("utf-8")
             ).hexdigest()
-            await self.outbox.acknowledge(batch, remote_head=remote_head, verified_digest=verified_digest)
+            await self.outbox.acknowledge(
+                batch,
+                remote_head=remote_head,
+                verified_digest=verified_digest,
+                skipped_event_ids=plan.redundant_closes,
+            )
             remaining_status = await self.outbox.status(known_ids=set(verified_by_id))
             # The receipt above already removed this batch from ``pending_events``.
             remaining = int(remaining_status["pending_events"]) + int(remaining_status["unsealed_events"])
@@ -538,6 +600,7 @@ class LedgerIntegrator:
                 commit_sha=commit_sha,
                 added=len(plan.new_lines),
                 remaining=remaining,
+                skipped=list(plan.redundant_closes),
                 recovery_path=recovery,
             )
         except StrictLedgerReadError:
@@ -551,6 +614,23 @@ class LedgerIntegrator:
                 remaining=len(batch.event_ids),
                 error_code="invalid-content",
                 recovery_path=str(tmp),
+            )
+        except Exception:  # noqa: BLE001 — never leak the owned worktree; the batch stays pending
+            self.logger.exception("ledger delivery attempt %d of %s failed", attempt, batch.batch_id)
+            try:
+                recovery = await self._remove_if_clean(tmp)
+            except Exception:  # noqa: BLE001 — best effort; keep the tree as the recovery path
+                recovery = str(tmp)
+            return LedgerDeliveryReport(
+                status="pending",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="unexpected-error",
+                recovery_path=recovery,
             )
 
     async def check_feature_diff(self, feature_ref: str) -> list[str]:

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-759 — GitHubReviewer SDD Spec Acceptance Criteria
 **Spec**: `sdd/specs/github-reviewer-sdd-spec-acceptance.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4813, TASK-4814

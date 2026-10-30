@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-531 — Auto-detect Claude Code / Codex CLI and default wikitoolkit + bookstore's LLM to it
 **Spec**: `sdd/specs/wikitoolkit-cli-llm-fallback.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

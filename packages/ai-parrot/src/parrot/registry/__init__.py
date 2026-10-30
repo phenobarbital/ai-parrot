@@ -1,5 +1,5 @@
 from ..conf import AGENTS_DIR, PLUGINS_DIR
-from .registry import AgentRegistry, BotConfig, BotMetadata
+from .registry import AgentKind, AgentRegistry, BotConfig, BotMetadata, RemoteAgentNotInstantiable
 from .storage import BotConfigStorage
 
 
@@ -18,4 +18,6 @@ __all__ = [
     "BotMetadata",
     "register_agent",
     "AgentRegistry",
+    "AgentKind",
+    "RemoteAgentNotInstantiable",
 ]

@@ -113,7 +113,7 @@ dependencies = [
     # Python 3.13+; 0.28.3 keeps abac_middleware after the auth middlewares
     # when PDP.setup() runs before AuthHandler.setup() (BotManager.setup()
     # builds PBAC first). Loose upper bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.28.3",
+    "navigator-auth>=0.28.8",
     "navigator-session>=1.0.1",
     # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
     # which lets a plain pip resolve down to pyopenssl 22.0 — broken against
@@ -1006,6 +1006,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
     "_assets/sdd/CODEX.md",
 ]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
+# FEAT-778: package-bundled domain experts, read via importlib.resources by parrot.experts.loader.
+"parrot.experts.bundled" = ["*/expert.yaml", "*/persona.md", "*/identity/*.md", "*/knowledge/*.md", "*/rules/*.md", "*/adr/*.md"]
 # FEAT-556: `parrot <host> install --toolkits` seeds .parrot/mcp-toolkits.yaml
 # from these templates, read via importlib.resources — they MUST be in the wheel.
 "parrot.mcp" = ["_toolkit_templates/*.yaml"]

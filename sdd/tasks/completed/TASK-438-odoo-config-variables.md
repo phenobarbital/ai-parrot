@@ -1,7 +1,7 @@
 # TASK-438 — Odoo Config Variables
 
 **Feature**: FEAT-054 — odoo-interface
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: S
 **Depends on**: —

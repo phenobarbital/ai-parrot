@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-447 — AgentsFlow Result Fidelity
 **Spec**: `sdd/specs/agentsflow-result-fidelity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2328

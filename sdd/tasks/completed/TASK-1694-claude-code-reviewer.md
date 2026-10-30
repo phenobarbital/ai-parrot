@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-270 — Multi-Dispatcher Code Review Gate
 **Spec**: `sdd/specs/new-codereviewers.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1692, TASK-1693

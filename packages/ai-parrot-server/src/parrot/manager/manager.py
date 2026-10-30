@@ -226,6 +226,7 @@ class BotManager:
         enable_database_bots: bool = ENABLE_DATABASE_BOTS,
         enable_crews: bool = ENABLE_CREWS,
         enable_registry_bots: bool = ENABLE_REGISTRY_BOTS,
+        enable_experts: bool = True,
         enable_swagger_api: bool = ENABLE_SWAGGER,
     ) -> None:
         """Initialize BotManager.
@@ -240,6 +241,8 @@ class BotManager:
                 pipeline (load_modules, discover_config_agents,
                 load_agent_definitions, instantiate_startup_agents). Defaults
                 to ``ENABLE_REGISTRY_BOTS`` (True).
+            enable_experts: When True, load domain experts during registry
+                discovery. Defaults to ``True``.
             enable_swagger_api: When True, register the OpenAPI/Swagger routes
                 via ``setup_swagger()``. Defaults to ``ENABLE_SWAGGER``.
         """
@@ -259,6 +262,7 @@ class BotManager:
         self.enable_database_bots: bool = enable_database_bots
         self.enable_crews: bool = enable_crews
         self.enable_registry_bots: bool = enable_registry_bots
+        self.enable_experts: bool = enable_experts
         self.enable_swagger_api: bool = enable_swagger_api
         # Initialize Redis persistence for crews — keyed off instance attr
         self.crew_redis = CrewRedis() if self.enable_crews else None
@@ -453,6 +457,11 @@ class BotManager:
             if definitions_dir.is_dir():
                 def_count = self.registry.load_agent_definitions(definitions_dir)
                 self.logger.info(f"Loaded {def_count} agents from YAML definitions")
+
+            # Step 2c: domain experts (FEAT-778) — fail-open
+            from parrot.experts.bootstrap import load_experts  # noqa: PLC0415
+
+            await load_experts(self.registry, enabled=self.enable_experts)
 
             # Step 3: Instantiate startup agents
             startup_results = await self.registry.instantiate_startup_agents(app)

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-550 — Cumulative Question Token Budgets for Bedrock and Mantle
 **Spec**: `sdd/specs/token-budget-bedrock.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3140

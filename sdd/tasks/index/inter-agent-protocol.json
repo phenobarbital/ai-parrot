@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-26T00:59:23.268174+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-30T00:33:01+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,9 +84,10 @@
       "parallel": true,
       "parallelism_notes": "imports HandleDescriptor/MediaType from TASK-4739 (parrot/interagent/descriptors.py) to measure the real model; the parrot.squawk.client.affordances mention is in Does NOT Exist (created later by TASK-4749's package), not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4731-g1-token-accounting-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:43:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4731-g1-token-accounting-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4732",
@@ -95,7 +96,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,9 +105,10 @@
       "parallel": false,
       "parallelism_notes": "needs pycapnp declared by TASK-4737 (packages/ai-parrot-squawk/pyproject.toml) and the tests/spikes package; exclusive: opens loopback TLS ports",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4732-g2-capnp-arrow-transport-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4732-g2-capnp-arrow-transport-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4733",
@@ -115,7 +117,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,9 +127,10 @@
       "parallel": false,
       "parallelism_notes": "imports compile_capability from TASK-4742 (parrot/interagent/compiler.py); the parrot.squawk.contract.compiler mention is in Does NOT Exist (TASK-4743's package), not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4733-g3-contract-tool-defs-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T23:05:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4733-g3-contract-tool-defs-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4734",
@@ -136,7 +139,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -145,9 +148,10 @@
       "parallel": false,
       "parallelism_notes": "test file lives in packages/ai-parrot-squawk/tests/spikes created by TASK-4737; exclusive: real-LLM provider quota",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4734-g4-mount-prompt-cache-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4734-g4-mount-prompt-cache-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4735",
@@ -156,7 +160,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -165,9 +169,10 @@
       "parallel": true,
       "parallelism_notes": "needs biscuit-python declared by TASK-4737 (packages/ai-parrot-squawk/pyproject.toml) and tests/spikes package",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4735-g5-biscuit-attenuation-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T01:57:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4735-g5-biscuit-attenuation-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4736",
@@ -176,7 +181,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -186,9 +191,10 @@
       "parallel": false,
       "parallelism_notes": "imports BusPayloadSerializer/CallMessage from TASK-4741 (parrot/interagent/bus_codec.py, messages.py); exclusive: needs a shared Redis Streams instance; test file lives in packages/ai-parrot-squawk/tests/spikes created by TASK-4737",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4736-g6-bus-envelope-spike.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:49:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4736-g6-bus-envelope-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4737",
@@ -197,16 +203,17 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits root pyproject.toml and requires a uv.lock refresh (dependency manifest); the parrot.interagent mention is a docstring reference to TASK-4739's package, not an import",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4737-squawk-satellite-scaffold.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-26T12:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4737-squawk-satellite-scaffold.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4738",
@@ -215,16 +222,17 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "touches only packages/ai-parrot-server mcp/config.py + transports; no shared files with other tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4738-remove-dead-grpc-mcp-stub.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4738-remove-dead-grpc-mcp-stub.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4739",
@@ -233,16 +241,17 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "creates parrot/interagent/ (new package); parrot.squawk (TASK-4737's package) appears only in the 'never imports' rule, not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4739-interagent-errors-handles.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4739-interagent-errors-handles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4740",
@@ -251,7 +260,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -260,9 +269,10 @@
       "parallel": true,
       "parallelism_notes": "imports MediaType/SquawkErrorCode from TASK-4739 and modifies parrot/interagent/__init__.py it created; parrot.squawk (TASK-4737's package) appears only in Does NOT Exist, not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4740-interagent-ledger-contract.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:11:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4740-interagent-ledger-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4741",
@@ -271,7 +281,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -280,9 +290,10 @@
       "parallel": true,
       "parallelism_notes": "imports ContractDelta/CapabilityCategory/CallCost/CallerIdentity from TASK-4740 and modifies parrot/interagent/__init__.py after it; parrot.squawk (TASK-4737's package) appears only in Does NOT Exist, not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4741-interagent-messages-bus-codec.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:43:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4741-interagent-messages-bus-codec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4742",
@@ -291,7 +302,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -300,9 +311,10 @@
       "parallel": true,
       "parallelism_notes": "modifies parrot/interagent/__init__.py after TASK-4741 (same file, serialized); parrot.squawk (TASK-4737) and parrot.squawk.contract (TASK-4743) appear only in Does NOT Exist as rev 0.1 paths, not a use",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4742-interagent-compiler.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4742-interagent-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4743",
@@ -311,7 +323,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -321,9 +333,10 @@
       "parallel": true,
       "parallelism_notes": "needs the satellite package from TASK-4737 (parrot/squawk/) and imports SquawkCapability/CapabilityCategory/contract_delta from TASK-4740",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4743-squawk-bindings-contract-cache.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:20:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4743-squawk-bindings-contract-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4744",
@@ -332,7 +345,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -342,9 +355,10 @@
       "parallel": true,
       "parallelism_notes": "needs the satellite package from TASK-4737 and imports HandleOwner/handle_key/HandleClaimError from TASK-4739",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4744-squawk-blob-store-local.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:11:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4744-squawk-blob-store-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4745",
@@ -353,7 +367,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -362,9 +376,10 @@
       "parallel": true,
       "parallelism_notes": "extends SquawkBlobStore/_authorize from TASK-4744 (blobs/store.py) and modifies blobs/__init__.py it created",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4745-squawk-blob-filemanager-sweeper.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:20:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4745-squawk-blob-filemanager-sweeper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4746",
@@ -373,7 +388,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -383,9 +398,10 @@
       "parallel": true,
       "parallelism_notes": "needs the satellite package from TASK-4737 and imports ServedLedgerEntry from TASK-4740 (parrot/interagent/ledger.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4746-squawk-served-ledger.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:20:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4746-squawk-served-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4747",
@@ -394,7 +410,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -405,9 +421,10 @@
       "parallel": true,
       "parallelism_notes": "imports ServedLedger from TASK-4746 (modifies server/__init__.py it created), BusPayloadSerializer from TASK-4741, CapabilityBinding/build_contract from TASK-4743",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4747-squawk-render-promotion.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4747-squawk-render-promotion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4748",
@@ -416,16 +433,17 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "core-only edits (observability/recorders, core/events/lifecycle/events); no shared files with other tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4748-capability-call-record-event.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4748-capability-call-record-event.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4749",
@@ -434,7 +452,7 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -445,9 +463,10 @@
       "parallel": true,
       "parallelism_notes": "needs the satellite package from TASK-4737, CallCost/SquawkCapability from TASK-4740, CapabilityCallRecord/CapabilityCallEvent from TASK-4748",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4749-squawk-telemetry-received-ledger.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-29T22:43:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4749-squawk-telemetry-received-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4750",
@@ -456,16 +475,40 @@
       "feature_id": "FEAT-746",
       "feature": "inter-agent-protocol",
       "spec": "sdd/specs/inter-agent-protocol.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "core-only edits to parrot/registry/{registry,__init__}.py; no other task touches them",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4750-registry-remote-agent-kind.md"
+      "started_at": "2026-10-26T12:36:12+00:00",
+      "completed_at": "2026-10-27T02:03:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4750-registry-remote-agent-kind.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4893",
+      "slug": "g2-g4-gate-rerun",
+      "title": "Rerun gates G2 and G4 with real evidence and amend the spec",
+      "feature_id": "FEAT-746",
+      "feature": "inter-agent-protocol",
+      "spec": "sdd/specs/inter-agent-protocol.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4732",
+        "TASK-4734"
+      ],
+      "parallel": false,
+      "parallelism_notes": "exclusive: real-LLM provider quota; opens loopback ports",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-30T00:00:00+00:00",
+      "completed_at": "2026-10-29T23:37:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4893-g2-g4-gate-rerun.md",
+      "discovered_from": "issue:60de633baac2",
+      "verification": "verified"
     }
   ]
 }

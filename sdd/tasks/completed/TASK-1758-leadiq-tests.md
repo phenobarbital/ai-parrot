@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-304 — LeadIQ Toolkit for ai-parrot-tools
 **Spec**: `sdd/specs/leadiqtool.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1756, TASK-1757

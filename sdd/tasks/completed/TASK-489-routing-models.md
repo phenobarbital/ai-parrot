@@ -2,7 +2,7 @@
 
 **Feature**: intent-router
 **Spec**: `sdd/specs/intent-router.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-579 — Lifecycle Telemetry for `invoke()` (JevClient + OpenAIBaseClient)
 **Spec**: `sdd/specs/invoke-telemetry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

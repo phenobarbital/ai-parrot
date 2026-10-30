@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-655 — Audio form active-session resume hint and split TTLs
 **Spec**: `sdd/specs/audio-form-active-session-resume.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4263

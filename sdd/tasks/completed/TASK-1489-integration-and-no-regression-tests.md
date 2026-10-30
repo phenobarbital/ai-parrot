@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-224 — IntentRouterMixin Embedding-Based Output-Mode Routing
 **Spec**: `sdd/specs/intent-router-mixin-embedding-routing.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1484, TASK-1485, TASK-1486, TASK-1487, TASK-1488

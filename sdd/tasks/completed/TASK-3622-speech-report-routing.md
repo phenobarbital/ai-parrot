@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-591 — speech_report pluggable TTS backends (fast-path)
 **Spec**: `sdd/specs/speech-report-models.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3619, TASK-3620, TASK-3621

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-454 — Jira Ticket Extractor → LLM Wiki (`issues` namespace)
 **Spec**: `sdd/specs/jira-extractor-llmwiki.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2400

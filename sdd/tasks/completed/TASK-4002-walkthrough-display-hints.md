@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-623 — Infographic → A2UI display hints
 **Spec**: `sdd/specs/infographic-a2ui-display-hints.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3994, TASK-3995, TASK-3997

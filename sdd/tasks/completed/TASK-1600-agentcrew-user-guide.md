@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-376 — Update AgentCrew & AgentsFlow Documentation
 **Spec**: `sdd/specs/update-agentcrew-agentflow-documentation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1599

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-527 — Infographic → A2UI migration (dual-emit)
 **Spec**: `sdd/specs/infographic-a2ui-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2858, TASK-2861, TASK-2865, TASK-2868

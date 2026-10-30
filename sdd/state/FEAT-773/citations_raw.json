@@ -1,0 +1,1814 @@
+[
+ {
+  "finding": "F001",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "43",
+  "symbol": "AuthKind"
+ },
+ {
+  "finding": "F001",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "113-154",
+  "symbol": "CredentialRequired"
+ },
+ {
+  "finding": "F001",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "162-181",
+  "symbol": "CredentialResolver"
+ },
+ {
+  "finding": "F001",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "184-202",
+  "symbol": "OAuthCredentialResolver"
+ },
+ {
+  "finding": "F001",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "82-110",
+  "symbol": "NeedsAuth"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "44-50",
+  "symbol": "_TOKEN_KEY_PREFIX"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "231-259",
+  "symbol": "CredentialSink"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "262-286",
+  "symbol": "JiraOAuthManager.__init__"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "396-405",
+  "symbol": "_token_key"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "481-562",
+  "symbol": "handle_callback"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "602-611",
+  "symbol": "get_valid_token"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "691-694",
+  "symbol": "revoke"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "697-800",
+  "symbol": "_refresh_tokens"
+ },
+ {
+  "finding": "F002",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+  "lines": "1284-1292",
+  "symbol": "_build_permission_context docstring"
+ },
+ {
+  "finding": "F003",
+  "path": "packages/ai-parrot/src/parrot/auth/exceptions.py",
+  "lines": "12-47",
+  "symbol": "AuthorizationRequired"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "lines": "2273-2290",
+  "symbol": "ToolManager.execute_tool"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "lines": "1182-1197",
+  "symbol": "AbstractTool.execute"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/jira_connect_tool.py",
+  "lines": "70-92",
+  "symbol": "JiraConnectTool._execute"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/adapters.py",
+  "lines": "114",
+  "symbol": "NOT_EXECUTED_STATUSES"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "lines": "1012-1045",
+  "symbol": "AbstractTool.execute (FEAT-264 seam)"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+  "lines": "315-330",
+  "symbol": "AbstractToolkit.credential_provider docs"
+ },
+ {
+  "finding": "F004",
+  "path": "packages/ai-parrot/src/parrot/tools/jira_connect_tool.py",
+  "lines": "1-12",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F005",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "123-198",
+  "symbol": "_handle_web_callback"
+ },
+ {
+  "finding": "F005",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "200-281",
+  "symbol": "make_oauth2_callback"
+ },
+ {
+  "finding": "F005",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "283-310",
+  "symbol": "setup_oauth2_routes"
+ },
+ {
+  "finding": "F005",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "314-434",
+  "symbol": "handle_mcp_oauth2_callback"
+ },
+ {
+  "finding": "F005",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "80-86",
+  "symbol": "_TEMPLATES_DIR"
+ },
+ {
+  "finding": "F006",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "32-79",
+  "symbol": "CredentialBroker"
+ },
+ {
+  "finding": "F006",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "81-104",
+  "symbol": "CredentialBroker.register"
+ },
+ {
+  "finding": "F006",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "106-154",
+  "symbol": "CredentialBroker.from_config"
+ },
+ {
+  "finding": "F006",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "156-215",
+  "symbol": "CredentialBroker.resolve"
+ },
+ {
+  "finding": "F007",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+  "lines": "1-136",
+  "symbol": "module"
+ },
+ {
+  "finding": "F007",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "1-532",
+  "symbol": "module"
+ },
+ {
+  "finding": "F007",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "1-201",
+  "symbol": "module"
+ },
+ {
+  "finding": "F007",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+  "lines": "1-191",
+  "symbol": "module"
+ },
+ {
+  "finding": "F007",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+  "lines": "1-264",
+  "symbol": "module"
+ },
+ {
+  "finding": "F008",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_provider.py",
+  "lines": "32-58",
+  "symbol": "O365OAuth2Provider"
+ },
+ {
+  "finding": "F008",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_provider.py",
+  "lines": "67-75",
+  "symbol": "O365OAuth2Provider.toolkit_factory"
+ },
+ {
+  "finding": "F009",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/oauth2_providers.py",
+  "lines": "16-44",
+  "symbol": "OAuth2ProviderConfig"
+ },
+ {
+  "finding": "F010",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "3-16",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F010",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "69-88",
+  "symbol": "_synth_session_uuid"
+ },
+ {
+  "finding": "F010",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "107-150",
+  "symbol": "VaultTokenSync"
+ },
+ {
+  "finding": "F010",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "157-181",
+  "symbol": "VaultTokenSync._load_vault"
+ },
+ {
+  "finding": "F010",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "189-239",
+  "symbol": "VaultTokenSync.store_tokens"
+ },
+ {
+  "finding": "F011",
+  "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+  "lines": "43-49",
+  "symbol": "set_vault_credential_store"
+ },
+ {
+  "finding": "F011",
+  "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+  "lines": "92-143",
+  "symbol": "store_vault_credential"
+ },
+ {
+  "finding": "F011",
+  "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+  "lines": "205-211",
+  "symbol": "oauth2_vault_name"
+ },
+ {
+  "finding": "F012",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "1-24",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F012",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "44-53",
+  "symbol": "_UPSERT_SQL"
+ },
+ {
+  "finding": "F012",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "136-160",
+  "symbol": "IdentityMappingService"
+ },
+ {
+  "finding": "F012",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "173-268",
+  "symbol": "IdentityMappingService.upsert_identity"
+ },
+ {
+  "finding": "F013",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+  "lines": "1-15",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F013",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+  "lines": "24-43",
+  "symbol": "IdentityVaultCredentialSink"
+ },
+ {
+  "finding": "F013",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+  "lines": "64-121",
+  "symbol": "IdentityVaultCredentialSink.persist_minted"
+ },
+ {
+  "finding": "F013",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+  "lines": "123-171",
+  "symbol": "IdentityVaultCredentialSink.persist"
+ },
+ {
+  "finding": "F014",
+  "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+  "lines": "21-49",
+  "symbol": "UserSession"
+ },
+ {
+  "finding": "F014",
+  "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+  "lines": "81-126",
+  "symbol": "PermissionContext"
+ },
+ {
+  "finding": "F014",
+  "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+  "lines": "166-205",
+  "symbol": "build_principal_context"
+ },
+ {
+  "finding": "F015",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+  "lines": "50-88",
+  "symbol": "connect_jira_handler"
+ },
+ {
+  "finding": "F015",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+  "lines": "156-190",
+  "symbol": "register_jira_commands"
+ },
+ {
+  "finding": "F015",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+  "lines": "192-233",
+  "symbol": "TelegramOAuthNotifier"
+ },
+ {
+  "finding": "F016",
+  "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+  "lines": "2388",
+  "symbol": "BotManager.setup"
+ },
+ {
+  "finding": "F016",
+  "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+  "lines": "2459-2472",
+  "symbol": "BotManager route registration"
+ },
+ {
+  "finding": "F016",
+  "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+  "lines": "2789-2807",
+  "symbol": "BotManager._register_oauth2_providers"
+ },
+ {
+  "finding": "F016",
+  "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+  "lines": "41",
+  "symbol": "import"
+ },
+ {
+  "finding": "F017",
+  "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+  "lines": "174",
+  "symbol": "MCPClientConfig.token_supplier"
+ },
+ {
+  "finding": "F017",
+  "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+  "lines": "186",
+  "symbol": "MCPClientConfig.header_provider"
+ },
+ {
+  "finding": "F017",
+  "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+  "lines": "234-236",
+  "symbol": "MCPClientConfig.user_id"
+ },
+ {
+  "finding": "F017",
+  "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+  "lines": "250-290",
+  "symbol": "MCPClientConfig.get_headers"
+ },
+ {
+  "finding": "F018",
+  "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+  "lines": "1394-1407",
+  "symbol": "add_oauth_mcp_server"
+ },
+ {
+  "finding": "F018",
+  "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+  "lines": "1706-1740",
+  "symbol": "add_netsuite_mcp_server"
+ },
+ {
+  "finding": "F018",
+  "path": "packages/ai-parrot/src/parrot/bots/agent.py",
+  "lines": "1038-1200",
+  "symbol": "Agent.add_*_mcp_server"
+ },
+ {
+  "finding": "F018",
+  "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+  "lines": "1429-1441",
+  "symbol": "add_oauth_mcp_server body"
+ },
+ {
+  "finding": "F019",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+  "lines": "22-26",
+  "symbol": "TokenStore"
+ },
+ {
+  "finding": "F019",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+  "lines": "42-61",
+  "symbol": "RedisTokenStore"
+ },
+ {
+  "finding": "F019",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+  "lines": "63-166",
+  "symbol": "VaultTokenStore"
+ },
+ {
+  "finding": "F019",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+  "lines": "168-280",
+  "symbol": "NetSuiteM2MAuth"
+ },
+ {
+  "finding": "F020",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+  "lines": "27-96",
+  "symbol": "MCPOAuth2Config"
+ },
+ {
+  "finding": "F020",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+  "lines": "98-135",
+  "symbol": "MCPOAuth2Preset"
+ },
+ {
+  "finding": "F020",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+  "lines": "136-204",
+  "symbol": "_PRESETS / get_mcp_oauth2_preset"
+ },
+ {
+  "finding": "F021",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "100-110",
+  "symbol": "UserSocketManager.__init__"
+ },
+ {
+  "finding": "F021",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "179-217",
+  "symbol": "UserSocketManager._validate_token"
+ },
+ {
+  "finding": "F021",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "219-262",
+  "symbol": "UserSocketManager._handle_auth"
+ },
+ {
+  "finding": "F021",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "382-414",
+  "symbol": "UserSocketManager.send_direct_message"
+ },
+ {
+  "finding": "F021",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "340-360",
+  "symbol": "UserSocketManager.broadcast_to_channel"
+ },
+ {
+  "finding": "F022",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+  "lines": "30,240",
+  "symbol": "EventBus"
+ },
+ {
+  "finding": "F022",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+  "lines": "23-24",
+  "symbol": "MatrixHook"
+ },
+ {
+  "finding": "F022",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+  "lines": "1",
+  "symbol": "lifecycle registry"
+ },
+ {
+  "finding": "F023",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "lines": "1-5",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F023",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "lines": "74-87",
+  "symbol": "_validate_bus"
+ },
+ {
+  "finding": "F023",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "lines": "90-121",
+  "symbol": "setup_event_fanout"
+ },
+ {
+  "finding": "F024",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "333-351",
+  "symbol": "setup_jira_oauth_routes"
+ },
+ {
+  "finding": "F024",
+  "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+  "lines": "2459-2471",
+  "symbol": "IntegrationsHandler routes"
+ },
+ {
+  "finding": "F024",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "277-291",
+  "symbol": "jira_oauth_callback (dispatch)"
+ },
+ {
+  "finding": "F024",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "296-322",
+  "symbol": "jira_oauth_callback (telegram)"
+ },
+ {
+  "finding": "F025",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+  "lines": "37-69",
+  "symbol": "Office365Toolkit"
+ },
+ {
+  "finding": "F025",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+  "lines": "102-150",
+  "symbol": "Office365Toolkit._pre_execute"
+ },
+ {
+  "finding": "F026",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+  "lines": "22-26",
+  "symbol": "O365AuthMode"
+ },
+ {
+  "finding": "F026",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+  "lines": "141-180",
+  "symbol": "O365Tool auth branches"
+ },
+ {
+  "finding": "F026",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+  "lines": "247-254",
+  "symbol": "O365Tool pctx bridge"
+ },
+ {
+  "finding": "F027",
+  "path": "packages/ai-parrot-server/ui/src/lib/api/integrations.ts",
+  "lines": "1-40",
+  "symbol": "IntegrationDescriptor / ConnectInitResponse"
+ },
+ {
+  "finding": "F027",
+  "path": "packages/ai-parrot-server/ui/src/lib/oauth/popup.ts",
+  "lines": "1-45",
+  "symbol": "awaitOAuthCallback"
+ },
+ {
+  "finding": "F027",
+  "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/IntegrationsMenu.svelte",
+  "lines": "1-167",
+  "symbol": "IntegrationsMenu"
+ },
+ {
+  "finding": "F027",
+  "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte",
+  "lines": "1-89",
+  "symbol": "ConnectIntegrationPill"
+ },
+ {
+  "finding": "F027",
+  "path": "packages/ai-parrot-server/ui/src/lib/types/agent.ts",
+  "lines": "39-40",
+  "symbol": "auth_required fields"
+ },
+ {
+  "finding": "F028",
+  "path": "packages/ai-parrot-server/ui/src/lib/oauth",
+  "lines": "\u2014",
+  "symbol": "oauth/"
+ },
+ {
+  "finding": "F028",
+  "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations",
+  "lines": "\u2014",
+  "symbol": "integrations/"
+ },
+ {
+  "finding": "F028",
+  "path": "packages/ai-parrot-server/ui/src/lib/stores",
+  "lines": "\u2014",
+  "symbol": "stores/"
+ },
+ {
+  "finding": "F029",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+  "lines": "927-936",
+  "symbol": "JiraToolkit.__init__ (oauth2_local -> oauth2_3lo)"
+ },
+ {
+  "finding": "F029",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+  "lines": "1054-1061",
+  "symbol": "JiraToolkit.__init__ (3LO cache)"
+ },
+ {
+  "finding": "F029",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+  "lines": "1316-1345",
+  "symbol": "JiraToolkit._pre_execute"
+ },
+ {
+  "finding": "F030",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+  "lines": "603-617",
+  "symbol": "TelegramAgentWrapper (post_auth wiring)"
+ },
+ {
+  "finding": "F030",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py",
+  "lines": "85-107",
+  "symbol": "_build_credential_sink"
+ },
+ {
+  "finding": "F030",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/post_auth.py",
+  "lines": "15-16,101",
+  "symbol": "PostAuthProvider registry"
+ },
+ {
+  "finding": "F030",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+  "lines": "115-135",
+  "symbol": "UserSocketManager._on_startup"
+ },
+ {
+  "finding": "F030",
+  "path": "packages/ai-parrot/src/parrot/auth/templates/web_oauth_success.html",
+  "lines": "\u2014",
+  "symbol": "template"
+ },
+ {
+  "finding": "F031",
+  "path": "docs/auth/jira-credential-ownership.md",
+  "lines": "1-20",
+  "symbol": "The answer"
+ },
+ {
+  "finding": "F031",
+  "path": "docs/auth/jira-credential-ownership.md",
+  "lines": "24-40",
+  "symbol": "Adding a reader"
+ },
+ {
+  "finding": "F031",
+  "path": "docs/auth/jira-credential-ownership.md",
+  "lines": "60-80",
+  "symbol": "Known gap"
+ },
+ {
+  "finding": "F032",
+  "path": "docs/integrations/office365-oauth2.md",
+  "lines": "13-37",
+  "symbol": "Architecture summary"
+ },
+ {
+  "finding": "F032",
+  "path": "docs/integrations/office365-oauth2.md",
+  "lines": "148-165",
+  "symbol": "Token lifecycle"
+ },
+ {
+  "finding": "F033",
+  "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+  "lines": "331",
+  "symbol": "AbstractToolkit.credential_provider"
+ },
+ {
+  "finding": "F033",
+  "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+  "lines": "491-506",
+  "symbol": "AbstractToolkit._pre_execute/_post_execute"
+ },
+ {
+  "finding": "F033",
+  "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+  "lines": "717-718",
+  "symbol": "AbstractToolkit._generate_tools"
+ },
+ {
+  "finding": "F033",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "lines": "306",
+  "symbol": "AbstractTool.credential_provider"
+ },
+ {
+  "finding": "F033",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "lines": "39-48",
+  "symbol": "current_credential"
+ },
+ {
+  "finding": "F034",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "lines": "80,296",
+  "symbol": "AuditLedgerEntry / AuditLedger"
+ },
+ {
+  "finding": "F034",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "lines": "65",
+  "symbol": "AuditLedger (legacy)"
+ },
+ {
+  "finding": "F034",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/wrapper.py",
+  "lines": "135",
+  "symbol": "legacy import"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+  "lines": "477-495",
+  "symbol": "BasicAuthStrategy callback"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "68-121",
+  "symbol": "JiraPostAuthProvider.build_auth_url"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "206-252",
+  "symbol": "JiraPostAuthProvider._write_identity_records"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py",
+  "lines": "149,265-267",
+  "symbol": "_resolve_nav_user_id"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "182-305",
+  "symbol": "handle_msteams_jira_callback"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "38-66",
+  "symbol": "JiraPostAuthProvider"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "1-22",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F035",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "89-143",
+  "symbol": "MSTeamsOAuthNotifier"
+ },
+ {
+  "finding": "F036",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "21-51",
+  "symbol": "IntegrationDescriptor"
+ },
+ {
+  "finding": "F036",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "79-92",
+  "symbol": "ConnectInitResponse"
+ },
+ {
+  "finding": "F036",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "117-139",
+  "symbol": "AuthRequiredEnvelope"
+ },
+ {
+  "finding": "F036",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "147-180",
+  "symbol": "UsersIntegrationRow"
+ },
+ {
+  "finding": "F037",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+  "lines": "20-67",
+  "symbol": "OAuth2Provider"
+ },
+ {
+  "finding": "F037",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+  "lines": "69-126",
+  "symbol": "OAuth2ProviderRegistry"
+ },
+ {
+  "finding": "F038",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "74-90",
+  "symbol": "IntegrationsService"
+ },
+ {
+  "finding": "F038",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "155-250",
+  "symbol": "_vault_sync / _identity_store / _identity_token_status / _token_status"
+ },
+ {
+  "finding": "F038",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "291-345",
+  "symbol": "IntegrationsService.start_connect"
+ },
+ {
+  "finding": "F038",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "440-482",
+  "symbol": "IntegrationsService.persist_credential"
+ },
+ {
+  "finding": "F039",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+  "lines": "42-64",
+  "symbol": "upsert_users_integration"
+ },
+ {
+  "finding": "F039",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+  "lines": "113-146",
+  "symbol": "upsert_user_agent_toolkit"
+ },
+ {
+  "finding": "F039",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+  "lines": "171-191",
+  "symbol": "delete_user_agent_toolkits_by_provider"
+ },
+ {
+  "finding": "F040",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+  "lines": "43-62",
+  "symbol": "IntegrationsHandler._get_user_id"
+ },
+ {
+  "finding": "F040",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+  "lines": "109-160",
+  "symbol": "IntegrationsHandler._post_connect"
+ },
+ {
+  "finding": "F041",
+  "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+  "lines": "55-90",
+  "symbol": "O365OAuthManager"
+ },
+ {
+  "finding": "F041",
+  "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+  "lines": "99-110",
+  "symbol": "authorization_url_extra_params"
+ },
+ {
+  "finding": "F041",
+  "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+  "lines": "113-165",
+  "symbol": "_exchange_code / _refresh_request"
+ },
+ {
+  "finding": "F042",
+  "path": "packages/ai-parrot/src/parrot/auth/identity.py",
+  "lines": "57-100",
+  "symbol": "CanonicalIdentityMapper"
+ },
+ {
+  "finding": "F042",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+  "lines": "11-71",
+  "symbol": "CredentialResolverFactory.build"
+ },
+ {
+  "finding": "F042",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+  "lines": "222-264",
+  "symbol": "_VaultStaticKeyResolver / _MCPVaultResolver"
+ },
+ {
+  "finding": "F043",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+  "lines": "477-495",
+  "symbol": "BasicAuthStrategy (callback)"
+ },
+ {
+  "finding": "F043",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/combined_callback.py",
+  "lines": "1-12",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F043",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/office365_commands.py",
+  "lines": "4,44,53,101",
+  "symbol": "/connect_office365"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "38-50",
+  "symbol": "key templates"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "89-178",
+  "symbol": "AbstractOAuth2Manager.__init__"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "289-345",
+  "symbol": "_new_pkce_pair / create_authorization_url / authorization_url_extra_params"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "354-427",
+  "symbol": "handle_callback / _persist_token"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "461-505",
+  "symbol": "get_valid_token / revoke"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "507-575",
+  "symbol": "_refresh_tokens"
+ },
+ {
+  "finding": "F044",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "577-623",
+  "symbol": "abstract hooks"
+ },
+ {
+  "finding": "F045",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/jira_provider.py",
+  "lines": "21-95",
+  "symbol": "JiraOAuth2Provider"
+ },
+ {
+  "finding": "F045",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+  "lines": "36-125",
+  "symbol": "MCPOAuth2Provider"
+ },
+ {
+  "finding": "F046",
+  "path": "packages/ai-parrot-server/ui/src/lib/api/integrations.ts",
+  "lines": "1-9",
+  "symbol": "module docstring"
+ },
+ {
+  "finding": "F046",
+  "path": "packages/ai-parrot-server/ui/src/lib/oauth/popup.ts",
+  "lines": "1-10",
+  "symbol": "awaitOAuthCallback docstring"
+ },
+ {
+  "finding": "F046",
+  "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte",
+  "lines": "20-35",
+  "symbol": "handleConnect"
+ },
+ {
+  "finding": "F046",
+  "path": "packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte",
+  "lines": "1342-1351, 2468-2469",
+  "symbol": "auth_required handling"
+ },
+ {
+  "finding": "F047",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/agent.py",
+  "lines": "1916-1927",
+  "symbol": "AgentTalk handler"
+ },
+ {
+  "finding": "F048",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/oauth2_callback.py",
+  "lines": "138-206",
+  "symbol": "oauth2_callback_handler / setup_oauth2_routes"
+ },
+ {
+  "finding": "F048",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+  "lines": "1280-1300",
+  "symbol": "TelegramAgentWrapper._build_permission_context docstring"
+ },
+ {
+  "finding": "F054",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "n/a",
+  "symbol": "CredentialBroker` (`__init__`, `from_config`, `register`, `resolve`), `CredentialBrokerConfigError"
+ },
+ {
+  "finding": "F054",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/__init__.py",
+  "lines": "n/a",
+  "symbol": "CredentialResolverFactory`, `_MCPVaultResolver`, `_VaultStaticKeyResolver`, `_UserLLMKeyResolver`, `set_user_llm_key_store`, `byok_store_setting"
+ },
+ {
+  "finding": "F054",
+  "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+  "lines": "n/a",
+  "symbol": "CredentialResolver`, `OAuthCredentialResolver`, `StaticCredentialResolver`, `AuthKind`, `ProviderCredentialConfig`, `ResolvedCredential`, `NeedsAuth`, `CredentialRequired"
+ },
+ {
+  "finding": "F054",
+  "path": "packages/ai-parrot/src/parrot/auth/__init__.py",
+  "lines": "n/a",
+  "symbol": "_LAZY_ATTRS` (exports `AuthorizationRequired` from `parrot.auth.exceptions`, `CredentialBroker` from `parrot.auth.broker`, `CredentialRequired`/`NeedsAuth` from `parrot.auth.credentials`)"
+ },
+ {
+  "finding": "F054",
+  "path": "sdd/tasks/completed/TASK-1669-tool-loop-seam.md",
+  "lines": "n/a",
+  "symbol": "current_credential()` ContextVar seam in `AbstractTool.execute"
+ },
+ {
+  "finding": "F054",
+  "path": "sdd/tasks/index/unified-credential-broker.json",
+  "lines": "n/a",
+  "symbol": "FEAT-264 tasks TASK-1667..TASK-1677 all `done`, completed_at 2026-06-30"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+  "lines": "n/a",
+  "symbol": "OAuth2Provider`, `OAuth2ProviderRegistry`, `register_oauth2_provider"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/__init__.py",
+  "lines": "n/a",
+  "symbol": "_WEB_CHANNEL = \"web\"`, re-exports `JiraOAuth2Provider`, `IntegrationsService`, models"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_provider.py",
+  "lines": "n/a",
+  "symbol": "O365OAuth2Provider"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "n/a",
+  "symbol": "make_oauth2_callback`, `setup_oauth2_routes`, `_handle_web_callback`, `handle_mcp_oauth2_callback`, `setup_mcp_oauth2_callback`, `register_a2a_resume_hook"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "n/a",
+  "symbol": "jira_oauth_callback`, `setup_jira_oauth_routes`, `_handle_web_callback`, `_handle_oauth_error`, `_notify_telegram"
+ },
+ {
+  "finding": "F055",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/oauth2_providers.py",
+  "lines": "n/a",
+  "symbol": "OAUTH2_PROVIDERS`, `OAuth2ProviderConfig`, `get_provider"
+ },
+ {
+  "finding": "F055",
+  "path": "sdd/tasks/completed/TASK-983-oauth2-models-and-registry.md",
+  "lines": "n/a",
+  "symbol": "TASK-983 OAuth2 Integration Models and Provider Registry (FEAT-144)"
+ },
+ {
+  "finding": "F055",
+  "path": "sdd/tasks/completed/TASK-1661-mcp-oauth2-provider.md",
+  "lines": "n/a",
+  "symbol": "MCPOAuth2Provider` registered in the same registry"
+ },
+ {
+  "finding": "F056",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "n/a",
+  "symbol": "IdentityMappingService` (`upsert_identity(nav_user_id, auth_provider, provider_user_id, auth_data, display_name, email, token)`, `get_identity`, `get_all_identities`, `delete_identity`), `_UPSERT_SQL"
+ },
+ {
+  "finding": "F056",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "n/a",
+  "symbol": "JiraPostAuthProvider.build_auth_url` (puts `nav_user_id` in `extra_state`), `_write_identity_records"
+ },
+ {
+  "finding": "F056",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+  "lines": "n/a",
+  "symbol": "TelegramUserSession`, `NavigatorAuthClient`, `AbstractAuthStrategy"
+ },
+ {
+  "finding": "F056",
+  "path": "sdd/tasks/completed/TASK-4664-identity-writes-identitystore-and-sql-fix.md",
+  "lines": "n/a",
+  "symbol": "four call sites table (`msteams/oauth_callback.py:248`, `slack/oauth_callback.py:232`, `telegram/post_auth_jira.py:256`, `:273`); `IdentityStore` full API (`save_linked_identity`, `update_tokens`, `get_by_provider`, `get_for_provider_account`, `find_user_by_provider_account`, `decrypt_credential` (sync), `delete`, `list_for_user`, `masked`)"
+ },
+ {
+  "finding": "F056",
+  "path": "sdd/tasks/completed/TASK-760-identity-mapping-service.md",
+  "lines": "n/a",
+  "symbol": "TASK-760 Identity Mapping Service (FEAT-108)"
+ },
+ {
+  "finding": "F056",
+  "path": "sdd/tasks/completed/TASK-4666-slack-oauth-nav-user-id.md",
+  "lines": "n/a",
+  "symbol": "Slack callback skips identity write when no Navigator id in state"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+  "lines": "n/a",
+  "symbol": "store_vault_credential`, `retrieve_vault_credential`, `delete_vault_credential"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "n/a",
+  "symbol": "VaultTokenSync` (`store_tokens`, `read_tokens`, `read_tokens_result`, `delete_tokens`), `VaultTokenRead"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/vault_store.py",
+  "lines": "n/a",
+  "symbol": "Postgres vault credentials store (`navigator.ai_user_credentials`, `VAULT_STORE`)"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/studio/byok.py",
+  "lines": "n/a",
+  "symbol": "BYOK per-user LLM API keys + `CredentialBroker` resolver (TASK-2516)"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot/src/parrot/security/credentials_utils.py",
+  "lines": "n/a",
+  "symbol": "credential encryption helpers \u2014 envelope v2 (FEAT-099)"
+ },
+ {
+  "finding": "F057",
+  "path": "packages/ai-parrot/src/parrot/vault_targets.py",
+  "lines": "n/a",
+  "symbol": "Vault protected targets for DocumentDB collections (FEAT-099)"
+ },
+ {
+  "finding": "F057",
+  "path": "sdd/tasks/completed/TASK-3953-p2-vault-credentials-postgres.md",
+  "lines": "n/a",
+  "symbol": "Phase 2 vault credentials in `navigator.ai_user_credentials` behind `VAULT_STORE"
+ },
+ {
+  "finding": "F057",
+  "path": "sdd/specs/user-based-credentials.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-063 CredentialsHandler, DocumentDB `user_credentials`, session key `_credentials:{name}"
+ },
+ {
+  "finding": "F058",
+  "path": "sdd/specs/unified-credential-broker.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-264 \u00a72 Overview, \u00a73 M1\u2013M10, \u00a76 Codebase Contract"
+ },
+ {
+  "finding": "F058",
+  "path": "packages/ai-parrot/src/parrot/auth/manifest.py",
+  "lines": "n/a",
+  "symbol": "in-package YAML manifest loader for per-agent credential configuration"
+ },
+ {
+  "finding": "F058",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "lines": "n/a",
+  "symbol": "DEPRECATED shim \u2192 `parrot.security.audit_ledger"
+ },
+ {
+  "finding": "F058",
+  "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+  "lines": "n/a",
+  "symbol": "credential_provider`, `current_credential()` (per spec \u00a76: `abstract.py:36`, `:123/:147`)"
+ },
+ {
+  "finding": "F058",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "lines": "n/a",
+  "symbol": "ToolManager.set_broker()`, `_broker` / `_cred_channel` / `_cred_user_id` injection from `permission_context.channel/.user_id` (spec \u00a72: `manager.py:1305-1316`)"
+ },
+ {
+  "finding": "F059",
+  "path": "sdd/specs/services-vault-token-sync-tech-debt.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-735 \u00a71 three-store table, \u00a72 Overview, \u00a73 M1/M1b/M2/M3/M4, \u00a76 contract (`jira_oauth.py:386 _write_token`, `:439 handle_callback`, `:498` link-time sink site, `:547 get_valid_token`, `:642 _refresh_tokens`; `oauth2/service.py:173 _token_status`; `vault_token_sync.py:99/181/244/294/308`)"
+ },
+ {
+  "finding": "F059",
+  "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+  "lines": "n/a",
+  "symbol": "JiraOAuthManager.__init__(..., credential_sink=None)`, `CredentialSink` Protocol, `_refresh_tokens`, `handle_callback`, `JiraTokenSet"
+ },
+ {
+  "finding": "F059",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+  "lines": "n/a",
+  "symbol": "IdentityVaultCredentialSink` (`persist_minted`, `persist`, `_as_token_response`)"
+ },
+ {
+  "finding": "F059",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "n/a",
+  "symbol": "_IDENTITY_OWNED_PROVIDERS`, `IntegrationsService._identity_token_status`, `_token_status"
+ },
+ {
+  "finding": "F059",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py",
+  "lines": "n/a",
+  "symbol": "two `JiraOAuthManager(` construction sites (spec \u00a76 anchors `manager.py:338`, `:896`) where the sink is wired"
+ },
+ {
+  "finding": "F059",
+  "path": "docs/auth/jira-credential-ownership.md",
+  "lines": "n/a",
+  "symbol": "ownership doc (M4)"
+ },
+ {
+  "finding": "F059",
+  "path": "sdd/tasks/index/services-vault-token-sync-tech-debt.json",
+  "lines": "n/a",
+  "symbol": "TASK-4668..4672 all `done`, completed_at 2026-10-23T21:42"
+ },
+ {
+  "finding": "F060",
+  "path": "sdd/specs/msteams-user-auth-lane.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-729 \u00a71\u2013\u00a73, \u00a76 (anchors `wrapper.py:460/:675/:1025` raw Teams id context dicts; `msteams/commands/jira_commands.py:116 _get_user_id`; `auth/session_identity.py:90 resolve_user_id`; `auth/context.py:39 UserContext`; `bots/abstract.py:4561 post_login`, `:4583 clone_for_user`)"
+ },
+ {
+  "finding": "F060",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/auth.py",
+  "lines": "n/a",
+  "symbol": "MSTeamsUserSession`, `MSTeamsSessionStore`, `MSTeamsAuthStrategy`, `user_key()"
+ },
+ {
+  "finding": "F060",
+  "path": "packages/ai-parrot/src/parrot/auth/token_exchange.py",
+  "lines": "n/a",
+  "symbol": "TokenExchangeClient.exchange(provider, token, token_type, id_token) -> TokenExchangeResult"
+ },
+ {
+  "finding": "F060",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/auth_commands.py",
+  "lines": "n/a",
+  "symbol": "register_auth_commands(router, strategy)` \u2014 `/login`, `/logout`, `/whoami"
+ },
+ {
+  "finding": "F060",
+  "path": "packages/ai-parrot/src/parrot/auth/session_identity.py",
+  "lines": "n/a",
+  "symbol": "resolve_user_id(request, session)` \u2192 canonical Navigator id"
+ },
+ {
+  "finding": "F060",
+  "path": "sdd/tasks/index/msteams-user-auth-lane.json",
+  "lines": "n/a",
+  "symbol": "TASK-4659..4667; 4664/4665 `done-with-issues`; completed 2026-10-23T16:13"
+ },
+ {
+  "finding": "F061",
+  "path": "sdd/specs/o365-auth-homologation.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-266 \u00a71 three generations, \u00a72, \u00a76 contract (`credentials.py:43 AuthKind`, `:82 NeedsAuth`, `:97 CredentialRequired`, `:128 CredentialResolver`; `broker.py:66 CredentialResolverFactory`, `:280 CredentialBroker`, `:405 resolve`; `interfaces/o365.py:115 O365Client`, `:763 interactive_login`, `:621 acquire_token_on_behalf_of`; `o365_oauth.py:55`, `:140 _refresh_request`; `identity.py:57`; `tools/abstract.py:36 current_credential`)"
+ },
+ {
+  "finding": "F061",
+  "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+  "lines": "n/a",
+  "symbol": "O365TokenSet`, `O365OAuthManager` (`provider_id=\"o365\"`, `use_pkce=True`, `require_client_secret=True`, `refresh_access_token`, `_discover_identity` Graph `/me`), `DEFAULT_O365_SCOPES"
+ },
+ {
+  "finding": "F061",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py",
+  "lines": "n/a",
+  "symbol": "O365DeviceCodeCredentialResolver"
+ },
+ {
+  "finding": "F061",
+  "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+  "lines": "n/a",
+  "symbol": "Office 365 toolkit with per-user OAuth 2.0 (delegated / 3LO) auth"
+ },
+ {
+  "finding": "F061",
+  "path": "sdd/tasks/index/o365-auth-homologation.json",
+  "lines": "n/a",
+  "symbol": "TASK-1681..1686 all `done`, completed 2026-07-01"
+ },
+ {
+  "finding": "F062",
+  "path": "sdd/tasks/completed/TASK-4664-identity-writes-identitystore-and-sql-fix.md",
+  "lines": "n/a",
+  "symbol": "scope-correction table; `IdentityStore` write surface; `_UPSERT_SQL` blueprint; Completion Note"
+ },
+ {
+  "finding": "F062",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "n/a",
+  "symbol": "_UPSERT_SQL`, `IdentityMappingService.upsert_identity(..., provider_user_id: str, token: Optional[TokenResponse])"
+ },
+ {
+  "finding": "F062",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "n/a",
+  "symbol": "handle_msteams_jira_callback` (identity write, `auth_provider=\"msteams\"`)"
+ },
+ {
+  "finding": "F062",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py",
+  "lines": "n/a",
+  "symbol": "handle_slack_jira_callback` (identity write, `auth_provider=\"slack\"`)"
+ },
+ {
+  "finding": "F062",
+  "path": "packages/ai-parrot/tests/unit/test_identity_mapping.py",
+  "lines": "n/a",
+  "symbol": "real-Postgres tests, skip unless `IDENTITY_PG_DSN"
+ },
+ {
+  "finding": "F063",
+  "path": "sdd/tasks/completed/TASK-1676-mcp-per-user-token-injection.md",
+  "lines": "n/a",
+  "symbol": "scope, contract (`MCPClientConfig` fields, `get_headers(context)`, `mcp_mixin.py:57 add_mcp_server(config, context)`)"
+ },
+ {
+  "finding": "F063",
+  "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+  "lines": "n/a",
+  "symbol": "MCPClientConfig` (`token_supplier`, `header_provider`, `user_id`, `oauth2`, `auth_preset`), `get_headers"
+ },
+ {
+  "finding": "F063",
+  "path": "packages/ai-parrot/src/parrot/tools/mcp_mixin.py",
+  "lines": "n/a",
+  "symbol": "add_mcp_server(self, config, context=None)"
+ },
+ {
+  "finding": "F063",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+  "lines": "n/a",
+  "symbol": "MCPOAuth2Config` models + presets registry (FEAT-262 TASK-1659)"
+ },
+ {
+  "finding": "F063",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_state.py",
+  "lines": "n/a",
+  "symbol": "shared in-process state for MCP OAuth2 callback coordination"
+ },
+ {
+  "finding": "F063",
+  "path": "sdd/tasks/completed/TASK-1665-oauth-manager-removal.md",
+  "lines": "n/a",
+  "symbol": "OAuthManager` removed from `parrot.mcp.oauth`; factory migration to `MCPOAuth2Config"
+ },
+ {
+  "finding": "F063",
+  "path": "packages/ai-parrot/tests/unit/test_mcp_per_user_token.py",
+  "lines": "n/a",
+  "symbol": "token-injection tests"
+ },
+ {
+  "finding": "F064",
+  "path": "sdd/tasks/completed/TASK-987-oauth-callback-web-branch.md",
+  "lines": "n/a",
+  "symbol": "TASK-987 (status done, FEAT-144 M7)"
+ },
+ {
+  "finding": "F064",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "n/a",
+  "symbol": "_handle_web_callback(request, token_set, state_payload)`, `_WEB_SUCCESS_TMPL`, `_WEB_ERROR_TMPL`, `jira_oauth_callback` channel dispatch (web/slack/msteams/telegram), `setup_jira_oauth_routes` (+ `navigator_auth.conf.exclude_list`)"
+ },
+ {
+  "finding": "F064",
+  "path": "packages/ai-parrot/src/parrot/auth/templates/web_oauth_success.html",
+  "lines": "n/a",
+  "symbol": "postMessage + window.close template"
+ },
+ {
+  "finding": "F064",
+  "path": "packages/ai-parrot/src/parrot/auth/templates/web_oauth_error.html",
+  "lines": "n/a",
+  "symbol": "error template (`error`, `target_origin`)"
+ },
+ {
+  "finding": "F064",
+  "path": "packages/ai-parrot/src/parrot/conf.py",
+  "lines": "n/a",
+  "symbol": "WEB_OAUTH_ALLOWED_ORIGINS"
+ },
+ {
+  "finding": "F065",
+  "path": "sdd/tasks/completed/TASK-990-frontend-api-client-and-popup.md",
+  "lines": "n/a",
+  "symbol": "TASK-990 Frontend API Client and OAuth Popup Helper (done)"
+ },
+ {
+  "finding": "F065",
+  "path": "sdd/tasks/completed/TASK-991-integrations-menu.md",
+  "lines": "n/a",
+  "symbol": "IntegrationsMenu.svelte`, `IntegrationItem.svelte` (navigator-frontend-next commit ee3712b)"
+ },
+ {
+  "finding": "F065",
+  "path": "sdd/tasks/completed/TASK-992-connect-integration-pill.md",
+  "lines": "n/a",
+  "symbol": "ConnectIntegrationPill.svelte`; `AgentMessage` type extended with `type/provider/auth_url/scopes"
+ },
+ {
+  "finding": "F065",
+  "path": "packages/ai-parrot-server/ui/src/lib/oauth/popup.ts",
+  "lines": "n/a",
+  "symbol": "awaitOAuthCallback`, `OAuthCallbackOutcome`, `POPUP_MESSAGE_TYPE = \"ai-parrot-oauth-callback\""
+ },
+ {
+  "finding": "F065",
+  "path": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-144 \u00a72 (`IntegrationsHandler`, `AuthRequiredEnvelope`, `users_integrations`, `user_agent_toolkits`, M1\u2013M15)"
+ },
+ {
+  "finding": "F065",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "n/a",
+  "symbol": "IntegrationDescriptor`, `ConnectInitRequest/Response`, `EnableResponse`, `DisconnectResponse`, `AuthRequiredEnvelope`, `UsersIntegrationRow`, `UserAgentToolkitRow"
+ },
+ {
+  "finding": "F065",
+  "path": "sdd/tasks/index/cross-repository-jiratoolkit-oauth2-3lo.json",
+  "lines": "n/a",
+  "symbol": "TASK-983..993 all `done`, completed 2026-05-05"
+ },
+ {
+  "finding": "F066",
+  "path": "sdd/state/FEAT-747/findings/F018-eventbus-navigator.md",
+  "lines": "n/a",
+  "symbol": "F018 digest (FEAT-310/710 facts)"
+ },
+ {
+  "finding": "F066",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "lines": "1-45",
+  "symbol": "setup_event_fanout`, `_validate_bus`, `redact_usage_event`, `FORWARDED_EVENTS"
+ },
+ {
+  "finding": "F066",
+  "path": "packages/ai-parrot/src/parrot/roost/carriers/bus.py",
+  "lines": "n/a",
+  "symbol": "navigator-eventbus carrier (FEAT-747 M9)"
+ },
+ {
+  "finding": "F066",
+  "path": "docs/events/eventbus-migration.md",
+  "lines": "n/a",
+  "symbol": "EventBus v2 Migration Notes (FEAT-310)"
+ },
+ {
+  "finding": "F066",
+  "path": "sdd/tasks/completed/TASK-4553-event-fanout-wiring.md",
+  "lines": "n/a",
+  "symbol": "attach_bus` + `forward_to_bus` over durable Streams"
+ },
+ {
+  "finding": "F067",
+  "path": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-225 \u00a72\u2013\u00a73, \u00a76 contract (`jira_oauth.py:37 _TOKEN_KEY_PREFIX=\"jira:oauth\"`, `:38 _NONCE_KEY_PREFIX`, `:39 _LOCK_KEY_PREFIX`, `:42 TTL 90d`, `:258 create_authorization_url(channel, user_id, extra_state)`, `:304 handle_callback`, `:384 get_valid_token`, `:405 validate_token`, `:400 revoke`)"
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py",
+  "lines": "n/a",
+  "symbol": "Slack `/connect_jira` handlers, `_SLACK_CHANNEL = \"slack\""
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py",
+  "lines": "n/a",
+  "symbol": "Teams `/connect_jira` handlers, `_get_user_id` (aad_object_id), `_MSTEAMS_CHANNEL = \"msteams\""
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py",
+  "lines": "n/a",
+  "symbol": "handle_slack_jira_callback`, `SlackOAuthNotifier"
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "n/a",
+  "symbol": "handle_msteams_jira_callback`, `MSTeamsOAuthNotifier"
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/__init__.py",
+  "lines": "n/a",
+  "symbol": "shared auth primitives (`PostAuthProvider`, `PostAuthRegistry`, `OAUTH2_PROVIDERS`)"
+ },
+ {
+  "finding": "F067",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+  "lines": "n/a",
+  "symbol": "register_jira_commands`, `TelegramOAuthNotifier`, `_TELEGRAM_CHANNEL = \"telegram\""
+ },
+ {
+  "finding": "F067",
+  "path": "sdd/tasks/index/jiratoolkit-integrations-oauth2.json",
+  "lines": "n/a",
+  "symbol": "TASK-1467..1474 all `done"
+ },
+ {
+  "finding": "F068",
+  "path": "sdd/specs/user-based-credentials.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-063 \u00a72 (`CredentialsHandler(BaseView)`, `@is_authenticated` `@user_session`, `DocumentDb.save_background`), \u00a76 session key convention `_credentials:{name}"
+ },
+ {
+  "finding": "F068",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/credentials.py",
+  "lines": "n/a",
+  "symbol": "CredentialsHandler` CRUD view for user database credentials"
+ },
+ {
+  "finding": "F068",
+  "path": "packages/ai-parrot/src/parrot/security/credentials_utils.py",
+  "lines": "n/a",
+  "symbol": "envelope v2 encryption helpers (FEAT-099)"
+ },
+ {
+  "finding": "F069",
+  "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+  "lines": "n/a",
+  "symbol": "CredentialBroker.resolve`, `CredentialBroker.from_config`, `CredentialBroker.register`, `CredentialBrokerConfigError"
+ },
+ {
+  "finding": "F069",
+  "path": "packages/ai-parrot/tests/unit/test_credential_broker.py",
+  "lines": "n/a",
+  "symbol": "TASK-1667 unit tests"
+ },
+ {
+  "finding": "F069",
+  "path": "tests/auth/test_a2a_credential_var.py",
+  "lines": "n/a",
+  "symbol": "A2AServer._try_invoke_with_gate` injects `_CREDENTIAL_VAR"
+ },
+ {
+  "finding": "F069",
+  "path": "sdd/tasks/completed/TASK-2389-broker-backed-authenticate.md",
+  "lines": "n/a",
+  "symbol": "broker-backed `Authenticate` (scraping)"
+ },
+ {
+  "finding": "F069",
+  "path": "sdd/state/FEAT-602/findings/F003-credential-broker.md",
+  "lines": "n/a",
+  "symbol": "F003 CredentialBroker fail-closed adapter"
+ },
+ {
+  "finding": "F070",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+  "lines": "n/a",
+  "symbol": "make_oauth2_callback`, `setup_oauth2_routes`, `_handle_web_callback`, `handle_mcp_oauth2_callback`, `setup_mcp_oauth2_callback`, `register_a2a_resume_hook`, `_error_response"
+ },
+ {
+  "finding": "F070",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "n/a",
+  "symbol": "AbstractOAuth2Manager.setup()` \u2192 `app[f'oauth2_manager_{provider_id}']`, `setup_oauth2_routes(app, provider_id, callback_path)`; `_callback_path` default `/api/auth/oauth2/{provider_id}/callback"
+ },
+ {
+  "finding": "F070",
+  "path": "packages/ai-parrot-server/tests/unit/test_a2a_resume_trigger.py",
+  "lines": "n/a",
+  "symbol": "A2A OAuth-callback resume trigger tests (FEAT-260 / TASK-1645)"
+ },
+ {
+  "finding": "F070",
+  "path": "tests/auth/test_mcp_oauth2_callback.py",
+  "lines": "n/a",
+  "symbol": "MCP OAuth2 callback route tests (FEAT-262 / TASK-1664)"
+ },
+ {
+  "finding": "F070",
+  "path": "packages/ai-parrot/src/parrot/mcp/oauth2_state.py",
+  "lines": "n/a",
+  "symbol": "shared in-process MCP OAuth2 callback state"
+ },
+ {
+  "finding": "F071",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+  "lines": "n/a",
+  "symbol": "AbstractOAuth2TokenSet` (`access_token`, `refresh_token`, `expires_at`, `scopes`, `granted_at`, `last_refreshed_at`, `account_id`, `display_name`, `email`, `is_expired`), `AbstractOAuth2Manager` (`create_authorization_url`, `handle_callback`, `_persist_token`, `get_valid_token`, `is_connected`, `revoke`, `_refresh_tokens`, `_new_pkce_pair`, `setup`), `_TOKEN_KEY_TEMPLATE`, `_NONCE_KEY_TEMPLATE`, `_LOCK_KEY_TEMPLATE`, `_VAULT_NAME_TEMPLATE`, `_TOKEN_TTL_SECONDS`, `_NONCE_TTL_SECONDS"
+ },
+ {
+  "finding": "F071",
+  "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+  "lines": "n/a",
+  "symbol": "O365OAuthManager(AbstractOAuth2Manager)` \u2014 the one concrete subclass"
+ },
+ {
+  "finding": "F072",
+  "path": "packages/ai-parrot/src/parrot/auth/identity.py",
+  "lines": "n/a",
+  "symbol": "CanonicalIdentityMapper.to_canonical`, `_OID_FIELDS`, `_EMAIL_FIELDS`, `identity_mapper` singleton, `_get"
+ },
+ {
+  "finding": "F072",
+  "path": "packages/ai-parrot/tests/unit/test_canonical_identity.py",
+  "lines": "n/a",
+  "symbol": "TASK-1671 tests"
+ },
+ {
+  "finding": "F072",
+  "path": "packages/ai-parrot/src/parrot/cli/identity.py",
+  "lines": "n/a",
+  "symbol": "CLI identity bootstrap (FEAT-266) using the mapper"
+ },
+ {
+  "finding": "F072",
+  "path": "packages/ai-parrot/src/parrot/auth/session_identity.py",
+  "lines": "n/a",
+  "symbol": "resolve_user_id(request, session)` \u2014 backend-independent Navigator user id (FEAT-729 contract `:90`)"
+ },
+ {
+  "finding": "F073",
+  "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+  "lines": "n/a",
+  "symbol": "jira_oauth_callback`, `_handle_oauth_error`, `_handle_web_callback`, `_notify_telegram`, `setup_jira_oauth_routes"
+ },
+ {
+  "finding": "F073",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "n/a",
+  "symbol": "JiraPostAuthProvider` (`provider_name=\"jira\"`, `build_auth_url`, `handle_result`, `_write_identity_records`)"
+ },
+ {
+  "finding": "F073",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+  "lines": "n/a",
+  "symbol": "TelegramUserSession` (`nav_user_id`, `nav_display_name`, `nav_email`, `set_jira_authenticated`), `AbstractAuthStrategy` (Basic/Azure/Google/OAuth2/Composite), `NavigatorAuthClient"
+ },
+ {
+  "finding": "F073",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/post_auth.py",
+  "lines": "n/a",
+  "symbol": "PostAuthProvider` protocol, `PostAuthRegistry` (FEAT-225 M1 lift)"
+ },
+ {
+  "finding": "F074",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+  "lines": "n/a",
+  "symbol": "JiraPostAuthProvider` docstring (\"Since FEAT-735 \u2026 this provider no longer stores tokens here\")"
+ },
+ {
+  "finding": "F074",
+  "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+  "lines": "n/a",
+  "symbol": "VaultTokenSync` (about-symbol of issues 50a3\u2026/2e85\u2026)"
+ },
+ {
+  "finding": "F074",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+  "lines": "n/a",
+  "symbol": "handle_msteams_jira_callback` \u2014 fails closed on missing/non-numeric nav id (TASK-4667)"
+ },
+ {
+  "finding": "F074",
+  "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+  "lines": "n/a",
+  "symbol": "IdentityMappingService.upsert_identity` rejects non-numeric `nav_user_id` (TASK-4667)"
+ },
+ {
+  "finding": "F075",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+  "lines": "n/a",
+  "symbol": "IntegrationsService` (`list_for_user`, `_vault_sync`, `_identity_store`, `_identity_token_status`, `_token_status`, `start_connect`, `confirm_enable`, `disconnect`, `persist_credential`, `_check_pbac`), `_IDENTITY_OWNED_PROVIDERS`, `_get_allowed_origins"
+ },
+ {
+  "finding": "F075",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+  "lines": "n/a",
+  "symbol": "get_users_integration`, `upsert_users_integration`, `delete_users_integration`, `list_user_agent_toolkits`, `upsert_user_agent_toolkit`, `delete_user_agent_toolkits_by_provider"
+ },
+ {
+  "finding": "F075",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+  "lines": "n/a",
+  "symbol": "IntegrationDescriptor`, `ConnectInitResponse`, `UsersIntegrationRow`, `UserAgentToolkitRow`, `AuthRequiredEnvelope"
+ },
+ {
+  "finding": "F075",
+  "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+  "lines": "n/a",
+  "symbol": "IntegrationsHandler(BaseView)` \u2014 `/api/v1/agents/integrations/{agent_id}[/{provider}/connect|/enable]` (FEAT-144 M6; path per spec `parrot/handlers/integrations.py`)"
+ },
+ {
+  "finding": "F076",
+  "path": "sdd/specs/copilot-a2a-percredential.spec.md",
+  "lines": "n/a",
+  "symbol": "FEAT-263 \u00a72 overview, \u00a76 contract (`a2a/server.py:245 process_message`; `human/suspended_store.py:33 SuspendedExecution`, `:64 SuspendedExecutionStore` (`save/load/delete`); `bots/abstract.py:3462 resume`; `oauth2_routes.py:151 make_oauth2_callback`, `:202 setup_oauth2_routes`, `:216` auth exclusion)"
+ },
+ {
+  "finding": "F076",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "lines": "n/a",
+  "symbol": "AuditLedger` (`append`, `verify`), `AuditLedgerEntry`, `AbstractKMSSigner`, `LocalHMACSigner` (FEAT-264 \u00a76 anchors `:203/:79/:134/:165`)"
+ },
+ {
+  "finding": "F076",
+  "path": "packages/ai-parrot-server/src/parrot/human/suspended_store.py",
+  "lines": "n/a",
+  "symbol": "SuspendedExecution`, `SuspendedExecutionStore"
+ },
+ {
+  "finding": "F076",
+  "path": "packages/ai-parrot-server/src/parrot/a2a/server.py",
+  "lines": "n/a",
+  "symbol": "A2AServer` (`_extract_identity`, `_on_missing_credential`, `resume_from_oauth_callback`)"
+ },
+ {
+  "finding": "F076",
+  "path": "packages/ai-parrot/src/parrot/integrations/mcp/fireflies_a2a.py",
+  "lines": "n/a",
+  "symbol": "FirefliesCredentialResolver` (static key, `fireflies:api_key`, `store_key`)"
+ },
+ {
+  "finding": "F076",
+  "path": "packages/ai-parrot/src/parrot/auth/oauth2/workiq_provider.py",
+  "lines": "n/a",
+  "symbol": "WorkIQOBOCredentialResolver`, `WorkIQOAuth2Provider`, `WORKIQ_SCOPE"
+ }
+]

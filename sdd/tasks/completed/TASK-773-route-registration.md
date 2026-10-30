@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — MCP Mixin Helper Handler
 **Spec**: `sdd/specs/mcp-mixin-helper-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-771

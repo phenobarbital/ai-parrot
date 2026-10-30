@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-325 — NetworkNinja Importer — Select Options from `form_metadata`
 **Spec**: `sdd/specs/networkninja-metadata-select-options.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1878

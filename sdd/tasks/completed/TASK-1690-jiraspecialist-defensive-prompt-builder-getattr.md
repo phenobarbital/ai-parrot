@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-268 — jiraspecialist-prompt-builder-stub-leak
 **Spec**: `sdd/specs/jiraspecialist-prompt-builder-stub-leak.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

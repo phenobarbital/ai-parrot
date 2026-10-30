@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-453 — Business Browser Automation
 **Spec**: `sdd/specs/web-automation-infra.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2390

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-197 — Infographic Toolkit
 **Spec**: `sdd/specs/infographictoolkit.spec.md` (Module 4)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

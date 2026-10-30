@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-045 (Episodic Memory Store v2)
 **Spec**: `sdd/specs/episodicmemorystore.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: (none)

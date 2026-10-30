@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-132 — feat-129-upgrades
 **Spec**: `sdd/specs/feat-129-upgrades.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4–8h)
 **Depends-on**: TASK-896, TASK-897

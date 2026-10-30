@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-753 — A2UI MermaidDiagram (opaque Mermaid-source component in the Parrot catalog)
 **Spec**: `sdd/specs/a2ui-mermaid-diagram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4773

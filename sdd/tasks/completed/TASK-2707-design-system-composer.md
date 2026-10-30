@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-493 — Backend HTML Design System
 **Spec**: `sdd/specs/html-renderer-design-system.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2706

@@ -2,7 +2,7 @@
 
 **Feature**: Granular Permissions System for Tools & Toolkits
 **Spec**: `sdd/specs/granular-permission-system.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-059, TASK-060

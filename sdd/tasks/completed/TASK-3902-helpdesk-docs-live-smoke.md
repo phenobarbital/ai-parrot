@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-616 — OdooHelpdeskToolkit — typed helpdesk tools for the Softhealer helpdesk (Odoo 19)
 **Spec**: `sdd/specs/odoo-toolkit-upgrades.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3891, TASK-3901

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-533 — Bookstore Conceptual Relations
 **Spec**: `sdd/specs/wikitoolkit-bookstore-conceptual-relations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

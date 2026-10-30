@@ -75,8 +75,9 @@ def test_adaptive_only_models_reject_sampling(model):
         "",
     ],
 )
-def test_other_models_accept_sampling(model):
-    assert AnthropicClient._rejects_sampling_params(model) is False
+def test_older_models_also_reject_sampling(model):
+    # API version 2026-10-21 removed sampling params on every model.
+    assert AnthropicClient._rejects_sampling_params(model) is True
 
 
 # ── _rejects_explicit_thinking_disabled ──────────────────────────────────────
@@ -139,18 +140,17 @@ def test_sanitize_keeps_adaptive_thinking_on_fable5(client):
     }
 
 
-def test_sanitize_leaves_non_adaptive_models_untouched(client):
+def test_sanitize_drops_sampling_on_older_models_without_extra_body(client):
+    # 2026-10-21 400s on sampling params even via extra_body, so nothing is relayed.
     payload = {
         "model": "claude-sonnet-4-6",
         "max_tokens": 100,
         "temperature": 0.5,
+        "top_p": 0.9,
+        "top_k": 40,
     }
     out = client._sanitize_payload_for_model(payload)
-    assert out == {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 100,
-        "temperature": 0.5,
-    }
+    assert out == {"model": "claude-sonnet-4-6", "max_tokens": 100}
 
 
 def test_sanitize_mutates_in_place_and_returns_same_dict(client):
@@ -172,9 +172,14 @@ def test_claude_5_generation_rejects_sampling(model):
     assert AnthropicClient.unsupported_params(model) == ["temperature", "top_p", "top_k"]
 
 
-def test_models_that_accept_sampling_report_no_unsupported_params():
-    assert AnthropicClient.unsupported_params("claude-sonnet-4-6") == []
-    assert AnthropicClient.unsupported_params("claude-opus-4-6") == []
+def test_older_models_report_sampling_as_unsupported():
+    assert AnthropicClient.unsupported_params("claude-sonnet-4-6") == ["temperature", "top_p", "top_k"]
+    assert AnthropicClient.unsupported_params("claude-opus-4-6") == ["temperature", "top_p", "top_k"]
+
+
+def test_client_sends_api_version_2026_10_21(client):
+    assert client.version == "2026-10-21"
+    assert client.base_headers["anthropic-version"] == "2026-10-21"
 
 
 class _Captured(Exception):

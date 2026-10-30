@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-449 — Legal Norms Graph (BOE consolidated legislation with temporal validity)
 **Spec**: `sdd/specs/legal-norms-graph-boe.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2373

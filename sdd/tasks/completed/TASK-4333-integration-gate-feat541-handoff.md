@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-540 — GraphIndex Core Seams
 **Spec**: `sdd/specs/graphindex-core-seams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4301, TASK-4305, TASK-4310, TASK-4312, TASK-4315, TASK-4316, TASK-4322, TASK-4324, TASK-4325, TASK-4332

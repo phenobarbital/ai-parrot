@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-754 — C4 architecture diagrams as a `Graph` kind
 **Spec**: `sdd/specs/a2ui-c4-diagrams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4790, TASK-4791

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-313 — EventBus Lifecycle Extraction (navigator-eventbus phase 2)
 **Spec**: `sdd/specs/eventbus-lifecycle-extraction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

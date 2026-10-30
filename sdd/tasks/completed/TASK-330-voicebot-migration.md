@@ -2,7 +2,7 @@
 
 **Feature**: Composable Prompt Layer System
 **Spec**: `sdd/specs/composable-prompt-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-329

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-302 — Native Bedrock Client (Converse API) + Nova 2 Sonic
 **Spec**: `sdd/specs/bedrock-client-llm.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: XL (8h+)
 **Depends-on**: TASK-1745, TASK-1744

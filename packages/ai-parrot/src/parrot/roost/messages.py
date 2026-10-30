@@ -92,8 +92,14 @@ class RoostMessage(BaseModel):
         content: Any = None,
         body: Optional[str] = None,
         failure: Optional[FailureInfo] = None,
+        tokens: int = 0,
     ) -> "RoostMessage":
         """Build a valid reply while retaining the content object by reference.
+
+        Args:
+            tokens: Tokens the host spent producing this reply. A wake callback MUST set
+                this for ``token_budget`` to be enforceable — the endpoint charges it via
+                ``ProtocolEngine.charge`` and cannot observe a provider's usage itself.
 
         Raises:
             ValueError: The performative is not an allowed reply, or this message has no explicit receiver.
@@ -114,6 +120,7 @@ class RoostMessage(BaseModel):
             body=body,
             envelope=self.envelope,
             failure=failure,
+            tokens=tokens,
             permission_context=self.permission_context,
             auth_token=self.auth_token,
         )

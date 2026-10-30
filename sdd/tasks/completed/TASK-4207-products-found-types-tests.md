@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-648 — `products_found` for every product-detecting planogram type
 **Spec**: `sdd/specs/products-found-endcap.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4206

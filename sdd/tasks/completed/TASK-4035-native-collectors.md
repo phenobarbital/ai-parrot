@@ -4,7 +4,7 @@
 
 **Feature**: FEAT-627 — wikitoolkit standup: entity attributes and daily/period briefs
 **Spec**: `sdd/specs/wikitoolkit-standup.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4031, TASK-4027

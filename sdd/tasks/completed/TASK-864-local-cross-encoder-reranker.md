@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-126 — Local Cross-Encoder Reranker for RAG Retrieval
 **Spec**: `sdd/specs/local-cross-encoder-reranker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-863

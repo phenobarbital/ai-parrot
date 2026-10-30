@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-380 — Sandbox Hardening — PythonREPLTool a worker persistente
 **Spec**: `sdd/specs/sandbox-hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

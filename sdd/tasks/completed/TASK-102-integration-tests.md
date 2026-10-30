@@ -2,7 +2,7 @@
 
 **Feature**: MassiveToolkit Integration (FEAT-019)
 **Spec**: `sdd/specs/massivetoolkit-integration.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-098, TASK-099, TASK-100, TASK-101

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-492 — A2UI Surface Rehydration
 **Spec**: `sdd/specs/a2ui-surface-rehydration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

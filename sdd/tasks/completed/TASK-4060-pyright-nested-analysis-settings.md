@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-630 (Pyright `extraPaths` reach the server)
 **Spec**: `sdd/specs/lsp-test-pyright-integration-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 1h)
 **Depends-on**: none

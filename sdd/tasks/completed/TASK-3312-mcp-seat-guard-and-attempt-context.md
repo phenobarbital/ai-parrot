@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-563 — Scoped Test Selection for the SDD Cycle
 **Spec**: `sdd/specs/scoped-test-selection.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3309

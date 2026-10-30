@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-160 — CloudSploit `--config` support for run_scan
 **Spec**: `sdd/proposals/cloudsploit-config-support.proposal.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1079, TASK-1080, TASK-1081

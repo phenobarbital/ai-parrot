@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-547 — Sync `sdd-worker` Packaged Prompt Twin
 **Spec**: `sdd/specs/sdd-worker-prompt-twin-sync.spec.md` (§3 Module 1)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

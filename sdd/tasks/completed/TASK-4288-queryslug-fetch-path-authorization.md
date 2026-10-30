@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-667 — Fail-closed slug authorization on the QuerySlugSource fetch path
 **Spec**: `sdd/specs/fixgroup-04e6aabc0d26.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

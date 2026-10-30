@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-672 — GitHubReviewer local clone + wikitoolkit graph
 **Spec**: `sdd/specs/github-reviewer-local-repo-wiki.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4336 (done)

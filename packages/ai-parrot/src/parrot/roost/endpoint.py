@@ -24,6 +24,17 @@ if TYPE_CHECKING:
     from parrot.tools.manager import ToolManager
     from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 
+#: Wakes the host agent for one turn.
+#:
+#: The returned :class:`RoostMessage` MUST carry ``tokens`` — the tokens the host actually
+#: spent on this turn. Roost cannot observe a provider's usage, so a response left at the
+#: default ``tokens=0`` leaves the conversation effectively unbudgeted: ``token_budget`` is
+#: never reached and ``FailureCode.TOKEN_BUDGET`` never fires. The endpoint logs a warning
+#: once per conversation when a budgeted conversation reports 0 tokens.
+#:
+#: Report usage through the reply itself::
+#:
+#:     return msg.reply(Performative.INFORM, content=answer, tokens=usage.total_tokens)
 WakeCallback = Callable[[RoostMessage, Dispatch], Awaitable[Optional[RoostMessage]]]
 
 
@@ -53,6 +64,8 @@ class RoostEndpoint:
         wake: Optional[WakeCallback] = None,
         registry: Optional["AgentRegistry"] = None,
         grant: Optional[GrantPolicy] = None,
+        permission_context: Any = None,
+        auth_token: Optional[str] = None,
         sweep_interval: float = 0.25,
     ) -> None:
         self.logger = logging.getLogger(__name__)
@@ -61,16 +74,34 @@ class RoostEndpoint:
         self.ledger = ledger or RoostAuditLedger()
         self.working_memory, self.wake, self.registry = working_memory, wake, registry
         self.grant = grant or GrantPolicy()
+        self._permission_context, self._auth_token = permission_context, auth_token
         self._pending: dict[str, asyncio.Future[Any]] = {}
         self._subs: list[tuple[Carrier, str]] = []
         self._sweep_interval = sweep_interval
         self._sweeper: Optional[asyncio.Task[None]] = None
         self._metrics = {"messages_in": 0, "messages_out": 0, "wakes": 0, "not_understood": 0, "stored": 0}
+        self._token_budget_warned: set[str] = set()
 
     def address(self) -> AgentAddress:
         """Return this endpoint's configured transport address."""
         carrier = self.config.carrier if self.config else CarrierKind.IN_PROCESS
         return AgentAddress(name=self.agent_name, carrier=carrier)
+
+    def _caller_authority(self) -> tuple[Any, Optional[str]]:
+        """Return the caller authority to stamp on an outbound message.
+
+        The constructor override wins; otherwise the request-scoped
+        ``PermissionContext`` published on ``parrot.auth.context._pctx_var``
+        is used, so a shared endpoint never mixes two callers' identities.
+
+        Returns:
+            The resolved ``(permission_context, auth_token)`` pair; either may be ``None``.
+        """
+        if self._permission_context is not None:
+            return self._permission_context, self._auth_token
+        from parrot.auth.context import _pctx_var
+
+        return _pctx_var.get(), self._auth_token
 
     async def start(self) -> None:
         """Subscribe this endpoint's address (and capabilities) on every carrier."""
@@ -118,11 +149,21 @@ class RoostEndpoint:
         transitions = self.engine.expire()
         for transition in transitions:
             for emitted in transition.emit:
-                if emitted.is_addressed_to(self.agent_name):
-                    await self._resolve_pending(emitted)
-                else:
-                    await self._send_reply(emitted)
+                await self._route_emitted(emitted)
         return len(transitions)
+
+    async def _route_emitted(self, emitted: RoostMessage) -> None:
+        """Deliver an engine-emitted message: locally when it names this agent, else over a carrier.
+
+        A budget that trips on the side which opened the conversation produces a failure
+        addressed to this agent; that message is what the pending ``request``/``query`` future is
+        waiting for, so it must resolve the waiter instead of going out over a carrier and
+        arriving back on an already-terminal conversation.
+        """
+        if emitted.is_addressed_to(self.agent_name):
+            await self._resolve_pending(emitted)
+        else:
+            await self._send_reply(emitted)
 
     async def _on_message(self, msg: RoostMessage) -> None:
         """Audit, dispatch, and execute an inbound Roost message."""
@@ -130,7 +171,7 @@ class RoostEndpoint:
         await self.ledger.record(msg, direction="served", self_name=self.agent_name)
         dispatch = self.dispatcher.dispatch(msg)
         for emitted in dispatch.emit:
-            await self._send_reply(emitted)
+            await self._route_emitted(emitted)
 
         if dispatch.decision is DispatchDecision.IGNORE:
             return
@@ -156,9 +197,12 @@ class RoostEndpoint:
                 if response is not None:
                     await self._send_reply(response)
                     exhausted = self.engine.charge(msg.conversation_id, response.tokens)
+                    if response.tokens == 0:
+                        self._warn_unfed_token_budget(msg.conversation_id)
                     if exhausted is not None:
                         for emitted in exhausted.emit:
-                            await self._send_reply(emitted)
+                            await self._route_emitted(emitted)
+                    self._forget_if_closed(msg.conversation_id)
             await self._resolve_pending(msg)
             return
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
@@ -169,16 +213,59 @@ class RoostEndpoint:
         if dispatch.decision is DispatchDecision.REPLAN:
             await self._resolve_pending(msg)
 
+    def _advertised_tool(self, msg: RoostMessage) -> Optional[str]:
+        """Return the tool name for an inbound message, or ``None`` when it is not advertised.
+
+        The capability is taken from ``msg.capability_filter`` when present; a directed request
+        (which cannot carry a filter without turning into a broadcast) names it in ``content["tool"]``.
+        Either way it must equal an advertised ``config.capabilities`` entry, so a caller cannot
+        name an arbitrary tool registered in this agent's manager (``issue:59d1cb0c9814`` part 3).
+
+        Args:
+            msg: The inbound Roost message whose capability is being served.
+
+        Returns:
+            The underscore tool name, or ``None`` when no advertised capability matches.
+        """
+        if self.config is None:
+            return None
+        if msg.capability_filter is not None:
+            wanted = msg.capability_filter.replace(".", "_")
+        elif isinstance(msg.content, dict) and isinstance(msg.content.get("tool"), str):
+            wanted = msg.content["tool"]
+        else:
+            return None
+        for capability in self.config.capabilities:
+            if capability.replace(".", "_") == wanted:
+                return wanted
+        return None
+
+    async def _refuse(self, msg: RoostMessage, detail: str) -> None:
+        """Answer *msg* with ``failure(POLICY)`` when it has an explicit sender to reply to."""
+        if not msg.receivers:
+            self.logger.warning("Roost cannot reply to broadcast refusal on conversation %s", msg.conversation_id)
+            return
+        await self._send_reply(
+            msg.reply(Performative.FAILURE, failure=FailureInfo(code=FailureCode.POLICY, detail=detail))
+        )
+
     async def _run_tool(self, msg: RoostMessage) -> None:
         """Run a deterministic serving tool through the manager's policy guard."""
         content = msg.content if isinstance(msg.content, dict) else {}
-        tool_name = content.get("tool") or (msg.capability_filter or "").replace(".", "_")
-        try:
-            result = await self.tool_manager.execute_tool(
-                tool_name,
-                content,
-                permission_context=squawk_bridge.resolve_authority(msg),
+        authority = squawk_bridge.resolve_authority(msg)
+        if authority is None:
+            self.logger.warning("Roost refused an unauthenticated request on conversation %s", msg.conversation_id)
+            await self._refuse(msg, "no caller authority on the message")
+            return
+        tool_name = self._advertised_tool(msg)
+        if tool_name is None:
+            self.logger.warning(
+                "Roost refused capability %r not advertised by %s", msg.capability_filter, self.agent_name
             )
+            await self._refuse(msg, "capability not advertised")
+            return
+        try:
+            result = await self.tool_manager.execute_tool(tool_name, content, permission_context=authority)
         except Exception as exc:  # noqa: BLE001 — any tool error must become a typed failure, never a silent hang
             self.logger.warning("Roost tool %r failed for conversation %s: %s", tool_name, msg.conversation_id, exc)
             code = FailureCode.POLICY if isinstance(exc, PermissionError) else FailureCode.INTERNAL
@@ -202,6 +289,32 @@ class RoostEndpoint:
         )
         self._metrics["stored"] += 1
 
+    def _warn_unfed_token_budget(self, conversation_id: str) -> None:
+        """Warn once per conversation that a declared token budget is receiving no usage.
+
+        A wake callback that leaves ``RoostMessage.tokens`` at 0 makes the budget
+        unenforceable; this surfaces the misintegration without changing the turn. A
+        conversation that declares no budget is legitimately unbudgeted and stays silent.
+        """
+        state = self.engine.state(conversation_id)
+        if state is None or state.budget.token_budget is None:
+            return
+        if conversation_id in self._token_budget_warned:
+            return
+        self._token_budget_warned.add(conversation_id)
+        self.logger.warning(
+            "Roost conversation %s declares a token budget of %s but its wake response reported 0 tokens; "
+            "the WakeCallback must set RoostMessage.tokens or the budget cannot be enforced",
+            conversation_id,
+            state.budget.token_budget,
+        )
+
+    def _forget_if_closed(self, conversation_id: str) -> None:
+        """Drop per-conversation bookkeeping once the conversation is terminal."""
+        state = self.engine.state(conversation_id)
+        if state is None or state.terminal is not None:
+            self._token_budget_warned.discard(conversation_id)
+
     async def _resolve_pending(self, msg: RoostMessage) -> None:
         """Complete the request waiter after a terminal inbound outcome."""
         future = self._pending.get(msg.conversation_id)
@@ -214,6 +327,7 @@ class RoostEndpoint:
         elif msg.performative in (Performative.REFUSE, Performative.FAILURE):
             failure = msg.failure or FailureInfo(code=FailureCode.POLICY, detail="request refused")
             future.set_exception(RoostFailure(failure))
+        self._token_budget_warned.discard(msg.conversation_id)
 
     async def _send_reply(self, msg: RoostMessage) -> RoostMessage:
         """Send a preconstructed reply while retaining its protocol metadata."""
@@ -260,6 +374,7 @@ class RoostEndpoint:
         conversation_id = conversation_id or uuid.uuid4().hex
         selected_protocol = protocol or InteractionProtocol.INFORM
         envelope = envelope or squawk_bridge.new_envelope(correlation_id=conversation_id, caller=self.agent_name)
+        pctx, token = self._caller_authority()
         msg = RoostMessage(
             performative=performative,
             protocol=selected_protocol,
@@ -271,6 +386,8 @@ class RoostEndpoint:
             content=content,
             body=body,
             envelope=envelope,
+            permission_context=pctx,
+            auth_token=token,
             hops=hops,
         )
         await self._deliver_outbound(msg)
@@ -331,6 +448,7 @@ class RoostEndpoint:
             caller=self.agent_name,
             budget_ms=int(timeout * 1000) if timeout is not None else None,
         )
+        pctx, token = self._caller_authority()
         opener = RoostMessage(
             performative=Performative.REQUEST,
             protocol=InteractionProtocol.REQUEST,
@@ -340,6 +458,8 @@ class RoostEndpoint:
             capability_filter=cap_id,
             content=dict(args),
             envelope=envelope,
+            permission_context=pctx,
+            auth_token=token,
             hops=hops,
         )
         self.engine.open(opener)
@@ -350,7 +470,7 @@ class RoostEndpoint:
                 Performative.REQUEST,
                 receivers=[receiver],
                 capability_filter=None,
-                content={"tool": cap_id.replace(".", "_"), **args},
+                content={**dict(args), "tool": cap_id.replace(".", "_")},
                 protocol=InteractionProtocol.REQUEST,
                 conversation_id=conversation_id,
                 envelope=envelope,
@@ -378,7 +498,20 @@ class RoostEndpoint:
         expected_schema: Optional[dict] = None,
         hops: int = 0,
     ) -> Any:
-        """Execute a Query conversation without an agreement phase."""
+        """Execute a Query conversation without an agreement phase.
+
+        Args:
+            question: Free-form query content.
+            receiver: Target agent; its name is checked against the caller's grant (fail-closed).
+            timeout: Seconds to wait; also becomes the envelope budget.
+            expected_schema: Currently unused.
+            hops: Chain depth of the caller seeding the hop budget.
+
+        Raises:
+            GrantDenied: *receiver* is outside the caller's grant.
+        """
+        if not self.grant.allows(self.config, receiver.name):
+            raise GrantDenied(receiver.name)
         del expected_schema
         conversation_id = uuid.uuid4().hex
         envelope = squawk_bridge.new_envelope(
@@ -386,6 +519,7 @@ class RoostEndpoint:
             caller=self.agent_name,
             budget_ms=int(timeout * 1000) if timeout is not None else None,
         )
+        pctx, token = self._caller_authority()
         opener = RoostMessage(
             performative=Performative.QUERY,
             protocol=InteractionProtocol.QUERY,
@@ -394,6 +528,8 @@ class RoostEndpoint:
             receivers=[receiver],
             content=question,
             envelope=envelope,
+            permission_context=pctx,
+            auth_token=token,
             hops=hops,
         )
         self.engine.open(opener)

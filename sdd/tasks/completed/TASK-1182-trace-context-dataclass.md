@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-176 — Lifecycle Events System
 **Spec**: `sdd/specs/FEAT-176-lifecycle-events-system.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none

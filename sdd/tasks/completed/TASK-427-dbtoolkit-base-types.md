@@ -3,7 +3,7 @@
 **Feature**: DatabaseToolkit
 **Feature ID**: FEAT-062
 **Spec**: `sdd/specs/databasetoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

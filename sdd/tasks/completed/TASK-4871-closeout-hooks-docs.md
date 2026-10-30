@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-764 — `/sdd-done` closeout hooks
 **Spec**: `sdd/specs/sdd-done-closeout-hooks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-4867, TASK-4869

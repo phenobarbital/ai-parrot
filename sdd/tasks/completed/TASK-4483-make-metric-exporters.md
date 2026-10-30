@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-705 — Observability — OTLP metrics fan-out and env-level trace/metric switches
 **Spec**: `sdd/specs/observability-metrics-fanout-and-env-config.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

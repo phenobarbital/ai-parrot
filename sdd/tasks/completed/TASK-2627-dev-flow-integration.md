@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-480 — Dev Flow Node Checkpoint Recovery
 **Spec**: `sdd/specs/dev-flow-node-caching.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2626

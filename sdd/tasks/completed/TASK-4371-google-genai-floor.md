@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-688 — Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon)
 **Spec**: `sdd/specs/gemini-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4369, TASK-4370

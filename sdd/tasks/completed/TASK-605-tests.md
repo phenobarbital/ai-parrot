@@ -2,7 +2,7 @@
 
 **Feature**: form-designer-edition
 **Spec**: `sdd/specs/form-designer-edition.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-597, TASK-598, TASK-599, TASK-600, TASK-601, TASK-602, TASK-603, TASK-604

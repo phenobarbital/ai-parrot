@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,8 +45,28 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
+_STATUS_HEADER_RE = re.compile(r"^\*\*Status\*\*: *(?:pending|in-progress)\b.*$", re.MULTILINE)
+
+
+def sync_status_header(task_file: Path) -> bool:
+    """Rewrite the first ``**Status**: pending|in-progress`` line of ``task_file`` to ``**Status**: done``.
+
+    Returns:
+        True when the header was rewritten, False when there was nothing to change.
+    """
+    text = task_file.read_text(encoding="utf-8")
+    updated, count = _STATUS_HEADER_RE.subn("**Status**: done", text, count=1)
+    if not count:
+        return False
+    task_file.write_text(updated, encoding="utf-8")
+    return True
+
+
 def update_index(index: Path, task_id: str, verification: str, completed_file: str, now: str) -> None:
     """C10: mark ``task_id`` done in the per-spec index; stamp top-level completed_at when every task is done.
+
+    ``completed_at`` and ``verification`` are write-once (dev f9e08bee3, issue:732f350600d1): a re-run on an
+    already-closed task — the idempotent path — re-asserts status/file but never moves recorded history to now.
 
     Raises:
         ValueError: when the index is not valid JSON or ``tasks`` is not a list (caller returns 5, jq parity).
@@ -60,11 +81,11 @@ def update_index(index: Path, task_id: str, verification: str, completed_file: s
     for task in tasks:
         if task.get("id") == task_id:
             task["status"] = "done"
-            task["completed_at"] = now
-            task["verification"] = verification
+            task["completed_at"] = task.get("completed_at") or now
+            task["verification"] = task.get("verification") or verification
             task["file"] = completed_file
     if all(t.get("status") == "done" for t in tasks):
-        data["completed_at"] = now
+        data["completed_at"] = data.get("completed_at") or now
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=index.parent, prefix=index.name + ".", suffix=".tmp", delete=False
     ) as handle:
@@ -169,6 +190,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not basename_md and completed_matches:
         basename_md = completed_matches[0].name
+
+    # Keep the task file's own `**Status**:` header in step with the index (dev e72348060): only the first
+    # `pending`/`in-progress` header line is rewritten; `done` / hand-set `done-with-issues` are left alone.
+    if basename_md and (completed_dir / basename_md).is_file():
+        if sync_status_header(completed_dir / basename_md):
+            _out(f"✓ {task_id}: header **Status** → done")
 
     if index.is_file() and basename_md:
         try:

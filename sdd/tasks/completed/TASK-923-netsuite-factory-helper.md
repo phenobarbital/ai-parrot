@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-135 — NetSuite MCP Integration
 **Spec**: `sdd/specs/netsuite-mcp-integration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-922

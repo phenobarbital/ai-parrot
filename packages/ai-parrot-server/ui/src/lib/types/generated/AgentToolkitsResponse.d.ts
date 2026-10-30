@@ -2,6 +2,9 @@
 
 export type Agent = string;
 export type Editable = boolean;
+export type Failed = {
+  [k: string]: string;
+}[];
 export type Reason = string | null;
 export type Toolkits = {
   [k: string]: unknown;
@@ -14,6 +17,7 @@ export type Unavailable = string[];
 export interface AgentToolkitsResponse {
   agent: Agent;
   editable: Editable;
+  failed?: Failed;
   reason?: Reason;
   toolkits?: Toolkits;
   unavailable?: Unavailable;

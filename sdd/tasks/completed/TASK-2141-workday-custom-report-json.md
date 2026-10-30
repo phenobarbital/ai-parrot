@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-415 — Workday Interfaces Homologation (flowtask → ai-parrot)
 **Spec**: `sdd/specs/workday-interfaces-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

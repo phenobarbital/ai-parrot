@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-253 — GigSmart Interface Toolkit
 **Spec**: `sdd/specs/gigsmart-interface-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (8-16h)
 **Depends-on**: TASK-1621

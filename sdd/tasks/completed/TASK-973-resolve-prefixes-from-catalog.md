@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-142 — Embedding Catalog as Prefix Source of Truth
 **Spec**: `sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

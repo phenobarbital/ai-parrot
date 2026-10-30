@@ -3,7 +3,7 @@
 **Feature**: DatasetManager add_dataset Filter Support
 **Feature ID**: FEAT-050
 **Spec**: `sdd/specs/add-filter-add-dataset.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-349

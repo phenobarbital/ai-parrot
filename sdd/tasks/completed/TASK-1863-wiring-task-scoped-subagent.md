@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-323 — Dev-Loop Multiple Dev Agents (Parallel Development Node)
 **Spec**: `sdd/specs/dev-loop-multiple-dev-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1860, TASK-1862

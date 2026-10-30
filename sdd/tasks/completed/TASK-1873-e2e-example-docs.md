@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-324 — Infographic Builder — Recipe-Driven, Replayable A2UI Infographics
 **Spec**: `sdd/specs/infographic-builder.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1870, TASK-1871, TASK-1872

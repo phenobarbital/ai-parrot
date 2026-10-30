@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-230 — Workday Composable Interface + Toolkit Homologation
 **Spec**: `sdd/specs/workday-tooling-composable-interface.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1507

@@ -2,7 +2,7 @@
 
 **Feature**: chatbot-rag-api-integration
 **Spec**: `sdd/specs/chatbot-rag-api-integration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-500

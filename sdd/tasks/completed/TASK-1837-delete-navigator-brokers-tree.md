@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-318 — Navigator Brokers Removal (`navigator-eventbus` phase 5)
 **Spec**: `sdd/specs/navigator-brokers-removal.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1835, TASK-1836

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-141 — Rust-backed Semantic Text Splitter
 **Spec**: `sdd/specs/rust-semantic-text-splitter.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

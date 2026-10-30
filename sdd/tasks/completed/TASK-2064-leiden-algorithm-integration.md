@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-401 — Leiden Community Detection & Inter-Community Relations
 **Spec**: `sdd/specs/leiden-community-detection-and-inter-community-relations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-470 — A2UI v1.0 Dialect
 **Spec**: `sdd/specs/a2ui-v1-dialect.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L
 **Depends-on**: TASK-2533, TASK-2534

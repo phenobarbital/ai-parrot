@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-253 — GigSmart Interface Toolkit
 **Spec**: `sdd/specs/gigsmart-interface-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1616, TASK-1617, TASK-1618, TASK-1619, TASK-1620, TASK-1621, TASK-1622

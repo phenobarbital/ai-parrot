@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-114 — Bot Cleanup Lifecycle
 **Spec**: `sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-812

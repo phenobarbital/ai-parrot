@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-578 — ADR extraction and decision retrieval in the LLM wiki
 **Spec**: `sdd/specs/sdd-spec-wiki-adr.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3489, TASK-3490, TASK-3491, TASK-3492

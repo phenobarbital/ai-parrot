@@ -18,6 +18,12 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
 
 ## Steps
 1. **Plan** — `wikitoolkit ledger plan-fix --json` (pass `--kind/--severity/--lane` through). Parse stdout as a FixPlan.
+   Schema (exact keys — do not guess): top level `planner_version`, `generated_at`, `total_open`, `groups`, `filters`;
+   each group `group_id`, `issues`, `files`, `max_severity`, `lane`, `lane_reason`, `suggested_slug`, `parents`;
+   each issue `issue_id` (NOT `id`), `title`, `kind`, `severity`, `discovered_from`, `about`, `files`.
+   Stdout may start with a navconfig banner, so parse from the first `{`. Use this snippet instead of an ad-hoc one:
+   `plan = json.loads(raw[raw.index("{"):])` then
+   `hits = [(g, i) for g in plan["groups"] for i in g["issues"] if i["issue_id"] == target]`.
    Require a successful exit and `planner_version == "1"` before selecting or claiming anything.
    Reject missing/unsupported versions or malformed output; never re-implement ordering, grouping or lane rules.
    `--lane fast` is refused for critical or vulnerability groups; stop on that planner error.

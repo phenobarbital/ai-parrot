@@ -1,0 +1,49 @@
+---
+id: FW-012
+query_id: Q012
+type: wiki_page
+intent: "Read task: TASK-990 frontend API client + OAuth popup helper — did a web connect UI ship?"
+executed_at: 2026-10-30T12:10:52Z
+duration_ms: 0
+parent_id: null
+depth: 0
+---
+
+# FW-012 — TASK-990/991/992 (FEAT-144, done 2026-05-05): a web "+ Integrations" menu, per-provider Connect/Disconnect items, `awaitOAuthCallback` popup helper and an inline `ConnectIntegrationPill` for `auth_required` envelopes SHIPPED — originally in `navigator-frontend-next`, and `popup.ts` is now also in the admin UI at `packages/ai-parrot-server/ui/src/lib/oauth/popup.ts`
+
+## Summary
+
+The brainstorm's S-3a ("Svelte ConnectionsPanel + ConnectionCard + connections store + inline A2UI auth block — nothing shipped") is contradicted. FEAT-144 delivered `src/lib/api/integrations.ts` (`listIntegrations`, `startIntegrationConnect`, `confirmIntegrationEnable`, `disconnectIntegration`), `src/lib/oauth/popup.ts` (`awaitOAuthCallback({authUrl, allowedOrigin, timeoutMs}) -> {success, payload} | {success:false, reason: popup-blocked|cancelled|timeout|error}`), `IntegrationsMenu.svelte` + `IntegrationItem.svelte` (DaisyUI dropdown in the AgentChat toolbar, status badge Connected/Not connected), and `ConnectIntegrationPill.svelte` wired into AgentChat's message renderer for `message.type === "auth_required"` (no auto-retry, Q-D). Backend: `IntegrationsHandler` at `/api/v1/agents/integrations/{agent_id}` (GET list, POST `{provider}/connect`, POST `{provider}/enable`, DELETE `{provider}`), PBAC fail-closed (`integration:list/connect/disconnect`), DocumentDB `users_integrations` + `user_agent_toolkits`, cold-session hydration in `UserObjectsHandler.configure_tool_manager`, and `AgentTalk` translating `AuthorizationRequired` → `AuthRequiredEnvelope {type:"auth_required", provider, tool_name, auth_url, scopes, message}` (TASK-988). The admin UI (`ai-parrot-server/ui`) has `lib/oauth/popup.ts` (ported with the AgentChat migration, TASK-2593..2597); whether the menu/pill components were ported too is for the codebase lane.
+
+## Citations
+
+- path: `sdd/tasks/completed/TASK-990-frontend-api-client-and-popup.md`
+  lines: n/a
+  symbol: TASK-990 Frontend API Client and OAuth Popup Helper (done)
+  wiki_page_id: file:sdd/tasks/completed/TASK-990-frontend-api-client-and-popup.md (score=0.24)
+- path: `sdd/tasks/completed/TASK-991-integrations-menu.md`
+  lines: n/a
+  symbol: `IntegrationsMenu.svelte`, `IntegrationItem.svelte` (navigator-frontend-next commit ee3712b)
+  wiki_page_id: file:sdd/tasks/completed/TASK-991-integrations-menu.md (score=1.00)
+- path: `sdd/tasks/completed/TASK-992-connect-integration-pill.md`
+  lines: n/a
+  symbol: `ConnectIntegrationPill.svelte`; `AgentMessage` type extended with `type/provider/auth_url/scopes`
+  wiki_page_id: file:sdd/tasks/completed/TASK-992-connect-integration-pill.md (score=0.50)
+- path: `packages/ai-parrot-server/ui/src/lib/oauth/popup.ts`
+  lines: n/a
+  symbol: `awaitOAuthCallback`, `OAuthCallbackOutcome`, `POPUP_MESSAGE_TYPE = "ai-parrot-oauth-callback"`
+  wiki_page_id: file:packages/ai-parrot-server/ui/src/lib/oauth/popup.ts (score=0.27)
+- path: `sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md`
+  lines: n/a
+  symbol: FEAT-144 §2 (`IntegrationsHandler`, `AuthRequiredEnvelope`, `users_integrations`, `user_agent_toolkits`, M1–M15)
+  wiki_page_id: file:sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md
+- path: `packages/ai-parrot/src/parrot/auth/oauth2/models.py`
+  lines: n/a
+  symbol: `IntegrationDescriptor`, `ConnectInitRequest/Response`, `EnableResponse`, `DisconnectResponse`, `AuthRequiredEnvelope`, `UsersIntegrationRow`, `UserAgentToolkitRow`
+- path: `sdd/tasks/index/cross-repository-jiratoolkit-oauth2-3lo.json`
+  lines: n/a
+  symbol: TASK-983..993 all `done`, completed 2026-05-05
+
+## Notes
+
+FEAT-144 explicitly chose per-`(user, agent, toolkit)` enablement and declared cross-channel credential sharing a NON-goal ("Jira on web does NOT give Telegram; same Atlassian account, separate Redis rows") — the brainstorm's core goal reverses that decision. `[cross-lane: type=grep, intent=in packages/ai-parrot-server/ui/src find IntegrationsMenu/ConnectIntegrationPill/api/integrations.ts to see whether the admin UI port includes them]`.

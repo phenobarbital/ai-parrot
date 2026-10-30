@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-215 — Structured Chart Output Mode
 **Spec**: `sdd/specs/structured-chart-output.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1411, TASK-1412

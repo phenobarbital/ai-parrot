@@ -182,7 +182,7 @@ describe("Router", () => {
 
   describe("isInAppPath", () => {
     it("accepts the SPA's own sections and the site root", () => {
-      for (const path of ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home"]) {
+      for (const path of ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home", "/account/security"]) {
         expect(isInAppPath(path)).toBe(true);
       }
     });
@@ -194,6 +194,7 @@ describe("Router", () => {
         "/\\evil.example",
         "/api/v1/bots",
         "/administer",
+        "/accounts",
         "agents",
       ]) {
         expect(isInAppPath(path)).toBe(false);

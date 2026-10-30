@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-734 — Serve FormDesigner forms from a Teams agent
 **Spec**: `sdd/specs/formdesigner-serve-forms.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L
 **Depends-on**: TASK-4682, TASK-4683, TASK-4684, TASK-4686, TASK-4687, TASK-4688, TASK-4689, TASK-4690

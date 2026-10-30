@@ -2,7 +2,7 @@
 
 **Feature**: Form Builder from Database Definition
 **Spec**: `sdd/specs/formbuilder-database.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

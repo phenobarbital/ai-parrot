@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-426 — Research Tools for Agents
 **Spec**: `sdd/specs/research-tools-for-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2243

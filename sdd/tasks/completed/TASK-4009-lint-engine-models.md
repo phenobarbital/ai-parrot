@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-625 — wikitoolkit lint
 **Spec**: `sdd/specs/wikitoolkit-lint.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-575 — AgentCrew Handler Default Google Key (`CREW_AI_KEY`)
 **Spec**: `sdd/specs/agentcrew-handler-default-key.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3454

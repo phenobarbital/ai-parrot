@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-522 — Interactive-HTML Map Rendering + Tailwind CSS Coverage
 **Spec**: `sdd/specs/interactive-html-map-tailwind.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

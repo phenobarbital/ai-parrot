@@ -2,7 +2,7 @@
 
 **Feature**: infographic-html-output
 **Spec**: `sdd/specs/infographic-html-output.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-645, TASK-646

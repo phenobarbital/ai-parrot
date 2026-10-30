@@ -22,6 +22,9 @@ from parrot.roost import (
 )
 
 
+CALLER_CTX = object()  # opaque stand-in for a PermissionContext (FEAT-747 / issue:59d1cb0c9814)
+
+
 class _DummyBot(AbstractBot):
     """Minimal bot class used only for registration."""
 
@@ -41,6 +44,7 @@ def _endpoint(
     *,
     tool_result: object = None,
     registry: Optional[AgentRegistry] = None,
+    permission_context: object = CALLER_CTX,
 ) -> RoostEndpoint:
     """Build one endpoint with a stubbed tool manager and a stubbed (never-LLM) wake callback."""
     eng = ProtocolEngine()
@@ -56,6 +60,7 @@ def _endpoint(
         tool_manager=tm,
         wake=AsyncMock(return_value=None),
         registry=registry,
+        permission_context=permission_context,
     )
 
 

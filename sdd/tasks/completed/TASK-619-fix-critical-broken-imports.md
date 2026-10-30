@@ -2,7 +2,7 @@
 
 **Feature**: refactor-tools-imports
 **Spec**: `sdd/specs/refactor-tools-imports.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

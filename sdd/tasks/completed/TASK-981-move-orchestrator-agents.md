@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-143 — Flows Consolidation
 **Spec**: `sdd/specs/flows-consolidation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-979

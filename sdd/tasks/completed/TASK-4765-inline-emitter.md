@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-755 — Inline A2UI Component Routing
 **Spec**: `sdd/specs/inline-a2ui-component-routing.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4762, TASK-4763, TASK-4764

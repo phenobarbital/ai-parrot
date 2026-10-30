@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-118 — Database Toolkit asyncpg Native Boundary Refactor
 **Spec**: `sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-926

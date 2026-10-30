@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-233 — Workday Composable-Only WSDL Routing
 **Spec**: `sdd/specs/workday-composable-only-wsdl-routing.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1521

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-081 parrot-formdesigner-renderer-telegram
 **Spec**: `sdd/specs/parrot-formdesigner-renderer-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-562, TASK-563, TASK-564, TASK-565

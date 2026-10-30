@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-635 — Scheduler callback delivery status
 **Spec**: `sdd/specs/scheduler-callback-delivery-status.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

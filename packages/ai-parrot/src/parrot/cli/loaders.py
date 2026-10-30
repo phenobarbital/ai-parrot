@@ -138,6 +138,11 @@ class StandaloneAgentLoader:
             def_count = agent_registry.load_agent_definitions(definitions_dir)
             self.logger.debug("Discovery: %d agent(s) from YAML definitions", def_count)
 
+        # Step 4: domain experts (FEAT-778) — fail-open, never blocks the REPL
+        from parrot.experts.bootstrap import load_experts  # noqa: PLC0415
+
+        await load_experts(agent_registry)
+
     async def load(self, name: str) -> AbstractBot:
         """Load a registered agent by name.
 

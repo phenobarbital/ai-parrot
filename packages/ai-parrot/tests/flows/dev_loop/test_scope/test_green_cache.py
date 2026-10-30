@@ -99,8 +99,10 @@ def test_input_change_invalidates(git_repo, edit):
 
 def test_marker_change_invalidates(git_repo):
     _green(git_repo, _plan(git_repo, TEST))
+    # A mirror target: declared targets always run under the override marker, so only a
+    # policy-driven target can exercise a marker change.
     plan = build_plan(
-        [TestTarget(path=TEST, distribution="a", reason="declared")],
+        [TestTarget(path=TEST, distribution="a", reason="mirror")],
         tier="merge",
         worktree=git_repo,
         policy=ScopePolicy(marker_expression="other"),

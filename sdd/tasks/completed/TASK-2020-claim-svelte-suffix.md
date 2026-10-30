@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-396 — Svelte / hardened-TypeScript support in the wiki repo scanner
 **Spec**: `sdd/specs/wikitoolkit-svelte-typescript-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

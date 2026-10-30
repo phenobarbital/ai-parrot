@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-377 — Graph Engineering Hardening
 **Spec**: `sdd/specs/graphindex-as-engineering-devloop.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1910
