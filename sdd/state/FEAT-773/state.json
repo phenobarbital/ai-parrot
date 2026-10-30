@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-773",
+  "feature_slug": "delegated-auth-connections",
+  "started_at": "2026-10-30T11:52:11Z",
+  "updated_at": "2026-10-30T13:02:23Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "artifacts/Brainstorm Delegated Auth Connections (OAuth2 3LO core + channel consumers).md",
+    "raw_path": "sdd/state/FEAT-773/source.md",
+    "fetched_at": "2026-10-30T11:52:11Z",
+    "summary_oneline": "Generic OAuth2 3LO connections core (parrot.connections) with principal-keyed vault, consumed by web, Telegram and Teams channels"
+  },
+  "mode": "auto",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-30T11:52:11Z",
+      "completed_at": "2026-10-30T11:52:11Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-30T11:54:46Z",
+      "completed_at": "2026-10-30T12:02:11Z",
+      "duration_seconds": 0,
+      "queries_total": 58,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-773/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-30T12:02:11Z",
+      "completed_at": "2026-10-30T12:26:11Z",
+      "duration_seconds": null,
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-10-30T12:02:11Z",
+            "completed_at": "2026-10-30T12:26:11Z",
+            "duration_seconds": null,
+            "findings_count": 57,
+            "queries_executed": 57,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-10-30T12:02:11Z",
+            "completed_at": "2026-10-30T12:26:11Z",
+            "duration_seconds": null,
+            "findings_count": 5,
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-10-30T12:02:11Z",
+            "completed_at": "2026-10-30T12:26:11Z",
+            "duration_seconds": null,
+            "findings_count": 23,
+            "queries_executed": 17,
+            "queries_skipped": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-10-30T12:26:11Z",
+          "completed_at": "2026-10-30T12:26:11Z",
+          "input_count": 85,
+          "output_count": 76,
+          "merged_count": 9,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "queries_executed": 79,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 53,
+      "grep_calls": 25,
+      "git_calls": 11,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-30T12:33:20Z",
+      "completed_at": "2026-10-30T12:33:20Z",
+      "duration_seconds": 0,
+      "synthesis_path": "sdd/state/FEAT-773/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 23,
+      "claims_high_conf": 19,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-30T12:57:52Z",
+      "completed_at": "2026-10-30T12:57:52Z",
+      "duration_seconds": 0,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "running",
+      "started_at": "2026-10-30T13:02:23Z",
+      "completed_at": null,
+      "duration_seconds": null,
+      "proposal_path": "sdd/proposals/delegated-auth-connections.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization/constraints high-confidence; Option B settled in the brainstorm; U1-U5 decided; remaining medium/low items are spec-time verifications."
+    }
+  },
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 53,
+    "grep_calls": 25,
+    "git_calls": 11,
+    "wall_seconds": 1326
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Commit proposal + state (Step 9a)"
+  },
+  "detected_mode": "enrichment"
+}
