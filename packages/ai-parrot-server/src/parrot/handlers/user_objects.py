@@ -15,7 +15,7 @@ from ..tools.dataset_manager import DatasetManager
 from ..models import ToolConfig
 from ..mcp.integration import MCPServerConfig
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
-from parrot.auth.oauth2.persistence import list_user_agent_toolkits
+from parrot.auth.oauth2.persistence import list_users_integrations
 from ..auth.credentials import OAuthCredentialResolver
 
 if TYPE_CHECKING:
@@ -122,7 +122,7 @@ class UserObjectsHandler:
             agent_name: Agent name used to namespace the session key
             user_id: Authenticated user identifier used for cold-session
                 hydration (optional; hydration skipped when absent).
-            agent_id: Agent identifier used to query ``user_agent_toolkits``
+            agent_id: Agent identifier retained for caller compatibility
                 (optional; hydration skipped when absent).
 
         Returns:
@@ -202,8 +202,8 @@ class UserObjectsHandler:
     ) -> Optional[ToolManager]:
         """Re-populate OAuth toolkits from DocumentDB on a cold session.
 
-        Reads ``user_agent_toolkits`` rows for the given ``(user_id, agent_id)``
-        pair and registers each enabled toolkit via the provider's
+        Reads active principal connection rows for *user_id* and registers each
+        provider toolkit via the provider's
         :meth:`~parrot.integrations.oauth2.registry.OAuth2Provider.toolkit_factory`.
 
         The resulting :class:`~parrot.tools.manager.ToolManager` is persisted
@@ -212,33 +212,40 @@ class UserObjectsHandler:
 
         Returns:
             A populated :class:`~parrot.tools.manager.ToolManager`, or ``None``
-            if DocumentDB returned no enablements or an error occurred.
+            if DocumentDB returned no active connections or an error occurred.
         """
         try:
-            enablements = await list_user_agent_toolkits(user_id, agent_id)
-            if not enablements:
+            connections = [row for row in await list_users_integrations(user_id) if row.status == "active"]
+            if not connections:
                 return None
 
             tool_manager = ToolManager(debug=True)
             registry = OAuth2ProviderRegistry()
-            for row in enablements:
+            for row in connections:
                 provider = registry.get(row.provider)
                 if provider is None:
                     self.logger.warning(
-                        "Unknown OAuth provider %r in user_agent_toolkits "
+                        "Unknown OAuth provider %r in principal connections "
                         "(user=%s agent=%s) — skipping",
                         row.provider, user_id, agent_id,
                     )
                     continue
-                # Skip if toolkit already registered (idempotency guard).
-                if tool_manager.get_tool(row.toolkit_id) is not None:
+                toolkit_factory = provider.toolkit_factory
+                if toolkit_factory is None:
+                    self.logger.warning(
+                        "OAuth provider %r has no toolkit factory (user=%s agent=%s) — skipping",
+                        row.provider, user_id, agent_id,
+                    )
+                    continue
+                # The connection provider is the toolkit name for hydration.
+                if tool_manager.get_tool(row.provider) is not None:
                     continue
                 resolver = OAuthCredentialResolver(provider.manager)
-                toolkit = provider.toolkit_factory(resolver)
+                toolkit = toolkit_factory(resolver)
                 tool_manager.register_toolkit(toolkit)
                 self.logger.debug(
                     "Hydrated toolkit %r for user=%s agent=%s",
-                    row.toolkit_id, user_id, agent_id,
+                    row.provider, user_id, agent_id,
                 )
 
             if request_session is not None:
