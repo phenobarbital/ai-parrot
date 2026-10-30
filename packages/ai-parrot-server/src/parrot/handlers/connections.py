@@ -1,4 +1,5 @@
 """Principal-level connections API (FEAT-773 M6): /api/v1/connections*."""
+
 from __future__ import annotations
 
 import logging

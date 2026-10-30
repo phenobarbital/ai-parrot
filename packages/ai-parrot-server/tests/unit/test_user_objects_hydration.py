@@ -1,4 +1,5 @@
 """Tests for connection-backed OAuth toolkit hydration."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace

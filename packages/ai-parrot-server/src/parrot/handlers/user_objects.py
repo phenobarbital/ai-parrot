@@ -225,16 +225,19 @@ class UserObjectsHandler:
                 provider = registry.get(row.provider)
                 if provider is None:
                     self.logger.warning(
-                        "Unknown OAuth provider %r in principal connections "
-                        "(user=%s agent=%s) — skipping",
-                        row.provider, user_id, agent_id,
+                        "Unknown OAuth provider %r in principal connections " "(user=%s agent=%s) — skipping",
+                        row.provider,
+                        user_id,
+                        agent_id,
                     )
                     continue
                 toolkit_factory = provider.toolkit_factory
                 if toolkit_factory is None:
                     self.logger.warning(
                         "OAuth provider %r has no toolkit factory (user=%s agent=%s) — skipping",
-                        row.provider, user_id, agent_id,
+                        row.provider,
+                        user_id,
+                        agent_id,
                     )
                     continue
                 # The connection provider is the toolkit name for hydration.
@@ -245,7 +248,9 @@ class UserObjectsHandler:
                 tool_manager.register_toolkit(toolkit)
                 self.logger.debug(
                     "Hydrated toolkit %r for user=%s agent=%s",
-                    row.provider, user_id, agent_id,
+                    row.provider,
+                    user_id,
+                    agent_id,
                 )
 
             if request_session is not None:

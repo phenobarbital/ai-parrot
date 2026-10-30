@@ -1,4 +1,5 @@
 """Behavioral tests for the principal-level connections handler."""
+
 from __future__ import annotations
 
 import json
