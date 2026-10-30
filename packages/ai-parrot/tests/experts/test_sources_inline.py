@@ -83,7 +83,9 @@ async def test_bundled_source_emits_tier1_with_revisions(expert_bundle: Path) ->
     bundle = _bundle(expert_bundle)
     counter = CharacterCounter()
 
-    layers = await BundledSource(shared_dir).layers(_spec(KnowledgeSourceKind.BUNDLED), bundle, workspace=None, counter=counter)
+    layers = await BundledSource(shared_dir).layers(
+        _spec(KnowledgeSourceKind.BUNDLED), bundle, workspace=None, counter=counter
+    )
 
     assert [(layer.layer, layer.source) for layer in layers] == [
         ("tier1_shared", "alpha.md"),
@@ -144,7 +146,9 @@ async def test_adr_source_filters_accepted_only(expert_bundle: Path) -> None:
     )
     bundle = _bundle(expert_bundle)
 
-    layers = await ADRSource(service).layers(_spec(KnowledgeSourceKind.ADR), bundle, workspace=None, counter=CharacterCounter())
+    layers = await ADRSource(service).layers(
+        _spec(KnowledgeSourceKind.ADR), bundle, workspace=None, counter=CharacterCounter()
+    )
 
     assert [(layer.source, layer.content, layer.revision) for layer in layers] == [
         ("adr:accepted", "### Title accepted\nDecision accepted", sha256_revision(b"accepted:2"))

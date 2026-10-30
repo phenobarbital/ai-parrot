@@ -44,7 +44,9 @@ class BundledSource:
         shadowed: set[str] = set()
         if bundle.tenant and not bundle.manifest.global_only:
             tenant_dir = bundle.root / "tenants" / bundle.tenant / "knowledge"
-            shadowed = {path.name for path in tenant_dir.glob("*.md") if path.is_file()} if tenant_dir.is_dir() else set()
+            shadowed = (
+                {path.name for path in tenant_dir.glob("*.md") if path.is_file()} if tenant_dir.is_dir() else set()
+            )
 
         layers: list[KnowledgeLayer] = []
         if self.shared_dir is not None and self.shared_dir.is_dir():
