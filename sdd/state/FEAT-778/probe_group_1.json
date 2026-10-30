@@ -1,0 +1,240 @@
+[
+{
+"id": "c14",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/stores/local.py",
+"symbol": "registration"
+},
+{
+"id": "c21",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/stores/local.py",
+"symbol": "dir"
+},
+{
+"id": "c91",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/clients/base.py",
+"symbol": "_lightweight_model"
+},
+{
+"id": "c92",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/clients/base.py",
+"symbol": "_resolve_invoke_model"
+},
+{
+"id": "c17",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/conf.py",
+"symbol": "AGENTS_DIR"
+},
+{
+"id": "c129",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_flow/",
+"symbol": "commits"
+},
+{
+"id": "c128",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_data/sdd-ideation.md",
+"symbol": "brief"
+},
+{
+"id": "c63",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_flow/definition.py",
+"symbol": "docstring"
+},
+{
+"id": "c64",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_flow/definition.py",
+"symbol": "_dev_loop_node"
+},
+{
+"id": "c65",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_flow/definition.py",
+"symbol": "build_dev_flow_definition"
+},
+{
+"id": "c66",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/definition.py",
+"symbol": "CLOSE"
+},
+{
+"id": "c67",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+"symbol": "ApprovalGate"
+},
+{
+"id": "c68",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+"symbol": "kinds"
+},
+{
+"id": "c69",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+"symbol": "GateExpired"
+},
+{
+"id": "c70",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+"symbol": "wait_gate"
+},
+{
+"id": "c72",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+"symbol": "open_gate"
+},
+{
+"id": "c133",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/human/",
+"symbol": "package"
+},
+{
+"id": "c73",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/human/models.py",
+"symbol": "ConsensusMode"
+},
+{
+"id": "c74",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/human/models.py",
+"symbol": "EscalationPolicy"
+},
+{
+"id": "c75",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/human/models.py",
+"symbol": "HumanInteraction"
+},
+{
+"id": "c132",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/",
+"symbol": "commits"
+},
+{
+"id": "c131",
+"kind": "file",
+"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py"
+},
+{
+"id": "c51",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/models.py",
+"symbol": "BookCard"
+},
+{
+"id": "c106",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/models.py",
+"symbol": "fields"
+},
+{
+"id": "c107",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/bookstore/models.py",
+"symbol": "RelateSummary"
+},
+{
+"id": "c52",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+"symbol": "source_sha256"
+},
+{
+"id": "c53",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+"symbol": "identity"
+},
+{
+"id": "c56",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+"symbol": "ContractCard"
+},
+{
+"id": "c94",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/contracts.ontology.yaml",
+"symbol": "ontology"
+},
+{
+"id": "c96",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/field_services.ontology.yaml",
+"symbol": "ontology"
+},
+{
+"id": "c93",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/legal.ontology.yaml",
+"symbol": "header"
+},
+{
+"id": "c95",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/procedures.ontology.yaml",
+"symbol": "ontology"
+},
+{
+"id": "c126",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/",
+"symbol": "DirectSymbolPolicy"
+},
+{
+"id": "c49",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/__init__.py",
+"symbol": "docstring"
+},
+{
+"id": "c50",
+"kind": "file",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/__init__.py",
+"min_lines": 18
+},
+{
+"id": "c146",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/__init__.py",
+"symbol": "SourceDigest"
+},
+{
+"id": "c54",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/digest.py",
+"symbol": "derive_digest"
+},
+{
+"id": "c127",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/retrieval/pin.py",
+"symbol": "capability"
+},
+{
+"id": "c122",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/",
+"symbol": "commits"
+},
+{
+"id": "c145",
+"kind": "file",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/"
+}
+]
