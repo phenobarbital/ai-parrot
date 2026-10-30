@@ -1,4 +1,5 @@
 """Render a KnowledgeContext into literal prompt layers (FEAT-778 M6)."""
+
 from __future__ import annotations
 
 import dataclasses

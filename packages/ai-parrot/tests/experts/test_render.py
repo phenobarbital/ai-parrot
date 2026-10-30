@@ -18,12 +18,19 @@ def _ctx(rules: str = "ALWAYS cite sources", body: str = "Use primary sources.")
         expert="sample-expert",
         budget_tokens=1000,
         layers=[
-            KnowledgeLayer(layer="rules", source="rules/governance.md", mode=KnowledgeMode.INLINE,
-                           revision="r1", content=rules),
-            KnowledgeLayer(layer="tier1_expert", source="knowledge/method.md", mode=KnowledgeMode.INLINE,
-                           revision="r2", content=body),
-            KnowledgeLayer(layer="retrieval", source="wiki", mode=KnowledgeMode.RETRIEVAL, revision="r3",
-                           handle={"q": "x"}),
+            KnowledgeLayer(
+                layer="rules", source="rules/governance.md", mode=KnowledgeMode.INLINE, revision="r1", content=rules
+            ),
+            KnowledgeLayer(
+                layer="tier1_expert",
+                source="knowledge/method.md",
+                mode=KnowledgeMode.INLINE,
+                revision="r2",
+                content=body,
+            ),
+            KnowledgeLayer(
+                layer="retrieval", source="wiki", mode=KnowledgeMode.RETRIEVAL, revision="r3", handle={"q": "x"}
+            ),
         ],
     )
 
