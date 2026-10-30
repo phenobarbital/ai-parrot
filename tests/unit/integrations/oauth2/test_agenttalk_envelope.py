@@ -6,7 +6,16 @@ import json
 import pytest
 
 from parrot.auth.exceptions import AuthorizationRequired
-from parrot.integrations.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.credentials import CredentialRequired
+from parrot.auth.oauth2.models import AuthRequiredEnvelope
+
+
+def _envelope_from_auth_exception(
+    exc: AuthorizationRequired | CredentialRequired,
+) -> AuthRequiredEnvelope:
+    """Mirror AgentTalk's auth-required response construction."""
+    payload = exc.to_payload() if isinstance(exc, AuthorizationRequired) else exc.to_payload(tool_name=None)
+    return AuthRequiredEnvelope(**payload.model_dump())
 
 
 class TestAgentTalkAuthRequiredEnvelope:
@@ -22,14 +31,7 @@ class TestAgentTalkAuthRequiredEnvelope:
             scopes=["read:jira-work", "write:jira-work"],
         )
 
-        # Replicate the envelope construction from agent.py's except clause
-        envelope = AuthRequiredEnvelope(
-            provider=exc.provider,
-            tool_name=exc.tool_name,
-            auth_url=exc.auth_url,
-            scopes=exc.scopes or [],
-            message=str(exc),
-        )
+        envelope = _envelope_from_auth_exception(exc)
 
         data = envelope.model_dump()
         assert data["type"] == "auth_required"
@@ -47,13 +49,7 @@ class TestAgentTalkAuthRequiredEnvelope:
             provider="jira",
             # scopes omitted → defaults to None → becomes []
         )
-        envelope = AuthRequiredEnvelope(
-            provider=exc.provider,
-            tool_name=exc.tool_name,
-            auth_url=exc.auth_url,
-            scopes=exc.scopes or [],
-            message=str(exc),
-        )
+        envelope = _envelope_from_auth_exception(exc)
         data = envelope.model_dump()
         assert data["scopes"] == []
 
@@ -66,13 +62,7 @@ class TestAgentTalkAuthRequiredEnvelope:
             provider="jira",
             scopes=["read:jira-work", "write:jira-work"],
         )
-        envelope = AuthRequiredEnvelope(
-            provider=exc.provider,
-            tool_name=exc.tool_name,
-            auth_url=exc.auth_url,
-            scopes=exc.scopes or [],
-            message=str(exc),
-        )
+        envelope = _envelope_from_auth_exception(exc)
         data = envelope.model_dump()
         assert data["type"] == "auth_required"
         assert data["provider"] == "jira"
@@ -107,3 +97,29 @@ class TestAgentTalkAuthRequiredEnvelope:
         assert hasattr(exc, "tool_name")
         assert hasattr(exc, "auth_url")
         assert hasattr(exc, "scopes")
+
+    def test_credential_required_preserves_device_code_envelope_fields(self) -> None:
+        """CredentialRequired maps to the same envelope with device-code fields."""
+        envelope = _envelope_from_auth_exception(
+            CredentialRequired(
+                "o365",
+                "https://dev",
+                "device_code",
+                user_code="ABCD",
+                verification_uri="https://microsoft.com/devicelogin",
+                expires_in=900,
+            )
+        )
+
+        assert envelope.model_dump() == {
+            "type": "auth_required",
+            "provider": "o365",
+            "tool_name": None,
+            "auth_url": "https://dev",
+            "scopes": [],
+            "message": "Credential required for provider='o365' — visit https://dev to authorize (auth_kind='device_code')",
+            "auth_kind": "device_code",
+            "user_code": "ABCD",
+            "verification_uri": "https://microsoft.com/devicelogin",
+            "expires_in": 900,
+        }
