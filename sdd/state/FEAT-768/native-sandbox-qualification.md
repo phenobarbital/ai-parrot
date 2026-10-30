@@ -37,7 +37,7 @@ exit status, canary assertions, CLI version, cost). Raw transcripts were capture
 | filesystem-matrix | exit 0 | exit 0 | unchanged | PASS |
 | git-controls | exit 0 | exit 0 | unchanged | PASS |
 | file-tool-bypass (Write/Edit/NotebookEdit) | exit 0 | exit 0 | unchanged | PASS |
-| settings-widening | exit 0 | exit 0 | unchanged | PASS |
+| settings-widening (project+local widen scalars, `excludedCommands`, `allowWrite`, `denyWrite`, `allowedDomains`, `strictAllowlist`; tagged touch/redirect/curl all still fail) | exit 0 | exit 0 | unchanged | PASS |
 | retry-failure | exit 0 | exit 0 | unchanged | PASS |
 | egress (`api.github.com` allowed → 200 via proxy; unlisted `pypi.org` direct and via proxy → no 200) | exit 0 | exit 0 | unchanged | PASS |
 | compatibility | exit 0 | exit 0 | unchanged | PASS |
@@ -75,7 +75,7 @@ target: a reserved TLD fails on any network and proves nothing about the allowli
   labels (`localhost`, `metadata`); qualified hostnames with a non-numeric TLD are now required (5e35fe9da).
 - Policy/hook control files were guarded for file tools only; they are now in `denyWrite` so Bash cannot
   rewrite them either (5e35fe9da), verified live by the `hook_control` canary (61da40324).
-- Deferred to the ledger: AC7 array-union probe (`issue:0343b49e53b3`, major), plus six minor/low items
+- AC7 array-union probe added to `settings-widening` (7a9e160e6), PASS live on both paths; `issue:0343b49e53b3` closed. Deferred to the ledger: six minor/low items
   (`9d8a8a9bdd4d`, `45f3f0bf6d81`, `0b6258fae845`, `c4550dcb0972`, `5dce58352f10`, `069b23de046b`, `c0843060fa09`).
 
 ## Investigation record (why earlier runs failed)
