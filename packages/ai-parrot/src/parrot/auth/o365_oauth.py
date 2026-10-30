@@ -12,6 +12,7 @@ when calling actual API endpoints.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any, ClassVar, Dict, List, Optional
@@ -19,7 +20,12 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-from parrot.auth.oauth2_base import AbstractOAuth2Manager, AbstractOAuth2TokenSet
+from parrot.auth.oauth2_base import (
+    AbstractOAuth2Manager,
+    AbstractOAuth2TokenSet,
+    InvalidGrantError,
+    RefreshTransientError,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -138,6 +144,7 @@ class O365OAuthManager(AbstractOAuth2Manager):
             return await response.json()
 
     async def _refresh_request(self, refresh_token: str) -> Dict[str, Any]:
+        """Refresh against Entra; typed outcomes per S7 (no token material in errors)."""
         data = {
             "grant_type": "refresh_token",
             "client_id": self.client_id,
@@ -146,23 +153,34 @@ class O365OAuthManager(AbstractOAuth2Manager):
             "scope": " ".join(self.scopes),
         }
         session = await self._get_session()
-        async with session.post(
-            self.token_url,
-            data=urlencode(data),
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        ) as response:
-            if response.status == 400 or response.status == 401:
-                text = await response.text()
-                # 400 invalid_grant is Microsoft's "your refresh token died".
-                raise PermissionError(
-                    f"O365 refresh token rejected (HTTP {response.status}): {text}"
-                )
-            if response.status != 200:
-                text = await response.text()
-                raise aiohttp.ClientError(
-                    f"O365 token refresh failed with status {response.status}: {text}"
-                )
-            return await response.json()
+        try:
+            async with session.post(
+                self.token_url,
+                data=urlencode(data),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+                status = response.status
+                error_code = await self._oauth_error_code(response)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            raise RefreshTransientError(f"O365 refresh network error: {type(exc).__name__}") from None
+
+        if error_code == "invalid_grant":
+            raise InvalidGrantError(f"O365 refresh token rejected (HTTP {status})")
+        if status == 429 or status >= 500:
+            raise RefreshTransientError(f"O365 refresh unavailable (HTTP {status})")
+        raise RuntimeError(f"O365 token refresh failed (HTTP {status}, error={error_code or 'unknown'})")
+
+    @staticmethod
+    async def _oauth_error_code(response: aiohttp.ClientResponse) -> Optional[str]:
+        """Return the OAuth ``error`` field, or None for a malformed response body."""
+        try:
+            payload = await response.json(content_type=None)
+        except (ValueError, aiohttp.ContentTypeError):
+            return None
+        error_code = payload.get("error") if isinstance(payload, dict) else None
+        return error_code if isinstance(error_code, str) else None
 
     async def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
         """Public, stateless Entra refresh: exchange a refresh_token for a new token dict.
@@ -181,9 +199,9 @@ class O365OAuthManager(AbstractOAuth2Manager):
             ``expires_in``, ``scope``, …).
 
         Raises:
-            PermissionError: When Microsoft rejects the refresh token
-                (HTTP 400/401 — dead/revoked refresh token).
-            aiohttp.ClientError: On any other non-200 response.
+            InvalidGrantError: When Microsoft returns ``invalid_grant``.
+            RefreshTransientError: For network errors, rate limits, and 5xx responses.
+            RuntimeError: For other OAuth failures.
         """
         return await self._refresh_request(refresh_token)
 
