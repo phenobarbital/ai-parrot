@@ -299,7 +299,12 @@ def plan_native_launch(cwd: Path, *, allowed_domains: Sequence[str] = ()) -> tup
     root, _git_dir, _primary = _native_roots(cwd)
     mode = resolve_sandbox_mode(root)
     if mode == "off":
-        return mode, True, "sandbox mode off", native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False)
+        return (
+            mode,
+            True,
+            "sandbox mode off",
+            native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False),
+        )
     available, reason = native_sandbox_available()
     if not available:
         if mode == "required":

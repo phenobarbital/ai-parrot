@@ -656,9 +656,7 @@ class ClaudeCodeDispatcher:
             env = dict(env or {})
             env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_NATIVE
             if degraded:
-                self.logger.warning(
-                    "native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason
-                )
+                self.logger.warning("native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason)
                 env[native_claude_sandbox.DEGRADED_ENV] = "1"
             else:
                 self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)

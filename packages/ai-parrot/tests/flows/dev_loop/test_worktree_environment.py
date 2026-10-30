@@ -748,9 +748,7 @@ def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest
     )
 
 
-def test_native_hook_prepends_degraded_banner_only_with_marker(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_native_hook_prepends_degraded_banner_only_with_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     feature, _task, _main = _native_hook_worktrees(tmp_path)
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
 
