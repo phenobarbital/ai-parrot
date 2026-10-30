@@ -11,7 +11,6 @@ import pytest
 from parrot.auth.oauth2.models import IntegrationDescriptor, UsersIntegrationRow
 from parrot.auth.oauth2.service import IntegrationsService
 
-
 PROVIDER = SimpleNamespace(
     provider_id="o365",
     display_name="Office 365",

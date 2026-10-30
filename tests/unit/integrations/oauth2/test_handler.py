@@ -160,9 +160,7 @@ async def test_generic_callback_persists_non_web_channel() -> None:
 @pytest.mark.asyncio
 async def test_callback_credential_persistence_error_has_no_success_page() -> None:
     """A durable-write failure is a 500 error page, never a success response."""
-    manager = SimpleNamespace(
-        handle_callback=AsyncMock(side_effect=CredentialPersistenceError("vault write failed"))
-    )
+    manager = SimpleNamespace(handle_callback=AsyncMock(side_effect=CredentialPersistenceError("vault write failed")))
     request = make_mocked_request(
         "GET",
         "/callback?code=code&state=state",

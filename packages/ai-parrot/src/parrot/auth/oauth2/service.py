@@ -388,9 +388,7 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(
-            request, "integration:disconnect", provider_id, list(provider.default_scopes)
-        ):
+        if not await self._check_pbac(request, "integration:disconnect", provider_id, list(provider.default_scopes)):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
         await provider.manager.revoke(channel=_WEB_CHANNEL, user_id=user_id)
         await delete_users_integration(user_id, provider_id)

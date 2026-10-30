@@ -14,6 +14,7 @@ Exposes four routes under ``/api/v1/agents/integrations/{agent_id}``:
 The handler delegates all business logic to
 :class:`~parrot.integrations.oauth2.service.IntegrationsService`.
 """
+
 from __future__ import annotations
 
 import logging

@@ -13,7 +13,6 @@ from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.oauth2.service import IntegrationsService
 from parrot.auth.principal import Principal
 
-
 @pytest.fixture(autouse=True)
 def reset_registry() -> None:
     """Ensure every test has an isolated provider registry."""
@@ -234,9 +233,7 @@ async def test_reconnect_with_different_account_resets_connected_at() -> None:
         patch("parrot.auth.oauth2.service.get_users_integration", AsyncMock(return_value=existing)),
         patch("parrot.auth.oauth2.service.upsert_users_integration", AsyncMock()),
     ):
-        row = await IntegrationsService().persist_credential(
-            "42", "jira", token_set("new-account"), channel="web"
-        )
+        row = await IntegrationsService().persist_credential("42", "jira", token_set("new-account"), channel="web")
 
     assert row.connected_at > existing.connected_at
     assert row.account_id == "new-account"
