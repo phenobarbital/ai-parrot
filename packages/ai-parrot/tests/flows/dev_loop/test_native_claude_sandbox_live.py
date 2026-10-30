@@ -180,6 +180,7 @@ def run_session(argv: list[str], cwd: Path, env: dict[str, str]) -> SessionResul
         )
     except subprocess.TimeoutExpired:
         return SessionResult(exit_status=124, tool_results=[], child_tool_calls=0, cost_usd=0.0)
+    _dump_raw_session(argv, cwd, env, completed)
     results: list[str] = []
     child_calls = 0
     cost = 0.0
@@ -196,6 +197,33 @@ def run_session(argv: list[str], cwd: Path, env: dict[str, str]) -> SessionResul
                 cost = 0.0
     BUDGET.cost_usd += cost
     return SessionResult(completed.returncode, results, child_calls, cost)
+
+
+_RAW_ENV_KEYS = ("HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "TMPDIR", "PYTEST_CURRENT_TEST", "VIRTUAL_ENV", "PATH")
+
+
+def _dump_raw_session(argv: list[str], cwd: Path, env: dict[str, str], completed: subprocess.CompletedProcess) -> None:
+    """Keep one session's raw transcript for diagnosis when ``PARROT_NATIVE_QUAL_RAW_DIR`` is set.
+
+    Opt-in only: the default record stays sanitized. Environment values are
+    written only for a fixed allowlist of non-secret keys; every other key is
+    listed by name.
+    """
+    raw_dir = os.environ.get("PARROT_NATIVE_QUAL_RAW_DIR")
+    if not raw_dir:
+        return
+    target = Path(raw_dir) / f"session-{BUDGET.sessions:02d}"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "stdout.jsonl").write_text(completed.stdout, encoding="utf-8")
+    (target / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    meta = {
+        "argv": argv,
+        "cwd": str(cwd),
+        "returncode": completed.returncode,
+        "env_values": {key: env[key] for key in _RAW_ENV_KEYS if key in env},
+        "env_keys": sorted(env),
+    }
+    (target / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
 def _bundled_cli() -> Path:
