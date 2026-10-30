@@ -344,7 +344,11 @@ def _record(
         "cost_usd": result.cost_usd,
         "child_tool_calls": result.child_tool_calls,
     }
-    (LOG_DIR / f"{scenario}.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    selected = os.environ.get("PARROT_NATIVE_QUAL_CLI", "path")
+    record["launch_path"] = selected
+    (LOG_DIR / f"{selected}-{scenario}.json").write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _probe(qual: QualificationRepo, scenario: str, prompt: str, allowed_domains: tuple[str, ...] = ()) -> SessionResult:
