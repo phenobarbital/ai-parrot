@@ -93,3 +93,16 @@ Model feedback for the TASK-4890 attempt (`1038c99605cf4231be1490336e7c81fe`, co
 pattern `cwd-dependent-relative-path-in-test`) was NOT recorded: `coder_record_feedback` rejected the
 attempt identity after the run. Defect: cwd-relative launcher/log paths in a test of a repo whose
 `parrot` import changes the cwd. Correction: anchor repository paths to `__file__` and assert provenance.
+
+## Post-closeout confirmation (2026-10-30, deferred-findings fixes)
+
+After resolving the eight deferred review findings (commits `e69ff8f47`, `f2728eaa8` on the PR branch),
+the two scenarios whose runtime contract changed were re-run by the operator from an unsandboxed shell:
+
+| Path | CLI | filesystem-matrix (frozen roots, `PARROT_SDD_SANDBOX_ROOTS`) | file-tool-bypass (hook under `sys.executable`) |
+|---|---|---|---|
+| `path` | 2.1.314 | PASS — all canaries untouched | PASS — hook denied |
+| `bundled` | 2.1.310 | PASS — all canaries untouched | PASS — hook denied |
+
+Records: `artifacts/logs/feat-768/{path,bundled}-{filesystem-matrix,file-tool-bypass}.json`.
+Verdict unchanged: **QUALIFIED** on both launch paths.
