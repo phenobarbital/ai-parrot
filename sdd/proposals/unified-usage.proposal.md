@@ -4,7 +4,7 @@ title: "Unified usage & cost metrics per SDD spec: extend the existing attributi
 slug: unified-usage
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: file
   jira_key: null
@@ -18,6 +18,7 @@ tags: [usage-metrics, cost-attribution, observability, telemetry, sdd-coder, ote
 research_state: sdd/state/FEAT-783/
 created: 2026-10-30
 updated: 2026-10-31
+accepted: 2026-10-31
 ---
 
 # FEAT-783 — Unified usage & cost metrics per SDD spec
