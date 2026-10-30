@@ -12,7 +12,6 @@ from parrot.auth.oauth2.reencrypt import (
     RowClass,
 )
 
-
 # Test fixtures
 
 
