@@ -4,6 +4,7 @@ Bound users connect, see status and disconnect against the principal key
 (the Navigator ``user_id``); unbound users get the link-first reply and no
 OAuth state is created.
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
@@ -67,9 +68,7 @@ def oauth_manager():
     """JiraOAuthManager double with async methods."""
     manager = MagicMock()
     manager.validate_token = AsyncMock(return_value=None)
-    manager.create_authorization_url = AsyncMock(
-        return_value=("https://auth.atlassian.com/authorize?x=1", "nonce-abc")
-    )
+    manager.create_authorization_url = AsyncMock(return_value=("https://auth.atlassian.com/authorize?x=1", "nonce-abc"))
     manager.revoke = AsyncMock(return_value=None)
     return manager
 
@@ -98,6 +97,7 @@ def _sent_text(ctx: MagicMock) -> str:
 # ---------------------------------------------------------------------------
 # Slack
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_slack_connect_unbound_user_gets_link_first(oauth_manager, slack_payload):
@@ -170,6 +170,7 @@ async def test_slack_disconnect_bound_user_revokes_principal_key(bind_slack, oau
 # MS Teams
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_teams_connect_unbound_user_gets_link_first(oauth_manager):
     """An unlinked Teams user gets the link-first reply and no authorization URL."""
@@ -199,9 +200,7 @@ async def test_teams_connect_bound_user_passes_principal(bind_teams, oauth_manag
 @pytest.mark.asyncio
 async def test_teams_status_uses_principal_key(bind_teams, oauth_manager):
     """A linked Teams user's status is checked through the bound principal."""
-    oauth_manager.validate_token.return_value = MagicMock(
-        display_name="Ada", site_url="https://ada.atlassian.net"
-    )
+    oauth_manager.validate_token.return_value = MagicMock(display_name="Ada", site_url="https://ada.atlassian.net")
     ctx = _teams_turn()
 
     await teams_status(ctx, oauth_manager)
