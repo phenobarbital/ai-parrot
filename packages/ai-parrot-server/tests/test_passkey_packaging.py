@@ -1,4 +1,5 @@
 """FEAT-772 packaging guard: the passkey extra exists, is in ``all``, and the lock carries it."""
+
 from __future__ import annotations
 
 import tomllib
