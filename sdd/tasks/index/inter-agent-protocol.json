@@ -108,7 +108,7 @@
       "started_at": "2026-10-26T12:36:12+00:00",
       "completed_at": "2026-10-27T02:03:27+00:00",
       "file": "sdd/tasks/completed/TASK-4732-g2-capnp-arrow-transport-spike.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-4733",
@@ -130,7 +130,7 @@
       "started_at": "2026-10-26T12:36:12+00:00",
       "completed_at": "2026-10-29T23:05:56+00:00",
       "file": "sdd/tasks/completed/TASK-4733-g3-contract-tool-defs-spike.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-4734",
@@ -151,7 +151,7 @@
       "started_at": "2026-10-26T12:36:12+00:00",
       "completed_at": "2026-10-27T02:03:29+00:00",
       "file": "sdd/tasks/completed/TASK-4734-g4-mount-prompt-cache-spike.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-4735",
@@ -172,7 +172,7 @@
       "started_at": "2026-10-26T12:36:12+00:00",
       "completed_at": "2026-10-27T01:57:17+00:00",
       "file": "sdd/tasks/completed/TASK-4735-g5-biscuit-attenuation-spike.md",
-      "verification": "forced"
+      "verification": "verified"
     },
     {
       "id": "TASK-4736",
@@ -194,7 +194,7 @@
       "started_at": "2026-10-26T12:36:12+00:00",
       "completed_at": "2026-10-29T22:49:17+00:00",
       "file": "sdd/tasks/completed/TASK-4736-g6-bus-envelope-spike.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-4737",

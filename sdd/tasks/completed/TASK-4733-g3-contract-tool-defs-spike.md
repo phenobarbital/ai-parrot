@@ -254,3 +254,5 @@ Review fix 428df256b: real-LLM path called ask() on an unopened client and had n
 PARTIAL: offline gate PASS for all 4 formats (3 schemas each, zero violations); amendment = "no wording change". Live: Anthropic PASS, Google PASS; OpenAI and Groq FAIL with 400s on the clients' default request params/model (max_tokens vs max_completion_tokens; Groq default model id rejected) — not tool-schema rejections; re-run those two with explicit valid models.
 Note: task contract said Groq forbids additionalProperties, but ToolSchemaAdapter._clean_for_groq emits additionalProperties:false; the spike validates actual adapter behaviour (documented in report).
 Validation: PARROT_SPIKE=1 test 2 passed; merge-tier only red on the 4 pre-existing repl_worker sandbox failures.
+
+**Gap closed 2026-10-30** (`e6cb5355a`): Live gate complete: Anthropic, Google, OpenAI (gpt-4.1-mini) and Groq (openai/gpt-oss-120b) all call the compiled tool with valid args. Client-default failures are client defects filed in the ledger (OpenAI max_tokens on gpt-5-mini; Groq default model 404). Amendment: no wording change. Verification upgraded to `verified`.

@@ -227,3 +227,5 @@ See blueprint test.
 **Review edits (docs only)**: report date corrected to 2026-10-27; limitation added — `spike.py` hardcodes `starts_with("hr.reports.")` rather than deriving it from the token's `capability_glob` fact, so M10 must derive the prefix from the verified fact and add a second-glob regression.
 
 **Deviations from spec**: none in file set; see limitation above.
+
+**Gap closed 2026-10-30** (`3dc9441cd`): Limitation closed: the capability check derives its prefix from the verified capability_glob facts instead of a hard-coded "hr.reports."; a second-glob (finance.ledger.*) regression passes. The earlier 'forced' close was a fidelity-gate process issue, not missing evidence. Verification upgraded to `verified`.

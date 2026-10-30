@@ -244,3 +244,5 @@ See blueprint test; skipped unless both env flags are set.
 **Notes**: Gate NOT met: the report is PENDING. No real-provider measurement was run (PARROT_TEST_REAL_LLM=1 not authorised); only the offline request-shape path ran. M7 keeps the premount-only planner path. Tracked in issue:60de633baac2.
 
 **Deviations from spec**: none in the file set.
+
+**Gap closed 2026-10-30** (`08f11db56`): Measured live: Anthropic loses its cached prefix after the mid-conversation mount (turn 3: 0 read / 3,973 write); OpenAI and Google implicit caches survive. Amendment resolved per the report's own rule: M7 premount-only, mounted tools never in a shared cache prefix. Google explicit cache + tools defect filed in the ledger. Verification upgraded to `verified`.

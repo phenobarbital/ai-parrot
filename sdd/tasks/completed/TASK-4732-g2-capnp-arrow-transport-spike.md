@@ -288,3 +288,5 @@ See the blueprint test; skipped by default, `importorskip("capnp")` guards envir
 **Notes**: Gate NOT met: the report marks all four criteria FAIL because the loopback bind was denied in the sandbox, and prescribes the gRPC fallback for M3/M4 until an operator reruns outside the sandbox. The spike code, schema, opt-in test and report exist and are as specified; the 100 MB / cancel / SAN evidence does not. Tracked in issue:60de633baac2. Do not treat the transport choice as settled.
 
 **Deviations from spec**: none in the file set.
+
+**Gap closed 2026-10-30** (`51c2f45f8`): G2 now PASS on all four criteria (loopback mTLS, 1.5M rows: 106 frames <= 1 MiB, ~222 MiB/s; cancel -> PARTIAL with 11 valid frames; SAN + Hello token observed; pycapnp under asyncio). The earlier FAIL came from the sandbox plus three spike bugs (un-awaited capnp.run, private _AsyncIoStream.protocol, listener-first teardown hanging on Python 3.12 wait_closed). Amendment: PASS, no gRPC fallback. Verification upgraded to `verified`.

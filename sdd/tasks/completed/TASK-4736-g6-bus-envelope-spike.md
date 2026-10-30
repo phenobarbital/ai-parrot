@@ -241,3 +241,5 @@ Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · 
 
 PARTIAL: memory-backend criteria PASS (correlation round-trip, 1 MiB + \x00\xff bytes intact, dedup 2 executions / 3 calls, DLQ callback); base64 overhead 33.4%; change request text recorded. The Redis Streams run (durable DLQ) was NOT executed — no Redis reachable on this host (localhost:6379 refused). Rerun `SQUAWK_SPIKE_REDIS_URL=... python sdd/state/FEAT-746/spikes/G6-bus-envelope/spike.py` against operator Redis before M11 (SquawkBusCarrier) relies on the gate.
 Validation: PARROT_SPIKE=1 test 1 passed. Merge-tier handle b7e2c4a1:TASK-4736:merge only red on the 4 pre-existing repl_worker sandbox /tmp failures (files untouched by this feature).
+
+**Gap closed 2026-10-30** (`c1b1327d7`): Redis Streams run complete (Redis 7.4.11, 4/4 runs): calls and replies cross Redis, dedup 2 executions / 3 calls, 1 MiB + \x00\xff bytes intact, DLQ recorded for a reply that can only arrive via Redis. Findings: nodes need their own consumer group, consumer name and dedup prefix. Verification upgraded to `verified`.
