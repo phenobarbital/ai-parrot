@@ -129,7 +129,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -141,8 +141,9 @@
       "parallelism_notes": "uses toCreationOptions/credentialToJSON from TASK-4898, listPasskeys/verifyRegistration/deletePasskey from TASK-4899, authStore.authMethod from TASK-4900; creates only new files under pages/account and components/account, so it runs alongside TASK-4901.",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4902-account-security-page.md"
+      "completed_at": "2026-10-30T16:00:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4902-account-security-page.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4903",
