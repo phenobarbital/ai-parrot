@@ -535,24 +535,22 @@ the "unsupported browser" path must stay testable).
 
 ### Validation Contract
 
-runners:
-- kind: pytest
-  tests:
-  - packages/ai-parrot-server/tests/test_admin_ui_serving.py
-  - packages/ai-parrot-server/tests/test_autonomous_admin_page.py
-  markers: none
-- kind: vitest
-  cwd: packages/ai-parrot-server/ui
-  tests:
-  - src/pages/Login.test.ts
-  - src/lib/stores/auth.test.ts
-  - src/lib/router.test.ts
-  - src/App.test.ts
-  - src/lib/components/AppShell.test.ts
-  - src/lib/webauthn.test.ts
-  - src/lib/api/passkey.test.ts
-  - src/lib/components/auth/PasskeySignIn.test.ts
-  - src/pages/account/Security.test.ts
+> UI tests run through pytest wrappers in `packages/ai-parrot-server/tests/ui/` (`_vitest.run_vitest`), the
+> repo convention since FEAT-593 — `check_task_graph` accepts pytest validation commands only. Each wrapper
+> runs the vitest files listed in its docstring; a single runner keeps every test running once per tier.
+
+tests:
+- packages/ai-parrot-server/tests/test_admin_ui_serving.py
+- packages/ai-parrot-server/tests/test_autonomous_admin_page.py
+- packages/ai-parrot-server/tests/test_passkey_packaging.py
+- packages/ai-parrot-server/tests/test_passkey_settings_example.py
+- packages/ai-parrot-server/tests/ui/test_vitest_passkey_webauthn.py
+- packages/ai-parrot-server/tests/ui/test_vitest_passkey_api.py
+- packages/ai-parrot-server/tests/ui/test_vitest_auth_store.py
+- packages/ai-parrot-server/tests/ui/test_vitest_passkey_sign_in.py
+- packages/ai-parrot-server/tests/ui/test_vitest_account_security.py
+- packages/ai-parrot-server/tests/ui/test_vitest_account_navigation.py
+markers: none
 
 ### Test Data / Fixtures
 
@@ -828,6 +826,14 @@ Verified against: `1ee364d41` (dev, 2026-10-30; HEAD `ed44ca4fa` differs only by
 | `packages/ai-parrot-server/src/parrot/autonomous/admin.py` | MODIFY | `                       placeholder="Enter your username" autocomplete="username">` | `admin.py:224` | 1 |
 | `packages/ai-parrot-server/src/parrot/autonomous/admin.py` | MODIFY | `                        'X-Auth-Method': 'BasicAuth'` | `admin.py:324` | 1 |
 | `packages/ai-parrot-server/tests/test_autonomous_admin_page.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/tests/test_passkey_packaging.py` | CREATE (added at /sdd-task, TASK-4905) | — | — | — |
+| `packages/ai-parrot-server/tests/test_passkey_settings_example.py` | CREATE (added at /sdd-task, TASK-4906) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_passkey_webauthn.py` | CREATE (added at /sdd-task, TASK-4898) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_passkey_api.py` | CREATE (added at /sdd-task, TASK-4899) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_auth_store.py` | CREATE (added at /sdd-task, TASK-4900) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_passkey_sign_in.py` | CREATE (added at /sdd-task, TASK-4901) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_account_security.py` | CREATE (added at /sdd-task, TASK-4902) | — | — | — |
+| `packages/ai-parrot-server/tests/ui/test_vitest_account_navigation.py` | CREATE (added at /sdd-task, TASK-4903) | — | — | — |
 
 ---
 
@@ -985,4 +991,5 @@ Summary: **12** confirmed · **0** rejected · **0** escalated.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-10-30 | Jesus Lara / Claude (Opus 5.5) | Approved; Q1 resolved (ledger `issue:ea1e3a3f2488`). /sdd-task: M8 split into packaging (TASK-4905, exclusive) and docs (TASK-4906); two guard tests added to the Validation Contract (`test_passkey_packaging.py`, `test_passkey_settings_example.py`); vitest files wrapped in pytest (`tests/ui/test_vitest_*.py`, FEAT-593 convention) |
 | 0.1 | 2026-10-30 | Jesus Lara / Claude (Fable 5.1) | Initial draft from the brainstorm (Option A, 12 resolved questions carried); transport split (bare axios vs apiClient) derived from `http.ts` interceptor; codex design research folded (12 confirm / 0 reject / 0 escalate — `uv.lock` regeneration and Vite-origin manual check added) |
