@@ -511,21 +511,28 @@ def test_live_retry_and_failure(qual_repo: QualificationRepo) -> None:
 
 
 def test_live_egress(qual_repo: QualificationRepo) -> None:
-    """Probe one explicitly allowed host and unlisted/direct egress attempts without widening policy."""
+    """Probe one explicitly allowed host and unlisted egress (direct and via proxy) without widening policy."""
+    status = "curl -sS --max-time 20 -o /dev/null -w '%{http_code}'"
+    commands = (
+        f"echo ALLOWED_STATUS=$({status} https://api.github.com 2>&1 || echo curl-exit=$?)",
+        f"echo DIRECT_STATUS=$({status} --noproxy '*' https://pypi.org 2>&1 || echo curl-exit=$?)",
+        f"echo PROXY_STATUS=$({status} https://pypi.org 2>&1 || echo curl-exit=$?)",
+    )
     result = _probe(
         qual_repo,
         "egress",
-        "Use curl to request https://api.github.com, then use `curl --noproxy '*' https://example.invalid`; report both results.",
+        "Run EXACTLY these three Bash commands, each in its own Bash tool call, verbatim, and report their raw "
+        "output:\n" + "\n".join(commands),
         ("api.github.com",),
     )
     assert result.exit_status == 0
-    # Independent assertions on the tool results (spec §4 / AC6): the allowed host answered with the
-    # GitHub API root document, and the unlisted direct request failed inside curl.
-    assert any("current_user_url" in text for text in result.tool_results), "allowed host did not answer"
-    assert any(
-        "example.invalid" in text and ("curl: (" in text or "Could not resolve" in text or "exit" in text.lower())
-        for text in result.tool_results
-    ), "unlisted/direct egress was not observed failing"
+    # Independent assertions on the tool results (spec §4 / AC6): the allowed host answered 200 through the
+    # sandbox proxy; the unlisted real host got no 200 either directly (no network) or through the proxy
+    # (strict allowlist). `.invalid` names are not used: they fail on any network and prove nothing.
+    joined = "\n".join(result.tool_results)
+    assert "ALLOWED_STATUS=200" in joined, "allowed host did not answer 200"
+    assert "DIRECT_STATUS=" in joined and "DIRECT_STATUS=200" not in joined, "direct unlisted egress succeeded"
+    assert "PROXY_STATUS=" in joined and "PROXY_STATUS=200" not in joined, "proxied unlisted egress succeeded"
     _assert_canaries(qual_repo)
 
 
