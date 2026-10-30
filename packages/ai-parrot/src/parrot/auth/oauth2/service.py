@@ -1,8 +1,7 @@
 """IntegrationsService — orchestration layer for the OAuth2 integration flows.
 
-Provides four operations (list, start_connect, confirm_enable, disconnect) plus
-``persist_credential()`` which is called from the web-channel OAuth2 callback
-handler after a successful code exchange.
+Provides principal-scoped listing and status, channel-neutral connect and
+credential persistence, and disconnect orchestration.
 
 All origin validation is performed here (not in the handler) so that it is
 covered by service-level unit tests.
@@ -24,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from navconfig.logging import logging  # noqa: F811
 
 from parrot.auth.oauth2 import _WEB_CHANNEL
+from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -31,26 +31,17 @@ from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
     IntegrationDescriptor,
-    UserAgentToolkitRow,
     UsersIntegrationRow,
 )
 from parrot.auth.oauth2.persistence import (
-    delete_user_agent_toolkits_by_provider,
     delete_users_integration,
     get_users_integration,
-    list_user_agent_toolkits,
-    upsert_user_agent_toolkit,
+    list_users_integrations,
     upsert_users_integration,
 )
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
-
-#: Providers whose durable credential lives in navigator-auth's Identity
-#: Vault (``auth.user_identities``) rather than the Session Vault. FEAT-735
-#: moved Jira there and retired its Session Vault copy; every other provider
-#: is still served by :class:`VaultTokenSync`.
-_IDENTITY_OWNED_PROVIDERS = frozenset({"jira"})
 
 
 def _get_allowed_origins() -> List[str]:
@@ -87,21 +78,15 @@ class IntegrationsService:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
 
-    async def list_for_user(
+    async def list_for_principal(
         self,
         user_id: str,
-        agent_id: str,
         request: Any = None,
     ) -> List[IntegrationDescriptor]:
-        """Return a PBAC-filtered list of integration descriptors.
-
-        For each registered provider, fetches whether the user has a connected
-        credential (``users_integrations`` row) and whether it is enabled on
-        this specific agent (``user_agent_toolkits`` row).
+        """Return one PBAC-filtered descriptor per registered provider.
 
         Args:
             user_id: Navigator user identifier.
-            agent_id: Agent identifier.
             request: Optional aiohttp request used for PBAC evaluation. When
                 ``None`` or when ``abac`` is absent, the service fails closed
                 and returns an empty list.
@@ -121,36 +106,61 @@ class IntegrationsService:
             )
             return []
 
-        # Fetch persistence state concurrently would be ideal; use sequential
-        # for simplicity (N providers is small — typically 1 for v1).
         result: List[IntegrationDescriptor] = []
-        enabled_toolkits = await list_user_agent_toolkits(user_id, agent_id)
-        enabled_provider_ids = {row.provider for row in enabled_toolkits}
+        rows = {row.provider: row for row in await list_users_integrations(user_id)}
 
         for provider in providers:
-            # Check whether a per-provider PBAC check passes
             if not await self._check_pbac(request, "integration:list", provider.provider_id):
                 continue
-
-            integration_row = await get_users_integration(user_id, provider.provider_id)
-            status = "disconnected"
-            if integration_row is not None:
-                status = await self._token_status(user_id, provider.provider_id, request)
-            descriptor = IntegrationDescriptor(
-                provider=provider.provider_id,
-                display_name=provider.display_name,
-                icon=provider.icon,
-                default_scopes=provider.default_scopes,
-                status=status,
-                enabled_on_agent=provider.provider_id in enabled_provider_ids,
-                account_id=integration_row.account_id if integration_row else None,
-                display_account_name=(integration_row.display_name if integration_row else None),
-                email=integration_row.email if integration_row else None,
-                connected_at=integration_row.connected_at if integration_row else None,
-            )
-            result.append(descriptor)
+            result.append(await self._descriptor(user_id, provider, rows.get(provider.provider_id), request))
 
         return result
+
+    async def list_for_user(
+        self,
+        user_id: str,
+        agent_id: str,
+        request: Any = None,
+    ) -> List[IntegrationDescriptor]:
+        """Return principal connections for an agent-scoped compatibility route.
+
+        Args:
+            user_id: Navigator user identifier.
+            agent_id: Ignored legacy agent identifier.
+            request: Optional aiohttp request used for PBAC evaluation.
+
+        Returns:
+            The principal-scoped integration descriptors.
+        """
+        del agent_id
+        return await self.list_for_principal(user_id, request=request)
+
+    async def _descriptor(
+        self,
+        user_id: str,
+        provider: Any,
+        integration_row: Optional[UsersIntegrationRow],
+        request: Any,
+    ) -> IntegrationDescriptor:
+        """Build the public descriptor for one registered provider."""
+        status = "disconnected"
+        if integration_row is not None:
+            status = await self._token_status(user_id, provider.provider_id, request)
+        return IntegrationDescriptor(
+            provider=provider.provider_id,
+            display_name=provider.display_name,
+            icon=provider.icon,
+            default_scopes=provider.default_scopes,
+            status=status,
+            account_id=integration_row.account_id if integration_row else None,
+            display_account_name=integration_row.display_name if integration_row else None,
+            email=integration_row.email if integration_row else None,
+            connected_at=integration_row.connected_at if integration_row else None,
+            channels=integration_row.channels if integration_row else [],
+            scopes_granted=integration_row.scopes_granted if integration_row else [],
+            expires_at=integration_row.expires_at if integration_row else None,
+            updated_at=integration_row.updated_at if integration_row else None,
+        )
 
     def _vault_sync(self, request: Any) -> Any:
         """One ``VaultTokenSync`` per request (loads each user's vault once).
@@ -250,60 +260,54 @@ class IntegrationsService:
     async def _token_status(self, user_id: str, provider_id: str, request: Any) -> str:
         """Status of a connected provider based on its stored vault tokens.
 
-        A ``users_integrations`` row only says the user linked the provider;
-        the credential lives elsewhere. For a provider in
-        :data:`_IDENTITY_OWNED_PROVIDERS` that is the Identity Vault
-        (FEAT-735) and the probe is delegated to
-        :meth:`_identity_token_status`; for every other provider it is the
-        Session Vault, probed below. When the credential is missing or fails
-        its integrity checks the UI must offer a re-connect instead of
-        showing the integration as usable.
+        The Identity Vault is the durable owner for every provider. When the
+        server-side store is unavailable, fall back to the provider manager's
+        principal-keyed connectivity check.
 
         Returns:
             ``"connected"`` or ``"needs_reconnect"``. Falls back to
             ``"connected"`` when the vault cannot be probed, so a vault outage
             never hides working integrations.
         """
-        if provider_id in _IDENTITY_OWNED_PROVIDERS:
+        if self._identity_store(request) is not None:
             return await self._identity_token_status(user_id, provider_id, request)
-        sync = self._vault_sync(request)
-        if sync is None:
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
             return "connected"
         try:
-            result = await sync.read_tokens_result(user_id, provider_id)
+            connected = await provider.manager.is_connected(_WEB_CHANNEL, user_id)
         except Exception:  # noqa: BLE001 - probing must never break the listing
             logger.warning(
-                "Integrations: token probe failed for user=%s provider=%s",
+                "Integrations: manager probe failed for user=%s provider=%s",
                 user_id,
                 provider_id,
             )
             return "connected"
-        if result.status in ("missing", "unreadable"):
-            logger.info(
-                "Integrations: provider=%s needs reconnect for user=%s (%s)",
-                provider_id,
-                user_id,
-                result.status,
-            )
-            return "needs_reconnect"
-        return "connected"
+        return "connected" if connected else "needs_reconnect"
 
     async def start_connect(
         self,
         user_id: str,
-        agent_id: str,
         provider_id: str,
-        return_origin: str,
+        return_origin: Optional[str] = None,
+        *,
+        channel: str = _WEB_CHANNEL,
+        principal: Optional[Principal] = None,
+        scopes: Optional[List[str]] = None,
+        request: Any = None,
+        extra_state: Optional[Dict[str, Any]] = None,
     ) -> ConnectInitResponse:
-        """Validate the return origin and generate the OAuth2 authorization URL.
+        """Authorize and initialize a channel-neutral OAuth2 connection.
 
         Args:
             user_id: Navigator user identifier.
-            agent_id: Agent identifier (embedded in ``extra_state`` for the
-                callback handler to use during ``confirm_enable``).
             provider_id: Provider identifier, e.g. ``"jira"``.
-            return_origin: The caller's ``window.location.origin``.  Must be in
-                ``WEB_OAUTH_ALLOWED_ORIGINS``.
+            return_origin: Web popup origin, validated only for web requests.
+            channel: Originating channel.
+            principal: Bound platform principal. Required outside web.
+            scopes: Requested scopes for PBAC context and response.
+            request: aiohttp request used for PBAC evaluation.
+            extra_state: Additional signed state fields.
 
         Returns:
             :class:`~parrot.integrations.oauth2.models.ConnectInitResponse` with
@@ -313,121 +317,82 @@ class IntegrationsService:
             ValueError: If ``return_origin`` is not in the allowed origins list.
             ValueError: If ``provider_id`` is not registered.
         """
-        allowed = _get_allowed_origins()
-        if return_origin not in allowed:
-            raise ValueError(
-                f"Origin {return_origin!r} is not in the list of allowed OAuth2 "
-                f"return origins.  Allowed: {allowed!r}"
-            )
-
         registry = OAuth2ProviderRegistry()
         provider = registry.get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
 
-        extra_state: Dict[str, Any] = {
-            "channel": _WEB_CHANNEL,
+        requested_scopes = list(scopes or provider.default_scopes)
+        if not await self._check_pbac(request, "integration:connect", provider_id, requested_scopes):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+
+        if channel == _WEB_CHANNEL:
+            allowed = _get_allowed_origins()
+            if return_origin not in allowed:
+                raise ValueError(
+                    f"Origin {return_origin!r} is not in the list of allowed OAuth2 "
+                    f"return origins.  Allowed: {allowed!r}"
+                )
+            if principal is None:
+                principal = Principal(user_id=user_id, channel=channel, channel_user_id=user_id)
+        elif principal is None:
+            raise ValueError(f"A principal is required for channel {channel!r}")
+
+        state: Dict[str, Any] = {
+            "channel": channel,
             "provider_id": provider_id,
-            "agent_id": agent_id,
             "return_origin": return_origin,
+            **(extra_state or {}),
         }
         auth_url, nonce = await provider.manager.create_authorization_url(
-            channel=_WEB_CHANNEL,
+            channel=channel,
             user_id=user_id,
-            extra_state=extra_state,
+            extra_state=state,
+            principal=principal,
         )
         return ConnectInitResponse(
             auth_url=auth_url,
             state=nonce,
-            scopes=provider.default_scopes,
+            scopes=requested_scopes,
             expires_in=600,
         )
 
-    async def confirm_enable(
-        self,
-        user_id: str,
-        agent_id: str,
-        provider_id: str,
-    ) -> IntegrationDescriptor:
-        """Enable a connected integration on a specific agent.
-
-        Requires that a ``users_integrations`` row already exists for
-        ``(user_id, provider_id)`` (i.e. the OAuth callback completed
-        successfully).  Upserts a ``user_agent_toolkits`` row.
-
-        Args:
-            user_id: Navigator user identifier.
-            agent_id: Agent identifier.
-            provider_id: Provider identifier, e.g. ``"jira"``.
-
-        Returns:
-            Updated :class:`~parrot.integrations.oauth2.models.IntegrationDescriptor`
-            with ``connected=True`` and ``enabled_on_agent=True``.
-
-        Raises:
-            LookupError: If no ``users_integrations`` row exists for
-                ``(user_id, provider_id)`` — the popup OAuth flow has not
-                completed yet.
-        """
-        integration_row = await get_users_integration(user_id, provider_id)
-        if integration_row is None:
-            raise LookupError(
-                f"No credential found for user_id={user_id!r} provider={provider_id!r}. "
-                "Complete the OAuth2 popup flow before calling confirm_enable."
-            )
-
+    async def status(self, user_id: str, provider_id: str, request: Any = None) -> IntegrationDescriptor:
+        """Return the PBAC-filtered descriptor for one provider."""
         registry = OAuth2ProviderRegistry()
         provider = registry.get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-
-        toolkit_row = UserAgentToolkitRow(
-            user_id=user_id,
-            agent_id=agent_id,
-            toolkit_id=provider_id,
-            provider=provider_id,
-            enabled_at=datetime.now(tz=timezone.utc),
-        )
-        await upsert_user_agent_toolkit(toolkit_row)
-
-        return IntegrationDescriptor(
-            provider=provider.provider_id,
-            display_name=provider.display_name,
-            icon=provider.icon,
-            default_scopes=provider.default_scopes,
-            connected=True,
-            enabled_on_agent=True,
-            account_id=integration_row.account_id,
-            display_account_name=integration_row.display_name,
-            email=integration_row.email,
-            connected_at=integration_row.connected_at,
-        )
+        if not await self._check_pbac(request, "integration:list", provider_id):
+            raise PermissionError(f"Not permitted to list provider {provider_id!r}")
+        row = await get_users_integration(user_id, provider_id)
+        return await self._descriptor(user_id, provider, row, request)
 
     async def disconnect(
         self,
         user_id: str,
-        agent_id: str,  # noqa: ARG002 — kept for API symmetry; cascade ignores agent
         provider_id: str,
+        request: Any = None,
     ) -> DisconnectResponse:
-        """Disconnect a provider for a user.
-
-        Deletes the ``users_integrations`` row AND cascade-deletes all
-        ``user_agent_toolkits`` rows for ``(user_id, provider_id)`` regardless
-        of ``agent_id``.  Idempotent — a second call is a no-op.
+        """Revoke and delete one provider connection for a principal.
 
         Args:
             user_id: Navigator user identifier.
-            agent_id: Agent identifier (present for API symmetry; the cascade
-                deletes across ALL agents for this user+provider).
             provider_id: Provider identifier, e.g. ``"jira"``.
+            request: aiohttp request used for PBAC evaluation.
 
         Returns:
             :class:`~parrot.integrations.oauth2.models.DisconnectResponse` with
             ``disconnected=True``.
         """
-        # Cascade-delete enablement rows first (foreign-key order)
-        await delete_user_agent_toolkits_by_provider(user_id, provider_id)
-        # Then delete the credential record
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(
+            request, "integration:disconnect", provider_id, list(provider.default_scopes)
+        ):
+            raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
+        await provider.manager.revoke(channel=_WEB_CHANNEL, user_id=user_id)
         await delete_users_integration(user_id, provider_id)
 
         logger.info(
@@ -442,6 +407,9 @@ class IntegrationsService:
         user_id: str,
         provider_id: str,
         token_set: Any,
+        *,
+        channel: str,
+        canonical_identity: Optional[str] = None,
     ) -> UsersIntegrationRow:
         """Upsert a ``users_integrations`` row from any provider's token set.
 
@@ -456,23 +424,38 @@ class IntegrationsService:
                 ``scopes``. Optional Jira-only fields (``cloud_id``,
                 ``site_url``) are read with ``getattr`` and forwarded
                 when present.
+            channel: Channel that completed or used the connection.
+            canonical_identity: Stable cross-channel identity when known.
 
         Returns:
             The :class:`~parrot.integrations.oauth2.models.UsersIntegrationRow`
             that was persisted.
         """
+        existing = await get_users_integration(user_id, provider_id)
+        now = datetime.now(tz=timezone.utc)
+        account_id = getattr(token_set, "account_id", "") or ""
+        same_account = existing is not None and existing.account_id == account_id
+        channels = list(existing.channels) if existing is not None else []
+        if channel not in channels:
+            channels.append(channel)
+        scopes = list(getattr(token_set, "scopes", []) or [])
         row = UsersIntegrationRow(
             user_id=user_id,
             provider=provider_id,
-            channel=_WEB_CHANNEL,
+            canonical_identity=canonical_identity or (existing.canonical_identity if existing else None),
+            channels=channels,
             status="active",
-            account_id=getattr(token_set, "account_id", "") or "",
+            account_id=account_id,
             display_name=getattr(token_set, "display_name", "") or "",
             email=getattr(token_set, "email", None),
-            scopes=list(getattr(token_set, "scopes", []) or []),
+            scopes=scopes,
+            scopes_granted=list(getattr(token_set, "scopes_granted", None) or scopes),
+            expires_at=getattr(token_set, "expires_at", None),
             cloud_id=getattr(token_set, "cloud_id", None),
             site_url=getattr(token_set, "site_url", None),
-            connected_at=datetime.now(tz=timezone.utc),
+            connected_at=existing.connected_at if same_account else now,
+            updated_at=now,
+            last_used_at=existing.last_used_at if existing else None,
         )
         await upsert_users_integration(row)
         logger.info(
@@ -492,6 +475,7 @@ class IntegrationsService:
         request: Any,
         action: str,
         provider_id: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
     ) -> bool:
         """Evaluate a PBAC policy for the given action.
 
@@ -502,6 +486,7 @@ class IntegrationsService:
             action: PBAC action string, e.g. ``"integration:list"``.
             provider_id: Optional provider identifier used as a context attribute
                 on the EvalContext (not baked into the action string).
+            scopes: Optional requested scopes included in the PBAC context.
 
         Returns:
             ``True`` if the action is permitted, ``False`` otherwise.
@@ -521,6 +506,8 @@ class IntegrationsService:
             ctx: Dict[str, Any] = {"action": action}
             if provider_id:
                 ctx["provider"] = provider_id
+            if scopes is not None:
+                ctx["scopes"] = scopes
             result = await abac.is_allowed(request, ctx)
             return bool(result)
         except Exception:  # noqa: BLE001

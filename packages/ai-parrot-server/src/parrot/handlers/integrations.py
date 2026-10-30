@@ -7,9 +7,9 @@ Exposes four routes under ``/api/v1/agents/integrations/{agent_id}``:
 - ``POST   /api/v1/agents/integrations/{agent_id}/{provider}/connect``
   → initiate the OAuth2 popup flow; returns auth_url + state nonce.
 - ``POST   /api/v1/agents/integrations/{agent_id}/{provider}/enable``
-  → confirm-enable after the popup completes; writes user_agent_toolkits.
+  → compatibility no-op returning the current descriptor.
 - ``DELETE /api/v1/agents/integrations/{agent_id}/{provider}``
-  → disconnect; deletes both persistence rows.
+  → disconnect the principal's provider connection.
 
 The handler delegates all business logic to
 :class:`~parrot.integrations.oauth2.service.IntegrationsService`.
@@ -36,7 +36,7 @@ class IntegrationsHandler(BaseView):
 
     URL dispatch is performed by URL suffix inspection:
     - ``POST .../{provider}/connect`` → start OAuth2 flow.
-    - ``POST .../{provider}/enable``  → confirm-enable after popup.
+    - ``POST .../{provider}/enable``  → return current connection status.
     - ``DELETE .../{provider}``       → disconnect.
     """
 
@@ -118,7 +118,6 @@ class IntegrationsHandler(BaseView):
         Returns:
             ``ConnectInitResponse`` JSON on success.
         """
-        agent_id: str = self.request.match_info["agent_id"]
         provider: str = self.request.match_info["provider"]
         user_id = await self._get_user_id()
         if not user_id:
@@ -151,7 +150,14 @@ class IntegrationsHandler(BaseView):
 
         svc = IntegrationsService()
         try:
-            resp = await svc.start_connect(user_id, agent_id, provider, return_origin)
+            resp = await svc.start_connect(
+                user_id,
+                provider,
+                return_origin,
+                request=self.request,
+            )
+        except PermissionError:
+            return web.json_response({"error": "forbidden"}, status=403)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
         except Exception as exc:  # noqa: BLE001
@@ -164,10 +170,9 @@ class IntegrationsHandler(BaseView):
         """Handle ``POST .../integrations/{agent_id}/{provider}/enable``.
 
         Returns:
-            ``EnableResponse`` JSON on success.  HTTP 409 when no credential
-            exists for the user+provider.
+            ``EnableResponse`` JSON containing the current descriptor. This
+            compatibility route does not mutate connection state.
         """
-        agent_id: str = self.request.match_info["agent_id"]
         provider: str = self.request.match_info["provider"]
         user_id = await self._get_user_id()
         if not user_id:
@@ -175,9 +180,9 @@ class IntegrationsHandler(BaseView):
 
         svc = IntegrationsService()
         try:
-            descriptor = await svc.confirm_enable(user_id, agent_id, provider)
-        except LookupError as exc:
-            return web.json_response({"error": str(exc)}, status=409)
+            descriptor = await svc.status(user_id, provider, request=self.request)
+        except PermissionError:
+            return web.json_response({"error": "forbidden"}, status=403)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
         except Exception as exc:  # noqa: BLE001
@@ -193,13 +198,11 @@ class IntegrationsHandler(BaseView):
     async def delete(self) -> web.Response:
         """Handle ``DELETE .../integrations/{agent_id}/{provider}``.
 
-        Disconnects the provider: deletes both the ``users_integrations`` row
-        and all ``user_agent_toolkits`` rows for the user+provider.
+        Revokes the provider and deletes the principal's metadata row.
 
         Returns:
             ``DisconnectResponse`` JSON on success.
         """
-        agent_id: str = self.request.match_info["agent_id"]
         provider: str = self.request.match_info["provider"]
         user_id = await self._get_user_id()
         if not user_id:
@@ -207,7 +210,11 @@ class IntegrationsHandler(BaseView):
 
         svc = IntegrationsService()
         try:
-            resp = await svc.disconnect(user_id, agent_id, provider)
+            resp = await svc.disconnect(user_id, provider, request=self.request)
+        except PermissionError:
+            return web.json_response({"error": "forbidden"}, status=403)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Error disconnecting provider=%s for user=%s", provider, user_id)
             return web.json_response({"error": str(exc)}, status=500)
