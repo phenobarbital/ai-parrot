@@ -59,7 +59,7 @@ export const config = {
   /** First path segments the SPA owns; anything else is not an in-app path
    * (guards `?next=` redirects against leaving the SPA). MUST match the
    * routes `parrot/server/ui/serving.py` serves `index.html` for. */
-  appSections: ["login", "agents", "admin"],
+  appSections: ["login", "agents", "admin", "account"],
   loginUrl: "/api/v1/login",
   logoutUrl: "/api/v1/logout",
   authMethodsUrl: "/api/v1/auth/methods",
