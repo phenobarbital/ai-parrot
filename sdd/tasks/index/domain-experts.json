@@ -472,7 +472,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -482,8 +482,9 @@
       "parallelism_notes": "Builds ExpertRegistry from TASK-4926 (parrot/experts/registry.py) inside the new bootstrap helper.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4933-runtime-wiring-load-experts.md"
+      "completed_at": "2026-10-30T22:09:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4933-runtime-wiring-load-experts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4934",
@@ -492,7 +493,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -507,8 +508,9 @@
       "parallelism_notes": "Exercises ExpertRegistry (TASK-4926), the KB fold-in (TASK-4923), ExpertKnowledgeToolkit (TASK-4927), CVEToolkit (TASK-4929) and both shipped bundles (TASK-4930, TASK-4931) end to end.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4934-integration-tests.md"
+      "completed_at": "2026-10-30T22:09:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4934-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4935",
