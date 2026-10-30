@@ -1,4 +1,5 @@
 """Shared fixtures for FEAT-778 tests (spec §4 Test Data). Pure files — no network, no LLM."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,9 +34,7 @@ def expert_bundle(tmp_path: Path) -> Path:
         "## Mandated\nALWAYS cite sources\n## Forbidden\nNEVER delegate\n", encoding="utf-8"
     )
     (root / "persona.md").write_text("This file is documentation only.\n", encoding="utf-8")
-    (root / "tenants" / "acme" / "knowledge" / "method.md").write_text(
-        "Use Acme primary sources.\n", encoding="utf-8"
-    )
+    (root / "tenants" / "acme" / "knowledge" / "method.md").write_text("Use Acme primary sources.\n", encoding="utf-8")
     return tmp_path
 
 

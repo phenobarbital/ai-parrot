@@ -1,4 +1,5 @@
 """Unit tests for domain-expert models and lazy exports."""
+
 from __future__ import annotations
 
 import importlib
@@ -95,4 +96,4 @@ def test_models_import_is_light() -> None:
     assert "parrot_tools" not in sys.modules
     assert experts.ExpertManifest is ExpertManifest
     with pytest.raises(AttributeError):
-        getattr(experts, "not_an_expert_export")
+        experts.not_an_expert_export

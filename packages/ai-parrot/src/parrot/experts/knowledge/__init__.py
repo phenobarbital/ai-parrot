@@ -1,4 +1,5 @@
 """Knowledge resolution for domain experts (FEAT-778 M4–M6)."""
+
 from __future__ import annotations
 
 import importlib

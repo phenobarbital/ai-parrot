@@ -1,4 +1,5 @@
 """Knowledge source adapters, one per KnowledgeSourceKind (FEAT-778 M5)."""
+
 from __future__ import annotations
 
 import importlib

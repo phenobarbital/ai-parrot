@@ -1,4 +1,5 @@
 """Domain-expert data models, manifest invariants and errors (FEAT-778, spec §2/M1)."""
+
 from __future__ import annotations
 
 import re

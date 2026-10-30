@@ -1,13 +1,13 @@
 """Domain experts: declarative bundles, knowledge resolver and governance (FEAT-778)."""
+
 from __future__ import annotations
 
 import importlib
 from typing import Any
 
 _EXPORTS: dict[str, str] = {
-    **{
-        name: "parrot.experts.models"
-        for name in (
+    **dict.fromkeys(
+        (
             "SPAWN_TOOL_NAME",
             "ExpertError",
             "ExpertBundleError",
@@ -25,13 +25,14 @@ _EXPORTS: dict[str, str] = {
             "KnowledgeLayer",
             "KnowledgeContext",
             "ExpertBundle",
-        )
-    },
-    **{name: "parrot.experts.rules" for name in ("parse_rules", "resolve_chain", "rules_to_layer")},
-    **{
-        name: "parrot.experts.policy"
-        for name in ("model_config_for", "effective_toolkits", "effective_allowlist", "expert_policy_rules")
-    },
+        ),
+        "parrot.experts.models",
+    ),
+    **dict.fromkeys(("parse_rules", "resolve_chain", "rules_to_layer"), "parrot.experts.rules"),
+    **dict.fromkeys(
+        ("model_config_for", "effective_toolkits", "effective_allowlist", "expert_policy_rules"),
+        "parrot.experts.policy",
+    ),
     "KnowledgeResolver": "parrot.experts.knowledge.resolver",
     "knowledge_budget": "parrot.experts.knowledge.budget",
     "ExpertAgent": "parrot.experts.agent",
