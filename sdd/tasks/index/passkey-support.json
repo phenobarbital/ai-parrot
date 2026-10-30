@@ -187,7 +187,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -195,8 +195,9 @@
       "parallelism_notes": "EXCLUSIVE: edits the dependency manifest packages/ai-parrot-server/pyproject.toml and regenerates the shared root uv.lock (lockfile mutation).",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4905-server-passkey-extra-lock.md"
+      "completed_at": "2026-10-30T15:35:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4905-server-passkey-extra-lock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4906",
