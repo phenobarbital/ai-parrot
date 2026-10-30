@@ -404,7 +404,7 @@ async def test_legacy_envelope_unchanged_with_shim_active(monkeypatch, tmp_path,
     # shape, maxlen/approximate) — the shim adds a SEPARATE fold, it never
     # touches the legacy envelope construction/XADD call.
     assert len(legacy_calls) == len(shimmed_calls) == 5
-    for legacy_call, shimmed_call in zip(legacy_calls, shimmed_calls):
+    for legacy_call, shimmed_call in zip(legacy_calls, shimmed_calls, strict=True):
         assert legacy_call.args[0] == shimmed_call.args[0]  # stream_key
         assert legacy_call.kwargs == shimmed_call.kwargs
         # "event" JSON differs only in fields unaffected by the shim (ts is

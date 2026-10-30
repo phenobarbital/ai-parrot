@@ -968,7 +968,7 @@ class ClaudeCodeDispatcher:
             try:
                 usage = getattr(msg, "usage", None)
 
-                def _usage_get(key: str) -> Any:
+                def _usage_get(key: str, usage: Any = usage) -> Any:  # bind now, not at call time (B023)
                     if usage is None:
                         return None
                     if isinstance(usage, dict):
