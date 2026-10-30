@@ -29,6 +29,12 @@
       component: () => import("./pages/agents/AgentChatPage.svelte"),
       requiresAuth: true,
     },
+    // FEAT-772: user-level account pages (passkey management).
+    {
+      path: "/account/security",
+      component: () => import("./pages/account/Security.svelte"),
+      requiresAuth: true,
+    },
     // --- Administration -------------------------------------------------
     { path: "/admin/home", component: () => import("./pages/Home.svelte"), requiresAuth: true },
     {

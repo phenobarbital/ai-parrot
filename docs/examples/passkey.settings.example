@@ -1,0 +1,11 @@
+# Passkey (WebAuthn) sign-in for the AI-Parrot Admin UI (FEAT-772).
+# Copy into your env/settings. Requires: pip install "ai-parrot-server[passkey]", Redis >= 6.2.
+AUTHENTICATION_BACKENDS=navigator_auth.backends.BasicAuth,navigator_auth.backends.PasskeyAuth
+# One entry per EXACT browser origin (scheme://host:port). rp_id = that host or a parent domain.
+# The Vite dev server (pnpm dev, :5173) is a different origin from the backend (:5000).
+PASSKEY_RELYING_PARTIES='[{"origin": "https://parrot.example.com", "rp_id": "parrot.example.com", "rp_name": "AI-Parrot"}, {"origin": "http://localhost:5000", "rp_id": "localhost", "rp_name": "AI-Parrot (dev)"}, {"origin": "http://localhost:5173", "rp_id": "localhost", "rp_name": "AI-Parrot (vite dev)"}]'
+PASSKEY_USER_VERIFICATION=required
+PASSKEY_CHALLENGE_TTL=300
+PASSKEY_DECOY_CREDENTIALS=1
+# Leave 0 behind a reverse proxy (it keys on the socket address); rate-limit login/options at the proxy.
+PASSKEY_LOGIN_OPTIONS_RATE=0
