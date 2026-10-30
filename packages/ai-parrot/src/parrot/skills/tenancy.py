@@ -33,6 +33,9 @@ RESERVED_TENANT_NAMES: frozenset[str] = frozenset(
         "routes",
         "_drafts",
         "_shared",
+        "experts",  # FEAT-778: AGENTS_DIR/experts bundles
+        "knowledge",  # FEAT-778: AGENTS_DIR/knowledge Tier-2 shared knowledge
+        "governance",  # FEAT-778: AGENTS_DIR/governance rules chain
     }
 )
 TENANTS_DIRNAME: Final[str] = "tenants"
