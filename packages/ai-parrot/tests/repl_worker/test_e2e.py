@@ -1,7 +1,7 @@
 """Full-session and concurrent-session end-to-end tests (FEAT-380 Module 7, TASK-1945).
 
 Exercises the whole stack together: `WorkerPool` acquisition, `inject_df`
-(Arrow transport), multi-turn `exec`, plots, and `snapshot` — plus the
+(Arrow transport), multi-turn `exec`, an altair chart, and `snapshot` — plus the
 concurrency ceiling under `WorkerPool` (TASK-1942) with real workers.
 """
 
@@ -25,9 +25,9 @@ def real_worker_config():
     return WorkerConfig(deadline_ms=10_000, max_workers=4, idle_ttl_seconds=30, prewarm_pool_size=0)
 
 
-async def test_e2e_data_analysis_session(real_worker_config, sample_df, tmp_path):
+async def test_e2e_data_analysis_session(real_worker_config, sample_df, repl_output_dir):
     """inject_df -> multi-turn exec -> plot -> snapshot; state persists throughout."""
-    pool = WorkerPool(real_worker_config, output_dir=str(tmp_path))
+    pool = WorkerPool(real_worker_config, output_dir=str(repl_output_dir))
     try:
         handle = await pool.acquire("session-a")
 
@@ -43,11 +43,17 @@ async def test_e2e_data_analysis_session(real_worker_config, sample_df, tmp_path
         assert isinstance(r2, str)
         assert "12" in r2  # sum([1,2,3]) * 2 == 12
 
-        # 3. plot
-        r3 = await handle.execute("plt.plot(sales['a'])\nresult = save_current_plot()")
+        # 3. plot — matplotlib and save_current_plot() were removed (TASK-2218);
+        # altair is the supported renderer and `report_directory` is the
+        # output dir exposed in the worker namespace. The chart is not bound to
+        # a variable: snapshot() would refuse to unpickle an altair Chart.
+        r3 = await handle.execute(
+            "altair.Chart(sales.reset_index()).mark_line().encode(x='index', y='a')"
+            ".save(str(report_directory / 'sales_chart.html'))"
+        )
         assert isinstance(r3, str)
-        assert "Plot saved" in r3
-        assert list(tmp_path.glob("*.png"))
+        assert "Error" not in r3
+        assert (repl_output_dir / "sales_chart.html").is_file()
 
         # 4. snapshot — sees the injected DataFrame and the computed scalar
         snap = await handle.snapshot()
@@ -57,12 +63,12 @@ async def test_e2e_data_analysis_session(real_worker_config, sample_df, tmp_path
         await pool.shutdown()
 
 
-async def test_e2e_concurrent_sessions(real_worker_config, tmp_path):
+async def test_e2e_concurrent_sessions(real_worker_config, repl_output_dir):
     """N sessions under the ceiling all work independently; ceiling+1 is rejected."""
     config = WorkerConfig(
         deadline_ms=10_000, max_workers=2, idle_ttl_seconds=30, prewarm_pool_size=0
     )
-    pool = WorkerPool(config, output_dir=str(tmp_path))
+    pool = WorkerPool(config, output_dir=str(repl_output_dir))
     try:
         handle_a = await pool.acquire("session-a")
         handle_b = await pool.acquire("session-b")
@@ -83,7 +89,7 @@ async def test_e2e_concurrent_sessions(real_worker_config, tmp_path):
         await pool.shutdown()
 
 
-async def test_share_dataframe_delivers_into_worker_namespace(sample_df, tmp_path):
+async def test_share_dataframe_delivers_into_worker_namespace(sample_df, repl_output_dir):
     """`ToolManager.share_dataframe()` -> `PythonPandasTool` -> worker (Arrow transport).
 
     Regression coverage for the `add_dataframe(..., regenerate_guide=True)`
@@ -95,7 +101,7 @@ async def test_share_dataframe_delivers_into_worker_namespace(sample_df, tmp_pat
     from parrot.tools.manager import ToolManager
     from parrot.tools.pythonpandas import PythonPandasTool
 
-    tool = PythonPandasTool(report_dir=str(tmp_path))
+    tool = PythonPandasTool(report_dir=str(repl_output_dir))
     tm = ToolManager()
     tm.pandas_tool_name = tool.name  # "python_repl_pandas" — see manager.py default mismatch
     tm.register_tool(tool)

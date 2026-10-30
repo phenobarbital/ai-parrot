@@ -646,3 +646,40 @@ def test_run_validation_args_reject_unknown_tier():
 def test_check_uuid_optional_passes_none_through():
     assert _check_uuid_optional(None) is None
     assert _check_uuid_optional(VALID_UUID) == VALID_UUID
+
+
+def test_roster_seat_effort_default_none():
+    assert RosterSeat(label="a", backend="codex", model="m").effort is None
+
+
+@pytest.mark.parametrize("effort", ["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+def test_roster_seat_effort_accepts_vocabulary(effort):
+    assert RosterSeat(label="a", backend="codex", model="m", effort=effort).effort == effort
+
+
+def test_roster_seat_effort_rejects_unknown():
+    with pytest.raises(ValidationError):
+        RosterSeat(label="a", backend="codex", model="m", effort="ultra")
+
+
+def test_native_seat_effort_validates_silently(caplog):
+    """Native seats apply effort through NativePrep now, so configuring it is no longer a warning."""
+    with caplog.at_level("WARNING"):
+        seat = RosterSeat(label="h", kind="native", effort="high")
+    assert seat.effort == "high" and not caplog.records
+
+
+def test_native_prep_effort_defaults_none():
+    from parrot.flows.dev_loop.sdd_coder.models import NativePrep
+
+    prep = NativePrep(task_id="TASK-1", task_file="t.md", branch="b", worktree_path="/w", seat_label="h")
+    assert prep.effort is None
+
+
+def test_strong_model_identity_effort():
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import StrongModelIdentity
+
+    ident = StrongModelIdentity(canonical_model="x", backend="codex", model="m", effort="high")
+    assert ident.effort == "high"
+    with pytest.raises(ValidationError):
+        StrongModelIdentity(canonical_model="x", backend="codex", model="m", bogus=1)

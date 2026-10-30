@@ -125,6 +125,18 @@
       "default": null,
       "title": "Disclaimer"
     },
+    "enable_suggestions": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Enable Suggestions"
+    },
     "enabled": {
       "anyOf": [
         {
@@ -212,6 +224,18 @@
       ],
       "default": null,
       "title": "Max Context Turns"
+    },
+    "max_suggestions": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Suggestions"
     },
     "memory_config": {
       "anyOf": [
@@ -395,6 +419,42 @@
       ],
       "default": null,
       "title": "Storage"
+    },
+    "suggest_followups": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Suggest Followups"
+    },
+    "suggestion_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Suggestion Model"
+    },
+    "suggestion_timeout_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Suggestion Timeout S"
     },
     "system_prompt_template": {
       "anyOf": [

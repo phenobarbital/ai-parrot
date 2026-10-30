@@ -1,0 +1,8 @@
+governed: true
+connection: semantic_test
+limits: {default: 1000, max: 10000}
+roles:
+  analyst: {metrics: [revenue, order_count], dimensions: [region, order_date], usage: [sales.orders.region]}
+  admin: {metrics: "*", dimensions: "*", usage: "*"}
+rls:
+  - {driver: duckdb, table: sales.orders, predicate_template: "region IN (:subject.programs)", subject_attribute: programs}

@@ -27,15 +27,19 @@ def _no_default_chrome_executable(monkeypatch):
         lambda browser_binary, browser="chrome", channel=None: browser_binary or None,
     )
 
+
 # ── Factory Create ───────────────────────────────────────────────
 
 
 class TestDriverFactoryCreate:
-    @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
-    def test_default_creates_selenium(self, mock_cls):
+    @pytest.mark.parametrize("config", [None, {}])
+    @patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
+    def test_default_creates_playwright(self, mock_cls: MagicMock, config: dict | None) -> None:
+        """Both absent and empty configuration select Playwright."""
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
-        driver = DriverFactory.create()
-        mock_cls.assert_called_once_with(browser="chrome", headless=True, auto_install=True, mobile=False)
+        driver = DriverFactory.create(config)
+        mock_cls.assert_called_once()
+        assert mock_cls.call_args.args[0].browser_type == "chromium"
         assert isinstance(driver, AbstractDriver)
 
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
@@ -154,13 +158,13 @@ class TestDriverFactoryWithDict:
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
     def test_dict_config_selenium(self, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
-        DriverFactory.create({"browser": "firefox", "headless": False})
+        DriverFactory.create({"driver_type": "selenium", "browser": "firefox", "headless": False})
         mock_cls.assert_called_once_with(browser="firefox", headless=False, auto_install=True, mobile=False)
 
     @patch("parrot.tools.scraping.drivers.selenium_driver.SeleniumDriver")
     def test_dict_config_auto_install(self, mock_cls):
         mock_cls.return_value = MagicMock(spec=AbstractDriver)
-        DriverFactory.create({"auto_install": False})
+        DriverFactory.create({"driver_type": "selenium", "auto_install": False})
         mock_cls.assert_called_once_with(browser="chrome", headless=True, auto_install=False, mobile=False)
 
 
@@ -208,3 +212,11 @@ class TestDriverFactoryExports:
         )
 
         assert DF is not None
+
+
+@pytest.mark.parametrize("backend,expected", [("playwright", "/x/recordings"), ("obscura", None)])
+@patch("parrot.tools.scraping.drivers.playwright_driver.PlaywrightDriver")
+def test_recording_config_backend_isolation(mock_cls: MagicMock, backend: str, expected: str | None) -> None:
+    """Recording configuration reaches only the native Playwright backend."""
+    DriverFactory.create({"driver_type": backend, "record_video_dir": "/x/recordings"})
+    assert mock_cls.call_args.args[0].record_video_dir == expected

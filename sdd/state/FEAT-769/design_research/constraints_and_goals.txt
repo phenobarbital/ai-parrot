@@ -1,0 +1,66 @@
+### 2.2 Constraints Discovered
+
+- **K1 — Construction is kwargs-only and fails closed five ways.** `def __init__(self, **kwargs: Any) -> None`
+  (`toolkit.py:44`). `static_subject` raises `static_subject_forbidden` (:67); a governed model with no
+  `dataplane_guard` raises `guard_required` (:79); `allow_raw_sql` must be a bool (:69-70); an invalid
+  sink factory is rejected; `sl_run_sql`/`sl_save_result_as_dataset` are simply **not exposed** unless
+  opted in. *Implication*: every example must pass a real guard. *Evidence*: F008
+
+- **K2 — An LLM-driven example needs BOTH bindings.** `_pre_execute` fail-closes unless the
+  `_permission_context` kwarg **equals** `current_pctx()`, and that kwarg arrives only via
+  `AbstractBot.ask(permission_context=…)`. So an LLM example needs
+  `async with bind_semantic_context(ctx, identity=…)` **and** `await agent.ask(q, permission_context=ctx)`.
+  Direct method calls (what today's example does) bypass `_pre_execute` entirely.
+  *Implication*: this is the one constraint the current example cannot teach. *Evidence*: F013
+
+- **K3 — `SemanticQuery` is `ConfigDict(extra="forbid")`** (`models.py:105`). Any guessed field name is a
+  hard validation error. *Implication*: field names get copied from the model, never invented. *Evidence*: F014
+
+- **K4 — A `GovernedDatasetSink` may NOT be an `AbstractToolkit`/`DatasetManager`/`DataFrame`** —
+  `_validate_sink` rejects by MRO. The existing example works around this with a `_FacadeSink`
+  composition wrapper. *Implication*: reuse that wrapper; don't rediscover it. *Evidence*: F008, F001
+
+- **K5 — Never name a new example file `test_*.py`.** `pytest.ini` sets no `testpaths`/`norecursedirs`
+  and there is no root `collect_ignore`, so `examples/` **is** collected — `examples/agents/` already
+  holds five `test_*.py` files with pytest `__pycache__`. *Evidence*: F007 *(re-verified inline after a
+  mis-scoped probe)*
+
+- **K6 — `examples/**/*.py` waives only `F401, F841, E402`** (`ruff.toml:152`). `TID251` (banned imports,
+  incl. `sidemantic`), `B`, `ASYNC`, `PIE`, `C4`, `LOG` all still bite, at line-length 120 (`ruff.toml:68`).
+  *Implication*: examples are lint-gated like shipped code. *Evidence*: F007
+
+- **K7 — CI's only semantic exposure** is `ci.yml:535-536`: `uv sync --all-packages --extra duckdb` then
+  `uv run pytest packages/ai-parrot-semantic/tests -q --tb=short`, with no
+  `--continue-on-collection-errors`. *Implication*: new examples are DuckDB-only or `importorskip`-guarded.
+  *Evidence*: F007
+
+- **K8 — `compile_query` returns PRE-RLS SQL** (closed `issue:22fbd14d96a9`); governed SQL lives only in
+  the audit record. *Implication*: an example printing it must not call it "the SQL as executed". *Evidence*: F006
+
+- **K9 — `issue:f0da823294fb` (major, closed) already forced one rewrite.** It required the real
+  `DataPlanePolicyGuard`, `connection_env()`, an owner pre-check and a **failing** denial demo. Re-introducing
+  a placeholder guard, env leak, weak owner check or missing denial in a NEW example is a **known regression**.
+  *Evidence*: F006, F010
+
+- **K10 — `docs/tools/semantic-layer.md`'s fenced blocks are parsed** by
+  `packages/ai-parrot-semantic/tests/test_mcp_local.py:26` (`_DOC_PATH`). *Implication*: per D5 we are editing
+  that doc, so this is a **test-affecting change**. *Evidence*: F004, F007
+
+- **K11 — Usage rights restrict only masked / `sensitive: true` members** (closed `issue:9a4e4c35b032`). The
+  current example's `usage:` list is broader than required and must not be copied as "required".
+  *Evidence*: F006 · *confidence: medium (inferred from the issue body)*
+
+- **K12 — A policy model covers only its own table, relationship-reachable tables, and tables its own
+  masks/rls name** (closed `issue:bd477252b8f3`). A multi-model example **must** declare the relationship or
+  qualification fails. *Evidence*: F006, F003
+
+- **K13 — `RlsRegistry` has no unregister API** (closed `issue:e3ff9bfb4a83`): `reload()` never drops an RLS
+  rule. No example may present `reload()` as a way to remove one. *Evidence*: F006
+
+- **K14 — `parrot.semantic.__init__` exports only four names** (`:7`): `__version__`, `SemanticQuery`,
+  `SemanticQueryResult`, `SemanticLayerToolkit`. Everything else imports from its submodule. *Evidence*: F008
+
+- **K15 — Surface frozen since 2026-10-26, but that day landed four behavioural fixes**
+  (`c3e2049d`, `32a7762e`, `0ac26316`, `ae7e21f1`). Examples must target post-`c3e2049d` semantics.
+  *Evidence*: F009
+

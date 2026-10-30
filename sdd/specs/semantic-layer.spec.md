@@ -291,7 +291,7 @@ class SemanticQueryResult(BaseModel):
     row_count: int
     truncated: bool
     duration_ms: int
-    compiled_sql: str                   # governed SQL as executed
+    compiled_sql: str                   # pre-RLS compiled SQL (run_sql: the caller's SQL); governed SQL with RLS literals is audit-only (issue:22fbd14d96a9)
     audit_id: str
     result_id: str | None = None        # present only when the ResultHandleStore is enabled
 ```

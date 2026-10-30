@@ -85,6 +85,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # read-only QA/code-review gates legitimately need a shell.
 _WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 
+# Subagents whose Bash calls are wrapped in Bubblewrap by the
+# ``worktree_environment.py --hook`` PreToolUse hook. Another hook that also
+# returns ``updatedInput`` (e.g. a user-level RTK hook in ~/.claude) can
+# replace that wrapper — Claude Code does not define which rewrite wins — so
+# these sessions must never load the ``user`` setting source
+# (issue:6756c929a450).
+_SANDBOXED_SUBAGENTS = frozenset({"sdd-worker", "sdd-coder"})
+
 # FEAT-496: per-dispatch tool_use_id -> tool_name correlation map. Bound in
 # dispatch() alongside _SESSION_HOST_CTX/_DISPATCH_LABELS_CTX — NEVER instance
 # state on self, since one dispatcher instance is shared across concurrent
@@ -618,7 +626,7 @@ class ClaudeCodeDispatcher:
         # JSON parsing of the final ``ResultMessage`` payload — see
         # ``_validate_output`` — and leave ``extra_args`` unset.
         extra_args: Optional[Dict[str, Optional[str]]] = None
-        if profile.subagent in {"sdd-worker", "sdd-coder"}:
+        if profile.subagent in _SANDBOXED_SUBAGENTS:
             # Programmatic AgentDefinitions strip prompt frontmatter. Supply
             # the protection independently of project settings and prompt hooks.
             hook_command = (
@@ -646,7 +654,7 @@ class ClaudeCodeDispatcher:
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
-            setting_sources=list(profile.setting_sources) if profile.setting_sources else None,
+            setting_sources=self._effective_setting_sources(profile),
             strict_mcp_config=profile.strict_mcp_config,
             env=self._resolve_dispatch_env() or None,
             extra_args=extra_args,
@@ -658,6 +666,32 @@ class ClaudeCodeDispatcher:
             # byte-identical to pre-Module-6 behavior.
             mcp_servers=profile.mcp_servers,
         )
+
+    def _effective_setting_sources(self, profile: ClaudeCodeDispatchProfile) -> Optional[List[str]]:
+        """Resolve the setting sources forwarded to the dispatched CLI.
+
+        Sandboxed subagents (``sdd-worker`` / ``sdd-coder``) always get an
+        explicit list without ``"user"``: ``None`` would let the CLI load its
+        default sources, user hooks included, and a user-level ``PreToolUse``
+        hook that rewrites Bash input can replace the Bubblewrap wrapper.
+        Every other subagent keeps the historical mapping (empty → ``None``).
+
+        Args:
+            profile: The dispatch profile being translated.
+
+        Returns:
+            The sources to forward, or ``None`` to defer to the SDK default.
+        """
+        if profile.subagent not in _SANDBOXED_SUBAGENTS:
+            return list(profile.setting_sources) if profile.setting_sources else None
+        sources = [source for source in profile.setting_sources if source != "user"]
+        if "user" in profile.setting_sources:
+            self.logger.warning(
+                "Dropping the 'user' setting source for sandboxed subagent %s: user-level "
+                "PreToolUse hooks could replace the Bubblewrap wrapper",
+                profile.subagent,
+            )
+        return sources or ["project"]
 
     @staticmethod
     def _effective_max_turns(profile: ClaudeCodeDispatchProfile) -> Optional[int]:

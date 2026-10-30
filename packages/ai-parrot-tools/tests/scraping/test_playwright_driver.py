@@ -761,3 +761,47 @@ class TestCdpScreenshotDetachGuard:
         out = tmp_path / "shot.png"
         assert await driver.screenshot(str(out)) == png
         assert out.read_bytes() == png
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "configured,owned,has_video", [(True, True, True), (False, True, True), (True, False, True), (True, True, False)]
+)
+async def test_quit_recording_guards(started_driver, configured: bool, owned: bool, has_video: bool) -> None:
+    """Capture only configured recordings from owned contexts after closing."""
+    context = started_driver._context
+    video = AsyncMock()
+    started_driver.config.record_video_dir = "/tmp/recordings" if configured else None
+    started_driver._owns_context = owned
+    started_driver._page.video = video if has_video else None
+
+    async def video_path() -> str:
+        context.close.assert_awaited_once()
+        return "/tmp/recordings/session.webm"
+
+    video.path.side_effect = video_path
+    await started_driver.quit()
+    if configured and owned and has_video:
+        assert started_driver.recording_path == "/tmp/recordings/session.webm"
+        video.path.assert_awaited_once()
+        await started_driver.quit()
+        assert started_driver.recording_path == "/tmp/recordings/session.webm"
+    else:
+        assert started_driver.recording_path is None
+        video.path.assert_not_called()
+    if not owned:
+        context.close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_recording_failure_still_releases_resources(started_driver) -> None:
+    """Video retrieval failure must not leak the browser or Playwright transport."""
+    browser, playwright = started_driver._browser, started_driver._playwright
+    started_driver.config.record_video_dir = "/tmp/recordings"
+    started_driver._page.video = AsyncMock()
+    started_driver._page.video.path.side_effect = RuntimeError("recorder unavailable")
+    await started_driver.quit()
+    browser.close.assert_awaited_once()
+    playwright.stop.assert_awaited_once()
+    assert started_driver.recording_path is None
+    assert started_driver._page is None

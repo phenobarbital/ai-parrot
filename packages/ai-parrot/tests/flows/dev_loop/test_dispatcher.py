@@ -786,3 +786,52 @@ class TestMaxTurnsCap:
                 node_id="synthesis",
                 cwd=str(_patch_worktree_base),
             )
+
+
+# ---------------------------------------------------------------------------
+# issue:6756c929a450 — sandboxed seats never load the user setting source
+# ---------------------------------------------------------------------------
+
+
+class TestSandboxedSettingSources:
+    """A user-level PreToolUse hook that rewrites Bash input can replace the
+    Bubblewrap wrapper, so sandboxed subagents must never load ``user``."""
+
+    @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
+    @pytest.mark.parametrize(
+        ("requested", "expected"),
+        [
+            ([], ["project"]),
+            (["user"], ["project"]),
+            (["user", "project"], ["project"]),
+            (["project", "local"], ["project", "local"]),
+            (["local", "user"], ["local"]),
+        ],
+    )
+    def test_sandboxed_subagent_sources(self, dispatcher, _patch_worktree_base, subagent, requested, expected):
+        profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=requested)
+        opts = dispatcher._resolve_run_options(profile, str(_patch_worktree_base))
+        assert opts.setting_sources == expected
+
+    def test_non_sandboxed_subagent_unchanged(self, dispatcher, _patch_worktree_base):
+        empty = ClaudeCodeDispatchProfile(subagent="sdd-qa", setting_sources=[])
+        assert dispatcher._resolve_run_options(empty, str(_patch_worktree_base)).setting_sources is None
+        user = ClaudeCodeDispatchProfile(subagent="sdd-qa", setting_sources=["user", "project"])
+        assert dispatcher._resolve_run_options(user, str(_patch_worktree_base)).setting_sources == ["user", "project"]
+
+    def test_cli_argv_excludes_user_source(self, dispatcher, _patch_worktree_base):
+        """The CLI command a sandboxed seat runs carries an explicit
+        ``--setting-sources`` flag without ``user`` (no flag = CLI default,
+        which loads ~/.claude hooks)."""
+        sdk_types = pytest.importorskip("claude_agent_sdk.types")
+        transport_mod = pytest.importorskip("claude_agent_sdk._internal.transport.subprocess_cli")
+        profile = ClaudeCodeDispatchProfile(subagent="sdd-coder", setting_sources=[])
+        opts = dispatcher._resolve_run_options(profile, str(_patch_worktree_base))
+        sdk_options = sdk_types.ClaudeAgentOptions(
+            setting_sources=opts.setting_sources,
+            cli_path="/bin/true",
+            cwd=str(_patch_worktree_base),
+        )
+        argv = transport_mod.SubprocessCLITransport(prompt="x", options=sdk_options)._build_command()
+        flags = [arg for arg in argv if arg.startswith("--setting-sources")]
+        assert flags == ["--setting-sources=project"]

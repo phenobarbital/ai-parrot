@@ -1,0 +1,16 @@
+
+- [ ] **Does `test_mcp_local.py`'s doc-block parser tolerate an added fenced block in
+  `docs/tools/semantic-layer.md`, or must the new section be prose-only?** — *Owner*: spec author
+  *Blocks*: R2 · *Plausible answers*: a) parser keys on specific block content and tolerates extras ·
+  b) it enumerates all blocks and a new one breaks it · c) add prose only and keep code in the README
+
+- [ ] **Should the four examples land as one feature or be sequenced?** — *Owner*: tbd
+  *Blocks*: R3 · *Plausible answers*: a) one spec, four tasks, one PR · b) move + example #1 first,
+  the other three as a follow-up feature · c) one spec, four tasks, merged incrementally
+
+- [ ] **Does the shared committed YAML need a second connection** (so the multi-model example can show
+  cross-connection refusal), or does one DuckDB connection cover all four? — *Owner*: spec author
+  *Blocks*: K12 · *Plausible answers*: a) one connection suffices · b) two, to demonstrate the boundary
+
+---
+

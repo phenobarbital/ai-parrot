@@ -112,6 +112,14 @@ class PausedEnvelope(BaseModel):
     source_agent: Optional[str] = None
 
 
+def _suggestions_payload(message: Any) -> Optional[list[dict[str, Any]]]:
+    """JSON-ready follow-up chips (FEAT-752), or None when absent/empty so the key is omitted."""
+    chips = getattr(message, "suggestions", None)
+    if not chips:
+        return None
+    return [c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c) for c in chips]
+
+
 @is_authenticated()
 @user_session()
 class AgentTalk(BaseView):
@@ -1692,6 +1700,8 @@ class AgentTalk(BaseView):
         # transport to the /ws/userinfo channel keyed by session_id.  Default
         # False — frontend-driven path is unchanged when this flag is absent.
         avatar_bifurcate: bool = bool(data.pop("avatar_bifurcate", False))
+        # FEAT-752 rev 0.3: opt-in trailing chips frame on the stream path; popped so it never reaches the bot.
+        suggestions_trailer: bool = bool(data.pop("suggestions_trailer", False))
 
         # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
         # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
@@ -1863,6 +1873,7 @@ class AgentTalk(BaseView):
                         agent_name=agent_name,
                         client_message_id=client_message_id,
                         avatar_bifurcate=avatar_bifurcate,
+                        suggestions_trailer=suggestions_trailer,
                         tenant=tenant,
                         **data,
                     )
@@ -2604,6 +2615,38 @@ class AgentTalk(BaseView):
             turn_id,
         )
 
+    @staticmethod
+    def _cancel_suggestions_task(ai_message: Optional[AIMessage]) -> None:
+        """FEAT-752 rev 0.3: never leak a running chip LLM call when the stream is cancelled or fails."""
+        task = getattr(ai_message, "_suggestions_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _write_suggestions_trailer(
+        self, stream_resp: web.StreamResponse, bot: Any, ai_message: AIMessage
+    ) -> None:
+        """FEAT-752 rev 0.3: await the deferred chip task and write ``\\n\\x00{"suggestions", "turn_id"}``.
+
+        Writes nothing when there is no task, it times out/fails, or the list is empty. Never raises
+        (client cancellation excepted: that propagates so the caller can cancel the task).
+        """
+        task = getattr(ai_message, "_suggestions_task", None)
+        if task is None:
+            return
+        timeout = float(getattr(bot, "suggestion_timeout_s", 4.0)) + 1.0
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 — chips are best-effort
+            task.cancel()
+            self.logger.warning("Suggestions trailer skipped: %s", exc)
+            return
+        payload = _suggestions_payload(ai_message)
+        if payload is None:
+            return
+        trailer = {"suggestions": payload, "turn_id": str(getattr(ai_message, "turn_id", "") or "")}
+        await stream_resp.write(b"\n\x00" + json_encoder(trailer).encode("utf-8"))
+        await stream_resp.drain()
+
     async def _handle_stream_response(
         self,
         bot: AbstractBot,
@@ -2621,6 +2664,7 @@ class AgentTalk(BaseView):
         agent_name: str = "",
         client_message_id: Optional[str] = None,
         avatar_bifurcate: bool = False,
+        suggestions_trailer: bool = False,
         tenant: Optional[str] = None,
         **kwargs,
     ) -> web.StreamResponse:
@@ -2639,18 +2683,18 @@ class AgentTalk(BaseView):
         holds the WebSocket connection.  ``avatar_bifurcate`` is a no-op for
         non-streaming callers (``bot.ask`` path) — FULL mode always streams.
         """
-        stream_resp = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "text/plain; charset=utf-8",
-                "Transfer-Encoding": "chunked",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Parrot-Stream": "chunked-aimessage",
-                "X-Accel-Buffering": "no",
-            },
-        )
+        stream_headers = {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Parrot-Stream": "chunked-aimessage",
+            "X-Accel-Buffering": "no",
+        }
+        if suggestions_trailer:
+            # FEAT-752 rev 0.3: opt-in framing — the literal above stays the public default.
+            stream_headers["X-Parrot-Stream"] = "chunked-aimessage+suggestions"
+        stream_resp = web.StreamResponse(status=200, reason="OK", headers=stream_headers)
         await stream_resp.prepare(self.request)
         start_time = time.perf_counter()
         ai_message: Optional[AIMessage] = None
@@ -2672,6 +2716,7 @@ class AgentTalk(BaseView):
                 memory=memory,
                 llm=llm,
                 tenant=tenant,
+                defer_suggestions=suggestions_trailer,
                 **kwargs,
             ):
                 if isinstance(chunk, AIMessage):
@@ -2727,9 +2772,14 @@ class AgentTalk(BaseView):
                 a2ui_envelope = getattr(ai_message, "a2ui_envelope", None)
                 if a2ui_envelope is not None:
                     envelope["a2ui_envelope"] = a2ui_envelope
+                _suggestions = _suggestions_payload(ai_message)
+                if _suggestions is not None and not suggestions_trailer:
+                    envelope["suggestions"] = _suggestions
                 separator = b"\n\x00"
                 await stream_resp.write(separator + json_encoder(envelope).encode("utf-8"))
                 await stream_resp.drain()
+                if suggestions_trailer:
+                    await self._write_suggestions_trailer(stream_resp, bot, ai_message)
 
             # Persist chat turn via ChatStorage
             try:
@@ -2809,7 +2859,9 @@ class AgentTalk(BaseView):
 
         except asyncio.CancelledError:
             self.logger.info("Stream cancelled by client for agent '%s'.", agent_name)
+            self._cancel_suggestions_task(ai_message)
         except Exception as e:
+            self._cancel_suggestions_task(ai_message)
             error_payload = json_encoder({"error": str(e)})
             await stream_resp.write(f"\n\x00{error_payload}".encode("utf-8"))
             self.logger.error("Error in stream response for agent '%s': %s", agent_name, e)
@@ -2866,16 +2918,18 @@ class AgentTalk(BaseView):
                     "response_time": response_time_ms,
                 }
             )
-            return self.json_response(
-                {
-                    "input": getattr(response, "input", None),
-                    "output": response.response or "",
-                    "output_mode": OutputMode.A2UI.value,
-                    "a2ui_envelope": getattr(response, "a2ui_envelope", None),
-                    "artifact_id": getattr(response, "artifact_id", None),
-                    "metadata": a2ui_metadata,
-                }
-            )
+            a2ui_body = {
+                "input": getattr(response, "input", None),
+                "output": response.response or "",
+                "output_mode": OutputMode.A2UI.value,
+                "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                "artifact_id": getattr(response, "artifact_id", None),
+                "metadata": a2ui_metadata,
+            }
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                a2ui_body["suggestions"] = _suggestions
+            return self.json_response(a2ui_body)
 
         # FEAT-197: Infographic mode — return the documented JSON envelope
         # (or text/html for Accept: text/html / ?format=html requests).
@@ -2975,6 +3029,9 @@ class AgentTalk(BaseView):
             _a2ui_envelope = getattr(response, "a2ui_envelope", None)
             if _a2ui_envelope is not None:
                 obj_response["a2ui_envelope"] = _a2ui_envelope
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                obj_response["suggestions"] = _suggestions
             # self.logger.debug('Agent response: %s', obj_response)
 
             # Persist chat turn via ChatStorage (hot + cold)
@@ -3282,6 +3339,9 @@ class AgentTalk(BaseView):
         _a2ui_envelope = getattr(response, "a2ui_envelope", None)
         if _a2ui_envelope is not None:
             obj_response["a2ui_envelope"] = _a2ui_envelope
+        _suggestions = _suggestions_payload(response)
+        if _suggestions is not None:
+            obj_response["suggestions"] = _suggestions
         return web.json_response(
             obj_response,
             dumps=json_encoder,

@@ -13,7 +13,7 @@ class TestDriverConfig:
     def test_defaults(self):
         """DriverConfig initializes with correct defaults."""
         config = DriverConfig()
-        assert config.driver_type == "selenium"
+        assert config.driver_type == "playwright"
         assert config.browser == "chrome"
         assert config.headless is True
         assert config.mobile is False

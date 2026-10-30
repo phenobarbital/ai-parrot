@@ -137,6 +137,9 @@ class TelegramAgentConfig:
     knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     # Reply context enrichment (FEAT-120)
     enable_reply_context: bool = True
+    # Follow-up suggestion chips as inline buttons (FEAT-752) — opt-in.
+    suggestion_buttons: bool = False
+    suggestion_button_ttl_s: int = 86400
     # Operator commands (FEAT-210)
     # Allowlist of chat IDs that may execute operator commands.
     # Fail-closed: None (or empty) means NO chat is an operator.
@@ -299,6 +302,8 @@ class TelegramAgentConfig:
             max_document_size_mb=int(data.get("max_document_size_mb", 20)),
             knowledge_upload=KnowledgeUploadConfig.model_validate(data.get("knowledge_upload") or {}),
             enable_reply_context=bool(data.get("enable_reply_context", True)),
+            suggestion_buttons=bool(data.get("suggestion_buttons", False)),
+            suggestion_button_ttl_s=int(data.get("suggestion_button_ttl_s", 86400)),
             operator_chat_ids=[int(x) for x in data["operator_chat_ids"]] if data.get("operator_chat_ids") else None,
             enable_operator_commands=bool(data.get("enable_operator_commands", True)),
             # FEAT-213: TTS voice reply (opt-in, defaults match dataclass defaults)

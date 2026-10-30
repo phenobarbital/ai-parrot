@@ -39,6 +39,7 @@ from parrot.integrations.core.state import IntegrationStateManager
 from parrot.integrations.utils import parse_kwargs as _shared_parse_kwargs
 from navconfig.logging import logging
 from .callbacks import CallbackRegistry, CallbackContext, CallbackResult
+from .suggestion_buttons import SUGGESTION_PREFIX, SuggestionButtonStore, build_suggestion_keyboard
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .auth import (
@@ -205,6 +206,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
         self._state_manager = IntegrationStateManager()
+
+        # FEAT-752: follow-up chips as inline buttons (opt-in). Registered before _register_handlers() so the
+        # callback_query route is installed even when the agent has no @telegram_callback methods.
+        self._suggestion_buttons: Optional[SuggestionButtonStore] = None
+        if getattr(config, "suggestion_buttons", False):
+            self._suggestion_buttons = SuggestionButtonStore(ttl_s=config.suggestion_button_ttl_s)
+            self._callback_registry.register(
+                SUGGESTION_PREFIX, self._on_suggestion_press, "Replay a follow-up suggestion chip"
+            )
 
         # We need the orchestrator if this is a managed environment
         discovered = self._callback_registry.discover_from_agent(self.agent)
@@ -2637,6 +2647,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Send parsed response (handles text, images, documents, tables, code)
             sent = await self._send_parsed_response(message, parsed)
+            await self._send_suggestion_keyboard(message, session, response)
 
             # FEAT-120: cache bot message ID and persist metadata
             bot_msg_id = sent.message_id if sent else 0
@@ -4042,6 +4053,70 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     _escape_markdown_legacy = _strip_markdown
 
     # ─── NEW: Callback Handling Methods ───
+
+    async def _send_suggestion_keyboard(self, message: Message, session: Any, response: Any) -> None:
+        """FEAT-752: send the reply's non-action chips as an inline keyboard. Never raises."""
+        # getattr: a wrapper built without __init__ (tests, subclasses) has no store; chips must not break the turn.
+        if getattr(self, "_suggestion_buttons", None) is None:
+            return
+        chips = getattr(response, "suggestions", None) or []
+        if not chips:
+            return
+        try:
+            keyboard = await build_suggestion_keyboard(
+                chips,
+                self._suggestion_buttons,
+                chat_id=message.chat.id,
+                user_id=session.telegram_id,
+            )
+            if keyboard:
+                await self.send_interactive_message(message.chat.id, "💡 Follow-ups:", keyboard)
+        except Exception as exc:  # noqa: BLE001 — chips are best-effort
+            self.logger.warning("Suggestion keyboard skipped: %s", exc)
+
+    async def _on_suggestion_press(self, context: CallbackContext) -> CallbackResult:
+        """FEAT-752: replay a stored chip prompt as a new turn for the user who received it."""
+        store = self._suggestion_buttons
+        token = context.payload.get("raw") if isinstance(context.payload, dict) else None
+        record = await store.get(token) if (store is not None and isinstance(token, str)) else None
+        if record is None:
+            return CallbackResult(reply_text="⌛ This suggestion has expired.")
+        if (
+            record.get("user_id") != context.user_id
+            or record.get("chat_id") != context.chat_id
+            or not self._is_authorized(context.chat_id)
+        ):
+            return CallbackResult(reply_text="⛔ This suggestion is not for you.")
+
+        query = context.raw_query
+        msg = query.message if query is not None else None
+        if msg is None:
+            return CallbackResult(reply_text="⌛ This suggestion has expired.")
+
+        try:
+            mode = OutputMode(record.get("output_mode")) if record.get("output_mode") else OutputMode.TELEGRAM
+        except ValueError:
+            mode = OutputMode.TELEGRAM
+
+        # _get_user_session reads only `.from_user`: the callback query's (the clicker), never msg.from_user (the bot).
+        session = self._get_user_session(query)
+        # Same gate as handle_message (`_check_authentication`): a token outlives a logout or an expired session for up
+        # to `suggestion_button_ttl_s`, so a press must not run the agent for a user who is no longer signed in.
+        if self.config.force_authentication and not session.authenticated:
+            return CallbackResult(reply_text="⛔ You must sign in with /login to talk to me.")
+        memory = self._get_or_create_memory(context.chat_id)
+        with telegram_chat_scope(context.chat_id):
+            response = await self._invoke_agent(
+                session,
+                record["prompt"],
+                memory=memory,
+                output_mode=mode,
+                message=msg,
+            )
+        parsed = self._parse_response(response)
+        await self._send_parsed_response(msg, parsed)
+        await self._send_suggestion_keyboard(msg, session, response)
+        return CallbackResult()
 
     async def _handle_callback_query(self, callback_query: CallbackQuery) -> None:
         """

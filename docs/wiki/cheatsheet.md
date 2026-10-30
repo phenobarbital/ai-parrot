@@ -255,12 +255,11 @@ wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> [--no-reconci
 
 **Shared event log (FEAT-694).** `sdd/ledger/events.jsonl` (+ `sdd/ledger/archive/`) is a
 git-tracked, append-only copy of the ledger events, merged by git with `merge=union`
-(`.gitattributes`). The four `parrot-ledger` git hooks (pre-commit, post-merge, post-checkout,
-post-rewrite) import it into / export it from the local ledger automatically.
-Manual commands: `wikitoolkit ledger export-log`, `wikitoolkit ledger import-log`,
-`wikitoolkit ledger rotate-log --older-than-days N`. Rotation runs only in `/sdd-done`
-step 9.1, never in a hook. Existing checkouts: re-run `parrot claude install` once to
-install the hooks.
+(`.gitattributes`). The `parrot-ledger` post-merge, post-checkout and post-rewrite hooks import it into the
+local ledger; the pre-commit block is a no-op since FEAT-758 — events reach `origin/dev` only through
+`/sdd-done`'s outbox delivery (`wikitoolkit ledger outbox prepare|status|integrate`, see
+`docs/sdd/ledger-outbox.md`). `wikitoolkit ledger rotate-log --older-than-days N` is explicit maintenance;
+`/sdd-done` no longer rotates. Existing checkouts: re-run `parrot claude install` once to upgrade the hooks.
 
 Kinds: `bug | tech_debt | feature_gap | vulnerability`. Severidades:
 `critical | major | minor | low`. `--discovered-from`: `spec:<FEAT>`,

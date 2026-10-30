@@ -5,6 +5,7 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 
 from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
+import importlib.util
 from importlib import import_module
 from pathlib import Path
 import contextlib
@@ -45,6 +46,7 @@ from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.infographic_recipes import RecipeHandler
 from ..handlers.ui_surfaces import UISurfacesHandler
+from ..handlers.metric_definitions import MetricDefinitionsHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -567,6 +569,12 @@ class BotManager:
             memory_config=bot_model.memory_config,
             max_context_turns=bot_model.max_context_turns,
             use_conversation_history=bot_model.use_conversation_history,
+            # Follow-up suggestion chips (FEAT-752)
+            enable_suggestions=getattr(bot_model, "enable_suggestions", False),
+            suggest_followups=getattr(bot_model, "suggest_followups", False),
+            suggestion_timeout_s=getattr(bot_model, "suggestion_timeout_s", 4.0),
+            max_suggestions=getattr(bot_model, "max_suggestions", 6),
+            suggestion_model=getattr(bot_model, "suggestion_model", None),
             # Security and permissions
             permissions=bot_permissions,
             # Metadata
@@ -2424,6 +2432,10 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
+        # FEAT-756: metric definition registry REST lane — /schema before /{metric_id}.
+        router.add_view("/api/v1/metrics", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/schema", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/{metric_id}", MetricDefinitionsHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
@@ -2570,6 +2582,11 @@ class BotManager:
         # Dataset Manager for agents:
         router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)
         router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)
+        if importlib.util.find_spec("parrot.semantic") is not None:
+            from ..handlers.semantic import SemanticLayerHandler
+
+            router.add_view("/api/v1/agents/semantic/{agent_id}", SemanticLayerHandler)
+            router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
         # Infographic Recipes (FEAT-324): CRUD + on-demand replay. Unlike
         # DatasetManagerHandler, the recipe store/runner have no per-request
         # cloning path — configure them via

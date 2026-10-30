@@ -133,7 +133,7 @@ def _make_handler(
 
     handler = FormAPIHandler(registry=registry)
 
-    vr = MagicMock(spec=ValidationResult)
+    vr = ValidationResult(is_valid=valid, errors={}, sanitized_data={})
     vr.is_valid = valid
     vr.errors = validation_errors or ({} if valid else {"field": ["required"]})
     vr.sanitized_data = {"name": "Alice"} if valid else {}

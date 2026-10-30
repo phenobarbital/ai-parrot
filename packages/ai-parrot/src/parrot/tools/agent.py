@@ -1,6 +1,7 @@
 """
 Complete Fixed AgentTool with Correct Schema Structure
 """
+
 from __future__ import annotations
 from typing import Dict, List, Any, Optional, Literal, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from ..models.crew import AgentResult
 from ..models.outputs import OutputMode
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
+from ..roost.endpoint import RoostEndpoint, RoostFailure
+
 if TYPE_CHECKING:
     from ..bots.abstract import AbstractBot
 
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
 @dataclass
 class AgentContext:
     """Context passed between agents in orchestration."""
+
     user_id: str
     session_id: str
     original_query: str
@@ -31,13 +35,11 @@ class AgentContext:
 
 class QuestionInput(BaseModel):
     """Input schema for AgentTool - defines the question parameter."""
-    question: str = Field(
-        ...,
-        description="The question or task to ask the agent"
-    )
+
+    question: str = Field(..., description="The question or task to ask the agent")
     mode: Optional[Literal["replace", "append"]] = Field(
         default="replace",
-        description="How to handle results: 'replace' overwrites previous results, 'append' concatenates"
+        description="How to handle results: 'replace' overwrites previous results, 'append' concatenates",
     )
     include_previous_results: bool = Field(
         default=False,
@@ -45,7 +47,7 @@ class QuestionInput(BaseModel):
             "When True, automatically inject all previous agent results as "
             "context into this agent call. Use this for cross-pollination "
             "where the current agent should build upon prior agent outputs."
-        )
+        ),
     )
 
 
@@ -77,15 +79,15 @@ class AgentTool(AbstractTool):
 
         # Build description
         if tool_description:
-            self.description = tool_description or getattr(agent, 'description', f"Execute {agent.name} agent")
+            self.description = tool_description or getattr(agent, "description", f"Execute {agent.name} agent")
         else:
             # Auto-generate from agent properties
             desc_parts = []
-            if hasattr(agent, 'role') and agent.role:
+            if hasattr(agent, "role") and agent.role:
                 desc_parts.append(f"Role: {agent.role}")
-            if hasattr(agent, 'goal') and agent.goal:
+            if hasattr(agent, "goal") and agent.goal:
                 desc_parts.append(f"Goal: {agent.goal}")
-            if hasattr(agent, 'capabilities') and agent.capabilities:
+            if hasattr(agent, "capabilities") and agent.capabilities:
                 desc_parts.append(f"Capabilities: {agent.capabilities}")
 
             if desc_parts:
@@ -119,21 +121,18 @@ class AgentTool(AbstractTool):
             "parameters": {  # ← Google GenAI extracts this key
                 "type": "object",
                 "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": f"The question or task to ask {agent.name}"
-                    },
+                    "question": {"type": "string", "description": f"The question or task to ask {agent.name}"},
                     "include_previous_results": {
                         "type": "boolean",
                         "description": (
                             "When true, automatically inject all previous agent "
                             "results as context into this call for cross-pollination"
-                        )
-                    }
+                        ),
+                    },
                 },
                 "required": ["question"],
-                "additionalProperties": False
-            }
+                "additionalProperties": False,
+            },
         }
 
     def get_schema(self) -> Dict[str, Any]:
@@ -168,13 +167,19 @@ class AgentTool(AbstractTool):
         self.call_count += 1
 
         # Extract question from kwargs (validated by args_schema)
-        question = kwargs.pop('question', '')
-        mode = kwargs.pop('mode', 'replace')
-        include_previous = kwargs.pop('include_previous_results', False)
+        question = kwargs.pop("question", "")
+        mode = kwargs.pop("mode", "replace")
+        include_previous = kwargs.pop("include_previous_results", False)
         context = None
 
         if not question:
             return "Error: No question provided to agent tool"
+
+        # FEAT-747: Roost query path — only when both caller and target endpoints exist
+        roost_caller = kwargs.pop("_roost_caller", None) or getattr(self, "roost_caller", None)
+        roost_target = getattr(self.agent, "roost_endpoint", None)
+        if roost_caller is not None and roost_target is not None:
+            return await self._execute_roost(roost_caller, roost_target, question)
 
         # Cross-pollination: inject all previous agent results as context
         if include_previous and self.execution_memory and self.execution_memory.results:
@@ -184,21 +189,17 @@ class AgentTool(AbstractTool):
         # Fallback: sequential context from execution memory
         elif self.execution_memory:
             try:
-                context = self.execution_memory.get_context_for_agent(
-                    self.agent.name
-                )
+                context = self.execution_memory.get_context_for_agent(self.agent.name)
                 context_description = self._describe_context(context)
-                question = (
-                    f"{context_description}\n\nAdditional request: {question}"
-                )
+                question = f"{context_description}\n\nAdditional request: {question}"
             except (ValueError, KeyError):
                 # Agent not in execution_order yet — first call
                 pass
 
         try:
             # Auto-construct context from kwargs
-            user_id = kwargs.pop('user_id', 'orchestrator')
-            session_id = kwargs.pop('session_id', f'tool_call_{self.call_count}')
+            user_id = kwargs.pop("user_id", "orchestrator")
+            session_id = kwargs.pop("session_id", f"tool_call_{self.call_count}")
             start_time = time.time()
 
             # Create AgentContext
@@ -206,12 +207,8 @@ class AgentTool(AbstractTool):
                 user_id=user_id,
                 session_id=session_id,
                 original_query=question,
-                shared_data={
-                    **kwargs,
-                    'execution_memory': self.execution_memory,
-                    'previous_result': context
-                },
-                agent_results={}
+                shared_data={**kwargs, "execution_memory": self.execution_memory, "previous_result": context},
+                agent_results={},
             )
 
             # Apply context filter if provided
@@ -222,30 +219,30 @@ class AgentTool(AbstractTool):
             await self._inject_context_to_repl(context)
 
             # Choose method based on configuration and availability
-            if self.use_conversation_method and hasattr(self.agent, 'conversation'):
+            if self.use_conversation_method and hasattr(self.agent, "conversation"):
                 response = await self.agent.conversation(
                     question=question,
                     session_id=agent_context.session_id,
                     user_id=agent_context.user_id,
                     use_conversation_history=False,  # Keep tool calls stateless
-                    **agent_context.shared_data
+                    **agent_context.shared_data,
                 )
-            elif hasattr(self.agent, 'ask'):
+            elif hasattr(self.agent, "ask"):
                 response = await self.agent.ask(
                     question=question,
                     session_id=agent_context.session_id,
                     user_id=agent_context.user_id,
                     use_conversation_history=True,
                     output_mode=OutputMode.DEFAULT,
-                    **agent_context.shared_data
+                    **agent_context.shared_data,
                 )
-            elif hasattr(self.agent, 'invoke'):
+            elif hasattr(self.agent, "invoke"):
                 response = await self.agent.invoke(
                     question=question,
                     session_id=agent_context.session_id,
                     user_id=agent_context.user_id,
                     use_conversation_history=False,
-                    **agent_context.shared_data
+                    **agent_context.shared_data,
                 )
             else:
                 return f"Agent {self.agent.name} does not support *ask* methods"
@@ -257,16 +254,14 @@ class AgentTool(AbstractTool):
             if isinstance(response, AIMessage):
                 full_ai_message = response
             elif isinstance(response, AgentResponse):
-                inner = getattr(response, 'response', None)
+                inner = getattr(response, "response", None)
                 if isinstance(inner, AIMessage):
                     full_ai_message = inner
 
             # Extract content from response
-            if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
-                response, 'content'
-            ):
+            if isinstance(response, (AIMessage, AgentResponse)) or hasattr(response, "content"):
                 result = response.content
-            elif hasattr(response, 'output'):
+            elif hasattr(response, "output"):
                 result = response.output
             else:
                 result = str(response)
@@ -284,9 +279,9 @@ class AgentTool(AbstractTool):
                         "user_id": user_id,
                         "session_id": session_id,
                         "call_count": self.call_count,
-                        "result_type": type(result).__name__
+                        "result_type": type(result).__name__,
                     },
-                    execution_time=execution_time
+                    execution_time=execution_time,
                 )
 
                 # Handle mode: replace or append
@@ -306,19 +301,30 @@ class AgentTool(AbstractTool):
             self.logger.error(error_msg)
             return error_msg
 
+    async def _execute_roost(self, caller: RoostEndpoint, target: RoostEndpoint, question: str) -> str:
+        """Query a Roost-enabled agent and store its native answer by reference."""
+        try:
+            answer = await caller.query(question, receiver=target.address())
+        except RoostFailure as exc:
+            return f"Error: {exc}"
+
+        if caller.working_memory is None:
+            return "Error: Roost caller has no working memory"
+
+        key = f"roost:{target.agent_name}:{self.call_count}"
+        await caller.working_memory.store_result(key=key, data=answer, data_type="auto")
+        return f"Answer stored in working memory as '{key}'"
+
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get usage statistics for this agent tool."""
         return {
-            'name': self.name,
-            'agent_name': self.agent.name,
-            'call_count': self.call_count,
-            'last_response_length': len(self.last_response) if self.last_response else 0
+            "name": self.name,
+            "agent_name": self.agent.name,
+            "call_count": self.call_count,
+            "last_response_length": len(self.last_response) if self.last_response else 0,
         }
 
-    def _build_cross_pollination_context(
-        self,
-        max_result_length: int = 2000
-    ) -> Optional[str]:
+    def _build_cross_pollination_context(self, max_result_length: int = 2000) -> Optional[str]:
         """Build context from all previous agent results for cross-pollination.
 
         Aggregates every result in execution_memory into a structured text
@@ -334,9 +340,7 @@ class AgentTool(AbstractTool):
         if not self.execution_memory or not self.execution_memory.results:
             return None
 
-        parts = [
-            "## Context from previous agents (cross-pollination)\n"
-        ]
+        parts = ["## Context from previous agents (cross-pollination)\n"]
 
         for agent_id, agent_result in self.execution_memory.results.items():
             # Skip own previous results to avoid self-referencing loops
@@ -345,9 +349,7 @@ class AgentTool(AbstractTool):
 
             result_text = str(agent_result.result)
             if len(result_text) > max_result_length:
-                result_text = (
-                    result_text[:max_result_length] + "\n... [truncated]"
-                )
+                result_text = result_text[:max_result_length] + "\n... [truncated]"
 
             parts.append(f"### From {agent_result.agent_name}")
             parts.append(f"Task: {agent_result.task}")
@@ -413,21 +415,21 @@ class AgentTool(AbstractTool):
 
         # Check if agent has PythonREPL tool
         python_repl = None
-        if hasattr(self.agent, 'tool_manager'):
-            python_repl = self.agent.tool_manager.get_tool('python_repl')
+        if hasattr(self.agent, "tool_manager"):
+            python_repl = self.agent.tool_manager.get_tool("python_repl")
 
         # FEAT-380 (TASK-1944): namespace API — the REPL namespace lives in
         # the tool's worker process now, `.globals` on the host instance is
         # never updated by executed code and no longer accepts writes.
-        if python_repl and hasattr(python_repl, 'set_var'):
+        if python_repl and hasattr(python_repl, "set_var"):
             # Inject the structured data as a global variable
-            await python_repl.set_var('previous_result', context)
+            await python_repl.set_var("previous_result", context)
 
             # Also inject all results from execution memory with agent names
             if self.execution_memory:
                 for agent_id, agent_result in self.execution_memory.results.items():
-                    safe_name = agent_id.replace('-', '_').replace(' ', '_')
-                    await python_repl.set_var(f'{safe_name}_result', agent_result.result)
+                    safe_name = agent_id.replace("-", "_").replace(" ", "_")
+                    await python_repl.set_var(f"{safe_name}_result", agent_result.result)
 
     def _append_results(self, existing: Any, new: Any) -> Any:
         """Intelligently append results based on their types"""

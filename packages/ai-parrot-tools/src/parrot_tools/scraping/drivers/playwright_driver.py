@@ -74,6 +74,7 @@ class PlaywrightDriver(AbstractDriver):
         # would tear down state a supervised process's other clients may
         # still depend on.
         self._owns_context: bool = False
+        self.recording_path: Optional[str] = None
 
     # ── Lifecycle ────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ class PlaywrightDriver(AbstractDriver):
         """
         from playwright.async_api import async_playwright
 
+        self.recording_path = None
         self._playwright = await async_playwright().start()
         browser_launcher = getattr(self._playwright, self.config.browser_type)
 
@@ -171,6 +173,14 @@ class PlaywrightDriver(AbstractDriver):
         """
         if self._context and self._owns_context:
             await self._context.close()
+            if self.config.record_video_dir and self._page is not None:
+                video = getattr(self._page, "video", None)
+                if video is not None:
+                    try:
+                        self.recording_path = str(await video.path())
+                    except Exception:
+                        # A recorder failure must not prevent browser/transport cleanup.
+                        self.logger.warning("Unable to retrieve session recording", exc_info=True)
         self._context = None
         self._owns_context = False
         if self._browser:

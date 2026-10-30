@@ -6,7 +6,7 @@ GraphSpec` (schema parity by construction, FEAT-473 G2) via
 :func:`~parrot.outputs.a2ui.catalog.parrot._derive.derive_schema`, plus ONE
 post-derivation merge: ``action`` is not a ``GraphSpec`` field (it's the
 Component-level prop; the official ``common_types.json#/$defs/
-ComponentCommon`` does not define it either — spec §2 Overview), so it is
+ComponentCommon`` does not define it either — FEAT-754 spec, Overview), so it is
 declared explicitly as a ``$ref`` to the vendored ``common_types.json#/
 $defs/Action``. ``lower()`` never hand-edits ``GRAPH_SCHEMA`` further.
 
@@ -18,7 +18,7 @@ carried its identity/instructions, no registration).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from parrot.outputs.a2ui.catalog import register_component
 from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
@@ -48,6 +48,29 @@ GRAPH_INSTRUCTIONS = (
     "`accessibleDescription`. Bind `data` for live per-node state updates "
     '(`{"path": "/pointer"}`), never inline positions. Never set `action` — '
     "only a deterministic tool producer may."
+    ' For a software-architecture diagram set kind="c4" with level (context/container/component/dynamic), give every'
+    " node a c4Type (person, system, container, component, *_ext, *_db, *_queue) plus description (technology only on"
+    " containers/components), and model boundaries as groups (c4Type enterprise/system/container, nested via parent)."
+)
+
+GRAPH_C4_AUTHORING_NOTES: Final[str] = (
+    "1. Model one element per real system or container; use *_ext types for external elements and list persons first.\n"
+    "2. Label every relationship with a verb phrase and set technology only on containers or components.\n"
+    "3. Keep each diagram to at most 15 elements and add a boundary only when it contains at least 2 members.\n"
+    "4. Never provide positions or action."
+)
+
+GRAPH_C4_UTTERANCES: Final[tuple[str, ...]] = (
+    "C4 context diagram of the platform",
+    "draw a C4 container diagram of this system",
+    "show the architecture as a C4 diagram",
+    "component diagram of the API service",
+    "system context diagram with external systems",
+    "diagrama de contexto C4 de la plataforma",
+    "diagrama de contenedores de la aplicación",
+    "dibuja la arquitectura del sistema como C4",
+    "diagrama de componentes del servicio",
+    "diagrama de contexto con los sistemas externos",
 )
 
 
@@ -57,7 +80,81 @@ def _edge_extensions(edge: GraphEdge) -> dict[str, Any]:
         extensions["parrot_edge_kind"] = edge.kind
     if edge.condition:
         extensions["parrot_condition"] = edge.condition
+    if edge.technology:
+        extensions["parrot_technology"] = edge.technology
     return extensions
+
+
+def _c4_children(spec: GraphSpec) -> list[BasicNode]:
+    """Boundary-list and element-list Columns for a kind="c4" spec (order and roles per the FEAT-754 spec data models)."""
+    children: list[BasicNode] = []
+    groups = spec.groups or []
+
+    if groups:
+        groups_by_id = {group.id: group for group in groups}
+
+        def boundary_depth(group_id: str) -> int:
+            """Return the zero-based depth of a boundary in its parent chain."""
+            depth = 0
+            parent_id = groups_by_id[group_id].parent
+            while parent_id is not None:
+                depth += 1
+                parent_id = groups_by_id[parent_id].parent
+            return depth
+
+        boundary_children = []
+        for group in groups:
+            c4_type = group.c4_type or "generic"
+            boundary_children.append(
+                BasicNode(
+                    component="Text",
+                    text=f"{group.label or group.id} ({c4_type} boundary)",
+                    metadata={
+                        "extensions": {
+                            "parrot_role": "boundary",
+                            "parrot_c4_type": c4_type,
+                            "parrot_depth": boundary_depth(group.id),
+                        }
+                    },
+                )
+            )
+        children.append(
+            BasicNode(
+                component="Column",
+                children=boundary_children,
+                metadata={"extensions": {"parrot_role": "boundary-list"}},
+            )
+        )
+
+    node_groups = {node_id: group.id for group in groups for node_id in group.nodes}
+    element_children = []
+    for node in spec.nodes:
+        text = f"{node.label or node.id} [{node.c4_type}]"
+        if node.technology:
+            text += f" · {node.technology}"
+        if node.description:
+            text += f" — {node.description}"
+        extensions: dict[str, Any] = {
+            "parrot_role": "element",
+            "parrot_c4_type": node.c4_type,
+        }
+        if node.id in node_groups:
+            extensions["parrot_group"] = node_groups[node.id]
+        element_children.append(
+            BasicNode(
+                component="Text",
+                text=text,
+                metadata={"extensions": extensions},
+            )
+        )
+    children.append(
+        BasicNode(
+            component="Column",
+            children=element_children,
+            metadata={"extensions": {"parrot_role": "element-list"}},
+        )
+    )
+    return children
 
 
 @register_component("Graph", catalog_id=VIZ_CORE_CATALOG_ID)
@@ -71,6 +168,9 @@ class GraphComponent:
     """
 
     SCHEMA = GRAPH_SCHEMA
+    # FEAT-755: component_model() returns this verbatim, so GraphSpec's validators
+    # (kind="dag" rejects cycles) survive instead of being lost to a schema round-trip.
+    SOURCE_MODEL = GraphSpec
     INSTRUCTIONS = GRAPH_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
@@ -78,7 +178,7 @@ class GraphComponent:
 
         A graph without a native drawing surface degrades to its
         accessible description, a caption, an edge list, and its mermaid
-        source (spec §2 Data Models "Lowered tree") — every renderer
+        source (FEAT-754 spec, "Lowered tree") — every renderer
         without viz-core support (or without a graph engine) still shows
         something readable and copyable. Any ``data`` binding passes
         through UNRESOLVED under ``metadata.extensions.parrot_graph_data``
@@ -95,9 +195,14 @@ class GraphComponent:
         graph_props = {key: value for key, value in props.items() if key != "data"}
         spec = GraphSpec.model_validate(graph_props)
 
-        description = spec.accessible_description or (
-            f"Graph of {len(spec.nodes)} nodes and {len(spec.edges)} edges ({spec.kind})"
-        )
+        if spec.kind == "c4":
+            description = spec.accessible_description or (
+                f"C4 {spec.level} diagram of {len(spec.nodes)} elements and {len(spec.edges)} relationships"
+            )
+        else:
+            description = spec.accessible_description or (
+                f"Graph of {len(spec.nodes)} nodes and {len(spec.edges)} edges ({spec.kind})"
+            )
 
         children: list[BasicNode] = [
             BasicNode(
@@ -113,15 +218,22 @@ class GraphComponent:
         children.append(
             BasicNode(
                 component="Text",
-                text=f"Graph ({spec.kind}, {spec.direction})",
+                text=f"C4 {spec.level} diagram" if spec.kind == "c4" else f"Graph ({spec.kind}, {spec.direction})",
                 metadata={"extensions": {"parrot_role": "caption"}},
             )
         )
 
+        if spec.kind == "c4":
+            children.extend(_c4_children(spec))
+
         edge_children = [
             BasicNode(
                 component="Text",
-                text=f"{edge.from_} → {edge.to}" + (f" ({edge.label})" if edge.label else ""),
+                text=(
+                    f"{edge.from_} → {edge.to}"
+                    + (f" ({edge.label})" if edge.label else "")
+                    + (f" via {edge.technology}" if spec.kind == "c4" and edge.technology else "")
+                ),
                 metadata={"extensions": _edge_extensions(edge)},
             )
             for edge in spec.edges
@@ -145,9 +257,13 @@ class GraphComponent:
             )
         )
 
+        card_extensions: dict[str, Any] = {"parrot_variant": "graph"}
+        if spec.kind == "c4":
+            card_extensions["parrot_c4_level"] = spec.level
+
         return BasicNode(
             id=component.id,
             component="Card",
             child=BasicNode(component="Column", children=children),
-            metadata={"extensions": {"parrot_variant": "graph"}},
+            metadata={"extensions": card_extensions},
         )

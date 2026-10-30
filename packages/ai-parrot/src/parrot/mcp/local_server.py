@@ -86,6 +86,16 @@ class StdioMCPServer(LocalMCPServerBase):
                     # sys.stdin.readline() is blocking — run it off the event loop.
                     line = await loop.run_in_executor(None, sys.stdin.readline)
                     if not line:
+                        # The single path that ended four runs without a word
+                        # (issue:995ad869e502). The in-flight count separates an
+                        # orderly host shutdown (0) from a channel that died
+                        # under a running tool call, which is that bug's
+                        # signature.
+                        self.logger.info(
+                            "stdin reached EOF (host closed the JSON-RPC channel); "
+                            "stopping with %s request handler(s) in flight",
+                            len([t for t in self._inflight if not t.done()]),
+                        )
                         break
 
                     line = line.strip()

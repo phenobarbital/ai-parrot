@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import subprocess
 import sys
 from typing import Any, Sequence
 
@@ -442,8 +443,64 @@ def bounded_shell_argv(command: str, tool_input: dict[str, Any]) -> list[str]:
     return [timeout_bin, "-k", str(KILL_GRACE_SECONDS), str(seconds), *argv]
 
 
+# RTK compacts command output through its own global ``PreToolUse`` hook. When
+# both hooks rewrite a Bash call, the host keeps only one ``updatedInput`` and
+# does not define which: usually this module's wrapper of the *original*
+# command, so RTK's rewrite is lost, but sometimes RTK's, which then runs
+# unsandboxed. The RTK rewrite is applied here, inside the sandbox; keeping the
+# global hook out of sandboxed sessions is the caller's job.
+#
+# RTK's data directory stays read-only in the sandbox on purpose. It holds
+# ``trusted_filters.json``, the trust store for project-local
+# ``.rtk/filters.toml``; a seat that could write it could trust its own filter
+# and change what RTK shows outside the sandbox. RTK skips its tracking and
+# ``tee`` writes when they fail, so sandboxed runs only go uncounted by
+# ``rtk gain``.
+RTK_ENV_SWITCH = "PARROT_SANDBOX_RTK"
+RTK_REWRITE_TIMEOUT_SECONDS = 5
+
+
+def rtk_rewrite(command: str) -> str | None:
+    """Return RTK's token-optimized form of ``command``, or ``None`` to keep it as is.
+
+    ``rtk rewrite`` prints the rewritten command when RTK has an equivalent and
+    prints nothing when it has none. Only that output is trusted, because the
+    exit status is RTK's permission verdict against the Claude settings: 0 when
+    an allow rule matches, 3 when the host should ask, 2 (with no output) when a
+    deny rule matches. This hook grants no approval, so 0 and 3 are equivalent
+    here. ``--`` ends RTK's own options, so a command that starts with ``-`` is
+    rewritten as text instead of being parsed as an RTK flag. Every failure
+    (RTK not installed, disabled with ``PARROT_SANDBOX_RTK=0``, a timeout, a
+    crash) keeps the original command, because output compaction must never
+    block a command.
+
+    Args:
+        command: The shell text to run, after the test-scope guard.
+
+    Returns:
+        The rewritten command, or ``None`` when RTK is unavailable or has no equivalent.
+    """
+    if os.environ.get(RTK_ENV_SWITCH, "1") == "0":
+        return None
+    executable = shutil.which("rtk")
+    if executable is None:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "rewrite", "--", command],
+            capture_output=True,
+            text=True,
+            timeout=RTK_REWRITE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rewritten = result.stdout.rstrip("\n")
+    return rewritten if rewritten.strip() else None
+
+
 def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
-    """Wrap native Bash input and reject shared-environment file-tool writes."""
+    """Wrap native Bash input, through RTK when available, and reject shared-environment file-tool writes."""
     cwd = Path(payload["cwd"])
     tool_input = payload["tool_input"]
     output: dict[str, Any] = {"hookEventName": "PreToolUse"}
@@ -457,6 +514,9 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
             if action in ("rewrite", "verdict") and value:
                 command = value
+            # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
+            if optimized := rtk_rewrite(command):
+                command = optimized
             wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.

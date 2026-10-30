@@ -25,6 +25,7 @@ def test_compat_client_explicit_base_url_wins():
     assert c.base_url == "https://example.test/"
 
 
-def test_compat_client_has_no_model_defaults():
-    for name in ("_default_model", "_fallback_model", "_lightweight_model"):
+def test_compat_client_uses_gemini_default():
+    assert GeminiOpenAICompatClient._default_model == mod.GoogleModel.GEMINI_FLASH_LATEST.value
+    for name in ("_fallback_model", "_lightweight_model"):
         assert name not in GeminiOpenAICompatClient.__dict__

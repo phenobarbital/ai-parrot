@@ -53,6 +53,45 @@ def test_extract_last_linked_surface_result_ignores_non_linked() -> None:
     assert "version" not in LINKED_RESULT["a2ui_envelope"]
 
 
+SURFACE_RESULT = {
+    "a2ui_envelope": INNER,
+    "artifacts": [{"type": "a2ui_surface", "component": "MermaidDiagram", "surface_id": "linked-activity"}],
+}
+
+
+def test_extract_last_linked_surface_result_accepts_a2ui_surface() -> None:
+    extract = _base_bot()._extract_last_linked_surface_result
+    snapshot = copy.deepcopy(SURFACE_RESULT)
+    assert extract(object(), [_tc("render_mermaid_diagram", SURFACE_RESULT)]) == {
+        "version": "v1.0",
+        "createSurface": INNER,
+    }
+    assert SURFACE_RESULT == snapshot
+    # errored call and a non-liftable artifact type stay ignored
+    assert extract(object(), [_tc("render_mermaid_diagram", SURFACE_RESULT, error="boom")]) is None
+    assert extract(object(), [_tc("t", {"a2ui_envelope": INNER, "artifacts": [{"type": "chart"}]})]) is None
+
+
+def test_ask_lifts_mermaid_tool_result() -> None:
+    """A mermaid tool result is lifted by the same call site as the linked lift, with the same precedence."""
+    cls = _base_bot()
+    assert (
+        cls._extract_last_linked_surface_result.__doc__
+        and "a2ui_surface" in cls._extract_last_linked_surface_result.__doc__
+    )
+    source = inspect.getsource(cls.ask)
+    linked_idx = source.index("_extract_last_linked_surface_result(")
+    assert source.index("_extract_last_infographic_result(") < linked_idx
+    guard = source[source.rindex("if (", 0, linked_idx) : linked_idx]
+    assert "interactive_envelope is None" in guard and "infographic_envelope is None" in guard
+    # last-wins across a linked and a mermaid result
+    extract = cls._extract_last_linked_surface_result
+    second = dict(INNER, surfaceId="mermaid-diagram")
+    mermaid = {"a2ui_envelope": second, "artifacts": [{"type": "a2ui_surface", "surface_id": "mermaid-diagram"}]}
+    got = extract(object(), [_tc("a", LINKED_RESULT), _tc("render_mermaid_diagram", mermaid)])
+    assert got["createSurface"]["surfaceId"] == "mermaid-diagram"
+
+
 def test_extract_last_linked_surface_result_last_wins() -> None:
     extract = _base_bot()._extract_last_linked_surface_result
     second_inner = dict(INNER, surfaceId="linked-second")

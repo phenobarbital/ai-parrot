@@ -355,7 +355,7 @@ the main repository:
 $sdd-done FEAT-NNN
 $sdd-done FEAT-NNN --dry-run
 $sdd-done FEAT-NNN --force
-$sdd-done FEAT-NNN --resolve-jira
+# Configure the jira.transition post_pr hook; see docs/sdd/closeout-hooks.md
 ```
 
 `$sdd-done` verifies:
@@ -422,7 +422,7 @@ cd .claude/worktrees/feat-<FEAT-ID>-nav-8036-<slug>
 $sdd-start TASK-NNN
 # repeat tasks
 cd ../../..
-$sdd-done FEAT-NNN --resolve-jira
+# Configure jira.transition in .parrot/sdd_hooks.toml; see docs/sdd/closeout-hooks.md
 ```
 
 Greenfield feature:

@@ -475,6 +475,29 @@ class TestMapDispatch:
             importlib.import_module("parrot.outputs.a2ui_renderers.interactive_html")
 
 
+SRC = 'flowchart TD\n    a["a < b & c"] --> b\n'
+
+
+class TestMermaidDiagramNotIntercepted:
+    """FEAT-753 D5: interactive-html lowers MermaidDiagram to a code block (no mermaid.js)."""
+
+    async def test_interactive_html_mermaid_not_intercepted_code_block(self):
+        from parrot.outputs.a2ui_renderers.interactive_html import _INTERCEPTED
+
+        assert "MermaidDiagram" not in _INTERCEPTED
+        env = _envelope(Component(id="root", component="MermaidDiagram", source=SRC, diagramType="flowchart"))
+        baseline = await InteractiveHTMLRenderer().render(_envelope(Component(id="root", component="Text", text="x")))
+        art = await InteractiveHTMLRenderer().render(env)
+        out = art.content.decode()
+        assert '<pre class="a2ui-mermaid-source"><code class="language-mermaid">' in out
+        assert "a &lt; b &amp; c" in out
+        assert "a < b" not in out
+        assert out.count("<script src=") == baseline.content.decode().count("<script src=")
+        mermaid = [d for d in art.metadata["degraded"] if "mermaid" in d.get("reason", "").lower()]
+        assert len(mermaid) == 1
+        assert "self-contained invariant" in mermaid[0]["reason"]
+
+
 class TestHtmlDocumentSandboxedIframe:
     """FEAT-527: HtmlDocument embeds in a sandboxed iframe — never lowered,
     never evaluated by the host page."""

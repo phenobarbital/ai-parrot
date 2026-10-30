@@ -24,6 +24,7 @@ client and no model config.
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import os
 import re
@@ -406,6 +407,22 @@ async def sweep_jira_issues(
         return await _run_sweep(interface, issues_dir, dry_run=False, **kwargs)
 
 
+async def _issue_site_url(interface: JiraInterface) -> str:
+    """Browser site URL for issue links; falls back to ``server_url``."""
+    fallback = getattr(interface, "server_url", "") or ""
+    getter = getattr(interface, "get_site_url", None)
+    if not callable(getter):
+        return fallback
+    try:
+        site = getter()
+        if inspect.isawaitable(site):
+            site = await site
+    except Exception as exc:  # noqa: BLE001 -- links are best-effort
+        logger.warning("Could not resolve the Jira site URL, using server_url: %s", exc)
+        return fallback
+    return site if isinstance(site, str) and site else fallback
+
+
 async def _run_sweep(
     interface: JiraInterface,
     issues_dir: Path,
@@ -466,6 +483,9 @@ async def _run_sweep(
     labels: dict[str, set[str]] = {}
 
     semaphore = asyncio.Semaphore(concurrency)
+    # Issue links must open in a browser: resolve the site once, not the
+    # API base (which may be the api.atlassian.com gateway).
+    site_url = await _issue_site_url(interface)
 
     async def _resolve(raw: dict) -> object:
         """Do the per-issue *network* work: remote links, then parse.
@@ -484,7 +504,7 @@ async def _run_sweep(
             raw_remote_links = await interface.get_remote_links(raw_key) if raw_key else []
             return interface.parse_issue(
                 raw,
-                base_url=interface.server_url,
+                base_url=site_url,
                 ac_field_id=ac_field_id,
                 raw_remote_links=raw_remote_links,
             )

@@ -200,6 +200,7 @@ class _PlaywrightSetup:
             executable_path=resolve_browser_binary(
                 self._config.browser_binary, browser, self._config.browser_channel
             ),
+            record_video_dir=self._config.record_video_dir,
         )
         driver = PlaywrightDriver(pw_config)
         await driver.start()

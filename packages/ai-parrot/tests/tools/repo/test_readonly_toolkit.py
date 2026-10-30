@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -122,3 +123,27 @@ class TestListFiles:
         arguments must also apply to `list_files`'s own recursion."""
         out = await toolkit.list_files(".", depth=5)
         assert not any(f.startswith("escape") for f in out["files"])
+
+
+class TestSpawnStdinIsolation:
+    """This toolkit is served by the `parrot-bounded-source` stdio MCP server,
+    so it carries the identical exposure as the dev-loop dispatchers: a child
+    that inherits fd 0 can shut the server's own JSON-RPC channel down
+    (issue:995ad869e502)."""
+
+    async def test_run_argv_isolates_stdin(self, toolkit, monkeypatch):
+        captured: dict = {}
+
+        async def _fake_exec(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            raise FileNotFoundError("stop before spawning")
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+        with pytest.raises(FileNotFoundError):
+            await toolkit._run_argv(["git", "log", "-1"])
+
+        assert captured["kwargs"]["stdin"] is asyncio.subprocess.DEVNULL
+        assert captured["kwargs"]["stdout"] is asyncio.subprocess.PIPE
+

@@ -30,9 +30,13 @@ _DEFAULT_TAGS: set[str] = {"NOTE", "WHY", "HACK", "TODO", "FIXME", "XXX"}
 # Regex for tagged comments: # TAG: text  or  # TAG text
 _TAG_RE = re.compile(r"#\s*({tags}):?\s*(.*)", re.IGNORECASE)
 # Design-reference citations in comments/docstrings, e.g. "ADR-12",
-# "RFC 4180", "ADR/007". Captured as first-class Rationale nodes and linked
-# to the code that cites them.
-_CITATION_RE = re.compile(r"\b(ADR|RFC)[\s\-/]?(\d{1,5})\b", re.IGNORECASE)
+# "FS-ADR-3", "RFC 4180", "ADR/007". The optional prefix group mirrors
+# decisions/parser.py:ADR_REFERENCE_RE exactly; the two are parity-tested.
+# Captured as first-class Rationale nodes and linked to the code that cites them.
+_CITATION_RE = re.compile(
+    r"\b(?:(?!(?:ADR|RFC)\d{1,5}-)([A-Za-z][A-Za-z0-9]*)-)?(ADR|RFC)[\s\-/]?(\d{1,5})\b",
+    re.IGNORECASE,
+)
 
 
 def _make_node_id(source_uri: str, symbol: str) -> str:
@@ -85,7 +89,10 @@ class CodeExtractor:
         self,
         tag_set: Optional[set[str]] = None,
         ignore_file: Optional[str] = None,
+        known_prefixes: Optional[frozenset[str]] = None,
     ) -> None:
+        """Configure extraction with a caller-resolved ADR prefix allowlist."""
+        self._known_prefixes = known_prefixes or frozenset()
         self.tag_set: set[str] = tag_set if tag_set is not None else set(self.DEFAULT_TAGS)
         self._parser = self._build_parser()
         self._ignore_spec: Optional[pathspec.PathSpec] = None
@@ -591,8 +598,14 @@ class CodeExtractor:
         seen_nodes: dict[str, str] = {}          # normalized ref -> node_id
         seen_edges: set[tuple[str, str]] = set()  # (symbol_id, normalized ref)
 
-        def _register(raw_kind: str, number: str, link_target: Optional[str]) -> None:
-            norm = f"{raw_kind.upper()}-{int(number)}"
+        def _register(prefix: Optional[str], raw_kind: str, number: str, link_target: Optional[str]) -> None:
+            """Register a citation, qualifying only recognized ADR namespaces."""
+            kind = raw_kind.upper()
+            normalized_prefix = prefix.upper() if prefix else None
+            if kind == "ADR" and normalized_prefix in self._known_prefixes:
+                norm = f"{normalized_prefix}-{kind}-{int(number)}"
+            else:
+                norm = f"{kind}-{int(number)}"
             cid = seen_nodes.get(norm)
             if cid is None:
                 cid = _make_node_id(file_path, f"__citation__{norm}")
@@ -629,7 +642,7 @@ class CodeExtractor:
         for node in existing_nodes:
             if node.kind == NodeKind.SYMBOL and node.summary:
                 for match in _CITATION_RE.finditer(node.summary):
-                    _register(match.group(1), match.group(2), node.node_id)
+                    _register(match.group(1), match.group(2), match.group(3), node.node_id)
 
         return citation_nodes, citation_edges
 
@@ -648,7 +661,7 @@ class CodeExtractor:
             file_path: Source URI.
             source_bytes: Raw source bytes.
             existing_nodes: Already-created nodes for nearest-symbol lookup.
-            register: Callback ``(kind, number, link_target)`` from
+            register: Callback ``(prefix, kind, number, link_target)`` from
                 :meth:`_extract_citations`.
         """
         if node.type == "comment":
@@ -659,7 +672,7 @@ class CodeExtractor:
                     node, file_path, source_bytes, existing_nodes
                 )
                 for match in matches:
-                    register(match.group(1), match.group(2), target)
+                    register(match.group(1), match.group(2), match.group(3), target)
 
         for child in node.children:
             self._walk_for_citations(

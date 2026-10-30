@@ -83,6 +83,8 @@ up any other task.
    write its completion write-up yourself. A path under `sdd/` that YOUR
    task lists under *Files to Create / Modify* (e.g. `sdd/WORKFLOW.md`,
    `sdd/templates/*.md`) is a normal deliverable (FEAT-597).
+   Out-of-scope findings you discover go in your `DevelopmentOutput` for the orchestrator to register in the
+   ledger (FEAT-758); never write or stage ledger JSONL yourself.
 
 ---
 

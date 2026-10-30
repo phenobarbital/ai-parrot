@@ -51,3 +51,23 @@ def test_summary_job():
     summary = _load()["jobs"]["summary"]
     assert summary["needs"] == "suites"
     assert summary["if"] == "always()"
+
+
+def test_core_timeout_does_not_add_a_duplicate_matrix_job() -> None:
+    """Timeout metadata must augment the core suite, not create a second job."""
+    suites = _load()["jobs"]["suites"]
+    matrix = suites["strategy"]["matrix"]
+    assert "timeout" not in matrix
+    assert matrix["include"] == [{"suite": "ai-parrot", "timeout": 60}]
+    assert suites["timeout-minutes"] == "${{ matrix.timeout || 30 }}"
+
+
+def test_ui_commands_use_the_directory_with_the_lockfile() -> None:
+    """The repository root is not a pnpm workspace."""
+    steps = _load()["jobs"]["suites"]["steps"]
+    install = next(step for step in steps if step.get("name") == "Install Node dependencies")
+    assert (ROOT / install["working-directory"] / "pnpm-lock.yaml").is_file()
+    run = next(step["run"] for step in steps if step.get("name") == "Run suite")
+    assert "pnpm --dir packages/ai-parrot-server/ui exec vitest" in run
+    assert "uv run --no-sync pytest" in run
+    assert "--timeout=120" in run

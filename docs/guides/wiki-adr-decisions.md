@@ -37,6 +37,38 @@ ADRs are parsed from Markdown files matching the configured globs (defaults to `
 - **Missing `Decision`** section means the file is treated as an ordinary document, not an ADR.
 - **Status conflicts** (e.g., frontmatter says `accepted` but section says `deprecated`) result in `unknown` status and `ADR_STATUS_CONFLICT` in diagnostics.
 
+## ADR Prefixes and Configuration
+
+Prefixes begin with an ASCII letter and continue with ASCII letters or digits. They normalize to uppercase. Compact citation names such as ADR1 and RFC2119 are reserved. Bare ADR-42, ADR/042, ADR 42 and adr42 remain supported.
+
+Example decisions settings in `.parrot/wiki.json`:
+```json
+{
+  "local_prefix": "FS",
+  "known_prefixes": ["PARROT"]
+}
+```
+
+### Resolution Order
+
+When a citation is resolved, the system follows this exact order:
+
+1. **Exact ambiguity check** — If the canonical alias appears multiple times in the inventory, return `ADR_REFERENCE_AMBIGUOUS` immediately. Ambiguity is detected before any lookup.
+2. **Exact hit** — If the canonical alias exists in the alias map, return the corresponding decision. This is the fastest path.
+3. **Local fallback** — If the citation was bare (no prefix) and the repository declares a `local_prefix`, try `<local_prefix>-ADR-<n>`. Again, check ambiguity before the map.
+4. **Unknown prefix degradation** — If the citation has a syntactic prefix that is not in `known_prefixes`, the prefix is discarded and the bare alias is tried. This means `XX-ADR-3` may resolve to `ADR-3` or `<local_prefix>-ADR-3` if configured. Recognized prefixed misses never retry bare.
+
+**Key behaviors**:
+- No-config defaults: When neither `local_prefix` nor `known_prefixes` are set, all prefixes are discarded and only bare aliases are recognized. This preserves today's behavior for unconfigured repositories.
+- Local inclusion: `local_prefix` is always treated as a member of the effective prefix set, whether or not it is listed in `known_prefixes`.
+- Manual maintenance: `known_prefixes` is hand-maintained in `.parrot/wiki.json`. It is NOT derived from any external source or pull operation.
+- PARROT for ai-parrot only: ai-parrot's own `local_prefix` is `PARROT`, frozen before the first ADR is written. This is a repository-specific choice, not a global default.
+- Filename gating: A prefixed filename (e.g., `FS-0007-...`) supplies an alias only if its upper-cased prefix is in `known_prefixes`. Otherwise it supplies no candidate, never a degraded bare alias.
+- No rewriting of bare identities: A file that declares `ADR-7` owns the alias `ADR-7`. The parser never injects `local_prefix` into a bare `id:` field.
+- Prefixed supersedes: A `supersedes:` header may name prefixed aliases (e.g., `supersedes: FS-ADR-3`); they are parsed and stored as canonical alias strings. The resolution order above applies to code citations, not to `supersedes:` targets.
+- Distinct prefixes: `FS-ADR-7` and `PARROT-ADR-7` are different canonical aliases, so both resolve and neither is ambiguous.
+- RFC non-prefixing: RFC references are never prefixed. The shared prefix group matches them lexically, but the prefix is discarded when the kind is `RFC`.
+
 ## How Decisions Attach to Code
 
 Automatic citation extraction is **Python only**, from comment tokens and docstrings:
@@ -48,6 +80,8 @@ Automatic citation extraction is **Python only**, from comment tokens and docstr
 - Duplicate ADR-42 aliases stay unresolved
 
 Other languages use explicit Markdown `sym:` links only.
+
+Citations use the same prefix grammar as ADR files. A bare `ADR-42` in code resolves to the bare alias. A prefixed citation like `FS-ADR-3` resolves only if `FS` is in `known_prefixes`. An unlisted prefix is discarded, so `XX-ADR-3` may still resolve to `ADR-3` or `<local_prefix>-ADR-3` if configured.
 
 ## Freshness, Renames, and What Goes Stale
 

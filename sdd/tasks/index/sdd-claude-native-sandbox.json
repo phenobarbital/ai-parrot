@@ -1,0 +1,206 @@
+{
+  "feature": "sdd-claude-native-sandbox",
+  "feature_id": "FEAT-768",
+  "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-29T01:52:39+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_models.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
+          "tests/sdd/test_launch_worker.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_cli_dispatcher_usage_events.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_dual_publish.py",
+          "packages/ai-parrot/tests/flows/dev_loop/integration/test_concurrency.py",
+          "packages/ai-parrot/tests/flows/dev_flow/test_ideation_graph_search.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py",
+          "tests/sdd_scripts/test_feat722_doc_contract.py",
+          "tests/sdd_scripts/test_pr_policy_wording_contract.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:a983628298179de169735478adcdb3c08b3402ee982d16a29d1af45fc9cb937d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4885",
+      "slug": "native-sandbox-policy-compiler",
+      "title": "Native sandbox policy compiler",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: creates native_claude_sandbox.py and its test file, both new; only reads worktree_environment.py helpers",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4885-native-sandbox-policy-compiler.md"
+    },
+    {
+      "id": "TASK-4886",
+      "slug": "linked-worktree-test-fixtures",
+      "title": "Move Claude-dispatcher tests onto linked-worktree fixtures",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: adds a fixture to packages/ai-parrot/tests/flows/dev_loop/conftest.py, which every dev-loop test loads",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4886-linked-worktree-test-fixtures.md"
+    },
+    {
+      "id": "TASK-4887",
+      "slug": "native-hook-backend",
+      "title": "Native backend in the retained SDD hook",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4886"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports native_task_cwd/native_command_environment/validate_native_write_path from TASK-4885 (native_claude_sandbox.py); modifies test_worktree_environment.py after TASK-4886 migrated a test in it",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4887-native-hook-backend.md"
+    },
+    {
+      "id": "TASK-4888",
+      "slug": "dispatcher-native-sandbox",
+      "title": "Programmatic launch — dispatcher injects strict native settings",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4886",
+        "TASK-4887"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls native_sandbox_settings/validate_allowed_domains from TASK-4885; modifies test_dispatcher.py after TASK-4886 and uses its linked_worktree fixture; sets the PARROT_SDD_SANDBOX_BACKEND contract that TASK-4887's hook consumes",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4888-dispatcher-native-sandbox.md"
+    },
+    {
+      "id": "TASK-4889",
+      "slug": "interactive-native-launcher",
+      "title": "Interactive launch — native launcher behind launch_worker.sh",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4887"
+      ],
+      "parallel": true,
+      "parallelism_notes": "modifies native_claude_sandbox.py created by TASK-4885 (same file, serialized) and calls native_sandbox_settings; child env selects TASK-4887's native hook branch",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4889-interactive-native-launcher.md"
+    },
+    {
+      "id": "TASK-4890",
+      "slug": "live-qualification-harness",
+      "title": "Opt-in live qualification harness",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4888",
+        "TASK-4889"
+      ],
+      "parallel": true,
+      "parallelism_notes": "drives the real launch paths: dispatcher run options from TASK-4888 (dispatchers/claude.py) and launch_worker.sh/launch_worker from TASK-4889",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4890-live-qualification-harness.md"
+    },
+    {
+      "id": "TASK-4891",
+      "slug": "run-native-qualification",
+      "title": "Run the strict live qualification and write the report",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4890"
+      ],
+      "parallel": false,
+      "parallelism_notes": "exclusive: spends the bounded provider budget and needs the operator-remediated host; runs test_native_claude_sandbox_live.py from TASK-4890",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4891-run-native-qualification.md"
+    },
+    {
+      "id": "TASK-4892",
+      "slug": "native-sandbox-docs",
+      "title": "Operator and agent guidance for the native sandbox",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4889",
+        "TASK-4891"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the launch_worker.sh CLI from TASK-4889 and copies the version/host matrix from TASK-4891's native-sandbox-qualification.md",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4892-native-sandbox-docs.md"
+    }
+  ]
+}

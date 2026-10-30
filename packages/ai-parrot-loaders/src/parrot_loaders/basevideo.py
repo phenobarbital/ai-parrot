@@ -108,10 +108,7 @@ class BaseVideoLoader(AbstractLoader):
         self._diarizer_key: tuple = ()         # (token, device)
         self._diarizer_lock = threading.Lock()
 
-        # Store device info for lazy loading
-        device, _, dtype = self._get_device()
-        self._summarizer_device = device
-        self._summarizer_dtype = dtype
+        # Device discovery imports torch; defer it along with model loading.
 
         # NOTE: self.language is now set by AbstractLoader.__init__ via the
         # language= kwarg above.  self._language is kept as a backward-compat
@@ -198,6 +195,7 @@ class BaseVideoLoader(AbstractLoader):
         Only loads the model when actually needed, saving ~1.6GB VRAM.
         """
         if self._summarizer is None:
+            self._summarizer_device, _, self._summarizer_dtype = self._get_device()
             print("[ParrotBot] Loading summarizer model (BART-large-cnn)...")
             from transformers import (
                 AutoModelForSeq2SeqLM,

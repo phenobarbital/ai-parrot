@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-762",
+  "feature_slug": "e2e-browser-screencast-logs",
+  "started_at": "2026-10-27T19:07:34Z",
+  "updated_at": "2026-10-27T19:40:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-762/source.md",
+    "fetched_at": "2026-10-27T19:07:34Z",
+    "summary_oneline": "Give the FEAT-581 E2E browser target an operational screencast (.webm) alongside its on-anomaly screenshot"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-10-27T19:07:34Z", "completed_at": "2026-10-27T19:07:40Z"},
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-27T19:08:00Z",
+      "completed_at": "2026-10-27T19:08:30Z",
+      "queries_total": 12,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-762/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-27T19:08:30Z",
+      "completed_at": "2026-10-27T19:35:00Z",
+      "queries_executed": 12,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 6,
+      "grep_calls": 7,
+      "git_calls": 0,
+      "truncated": false,
+      "truncation_reason": null,
+      "parallel": {"enabled": false, "fallback_reason": "run directly by the coordinating agent, no forked lanes"}
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-27T19:35:00Z",
+      "completed_at": "2026-10-27T19:38:00Z",
+      "synthesis_path": "sdd/state/FEAT-762/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-27T19:38:00Z",
+      "completed_at": "2026-10-27T19:39:00Z",
+      "questions_total": 3,
+      "questions_answered": 3,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-27T19:39:00Z",
+      "completed_at": "2026-10-27T19:40:00Z",
+      "proposal_path": "sdd/proposals/e2e-browser-screencast-logs.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence and the change is additive/narrowly scoped to the exploration flow; the one architectural fork (Obscura video-capture support) is handled by a gated opt-in spike, not a blocking brainstorm."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 6,
+    "grep_calls": 7,
+    "git_calls": 0,
+    "wall_seconds": 1890
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "run /sdd-spec FEAT-762"
+  }
+}

@@ -90,7 +90,9 @@ class _NormalizedObjectBoxes(BaseModel):
 class AnthropicClient(AbstractClient):
     """Client for interacting with the Anthropic API using the official SDK."""
 
-    version: str = "2023-06-01"
+    # anthropic SDK 2.x sends API version 2026-10-21; keep raw-HTTP calls
+    # (batch results download) on the same version.
+    version: str = "2026-10-21"
     client_type: str = "anthropic"
     client_name: str = "claude"
     # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
@@ -299,15 +301,10 @@ class AnthropicClient(AbstractClient):
         return super()._is_capacity_error(error)
 
     # ── Model-capability guards ─────────────────────────────────────────────
-    # Adaptive-thinking-only models removed the legacy sampling parameters
-    # (``temperature`` / ``top_p`` / ``top_k``); sending any returns a 400.
-    # Fable 5 additionally rejects an explicit ``thinking={"type":"disabled"}``
-    # — the param must be omitted entirely. Mirrors the guard pattern in
-    # ``GoogleGenAIClient._requires_thinking``.
-    # Every Fable, every 5.x+ generation (Sonnet/Opus/Haiku 5 …) and Opus 4.7/4.8.
-    _ADAPTIVE_ONLY_PATTERN = re.compile(
-        r"^claude-(?:fable-|(?:sonnet|opus|haiku)-(?:[5-9]|\d{2,})(?!\d)|opus-4-[78](?!\d))"
-    )
+    # API version 2026-10-21 (anthropic SDK 2.x) removed the sampling
+    # parameters (``temperature`` / ``top_p`` / ``top_k``): sending any returns
+    # a 400 on every model, even at its default value. Some models also reject
+    # an explicit ``thinking={"type":"disabled"}`` — the param must be omitted.
     SAMPLING_PARAMS: tuple = ("temperature", "top_p", "top_k")
 
     @staticmethod
@@ -321,11 +318,11 @@ class AnthropicClient(AbstractClient):
     def _rejects_sampling_params(cls, model) -> bool:
         """Whether the model 400s on ``temperature`` / ``top_p`` / ``top_k``.
 
-        True for adaptive-thinking-only models (Fable 5, Opus 4.7, Opus 4.8),
-        which removed the sampling parameters.
+        Always True since API version 2026-10-21, which removed the sampling
+        parameters for every model. ``model`` is kept for callers (e.g. the
+        Studio catalog) that ask per model.
         """
-        m = cls._model_str(model)
-        return bool(cls._ADAPTIVE_ONLY_PATTERN.match(m))
+        return True
 
     @classmethod
     def unsupported_params(cls, model) -> list:
@@ -348,44 +345,31 @@ class AnthropicClient(AbstractClient):
         return bool(cls._REJECTS_THINKING_DISABLED_PATTERN.match(cls._model_str(model)))
 
     def _sanitize_payload_for_model(self, payload: dict) -> dict:
-        """Relocate or drop params the SDK / model rejects.
+        """Drop params the API version / model rejects.
 
-        **SDK 1.x**: ``temperature`` / ``top_p`` / ``top_k`` are removed from
-        the ``messages.create()`` signature (``TypeError`` if passed as
-        kwargs).  They are always extracted from ``payload`` and, for models
-        that still accept them at the API level, forwarded via ``extra_body``
-        (merged into the JSON body as-is).
-
-        - Adaptive-only models (Fable 5/5.1, Opus 5.5/5/4.7/4.8, Sonnet 5.5/5,
-          Haiku 5.5): discard the sampling params entirely (API returns 400).
-        - Older models (Opus 4.6, Sonnet 4.6, Haiku 4.5, …): relay via
-          ``extra_body`` so the API still sees them.
-        - Fable 5/5.1: drop an explicit ``thinking={"type": "disabled"}``
-          (must be omitted, not sent).
+        - ``temperature`` / ``top_p`` / ``top_k`` are always removed: API
+          version 2026-10-21 returns a 400 for them on every model, and the
+          SDK 2.x ``messages.create()`` signature no longer has them. They are
+          never relayed through ``extra_body`` (that would still 400). Calls
+          sample with the defaults (``temperature`` 1.0).
+        - Fable 5/5.1, Opus 5.5, Sonnet 5.5: drop an explicit
+          ``thinking={"type": "disabled"}`` (must be omitted, not sent).
 
         Applied just before every ``messages.create`` / ``messages.stream``
-        call so all payload-building paths are covered uniformly.  Mutates and
-        returns ``payload``.
+        call and to every Message Batch request's ``params``, so all
+        payload-building paths are covered uniformly. Mutates and returns
+        ``payload``.
         """
         model = payload.get("model", "")
-        rejects = self._rejects_sampling_params(model)
-        sampling_overrides: dict = {}
-        for param in ("temperature", "top_p", "top_k"):
-            val = payload.pop(param, None)
-            if val is not None:
-                if rejects:
-                    self.logger.debug(
-                        "AnthropicClient: dropped '%s' — %s is adaptive-only "
-                        "and rejects sampling params.",
-                        param,
-                        model,
-                    )
-                else:
-                    sampling_overrides[param] = val
-        if sampling_overrides:
-            eb = payload.get("extra_body") or {}
-            eb.update(sampling_overrides)
-            payload["extra_body"] = eb
+        for param in self.SAMPLING_PARAMS:
+            if payload.pop(param, None) is not None:
+                self.logger.debug(
+                    "AnthropicClient: dropped '%s' for %s — API version %s "
+                    "does not accept sampling params.",
+                    param,
+                    model,
+                    self.version,
+                )
         thinking = payload.get("thinking")
         if (
             isinstance(thinking, dict)

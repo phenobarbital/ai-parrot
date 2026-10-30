@@ -1,0 +1,14 @@
+
+FEAT-704 shipped the governed semantic layer as `packages/ai-parrot-semantic`, and it already has
+exactly one example — but at `examples/semantic/`, not under `examples/agents/`, and that example
+tells only one story (the guarded dataset hand-off), using 2 of the 10 `sl_*` tools. The requested
+directory `examples/agents/semantic/` **does not exist** (probe-confirmed). This proposal relocates
+the existing example into it — a change with a blast radius of exactly two live references,
+`packages/ai-parrot-semantic/tests/test_example_agent.py:21` and `examples/semantic/README.md:3` —
+and adds four new example agents, each covering a surface nothing currently demonstrates. The most
+valuable of these is an LLM-driven agent, because today **no example lets an LLM actually drive the
+semantic tools**: the existing one builds an `Agent` at line 314 and then discards it, which means the
+`ask(permission_context=…)` path required by the fail-closed gate is exercised nowhere. The
+recommendation is to proceed straight to `/sdd-spec` — localization is probe-verified and no
+architectural fork is in play.
+

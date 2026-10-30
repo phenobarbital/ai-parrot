@@ -1,0 +1,7 @@
+AI-Parrot's guardrails infrastructure (FEAT-396) today enforces exactly one security category with a real engine: prompt injection on user INPUT, via PromptInjectionGuardrail backed by the Wolf Defender ONNX classifier (patronus-studio/wolf-defender-prompt-injection-small, FEAT-439). For agents deployed in higher-assurance environments we need the next three guardrail categories as additional, independent security layers:
+
+- JAILBREAK — attempts to override the agent's system instructions or bypass its operational boundaries (role-play exploits, DAN-style prompts, instruction-override framing). Today nothing classifies these distinctly: the injection model catches some, misses the rest, and there is no per-category policy or telemetry.
+- PROMPT_INJECTION beyond INPUT — unintended instructions embedded in retrieved documents, tool outputs, or RAG chunks. The TOOL_OUTPUT pipeline seam exists (FEAT-396 Module 3) but only SecretsGuardrail runs there; a poisoned document reaches the agent loop unmarked.
+- PROMPT_LEAKAGE — attempts to extract the system prompt or internal configuration (INPUT side), and actual reproduction of the system prompt in a response (OUTPUT side). Nothing detects either today.
+
+Affected: every bot/agent exposed to untrusted users or untrusted retrieved content; operators who need per-category security telemetry and blocking policies.

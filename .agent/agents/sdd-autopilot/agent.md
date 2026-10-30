@@ -281,7 +281,7 @@ git worktree add -b feat-<FEAT-ID>-<slug> \
 
    Or manually:
      cd .claude/worktrees/feat-071-jira-oauth
-     claude --agent sdd-worker --verbose
+     claude --agent sdd-worker --setting-sources project,local --verbose
 ```
 
 ---
@@ -331,7 +331,7 @@ REVIEW_ITERATION=0
 # ──────────────────────────────────────────────
 # Stage 1: IMPLEMENT (sdd-worker)
 # ──────────────────────────────────────────────
-claude --agent sdd-worker \
+claude --agent sdd-worker --setting-sources project,local \
   --model sonnet \
   --verbose \
   --output-format json \
@@ -366,7 +366,7 @@ while [[ $REVIEW_ITERATION -lt $MAX_REVIEW_ITERATIONS ]]; do
     echo "⚠️ Code review: NEEDS_CHANGES (iteration $((REVIEW_ITERATION + 1)))"
     
     # Feed review findings back to worker for fixes
-    claude --agent sdd-worker \
+    claude --agent sdd-worker --setting-sources project,local \
       --model sonnet \
       -p "Fix the issues found in .autopilot/review-report.md for $FEAT_ID. \
           Only fix the issues listed — no scope creep." \
@@ -400,7 +400,7 @@ if [[ "$QA_VERDICT" != "PASS" ]]; then
     echo "❌ QA failed. See .autopilot/qa-report.md"
     echo "   Attempting auto-fix..."
     
-    claude --agent sdd-worker \
+    claude --agent sdd-worker --setting-sources project,local \
       --model sonnet \
       -p "Fix failing tests described in .autopilot/qa-report.md for $FEAT_ID." \
       2>&1 | tee .autopilot/qa-fix-output.log
@@ -723,7 +723,7 @@ claude --agent sdd-autopilot --verbose
 
 # Run worker + reviewer only
 cd .claude/worktrees/feat-071-jira-oauth
-claude --agent sdd-worker --verbose
+claude --agent sdd-worker --setting-sources project,local --verbose
 claude --agent code-reviewer -p "Review feat-071"
 
 # Human reviews code, then:

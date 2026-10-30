@@ -176,7 +176,7 @@ separate API key.
 
 <!-- verify: extra=claude-agent -->
 <!-- verify: provider=claude-code -->
-<!-- verify: dep=ai-parrot-client-anthropic:claude-agent-sdk>=0.1.68 -->
+<!-- verify: dep=ai-parrot-client-anthropic:claude-agent-sdk>=0.2.174 -->
 ```bash
 pip install "ai-parrot[claude-agent]"
 ```
@@ -224,7 +224,7 @@ agent end to end. It is adapted from `examples/basic_agent.py` in the
 repository, with one deliberate change: it passes `llm="anthropic"` (swap in
 whichever provider extra you installed) and `from_database=False` explicitly.
 
-<!-- verify: dep=ai-parrot-client-anthropic:claude-agent-sdk>=0.1.68 -->
+<!-- verify: dep=ai-parrot-client-anthropic:claude-agent-sdk>=0.2.174 -->
 ```python
 import asyncio
 from parrot.bots.agent import BasicAgent

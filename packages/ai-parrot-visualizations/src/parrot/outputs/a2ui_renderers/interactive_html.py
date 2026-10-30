@@ -1126,6 +1126,18 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         role = None
         if node.metadata is not None and node.metadata.extensions is not None:
             role = node.metadata.extensions.root.get("parrot_role")
+        if role == "mermaid-source":
+            # FEAT-753 D5: no mermaid.js in the self-contained artifact — code block, recorded once.
+            degradations.append(
+                degradation_record(
+                    node,
+                    "interactive-html does not bundle mermaid.js (self-contained invariant); source shown as a code block",
+                )
+            )
+            return (
+                '<pre class="a2ui-mermaid-source"><code class="language-mermaid">'
+                f"{html.escape(str(props.get('text') or ''))}</code></pre>"
+            )
         cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
         semantic_cls = semantic_text_class(node)
         if semantic_cls:

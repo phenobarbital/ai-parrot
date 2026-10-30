@@ -37,6 +37,56 @@ _RESERVED_NAMES: dict[str, str] = {
     "pseudonymize": "FEAT-324 (pii-detection-redaction)",
 }
 
+#: Named bundles expanded in place by `expand_presets` (FEAT-761). Members
+#: are built with their own defaults; per-member policy is configured by
+#: listing the member explicitly instead of the preset.
+GUARDRAIL_PRESETS: dict[str, tuple[str, ...]] = {
+    "security": ("prompt_injection", "jailbreak", "prompt_leakage"),
+}
+
+
+def expand_presets(
+    spec: list[str | dict[str, Any] | Guardrail],
+) -> list[str | dict[str, Any] | Guardrail]:
+    """Replace preset names in ``spec`` with their member names, in order.
+
+    Idempotent; non-preset entries pass through unchanged. A member that is
+    already present elsewhere in ``spec`` (by name) is not duplicated — the
+    explicit entry wins, so ``["security", {"name": "jailbreak", ...}]``
+    yields one configured ``jailbreak``.
+
+    Raises:
+        ValueError: A preset name appears inside a dict entry.
+    """
+    explicit_names: set[str] = set()
+    for item in spec:
+        if isinstance(item, dict):
+            name = item.get("name")
+            if name in GUARDRAIL_PRESETS:
+                raise ValueError(
+                    f"Guardrail preset {name!r} cannot be configured as a dict; "
+                    "configure its members explicitly instead"
+                )
+            if isinstance(name, str):
+                explicit_names.add(name)
+        elif isinstance(item, Guardrail):
+            explicit_names.add(item.name)
+        elif isinstance(item, str) and item not in GUARDRAIL_PRESETS:
+            explicit_names.add(item)
+
+    expanded: list[str | dict[str, Any] | Guardrail] = []
+    expanded_members: set[str] = set()
+    for item in spec:
+        if not isinstance(item, str) or item not in GUARDRAIL_PRESETS:
+            expanded.append(item)
+            continue
+        for member in GUARDRAIL_PRESETS[item]:
+            if member in explicit_names or member in expanded_members:
+                continue
+            expanded.append(member)
+            expanded_members.add(member)
+    return expanded
+
 
 def register_guardrail(name: str, factory: Callable[..., Guardrail]) -> None:
     """Register (or replace) a named guardrail factory.
@@ -114,6 +164,7 @@ def build_guardrails(spec: list[str | dict[str, Any] | Guardrail]) -> list[Guard
             missing ``"name"``.
         TypeError: An entry is not a ``str``, ``dict``, or ``Guardrail``.
     """
+    spec = expand_presets(spec)
     result: list[Guardrail] = []
     for item in spec:
         if isinstance(item, Guardrail):
@@ -171,4 +222,14 @@ register_guardrail(
 register_guardrail(
     "pbac",
     _make_lazy_factory("parrot.bots.guardrails.builtin.pbac", "PBACToolCallGuardrail"),
+)
+# FEAT-761: plugin modules land in later tasks of the feature; lazy factories
+# keep the onnx/rapidfuzz boundary untouched until a bot requests them.
+register_guardrail(
+    "jailbreak",
+    _make_lazy_factory("parrot.bots.guardrails.builtin.jailbreak", "JailbreakGuardrail"),
+)
+register_guardrail(
+    "prompt_leakage",
+    _make_lazy_factory("parrot.bots.guardrails.builtin.prompt_leakage", "PromptLeakageGuardrail"),
 )

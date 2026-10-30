@@ -173,7 +173,7 @@ Report the worktree path, brief path, materialized task IDs, and the next
 step. Offer either manual implementation or:
 
 ```bash
-cd <wt> && claude --agent sdd-worker --model sonnet --verbose
+cd <wt> && scripts/sdd/launch_worker.sh --verbose
 ```
 
 Finish by directing the owner to run `/sdd-done <KEY>` after implementation: it verifies the
@@ -187,5 +187,5 @@ Return:
 - Worktree: `<wt>`
 - Brief: `<wt>/sdd/briefs/<slug>.brief.md`
 - Tasks: `HOTFIX-<KEY>-<N>` list
-- Next step: `cd <wt> && claude --agent sdd-worker --model sonnet --verbose`,
+- Next step: `cd <wt> && scripts/sdd/launch_worker.sh --verbose`,
   manual implementation, then `/sdd-done <KEY>`

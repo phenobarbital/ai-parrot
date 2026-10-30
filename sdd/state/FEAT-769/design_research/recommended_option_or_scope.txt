@@ -1,0 +1,69 @@
+## 3. Probable Scope
+
+### What's New
+
+- **`examples/agents/semantic/llm_metrics_agent.py`** — an Agent that **really calls the LLM** and lets it
+  drive `sl_list_models` → `sl_get_dimensions` → `sl_query_metrics`. The only example exercising K2
+  (`ask(permission_context=…)`). *Fills the single largest gap.*
+- **`examples/agents/semantic/mcp_local_agent.py`** — the `LocalSemanticLayerToolkit` surface behind
+  `parrot mcp-local semantic-layer`, executing **both an explicit allow and an explicit deny** against the
+  real server factory — which `docs/tools/semantic-layer.md:148-157` demands but nothing currently runs.
+- **`examples/agents/semantic/masked_policy_agent.py`** — a policy demo exercising `masks:` and
+  `saved_queries:` (`policy.py:67,69`), supported but demonstrated in no YAML outside unit tests.
+- **`examples/agents/semantic/multimodel_joins_agent.py`** — two models with a declared `one_to_many`
+  relationship, `DATE_TRUNC` time grains, and the **fan-out rejection** that makes the layer fail loudly.
+- **`examples/agents/semantic/models/`** — one shared, committed model + policy YAML pair the examples load
+  (per D5), rather than each writing YAML into a tempdir.
+- **`examples/agents/semantic/README.md`** — the per-subdirectory README, following the `aws/` + `a2ui/`
+  precedent.
+- **Four pin tests** in `packages/ai-parrot-semantic/tests/`, one per new example (per D4).
+- **A new section in `docs/tools/semantic-layer.md`** (per D5) — ⚠️ test-affecting, see K10.
+
+### What Changes
+
+- **`examples/semantic/agent_semantic_example.py` → `examples/agents/semantic/agent_semantic_example.py`**
+  — relocation only, no content change. *Evidence*: F001, F002
+- **`examples/semantic/README.md` → `examples/agents/semantic/README.md`** — merged into the new README;
+  its "For production, replace…" paragraph is worth preserving. *Evidence*: F001
+- **`packages/ai-parrot-semantic/tests/test_example_agent.py:21`** — insert `"agents"` into `_EXAMPLE_PATH`.
+  **One line.** *Evidence*: F002
+- **`examples/semantic/README.md:3`** — the run command. *Evidence*: F002
+
+### What's Untouched (Non-Goals)
+
+- Any change under `packages/ai-parrot-semantic/src/**` — this feature adds **no library functionality**.
+- Fixing open `issue:3c4d154c0172` (S3: `_pre_execute` static-subject fallback not channel-scoped; S5:
+  `save_result_as_dataset` member recheck). The MCP-local example must simply not *imply* S3 is fixed.
+- The HTTP surface (`SemanticLayerHandler`, `handlers/semantic.py:18`) — no example proposed for it.
+- The OSSIE import format (`ossie.py:18-31`) — exercised only by unit tests; left that way.
+- Any `.so`/native work, any `uv sync` inside a worktree.
+
+### Patterns to Follow
+
+- **`examples/agents/finance/hooba_agent.py`** is the template: `Usage::` docstring block (:3), module-level
+  `SYSTEM_PROMPT`, `build_*` factories, `argparse` (:44), a deterministic `--smoke` no-LLM mode (:5,44,64),
+  `asyncio.run(main())` (:78). *Evidence*: F005, F012
+- **Not** `examples/basic_agent.py` / `examples/db_tool_usage.py` — bare `print()`, explicitly not the bar.
+- The existing example's quality bar: fully type-hinted, Google-style docstrings, `logging` only.
+- Reuse `connection_env()` (:268) rather than mutating `os.environ` — it restores on exit, and
+  `test_build_toolkits_does_not_mutate_environment` pins that behaviour.
+
+### Integration Risks
+
+- **R1 — The pin test asserts on the example's SOURCE TEXT**, not just its behaviour:
+  `test_pbac_is_wired_through_a_real_guard` asserts the literal string `"_pbac.available"` does **not**
+  appear in the example's source. A new pin test modelled on it inherits that coupling. *Mitigation*: copy
+  the assertion style deliberately, not by accident. *Evidence*: F002
+- **R2 — Editing `docs/tools/semantic-layer.md` can break `test_mcp_local.py`**, which parses its fenced
+  YAML/JSON blocks. *Mitigation*: add prose + a *new* block only if the test's parser tolerates it; run
+  `pytest packages/ai-parrot-semantic/tests/test_mcp_local.py` before committing. *Evidence*: F004, F007 (K10)
+- **R3 — Four examples is 2× the originally requested "un par".** *Mitigation*: see D2 — sequence them so
+  the move + example #1 can land independently.
+- **R4 — Examples are pytest-collected.** A file named `test_*.py` under `examples/agents/semantic/` would be
+  collected by unrelated suites. *Mitigation*: K5 — never use that prefix. *Evidence*: F007
+- **R5 — `issue:f0da823294fb` regression classes.** Four new examples are four new chances to re-introduce a
+  placeholder guard, env leak, weak owner check or missing denial. *Mitigation*: make "shows a real denial
+  that would fail if it silently succeeded" an acceptance criterion for every example. *Evidence*: F006, F010
+
+---
+

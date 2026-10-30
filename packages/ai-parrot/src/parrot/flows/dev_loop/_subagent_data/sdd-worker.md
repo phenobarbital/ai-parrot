@@ -99,6 +99,12 @@ directory switching, no shared mutable state across features.
    to the main repo to update state — there is no shared monolithic index
    to coordinate on. Per-spec indexes mean each feature owns its own file.
 
+7. **LEDGER FINDINGS GO THROUGH THE LEDGER SERVICE (FEAT-758).**
+   Record deferred findings with `wikitoolkit ledger open` (or the `ledger_open` MCP tool) carrying the
+   task/review attribution in `--discovered-from`. NEVER append to, edit or stage `sdd/ledger/events.jsonl`
+   or `sdd/ledger/issues.jsonl` — feature commits must not change them. `/sdd-done` delivers events to
+   `origin/dev` through the outbox. Coder findings returned in a `DevelopmentOutput` are registered by you.
+
 ---
 
 ## Input
@@ -360,7 +366,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
    AND, for each prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in
    worktree <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification:
-   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`.
+   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`. When `prepared.effort` is non-null, also
+   pass `effort=<prepared.effort>` — that value is the operator's roster configuration, so it is an explicit
+   instruction to set the effort; when it is null, omit `effort` entirely.
    Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
    `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
    automatically in their `TaskScopedBrief`, including retries. Propagate the same `execution_id` to every call.

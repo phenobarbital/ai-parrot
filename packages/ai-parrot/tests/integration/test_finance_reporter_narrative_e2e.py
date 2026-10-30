@@ -32,6 +32,7 @@ throughout.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -112,6 +113,25 @@ _ROWS = [
     # Gamma is NEW at the latest snapshot only -> trend is None for it.
     ("2026-07-22", "Wholesale", "Gamma", 20000.0, 25000.0, 3000.0, 10000.0),
 ]
+
+
+_EMBEDDED_BLOCK_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
+
+
+def _rendered_markup(html_doc: str) -> str:
+    """Return the document without its ``<style>``/``<script>`` blocks.
+
+    The interactive-HTML renderer embeds the design-system CSS, which defines
+    ``.a2ui-body``, ``.a2ui-card`` and friends. Class-name assertions must look
+    at rendered elements only, or they match the stylesheet instead.
+
+    Args:
+        html_doc: The full rendered HTML document.
+
+    Returns:
+        The document with every embedded style and script block removed.
+    """
+    return _EMBEDDED_BLOCK_RE.sub("", html_doc)
 
 
 def _snapshots_frame() -> pd.DataFrame:
@@ -228,9 +248,9 @@ class TestFinanceReporterNarrativeE2E:
         artifact = await runner.run(FinanceReporter.REPORT_RECIPE_NAME, pctx=pctx)
 
         html_doc = artifact.content.decode()
-        assert "a2ui-body" not in html_doc
-        assert "a2ui-summary" not in html_doc
-        assert "a2ui-card" in html_doc  # the report still rendered
+        assert "a2ui-body" not in _rendered_markup(html_doc)
+        assert "a2ui-summary" not in _rendered_markup(html_doc)
+        assert "a2ui-card" in _rendered_markup(html_doc)  # the report still rendered
 
     async def test_report_profile_replay_with_narrator(
         self, wired_agent, recipe_store, published_report_recipe, pctx
@@ -242,7 +262,7 @@ class TestFinanceReporterNarrativeE2E:
 
         html_doc = artifact.content.decode()
         assert "gap is narrowing" in html_doc
-        assert "a2ui-body" in html_doc
+        assert "a2ui-body" in _rendered_markup(html_doc)
 
     async def test_dashboard_profile_replay(
         self, wired_agent, recipe_store, published_dashboard_recipe, pctx
@@ -253,7 +273,7 @@ class TestFinanceReporterNarrativeE2E:
 
         html_doc = artifact.content.decode()
         assert 'data-variant="infographic"' in html_doc
-        assert "a2ui-value" in html_doc  # KPICard(s) rendered
+        assert "a2ui-value" in _rendered_markup(html_doc)  # KPICard(s) rendered
         assert 'data-sort-key="division"' in html_doc  # DataTable rendered
 
     async def test_interactive_html_renders_report_root(
@@ -270,7 +290,7 @@ class TestFinanceReporterNarrativeE2E:
         assert artifact.surface == "interactive-html"
         html_doc = artifact.content.decode()
         assert html_doc.startswith("<!DOCTYPE html>")
-        assert "a2ui-card" in html_doc
+        assert "a2ui-card" in _rendered_markup(html_doc)
 
     async def test_end_to_end_no_fabricated_figures(
         self, wired_agent, recipe_store, published_report_recipe, pctx
@@ -284,8 +304,8 @@ class TestFinanceReporterNarrativeE2E:
         html_doc = artifact.content.decode()
         assert "999.9" not in html_doc
         assert "behind budget" not in html_doc  # ALL prose discarded, not just the figure
-        assert "a2ui-body" not in html_doc
-        assert "a2ui-card" in html_doc  # deterministic numbers still rendered
+        assert "a2ui-body" not in _rendered_markup(html_doc)
+        assert "a2ui-card" in _rendered_markup(html_doc)  # deterministic numbers still rendered
 
     async def test_scheduled_refresh_with_narrator(
         self, wired_agent, recipe_store, published_report_recipe

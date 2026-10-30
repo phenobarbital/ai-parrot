@@ -213,16 +213,16 @@ class TestApplyRlimits:
 
 
 class TestWorkerNamespaceGate:
-    def test_worker_revalidates_gate(self, tmp_path):
+    def test_worker_revalidates_gate(self, repl_output_dir):
         """Blocked code sent directly to the worker namespace is rejected before exec."""
-        namespace = WorkerNamespace(output_dir=str(tmp_path))
+        namespace = WorkerNamespace(output_dir=str(repl_output_dir))
         result = namespace.exec(ExecRequest(code="import os\nos.system('id')", deadline_ms=1000))
         assert result.status in ("error", "done_with_errors")
         assert "denied" in (result.error or "").lower() or "SecurityError" in (result.result or "")
 
-    def test_execute_contract_invariant(self, tmp_path):
+    def test_execute_contract_invariant(self, repl_output_dir):
         """G5: str-shaped success / dict-shaped error, same as the in-process REPL."""
-        namespace = WorkerNamespace(output_dir=str(tmp_path))
+        namespace = WorkerNamespace(output_dir=str(repl_output_dir))
         ok = namespace.exec(ExecRequest(code="x = 1 + 1", deadline_ms=1000))
         assert isinstance(ok, ExecResult)
         assert ok.status is None
@@ -232,21 +232,21 @@ class TestWorkerNamespaceGate:
         assert err.status in ("error", "done_with_errors")
         assert err.error is not None
 
-    def test_list_ns_reports_preloaded_libraries(self, tmp_path):
-        namespace = WorkerNamespace(output_dir=str(tmp_path))
+    def test_list_ns_reports_preloaded_libraries(self, repl_output_dir):
+        namespace = WorkerNamespace(output_dir=str(repl_output_dir))
         names = namespace.list_ns()
         assert "pd" in names
         assert "np" in names
 
 
 class TestWorkerSubprocess:
-    def test_worker_first_frame_is_ready(self, real_worker_config, tmp_path):
+    def test_worker_first_frame_is_ready(self, real_worker_config, repl_output_dir):
         """FEAT-500 AC1 (worker half): readiness is announced as the first frame.
 
         The frame is only written after ``WorkerNamespace`` is fully
         constructed, and writing it does not disturb the service loop.
         """
-        worker = _spawn_worker(real_worker_config, str(tmp_path))
+        worker = _spawn_worker(real_worker_config, str(repl_output_dir))
         try:
             first = worker.recv()
             assert isinstance(first, ReadyResponse)
@@ -257,7 +257,7 @@ class TestWorkerSubprocess:
         finally:
             worker.close()
 
-    def test_bootstrap_per_worker(self, real_worker_config, tmp_path):
+    def test_bootstrap_per_worker(self, real_worker_config, repl_output_dir):
         """Two independently-spawned workers each bootstrap their own environment.
 
         Process isolation (a fresh interpreter per worker) is what fixes the
@@ -268,7 +268,7 @@ class TestWorkerSubprocess:
         workers = []
         try:
             for i in range(2):
-                out_dir = tmp_path / f"worker_{i}"
+                out_dir = repl_output_dir / f"worker_{i}"
                 out_dir.mkdir()
                 workers.append(_spawn_worker(real_worker_config, str(out_dir)))
 
@@ -283,8 +283,8 @@ class TestWorkerSubprocess:
             for worker in workers:
                 worker.close()
 
-    def test_ping_pong_over_real_subprocess(self, real_worker_config, tmp_path):
-        worker = _spawn_worker(real_worker_config, str(tmp_path))
+    def test_ping_pong_over_real_subprocess(self, real_worker_config, repl_output_dir):
+        worker = _spawn_worker(real_worker_config, str(repl_output_dir))
         try:
             worker.recv_ready()  # FEAT-500: readiness frame precedes any reply
             worker.send(PingRequest())
@@ -293,8 +293,8 @@ class TestWorkerSubprocess:
         finally:
             worker.close()
 
-    def test_exec_over_real_subprocess(self, real_worker_config, tmp_path):
-        worker = _spawn_worker(real_worker_config, str(tmp_path))
+    def test_exec_over_real_subprocess(self, real_worker_config, repl_output_dir):
+        worker = _spawn_worker(real_worker_config, str(repl_output_dir))
         try:
             worker.recv_ready()  # FEAT-500: readiness frame precedes any reply
             worker.send(ExecRequest(code="x = 21 * 2\nresult = x", deadline_ms=2000))

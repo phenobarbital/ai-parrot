@@ -154,7 +154,7 @@ def test_importing_writer_does_not_import_aws_sdk():
 
     code = "import parrot_tools.tool_optimizations.writer, sys; print(any('boto' in m for m in sys.modules))"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
-    assert out.strip() == "False"
+    assert out.strip().splitlines()[-1] == "False"
 
 
 async def test_no_client_configured(tmp_path):

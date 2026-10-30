@@ -10,6 +10,7 @@ export type ContextSearchLimit = number | null;
 export type CustomKbs = string[] | null;
 export type Description = string | null;
 export type Disclaimer = string | null;
+export type EnableSuggestions = boolean | null;
 export type Enabled = boolean | null;
 export type Goal = string | null;
 export type HumanPromptTemplate = string | null;
@@ -21,6 +22,7 @@ export type Kb =
 export type Language = string | null;
 export type Llm = string | null;
 export type MaxContextTurns = number | null;
+export type MaxSuggestions = number | null;
 export type MemoryConfig = {
   [k: string]: unknown;
 } | null;
@@ -51,6 +53,9 @@ export type RerankerConfig = {
 } | null;
 export type Role = string | null;
 export type Storage = "database" | null;
+export type SuggestFollowups = boolean | null;
+export type SuggestionModel = string | null;
+export type SuggestionTimeoutS = number | null;
 export type SystemPromptTemplate = string | null;
 export type Timezone = string | null;
 export type ToolThreshold = number | null;
@@ -88,6 +93,7 @@ export interface BotWritePayload {
   custom_kbs?: CustomKbs;
   description?: Description;
   disclaimer?: Disclaimer;
+  enable_suggestions?: EnableSuggestions;
   enabled?: Enabled;
   goal?: Goal;
   human_prompt_template?: HumanPromptTemplate;
@@ -95,6 +101,7 @@ export interface BotWritePayload {
   language?: Language;
   llm?: Llm;
   max_context_turns?: MaxContextTurns;
+  max_suggestions?: MaxSuggestions;
   memory_config?: MemoryConfig;
   memory_type?: MemoryType;
   model_config?: ModelConfig;
@@ -108,6 +115,9 @@ export interface BotWritePayload {
   reranker_config?: RerankerConfig;
   role?: Role;
   storage?: Storage;
+  suggest_followups?: SuggestFollowups;
+  suggestion_model?: SuggestionModel;
+  suggestion_timeout_s?: SuggestionTimeoutS;
   system_prompt_template?: SystemPromptTemplate;
   timezone?: Timezone;
   tool_threshold?: ToolThreshold;

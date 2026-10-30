@@ -57,6 +57,14 @@ class SkillSource(str, Enum):
     LEARNED = "learned"  # LLM-generated
 
 
+class SkillSuggestion(BaseModel):
+    """A follow-up chip declared under ``suggestions:`` in skill frontmatter (FEAT-752)."""
+
+    label: str = Field(min_length=1, max_length=40)
+    prompt: str = Field(min_length=1, max_length=500)
+    output_mode: str | None = None  # validated against OutputMode by SkillSuggestionProvider, not here
+
+
 class SkillDefinition(BaseModel):
     """Parsed skill from a .md file with YAML frontmatter.
 
@@ -81,6 +89,10 @@ class SkillDefinition(BaseModel):
     global_only: bool = Field(
         default=False,
         description="Tenant skill trees may not shadow this skill by name or trigger (FEAT-707).",
+    )
+    suggestions: list[SkillSuggestion] = Field(
+        default_factory=list,
+        description="Follow-up chips emitted when this skill is the turn's skill (FEAT-752).",
     )
 
     MAX_TOKENS: ClassVar[int] = 1000

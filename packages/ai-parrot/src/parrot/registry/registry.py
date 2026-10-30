@@ -7,12 +7,16 @@ and registering agents from the agents/ directory.
 """
 
 from __future__ import annotations
+import fnmatch
 import sys
 import os
 import tempfile
 import asyncio
 from enum import Enum
-from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+
+if TYPE_CHECKING:
+    from .capabilities.registry import CapabilityRegistry
 from pathlib import Path
 import hashlib
 from types import ModuleType
@@ -39,6 +43,7 @@ from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 from ..tools.spec import AgentMCPServerSpec, ToolkitSpec, normalize_tooling
+from ..roost.directory import CapabilityMatch, Locality, RoostAgentConfig, locality_of, rank
 
 
 class AgentFactory(Protocol):
@@ -83,6 +88,7 @@ class BotMetadata:
     kind: AgentKind = AgentKind.LOCAL
     endpoint: Optional[str] = None
     contract_categories: List[str] = field(default_factory=list)
+    roost: Optional[RoostAgentConfig] = None  # FEAT-747: Roost contract advert + carrier + grant
     _instance: Optional[AbstractBot] = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -290,6 +296,7 @@ class BotConfig(BaseModel):
         elif not self.endpoint:
             raise ValueError(f"endpoint is required for {self.kind.value} agent {self.name!r}")
         return self
+    roost: Optional[RoostAgentConfig] = Field(default=None)  # FEAT-747
 
 
 class AgentRegistry:
@@ -573,6 +580,7 @@ class AgentRegistry:
         at_startup: bool = False,
         startup_config: Optional[Dict[str, Any]] = None,
         bot_config: Optional["BotConfig"] = None,
+        roost: Optional[RoostAgentConfig] = None,
         **kwargs: Any,
     ) -> None:
         """Register a bot class with the registry."""
@@ -613,8 +621,10 @@ class AgentRegistry:
             dependencies=dependencies or [],
             bot_config=bot_config,
         )
+        metadata.roost = roost or getattr(bot_config, "roost", None)
 
         self._registered_agents[name] = metadata
+        self._mirror_roost(name, metadata, replace=replace)
         self.logger.info(f"Registered bot: {name}")
 
         # PBAC: collect and register policy rules for this agent
@@ -1394,6 +1404,7 @@ class AgentRegistry:
         at_startup: bool = False,
         startup_config: Optional[Dict[str, Any]] = None,
         tags: Optional[Iterable[str]] = None,
+        roost: Optional[RoostAgentConfig] = None,
         **kwargs,
     ):
         """
@@ -1458,6 +1469,7 @@ class AgentRegistry:
                 startup_config=startup_config or {},
                 tags=set(tags or []),
                 priority=priority,
+                roost=roost,
             )
 
             # Register immediately using the core register method
@@ -1471,6 +1483,7 @@ class AgentRegistry:
                 priority=priority,
                 dependencies=dependencies,
                 bot_config=_bot_config,
+                roost=roost,
                 **kwargs,
             )
 
@@ -1548,6 +1561,102 @@ class AgentRegistry:
     def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:
         """Get all bots that have a specific tag."""
         return [metadata for metadata in self._registered_agents.values() if tag in metadata.tags]
+
+    @property
+    def capability_registry(self) -> "CapabilityRegistry":
+        """Lazily created FEAT-070 registry used as the Roost directory index (FEAT-747)."""
+        reg = getattr(self, "_capability_registry", None)
+        if reg is None:
+            from .capabilities.registry import CapabilityRegistry  # noqa: PLC0415 — numpy import stays lazy
+
+            reg = self._capability_registry = CapabilityRegistry()
+        return reg
+
+    def _mirror_roost(self, name: str, metadata: BotMetadata, *, replace: bool) -> None:
+        """Mirror ``metadata.roost.capabilities`` into the capability index (FEAT-747)."""
+        if replace:
+            self.capability_registry.unregister_agent(name)
+
+        roost = metadata.roost
+        if roost is None:
+            return
+
+        kind = getattr(metadata, "kind", "local")
+        locality = locality_of(roost, kind=kind, local_host_id=None)
+        for cap_id in roost.capabilities:
+            category = next(
+                (category for category in roost.categories if cap_id == category or cap_id.startswith(f"{category}.")),
+                None,
+            )
+            self.capability_registry.register_agent_capability(
+                name,
+                cap_id,
+                keywords=roost.keywords,
+                category=category,
+                locality=int(locality),
+                cost=roost.cost,
+                backing=roost.backing,
+                kind=kind,
+                metadata={"category_hash": roost.category_hashes.get(category)},
+            )
+
+    def find_capability(
+        self,
+        query: str,
+        *,
+        caller: Optional[str] = None,
+        limit: int = 5,
+        include_remote: bool = True,
+    ) -> List[CapabilityMatch]:
+        """Perform deterministic capability lookup with optional caller grant filtering.
+
+        Never calls an LLM or an embedding function. When ``caller`` is given,
+        a missing or empty grant fails closed.
+
+        Args:
+            query: Exact capability id, glob, category, or keyword.
+            caller: Optional registered caller whose grant scopes constrain matches.
+            limit: Maximum number of ranked matches to return.
+            include_remote: Whether entries with remote locality are eligible.
+
+        Returns:
+            Ranked capability matches permitted for the caller.
+        """
+        from .capabilities.models import ResourceType
+
+        if limit <= 0:
+            return []
+
+        entries = self.capability_registry.find_exact(
+            query,
+            resource_types=[ResourceType.AGENT],
+            limit=sys.maxsize,
+        )
+        matches = [
+            CapabilityMatch(
+                agent_name=entry.metadata["agent_name"],
+                cap_id=entry.metadata["cap_id"],
+                locality=Locality(entry.metadata["locality"]),
+                cost=entry.metadata["cost"],
+                kind=entry.metadata["kind"],
+                backing=entry.metadata["backing"],
+                score=entry.metadata.get("score", 1.0),
+                category_hash=entry.metadata.get("category_hash"),
+            )
+            for entry in entries
+        ]
+
+        if caller is not None:
+            caller_metadata = self.get_metadata(caller)
+            grant = caller_metadata.roost.grant if caller_metadata is not None and caller_metadata.roost else None
+            scopes = grant.scopes if grant is not None else []
+            if not scopes:
+                return []
+            matches = [match for match in matches if any(fnmatch.fnmatchcase(match.cap_id, scope) for scope in scopes)]
+
+        if not include_remote:
+            matches = [match for match in matches if match.locality != Locality.REMOTE]
+        return rank(matches)[:limit]
 
     def clear_registry(self) -> None:
         """Clear all registered bots. Useful for testing."""

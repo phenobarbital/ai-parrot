@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-762",
+  "mode": "enrichment",
+  "summary_oneline": "Give the FEAT-581 e2e-ui-tester exploration flow a Playwright-backed .webm screencast as an operational log, alongside its existing on-anomaly screenshot.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot-server/src/parrot/e2e/targets/browser.py",
+      "symbol": "_BrowserAdapter",
+      "lines": "58-60, 316-323",
+      "role": "spawns the `obscura serve` CDP endpoint the screencast's Playwright client would connect to; never touches Playwright itself",
+      "evidence": ["F001"]
+    },
+    {
+      "path": ".claude/agents/e2e-ui-tester.md",
+      "symbol": "exploration protocol / report contract",
+      "lines": "27-29, 48-60, 111-162",
+      "role": "the agent that would gain the screencast capability; today only takes a one-off screenshot via an optional DevTools MCP tool",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_config.py",
+      "symbol": "PlaywrightConfig.record_video_dir / engine / cdp_endpoint_url",
+      "lines": "95, 101-102",
+      "role": "existing config surface that already supports CDP-attach video recording",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py",
+      "symbol": "PlaywrightDriver.start / _start_obscura_cdp / _build_context_kwargs",
+      "lines": "107-112, 586-618, 636-663",
+      "role": "the exact branch that decides whether record_video_dir engages (fresh context) or is silently ignored (reused context)",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/e2e/supervisor.py",
+      "symbol": "E2ESupervisor._log_path",
+      "lines": "889-903",
+      "role": "defines the real artifacts/logs/e2e/<run-id>/<target-id>.log convention a sibling .webm would follow",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "sdd/specs/agentic-e2e-testing.spec.md",
+      "symbol": "Evidence Identity and Gate Evaluation",
+      "lines": "221-222, 299-304",
+      "role": "confirms artifacts/logs/e2e/ is excluded from the deterministic source-identity hash and from the current evidence schema",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "docs/obscura-headless-browser.md",
+      "symbol": "Compatibility matrix",
+      "lines": "161-170, 191-201, 229-250",
+      "role": "shows video/screencast was never added to the verified-capability matrix for real Obscura",
+      "evidence": ["F007"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "record_video_dir only engages in engine=\"obscura\" mode when the CDP endpoint has zero pre-existing browser contexts at connect time; otherwise it is silently ignored.",
+      "evidence": ["F004"],
+      "implication": "the implementation must either force a fresh context or verify (not assume) that the target `obscura serve` process it connects to has none — the `browser` target's `minimal`/owned profile (fresh process per run) is favorable but unverified at runtime."
+    },
+    {
+      "statement": "No test or doc has verified Playwright's video capture against a real Obscura v0.2.2 binary; it is absent from the compatibility matrix and a sibling CDP feature already has known renderer gaps.",
+      "evidence": ["F007"],
+      "implication": "implementation should follow the repo's existing opt-in real-binary verification pattern (skip cleanly without the binary, never fail the suite) before the capability is trusted."
+    },
+    {
+      "statement": "artifacts/logs/e2e/ is excluded from the deterministic gate's source-identity hash and is not part of the current E2EVerdict evidence schema.",
+      "evidence": ["F006"],
+      "implication": "the screencast must stay confined to the exploration report (e2e-exploration.json evidence_refs); wiring it into deterministic gate evidence is explicitly out of scope for this proposal."
+    },
+    {
+      "statement": "artifacts/ is gitignored but has no retention, rotation, or size-cap policy anywhere in the repo.",
+      "evidence": ["F008"],
+      "implication": "an always-on recording policy needs an explicit retention decision (U3); video is far larger than today's screenshots/logs."
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new": [
+      {
+        "item": "Screencast recording path in the e2e-ui-tester exploration flow: connect a `PlaywrightDriver(PlaywrightConfig(engine=\"obscura\", cdp_endpoint_url=<browser target's ready() endpoint>, record_video_dir=<artifacts/logs/e2e/<run-id>/>))` session instead of (or alongside) the generic DevTools-MCP attach, so the context Playwright creates carries the video option.",
+        "evidence": ["F001", "F003", "F004"]
+      },
+      {
+        "item": "A `screencast_ref` entry (or reuse of the existing `evidence_refs` array) in e2e-exploration.json pointing at the recorded `.webm`.",
+        "evidence": ["F002"]
+      },
+      {
+        "item": "An opt-in, real-Obscura-binary verification test following the existing `test_fixture_site_integration.py` pattern (skip cleanly without a real binary), proving record_video_dir actually produces a playable .webm over a live Obscura CDP endpoint.",
+        "evidence": ["F007"]
+      }
+    ],
+    "modified": [
+      {
+        "path": ".claude/agents/e2e-ui-tester.md",
+        "symbol": "Exploration process / Report contract",
+        "change": "add the screencast step and the new evidence_refs entry; keep the existing on-anomaly screenshot step unchanged alongside it.",
+        "evidence": ["F002"]
+      }
+    ],
+    "untouched": [
+      "parrot.e2e.runner / parrot.e2e.models.E2EVerdict — the deterministic gate's evidence schema and source-identity hash stay exactly as they are (F006); no video field is added there.",
+      "parrot.e2e.targets.browser._BrowserAdapter — keeps only spawning obscura serve and handing back a CDP endpoint; it never becomes Playwright-aware itself (F001).",
+      "e2e-api-tester — no browser surface, out of scope.",
+      "the `ui` target's own HTTP-only readiness check."
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "opt-in real-binary verification that skips cleanly without the dependency, never fails the suite",
+        "evidence": ["F007"]
+      },
+      {
+        "pattern": "artifacts/logs/e2e/<run-id>/<target-id>-shaped file placement, sibling to the existing screenshot path",
+        "evidence": ["F005", "F002"]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "Obscura v0.2.2 may not support whatever CDP mechanism Playwright's video recording relies on internally, producing a silently empty/missing .webm.",
+        "impact": "the feature would look implemented but produce no usable evidence, misleading anyone reviewing an exploration run.",
+        "mitigation": "gate the feature behind the opt-in real-binary spike test (F007) before enabling it by default.",
+        "evidence": ["F007"]
+      },
+      {
+        "risk": "A reused CDP context (not the fresh-context case F001 expects for the `minimal` profile) silently drops the recording.",
+        "impact": "same as above — no error, just no video.",
+        "mitigation": "assert/log context freshness at connect time, and fail loud (not silently) rather than recording nothing unnoticed.",
+        "evidence": ["F004"]
+      },
+      {
+        "risk": "Unbounded disk growth in artifacts/logs/e2e/ under always-on recording.",
+        "impact": "dev-machine or CI-runner disk pressure over repeated runs.",
+        "mitigation": "decide always-on vs on-anomaly-only (U2) and whether retention is in scope (U3).",
+        "evidence": ["F008"]
+      }
+    ]
+  },
+
+  "confidence_map": [
+    {"id": "C1", "statement": "The `browser` e2e target only spawns `obscura serve`/exposes a raw CDP endpoint; it never touches Playwright itself.", "evidence": ["F001"], "confidence": "high", "reasoning": "direct read of browser.py's docstring and argv construction."},
+    {"id": "C2", "statement": "`e2e-ui-tester` today only captures a one-off PNG screenshot via an optional DevTools MCP tool, not a continuous recording.", "evidence": ["F002"], "confidence": "high", "reasoning": "direct read of the agent definition's tools list and protocol text."},
+    {"id": "C3", "statement": "`PlaywrightConfig` already has `record_video_dir` and an `engine=\"obscura\"` CDP-attach mode.", "evidence": ["F003"], "confidence": "high", "reasoning": "direct read of the dataclass fields."},
+    {"id": "C4", "statement": "`record_video_dir` only takes effect in Obscura/CDP mode when the endpoint has zero pre-existing browser contexts at connect time; it is silently ignored when an existing context is reused.", "evidence": ["F004"], "confidence": "high", "reasoning": "direct read of PlaywrightDriver._start_obscura_cdp's branching logic, not inferred from the task doc alone."},
+    {"id": "C5", "statement": "The `browser` target's `minimal`/owned profile spawns a fresh, isolated obscura process per run, which is the condition favorable to C4's fresh-context branch.", "evidence": ["F001", "F004"], "confidence": "medium", "reasoning": "combines two findings by inference; no runtime observation confirms the connecting Playwright client actually sees zero contexts in practice."},
+    {"id": "C6", "statement": "artifacts/logs/e2e/<run-id>/<target-id>.log is the real per-run log convention, distinct from the private sdd/state/e2e/<run-id>/ run directory.", "evidence": ["F005"], "confidence": "high", "reasoning": "direct read of both path-building functions."},
+    {"id": "C7", "statement": "artifacts/logs/e2e/ is already excluded from the deterministic gate's source-identity hash, so writing a video file there is safe and cannot trigger a spurious FAIL.", "evidence": ["F006"], "confidence": "high", "reasoning": "direct quote from the spec's evidence-identity exclusion list."},
+    {"id": "C8", "statement": "The deterministic evidence schema (E2EVerdict) does not currently include video as an evidence type.", "evidence": ["F006"], "confidence": "high", "reasoning": "direct quote enumerating the evidence types the spec names."},
+    {"id": "C9", "statement": "No existing test or doc has verified that a real Obscura v0.2.2 binary actually supports Playwright's video-recording mechanism.", "evidence": ["F007"], "confidence": "medium", "reasoning": "inferred from the absence of a row in the compatibility matrix plus a sibling CDP feature's known real-binary gap; absence-based, not a direct negative test result."},
+    {"id": "C10", "statement": "No retention, rotation, or size-cap policy exists for artifacts/logs/e2e/ anywhere in the repo today.", "evidence": ["F008"], "confidence": "high", "reasoning": "no contradicting mechanism found in any reviewed module (state.py, supervisor.py, cli.py) or the spec."}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the implementation be gated behind an opt-in real-Obscura-binary spike (verifying record_video_dir actually produces a usable .webm) before the feature ships, given no existing verification that Obscura supports Playwright's video mechanism?",
+      "blocks_claims": ["C9"],
+      "plausible_answers": [
+        "yes — make the spike the spec's first task/acceptance gate; if it fails, the feature's design needs to change (e.g. raw CDP frame capture instead of Playwright's video option)",
+        "no — trust the CDP-compatibility assumption, build the feature directly, and only add the spike as a follow-up if screencasts turn out empty in practice"
+      ],
+      "ask_user": true,
+      "user_answer": "yes — gate as the spec's first task/acceptance gate (opt-in real-Obscura spike, skips cleanly without the binary, following the existing test_fixture_site_integration.py pattern)."
+    },
+    {
+      "id": "U2",
+      "question": "Should the screencast be always-on for every e2e-ui-tester exploration run, or captured only on-anomaly (mirroring today's screenshot trigger)?",
+      "blocks_claims": ["C10"],
+      "plausible_answers": [
+        "always-on — every run gets a full .webm; simplest, matches the 'operational log' framing of the original ask",
+        "on-anomaly-only — start/stop recording around the same console-error/5xx trigger the screenshot already uses, smaller disk footprint",
+        "hybrid — always-on for a future deterministic UI scenario (small, bounded number of runs), on-anomaly-only for ad hoc exploration"
+      ],
+      "ask_user": true,
+      "user_answer": "hybrid — always-on for a future bounded deterministic UI scenario; on-anomaly-only (matching today's screenshot trigger) for ad hoc e2e-ui-tester exploration."
+    },
+    {
+      "id": "U3",
+      "question": "Is adding a retention/cleanup mechanism for artifacts/logs/e2e/ in scope for this feature, or should it be documented as a known risk and deferred?",
+      "blocks_claims": ["C10"],
+      "plausible_answers": [
+        "in scope — add a simple age/size-based cleanup as part of this feature",
+        "out of scope — document the risk only; defer to a separate housekeeping feature or manual cleanup, same as today's screenshots/logs"
+      ],
+      "ask_user": true,
+      "user_answer": "out of scope — document the disk-growth risk only; defer retention/cleanup to a separate housekeeping feature or manual cleanup, same as today's screenshots/logs."
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (C1-C8, C10) and the change is additive/narrowly scoped to the exploration flow (no deterministic-gate changes); the one real architectural fork (C9/U1 — whether Obscura actually supports video capture) is exactly the kind of risk this codebase already handles by making the real-binary check an opt-in, cleanly-skipping spec task rather than a blocking brainstorm."
+  },
+
+  "overall_confidence": "medium",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"],
+    "findings_unused": [],
+    "notes": "overall_confidence held at medium (not high) specifically because of C9/U1: the central technical premise (Obscura + Playwright video capture working together) has never been verified against a real binary anywhere in this repo, and scope confidence cannot exceed that gap per rule 4."
+  }
+}

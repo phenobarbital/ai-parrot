@@ -153,6 +153,12 @@ class BotModel(Model):
         memory_config JSONB DEFAULT '{}'::JSONB,
         max_context_turns INTEGER DEFAULT 5,
         use_conversation_history BOOLEAN DEFAULT TRUE,
+        -- Follow-up suggestion chips (FEAT-752)
+        enable_suggestions BOOLEAN DEFAULT FALSE,
+        suggest_followups BOOLEAN DEFAULT FALSE,
+        suggestion_timeout_s REAL DEFAULT 4.0,
+        max_suggestions INTEGER DEFAULT 6,
+        suggestion_model VARCHAR,
 
         -- Security and permissions
         permissions JSONB DEFAULT '{}'::JSONB,
@@ -297,6 +303,20 @@ class BotModel(Model):
     use_conversation_history: bool = Field(
         default=True, required=False, ui_help="Whether the bot’s conversation history is enabled or not."
     )
+    # Follow-up suggestion chips (FEAT-752) — defaults equal AbstractBot's constructor defaults.
+    enable_suggestions: bool = Field(
+        default=False, required=False, ui_help="Offer deterministic follow-up chips (view as table/chart, explain)."
+    )
+    suggest_followups: bool = Field(
+        default=False, required=False, ui_help="Also ask the lightweight LLM for follow-up questions (one extra call)."
+    )
+    suggestion_timeout_s: float = Field(
+        default=4.0, required=False, ui_help="Timeout in seconds for the LLM chip call."
+    )
+    max_suggestions: int = Field(default=6, required=False, ui_help="Maximum number of chips per answer.")
+    suggestion_model: Optional[str] = Field(
+        default=None, required=False, ui_help="Optional model for the chip call (defaults to the lightweight model)."
+    )
     # advanced: Bot Class
     bot_class: Optional[str] = Field(
         required=False, default="BasicBot", ui_help="The bot’s class path, e.g., 'parrot.bots.unified.UnifiedBot'."
@@ -384,6 +404,11 @@ class BotModel(Model):
             "memory_config": self.memory_config,
             "max_context_turns": self.max_context_turns,
             "use_conversation_history": self.use_conversation_history,
+            "enable_suggestions": self.enable_suggestions,
+            "suggest_followups": self.suggest_followups,
+            "suggestion_timeout_s": self.suggestion_timeout_s,
+            "max_suggestions": self.max_suggestions,
+            "suggestion_model": self.suggestion_model,
             "permissions": self.permissions,
             "language": self.language,
             "disclaimer": self.disclaimer,

@@ -34,6 +34,11 @@ describe("defaults()", () => {
     expect(d.memory_type).toBe("memory");
     expect(d.max_context_turns).toBe(5);
     expect(d.use_conversation_history).toBe(true);
+    expect(d.enable_suggestions).toBe(false);
+    expect(d.suggest_followups).toBe(false);
+    expect(d.suggestion_timeout_s).toBe(4);
+    expect(d.max_suggestions).toBe(6);
+    expect(d.suggestion_model).toBeNull();
     expect(d.bot_class).toBe("BasicBot");
   });
 
@@ -98,6 +103,11 @@ describe("FIELD_TAB coverage", () => {
       memory_config: null,
       max_context_turns: null,
       use_conversation_history: null,
+      enable_suggestions: null,
+      suggest_followups: null,
+      suggestion_timeout_s: null,
+      max_suggestions: null,
+      suggestion_model: null,
       bot_class: null,
       permissions: null,
     };
@@ -113,6 +123,7 @@ describe("FIELD_TAB coverage", () => {
       "behavior",
       "ai",
       "capabilities",
+      "tools",
       "data_memory",
       "advanced",
     ]);
@@ -162,6 +173,20 @@ describe("validate()", () => {
     });
     expect(errors.context_search_limit).toBeDefined();
     expect(errors.max_context_turns).toBeDefined();
+  });
+
+  it("rejects a non-positive suggestion timeout", () => {
+    expect(validate({ ...valid(), name: "x", suggestion_timeout_s: 0 }).suggestion_timeout_s).toBe(
+      "Must be a positive number.",
+    );
+    expect(validate({ ...valid(), name: "x", suggestion_timeout_s: -0.5 }).suggestion_timeout_s).toBeDefined();
+  });
+
+  it("rejects a negative or non-integer maximum suggestion count", () => {
+    expect(validate({ ...valid(), name: "x", max_suggestions: -1 }).max_suggestions).toBe(
+      "Must be a non-negative integer.",
+    );
+    expect(validate({ ...valid(), name: "x", max_suggestions: 1.5 }).max_suggestions).toBeDefined();
   });
 
   it("rejects an invalid operation_mode / memory_type", () => {

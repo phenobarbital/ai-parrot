@@ -1,0 +1,143 @@
+{
+  "feature": "sdd-done-closeout-hooks",
+  "feature_id": "FEAT-764",
+  "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T23:50:38+00:00",
+  "completed_at": "2026-10-28T00:30:09+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd_scripts/test_closeout_hooks_config.py",
+          "tests/sdd_scripts/test_run_closeout_hooks.py",
+          "tests/sdd_scripts/test_closeout_builtins.py",
+          "tests/sdd_scripts/test_sdd_done_hooks_contract.py",
+          "tests/sdd_scripts/test_e2e_closeout_contract.py",
+          "tests/sdd_scripts/test_sdd_done_brief_contract.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:53548903189ece6b83e31e780648cd9e43575af4feca257130a749fa9c57279a"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4867",
+      "slug": "closeout-hooks-config",
+      "title": "Hooks config models and loader (`.parrot/sdd_hooks.toml`)",
+      "feature_id": "FEAT-764",
+      "feature": "sdd-done-closeout-hooks",
+      "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root of the graph: creates HookSpec/HooksConfig/HookContext/HookResult/load_hooks in scripts/sdd/closeout_hooks_config.py",
+      "assigned_to": null,
+      "started_at": "2026-10-27T23:55:04+00:00",
+      "completed_at": "2026-10-27T23:59:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4867-closeout-hooks-config.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4868",
+      "slug": "closeout-builtins",
+      "title": "Builtin hook actions: jira.transition, telegram.send, push.send, webhook.post",
+      "feature_id": "FEAT-764",
+      "feature": "sdd-done-closeout-hooks",
+      "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4867"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports HookContext/HookResult/HookSpec/PUSH_PROVIDERS from TASK-4867 (scripts/sdd/closeout_hooks_config.py)",
+      "assigned_to": null,
+      "started_at": "2026-10-27T23:55:04+00:00",
+      "completed_at": "2026-10-28T00:16:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4868-closeout-builtins.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4869",
+      "slug": "run-closeout-hooks-cli",
+      "title": "Dispatcher CLI `run_closeout_hooks` (events, agent record/finalize, artifacts, exit codes)",
+      "feature_id": "FEAT-764",
+      "feature": "sdd-done-closeout-hooks",
+      "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4867",
+        "TASK-4868"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports load_hooks/HookContext from TASK-4867 (closeout_hooks_config.py) and run_builtin from TASK-4868 (closeout_builtins.py)",
+      "assigned_to": null,
+      "started_at": "2026-10-27T23:55:04+00:00",
+      "completed_at": "2026-10-28T00:22:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4869-run-closeout-hooks-cli.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4870",
+      "slug": "sdd-done-twins-hooks",
+      "title": "Wire closeout hooks into both `/sdd-done` twins; remove `--resolve-jira`",
+      "feature_id": "FEAT-764",
+      "feature": "sdd-done-closeout-hooks",
+      "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4869"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the CLI flags/exit codes created by TASK-4869 (scripts/sdd/run_closeout_hooks.py); sole editor of both twin files",
+      "assigned_to": null,
+      "started_at": "2026-10-27T23:55:04+00:00",
+      "completed_at": "2026-10-28T00:30:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4870-sdd-done-twins-hooks.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4871",
+      "slug": "closeout-hooks-docs",
+      "title": "Closeout hooks docs, example config, and `--resolve-jira` removal in SDD docs",
+      "feature_id": "FEAT-764",
+      "feature": "sdd-done-closeout-hooks",
+      "spec": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4867",
+        "TASK-4869"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the CLI/config created by TASK-4869 (run_closeout_hooks.py) and TASK-4867 (closeout_hooks_config.py); touches no file TASK-4870 edits",
+      "assigned_to": null,
+      "started_at": "2026-10-27T23:55:04+00:00",
+      "completed_at": "2026-10-28T00:27:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4871-closeout-hooks-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 """Packaging and dependency-boundary tests for FEAT-539 (TASK-3052).
 
-``rapidfuzz>=3.0`` is the *only* dependency this feature adds, and only to
-the core ``graphindex`` optional extra. These tests also pin the boundary
+``rapidfuzz>=3.0`` was promoted to a core dependency by FEAT-761 for
+prompt-leakage fuzzy matching on the OUTPUT path; it is no longer repeated in
+the ``graphindex`` extra. These tests also pin the boundary
 rules the spec relies on: core contracts modules never import
 ``parrot_tools`` or ``parrot.scheduler``, and no SQLite backend appears.
 """
@@ -35,21 +36,26 @@ def test_repo_layout_anchor_is_correct():
     assert CONTRACTS_SRC.is_dir()
 
 
-def test_rapidfuzz_is_declared_in_the_graphindex_extra(core_project):
+def test_rapidfuzz_is_not_duplicated_in_the_graphindex_extra(core_project):
+    """FEAT-761 moved rapidfuzz to core; an extra must not repeat a core dependency."""
     extras = core_project["project"]["optional-dependencies"]
-    graphindex = extras["graphindex"]
-    assert any(item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in graphindex), graphindex
+    assert not any("rapidfuzz" in item for item in extras["graphindex"]), extras["graphindex"]
 
 
-def test_rapidfuzz_is_not_a_core_runtime_dependency(core_project):
+def test_rapidfuzz_is_a_core_runtime_dependency(core_project):
+    """FEAT-761 promoted rapidfuzz to core (prompt-leakage fuzzy matching on the OUTPUT path).
+
+    Supersedes FEAT-539's "not a core runtime dependency" pin and its "declared in the
+    graphindex extra" pin: it now lives in core only.
+    """
     core = core_project["project"]["dependencies"]
-    assert not any("rapidfuzz" in item for item in core)
+    assert any(item.replace(" ", "").startswith("rapidfuzz>=3.0") for item in core), core
 
 
-def test_rapidfuzz_is_added_to_exactly_one_core_extra(core_project):
+def test_rapidfuzz_is_declared_in_no_core_extra(core_project):
     extras = core_project["project"]["optional-dependencies"]
     holders = [name for name, items in extras.items() if any("rapidfuzz" in item for item in items)]
-    assert holders == ["graphindex"], holders
+    assert holders == [], holders
 
 
 def test_tools_scraping_extra_is_untouched():

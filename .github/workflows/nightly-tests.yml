@@ -13,7 +13,7 @@ jobs:
   suites:
     name: ${{ matrix.suite }}
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.timeout }}
+    timeout-minutes: ${{ matrix.timeout || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -42,13 +42,13 @@ jobs:
           - ai-parrot-loaders
           - ai-parrot-openlit-bridge
           - ai-parrot-pipelines
+          - ai-parrot-semantic
           - ai-parrot-server
           - ai-parrot-tools
           - ai-parrot-visualizations
           - navrules
           - parrot-formdesigner
           - admin-ui
-        timeout: [30]
         include:
           - suite: ai-parrot
             timeout: 60
@@ -71,7 +71,32 @@ jobs:
 
       - name: Sync all workspace packages
         if: matrix.suite != 'admin-ui'
-        run: uv sync --all-packages
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          # Workspace membership does not enable optional dependencies. Select
+          # the existing extras exercised by each suite, and preserve this
+          # environment with --no-sync when invoking pytest below.
+          EXTRAS=(--extra db --extra scheduler)
+          case "$SUITE" in
+            ai-parrot-client-google) EXTRAS+=(--extra video) ;;
+            ai-parrot-visualizations) EXTRAS+=(--extra a2ui --extra charts --extra infographic) ;;
+            ai-parrot-semantic) EXTRAS+=(--extra duckdb) ;;
+            parrot-formdesigner) EXTRAS+=(--extra test) ;;
+            ai-parrot-embeddings) EXTRAS+=(--extra reranker-local) ;;
+            ai-parrot-loaders) EXTRAS+=(--extra youtube --extra video --extra ocr) ;;
+            ai-parrot-server) EXTRAS+=(--extra a2ui --extra comm-center --extra flowtask) ;;
+            ai-parrot-integrations)
+              EXTRAS+=(--extra msteams --extra msagentsdk --extra matrix --extra slack
+                --extra liveavatar --extra voice-local --extra voice-tts --extra voice-supertonic
+                --extra scraping)
+              ;;
+            ai-parrot-tools)
+              EXTRAS+=(--extra agents-lite --extra charts --extra plotly --extra scraping
+                --extra workday --extra bm25 --extra flowtask --extra notification)
+              ;;
+          esac
+          uv sync --locked --all-packages "${EXTRAS[@]}"
 
       - name: Set up Node.js
         if: matrix.suite == 'admin-ui'
@@ -85,6 +110,7 @@ jobs:
 
       - name: Install Node dependencies
         if: matrix.suite == 'admin-ui'
+        working-directory: packages/ai-parrot-server/ui
         run: pnpm install --frozen-lockfile
 
       - name: Run suite
@@ -93,14 +119,14 @@ jobs:
         run: |
           mkdir -p junit
           if [ "$SUITE" = "admin-ui" ]; then
-            pnpm --filter ./packages/ai-parrot-server/ui exec vitest run --reporter=junit --outputFile=../../../junit/admin-ui.xml
+            pnpm --dir packages/ai-parrot-server/ui exec vitest run --reporter=junit --outputFile=../../../junit/admin-ui.xml
           else
             if [ "$SUITE" = "root" ]; then
               TESTS_PATH=tests
             else
               TESTS_PATH="packages/$SUITE/tests"
             fi
-            uv run pytest "$TESTS_PATH" -q -m "not real_llm" -o junit_family=xunit1 \
+            uv run --no-sync pytest "$TESTS_PATH" -q -m "not real_llm" --timeout=120 -o junit_family=xunit1 \
               --junitxml="junit/$SUITE.xml" --continue-on-collection-errors -p no:cacheprovider
           fi
 

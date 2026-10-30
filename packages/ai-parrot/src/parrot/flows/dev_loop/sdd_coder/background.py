@@ -668,6 +668,7 @@ class ValidationSupervisor:
             process = await asyncio.create_subprocess_exec(
                 *sandboxed_argv,
                 cwd=worktree / first.cwd,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,  # own process group -- a deadline can kill the whole owned tree.
@@ -1010,6 +1011,7 @@ class ValidationSupervisor:
                     owned_process = await asyncio.create_subprocess_exec(
                         *sandboxed_argv,
                         cwd=worktree / invocation.cwd,
+                        stdin=asyncio.subprocess.DEVNULL,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
                         start_new_session=True,

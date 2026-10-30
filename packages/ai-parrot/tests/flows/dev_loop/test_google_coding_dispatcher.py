@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -458,3 +459,28 @@ def test_concurrent_schemas_use_distinct_dirs(dispatcher, tmp_path):
     assert Path(second).exists()
     dispatcher._cleanup_json_schema(second)
     assert list(tmp_path.iterdir()) == []
+
+
+# -- stdin isolation (issue:995ad869e502) ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_process_isolates_stdin(dispatcher, monkeypatch, tmp_path):
+    """fd 0 of an MCP-served process is its JSON-RPC channel; a child inheriting
+    it can EOF the server's own read and kill it silently."""
+    captured: Dict[str, Any] = {}
+
+    async def _fake_exec(*args: Any, **kwargs: Any):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _FakeAgyProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    await dispatcher._create_process(["agy", "--version"], str(tmp_path))
+
+    assert captured["args"] == ("agy", "--version")
+    assert captured["kwargs"]["stdin"] is asyncio.subprocess.DEVNULL
+    assert captured["kwargs"]["stdout"] is asyncio.subprocess.PIPE
+    assert captured["kwargs"]["stderr"] is asyncio.subprocess.PIPE
+

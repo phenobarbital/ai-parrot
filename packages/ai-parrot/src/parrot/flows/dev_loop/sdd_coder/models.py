@@ -28,6 +28,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
 from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
 
 SeatKind = Literal["mcp", "native"]
+SeatEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 TaskOutcome = Literal[
     "queued",
     "running",
@@ -164,6 +165,7 @@ class RosterSeat(BaseModel):
     backend: Optional[DevAgentBackend] = None
     model: str = ""
     fallback_model: str = ""
+    effort: Optional[SeatEffort] = None
 
     @model_validator(mode="after")
     def _backend_required_for_mcp(self) -> "RosterSeat":
@@ -460,6 +462,9 @@ class NativePrep(BaseModel):
     worktree_path: str
     seat_label: str
     model: str = "haiku"
+    effort: Optional[str] = None
+    """Effort the orchestrator passes to the `Agent` tool (`low|medium|high|xhigh|max`); `None` keeps the
+    session default. Resolved like MCP seats: strong_models (complex/unknown) -> seat -> unset."""
     attempt_uid: str = ""
     coder_feedback: str = ""
     validation_verdict: str = ""

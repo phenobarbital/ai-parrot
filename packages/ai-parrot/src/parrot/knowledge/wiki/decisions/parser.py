@@ -34,28 +34,44 @@ SECTION_NAMES = ("context", "decision", "consequences", "status")
 #: text preserved in ``source_status_raw``.
 KNOWN_STATUSES = ("accepted", "proposed", "rejected", "deprecated", "superseded")
 
-#: ``ADR-42`` / ``ADR/042`` / ``ADR 42`` -> canonical ``ADR-42``.
-#: The separator class and digit bound are copied VERBATIM from GraphIndex's
-#: citation regex (verified: graphindex/extractors/code.py:35,
-#: ``\b(ADR|RFC)[\s\-/]?(\d{1,5})\b``) so the two planes agree on what is a
-#: reference; only the RFC alternative is dropped, and leading zeros are
-#: stripped here to form the canonical alias. Do NOT widen the separator
-#: class (no ``_``) — that would make the wiki see references GraphIndex does
-#: not, which spec §2 forbids ("consistently with GraphIndex").
-ADR_REFERENCE_RE = re.compile(r"\bADR[\s\-/]?(\d{1,5})\b", re.IGNORECASE)
+#: ``FS-ADR-42`` / ``ADR/042`` / ``ADR 42`` -> canonical aliases.
+#: The prefix and separator rules are copied VERBATIM from GraphIndex's
+#: citation regex (verified: graphindex/extractors/code.py:35) so the two
+#: planes agree on references. Compact citation-shaped prefixes are excluded
+#: before prefix consumption: ``ADR1-ADR-2`` must retain both old references.
+#: Do NOT widen the separator class (no ``_``), which would make the wiki see
+#: references GraphIndex does not (spec §2).
+ADR_REFERENCE_RE = re.compile(
+    r"\b(?:(?!(?:ADR|RFC)\d{1,5}-)([A-Za-z][A-Za-z0-9]*)-)?ADR[\s\-/]?(\d{1,5})\b", re.IGNORECASE
+)
 
-#: A leading ``0042-`` style filename prefix.
-FILENAME_ID_RE = re.compile(r"^0*(\d+)[-_]")
+#: A leading ``FS-0042-`` or ``0042-`` style filename prefix.
+FILENAME_ID_RE = re.compile(r"^(?:([A-Za-z][A-Za-z0-9]*)-)?0*(\d+)[-_]")
 
 _ATX_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _FRONTMATTER_SCALAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$")
 
 
-def normalize_adr_alias(text: str) -> str | None:
-    """Return the canonical ``ADR-<n>`` alias in ``text``, or ``None``."""
+def normalize_adr_alias(text: str, known_prefixes: frozenset[str] | None = None) -> str | None:
+    """Return the first canonical alias, honoring only configured prefixes."""
     match = ADR_REFERENCE_RE.search(text)
-    return f"ADR-{int(match.group(1))}" if match else None
+    if not match:
+        return None
+
+    prefix, number = match.groups()
+    canonical_prefix = prefix.upper() if prefix else None
+    if canonical_prefix and known_prefixes and canonical_prefix in known_prefixes:
+        return f"{canonical_prefix}-ADR-{int(number)}"
+    return f"ADR-{int(number)}"
+
+
+def split_decision_alias(alias: str) -> tuple[str | None, int]:
+    """Split a canonical alias into its optional prefix and numeric identifier."""
+    if alias.startswith("ADR-"):
+        return None, int(alias.removeprefix("ADR-"))
+    prefix, number = alias.split("-ADR-", maxsplit=1)
+    return prefix, int(number)
 
 
 def split_sections(lines: list[str]) -> dict[str, tuple[int, int]]:
@@ -233,7 +249,9 @@ def _extract_h1(lines: list[str]) -> str | None:
     return None
 
 
-def parse_adr(rel_path: str, text: str) -> tuple[DecisionRecord | None, list[DecisionDiagnostic]]:
+def parse_adr(
+    rel_path: str, text: str, known_prefixes: frozenset[str] | None = None
+) -> tuple[DecisionRecord | None, list[DecisionDiagnostic]]:
     """Parse one ADR document.
 
     Args:
@@ -287,12 +305,19 @@ def parse_adr(rel_path: str, text: str) -> tuple[DecisionRecord | None, list[Dec
     diagnostics.extend(status_diagnostics)
 
     # Identity: frontmatter id -> H1 heading -> filename, in that order.
-    fm_id = normalize_adr_alias(fields["id"]) if fields.get("id") else None
+    fm_id = normalize_adr_alias(fields["id"], known_prefixes) if fields.get("id") else None
     h1_text = _extract_h1(lines)
-    h1_id = normalize_adr_alias(h1_text) if h1_text else None
+    h1_id = normalize_adr_alias(h1_text, known_prefixes) if h1_text else None
     filename = rel_path.rsplit("/", 1)[-1]
     filename_match = FILENAME_ID_RE.match(filename)
-    filename_id = f"ADR-{int(filename_match.group(1))}" if filename_match else None
+    filename_id = None
+    if filename_match:
+        filename_prefix, filename_number = filename_match.groups()
+        canonical_filename_prefix = filename_prefix.upper() if filename_prefix else None
+        if canonical_filename_prefix is None:
+            filename_id = f"ADR-{int(filename_number)}"
+        elif known_prefixes and canonical_filename_prefix in known_prefixes:
+            filename_id = f"{canonical_filename_prefix}-ADR-{int(filename_number)}"
 
     candidate_ids = [candidate for candidate in (fm_id, h1_id, filename_id) if candidate is not None]
     external_id = candidate_ids[0] if candidate_ids else None
@@ -334,7 +359,7 @@ def parse_adr(rel_path: str, text: str) -> tuple[DecisionRecord | None, list[Dec
         for token in re.split(r"[,\s]+", supersedes_raw.strip()):
             if not token:
                 continue
-            alias = normalize_adr_alias(token)
+            alias = normalize_adr_alias(token, known_prefixes)
             if alias:
                 links.append(alias)
 

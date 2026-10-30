@@ -66,6 +66,7 @@ from .jira_config import JiraToolkitConfig
 from .jira_kb import JiraKnowledgeBase
 from .jira_local_auth import FileTokenCredentialResolver
 from parrot.auth.jira_oauth import fetch_accessible_resources
+from parrot.interfaces.jira.site import SiteUrlResolver
 
 #: Suffix every Jira text template file carries.
 _TEMPLATE_SUFFIX = ".j2"
@@ -891,6 +892,9 @@ class JiraToolkit(AbstractToolkit):
         knowledge_base: Optional[Union[str, Path, JiraKnowledgeBase]] = None,
         **kwargs,
     ):
+        # ``site_url`` travels in kwargs to keep the public signature frozen
+        # (test_jiratoolkit_delegation.TestFrozenPublicSurface).
+        site_url: Optional[str] = kwargs.pop("site_url", None)
         super().__init__(**kwargs)
 
         # Pull defaults from navconfig or env vars
@@ -932,6 +936,10 @@ class JiraToolkit(AbstractToolkit):
         # CredentialResolver, so ``server_url`` is optional. Explicit static
         # modes validate it in the client-init block below.
         self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
+        # Browser-facing site URL for issue links. ``server_url`` may be the
+        # API gateway (api.atlassian.com/ex/jira/<cloud_id>), whose /browse/
+        # links do not open; see :attr:`site_url`.
+        self._site_resolver = SiteUrlResolver(site_url or _cfg("JIRA_SITE_URL"))
 
         self.username = username or _cfg("JIRA_USERNAME")
         self.password = password or _cfg("JIRA_PASSWORD") or _cfg("JIRA_API_TOKEN")
@@ -993,7 +1001,8 @@ class JiraToolkit(AbstractToolkit):
                 self.logger.warning("Could not load Jira knowledge base %s: %s", _kb_source, exc)
 
         if self._kb is not None and self.server_url:
-            if self._kb.site.rstrip("/") != self.server_url.rstrip("/"):
+            _kb_site = self._kb.site.rstrip("/")
+            if _kb_site not in (self.server_url.rstrip("/"), self._site_resolver.explicit):
                 self.logger.warning(
                     "Ignoring Jira knowledge base %s: site %s does not match server %s",
                     self._kb_path,
@@ -1477,6 +1486,27 @@ class JiraToolkit(AbstractToolkit):
     # -----------------------------
     # Utility
     # -----------------------------
+    @property
+    def site_url(self) -> str:
+        """Browser-facing Jira site URL (e.g. ``https://acme.atlassian.net``).
+
+        Differs from :attr:`server_url` when API calls go through the
+        Atlassian gateway (service-account scoped tokens, OAuth 2.0 3LO):
+        the site is then read once from ``serverInfo`` and cached. Set
+        ``site_url=`` / ``JIRA_SITE_URL`` to skip that lookup. Empty string
+        when no URL is known.
+        """
+        client = getattr(self, "jira", None)
+        options = getattr(client, "_options", None)
+        api_base = (options.get("server") if isinstance(options, dict) else None) or self.server_url
+        if self._kb is not None and not self._site_resolver.explicit:
+            return self._kb.site.rstrip("/")
+        return self._site_resolver.resolve(client, api_base)
+
+    def browse_url(self, key: Optional[str]) -> str:
+        """``<site_url>/browse/<key>``, or ``""`` when either is unknown."""
+        return SiteUrlResolver.browse_url(self.site_url, key)
+
     def _issue_to_dict(self, issue_obj: Any) -> Dict[str, Any]:
         # pycontribs Issue objects have a .raw (dict) and .key
         try:

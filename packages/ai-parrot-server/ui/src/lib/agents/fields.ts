@@ -84,6 +84,11 @@ export function defaults(): BotWritePayload {
     memory_config: {},
     max_context_turns: 5,
     use_conversation_history: true,
+    enable_suggestions: false,
+    suggest_followups: false,
+    suggestion_timeout_s: 4,
+    max_suggestions: 6,
+    suggestion_model: null,
     bot_class: "BasicBot",
     permissions: {},
   };
@@ -140,6 +145,11 @@ export const FIELD_TAB: Record<keyof BotWritePayload, TabId> = {
   memory_config: "data_memory",
   max_context_turns: "data_memory",
   use_conversation_history: "data_memory",
+  enable_suggestions: "capabilities",
+  suggest_followups: "capabilities",
+  suggestion_timeout_s: "capabilities",
+  max_suggestions: "capabilities",
+  suggestion_model: "capabilities",
   // Advanced
   bot_class: "advanced",
   permissions: "advanced",
@@ -209,6 +219,20 @@ export function validate(
     !isNonNegativeInt(values.max_context_turns)
   ) {
     errors.max_context_turns = "Must be a non-negative integer.";
+  }
+  if (
+    values.suggestion_timeout_s !== undefined &&
+    values.suggestion_timeout_s !== null &&
+    (typeof values.suggestion_timeout_s !== "number" || values.suggestion_timeout_s <= 0)
+  ) {
+    errors.suggestion_timeout_s = "Must be a positive number.";
+  }
+  if (
+    values.max_suggestions !== undefined &&
+    values.max_suggestions !== null &&
+    !isNonNegativeInt(values.max_suggestions)
+  ) {
+    errors.max_suggestions = "Must be a non-negative integer.";
   }
 
   if (

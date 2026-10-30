@@ -39,6 +39,8 @@ class ParrotEventType:
     # State events
     CHANNEL = "m.parrot.channel"
     TUNNEL = "m.parrot.tunnel"
+    ROOST = "m.parrot.roost"  # FEAT-747: Roost message event (typed envelope + mandatory human body)
+    BLACKBOARD = "m.parrot.blackboard"  # FEAT-747: state event, state_key = blackboard key
 
 
 # Register with mautrix if available
@@ -278,6 +280,36 @@ class ChannelStateContent(BaseModel):
     answer_policy: str
     agents: List[str]
     version: int = 1
+
+
+class RoostEventContent(BaseModel):
+    """Content of m.parrot.roost. ``body`` is mandatory (humans read it); ``envelope`` holds the envelope fields."""
+
+    body: str
+    performative: str
+    protocol: str
+    conversation_id: str
+    message_id: str
+    in_reply_to: Optional[str] = None
+    sender: str
+    receivers: List[str] = Field(default_factory=list)
+    capability_filter: Optional[str] = None
+    content: Optional[Any] = None
+    content_ref: Optional[str] = None
+    envelope: Dict[str, Any] = Field(default_factory=dict)
+    failure: Optional[Dict[str, Any]] = None
+
+
+class BlackboardStateContent(BaseModel):
+    """Content of m.parrot.blackboard (``state_key`` = key). Replaced, never accumulated."""
+
+    key: str
+    value: Any
+    version: int
+    writer: str
+    acl: Dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime
+    provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TunnelStateContent(BaseModel):

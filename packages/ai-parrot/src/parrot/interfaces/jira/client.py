@@ -30,6 +30,7 @@ from typing import Any
 from .errors import JiraAuthError, JiraDependencyError
 from .models import JiraPerson
 from .parse import _person, parse_issue
+from .site import SiteUrlResolver
 
 try:
     # Optional config source; fall back to env vars if missing — same
@@ -126,6 +127,7 @@ class JiraInterface:
         username: str | None = None,
         password: str | None = None,
         token: str | None = None,
+        site_url: str | None = None,
         oauth_consumer_key: str | None = None,
         oauth_key_cert: str | None = None,
         oauth_access_token: str | None = None,
@@ -175,6 +177,9 @@ class JiraInterface:
 
         # oauth2_3lo resolves its server URL per-user at call time.
         self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
+        # Browser-facing site for issue links (server_url may be the
+        # api.atlassian.com gateway); see get_site_url().
+        self._site_resolver = SiteUrlResolver(site_url or _cfg("JIRA_SITE_URL"))
 
         self.username = username or _cfg("JIRA_USERNAME")
         self.password = password or _cfg("JIRA_PASSWORD") or _cfg("JIRA_API_TOKEN")
@@ -331,6 +336,20 @@ class JiraInterface:
         self._client_cache[cache_key] = (client, token_hash)
         self._client = client
         return self._client
+
+    async def get_site_url(self) -> str:
+        """Return the browser-facing site URL used for ``/browse/`` links.
+
+        Same as ``server_url`` unless API calls go through the Atlassian
+        gateway, in which case the site is read once from ``serverInfo``
+        and cached (``site_url=`` / ``JIRA_SITE_URL`` skips the lookup).
+        """
+        if self._site_resolver.explicit:
+            return self._site_resolver.explicit
+        client = await self._ensure_client()
+        options = getattr(client, "_options", None)
+        api_base = (options.get("server") if isinstance(options, dict) else None) or self.server_url
+        return await asyncio.to_thread(self._site_resolver.resolve, client, api_base)
 
     async def _ensure_client(self) -> Any:
         """Resolve (and cache) the underlying ``jira.JIRA`` client.

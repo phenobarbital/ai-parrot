@@ -90,3 +90,14 @@ def test_driver_config_obscura_field_defaults():
     assert config.obscura_port == 9222
     assert config.obscura_stealth is False
     assert config.obscura_allow_private_network is False
+
+
+async def test_registry_forwards_recording_only_to_playwright() -> None:
+    """The live toolkit path must carry recording configuration to the driver."""
+    for backend in ("playwright", "obscura"):
+        config = DriverConfig(driver_type=backend, record_video_dir="/tmp/recordings")
+        driver = AsyncMock()
+        with patch("parrot_tools.scraping.drivers.playwright_driver.PlaywrightDriver", return_value=driver) as cls:
+            await DriverRegistry.get(backend)(config).get_driver()
+        assert cls.call_args.args[0].record_video_dir == ("/tmp/recordings" if backend == "playwright" else None)
+        driver.start.assert_awaited_once()

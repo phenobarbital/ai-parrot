@@ -146,6 +146,20 @@ re-fetches every source sequentially in dependency order (siblings first).
 
 All denials result in 404 "unavailable" responses to prevent information leakage. The renderer shows an appropriate error state to the user.
 
+## 3b. Materializing a chat turn (FEAT-757)
+
+The tool reads the turn's last completed `qs_execute_slug` invocation and the on-screen root component. If any
+tool outside `NEUTRAL_TOOLS` appears in the turn, the outcome is `snapshot_only`. Ownership is the caller's user
+and session.
+
+To opt in, register the tool next to `QuerysourceToolkit` and (for `pin=True`) `PublishSurfaceTool`:
+
+```python
+from parrot_tools.materialize_widget import MaterializeWidgetTool
+
+agent.tool_manager.register_tool(MaterializeWidgetTool(bot=agent))
+```
+
 ## 4. Refresh policy and snapshots
 
 Linked surfaces support three refresh policies:

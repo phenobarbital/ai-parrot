@@ -181,11 +181,13 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         cookies on disk).
 
         Returns:
-            Dict with ``closed`` indicating whether a session was open.
+            Dict with ``closed`` and ``recording_path`` (str or None).
+            The recording is finalized on close when ``record_video=True``.
         """
-        was_open = self._session_driver is not None
+        driver = self._session_driver
+        was_open = driver is not None
         await self.stop()
-        return {"closed": was_open}
+        return {"closed": was_open, "recording_path": getattr(driver, "recording_path", None)}
 
     # ── Catalog: sites ────────────────────────────────────────────────
 

@@ -1,0 +1,49 @@
+{
+  "feature": "sdd-coder-stdin-isolation",
+  "feature_id": "BRIEF-995ad869e502",
+  "spec": "sdd/briefs/sdd-coder-stdin-isolation.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-27",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-995ad869e502-1",
+      "slug": "isolate-subprocess-stdin",
+      "title": "Isolate stdin at every MCP-served subprocess spawn site",
+      "feature_id": "BRIEF-995ad869e502",
+      "feature": "sdd-coder-stdin-isolation",
+      "spec": "sdd/briefs/sdd-coder-stdin-isolation.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-coder-stdin-isolation/tasks/HOTFIX-995ad869e502-1-isolate-subprocess-stdin.md"
+    },
+    {
+      "id": "HOTFIX-995ad869e502-2",
+      "slug": "log-silent-exits",
+      "title": "Make the stdio server's two silent exits observable",
+      "feature_id": "BRIEF-995ad869e502",
+      "feature": "sdd-coder-stdin-isolation",
+      "spec": "sdd/briefs/sdd-coder-stdin-isolation.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-coder-stdin-isolation/tasks/HOTFIX-995ad869e502-2-log-silent-exits.md"
+    }
+  ]
+}

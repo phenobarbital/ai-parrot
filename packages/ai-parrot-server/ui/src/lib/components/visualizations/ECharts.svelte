@@ -118,6 +118,8 @@
     theme?: string | object;
     className?: string;
     style?: string;
+    /** Called once per live chart instance after its first setOption; may return a cleanup. */
+    onChartReady?: (chart: echarts.EChartsType) => (() => void) | void;
   }
 
   let {
@@ -125,10 +127,14 @@
     theme = "light",
     className = "",
     style = "width: 100%; height: 400px;",
+    onChartReady,
   }: Props = $props();
 
   let chartContainer: HTMLDivElement;
   let chartInstance: echarts.EChartsType | null = null;
+  let readyCleanup: (() => void) | null = null;
+  let readyFor: echarts.EChartsType | null = null;
+  let readyCallback: Props["onChartReady"] = undefined;
 
   type EChartsOption = Record<string, unknown>;
 
@@ -144,6 +150,20 @@
       return value;
     }
     return value != null ? [value] : [];
+  }
+
+  function detachReady() {
+    readyCleanup?.();
+    readyCleanup = null;
+    readyFor = null;
+    readyCallback = undefined;
+  }
+
+  function attachReady() {
+    if (!chartInstance || !onChartReady || readyFor === chartInstance) return;
+    readyCallback = onChartReady;
+    readyFor = chartInstance;
+    readyCleanup = onChartReady(chartInstance) || null;
   }
 
   function hasWheelInteractiveFeatures(echartsOptions: EChartsOption): boolean {
@@ -232,6 +252,16 @@
     }
   });
 
+  $effect(() => {
+    // Read the prop first: chartInstance is not reactive, so short-circuiting on it
+    // would leave this effect with no tracked dependency.
+    const callback = onChartReady;
+    if (chartInstance && callback !== readyCallback) {
+      detachReady();
+      attachReady();
+    }
+  });
+
   // Tracks the echarts build (core vs full) backing the live instance, and a
   // monotonic token so a slow full-build load can't clobber a newer render.
   let currentLib: typeof echarts = echarts;
@@ -250,6 +280,7 @@
     // An exotic series arrived after a core-rendered instance: dispose and
     // recreate with the resolved (full) build.
     if (chartInstance && lib !== currentLib) {
+      detachReady();
       chartInstance.dispose();
       chartInstance = null;
     }
@@ -265,6 +296,7 @@
     }
 
     chartInstance.setOption(safeOptions, true); // true = notMerge (replace checks)
+    attachReady();
   }
 
   function handleResize() {
@@ -278,6 +310,7 @@
       window.removeEventListener("resize", handleResize);
       resizeObserver?.disconnect();
     }
+    detachReady();
     chartInstance?.dispose();
     chartInstance = null;
   });

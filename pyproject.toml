@@ -244,6 +244,7 @@ ai-parrot-advisors = { workspace = true }
 ai-parrot-squawk = { workspace = true }
 ai-parrot-server = { workspace = true }
 ai-parrot-openlit-bridge = { workspace = true }
+ai-parrot-semantic = { workspace = true }
 navrules = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }

@@ -1,0 +1,448 @@
+{
+  "schema_version": "1.0",
+  "feature_id": "FEAT-769",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "overall_confidence_rationale": "Evidence was already high (54/57 citations probe-verified at HEAD 7e6741f13, research not truncated). The medium bound was the scope hypothesis; all five unknowns were resolved at the Q&A gate, so scope is now a decision, not an estimate.",
+  "localization": [
+    {
+      "path": "examples/agents/semantic/",
+      "symbol": null,
+      "lines": null,
+      "role": "TARGET \u2014 does not exist; confirmed absent by probe c42",
+      "evidence": [
+        "F001",
+        "F012"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/semantic/agent_semantic_example.py",
+      "symbol": "GuardedDatasetFacade",
+      "lines": "35-126",
+      "role": "the example to MOVE; owns the guarded-hand-off story",
+      "evidence": [
+        "F001",
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/semantic/agent_semantic_example.py",
+      "symbol": "build_toolkits/build_agent/connection_env",
+      "lines": "268,285,314",
+      "role": "reusable factories a second example should import or mirror",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-semantic/tests/test_example_agent.py",
+      "symbol": "_EXAMPLE_PATH",
+      "lines": "21",
+      "role": "THE single line the move breaks",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/semantic/README.md",
+      "symbol": null,
+      "lines": "3",
+      "role": "second and last live path reference",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+      "symbol": "SemanticLayerToolkit.__init__",
+      "lines": "44",
+      "role": "kwargs-only construction contract; fails closed 5 ways",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/context.py",
+      "symbol": "bind_semantic_context",
+      "lines": "86",
+      "role": "mandatory governance binding",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/bootstrap.py",
+      "symbol": "LocalSemanticLayerToolkit",
+      "lines": "60",
+      "role": "the MCP-local surface a second example could target",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/models.py",
+      "symbol": "SemanticQuery",
+      "lines": "102-105",
+      "role": "extra=\"forbid\" \u2014 any guessed kwarg is a hard error",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "docs/tools/semantic-layer.md",
+      "symbol": null,
+      "lines": "123",
+      "role": "canonical narrative; its code blocks are PARSED by test_mcp_local.py:26",
+      "evidence": [
+        "F004",
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/agents/finance/hooba_agent.py",
+      "symbol": null,
+      "lines": "3,5,44,78",
+      "role": "the house-style template to copy (Usage::, argparse, --smoke)",
+      "evidence": [
+        "F005",
+        "F012"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "symbol": null,
+      "lines": "535-536",
+      "role": "the only CI exposure: uv sync --extra duckdb + pytest on the semantic tests",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "K1",
+      "statement": "SemanticLayerToolkit.__init__ is `def __init__(self, **kwargs: Any) -> None` (toolkit.py:44) \u2014 kwargs-only, no named params. `static_subject` raises static_subject_forbidden (:67); a governed model without dataplane_guard raises guard_required (:79); sl_run_sql is hidden unless allow_raw_sql=True (:104,:469); sl_save_result_as_dataset is hidden without a dataset_manager_factory.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K2",
+      "statement": "An LLM-DRIVEN example must do BOTH `async with bind_semantic_context(ctx, identity=...)` AND `await agent.ask(q, permission_context=ctx)`. _pre_execute fail-closes unless the _permission_context kwarg equals current_pctx(), and that kwarg only arrives via AbstractBot.ask(permission_context=...). Direct method calls (what today's example does) bypass _pre_execute entirely.",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K3",
+      "statement": "SemanticQuery is ConfigDict(extra=\"forbid\") (models.py:105). Every field name in an example must be copied from the model, never guessed.",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K4",
+      "statement": "A GovernedDatasetSink may NOT be an AbstractToolkit/DatasetManager/DataFrame \u2014 _validate_sink rejects it by MRO. The existing example works around this with a _FacadeSink composition wrapper.",
+      "evidence": [
+        "F008",
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K5",
+      "statement": "Do NOT name any new example file test_*.py. pytest.ini sets no testpaths/norecursedirs and there is no root collect_ignore, so examples/ IS collected \u2014 examples/agents/ already holds five test_*.py files with pytest __pycache__.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K6",
+      "statement": "examples/**/*.py is ruff-ignored for ONLY F401/F841/E402 (ruff.toml:152). TID251 (banned imports incl. sidemantic), B, ASYNC, PIE, C4, LOG all still bite, at line-length 120.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K7",
+      "statement": "CI's only semantic exposure is ci.yml:535-536 \u2014 `uv sync --all-packages --extra duckdb` then pytest on packages/ai-parrot-semantic/tests, with no --continue-on-collection-errors. New examples should be DuckDB-only or importorskip-guarded.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K8",
+      "statement": "compile_query returns PRE-RLS SQL (closed issue:22fbd14d96a9); governed SQL lives only in the audit record. An example printing compile_query output must not call it 'the SQL as executed'.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K9",
+      "statement": "issue:f0da823294fb (major, closed) forced the current example's real DataPlanePolicyGuard, connection_env(), owner pre-check and failing-denial demo. Re-introducing a placeholder guard, env leak, weak owner check or missing denial in a NEW example is a known regression.",
+      "evidence": [
+        "F006",
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K10",
+      "statement": "docs/tools/semantic-layer.md's YAML/JSON code blocks are parsed by packages/ai-parrot-semantic/tests/test_mcp_local.py:26 (_DOC_PATH). Editing that doc's fenced blocks is a test-affecting change.",
+      "evidence": [
+        "F004",
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K11",
+      "statement": "Usage rights restrict ONLY masked columns / sensitive:true members (closed issue:9a4e4c35b032). The current example's `usage:` list is broader than required and should not be copied as 'required'.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "K12",
+      "statement": "A policy model covers only its own table, relationship-reachable tables, and tables its own masks/rls name (closed issue:bd477252b8f3). A multi-model example MUST declare the relationship or qualification fails.",
+      "evidence": [
+        "F006",
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K13",
+      "statement": "RlsRegistry has no unregister API (closed issue:e3ff9bfb4a83) \u2014 reload() never drops an RLS rule. No example may present reload() as a way to remove one.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K14",
+      "statement": "parrot.semantic.__init__ exports ONLY __version__, SemanticQuery, SemanticQueryResult, SemanticLayerToolkit (:7). Everything else (context, handoff, results, bootstrap, errors) must be imported from its submodule.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "K15",
+      "statement": "The public surface has been frozen since 2026-10-26, but that day landed four BEHAVIOURAL fixes (c3e2049d, 32a7762e, 0ac26316, ae7e21f1). Examples must be written against post-c3e2049d semantics.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "recent_history": [
+    {
+      "statement": "9b2f099c (2026-10-26) added examples/semantic/* under TASK-4702; ef85c503 (2026-10-27) rewrote 173 of its 261 lines after review issue:f0da823294fb; 9a953146 (2026-10-27) corrected the doc's model format.",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "origin/feat-FEAT-704-semantic-layer is 0 commits ahead of origin/dev and has no examples/ delta. No prior attempt at examples/agents/semantic/ exists anywhere.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "statement": "examples/agents/ is domain-foldered (a2ui/, aws/, finance/, oauth/, webbrowser/), last touched 2026-10-02, commit convention `feat(<slug>): TASK-<NNN> \u2014 <title>`.",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "FEAT-769 is a documentation/example feature with a small, mechanical relocation at its core plus two NEW example agents that each demonstrate a surface the existing example does not. The relocation is 2 line edits; the value is entirely in what the new examples teach.",
+      "confidence": "high",
+      "supporting": [
+        "F001",
+        "F002",
+        "F011",
+        "F012"
+      ],
+      "reasoning": "The target dir is confirmed absent, the move has exactly two live references, no prior attempt exists, and the existing example covers only 2 of 10 sl_* tools."
+    },
+    {
+      "id": "H2",
+      "statement": "The single largest gap an example can fill is that NO example currently has an LLM actually drive the semantic tools \u2014 the existing one builds an Agent at line 314 and then discards it, driving the toolkit directly. An LLM-driven catalog-to-query example (sl_list_models -> sl_get_dimensions -> sl_query_metrics) is therefore the highest-value example #2, and it is also the only one that exercises the K2 permission_context path.",
+      "confidence": "high",
+      "supporting": [
+        "F001",
+        "F013"
+      ],
+      "reasoning": "Verified at examples/semantic/agent_semantic_example.py:314 and by the _pre_execute/ask(permission_context=) trace in F013."
+    },
+    {
+      "id": "H3",
+      "statement": "Example #3 (if scoped) should be the MCP-local surface via LocalSemanticLayerToolkit, because the doc explicitly demands an allow AND a deny be executed against the real server factory, and that is currently only asserted by parsing the doc, never run as an example.",
+      "confidence": "medium",
+      "supporting": [
+        "F004",
+        "F008"
+      ],
+      "reasoning": "Grounded in docs/tools/semantic-layer.md:148-157 and bootstrap.py:60, but whether the user wants a third example is unresolved (U1)."
+    }
+  ],
+  "scope": {
+    "statement": "Move examples/semantic/* to examples/agents/semantic/ (2 reference edits); add FOUR new example agents (LLM-driven catalog->query, MCP-local allow+deny, masking/saved_queries, multi-model joins+grains), each with a --smoke no-LLM default and a pin test in packages/ai-parrot-semantic/tests/; one shared committed model+policy YAML pair; a README plus a section in docs/tools/semantic-layer.md.",
+    "confidence": "high",
+    "in_scope": [
+      "the move + its 2 reference edits",
+      "2 new example agents",
+      "examples/agents/semantic/README.md",
+      "a pin test per new example",
+      "model+policy YAML the new examples need"
+    ],
+    "out_of_scope": [
+      "any change to packages/ai-parrot-semantic/src/**",
+      "fixing open issue:3c4d154c0172 (S3/S5)",
+      "new library functionality"
+    ]
+  },
+  "confidence_map": [
+    {
+      "claim": "examples/agents/semantic/ does not exist",
+      "confidence": "high",
+      "basis": "directly cited (probe c42)"
+    },
+    {
+      "claim": "The move breaks exactly 2 live references",
+      "confidence": "high",
+      "basis": "directly cited (probe c31, c34) + exhaustive grep"
+    },
+    {
+      "claim": "Every sl_* signature and construction kwarg listed",
+      "confidence": "high",
+      "basis": "directly cited (probe c0-c14)"
+    },
+    {
+      "claim": "LLM-driven use needs ask(permission_context=) as well as the binding",
+      "confidence": "high",
+      "basis": "directly cited call-chain trace"
+    },
+    {
+      "claim": "examples/ is pytest-collected; don't name files test_*.py",
+      "confidence": "high",
+      "basis": "re-verified inline after a mis-scoped probe"
+    },
+    {
+      "claim": "Six closed ledger issues constrain the narrative",
+      "confidence": "medium",
+      "basis": "inferred from issue bodies, not from re-reading each fix"
+    },
+    {
+      "claim": "Usage rights are narrower than the current example implies (K11)",
+      "confidence": "medium",
+      "basis": "inferred from a closed issue body"
+    },
+    {
+      "claim": "The MCP-local example is the right #3",
+      "confidence": "low",
+      "basis": "weakly supported \u2014 a product preference, not an evidenced need"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which two examples? Candidates: (a) LLM-driven catalog->query agent, (b) MCP-local LocalSemanticLayerToolkit allow+deny, (c) masking/saved_queries policy demo, (d) multi-model joins + time grains.",
+      "blocks": [
+        "H3",
+        "scope"
+      ],
+      "user_answer": "ALL FOUR selected: (a) LLM-driven catalog->query, (b) MCP-local allow+deny, (c) masking/saved_queries, (d) multi-model joins + time grains. Supersedes the source's 'un par' (2) -> 4 new examples."
+    },
+    {
+      "id": "U2",
+      "question": "Should the new examples default to a deterministic no-LLM mode (hooba_agent.py's --smoke pattern) with the LLM path opt-in, so CI and offline readers can run them?",
+      "blocks": [
+        "K7"
+      ],
+      "user_answer": "Deterministic --smoke no-LLM default (hooba_agent.py pattern), LLM path opt-in."
+    },
+    {
+      "id": "U3",
+      "question": "Should each new example get its own pin test in packages/ai-parrot-semantic/tests/ (which puts it in CI and forces DuckDB-only), or stay untested like the rest of examples/?",
+      "blocks": [
+        "K7"
+      ],
+      "user_answer": "Yes - a pin test per new example in packages/ai-parrot-semantic/tests/, so CI covers them. DuckDB-only."
+    },
+    {
+      "id": "U4",
+      "question": "Do the new examples get a section in docs/tools/semantic-layer.md (whose fenced blocks are parsed by test_mcp_local.py), or only an examples/agents/semantic/README.md?",
+      "blocks": [
+        "K10"
+      ],
+      "user_answer": "Both: a section in docs/tools/semantic-layer.md AND examples/agents/semantic/README.md. Test-affecting (K10)."
+    },
+    {
+      "id": "U5",
+      "question": "Should the new examples share one model+policy YAML pair (a fixture file committed under examples/agents/semantic/), or each write its own YAML at runtime into a tempdir as the existing example does?",
+      "blocks": [
+        "K12"
+      ],
+      "user_answer": "One shared model+policy YAML pair committed under examples/agents/semantic/models/."
+    }
+  ],
+  "resolved_decisions": [
+    {
+      "id": "D1",
+      "decision": "Move + extend: relocate examples/semantic/* into examples/agents/semantic/ and add the new examples beside it, updating test_example_agent.py:21 and README.md:3.",
+      "decided_by": "user at the Phase-1 gate"
+    },
+    {
+      "id": "D2",
+      "decision": "ALL FOUR selected: (a) LLM-driven catalog->query, (b) MCP-local allow+deny, (c) masking/saved_queries, (d) multi-model joins + time grains. Supersedes the source's 'un par' (2) -> 4 new examples.",
+      "decided_by": "user at the Phase-5 Q&A gate"
+    },
+    {
+      "id": "D3",
+      "decision": "Deterministic --smoke no-LLM default (hooba_agent.py pattern), LLM path opt-in.",
+      "decided_by": "user at the Phase-5 Q&A gate"
+    },
+    {
+      "id": "D4",
+      "decision": "Yes - a pin test per new example in packages/ai-parrot-semantic/tests/, so CI covers them. DuckDB-only.",
+      "decided_by": "user at the Phase-5 Q&A gate"
+    },
+    {
+      "id": "D5",
+      "decision": "Both: a section in docs/tools/semantic-layer.md AND examples/agents/semantic/README.md. Test-affecting (K10). One shared model+policy YAML pair committed under examples/agents/semantic/models/.",
+      "decided_by": "user at the Phase-5 Q&A gate"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and the construction contract are probe-verified at HEAD, and the change is additive with a 2-line blast radius \u2014 there is nothing left to investigate. What remains is five scoping choices, which is exactly what a spec's Open Questions section is for. /sdd-brainstorm is unnecessary: no architectural alternatives are in play."
+  }
+}

@@ -61,6 +61,30 @@ describe('inferSurfaceKind', () => {
     const env = surface({ components: [{ id: 'root', component: 'Infographic' }] });
     expect(inferSurfaceKind(env)).toBe('infographic');
   });
+
+  it('a valid marker kind wins over the root-component heuristic', () => {
+    const env = surface({
+      components: [{ id: 'root', component: 'KPICard' }],
+      metadata: {
+        extensions: {
+          parrot_presentation: { kind: 'dashboard', inline: true, origin: 'chat_turn', component: 'KPICard' },
+        },
+      },
+    });
+    expect(inferSurfaceKind(env)).toBe('dashboard');
+  });
+
+  it('an invalid marker kind falls back to the heuristic', () => {
+    const env = surface({
+      components: [{ id: 'root', component: 'Infographic', sections: [{ heading: 'A' }] }],
+      metadata: {
+        extensions: {
+          parrot_presentation: { kind: 'invalid', inline: true, origin: 'chat_turn', component: 'Infographic' },
+        },
+      },
+    });
+    expect(inferSurfaceKind(env)).toBe('infographic');
+  });
 });
 
 describe('hasInfographicRoot', () => {

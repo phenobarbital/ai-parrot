@@ -359,7 +359,13 @@ by `review_pull_request`.
 The core review primitive. Useful for manual triggers and tests.
 
 Steps:
-1. Extract a `<JIRA_PROJECT>-\d+` key from `pr_body` + `pr_title`.
+1. Extract a `<JIRA_PROJECT>-\d+` key from the PR head branch (`head_ref`),
+   then from `pr_title`. The PR body is **never** scanned: it routinely
+   cites a parent or related ticket before the one under review. With no
+   Jira key, the SDD fallback resolves a `FEAT-<NNN>` id the same way
+   (branch → title), then from the SDD files the PR itself changes
+   (`sdd/tasks/index/*.json` `feature_id`, `sdd/specs/*.spec.md`
+   `**Feature ID**`), read at `head_sha`.
 2. `jira_get_issue` → description + acceptance criteria.
 3. `get_pull_request_diff` (truncated to `max_diff_bytes`).
 4. `self.ask(prompt, structured_output=PRReviewResult)`.
@@ -838,9 +844,10 @@ share one endpoint and let the `repository` guard inside
     `GET /repos/<owner>/<repo>` → `permissions.admin`; if it is `false`, no
     token setting will fix it, so either raise the user's role or fall back
     to manual setup.
-- **`status="no_ticket"`**: the PR body / title did not include a
-  `<JIRA_PROJECT>-\d+` reference. Educate authors or change
-  `jira_project=` for the agent.
+- **`status="no_ticket"`**: neither the PR branch name nor its title
+  included a `<JIRA_PROJECT>-\d+` reference (the body is not scanned),
+  and no SDD feature id could be resolved either. Educate authors or
+  change `jira_project=` for the agent.
 - **`status="ticket_not_found"`**: the Jira instance returned no ticket.
   Verify `JIRA_INSTANCE`, the credentials, and that the bot user can read
   the target project.

@@ -12,6 +12,7 @@ from .responses import (
     MessageResponse,
     StreamChunk,
 )
+from .suggestions import Suggestion, SuggestionBatch, SuggestionKind, SuggestionSource
 from .outputs import (
     StructuredOutputConfig,
     BoundingBox,
@@ -126,6 +127,10 @@ __all__ = (
     "SourceDocument",
     "MessageResponse",
     "StreamChunk",
+    "Suggestion",
+    "SuggestionBatch",
+    "SuggestionKind",
+    "SuggestionSource",
     "StructuredOutputConfig",
     "BoundingBox",
     "ObjectDetectionResult",

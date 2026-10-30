@@ -1,0 +1,117 @@
+{
+  "feature": "e2e-browser-screencast-logs",
+  "feature_id": "FEAT-762",
+  "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T21:36:53.176481+00:00",
+  "completed_at": "2026-10-28T00:17:41+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-tools/tests/scraping/test_fixture_site_integration.py::TestObscuraScreencastRecording::test_existing_page_produces_playable_webm",
+          "packages/ai-parrot-server/tests/unit/e2e/test_screencast.py",
+          "packages/ai-parrot-server/tests/unit/e2e/test_screencast_agent_protocol.py",
+          "packages/ai-parrot-server/tests/integration/e2e/test_screencast_integration.py::test_record_on_anomaly_real_obscura"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:bbbb801b045e3e80f30e0a4009126ae75400b9378421f34e32accf449566d584"
+  },
+  "decomposition_scope": "M0 (TASK-4842) + M1-M3 (TASK-4864..4866) after the 2026-10-28 in-process spec revision.",
+  "tasks": [
+    {
+      "id": "TASK-4842",
+      "slug": "e2e-active-page-screencast-spike",
+      "title": "Prove active-page Obscura screencast capture and encoding",
+      "feature_id": "FEAT-762",
+      "feature": "e2e-browser-screencast-logs",
+      "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No task dependencies. Uses isolated Obscura process, unused_tcp_port, and test-local output; modifies only its declared integration test, evidence report, and spec. No shared dependency manifests or conftest mutations.",
+      "assigned_to": null,
+      "started_at": "2026-10-27T22:17:30+00:00",
+      "completed_at": "2026-10-28T00:17:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4842-e2e-active-page-screencast-spike.md",
+      "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-762",
+      "feature": "e2e-browser-screencast-logs",
+      "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-27T23:53:58+00:00",
+      "parallel": true,
+      "id": "TASK-4864",
+      "slug": "e2e-screencast-recorder",
+      "title": "In-connection screencast recorder (parrot.e2e.screencast)",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallelism_notes": "Root of M1-M3; creates screencast.py + E2EScreencastError; M0 contract already frozen in the spec (TASK-4842 spike evidence), no code dependency on it.",
+      "file": "sdd/tasks/completed/TASK-4864-e2e-screencast-recorder.md",
+      "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-762",
+      "feature": "e2e-browser-screencast-logs",
+      "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-28T00:06:32+00:00",
+      "parallel": true,
+      "id": "TASK-4865",
+      "slug": "e2e-record-on-anomaly",
+      "title": "Anomaly-triggered recorder (record_on_anomaly)",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4864"
+      ],
+      "parallelism_notes": "imports start_screencast/stop_screencast/ScreencastSession from TASK-4864 and modifies the same screencast.py + test_screencast.py.",
+      "file": "sdd/tasks/completed/TASK-4865-e2e-record-on-anomaly.md",
+      "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-762",
+      "feature": "e2e-browser-screencast-logs",
+      "spec": "sdd/specs/e2e-browser-screencast-logs.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-28T00:17:22+00:00",
+      "parallel": true,
+      "id": "TASK-4866",
+      "slug": "e2e-ui-tester-screencast-protocol",
+      "title": "e2e-ui-tester on-anomaly screencast protocol",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4865"
+      ],
+      "parallelism_notes": "documents record_on_anomaly/AnomalyRecorder (.triggered/.path/.error) created by TASK-4865; prose must match its final signature.",
+      "file": "sdd/tasks/completed/TASK-4866-e2e-ui-tester-screencast-protocol.md",
+      "verification": "verified"
+    }
+  ]
+}

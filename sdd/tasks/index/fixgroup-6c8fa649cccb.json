@@ -1,0 +1,32 @@
+{
+  "feature": "fixgroup-6c8fa649cccb",
+  "feature_id": "FEAT-765",
+  "spec": "sdd/specs/fixgroup-6c8fa649cccb.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-28T00:40:00+00:00",
+  "completed_at": "2026-10-28T00:38:50+00:00",
+  "parallel_semantics": "exclusive",
+  "tasks": [
+    {
+      "id": "TASK-4872",
+      "slug": "screencast-recorder-hardening",
+      "title": "Screencast recorder hardening and test gaps",
+      "feature_id": "FEAT-765",
+      "feature": "fixgroup-6c8fa649cccb",
+      "spec": "sdd/specs/fixgroup-6c8fa649cccb.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-4872-screencast-recorder-hardening.md",
+      "discovered_from": "issue:c3e0c9065cce",
+      "parallelism_notes": "Single task; edits parrot/e2e/screencast.py, its unit/integration tests and the shared uv.lock.",
+      "started_at": "2026-10-28T00:45:00+00:00",
+      "completed_at": "2026-10-28T00:37:31+00:00",
+      "verification": "verified"
+    }
+  ]
+}

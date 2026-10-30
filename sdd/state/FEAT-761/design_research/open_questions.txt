@@ -1,0 +1,10 @@
+- Jailbreak bake-off (feature's first task, hard gate): run the candidate matrix through the extended compare_models.py — latency, ES/EN accuracy, Spanish-benign FP gate — and pin the winner as default. Licenses re-verified per candidate at that point.
+- 0din-specific caveat if it competes: trained/evaluated only for duplicate detection among attacks (55-pair eval, "directional") — its benign-vs-attack FP behavior is exactly what the gate must establish.
+- Reference attack corpus (only if an embedding engine wins): sourcing (WildJailbreak license for derived embeddings? curated internal set?), size budget, where it ships (package data vs HF dataset vs env dir), and update cadence.
+- Fuzzy matcher for leakage: add rapidfuzz to core deps (touches test_dependency_boundary.py) vs stdlib difflib.SequenceMatcher (slower, zero deps)?
+- Which system-prompt artifact does OUTPUT leakage compare against: the static template (system_prompt property) or the per-turn rendered prompt (incl. skills/tenant layers)? Rendered is more correct but needs a per-turn cache or re-render at OUTPUT time.
+- Streaming leakage: accept v1 limitation (final-message check only — leaked chunks already streamed) or invest in a StreamingGuardrail withholding adapter?
+- Confirm scan_tool_output default-off (opt-in) for the compat invariant, and whether per-tool opt-out is needed (e.g. skip scanning trusted internal tools).
+- Canary-token support in v1 (canary policy key, operator-managed) or follow-up? Auto-injection into the prompt is explicitly out of scope either way.
+- INPUT-side leakage (extraction attempts): heuristics-only in v1, or also consult the jailbreak model's score (extraction attempts often classify as jailbreak)?
+- Priority ordering within the sanitizer band (injection 10 -> jailbreak 11 -> leakage 12): confirm, and decide whether a combined "security" convenience preset (guardrails=["security"]) is worth adding.

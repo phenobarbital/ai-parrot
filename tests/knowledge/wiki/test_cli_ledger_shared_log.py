@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from click.testing import CliRunner
 
@@ -13,50 +13,22 @@ from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.shared_log import ClaimConflict, SharedLogExportReport, SharedLogImportReport
 
 
-def test_cli_export_log_stage_runs_git_add(tmp_path: Path, monkeypatch) -> None:
-    """Export stages a created/changed shared log in the requested checkout."""
+def test_cli_export_log_stage_is_rejected_without_writes(tmp_path: Path, monkeypatch) -> None:
+    """An old hook's staged export exits before any ledger write or git staging."""
     monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True, text=True)
-    dest = tmp_path / "sdd" / "ledger" / "events.jsonl"
-    dest.parent.mkdir(parents=True)
-    dest.write_text("{}\n", encoding="utf-8")
-    service = MagicMock(spec=LedgerService)
-    service.export_shared_log = AsyncMock(
-        return_value=SharedLogExportReport(dest=dest, created=True, added=1, skipped_local_only=0, total_committed=1)
-    )
+    service_factory = Mock(side_effect=AssertionError("LedgerService must not be constructed"))
 
-    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
-        result = CliRunner().invoke(ledger, ["export-log", "--repo-root", str(tmp_path), "--stage"])
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", service_factory):
+        result = CliRunner().invoke(ledger, ["export-log", "--repo-root", str(tmp_path), "--stage", "--quiet"])
 
-    assert result.exit_code == 0, result.output
-    assert f"Exported {dest} (+1 events)" in result.output
+    assert result.exit_code == 4, result.output
+    assert "export-log --stage is obsolete" in result.output
+    assert not (tmp_path / "sdd" / "ledger" / "events.jsonl").exists()
     staged = subprocess.run(
         ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"], check=True, capture_output=True, text=True
     )
-    assert staged.stdout.strip() == "sdd/ledger/events.jsonl"
-
-
-def test_cli_export_log_stage_reports_git_add_failure(tmp_path: Path, monkeypatch) -> None:
-    """A failed staged export reports git's error without a traceback."""
-    monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))
-    dest = tmp_path / "sdd" / "ledger" / "events.jsonl"
-    service = MagicMock(spec=LedgerService)
-    service.export_shared_log = AsyncMock(
-        return_value=SharedLogExportReport(dest=dest, created=True, added=1, skipped_local_only=0, total_committed=1)
-    )
-
-    def fail_git_add(command: list[str], **kwargs: object) -> None:
-        raise subprocess.CalledProcessError(1, command, stderr="permission denied")
-
-    with (
-        patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service),
-        patch("parrot.knowledge.wiki.cli.subprocess.run", side_effect=fail_git_add),
-    ):
-        result = CliRunner().invoke(ledger, ["export-log", "--repo-root", str(tmp_path), "--stage"])
-
-    assert result.exit_code == 1
-    assert "git add failed: permission denied" in result.output
-    assert "Traceback" not in result.output
+    assert staged.stdout == ""
 
 
 def test_cli_import_log_outputs_and_exit_codes(tmp_path: Path, monkeypatch) -> None:

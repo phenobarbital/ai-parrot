@@ -1,0 +1,60 @@
+{
+  "feature": "openai-client-fixes",
+  "feature_id": "FEAT-770",
+  "spec": "sdd/specs/openai-client-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-30T00:50:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-client-openai/tests/unit/test_openai_completion_params.py",
+          "packages/ai-parrot/tests/test_openai_client.py",
+          "packages/ai-parrot/tests/test_prompt_caching_openai.py",
+          "packages/ai-parrot-client-openai/tests/unit/test_openai_multiround_usage.py",
+          "packages/ai-parrot/tests/test_nvidia_client.py",
+          "packages/ai-parrot/tests/test_openrouter_client.py",
+          "packages/ai-parrot/tests/test_vllm_client.py",
+          "packages/ai-parrot/tests/clients/test_bedrock_mantle.py",
+          "packages/ai-parrot/tests/unit/clients/test_invoke_telemetry.py",
+          "packages/ai-parrot/tests/unit/clients/test_token_budget.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6db5d4a728032777af02cd1585606021b5b31181528451437ad4a5372f153b3d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4894",
+      "slug": "openai-completion-params",
+      "title": "Adapt OpenAI completion params — max_completion_tokens + fixed temperature",
+      "feature_id": "FEAT-770",
+      "feature": "openai-client-fixes",
+      "spec": "sdd/specs/openai-client-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4894-openai-completion-params.md"
+    }
+  ]
+}

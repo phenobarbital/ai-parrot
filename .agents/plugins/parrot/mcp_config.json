@@ -27,6 +27,16 @@
       ],
       "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
+    "parrot-memory": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "memory",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
     "parrot-browsing": {
       "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
@@ -42,16 +52,6 @@
       "args": [
         "mcp-local",
         "database-query",
-        "--config",
-        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
-      ],
-      "cwd": "/home/jesuslara/proyectos/ai-parrot"
-    },
-    "parrot-memory": {
-      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
-      "args": [
-        "mcp-local",
-        "memory",
         "--config",
         "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
       ],

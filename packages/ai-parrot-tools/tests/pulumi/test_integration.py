@@ -15,7 +15,7 @@ import yaml
 @pytest.fixture
 def fixtures_dir():
     """Return the path to the Pulumi test fixture directory."""
-    return Path(__file__).parent.parent.parent / "fixtures" / "pulumi_docker_project"
+    return Path(__file__).resolve().parents[3] / "ai-parrot" / "tests" / "fixtures" / "pulumi_docker_project"
 
 
 @pytest.fixture
@@ -96,26 +96,17 @@ class TestPulumiRegistration:
 
     def test_toolkit_registered(self):
         """PulumiToolkit is registered in ToolkitRegistry source code."""
-        # Skip actual registry loading due to environment dependencies
-        # Instead verify registration is in the source code
-        from pathlib import Path
+        from parrot.tools.discovery import discover_from_registry, resolve_class
+        from parrot_tools.pulumi import PulumiToolkit
 
-        registry_path = Path(__file__).parent.parent.parent.parent / "parrot" / "tools" / "registry.py"
-        content = registry_path.read_text()
-
-        # Verify PulumiToolkit is imported and registered
-        assert "from .pulumi.toolkit import PulumiToolkit" in content
-        assert '"pulumi": PulumiToolkit' in content
+        registry = discover_from_registry()
+        assert resolve_class(registry["pulumi"]) is PulumiToolkit
 
     def test_pulumi_in_registry_dict(self):
-        """Pulumi toolkit mapping exists in registry source."""
-        from pathlib import Path
+        """Pulumi toolkit mapping exists in the satellite registry."""
+        from parrot_tools import TOOL_REGISTRY
 
-        registry_path = Path(__file__).parent.parent.parent.parent / "parrot" / "tools" / "registry.py"
-        content = registry_path.read_text()
-
-        # Find the return dict and verify pulumi is there
-        assert "pulumi" in content.lower()
+        assert TOOL_REGISTRY["pulumi"] == "parrot_tools.pulumi.toolkit.PulumiToolkit"
 
 
 class TestPulumiFixture:
@@ -167,7 +158,7 @@ class TestPulumiToolkitTools:
     @pytest.mark.asyncio
     async def test_tools_have_descriptions(self, toolkit):
         """All tools have descriptions for LLM."""
-        tools = await toolkit.get_tools()
+        tools = toolkit.get_tools()
         assert len(tools) > 0, "No tools returned"
 
         for tool in tools:
@@ -177,7 +168,7 @@ class TestPulumiToolkitTools:
     @pytest.mark.asyncio
     async def test_expected_tools_exist(self, toolkit):
         """Expected tool methods exist."""
-        tools = await toolkit.get_tools()
+        tools = toolkit.get_tools()
         tool_names = [t.name for t in tools]
 
         expected_tools = ["pulumi_plan", "pulumi_apply", "pulumi_destroy", "pulumi_status"]

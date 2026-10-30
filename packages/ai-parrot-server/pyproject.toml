@@ -61,6 +61,14 @@ mcp = [
     "PyYAML>=6.0.2",
 ]
 
+# E2E screencast recorder (FEAT-762): PyAV encodes CDP screencast frames to
+# WebM (libvpx VP8); Pillow decodes the JPEG frames. Install with
+# `pip install ai-parrot-server[screencast]`.
+screencast = [
+    "av>=13.0.0,<14.0.0",
+    "pillow>=13.0.0",
+]
+
 # A2A server (optional JWT auth)
 a2a = [
     "PyJWT>=2.8.0",

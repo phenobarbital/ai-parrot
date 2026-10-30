@@ -246,8 +246,8 @@ Run inside the feature worktree. Steps:
 9.5. `--sync-down` (hotfix only): after the manual PR merges to `main`,
    propagate to `staging` and `dev` (normally done automatically by
    `.github/workflows/sync-down.yml`).
-10. `--resolve-jira`: fetch available transitions and move the linked ticket to
-   Done/Resolved (and its subtasks).
+10. Optional `post_pr` `jira.transition` hook: move the linked ticket to its
+    configured state (and its subtasks). See `docs/sdd/closeout-hooks.md`.
 11. Remove the worktree (`git worktree remove` / `prune`), optionally delete the
    merged local branch.
 12. Print the summary.
@@ -264,8 +264,8 @@ Run inside the feature worktree. Steps:
 | `/sdd-explain [--deep] <target>` | Code-grounded architecture walkthrough (default) or implementation trace (`--deep`); strict anti-hallucination (read before explain, grep anchors not line numbers). |
 
 `/sdd-tojira` is the reverse of `/sdd-fromjira`: the `jira:` metadata it writes
-enables `/sdd-done --resolve-jira`, `/pr-review` auto-detection, and idempotent
-re-export.
+enables the optional `/sdd-done` `jira.transition` hook, `/pr-review` auto-detection,
+and idempotent re-export. See `docs/sdd/closeout-hooks.md`.
 
 ---
 
@@ -300,7 +300,7 @@ approved. The agents under `.claude/agents/`:
 - **`sdd-worker`** — implements *all* tasks for a feature sequentially in
   dependency order, committing after each, inside a manually-created worktree.
   Implements exactly what tasks specify (no redesigns). Launch:
-  `claude --agent sdd-worker --model sonnet --verbose`.
+  `scripts/sdd/launch_worker.sh --verbose`.
 - **`sdd-autopilot`** — shell-level AgentCrew that chains
   `worker → code-reviewer → qa-runner → sdd-done → pr-review` with file-based
   quality gates in `.autopilot/` (`state.json` enables resume). Bounded retry
@@ -342,14 +342,14 @@ approved. The agents under `.claude/agents/`:
 ┌─ EXECUTE (in worktree) ───────────────▼───────────────────────────────────┐
 │ cd .claude/worktrees/feat-071-<slug>                                      │
 │ /sdd-start TASK-001  → implement → commit  (repeat per task, deps honored) │
-│        … or: claude --agent sdd-worker   (all tasks unattended)            │
+│        … or: scripts/sdd/launch_worker.sh (all tasks unattended)           │
 │        … or: claude --agent sdd-autopilot (worker→review→QA→done→pr-review)│
 └──────────────────────────────────────┬───────────────────────────────────┘
                                         │ all tasks done
 ┌─ INTEGRATE (on dev) ──────────────────▼───────────────────────────────────┐
-│ /sdd-done FEAT-071 --resolve-jira                                         │
+│ /sdd-done FEAT-071                                                        │
 │   verify evidence → close tasks → push branch → merge into dev →           │
-│   heal orphans → push dev → transition NAV-8036 to Done → remove worktree  │
+│   heal orphans → push dev → optional jira.transition hook → remove worktree│
 └──────────────────────────────────────┬───────────────────────────────────┘
                                         ▼
                          dev now contains the feature.
@@ -374,9 +374,9 @@ Concrete sequence:
 5. **Implement** — inside the worktree, `/sdd-start TASK-001 … TASK-00N` (or
    `sdd-worker` / `sdd-autopilot`). Each task verifies its contract, writes
    code, tests, commits.
-6. **`/sdd-done FEAT-071 --resolve-jira`** — from `dev`: verify, close tasks,
-   push the branch, **merge into `dev`**, heal orphans, push `dev`, transition
-   the Jira ticket to Done, remove the worktree.
+6. **`/sdd-done FEAT-071`** — from `dev`: verify, close tasks, push the branch,
+   **merge into `dev`**, heal orphans, push `dev`, run any configured
+   `jira.transition` hook, and remove the worktree. See `docs/sdd/closeout-hooks.md`.
 
 The feature is now "deployed" to the integration branch (`dev`). Promotion to
 production follows the **Git Parrot Flow**: `dev → staging` is a manual cut at
@@ -399,8 +399,8 @@ Identical except the entry point is a free-form idea rather than a ticket:
 4. **`/sdd-task …spec.md`** → tasks + worktree.
 5. **`/sdd-start` / `sdd-worker` / `sdd-autopilot`** → implementation.
 6. **`/sdd-done FEAT-<ID>`** → verify, merge to `dev`, cleanup. (Add
-   `/sdd-tojira` at any point if you later want a Jira record; add
-   `--resolve-jira` to `/sdd-done` if linked.)
+   `/sdd-tojira` at any point if you later want a Jira record; configure the
+   `jira.transition` hook if linked. See `docs/sdd/closeout-hooks.md`.)
 
 For a **hotfix**, set `type: hotfix` / `base_branch: main` in the brainstorm
 frontmatter. Then `/sdd-spec` and `/sdd-task` base on `main`, and `/sdd-done`

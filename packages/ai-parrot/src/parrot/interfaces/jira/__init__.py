@@ -26,6 +26,7 @@ from .models import (
     JiraRemoteLink,
 )
 from .parse import parse_issue
+from .site import SiteUrlResolver, fetch_site_url, is_gateway_url
 
 __all__ = (
     "JiraAttachmentRef",
@@ -39,5 +40,8 @@ __all__ = (
     "JiraIssueLinkKind",
     "JiraPerson",
     "JiraRemoteLink",
+    "SiteUrlResolver",
+    "fetch_site_url",
+    "is_gateway_url",
     "parse_issue",
 )

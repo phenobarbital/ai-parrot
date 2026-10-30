@@ -49,6 +49,8 @@ export interface AgentMessage {
   // A2UI envelope (FEAT-527): present on both `output_mode: "infographic"`
   // (dual-emit, additive) and `output_mode: "a2ui"` turns.
   a2ui_envelope?: A2UIEnvelope;
+  // Follow-up chips (FEAT-752) — live turn only, not persisted.
+  suggestions?: import("$lib/types/generated/AgentChatResponse").AgentChatSuggestion[];
 }
 
 /**

@@ -226,7 +226,7 @@ git checkout dev && git pull origin dev
 /sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
 cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
-/sdd-start TASK-<NNN+1> …                  # or: claude --agent sdd-worker
+/sdd-start TASK-<NNN+1> …                  # or: scripts/sdd/launch_worker.sh
 /sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```
 
@@ -237,7 +237,7 @@ a feature sequentially. Launch it **inside** a manually-created worktree:
 
 ```bash
 cd .claude/worktrees/<feature-worktree>
-claude --agent sdd-worker --model sonnet --verbose
+scripts/sdd/launch_worker.sh --verbose
 ```
 
 Key properties: uses Sonnet, implements EXACTLY what tasks
@@ -247,7 +247,7 @@ For background execution:
 ```bash
 cd .claude/worktrees/feat-014
 tmux new -s feat-014 \
-  "claude --agent sdd-worker --model sonnet --verbose"
+  "scripts/sdd/launch_worker.sh --verbose"
 # Ctrl+B, D to detach — tmux attach -t feat-014 to reconnect
 ```
 
