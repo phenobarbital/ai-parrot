@@ -65,7 +65,7 @@ class TestMountedDist:
         assert "admin" in (await resp.text())
 
     @pytest.mark.parametrize(
-        "path", ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home"]
+        "path", ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home", "/account/security"]
     )
     async def test_user_sections_served_at_root(self, fake_dist, aiohttp_client, path):
         app = web.Application()
@@ -83,7 +83,7 @@ class TestMountedDist:
         assert setup_admin_ui(app, mount_root=True) is True
 
         client = await aiohttp_client(app)
-        for path in ("/not-a-ui-page", "/agentsfoo", "/api/v1/missing"):
+        for path in ("/not-a-ui-page", "/agentsfoo", "/accounts", "/api/v1/missing"):
             resp = await client.get(path)
             assert resp.status == 404, path
 
@@ -189,13 +189,22 @@ class TestMountedDist:
         await aiohttp_client(app)  # starts the app -> fires on_startup
 
         excluded = app[AUTH_EXCLUDE_LIST_KEY]
-        for pattern in ("/admin", "/admin/*", "/login", "/agents", "/agents/*", "/ui/assets/*"):
+        for pattern in (
+            "/admin",
+            "/admin/*",
+            "/login",
+            "/agents",
+            "/agents/*",
+            "/account",
+            "/account/*",
+            "/ui/assets/*",
+        ):
             assert pattern in excluded
         # Segment-boundary patterns must not accidentally match lookalikes,
         # and the root pattern must never exclude the JSON API.
         import fnmatch
 
-        for path in ("/administer", "/agentsfoo", "/api/v1/bots", "/api/v1/login"):
+        for path in ("/administer", "/agentsfoo", "/accounts", "/api/v1/bots", "/api/v1/login"):
             assert not any(fnmatch.fnmatch(path, p) for p in excluded), path
 
     async def test_no_crash_without_auth_handler(self, fake_dist, aiohttp_client):
