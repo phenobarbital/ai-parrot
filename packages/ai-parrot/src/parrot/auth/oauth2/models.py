@@ -9,7 +9,7 @@ These models represent the data contracts between:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -30,8 +30,8 @@ class IntegrationDescriptor(BaseModel):
         status: ``connected`` (row + readable tokens), ``disconnected`` (no row)
             or ``needs_reconnect`` (row exists but its vault tokens are missing
             or unreadable — the user must re-link the provider).
-        enabled_on_agent: Whether the user has a ``user_agent_toolkits`` row
-            for the current ``(user, agent)`` pair.
+        enabled_on_agent: Deprecated compatibility input for the former
+            ``user_agent_toolkits`` repository. Excluded from serialized output.
         account_id: Provider-side account identifier (available when connected).
         display_account_name: Human-readable account name.
         email: Account email (if the provider exposes it).
@@ -44,11 +44,15 @@ class IntegrationDescriptor(BaseModel):
     default_scopes: List[str] = Field(default_factory=list)
     connected: bool = False
     status: Optional[IntegrationStatus] = None
-    enabled_on_agent: bool = False
+    enabled_on_agent: bool = Field(default=False, exclude=True)
     account_id: Optional[str] = None
     display_account_name: Optional[str] = None
     email: Optional[str] = None
     connected_at: Optional[datetime] = None
+    channels: List[str] = Field(default_factory=list)
+    scopes_granted: List[str] = Field(default_factory=list)
+    expires_at: Optional[float] = None
+    updated_at: Optional[datetime] = None
 
     @model_validator(mode="after")
     def _sync_status_and_connected(self) -> "IntegrationDescriptor":
@@ -160,32 +164,49 @@ class UsersIntegrationRow(BaseModel):
     Attributes:
         user_id: Navigator user identifier.
         provider: Provider identifier, e.g. ``"jira"``.
-        channel: Origin channel — always ``"web"`` for this integration path.
+        canonical_identity: Stable identity shared across channel-specific IDs.
+        channels: Every channel that connected or used this integration.
         status: ``"active"`` while the credential is usable; ``"revoked"`` after
-            explicit disconnect (soft-delete variant, not used in v1 — v1 does
-            hard deletes).
+            explicit disconnect, or ``"needs_reconnect"`` when credentials must
+            be replaced.
         account_id: Provider-side account ID (e.g. Atlassian ``accountId``).
         display_name: Human-readable account name.
         email: Account email.
         scopes: Scopes granted during consent.
+        scopes_granted: Explicitly granted provider scopes.
+        expires_at: Access-token expiry timestamp, when available.
         cloud_id: Atlassian cloud ID (Jira-specific).
         site_url: Atlassian site URL.
         connected_at: When the credential was first stored.
+        updated_at: When the credential status or token data was last updated.
         last_used_at: When the credential was last used (updated by the toolkit).
     """
 
     user_id: str
     provider: str
-    channel: str = "web"
-    status: Literal["active", "revoked"] = "active"
+    canonical_identity: Optional[str] = None
+    channels: List[str] = Field(default_factory=list)
+    status: Literal["active", "revoked", "needs_reconnect"] = "active"
     account_id: str
     display_name: str
     email: Optional[str] = None
     scopes: List[str]
+    scopes_granted: List[str] = Field(default_factory=list)
+    expires_at: Optional[float] = None
     cloud_id: Optional[str] = None
     site_url: Optional[str] = None
     connected_at: datetime
+    updated_at: Optional[datetime] = None
     last_used_at: Optional[datetime] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_channel(cls, data: Any) -> Any:
+        """Fold a legacy ``channel`` value into ``channels`` before validation."""
+        if isinstance(data, dict) and "channel" in data and "channels" not in data:
+            data = data.copy()
+            data["channels"] = [data.pop("channel")]
+        return data
 
 
 class UserAgentToolkitRow(BaseModel):

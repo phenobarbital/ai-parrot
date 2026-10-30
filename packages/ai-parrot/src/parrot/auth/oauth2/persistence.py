@@ -105,6 +105,33 @@ async def delete_users_integration(user_id: str, provider: str) -> None:
     )
 
 
+async def list_users_integrations(user_id: str) -> List[UsersIntegrationRow]:
+    """Return all provider connections stored for a principal.
+
+    Invalid documents are logged and skipped so one malformed persisted record
+    does not prevent a principal's other connections from being listed.
+
+    Args:
+        user_id: Navigator user identifier.
+
+    Returns:
+        Valid connection rows for the principal.
+    """
+    query = {"user_id": user_id}
+    async with DocumentDb() as db:
+        docs = await db.read(USERS_INTEGRATIONS_COLLECTION, query)
+
+    rows = []
+    for doc in docs:
+        document = dict(doc)
+        document.pop("_id", None)
+        try:
+            rows.append(UsersIntegrationRow.model_validate(document))
+        except ValueError:
+            logger.warning("Skipping invalid users_integration for user_id=%s", user_id)
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # user_agent_toolkits repository
 # ---------------------------------------------------------------------------
