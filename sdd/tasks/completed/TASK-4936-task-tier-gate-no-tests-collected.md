@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-782 — sdd-coder engine fixes 3 (task-tier gate: "no tests collected" is not a failure)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-3.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -139,4 +139,16 @@ Spec §4.
 
 ## Completion Note
 
-*(filled in on completion)*
+**Completed by**: Claude Opus 5.5 via `/sdd-fix issue:8c423c5612c2` (implemented in-session, no sdd-worker)
+**Date**: 2026-10-30
+**Commit**: `3c96b4002c`
+**Notes**: All four edits landed as specified (planner, PytestAdapter, build_verdict, engine diagnostics).
+Two refinements to the blueprint: (1) a permissive group with no declared target still goes through
+`marker_expression_for` (contract-only plans are byte-identical to before); (2) the contract marker sweep
+is gated on a contract target being present in the distribution (`if contract_paths:`), as before —
+pinned by `test_declared_only_with_marked_contract_adds_no_sweep`.
+Validation: the task's Validation Commands — 61 passed; plus the whole `test_scope` package, the
+`sdd_coder/test_background_*` verdict consumers, `tests/sdd_scripts/test_select_tests.py` and the
+FEAT-699/709 doc-contract tests — 526 passed total. `ruff check` clean.
+
+**Deviations from spec**: none.
