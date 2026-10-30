@@ -100,6 +100,19 @@ if [[ -z "$basename_md" && ${#completed_matches[@]} -gt 0 ]]; then
   basename_md="$(basename "${completed_matches[0]}")"
 fi
 
+# Keep the task file's own `**Status**:` header in step with the index. The
+# header is template boilerplate (`pending`) that nothing else ever rewrote, so
+# thousands of completed/ files advertised `pending` while their index said
+# `done` — /sdd-status readers then saw two contradicting sources of truth.
+# Only the first header line is touched; a header that already reads `done`
+# (or `done-with-issues`, set by hand for a flagged task) is left as is.
+if [[ -n "$basename_md" && -f "$COMPLETED_DIR/$basename_md" ]]; then
+  if grep -qE '^\*\*Status\*\*: *(pending|in-progress)\b' "$COMPLETED_DIR/$basename_md"; then
+    sed -i -E '0,/^\*\*Status\*\*: *(pending|in-progress).*$/s//**Status**: done/' "$COMPLETED_DIR/$basename_md"
+    echo "✓ ${TASK_ID}: header **Status** → done"
+  fi
+fi
+
 # Update the per-spec index for this task: status, completed_at, verification, file.
 if [[ -f "$INDEX" && -n "$basename_md" ]]; then
   tmp="$(mktemp)"
