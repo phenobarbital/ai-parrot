@@ -22,8 +22,9 @@ reuse_feature_id: FEAT-773
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` (FEAT-773, status `accepted`,
 > research state `sdd/state/FEAT-773/`), itself the research-grounded rewrite of the brainstorm
 > `artifacts/Brainstorm Delegated Auth Connections (OAuth2 3LO core + channel consumers).md` (Option B).
-> This is **S-1 of four specs** (decision at spec time: S-1 core now; S-2 Telegram, S-3a web + Slack and
-> S-3b Teams follow as separate `/sdd-spec` runs with their own FEAT ids once S-1's contracts are frozen).
+> This is **S-1 of five specs** (decision at spec time: S-1 core now; S-2 Telegram, S-3a web + Slack,
+> S-3b Teams and S-4 CLI / local MCP follow as separate `/sdd-spec` runs with their own FEAT ids once S-1's
+> contracts are frozen; S-4 was added 2026-10-30 after the spec was first committed).
 > Rejected alternatives (A: extend the Jira path per provider × channel; C: navigator-auth as remote token
 > broker; D: SPA-driven OAuth) are NOT carried into this body — see the brainstorm §5.
 
@@ -84,6 +85,14 @@ FEAT-735) all exist — but three defects remain (proposal §1, C1–C14):
 - User-level Connections panel, WS push on completion (cross-process `UserSocketManager`), automatic retry after
   connect, Slack first-link owner fix, O365 store consolidation (device-code `VaultTokenSync o365:*`) — **S-3a**.
 - Teams `ChannelNotifier` beyond the compatibility adapter, Adaptive-Card connect action — **S-3b**.
+- The CLI consumer surface — `AgentREPL`, the agent daemon and the `parrot mcp-local` stdio servers used by
+  Claude Code / Codex: a CLI `PrincipalResolver` that maps a local login to a Navigator `user_id` (today
+  `parrot/cli/identity.py` builds a `channel="cli"` `PermissionContext` from `O365_PRINCIPAL`, Entra-keyed and
+  device-code only), an out-of-process connect flow (print / open the authorize URL, learn completion by polling
+  `/api/v1/connections` or from the `connection.*` bus), and a remote `CredentialStore` backend so out-of-process
+  MCP tools resolve connections through the server instead of the Identity Vault directly — **S-4**. S-1 only keeps
+  the seams open: `channel="cli"` is a valid `Principal.channel`, `start_connect` is channel-agnostic, and
+  `CredentialStore` is a Protocol.
 - `OAuthRoutesMixin` on `HttpMCPServer` and the navigator-auth OAuth 2.1 authorization server (parrot as a
   *resource server*, opposite direction).
 - `CredentialBroker` / `CredentialResolverFactory` / `CanonicalIdentityMapper` internals (consumed, not changed).
@@ -1271,7 +1280,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 > Resolved items carried from the brainstorm and the proposal (decision trail). Unresolved items are implementation-time confirmations.
 
 - [x] Single core with channel consumers (web, Telegram, Teams) — *Resolved in brainstorm*: yes.
-- [x] Spec count — *Resolved in brainstorm*: one brainstorm, four specs (core, Telegram migration, web, Teams); *refined at spec time*: S-1 now, the three consumer specs as separate `/sdd-spec` runs depending on FEAT-773.
+- [x] Spec count — *Resolved in brainstorm*: one brainstorm, four specs (core, Telegram migration, web, Teams); *refined at spec time*: S-1 now, the consumer specs as separate `/sdd-spec` runs depending on FEAT-773 — S-2 Telegram, S-3a web + Slack, S-3b Teams, and **S-4 CLI / local MCP** (added 2026-10-30: CLI-based agents and MCP-based tools running in a CLI need their own principal resolution, out-of-process connect and credential retrieval; a sub-spec, not a task, because those are design decisions S-1 does not take).
 - [x] Telegram login links to a platform user — *Resolved in brainstorm*: confirmed; *located*: `TelegramUserSession.nav_user_id` after `/login`, persisted to `auth.user_identities` by the combined Jira flow (F035, F043).
 - [x] U1 principal key — *Resolved in proposal*: both columns, Navigator `user_id` primary, Entra OID/e-mail secondary.
 - [x] U2 reverse FEAT-144 — *Resolved in proposal*: reverse fully — one connection, all agents, all channels; `user_agent_toolkits` dropped.
@@ -1286,6 +1295,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - [ ] Encryption key management for the Identity Vault columns (navigator-auth `key_version` rotation) — *Owner: Jesus* (navigator-auth side).
 - [ ] R6 provider refresh facts (Atlassian rotation, Microsoft refresh lifetime, NetSuite 7-day) for the descriptors' `refresh_policy` — *Owner: implementer of M3/M7* (verify against provider docs; C23).
 - [ ] navigator-auth `>=0.28.8` availability in the deployment image (TASK-4664 xfail on 0.28.7) — *Owner: Jesus / ops*.
+- [ ] S-4 pre-check (keep the CLI sub-spec cheap): `list_for_principal` / `GET /api/v1/connections` must expose `provider`, `status` and `updated_at` so an out-of-process CLI can poll for completion, and `CredentialStore` must admit an HTTP-backed implementation without importing server code — *Owner: implementer of M2 / M6* (confirm while implementing; no new module in S-1).
 
 ---
 
@@ -1327,7 +1337,7 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
   - Concurrent after M1 + M4 land: M2 ∥ M5 ∥ M9; after M2: M3 ∥ M6; then M7 + M8 (serialized on shared files); M10 last.
 - **Shared files** (tasks serialized): `parrot/auth/oauth2/__init__.py` (M3, M4, M6 exports); `parrot/auth/oauth2/models.py` (M5, M6); `parrot/auth/credentials.py` (M5 only, but M1 export touches `auth/__init__.py`); `parrot/auth/jira_oauth.py` (M7 only); `ai-parrot-server manager/manager.py` (M6 routes, M8 registration); `ai-parrot-integrations integrations/manager.py` (M8 only); `tools/manager.py` (M5 only).
 - **Exclusive resources**: none (no compiled extensions, no lockfile, no DB migration — `auth.user_identities` already exists; `user_agent_toolkits` removal is a code change, DocumentDB collection left in place).
-- **Cross-feature dependencies**: none in flight on these files (git lane: `mcp/client.py` frozen since 2026-06-29; `parrot/auth/` last changed by FEAT-735/FEAT-729, both merged 2026-10-23). Consumer specs S-2 / S-3a / S-3b depend on FEAT-773 being merged.
+- **Cross-feature dependencies**: none in flight on these files (git lane: `mcp/client.py` frozen since 2026-06-29; `parrot/auth/` last changed by FEAT-735/FEAT-729, both merged 2026-10-23). Consumer specs S-2 / S-3a / S-3b / S-4 depend on FEAT-773 being merged.
 
 ---
 
@@ -1336,3 +1346,4 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from proposal FEAT-773 (accepted). S-1 scope; decisions U1–U5 + vault owner carried forward; codex design research folded (11 CONFIRM). Codebase Contract verified against `65aa79dfe`. |
+| 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Declared S-4 (CLI-based agents + MCP-based tools in a CLI) as a fifth consumer sub-spec: Non-Goals, §8 spec-count trail, S-4 pre-check item, Worktree Strategy dependency. No module or AC changes. |

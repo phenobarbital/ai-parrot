@@ -359,7 +359,7 @@ Distribution: **19** high, **3** medium, **1** low. Overall **medium**, bounded 
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-773`** — *Rationale*: localization and constraints are high-confidence, the architectural fork (Option B) was settled in the brainstorm and the five placement/product decisions are now recorded; the remaining medium/low items are spec-time verifications, not research gaps. Produce the four specs the brainstorm planned, re-scoped:
+**`/sdd-spec FEAT-773`** — *Rationale*: localization and constraints are high-confidence, the architectural fork (Option B) was settled in the brainstorm and the five placement/product decisions are now recorded; the remaining medium/low items are spec-time verifications, not research gaps. Produce the four specs the brainstorm planned, re-scoped, plus a fifth (S-4) for the CLI surface:
 
 | Spec | Re-scoped content (built on existing modules) |
 |---|---|
@@ -367,6 +367,7 @@ Distribution: **19** high, **3** medium, **1** low. Overall **medium**, bounded 
 | **S-2 Telegram migration** | generic `/connect <provider>` + notifier impl, principal resolution from `TelegramUserSession`, JiraToolkit on the broker seam, legacy-key read for linked users + forced re-connect for the rest, cutover + delete |
 | **S-3a Web + Slack** | user-level Connections panel + WS push + auto-retry in the admin UI, `UserSocketManager` cross-process send, Slack notifier impl + first-link owner fix, O365 store consolidation |
 | **S-3b MS Teams** | Teams `ChannelNotifier` over the existing `MSTeamsOAuthNotifier` and FEAT-729 principal mapping; generic commands |
+| **S-4 CLI + local MCP** *(added 2026-10-30)* | CLI `PrincipalResolver` mapping a local login to the Navigator `user_id` (replaces the Entra-only `O365_PRINCIPAL` bootstrap in `parrot/cli/identity.py`), out-of-process connect for `AgentREPL` / agent daemon (authorize URL + completion by polling `/api/v1/connections` or the `connection.*` bus), remote `CredentialStore` backend over the server API so `parrot mcp-local` stdio servers (Claude Code / Codex) resolve connections per call, device-code where the provider supports it |
 
 ### Alternatives
 
