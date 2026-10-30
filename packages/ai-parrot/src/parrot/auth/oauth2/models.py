@@ -3,9 +3,9 @@
 These models represent the data contracts between:
 - the HTTP API (``IntegrationsHandler``) and its callers,
 - the ``AgentTalk`` envelope response, and
-- the DocumentDB persistence layer (``UsersIntegrationRow``,
-  ``UserAgentToolkitRow``).
+- the DocumentDB persistence layer (``UsersIntegrationRow``).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -30,8 +30,6 @@ class IntegrationDescriptor(BaseModel):
         status: ``connected`` (row + readable tokens), ``disconnected`` (no row)
             or ``needs_reconnect`` (row exists but its vault tokens are missing
             or unreadable — the user must re-link the provider).
-        enabled_on_agent: Deprecated compatibility input for the former
-            ``user_agent_toolkits`` repository. Excluded from serialized output.
         account_id: Provider-side account identifier (available when connected).
         display_account_name: Human-readable account name.
         email: Account email (if the provider exposes it).
@@ -44,7 +42,6 @@ class IntegrationDescriptor(BaseModel):
     default_scopes: List[str] = Field(default_factory=list)
     connected: bool = False
     status: Optional[IntegrationStatus] = None
-    enabled_on_agent: bool = Field(default=False, exclude=True)
     account_id: Optional[str] = None
     display_account_name: Optional[str] = None
     email: Optional[str] = None
@@ -100,7 +97,7 @@ class EnableResponse(BaseModel):
     """Response for the confirm-enable endpoint.
 
     Attributes:
-        integration: Updated descriptor with ``enabled_on_agent=True``.
+        integration: Integration descriptor returned by the compatibility endpoint.
     """
 
     integration: IntegrationDescriptor
@@ -207,24 +204,3 @@ class UsersIntegrationRow(BaseModel):
             data = data.copy()
             data["channels"] = [data.pop("channel")]
         return data
-
-
-class UserAgentToolkitRow(BaseModel):
-    """Per-``(user, agent, toolkit)`` enablement record stored in
-    ``user_agent_toolkits``.
-
-    The composite key is ``(user_id, agent_id, toolkit_id)``.
-
-    Attributes:
-        user_id: Navigator user identifier.
-        agent_id: Agent identifier (slug or UUID used by the manager).
-        toolkit_id: Toolkit identifier — equals ``provider`` for OAuth toolkits.
-        provider: Provider identifier, e.g. ``"jira"``.
-        enabled_at: When the user enabled this toolkit on this agent.
-    """
-
-    user_id: str
-    agent_id: str
-    toolkit_id: str
-    provider: str
-    enabled_at: datetime
