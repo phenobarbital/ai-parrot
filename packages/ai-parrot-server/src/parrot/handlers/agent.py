@@ -48,6 +48,7 @@ from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from .toolkit_persistence import ToolkitConfigService
+from parrot.auth.credentials import CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
 from parrot.security.vault_utils import retrieve_vault_credential
@@ -1913,17 +1914,12 @@ class AgentTalk(BaseView):
                         tenant=tenant,
                         **data,
                     )
-        except AuthorizationRequired as exc:
+        except (AuthorizationRequired, CredentialRequired) as exc:
             # Translate the exception into a structured envelope so the web
             # frontend can render a "Connect" pill.  HTTP 200 — the chat call
             # succeeded; the envelope IS the agent's reply.
-            envelope = AuthRequiredEnvelope(
-                provider=exc.provider,
-                tool_name=exc.tool_name,
-                auth_url=exc.auth_url,
-                scopes=exc.scopes or [],
-                message=str(exc),
-            )
+            payload = exc.to_payload() if isinstance(exc, AuthorizationRequired) else exc.to_payload(tool_name=None)
+            envelope = AuthRequiredEnvelope(**payload.model_dump())
             return web.json_response(envelope.model_dump(), status=200)
         except HumanInteractionInterrupt as exc:
             # FEAT-204: SUSPEND path — the agent's SuspendingWebHumanTool raised

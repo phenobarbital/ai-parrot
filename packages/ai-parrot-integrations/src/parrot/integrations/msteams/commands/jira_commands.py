@@ -34,11 +34,13 @@ from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 if TYPE_CHECKING:
     from parrot.auth.jira_oauth import JiraOAuthManager
+    from parrot.auth.principal import Principal
     from parrot.integrations.msteams.commands import MSTeamsCommandRouter
 
 logger = logging.getLogger(__name__)
 
 _MSTEAMS_CHANNEL = "msteams"
+_LINK_FIRST = "Link your Teams account to the platform first, then try again."
 
 #: Resolves the Navigator user id for the current turn, or ``""`` when the
 #: Teams user is not authenticated against Navigator.
@@ -173,6 +175,31 @@ async def _resolve_nav_user_id(
         return ""
 
 
+async def _principal(user_id: str) -> Optional["Principal"]:
+    """Resolve the platform principal bound to a Teams user.
+
+    Args:
+        user_id: The Teams user identity (AAD object id or channel id).
+
+    Returns:
+        The bound principal, or ``None`` when the Teams user is not linked.
+    """
+    from parrot.auth.principal import resolve_principal
+
+    return await resolve_principal(_MSTEAMS_CHANNEL, user_id)
+
+
+async def _send_link_first(turn_context: "TurnContext") -> None:
+    """Reply with the link-your-account-first message.
+
+    Args:
+        turn_context: The current Bot Framework turn context.
+    """
+    from botbuilder.schema import Activity
+
+    await turn_context.send_activity(Activity(type="message", text=_LINK_FIRST))
+
+
 def _get_conversation_reference(turn_context: TurnContext) -> Dict[str, Any]:
     """Serialise the conversation reference for proactive messaging.
 
@@ -240,6 +267,12 @@ async def connect_jira_handler(
             ``nav_user_id`` so the callback can write the identity row.
     """
     user_id = _get_user_id(turn_context)
+    principal = await _principal(user_id)
+    if principal is None:
+        await _send_link_first(turn_context)
+        return
+
+    # The manager resolves the raw channel id to its principal itself.
     existing = await oauth_manager.validate_token(_MSTEAMS_CHANNEL, user_id)
     if existing is not None:
         from botbuilder.schema import Activity
@@ -269,6 +302,7 @@ async def connect_jira_handler(
         _MSTEAMS_CHANNEL,
         user_id,
         extra_state=extra_state,
+        principal=principal,
     )
     await _send_adaptive_card(turn_context, _connect_jira_card(url))
 
@@ -286,7 +320,17 @@ async def disconnect_jira_handler(
         oauth_manager: Backing Jira OAuth manager.
     """
     user_id = _get_user_id(turn_context)
-    await oauth_manager.revoke(_MSTEAMS_CHANNEL, user_id)
+    principal = await _principal(user_id)
+    if principal is None:
+        await _send_link_first(turn_context)
+        return
+
+    # revoke() is keyed by the principal (Navigator id), not the raw Teams id.
+    await oauth_manager.revoke(
+        _MSTEAMS_CHANNEL,
+        principal.user_id,
+        channel_user_id=principal.channel_user_id,
+    )
     from botbuilder.schema import Activity
     await turn_context.send_activity(
         Activity(type="message", text="Your Jira account has been disconnected.")
@@ -306,6 +350,11 @@ async def jira_status_handler(
         oauth_manager: Backing Jira OAuth manager.
     """
     user_id = _get_user_id(turn_context)
+    principal = await _principal(user_id)
+    if principal is None:
+        await _send_link_first(turn_context)
+        return
+
     token = await oauth_manager.validate_token(_MSTEAMS_CHANNEL, user_id)
     from botbuilder.schema import Activity
     if token is not None:

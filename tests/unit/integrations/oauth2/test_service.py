@@ -1,397 +1,244 @@
-"""Unit tests for parrot.integrations.oauth2.service."""
+"""Unit tests for the principal-scoped OAuth2 integrations service."""
+
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot.integrations.oauth2.models import (
-    IntegrationDescriptor,
-    UsersIntegrationRow,
-    UserAgentToolkitRow,
-)
-from parrot.integrations.oauth2.registry import OAuth2ProviderRegistry
-from parrot.integrations.oauth2.service import IntegrationsService
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
+from parrot.auth.oauth2.models import UsersIntegrationRow
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+from parrot.auth.oauth2.service import IntegrationsService
+from parrot.auth.principal import Principal
 
 @pytest.fixture(autouse=True)
 def reset_registry() -> None:
-    """Ensure a fresh registry for each test."""
+    """Ensure every test has an isolated provider registry."""
     OAuth2ProviderRegistry._reset()
     yield
     OAuth2ProviderRegistry._reset()
 
 
 @pytest.fixture
-def mock_provider() -> MagicMock:
-    provider = MagicMock()
-    provider.provider_id = "jira"
-    provider.display_name = "Jira"
-    provider.icon = "mdi:jira"
-    provider.default_scopes = ["read:jira-work", "write:jira-work", "offline_access"]
-    provider.manager = MagicMock()
-    provider.manager.create_authorization_url = AsyncMock(
-        return_value=("https://auth.atlassian.com/authorize?state=nonce123", "nonce123")
-    )
-    return provider
+def provider() -> MagicMock:
+    """Register a provider with async manager operations."""
+    item = MagicMock()
+    item.provider_id = "jira"
+    item.display_name = "Jira"
+    item.icon = "mdi:jira"
+    item.default_scopes = ["read:jira-work", "offline_access"]
+    item.manager.create_authorization_url = AsyncMock(return_value=("https://idp/authorize", "nonce"))
+    item.manager.is_connected = AsyncMock(return_value=True)
+    item.manager.revoke = AsyncMock()
+    OAuth2ProviderRegistry().register(item)
+    return item
 
 
-@pytest.fixture
-def registered_provider(mock_provider: MagicMock) -> MagicMock:
-    OAuth2ProviderRegistry().register(mock_provider)
-    return mock_provider
+def allow_request(allowed: bool = True) -> SimpleNamespace:
+    """Build a request carrying a controllable PBAC evaluator."""
+    abac = SimpleNamespace(is_allowed=AsyncMock(return_value=allowed))
+    return SimpleNamespace(app={"abac": abac})
 
 
-@pytest.fixture
-def sample_integration_row() -> UsersIntegrationRow:
+def integration_row(
+    *,
+    channels: list[str] | None = None,
+    account_id: str = "account-1",
+    connected_at: datetime | None = None,
+    updated_at: datetime | None = None,
+) -> UsersIntegrationRow:
+    """Build a durable integration row for descriptor and reconnect tests."""
+    connected = connected_at or datetime(2026, 1, 1, tzinfo=timezone.utc)
     return UsersIntegrationRow(
-        user_id="u1",
+        user_id="42",
         provider="jira",
-        account_id="acct-1",
+        channels=channels or ["web"],
+        account_id=account_id,
         display_name="Test User",
         email="test@example.com",
         scopes=["read:jira-work"],
-        connected_at=datetime.now(),
+        scopes_granted=["read:jira-work"],
+        connected_at=connected,
+        updated_at=updated_at or connected,
     )
 
 
-@pytest.fixture
-def allowed_origins_env(monkeypatch: pytest.MonkeyPatch) -> list:
-    monkeypatch.setenv("WEB_OAUTH_ALLOWED_ORIGINS", "https://app.example.com")
-    return ["https://app.example.com"]
+def token_set(account_id: str = "account-1") -> SimpleNamespace:
+    """Build a provider-neutral token-set double."""
+    return SimpleNamespace(
+        account_id=account_id,
+        display_name="Test User",
+        email="test@example.com",
+        scopes=["read:jira-work"],
+        scopes_granted=["read:jira-work"],
+        expires_at=1_800_000_000.0,
+        cloud_id="cloud-1",
+        site_url="https://example.atlassian.net",
+    )
 
 
-# ---------------------------------------------------------------------------
-# TestListForUser
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_list_for_user_is_principal_alias(provider: MagicMock) -> None:
+    """The legacy agent route ignores agent identity and returns principal rows."""
+    row = integration_row(channels=["telegram"])
+    request = allow_request()
+    with (
+        patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock(return_value=[row])),
+        patch.object(IntegrationsService, "_token_status", AsyncMock(return_value="connected")),
+    ):
+        descriptors = await IntegrationsService().list_for_user("42", "agent-ignored", request=request)
+
+    assert descriptors[0].provider == "jira"
+    assert descriptors[0].channels == ["telegram"]
+    assert descriptors[0].updated_at == row.updated_at
 
 
-class TestListForUser:
-    @pytest.mark.asyncio
-    async def test_returns_empty_when_no_pbac(self) -> None:
-        """When request is None (no PBAC), list_for_user returns []."""
-        svc = IntegrationsService()
-        result = await svc.list_for_user("u1", "agent1", request=None)
-        assert result == []
+@pytest.mark.asyncio
+async def test_list_for_principal_fails_closed_without_pdp(provider: MagicMock) -> None:
+    """A missing PDP returns no connection metadata."""
+    with patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock()) as list_rows:
+        assert await IntegrationsService().list_for_principal("42", request=None) == []
+    list_rows.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_returns_empty_when_abac_absent(self) -> None:
-        """When request.app has no 'abac', list_for_user returns []."""
-        request = MagicMock()
-        request.app = {}
-        svc = IntegrationsService()
-        result = await svc.list_for_user("u1", "agent1", request=request)
-        assert result == []
 
-    @pytest.mark.asyncio
-    async def test_returns_descriptors_with_connected_flag(
-        self,
-        registered_provider: MagicMock,
-        sample_integration_row: UsersIntegrationRow,
-    ) -> None:
-        """With a mock PBAC that allows everything, returns correct descriptor."""
-        request = MagicMock()
-        abac = MagicMock()
-        abac.is_allowed = AsyncMock(return_value=True)
-        request.app = {"abac": abac}
+@pytest.mark.asyncio
+async def test_service_pbac_on_connect_and_disconnect(provider: MagicMock) -> None:
+    """Connect and disconnect deny before manager state or persistence changes."""
+    service = IntegrationsService()
+    denied = allow_request(False)
+    principal = Principal(user_id="42", channel="telegram", channel_user_id="tg-7")
 
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.get_users_integration",
-                AsyncMock(return_value=sample_integration_row),
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.list_user_agent_toolkits",
-                AsyncMock(return_value=[]),
-            ),
-        ):
-            svc = IntegrationsService()
-            result = await svc.list_for_user("u1", "agent1", request=request)
-
-        assert len(result) == 1
-        desc = result[0]
-        assert desc.provider == "jira"
-        assert desc.connected is True
-        assert desc.enabled_on_agent is False  # no toolkit row
-
-    @pytest.mark.asyncio
-    async def test_returns_enabled_flag_when_toolkit_row_present(
-        self,
-        registered_provider: MagicMock,
-        sample_integration_row: UsersIntegrationRow,
-    ) -> None:
-        """enabled_on_agent=True when user_agent_toolkits row exists."""
-        request = MagicMock()
-        abac = MagicMock()
-        abac.is_allowed = AsyncMock(return_value=True)
-        request.app = {"abac": abac}
-
-        toolkit_row = UserAgentToolkitRow(
-            user_id="u1",
-            agent_id="agent1",
-            toolkit_id="jira",
-            provider="jira",
-            enabled_at=datetime.now(),
+    with pytest.raises(PermissionError):
+        await service.start_connect(
+            "42",
+            "jira",
+            channel="telegram",
+            principal=principal,
+            scopes=["read:jira-work"],
+            request=denied,
         )
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.get_users_integration",
-                AsyncMock(return_value=sample_integration_row),
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.list_user_agent_toolkits",
-                AsyncMock(return_value=[toolkit_row]),
-            ),
-        ):
-            svc = IntegrationsService()
-            result = await svc.list_for_user("u1", "agent1", request=request)
+    with patch("parrot.auth.oauth2.service.delete_users_integration", AsyncMock()) as delete_row:
+        with pytest.raises(PermissionError):
+            await service.disconnect("42", "jira", request=denied)
+    provider.manager.create_authorization_url.assert_not_awaited()
+    provider.manager.revoke.assert_not_awaited()
+    delete_row.assert_not_awaited()
 
-        assert result[0].enabled_on_agent is True
-
-
-# ---------------------------------------------------------------------------
-# TestStartConnect
-# ---------------------------------------------------------------------------
+    contexts = [call.args[1] for call in denied.app["abac"].is_allowed.await_args_list]
+    assert contexts == [
+        {"action": "integration:connect", "provider": "jira", "scopes": ["read:jira-work"]},
+        {
+            "action": "integration:disconnect",
+            "provider": "jira",
+            "scopes": provider.default_scopes,
+        },
+    ]
 
 
-class TestStartConnect:
-    @pytest.mark.asyncio
-    async def test_validates_origin_raises_for_disallowed(self) -> None:
-        """start_connect raises ValueError for origin not in allowed list."""
-        with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
-            return_value=["https://app.example.com"],
-        ):
-            svc = IntegrationsService()
-            with pytest.raises(ValueError, match="not in the list of allowed"):
-                await svc.start_connect("u1", "agent1", "jira", "https://evil.com")
+@pytest.mark.asyncio
+async def test_start_connect_passes_principal_and_channel(provider: MagicMock) -> None:
+    """A non-web connection forwards the bound principal and signed extra state."""
+    principal = Principal(user_id="42", channel="telegram", channel_user_id="tg-7")
+    response = await IntegrationsService().start_connect(
+        "42",
+        "jira",
+        channel="telegram",
+        principal=principal,
+        request=allow_request(),
+        extra_state={"chat_id": "chat-9"},
+    )
 
-    @pytest.mark.asyncio
-    async def test_raises_for_unknown_provider(self) -> None:
-        """start_connect raises ValueError for unregistered provider."""
-        with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
-            return_value=["https://app.example.com"],
-        ):
-            svc = IntegrationsService()
-            with pytest.raises(ValueError, match="Unknown provider"):
-                await svc.start_connect(
-                    "u1", "agent1", "unknown", "https://app.example.com"
-                )
+    assert response.state == "nonce"
+    provider.manager.create_authorization_url.assert_awaited_once_with(
+        channel="telegram",
+        user_id="42",
+        extra_state={
+            "channel": "telegram",
+            "provider_id": "jira",
+            "return_origin": None,
+            "chat_id": "chat-9",
+        },
+        principal=principal,
+    )
 
-    @pytest.mark.asyncio
-    async def test_returns_connect_init_response(
-        self, registered_provider: MagicMock
-    ) -> None:
-        """start_connect returns ConnectInitResponse with auth_url and state."""
-        with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
-            return_value=["https://app.example.com"],
-        ):
-            svc = IntegrationsService()
-            resp = await svc.start_connect(
-                "u1", "agent1", "jira", "https://app.example.com"
+
+@pytest.mark.asyncio
+async def test_web_connect_requires_allowed_origin_after_pbac(provider: MagicMock) -> None:
+    """Web origin validation runs after authorization and before nonce creation."""
+    with patch("parrot.auth.oauth2.service._get_allowed_origins", return_value=["https://app.example.com"]):
+        with pytest.raises(ValueError, match="not in the list"):
+            await IntegrationsService().start_connect(
+                "42",
+                "jira",
+                "https://evil.example",
+                request=allow_request(),
             )
+    provider.manager.create_authorization_url.assert_not_awaited()
 
-        assert resp.auth_url.startswith("https://auth.atlassian.com")  # lgtm[py/incomplete-url-substring-sanitization]
-        assert resp.state == "nonce123"
-        assert resp.expires_in == 600
-        assert "read:jira-work" in resp.scopes
 
-    @pytest.mark.asyncio
-    async def test_passes_extra_state_to_manager(
-        self, registered_provider: MagicMock
-    ) -> None:
-        """start_connect passes channel, agent_id, return_origin in extra_state."""
-        with patch(
-            "parrot.integrations.oauth2.service._get_allowed_origins",
-            return_value=["https://app.example.com"],
-        ):
-            svc = IntegrationsService()
-            await svc.start_connect(
-                "u1", "agent1", "jira", "https://app.example.com"
-            )
+@pytest.mark.asyncio
+async def test_service_list_for_principal_cross_channel(provider: MagicMock) -> None:
+    """A Telegram metadata row is returned through the principal listing."""
+    stored: list[UsersIntegrationRow] = []
 
-        call_kwargs = registered_provider.manager.create_authorization_url.call_args
-        extra_state = call_kwargs.kwargs.get("extra_state") or (
-            call_kwargs.args[2] if len(call_kwargs.args) > 2 else {}
+    async def save(row: UsersIntegrationRow) -> None:
+        stored[:] = [row]
+
+    with (
+        patch("parrot.auth.oauth2.service.get_users_integration", AsyncMock(return_value=None)),
+        patch("parrot.auth.oauth2.service.upsert_users_integration", side_effect=save),
+    ):
+        await IntegrationsService().persist_credential("42", "jira", token_set(), channel="telegram")
+
+    with (
+        patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock(return_value=stored)),
+        patch.object(IntegrationsService, "_token_status", AsyncMock(return_value="connected")),
+    ):
+        descriptors = await IntegrationsService().list_for_principal("42", request=allow_request())
+
+    assert descriptors[0].channels == ["telegram"]
+    assert descriptors[0].status == "connected"
+
+
+@pytest.mark.asyncio
+async def test_descriptor_updated_at_bumps_on_reconnect() -> None:
+    """Same-account reconnect preserves connected_at and advances updated_at."""
+    first_time = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    existing = integration_row(connected_at=first_time, updated_at=first_time)
+    with (
+        patch("parrot.auth.oauth2.service.get_users_integration", AsyncMock(return_value=existing)),
+        patch("parrot.auth.oauth2.service.upsert_users_integration", AsyncMock()),
+    ):
+        row = await IntegrationsService().persist_credential(
+            "42",
+            "jira",
+            token_set(),
+            channel="telegram",
+            canonical_identity="person@example.com",
         )
-        assert extra_state.get("channel") == "web"
-        assert extra_state.get("agent_id") == "agent1"
-        assert extra_state.get("return_origin") == "https://app.example.com"
+
+    assert row.connected_at == first_time
+    assert row.updated_at is not None and row.updated_at > first_time
+    assert row.channels == ["web", "telegram"]
+    assert row.canonical_identity == "person@example.com"
 
 
-# ---------------------------------------------------------------------------
-# TestConfirmEnable
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_reconnect_with_different_account_resets_connected_at() -> None:
+    """Replace-on-reconnect starts a new connection timestamp for a new account."""
+    existing = integration_row(account_id="old-account")
+    with (
+        patch("parrot.auth.oauth2.service.get_users_integration", AsyncMock(return_value=existing)),
+        patch("parrot.auth.oauth2.service.upsert_users_integration", AsyncMock()),
+    ):
+        row = await IntegrationsService().persist_credential("42", "jira", token_set("new-account"), channel="web")
+
+    assert row.connected_at > existing.connected_at
+    assert row.account_id == "new-account"
 
 
-class TestConfirmEnable:
-    @pytest.mark.asyncio
-    async def test_raises_when_no_credential(
-        self, registered_provider: MagicMock
-    ) -> None:
-        """confirm_enable raises LookupError when no users_integrations row."""
-        with patch(
-            "parrot.integrations.oauth2.service.get_users_integration",
-            AsyncMock(return_value=None),
-        ):
-            svc = IntegrationsService()
-            with pytest.raises(LookupError, match="No credential found"):
-                await svc.confirm_enable("u1", "agent1", "jira")
-
-    @pytest.mark.asyncio
-    async def test_returns_descriptor_with_enabled_flag(
-        self,
-        registered_provider: MagicMock,
-        sample_integration_row: UsersIntegrationRow,
-    ) -> None:
-        """confirm_enable returns descriptor with connected=True, enabled_on_agent=True."""
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.get_users_integration",
-                AsyncMock(return_value=sample_integration_row),
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.upsert_user_agent_toolkit",
-                AsyncMock(),
-            ),
-        ):
-            svc = IntegrationsService()
-            desc = await svc.confirm_enable("u1", "agent1", "jira")
-
-        assert isinstance(desc, IntegrationDescriptor)
-        assert desc.connected is True
-        assert desc.enabled_on_agent is True
-
-    @pytest.mark.asyncio
-    async def test_idempotent(
-        self,
-        registered_provider: MagicMock,
-        sample_integration_row: UsersIntegrationRow,
-    ) -> None:
-        """confirm_enable is idempotent — second call succeeds without error."""
-        upsert_mock = AsyncMock()
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.get_users_integration",
-                AsyncMock(return_value=sample_integration_row),
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.upsert_user_agent_toolkit",
-                upsert_mock,
-            ),
-        ):
-            svc = IntegrationsService()
-            await svc.confirm_enable("u1", "agent1", "jira")
-            await svc.confirm_enable("u1", "agent1", "jira")
-
-        assert upsert_mock.call_count == 2  # called twice; idempotent via upsert
-
-
-# ---------------------------------------------------------------------------
-# TestDisconnect
-# ---------------------------------------------------------------------------
-
-
-class TestDisconnect:
-    @pytest.mark.asyncio
-    async def test_cascade_deletes(self) -> None:
-        """disconnect deletes users_integrations and user_agent_toolkits."""
-        delete_toolkits_mock = AsyncMock()
-        delete_credential_mock = AsyncMock()
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.delete_user_agent_toolkits_by_provider",
-                delete_toolkits_mock,
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.delete_users_integration",
-                delete_credential_mock,
-            ),
-        ):
-            svc = IntegrationsService()
-            resp = await svc.disconnect("u1", "agent1", "jira")
-
-        delete_toolkits_mock.assert_called_once_with("u1", "jira")
-        delete_credential_mock.assert_called_once_with("u1", "jira")
-        assert resp.provider == "jira"
-        assert resp.disconnected is True
-
-    @pytest.mark.asyncio
-    async def test_idempotent(self) -> None:
-        """disconnect is idempotent — second call is a no-op (no-raise)."""
-        with (
-            patch(
-                "parrot.integrations.oauth2.service.delete_user_agent_toolkits_by_provider",
-                AsyncMock(),
-            ),
-            patch(
-                "parrot.integrations.oauth2.service.delete_users_integration",
-                AsyncMock(),
-            ),
-        ):
-            svc = IntegrationsService()
-            await svc.disconnect("u1", "agent1", "jira")
-            await svc.disconnect("u1", "agent1", "jira")  # second call — no error
-
-
-# ---------------------------------------------------------------------------
-# TestPersistCredential
-# ---------------------------------------------------------------------------
-
-
-class TestPersistCredential:
-    @pytest.mark.asyncio
-    async def test_builds_row_from_token_set(self) -> None:
-        """persist_credential builds UsersIntegrationRow from JiraTokenSet-like object."""
-        token_set = MagicMock()
-        token_set.account_id = "acct-1"
-        token_set.display_name = "Test User"
-        token_set.email = "test@example.com"
-        token_set.scopes = ["read:jira-work", "offline_access"]
-        token_set.cloud_id = "cloud-1"
-        token_set.site_url = "https://example.atlassian.net"
-
-        upsert_mock = AsyncMock()
-        with patch(
-            "parrot.integrations.oauth2.service.upsert_users_integration",
-            upsert_mock,
-        ):
-            svc = IntegrationsService()
-            row = await svc.persist_credential("u1", "jira", token_set)
-
-        assert row.user_id == "u1"
-        assert row.provider == "jira"
-        assert row.account_id == "acct-1"
-        assert row.display_name == "Test User"
-        assert row.channel == "web"
-        assert row.status == "active"
-        upsert_mock.assert_called_once_with(row)
-
-    @pytest.mark.asyncio
-    async def test_persist_credential_calls_upsert(self) -> None:
-        """persist_credential calls upsert_users_integration exactly once."""
-        token_set = MagicMock()
-        token_set.account_id = "a1"
-        token_set.display_name = "User"
-        token_set.email = None
-        token_set.scopes = []
-        token_set.cloud_id = None
-        token_set.site_url = None
-
-        upsert_mock = AsyncMock()
-        with patch(
-            "parrot.integrations.oauth2.service.upsert_users_integration",
-            upsert_mock,
-        ):
-            svc = IntegrationsService()
-            await svc.persist_credential("u1", "jira", token_set)
-
-        upsert_mock.assert_called_once()
+def test_confirm_enable_removed_enable_route_noop() -> None:
+    """The per-agent mutation API is a hard cut from the service."""
+    assert not hasattr(IntegrationsService, "confirm_enable")

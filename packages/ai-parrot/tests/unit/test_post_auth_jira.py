@@ -102,6 +102,9 @@ class TestBuildAuthUrl:
         kwargs = mock_oauth_manager.create_authorization_url.call_args.kwargs
         assert kwargs["channel"] == "telegram"
         assert kwargs["user_id"] == "123456"
+        assert kwargs["principal"].user_id == "nav-user-1"
+        assert kwargs["principal"].channel == "telegram"
+        assert kwargs["principal"].channel_user_id == "123456"
 
     async def test_embeds_primary_auth_in_extra_state(self, provider, session, mock_oauth_manager):
         await provider.build_auth_url(session, MagicMock(), "https://example.com")
@@ -113,6 +116,14 @@ class TestBuildAuthUrl:
         assert extra["nav_display_name"] == "John Doe"
         assert extra["nav_email"] == "jdoe@example.com"
         assert extra["callback_base_url"] == "https://example.com"
+
+    async def test_missing_nav_user_id_fails_closed(self, provider, session, mock_oauth_manager):
+        session.nav_user_id = None
+
+        with pytest.raises(ValueError, match="authenticated Navigator principal"):
+            await provider.build_auth_url(session, MagicMock(), "https://example.com")
+
+        mock_oauth_manager.create_authorization_url.assert_not_awaited()
 
 
 # ----------------------------------------------------------------------

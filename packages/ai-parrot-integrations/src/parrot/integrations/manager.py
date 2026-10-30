@@ -20,10 +20,18 @@ from aiohttp import web
 
 from navconfig import BASE_DIR
 from navconfig.logging import logging
+from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher, setup_connection_fanout
+from parrot.security.audit_ledger import AuditLedger
+from parrot.auth.principal import set_principal_resolver
 from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
     HumanInteractionManager,
     set_default_human_manager,
+)
+from parrot.integrations.core.auth.notifiers import (
+    MSTeamsJiraNotifierAdapter,
+    SlackJiraNotifierAdapter,
+    TelegramJiraNotifierAdapter,
 )
 from .models import (
     IntegrationBotConfig,
@@ -78,16 +86,16 @@ def _build_jira_toolkit() -> Any:
         return None
 
 
-def _build_jira_credential_sink(app: Any) -> Any:
-    """Build the Identity Vault sink for a ``JiraOAuthManager``, else ``None``.
+def _build_credential_store(app: Any) -> Any:
+    """Build the Identity Vault store for a ``JiraOAuthManager``, else ``None``.
 
     The durable owner of a Jira grant is navigator-auth's Identity Vault
-    (FEAT-735); the sink is what keeps it in step with the Redis hot cache on
-    every refresh. It needs the ``authdb`` pool, so a deployment without one
-    simply gets today's Redis-only behaviour.
+    (FEAT-773); the store is the durable owner before Redis is updated. It
+    needs the ``authdb`` pool, so a deployment without one uses the core
+    vault-utils store.
 
     Returns:
-        An ``IdentityVaultCredentialSink``, or ``None`` when ``app['authdb']``
+        An ``IdentityVaultCredentialStore``, or ``None`` when ``app['authdb']``
         is absent or the server package is not installed.
     """
     db_pool = app.get("authdb") if app is not None else None
@@ -95,15 +103,71 @@ def _build_jira_credential_sink(app: Any) -> Any:
         return None
     try:
         from parrot.services.identity_credential_sink import (  # noqa: PLC0415
-            IdentityVaultCredentialSink,
+            IdentityVaultCredentialStore,
         )
 
-        return IdentityVaultCredentialSink(db_pool=db_pool)
+        return IdentityVaultCredentialStore(db_pool=db_pool)
     except Exception:  # noqa: BLE001 - the durable copy is optional, never fatal
         logging.getLogger(__name__).warning(
-            "IdentityVaultCredentialSink unavailable; Jira refreshes will update Redis only."
+            "IdentityVaultCredentialStore unavailable; Jira will use the default credential store."
         )
         return None
+
+
+def _build_principal_resolver(app: Any) -> Any:
+    """Build and register the server principal resolver, else return ``None``."""
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+
+    try:
+        from parrot.services.identity_principal import IdentityPrincipalResolver  # noqa: PLC0415
+
+        resolver = IdentityPrincipalResolver(db_pool)
+        set_principal_resolver(resolver)
+        return resolver
+    except Exception:  # noqa: BLE001 - server package is optional for integrations
+        logging.getLogger(__name__).warning("IdentityPrincipalResolver unavailable; non-web channels will fail closed.")
+        return None
+
+
+def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
+    """Register the three Jira channel adapters in the shared registry."""
+    registry = ChannelNotifierRegistry()
+    if app.get("connection_channel_notifiers_registered"):
+        return registry
+    registry.register(TelegramJiraNotifierAdapter(app))
+    registry.register(SlackJiraNotifierAdapter(app))
+    registry.register(MSTeamsJiraNotifierAdapter(app))
+    app["connection_channel_notifiers_registered"] = True
+    return registry
+
+
+def _connection_publisher(app: Any) -> ConnectionEventPublisher:
+    """Return the app's shared publisher with all Jira adapters registered."""
+    registry = _register_channel_notifiers(app)
+    publisher = app.get("connection_event_publisher")
+    if publisher is None:
+        audit_ledger = app.get("connection_audit_ledger")
+        if audit_ledger is None:
+            audit_ledger = AuditLedger()
+            app["connection_audit_ledger"] = audit_ledger
+        publisher = ConnectionEventPublisher(notifiers=registry, audit_ledger=audit_ledger)
+        _attach_fanout_bus(publisher)
+        app["connection_event_publisher"] = publisher
+    return publisher
+
+
+def _attach_fanout_bus(publisher: ConnectionEventPublisher) -> None:
+    """Attach the shared publish-only fan-out bus when observability fan-out is enabled (additive)."""
+    try:
+        from parrot.observability.fanout import get_event_fanout_bus
+
+        bus = get_event_fanout_bus()
+        if bus is not None:
+            setup_connection_fanout(bus, publisher)
+    except Exception:  # noqa: BLE001 — the bus is additive; never block integration startup
+        logging.getLogger(__name__).warning("Connection event fan-out bus not attached", exc_info=True)
 
 
 async def handle_a2a_directory(request: web.Request) -> web.Response:
@@ -351,6 +415,7 @@ class IntegrationBotManager:
 
         # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -369,7 +434,8 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
-                        credential_sink=_build_jira_credential_sink(app),
+                        credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -913,6 +979,7 @@ class IntegrationBotManager:
         # Reuse an existing manager on the app if one was already set up by
         # another integration (same Atlassian app registration, single callback).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -928,7 +995,8 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
-                        credential_sink=_build_jira_credential_sink(app),
+                        credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001

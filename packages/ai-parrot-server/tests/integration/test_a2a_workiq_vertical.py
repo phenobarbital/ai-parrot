@@ -237,7 +237,7 @@ class TestWorkIQVertical:
                     assert FAKE_ENTRA_TOKEN not in part.text
                     assert FAKE_WORKIQ_TOKEN not in part.text
                     assert "access_token" not in part.text
-            for key, val in (art.metadata or {}).items():
+            for _key, val in (art.metadata or {}).items():
                 assert FAKE_WORKIQ_TOKEN not in str(val)
                 assert FAKE_ENTRA_TOKEN not in str(val)
 
@@ -364,7 +364,7 @@ class TestWorkIQVertical:
 
         # Broker internal dict has the resolver.
         assert "workiq" in broker._resolvers
-        assert broker._resolvers["workiq"] is resolver
+        assert broker._resolvers["workiq"][0] is resolver  # stored as (resolver, auth_kind)
 
         # A2AServer built with the broker uses it for gating.
         agent = MagicMock()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 from parrot.integrations.slack.commands import SlackCommandRouter
 from parrot.integrations.slack.commands.jira_commands import (
@@ -17,6 +17,25 @@ from parrot.integrations.slack.commands.jira_commands import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+class _IdentityResolver:
+    """Bind every channel user to a principal whose user_id equals the channel id (FEAT-773)."""
+
+    async def resolve(self, channel, channel_user_id):
+        from parrot.auth.principal import Principal
+
+        return Principal(user_id=channel_user_id, channel=channel, channel_user_id=channel_user_id)
+
+
+@pytest.fixture(autouse=True)
+def _bound_principal_resolver():
+    """Commands now gate on a bound principal; bind everyone for these legacy-behaviour tests."""
+    from parrot.auth.principal import set_principal_resolver
+
+    set_principal_resolver(_IdentityResolver())
+    yield
+    set_principal_resolver(None)
+
 
 @pytest.fixture
 def mock_oauth_manager():
@@ -121,6 +140,7 @@ class TestConnectJiraHandler:
                 "team_id": "T0001",
                 "slack_user_id": "U1234",
             },
+            principal=ANY,
         )
         assert result["response_type"] == "ephemeral"
         # Should include blocks with a button
@@ -177,7 +197,7 @@ class TestDisconnectJiraHandler:
         """Calls oauth_manager.revoke with correct channel and user_id."""
         result = await disconnect_jira_handler(slack_payload, mock_oauth_manager)
 
-        mock_oauth_manager.revoke.assert_called_once_with(_SLACK_CHANNEL, "T0001:U1234")
+        mock_oauth_manager.revoke.assert_called_once_with(_SLACK_CHANNEL, "T0001:U1234", channel_user_id="T0001:U1234")
         assert result["response_type"] == "ephemeral"
         assert "disconnected" in result["text"].lower()
 

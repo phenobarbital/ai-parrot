@@ -16,6 +16,7 @@ from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
+from ..auth.credentials import CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
 from ..core.exceptions import BudgetError
 
@@ -2270,23 +2271,23 @@ class ToolManager(MCPToolManagerMixin):
                 return out
             else:
                 raise ValueError(f"Unknown tool type: {type(tool)}")
-        except AuthorizationRequired as auth_exc:
+        except (AuthorizationRequired, CredentialRequired) as auth_exc:
+            payload = (
+                auth_exc.to_payload(tool_name=tool_name)
+                if isinstance(auth_exc, CredentialRequired)
+                else auth_exc.to_payload()
+            )
             self.logger.info(
                 "Authorization required for tool %s: provider=%s",
                 tool_name,
-                auth_exc.provider,
+                payload.provider,
             )
             return ToolResult(
                 success=False,
                 status="authorization_required",
                 result=None,
-                error=auth_exc.message,
-                metadata={
-                    "auth_url": auth_exc.auth_url,
-                    "provider": auth_exc.provider,
-                    "scopes": list(auth_exc.scopes),
-                    "tool_name": auth_exc.tool_name,
-                },
+                error=payload.message,
+                metadata=payload.model_dump(),
             )
         except Exception as e:
             self.logger.error("Error executing tool %s: %s", tool_name, e)

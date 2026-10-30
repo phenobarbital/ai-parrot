@@ -6,7 +6,10 @@ the LLM, through :class:`parrot.tools.manager.ToolManager`).
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from parrot.auth.credentials import AuthRequiredPayload
 
 
 class AuthorizationRequired(Exception):
@@ -50,6 +53,19 @@ class AuthorizationRequired(Exception):
         return (
             f"AuthorizationRequired(tool_name={self.tool_name!r}, "
             f"provider={self.provider!r}, auth_url={self.auth_url!r})"
+        )
+
+    def to_payload(self) -> "AuthRequiredPayload":
+        """Serialize to the unified needs-auth payload."""
+        from parrot.auth.credentials import AuthRequiredPayload
+
+        return AuthRequiredPayload(
+            provider=self.provider,
+            auth_url=self.auth_url,
+            scopes=list(self.scopes),
+            tool_name=self.tool_name,
+            message=self.message,
+            auth_kind="oauth2" if self.auth_url else None,
         )
 
 
