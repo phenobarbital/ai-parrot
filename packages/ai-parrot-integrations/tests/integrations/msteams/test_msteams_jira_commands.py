@@ -24,6 +24,25 @@ def _make_turn_context(text: str = "", aad_object_id: str = "aad-obj-123"):
     return ctx, mock_conv_ref
 
 
+class _IdentityResolver:
+    """Bind every channel user to a principal whose user_id equals the channel id (FEAT-773)."""
+
+    async def resolve(self, channel, channel_user_id):
+        from parrot.auth.principal import Principal
+
+        return Principal(user_id=channel_user_id, channel=channel, channel_user_id=channel_user_id)
+
+
+@pytest.fixture(autouse=True)
+def _bound_principal_resolver():
+    """Commands now gate on a bound principal; bind everyone for these legacy-behaviour tests."""
+    from parrot.auth.principal import set_principal_resolver
+
+    set_principal_resolver(_IdentityResolver())
+    yield
+    set_principal_resolver(None)
+
+
 @pytest.fixture
 def mock_oauth_manager():
     """JiraOAuthManager with mocked async methods."""
@@ -256,7 +275,7 @@ class TestDisconnectJiraTeams:
         ctx, _ = _make_turn_context()
         await disconnect_jira_handler(ctx, mock_oauth_manager)
 
-        mock_oauth_manager.revoke.assert_called_once_with("msteams", "aad-obj-123")
+        mock_oauth_manager.revoke.assert_called_once_with("msteams", "aad-obj-123", channel_user_id="aad-obj-123")
         ctx.send_activity.assert_called_once()
         activity = ctx.send_activity.call_args[0][0]
         assert "disconnected" in activity.text.lower()
