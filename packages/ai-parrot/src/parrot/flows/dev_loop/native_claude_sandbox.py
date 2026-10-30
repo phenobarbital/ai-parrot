@@ -26,6 +26,7 @@ BACKEND_NATIVE = "claude-native"
 BACKEND_BUBBLEWRAP = "bubblewrap"
 CACHE_DIR_ENV = "PARROT_SDD_CACHE_DIR"
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+_NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
 
 
@@ -64,8 +65,13 @@ def validate_allowed_domains(domains: Sequence[str]) -> list[str]:
             pass
         else:
             raise ValueError(f"IP literals are not allowed domains: {raw!r}")
-        if any(not label or _HOSTNAME_LABEL.fullmatch(label) is None for label in host.split(".")):
+        labels = host.split(".")
+        if any(not label or _HOSTNAME_LABEL.fullmatch(label) is None for label in labels):
             raise ValueError(f"Invalid allowed domain: {raw!r}")
+        # inet_aton-style forms (``127.1``, ``2130706433``, ``0x7f.1``) parse as addresses for libc even
+        # though ``ipaddress`` rejects them, and a TLD is never numeric; single labels are not DNS names.
+        if len(labels) < 2 or _NUMERIC_LABEL.fullmatch(labels[-1]) is not None:
+            raise ValueError(f"Allowed domains must be qualified DNS hostnames, not addresses: {raw!r}")
         if host not in normalized:
             normalized.append(host)
     return normalized
@@ -132,9 +138,16 @@ def _rtk_data_dir() -> Path:
 def _denied_write_paths(root: Path, git_dir: Path) -> list[str]:
     """Return canonical paths that remain read-only under native policy."""
     admin_dir = _worktree_admin_dir(root)
+    controls = root / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop"
     paths = [
         *_we.shared_environments(root),
         _rtk_data_dir(),
+        # Policy/hook control files: the hook only guards file tools, so Bash needs the OS deny too.
+        controls / "native_claude_sandbox.py",
+        controls / "worktree_environment.py",
+        root / ".claude" / "settings.json",
+        root / ".claude" / "settings.local.json",
+        root / ".claude" / "agents",
         git_dir / "hooks",
         git_dir / "config",
         git_dir / "config.lock",

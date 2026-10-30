@@ -69,10 +69,37 @@ def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
         "allowedDomains": ["github.com"],
     }
     assert str(main) not in sandbox["filesystem"]["allowWrite"]
+    deny = sandbox["filesystem"]["denyWrite"]
+    worktree = feature
+    controls = worktree / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop"
+    for control in (
+        controls / "native_claude_sandbox.py",
+        controls / "worktree_environment.py",
+        worktree / ".claude" / "settings.json",
+        worktree / ".claude" / "settings.local.json",
+        worktree / ".claude" / "agents",
+    ):
+        assert str(control.resolve()) in deny, control
     assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith(" || exit 2")
 
 
-@pytest.mark.parametrize("bad", ["https://github.com", "*.github.com", "github.com:443", "10.0.0.1", "::1", ""])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://github.com",
+        "*.github.com",
+        "github.com:443",
+        "10.0.0.1",
+        "::1",
+        "",
+        "127.1",
+        "2130706433",
+        "0x7f.1",
+        "1.2.3",
+        "localhost",
+        "metadata",
+    ],
+)
 def test_domain_rejected(linked: tuple[Path, Path], bad: str) -> None:
     """Only exact DNS hostnames are valid egress grants."""
     assert linked
