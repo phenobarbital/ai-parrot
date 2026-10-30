@@ -86,3 +86,18 @@ async def test_remote_entry_is_pbac_checked_before_the_remote_refusal(tmp_path):
         with pytest.raises(RemoteAgentNotInstantiable) as exc_info:
             await reg.get_instance("hr", request=MagicMock())
     assert "squawk://" not in str(exc_info.value)
+
+
+def test_remote_entry_advertises_its_roost_capabilities(tmp_path):
+    """register_remote mirrors the roost block into the capability index, replacing stale entries."""
+    from parrot.roost.directory import RoostAgentConfig
+
+    reg = AgentRegistry(agents_dir=tmp_path)
+    reg.register_remote(_cfg(roost=RoostAgentConfig(capabilities=["hr.reports.headcount"], keywords=["headcount"])))
+    (match,) = reg.find_capability("headcount")
+    assert match.cap_id == "hr.reports.headcount"
+    assert reg.find_capability("headcount", include_remote=False) == []
+
+    reg.register_remote(_cfg(roost=RoostAgentConfig(capabilities=["hr.reports.attrition"], keywords=["attrition"])))
+    assert reg.find_capability("headcount") == []
+    assert [m.cap_id for m in reg.find_capability("attrition")] == ["hr.reports.attrition"]

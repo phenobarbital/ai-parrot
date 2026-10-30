@@ -922,6 +922,13 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 registry.register_remote(config)
             except Exception as exc:
                 self.logger.warning(f"YAML written but remote registration failed: {exc}")
+                return self.error(
+                    response={
+                        "message": f"Agent definition written but remote registration failed: {exc}",
+                        "file_path": str(file_path),
+                    },
+                    status=500,
+                )
             return self.json_response(
                 {
                     "message": f"Remote agent '{config.name}' registered",

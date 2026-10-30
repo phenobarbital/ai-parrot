@@ -1541,8 +1541,12 @@ class AgentRegistry:
             kind=config.kind,
             endpoint=config.endpoint,
             contract_categories=list(config.contract_categories),
+            roost=config.roost,
         )
         self._registered_agents[config.name] = metadata
+        # Advertise the remote agent's Roost capabilities (Locality.REMOTE); replace any
+        # previous mirror so re-registering a name never leaves stale capabilities behind.
+        self._mirror_roost(config.name, metadata, replace=True)
         self.logger.info(f"Registered remote bot: {config.name} ({config.kind.value} @ {config.endpoint})")
         return metadata
 
