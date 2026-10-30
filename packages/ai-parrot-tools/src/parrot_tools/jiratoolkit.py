@@ -59,6 +59,7 @@ from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.utils.helpers import current_context
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.auth.principal import resolve_principal
 from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
@@ -833,6 +834,7 @@ class JiraToolkit(AbstractToolkit):
     """  # noqa
 
     #: FEAT-593 — Agent Studio configuration surface.
+    credential_provider = "jira"
     config_model = JiraToolkitConfig
     options_params = frozenset({"default_project"})
     default_user_overridable = frozenset({"username", "password", "token"})
@@ -1057,7 +1059,7 @@ class JiraToolkit(AbstractToolkit):
             if self.credential_resolver is None:
                 raise ValueError("oauth2_3lo requires a credential_resolver")
             self.jira = None  # resolved per-call in _pre_execute
-            # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
+            # Per-principal JIRA client cache: {principal.user_id: (client, token_hash)}
             self._client_cache: Dict[str, tuple] = {}
             return
 
@@ -1372,7 +1374,27 @@ class JiraToolkit(AbstractToolkit):
                     scopes=list(self._OAUTH_SCOPES),
                 )
 
-            user_key = f"{channel}:{user_id}"
+            principal = await resolve_principal(channel, str(user_id))
+            if principal is None:
+                try:
+                    auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
+                except AuthorizationRequired as exc:
+                    raise AuthorizationRequired(
+                        tool_name=tool_name,
+                        message=exc.message,
+                        auth_url=exc.auth_url,
+                        provider=exc.provider,
+                        scopes=exc.scopes,
+                    ) from exc
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message="Please authorize your Jira account to use this tool.",
+                    auth_url=auth_url,
+                    provider="jira",
+                    scopes=list(self._OAUTH_SCOPES),
+                )
+
+            user_key = principal.user_id
             token_set = await self.credential_resolver.resolve(channel, user_id)
         if token_set is None:
             try:
