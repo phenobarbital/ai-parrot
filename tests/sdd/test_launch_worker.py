@@ -29,6 +29,7 @@ def fake_claude_path(tmp_path: Path) -> str:
         bin_dir / "claude",
         "#!/bin/sh\n"
         "printf 'BACKEND=%s\\n' \"$PARROT_SDD_SANDBOX_BACKEND\"\n"
+        "printf 'DEGRADED=%s\\n' \"$PARROT_SDD_SANDBOX_DEGRADED\"\n"
         "printf 'CACHE=%s\\n' \"$PARROT_SDD_CACHE_DIR\"\n"
         "printf '%s\\n' \"$@\"\n",
     )
@@ -66,8 +67,8 @@ def _run(path: str, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def _output(result: subprocess.CompletedProcess[str]) -> tuple[dict[str, str], list[str]]:
     """Split the Claude stub's environment markers from its argv."""
     lines = result.stdout.splitlines()
-    environment = dict(line.split("=", 1) for line in lines[:2])
-    return environment, lines[2:]
+    environment = dict(line.split("=", 1) for line in lines[:3])
+    return environment, lines[3:]
 
 
 def test_defaults_exclude_user_source(fake_claude_path: str, linked_cwd: Path) -> None:
@@ -175,11 +176,22 @@ def test_missing_prerequisite_exits_1(tmp_path: Path, linked_cwd: Path, missing:
     assert missing in result.stderr
 
 
+def test_required_mode_refuses_failing_bwrap_probe(fake_claude_path: str, linked_cwd: Path) -> None:
+    bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
+    _write_executable(bin_dir / "bwrap", "#!/bin/sh\necho user namespaces denied >&2\nexit 1\n")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 1
+    assert "native sandbox unavailable (user namespaces denied); mode=required refuses to start" in result.stderr
+
+
 def test_backend_env_set_for_child(fake_claude_path: str, linked_cwd: Path) -> None:
     result = _run(fake_claude_path, linked_cwd)
     assert result.returncode == 0, result.stderr
     environment, _argv = _output(result)
     assert environment["BACKEND"] == "claude-native"
+    assert environment["DEGRADED"] == ""
     cache_dir = Path(environment["CACHE"])
     assert cache_dir.parent.name == "parrot-sdd-cache"
     assert cache_dir.is_dir()
@@ -198,3 +210,42 @@ def test_next_launch_removes_dead_owned_cache(fake_claude_path: str, linked_cwd:
     second_environment, _second_argv = _output(second)
     assert not first_cache.exists()
     assert Path(second_environment["CACHE"]).is_dir()
+
+
+def test_pyproject_preferred_mode_degrades_after_failing_probe(
+    fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (linked_cwd / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
+    _write_executable(bin_dir / "bwrap", "#!/bin/sh\necho unavailable >&2\nexit 1\n")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 0
+    environment, argv = _output(result)
+    assert environment["DEGRADED"] == "1"
+    assert "sandbox" not in json.loads(argv[argv.index("--settings") + 1])
+    assert "WARNING native sandbox unavailable (unavailable); mode=preferred launches DEGRADED" in result.stderr
+
+
+def test_off_mode_skips_probe(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "off")
+    bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
+    _write_executable(bin_dir / "bwrap", "#!/bin/sh\necho probe-called >&2\nexit 1\n")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 0
+    environment, argv = _output(result)
+    assert environment["DEGRADED"] == "1"
+    assert "sandbox" not in json.loads(argv[argv.index("--settings") + 1])
+    assert "probe-called" not in result.stderr
+
+
+def test_invalid_mode_exits_2(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "unsafe")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 2
+    assert "PARROT_SDD_SANDBOX_MODE" in result.stderr

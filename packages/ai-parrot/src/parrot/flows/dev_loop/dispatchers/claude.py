@@ -647,14 +647,21 @@ class ClaudeCodeDispatcher:
             # FEAT-768: the native Claude sandbox is the enforcement boundary; the retained
             # hook (guard → RTK → bounded shell) rides in the same settings object.
             try:
-                settings = native_claude_sandbox.native_sandbox_settings(
+                mode, degraded, reason, settings = native_claude_sandbox.plan_native_launch(
                     Path(cwd), allowed_domains=profile.sandbox_allowed_domains
                 )
-            except ValueError as exc:
+            except (ValueError, RuntimeError) as exc:
                 raise DispatchExecutionError(f"Native sandbox refused cwd {cwd!r}: {exc}") from exc
             extra_args = {"settings": json.dumps(settings)}
             env = dict(env or {})
             env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_NATIVE
+            if degraded:
+                self.logger.warning(
+                    "native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason
+                )
+                env[native_claude_sandbox.DEGRADED_ENV] = "1"
+            else:
+                self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)
             cache_dir = worktree_environment.claude_scratch_root() / "parrot-sdd-cache" / uuid4().hex
             env[native_claude_sandbox.CACHE_DIR_ENV] = str(cache_dir)
 

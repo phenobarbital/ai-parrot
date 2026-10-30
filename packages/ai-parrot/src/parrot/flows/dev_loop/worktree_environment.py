@@ -526,6 +526,8 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
             # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
             if optimized := rtk_rewrite(command):
                 command = optimized
+            if native and os.environ.get(native.DEGRADED_ENV) == "1":
+                command = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; " + command
             shell = bounded_shell_argv(command, tool_input)
             if native:
                 env = native.native_command_environment(task_cwd)
