@@ -10,7 +10,7 @@ tags: [oauth2, connections, msteams, adaptive-cards, principal, channel-notifier
 **Feature ID**: FEAT-775
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Opus 5.5)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` §6 row **"S-3b MS Teams"**
