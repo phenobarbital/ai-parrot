@@ -29,17 +29,31 @@ import time
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, ClassVar, Dict, List, Optional, Protocol, Tuple, Type, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    runtime_checkable,
+)
 from urllib.parse import urlencode
 
 import aiohttp
 from aiohttp import web
 from pydantic import BaseModel, Field
 
-from parrot.auth.oauth2.events import ConnectionEvent, ConnectionEventPublisher
 from parrot.auth.principal import Principal, resolve_principal
 from parrot.conf import OAUTH2_LEGACY_KEYS_UNTIL
 from parrot.security.vault_utils import delete_vault_credential, retrieve_vault_credential, store_vault_credential
+
+if TYPE_CHECKING:  # events import parrot.auth.oauth2 whose __init__ imports this module
+    from parrot.auth.oauth2.events import ConnectionEventPublisher
 
 # Token storage key schema (Redis cache layer).
 _TOKEN_KEY_TEMPLATE = "oauth2:{provider}:{user_id}"
@@ -546,6 +560,8 @@ class AbstractOAuth2Manager(ABC):
         """Publish a connection event when a publisher is attached."""
         if self._events is None:
             return
+        from parrot.auth.oauth2.events import ConnectionEvent
+
         event = ConnectionEvent(
             kind=kind,
             user_id=principal.user_id,
