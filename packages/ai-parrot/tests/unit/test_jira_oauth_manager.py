@@ -12,7 +12,6 @@ from aiohttp import web
 from parrot.auth.jira_oauth import JIRA_DESCRIPTOR, JiraOAuthManager, JiraTokenSet
 from parrot.auth.oauth2.descriptor import RefreshPolicy, StandardOAuth2Manager
 
-
 class _FakeRedis:
     """Small async Redis fake used by the migration test."""
 
