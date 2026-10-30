@@ -2,7 +2,7 @@
 
 Mounts the compiled single-page application (Svelte 5 + Vite) when the
 ``dist/`` build output is present in the installed package: end-user pages
-(``/login``, ``/agents``, ``/agents/<name>/chat``) at the site root and the
+(``/login``, ``/agents``, ``/agents/<name>/chat``, ``/account``) at the site root and the
 administration pages under ``/admin``, with hashed assets at
 ``/ui/assets/``. Gracefully degrades (registers nothing, logs a single
 warning) when the UI was not built — e.g. an install-from-git without
@@ -36,7 +36,7 @@ DEFAULT_PREFIX = "/admin"
 
 #: Top-level SPA sections served at the site root (besides the admin
 #: prefix). MUST match ``config.appSections`` in ``ui/src/lib/config.ts``.
-SPA_SECTIONS: tuple[str, ...] = ("/login", "/agents")
+SPA_SECTIONS: tuple[str, ...] = ("/login", "/agents", "/account")
 
 #: URL prefix of the hashed Vite assets — MUST match ``build.assetsDir``
 #: (``ui/assets``, under ``base: '/'``) in ``ui/vite.config.ts``.
@@ -246,7 +246,7 @@ def setup_admin_ui(
         header injected via ``on_response_prepare``.
       - ``index.html`` (SPA history-mode router fallback, ``no-cache``) for
         the end-user sections (:data:`SPA_SECTIONS`: ``/login``,
-        ``/agents``), the administration ``prefix`` (``/admin``), each as
+        ``/agents``, ``/account``), the administration ``prefix`` (``/admin``), each as
         the exact path plus its ``/{tail}`` children, and — when
         ``mount_root`` is true and nothing else already serves it — the
         bare site root ``/``. Every mount is anchored on a path *segment*
