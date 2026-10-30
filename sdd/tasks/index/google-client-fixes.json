@@ -39,15 +39,16 @@
       "feature_id": "FEAT-781",
       "feature": "google-client-fixes",
       "spec": "sdd/specs/google-client-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "first of three sequential edits to client.py (ask cache block)",
-      "assigned_to": null,
+      "assigned_to": "agent:sdd-fix",
       "file": "sdd/tasks/active/TASK-4911-google-client-cache-attach.md",
-      "discovered_from": "issue:71716068e28f"
+      "discovered_from": "issue:71716068e28f",
+      "started_at": "2026-10-30T19:43:27Z"
     },
     {
       "id": "TASK-4912",
