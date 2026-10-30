@@ -16,32 +16,33 @@ tags: [sdd, decisions, ontology, audit, wiki, drift]
 
 **Date**: 2026-10-30
 **Author**: Jesús Lara (with Claude Fable 5.1)
-**Status**: exploration
-**Recommended Option**: A
+**Status**: accepted
+**Recommended Option**: A (accepted 2026-10-31; owner decisions below resolved on the owner's instruction, conservative defaults from the audit)
 
 ---
 
 ## Problem Statement
 
 The SDD flow reviews *code* (`/sdd-codereview`, `sdd-secondopinion`, the GitHub
-reviewer) but never audits *decisions*. A code review asks "is this diff good?".
+reviewer) but lacks the unified approval-time decision gate proposed here.
+Existing ADR lint and architectural tests cover narrower checks.
+A code review asks "is this diff good?".
 An audit asks: which decision was taken, under which constraints that were
 already in force, does it contradict a decision accepted earlier, does the
 implementation honor it, and does it still honor it today. That chain —
 provenance, consistency, re-verifiability — lives today only in prose:
-`CLAUDE.md`, `.agent/CONTEXT.md`, Completion Notes, review markdown. None of it
-is machine-queryable or refutable.
+`CLAUDE.md`, `.agent/CONTEXT.md`, Completion Notes, review markdown. Those sources are not yet joined into a single approval-time decision contract;
+existing ADR APIs, lint rules and regression tests cover parts of the problem.
 
 Concrete symptoms:
 
 - Hard architectural rules ("clients are memory-less", "`AbstractBot` is the
   sole writer of conversation history", "never `httpx`", "concrete tools live
-  in `parrot_tools`") exist as paragraphs. Only one of them (`TID251`) is
-  enforced mechanically.
-- The one real decision audit this repo has was done **by hand**
+  in `parrot_tools`") exist as paragraphs. Some are enforced mechanically: `TID251` and the FEAT-524 memory/history
+  ownership regression tests. There is no unified decision-consistency gate.
+- One documented design audit was done **by hand**
   (`sdd/proposals/plan-then-execute-design-drift.findings.md`, 2026-09-20):
-  a section-by-section comparison of a design document against `dev`. It took
-  a full session and is already stale.
+  a section-by-section comparison of a design document against `dev`. Its conclusions are tied to that snapshot and need revalidation for current code.
 - FEAT-578 built a complete ADR "decision plane"
   (`parrot.knowledge.wiki.decisions`: `DecisionRecord`, hashed `EvidenceRef`,
   freshness `current|stale|missing|unverified`, attributed review) and then
@@ -49,8 +50,8 @@ Concrete symptoms:
   verdicts". The infrastructure for an audit exists; the audit was deliberately
   left out.
 - The plane is **empty** in this repository: `docs/adr/`, `docs/adrs/` and
-  `docs/decisions/` (the three `adr_globs`) do not exist, so there are zero
-  documented decisions to audit against.
+  `docs/decisions/` (the three `adr_globs`) do not exist, and a local decision-plane query with history included independently returned
+  no records during the audit. Missing directories alone would not prove emptiness.
 - Even where records exist, **nothing in the SDD authoring lane consumes
   them**: `/sdd-spec`, `/sdd-task`, `sdd-coder` and `sdd-worker` never call
   `wiki_decision_why` / `wiki_decisions_for_symbol`. The Codebase Contract
@@ -58,12 +59,13 @@ Concrete symptoms:
   why*. FEAT-778 (domain-experts) designed exactly that consumer — a
   `KnowledgeResolver` with an `adr` source that loads accepted decisions
   through `DecisionService` under a token budget, as a fixed prompt layer —
-  but for runtime expert agents only, and none of its 22 tasks has started.
+  for runtime expert agents. All 22 tasks are now done, and `KnowledgeResolver`
+  and `ADRSource` exist; their lexical, budgeted output is not a complete gate input.
 - Retrieval is the ceiling: a `DecisionRecord` is found by symbol link or by
   token overlap. There is no filter by component, subsystem or capability
   (no `tags`, FEAT-778 finding F043), so "what is decided about conversation
-  memory?" — the question a spec author actually asks — cannot be answered
-  by the plane today.
+  memory?" — the question a spec author actually asks — can only use lexical retrieval today; explicit domain filtering and coverage
+  guarantees are absent.
 
 Inspiration: `fabio-rovai/open-ontologies` (MIT, Rust). Its loop is *plan a
 change → see every consequence before applying → certify → watch drift →
@@ -86,7 +88,8 @@ maintainer doing post-hoc audits.
 
 ## Constraints & Requirements
 
-Resolved in discovery (Rounds 0–2, owner Jesús):
+Recorded discovery constraints (Rounds 0–2, owner Jesús); the audit clarifications
+below are proposed contract corrections, not new owner answers:
 
 - Flow: `feature` on `dev`.
 - **Assertion**: decisions enter the graph only from a structured, human-approved
@@ -97,12 +100,13 @@ Resolved in discovery (Rounds 0–2, owner Jesús):
 - **v1 core**: consequence preview in `/sdd-spec`. Task certificates, drift
   job and retroactive inference are later phases.
 - **Checks in v1**: contradictions with accepted decisions; blast radius of the
-  symbols the spec touches; undeclared supersedes (conservativity); evidence
+  symbols the spec touches; possible undeclared supersession (advisory, not formal conservativity); evidence
   gaps (accepted decisions whose evidence is already stale/missing inside the
   spec's radius).
 - **Verdict**: a `## Consequences` section is written into the spec (auditable
   in git). Only an *unresolved contradiction* with an accepted decision blocks
-  approval; everything else is advisory.
+  approval among complete evaluations; malformed inputs and incomplete audits
+  also prevent approval. Other findings remain advisory.
 - **Target resolution**: explicit `sym:<rel>#<qualname>` / `file:<rel>` /
   `dir:<rel>` ids in the spec's Decisions section. A target that does not
   resolve is a spec error. No lexical guessing in the verdict.
@@ -117,7 +121,7 @@ Resolved in discovery (Rounds 0–2, owner Jesús):
 Non-negotiable technical constraints:
 
 - Read path is deterministic and offline: zero LLM calls (FEAT-578 AC5 already
-  guarantees this for `DecisionService`; the preview must keep it).
+  guarantees this for ordinary decision reads, not explicit generation; the preview must keep it).
 - Reuse `DecisionRecord` / `EvidenceRef` / `DecisionLink`; do not fork a second
   decision model. New relations are additive (`RelationType` values must stay
   stable strings — FEAT-239 design note).
@@ -132,122 +136,176 @@ Non-negotiable technical constraints:
 
 ### Option A: Governing-decisions dossier + consequence service over the existing decision plane
 
-Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`,
-and make `/sdd-spec` both a consumer and a producer of the plane:
+**Contract correction, 2026-10-31:** incorporates F01–F10 from
+`sdd-decision-audit.findings.md`. These are proposed design corrections, not
+additional discovery answers attributed to the owner. The document remains
+`exploration`; approval integration and optional delivery scope remain open.
 
-0. **Governing decisions (consumer).** Before Section 2 of a spec is
-   written, `/sdd-spec` resolves the accepted decisions that govern the
-   spec's domain and pulls them into a generated `## Governing Decisions`
-   section: a budgeted dossier (`DecisionService.why()` / `for_symbol()`,
-   `source_status == accepted`, history excluded) retrieved on two axes —
-   by **subsystem** (the frontmatter `projects` / `tags` the spec already
-   declares, matched against each record's `about` concepts) and by
-   **symbol** (the ids in the Codebase Contract). Each entry carries the
-   decision statement, its rationale/consequences, the `supersedes` chain
-   and the rejected alternatives, so a new spec does not re-derive an
-   option that was already discarded. This is the same resolver shape
-   FEAT-778 specifies for expert agents (`adr` source, accepted-only
-   filter, token budget, fixed layer order); the SDD lane is one more
-   consumer of it, not a second implementation.
-1. **Decisions section in the spec template (producer).** A structured block
-   (one entry per decision) with `id`, `statement`, `relation` ∈
-   {`constrains`, `forbids`, `requires`, `supersedes`}, `about` (one or more
-   subsystem concepts from a curated taxonomy), explicit `targets` (graph
-   ids) and optional `supersedes: <decision-id>`. The ADR parser already reads
-   flat frontmatter keys `id/title/status/supersedes`; this extends the
-   vocabulary with `about` and `targets` lists and the new relations.
-2. **Ingestion.** Approving a spec (status `approved`) runs the existing
-   `refresh_decisions()` path over the spec's Decisions block, producing
-   `DecisionRecord`s with `origin="documented"`, `source_status="accepted"`,
-   `source_path=<spec>`, and `EvidenceRef`s pointing at the target spans
-   (hashed by `source_sha1`, exactly as ADR evidence today).
-3. **Seed.** `docs/decisions/*.md` is one of the three `adr_globs` already
-   configured. The architecture rules become ADR-style markdown files there
-   with the extended `about:` + `targets:` frontmatter — so the seed is
-   ingested by the code that exists, with no new loader. Because every
-   seeded rule is anchored to a subsystem, the seed is also the first layer
-   of curated knowledge the consumer step returns, not just a list of
-   prohibitions.
-3b. **Subsystem taxonomy.** A small, versioned list of code-subsystem
-   concepts (memory, clients, tools, flows, skills, knowledge/wiki, server,
-   sdd-tooling, …) that `about` values must come from. It is the ontological
-   spine for retrieval by domain; `KNOWN_PROJECTS` (frontmatter `projects`)
-   is the coarse layer that already exists, the taxonomy is the finer one.
-   Records link to concepts with `RelationType.ABOUT`, which already exists.
-4. **Preview.** A `ConsequenceService` takes a spec path, resolves every
-   target through `StructuralService.lookup()`, computes
-   `StructuralService.blast_radius()` per target, pulls accepted records via
-   `DecisionService.for_symbol()`, and emits a `ConsequenceReport` with four
-   finding kinds: `contradiction`, `undeclared-supersedes`, `blast-radius`,
-   `evidence-gap`. Freshness reuses `verify_freshness()`.
-5. **Gate.** `scripts/sdd/check_spec_consequences.py` renders the report into
-   the spec's `## Consequences` section and exits non-zero only on an
-   unresolved `contradiction`. `/sdd-spec` runs it between "Scaffold" and
-   "Commit"; CI runs it on PRs touching `sdd/specs/`.
-6. **Surface.** One MCP tool `wiki_spec_consequences` (and `wikitoolkit spec
-   consequences <path>`) so Codex seats and humans get the same report.
+The v1 service checks **consistency of declared decisions**, not whether code
+implements prose rules. It has two outputs over one complete, versioned input
+inventory: a budgeted dossier for authoring and an unbudgeted evaluation for
+approval. No lexical match or LLM judgment establishes applicability or a
+blocking contradiction.
+
+0. **Authoritative inventory before presentation.** Introduce a shared read
+   contract over `DecisionRepository` that returns complete records, revisions,
+   source provenance and diagnostics from a consistent snapshot. A record is
+   eligible when `origin == documented`, `source_status == accepted`,
+   `review_status != rejected`, and it is effective under the validated
+   supersession graph. An accepted documented ADR may remain `unreviewed`;
+   double acceptance is not required. Inferred records remain suggestions.
+   New spec/seed records additionally require a verified approval batch.
+   Filtering happens before ranking/packing. Inventory overflow, decode
+   failures or unstable reads mean `incomplete`, never an empty clean result.
+
+1. **Governing dossier.** Retrieve by explicit `about` concepts and structural
+   scope, union/deduplicate by canonical ID, then render under a token budget.
+   A versioned mapping connects `projects` and recognized `tags` to subsystem
+   concepts; arbitrary tags do not silently become concepts. Unknown mappings
+   are shown to the author; authored `about` values must be valid taxonomy IDs.
+   Load full records for rationale/context, consequences and supersession
+   references. Rejected alternatives are shown only when explicitly recorded;
+   missing fields say “not recorded”, never inferred. List omitted IDs and
+   domains separately from “no accepted records”. Budget truncation affects
+   presentation only. Presence of a dossier is not proof that a human read it.
+
+2. **Structured producer.** A dedicated parser reads a versioned YAML block
+   inside `## Decisions`, containing `schema_version`, a stable `document_id`
+   and an `entries` list. Each entry has an immutable local `id`, `statement`,
+   `relation` in `{constrains, forbids, requires}`, nonempty `about` and
+   `targets` lists, and optional `contradicts` and `supersedes` lists of
+   `{decision_id, revision}` references. `supersedes` is a lifecycle link, not a normative
+   relation. Optional rationale and rejected-alternative text is authored.
+   Canonical IDs use `adr:spec:<document_id>#<entry_id>`; both components are
+   immutable repository-unique/document-local identifiers respectively, limited
+   to lowercase ASCII letters, digits, hyphens and underscores. IDs derive from
+   the stable document ID plus entry ID, not only the path;
+   source paths/spans remain provenance. Duplicate IDs, unknown fields and
+   dangling references fail validation. New entries can reference one another
+   via their canonical IDs and proposed revisions; unresolved intra-proposal
+   conflicts also block. New entries start at revision 1; edits preserve ID,
+   increment revision and explicitly pin their previous revision. Updating a
+   record is a revision transition, not a self-referential supersedes edge.
+   This is new parsing/identity work: `parse_adr()` currently yields one
+   path-identified record per document. Preserve ordinary ADR v1 parsing.
+
+3. **Typed targets and scope.** A new resolver validates exact local `sym:`,
+   `file:` and `dir:` IDs against confined repository paths and structural
+   records. `StructuralService.lookup()` is for name suggestions only;
+   `DecisionService._resolve_symbol()` is not an existence validator.
+   A symbol target covers that symbol; a file target covers its file/symbols;
+   a directory target covers path-segment descendants recursively. Consult
+   ancestor scope when collecting governing decisions. Directory expansion
+   must prove completeness against the declared scan inventory. Unsupported
+   files may be governed at file scope, but must not imply complete symbol
+   impact analysis. v1 targets must exist: decisions about future components
+   anchor to an existing container and state that scope explicitly. The gate
+   never invents a future node. A later phase may add typed proposed targets.
+
+4. **Deterministic findings.** Blocking `contradiction` requires an explicit
+   `contradicts` reference between the proposal and an effective accepted
+   record, or between proposed entries. Either direction establishes the
+   declared conflict, independently of target overlap. Sharing a target with
+   opposite `forbids`/`requires` relations yields advisory `potential-conflict`;
+   sharing a target and relation yields advisory `possible-supersession`.
+   Neither proves semantic disagreement or conservativity. `blast-radius`
+   reports impacted dependents; `evidence-gap` reports stale/missing/unverified
+   evidence. Impact does not propagate normative applicability. Absent
+   declarations, semantic contradictions may remain undetected in v1.
+
+5. **Approval and supersession.** A proposed `supersedes` link names an exact
+   active predecessor revision and represents full replacement in v1. Validate
+   existence, local identity, acyclicity, identical canonical target sets and absence
+   of competing effective successors. No implicit partial replacement or
+   exception. Historical targets yield a diagnostic with their active heads;
+   do not silently retarget the author's link. The prospective replacement
+   resolves only the conflict with that predecessor, and becomes effective
+   only when the same proposal batch receives human approval.
+   Optional conflict waivers live in a separate authored block, with stable
+   finding fingerprint, participating decision revisions, actor, reason and
+   verifiable approval reference. Generated markdown cannot authorize a waiver.
+   Any changed participant invalidates it. The trust adapter must verify actor,
+   scope and approval against versioned evidence; its concrete mechanism must
+   be chosen before implementation. No adapter means no ingestion or waiver
+   acceptance, not a fallback to trusting `status: approved`.
+
+6. **Publication and evidence.** Extend ingestion with a spec-entry adapter
+   and approval-batch manifest. Parse/validate all entries, then publish one
+   effective batch only after its complete manifest and approval are valid.
+   Per-record CAS remains the write primitive; it is not a multi-record
+   transaction. Partial/retried writes must never expose half an approved
+   proposal. Edits require a new approved batch; removed entries require an
+   explicit retirement, not silent deletion. Preserve prior approved revisions
+   and review history. Store declaration/approval provenance separately from
+   target applicability and optional implementation evidence. A hash proves
+   source freshness, not compliance. Spec/seed approval sets documented source
+   acceptance; review events remain attributed and are not manufactured by sync.
+
+7. **Seed, persistence and compatibility.** Prefer ADR Markdown under
+   `docs/decisions/` for the seed; the existing glob only handles discovery.
+   Extended metadata and approval still require code. Add explicit `about`
+   and `targets` fields to the canonical decision model, keeping `supported_by`
+   for evidence. Project ABOUT/normative edges as rebuildable caches; retrieval
+   validates canonical records. Use a new schema version for extended records:
+   new readers support legacy v1 and the extended schema; old readers must
+   fail explicitly, so readers upgrade before writers. Legacy records retain
+   their IDs. Migration, rollback and all consumers' compatibility are part of
+   the spec, not a claim that optional fields are universally nonbreaking.
+
+8. **Surfaces and scope.** `ConsequenceService` exposes one typed evaluation
+   shared by CLI, MCP and `scripts/sdd/check_spec_consequences.py`. `/sdd-spec`
+   retrieves before design and verifies before approval. Three sections:
+   `Governing Decisions`, `Decisions`, `Consequences`; approval/waiver metadata
+   is authored separately. Rendering is explicit and idempotent; checking
+   never rewrites files. CI and task-dossier propagation are optional v1 delivery
+   items pending owner scope, not prerequisites silently assumed to exist.
 
 ✅ **Pros:**
-- Reuses the whole FEAT-578 stack (models, CAS persistence, review,
-  freshness, dossier rendering, MCP transport). The new code is one service,
-  one gate script, two template sections, one parser extension.
-- Closes the loop: a spec reads accepted decisions, declares its own, the
-  preview checks consistency, approval feeds the next spec. With the `about`
-  axis the preview can also say "you are legislating about memory without
-  having read what is decided about memory", which a symbol-only check
-  never can.
-- Deterministic and offline by construction; the only LLM in the loop is the
-  human-approved spec author. The consumer step is retrieval + rendering,
-  zero generation.
-- The seed path is zero-code: `docs/decisions/` is already an `adr_glob`.
-- Aligns with FEAT-778 instead of competing with it: same `DecisionService`
-  calls, same accepted-only filter, same budget semantics.
-- Each phase after v1 (task certificate, drift job, retroactive inference)
-  plugs into the same records without a model change.
+- Reuses record persistence, source hashing, review provenance and transports
+  without introducing a second authoritative decision plane.
+- One shared authority/scope contract feeds complete checks and bounded author
+  context. Offline results are reproducible for the same versioned inputs.
+- Existing ADR discovery and FEAT-778 consumers provide integration points.
 
 ❌ **Cons:**
-- `RelationType` and `DecisionLink.relation` need new values
-  (`constrains/forbids/requires`); `DecisionLink` is a strict Literal, so this
-  is a model bump (schema_version stays 1 if purely additive, but tests pin
-  the literal set).
-- Spec authors must write explicit graph ids. Friction is real; mitigated by
-  `wikitoolkit symbols lookup` and by making the gate report *suggested* ids
-  for unresolved targets.
-- "Contradiction" in v1 is structural (same target, opposing relation, or an
-  explicit `contradicts` link), not semantic. Two prose statements that
-  contradict each other without sharing a target are not detected — but the
-  `about` axis narrows the miss: two decisions on the same subsystem are at
-  least surfaced side by side in the dossier.
-- A subsystem taxonomy is one more curated artifact to keep honest. Too
-  coarse and every spec pulls everything; too fine and authors guess.
-- Sequencing with FEAT-778: if its `KnowledgeResolver` lands first the SDD
-  consumer reuses it; if not, the consumer is built directly on
-  `DecisionService` (which already has `budget_tokens`) and migrated later.
+- New identity/parser, scope resolver, snapshot/approval protocol and schema
+  migration are substantial work; this is not “mostly wiring”.
+- Explicit conflict declarations provide no automatic semantic completeness.
+- Taxonomy, stable IDs and approval provenance require maintained artifacts.
+- FEAT-778 is already implemented (22/22 tasks done). Its current `ADRSource`
+  uses lexical `why()` and emits title/decision only; it is not a drop-in
+  implementation of the strict domain dossier. Share authority/retrieval
+  primitives through an explicit adapter contract, without requiring an
+  unrelated runtime refactor in this feature.
 
-📊 **Effort:** Medium
+📊 **Effort:** Medium–High; estimate after approval/snapshot contracts are frozen.
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `pydantic` ≥ 2 | `ConsequenceReport`, finding models | already a core dep |
-| `wikitoolkit` (in-repo) | graph plane, structural + decision services, MCP transport | FEAT-540/578/760 |
-| `PyYAML` | frontmatter `targets:` list (ADR parser reads flat scalars only today) | already a dep via navconfig; or extend the flat parser with a list form |
+| `pydantic` ≥ 2 | versioned reports, validation and model evolution | existing core dependency |
+| `wikitoolkit` | local decision/structural planes and transport | existing infrastructure |
+| `PyYAML` | structured entries and extended seed metadata | direct core dependency |
 
-🔗 **Existing Code to Reuse:**
-- `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py` — `DecisionRecord`, `EvidenceRef`, `DecisionLink`, `ReviewRequest`, `DecisionConfig.adr_globs`.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/service.py` — `DecisionService.for_symbol()` / `.why()`, `HISTORICAL_STATUSES`, symbol-link scoring.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/ingest.py` — `discover_adr_sources()`, `refresh_decisions()`, `project_links()`.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/evidence.py` — `verify_freshness()`, `build_evidence()`.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/parser.py` — `parse_frontmatter()`, `resolve_status()`; extend `FRONTMATTER_KEYS`.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/structural/service.py` — `StructuralService.lookup()`, `.blast_radius()`, `BlastRadiusOutput`.
-- `packages/ai-parrot/src/parrot/knowledge/wiki/transport.py` — MCP `_Spec` registry (`wiki_decision_why`, `wiki_blast_radius` as templates).
-- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` — `compare_and_swap_page()` for record writes.
-- `scripts/sdd/check_task_graph.py` — `Finding`/`GraphReport`/`main()` shape for the new gate script.
-- `.claude/commands/sdd-spec.md` §5 "Scaffold the Spec" / §6 "Commit the Spec" — hook point for the preview.
-- `sdd/templates/spec.md` — gains `## Governing Decisions` (generated, consumer), `## Decisions` (authored, producer) and `## Consequences` (generated, gate).
-- `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` — `DocTaxonomy.projects/tags` + `KNOWN_PROJECTS`: the coarse subsystem axis a spec already declares.
-- `packages/ai-parrot/src/parrot/knowledge/okf/ontology.py` — `RelationType.ABOUT` for record → subsystem-concept edges.
-- `sdd/specs/domain-experts.spec.md` (FEAT-778) — G6 "ADR as consumer and producer" and the `adr` knowledge source (`DecisionService.why/for_symbol`, accepted only, budgeted) as the resolver contract to share.
+🔗 **Existing code to reuse, with boundaries:**
+- `decisions/models.py`, `repository.py`, `codec.py`: canonical records and
+  CAS; extend schemas/identity and complete snapshot reads explicitly.
+- `decisions/parser.py`, `ingest.py`: legacy ADR parser/discovery; add a
+  separate multi-entry spec adapter and approval-aware batch publication.
+- `decisions/evidence.py`: freshness only, not a compliance verifier.
+- `decisions/service.py`, `render.py`: presentation patterns; their budgeted
+  `why()`/`for_symbol()` outputs must not be gate inputs.
+- `structural/service.py`: impact traversal, with explicit freshness and
+  completeness checks; a typed target resolver is new work.
+- `experts/knowledge/resolver.py`, `experts/knowledge/sources/adr.py`:
+  implemented FEAT-778 consumer; compatibility target, not a future dependency.
+- `wiki/transport.py`, `scripts/sdd/check_task_graph.py`: transport/report shape.
+- `ledger/sdd_meta.py`, `okf/ontology.py`: coarse taxonomy and ABOUT vocabulary;
+  exact subsystem mapping and authoritative fields are new work.
+
+Paths above are relative to `packages/ai-parrot/src/parrot/knowledge/` except
+`experts/`, which is relative to `packages/ai-parrot/src/parrot/`; `decisions/`
+and `structural/` are under `knowledge/wiki/`.
 
 ---
 
@@ -354,217 +412,222 @@ it, never produces it.
 
 ## Recommendation
 
-**Option A** is recommended because:
+**Option A** remains recommended: it extends the canonical decision plane and
+keeps consumer, producer and verifier on one authority model. Its advantage is
+lower integration duplication, not exclusive access to a consumer/producer
+design. B/C could also consume projections of those records.
 
-- It is the only option whose v1 is mostly wiring. FEAT-578 already solved
-  persistence (CAS pages), evidence hashing, freshness, attributed review,
-  budgeted rendering, CLI and MCP transport. The brainstorm's four ideas map
-  onto that stack with one new service and one gate script.
-- It honors every discovery answer directly: human-asserted (spec section),
-  two layers (module rules now, symbol contracts next), explicit targets,
-  curated seed via an existing glob, advisory-with-one-blocking-rule verdict.
-- It is the only option that treats the plane as curated knowledge *for
-  writing* specs and not only for checking them. The consumer step costs
-  little (retrieval + a rendered section) and is what turns the seeded
-  architecture rules into something an author reads before designing.
-- The seed costs no code: `docs/decisions/` is already an `adr_glob`.
-- Phases 2–4 (task certificate + independent checker, drift job to the
-  ledger, retroactive inference via `generation.py`) attach to the same
-  records. Option C stays available as an *optional external cross-check*
-  once the plane has content; Option B's Rust hot path becomes relevant only
-  if rule counts ever make the Python walk slow, which the current graph size
-  does not suggest.
-
-Traded away: semantic contradiction detection (v1 is structural), and the
-proof-grade certificate (Option C). Both are acceptable for a first gate whose
-value is "the spec author sees, in git, what the proposal collides with
-before anyone writes code".
-
----
+The corrected v1 provides explicit-conflict checking plus advisory structural
+signals. It does not prove conservativity, semantic consistency or implementation
+compliance. Certificates, drift jobs and backfill remain later phases. A rich
+dossier, multi-entry ingestion and approval snapshots are new contracts, so
+the earlier “one service and one parser extension” estimate is withdrawn.
 
 ## Feature Description
 
 ### User-Facing Behavior
 
-0. **Reading before designing.** When `/sdd-spec` scaffolds a spec it fills a
-   generated `## Governing Decisions` section: the accepted decisions that
-   govern the subsystems the spec declares (`projects` / `tags`) and the
-   symbols its Codebase Contract names. Each entry shows statement,
-   rationale, consequences, what it superseded and why alternatives were
-   rejected, with its evidence freshness. If the subsystem has no accepted
-   decisions, the section says so explicitly. The author writes Section 2
-   against that dossier; the same dossier is what `/sdd-task` hands to coder
-   seats as part of the task contract.
-1. **Authoring.** `sdd/templates/spec.md` gains a `## Decisions` section.
-   Each entry declares an id, a one-line statement, a relation
-   (`constrains` / `forbids` / `requires` / `supersedes`), one or more
-   `about` subsystem concepts, explicit targets (`sym:…`, `file:…`, `dir:…`)
-   and, when it replaces an earlier decision, the superseded id.
-2. **Preview.** During `/sdd-spec` (between scaffold and commit) the command
-   runs the consequence gate. The output is written into the spec as a
-   `## Consequences` section with four sub-blocks: *Contradictions*,
-   *Undeclared supersedes*, *Blast radius*, *Evidence gaps*. Each finding
-   cites the accepted decision id, its source path, and the evidence span
-   (path:lines, freshness).
-3. **Verdict.** The spec cannot move to `approved` while a contradiction is
-   unresolved. Resolving means either adding `supersedes: <id>` to the new
-   decision, or marking the finding `resolved-by: <owner>: <reason>` in the
-   Consequences block. Everything else is informational.
-4. **On approval.** The spec's decisions are ingested as accepted
-   `DecisionRecord`s (origin `documented`, source path = the spec, `about`
-   edges to the subsystem concepts). From then on they are visible through
-   `wiki_decisions_for_symbol` / `wiki_decision_why` to every coder seat,
-   they appear in the next spec's `## Governing Decisions` for the same
-   subsystem, and they are what the next spec's preview is checked against.
-5. **Seed.** A one-time curated set of architecture rules lives in
-   `docs/decisions/` as ADR-style markdown with explicit targets, reviewed and
-   committed once. The preview is useful from day one.
-6. **CLI / MCP.** `wikitoolkit spec consequences <spec>` and the
-   `wiki_spec_consequences` MCP tool return the same report for humans, Codex
-   seats and CI.
+1. Before design, `/sdd-spec` generates `## Governing Decisions` from the
+   complete eligible inventory for the declared domains and existing targets.
+   Entries cite provenance and freshness; omitted entries remain enumerable.
+2. The author declares structured entries in `## Decisions`. Targets use
+   explicit scope; `contradicts` and `supersedes` name exact canonical records.
+3. Preview generates `## Consequences` with input/evaluation digests, coverage,
+   blocking conflicts and advisory findings. JSON retains the full result;
+   shortening Markdown never removes a finding from the verdict.
+4. Fix invalid inputs/incomplete checks first; resolve declared conflicts by
+   revising the proposal, a validated prospective replacement, or an approved
+   waiver. Editing generated findings or adding an unverified owner string
+   cannot change the result.
+5. Approval requires a current passing report and verified human approval of
+   that exact proposal batch. A status edit alone cannot activate decisions.
+   Ingestion publishes the complete batch, then future specs can consume it.
+6. CLI/MCP share the evaluator. The CLI has explicit render and read-only check
+   modes; check fails when persisted generated sections are absent or stale.
+   A future CI job uses the same check mode with a reproducible local snapshot.
 
 ### Internal Behavior
 
-- **Retrieve (consumer).** From the spec frontmatter (`projects`, `tags`)
-  and the Codebase Contract ids, build two query sets: subsystem concepts
-  and symbol ids. Collect accepted records via `DecisionService.for_symbol()`
-  for the symbols and via `about`-edge lookup for the concepts
-  (`why()` as a lexical fallback only to *suggest*, never to include).
-  Rank documented+current+accepted first (the existing `_group_rank`), pack
-  under `budget_tokens`, render as `## Governing Decisions` with per-entry
-  freshness. Zero LLM calls.
-- **Parse.** The Decisions block is parsed with the ADR parser's flat
-  frontmatter rules extended by list-valued `about` and `targets` keys and
-  the new relation vocabulary. `about` values must belong to the subsystem
-  taxonomy. Malformed entries are `DecisionDiagnostic`s, never silent.
-- **Resolve.** Every target goes through `StructuralService.lookup()`
-  (exact `sym:` / `file:` / `dir:` ids; name-based disambiguation is only
-  used to *suggest* an id in the diagnostic, never to accept one).
-- **Radius.** For each resolved symbol target, `blast_radius()` (default
-  relations, depth 2) yields the impacted set; module/dir targets expand to
-  their contained symbols first (the `contains` relation).
-- **Collect.** `DecisionService.for_symbol()` over the targets and the
-  impacted set, filtered to `source_status == "accepted"` and
-  `review_status == "accepted"`, history excluded.
-- **Judge (deterministic rules):**
-  - *contradiction*: an accepted record with an opposing relation on an
-    overlapping target (`forbids` vs `requires`, `constrains` vs an explicit
-    `contradicts` link), or any accepted record the new decision names in a
-    `contradicts` link.
-  - *undeclared-supersedes*: the new decision shares a target and relation
-    with an accepted record and does not declare `supersedes` for it.
-  - *blast-radius*: impacted symbols that carry accepted decisions the spec
-    does not mention.
-  - *evidence-gap*: accepted records in scope whose `verify_freshness()` is
-    `stale` or `missing`.
-- **Render + persist.** The `ConsequenceReport` is rendered to markdown and
-  spliced into the spec's `## Consequences` section (replacing the previous
-  one), with a header line carrying the report's input digest (spec body
-  hash + plane `content_hash`es consulted) so a later run can say whether the
-  section is current.
-- **Gate.** Exit code non-zero iff any `contradiction` lacks a
-  `resolved-by`. JSON output for `/sdd-spec` and CI.
-- **Ingest on approval.** `refresh_decisions(paths=[spec])` with the spec
-  added to the discovery inventory when its status is `approved`;
-  `project_links()` rebuilds navigation edges, including the `about` edges
-  to subsystem concepts that make the next retrieval-by-domain possible. Records are written via
-  `compare_and_swap_page`, so a concurrent edit is a visible conflict, not a
-  lost update.
+**Snapshot and baseline.** Build a manifest from versioned decision sources,
+approval/retirement events, taxonomy/mapping, evaluator/config versions and a
+structural index tied to the evaluated repository content. SQLite is a derived
+cache, not the only source of approval history. Record source-byte hashes for
+every observed freshness check and a complete inventory manifest so additions
+and removals invalidate results. A consistent read transaction or a revision
+recheck/retry must prevent mixed reads; exhaustion returns `incomplete`.
+
+For initial approval, compare the proposal with the current approved baseline.
+For a revision, retain the prior approved entries as baseline, deduplicate
+unchanged entries and evaluate changed entries as replacements. For replay of
+an approved batch, use its recorded pre-publication baseline; do not compare a
+decision against its newly ingested self. Distinguish historical replay from
+a fresh preview against today's governing inventory in the report.
+
+**Parse and resolve.** Validate entries, identities, taxonomy, target scope,
+links and approval metadata before judging. Resolve exact IDs by type; name
+lookup may suggest corrections only. New components use existing containers
+in v1. Collect governing records by explicit domain and ancestor structural
+scope, with no dependence on a projected edge alone. Empty directories can be
+valid scopes; missing/unsupported index coverage is reported explicitly.
+
+**Impact and collection.** Compute reverse dependency radius over the resolved
+symbols, default depth 2 and `calls/extends/implements/uses`. Include tests;
+exclude inferred edges from the required traversal, with optional inferred
+impact labeled separately. Completeness is relative to these declared bounds,
+not a claim of whole-program impact. Caps, missing source coverage or stale
+index state in the required traversal return `incomplete`. Collect the entire
+eligible decision set before any token budget. Inspect explicit cross-domain
+references too. Scope eligibility and impact are separate fields.
+
+**Judge.** Emit stable findings keyed by rule/version, participant IDs and
+revisions, and relevant scope:
+
+| Kind | Meaning | Effect |
+|---|---|---|
+| `contradiction` | explicit unresolved `contradicts` link | blocks |
+| `potential-conflict` | overlapping scope, opposing normative labels | advisory |
+| `possible-supersession` | overlapping scope, same normative label, no declared replacement | advisory; not conservativity |
+| `blast-radius` | impacted dependent with governing decisions not mentioned by the proposal | advisory |
+| `evidence-gap` | accepted record has stale/missing/unverified evidence | advisory; no compliance verdict |
+
+Validate a prospective supersession against the predecessor revision and batch
+approval requirements; suppress only that resolved predecessor conflict.
+Validate waivers against finding fingerprints and trusted approval evidence.
+No chain traversal silently alters authored IDs or scope. A source read that
+legitimately shows missing evidence is an advisory gap; a failure to enumerate
+the authoritative inventory is an incomplete audit.
+
+**Digest and render.** Canonicalize authored spec content, entries, waiver
+payloads and configuration with deterministic ordering and normalized encoding;
+exclude generated sections, generated approval receipts and the workflow status
+marker whose transition is separately verified by the approval adapter. Other
+authored changes invalidate approval. Define an input
+digest over that payload plus the snapshot manifest, and an evaluation digest
+over the input digest plus canonical findings. Approval receipts bind these
+digests externally; waiver approval binds participant revisions/fingerprints
+before the full evaluation digest is computed, avoiding self-reference.
+Render sections in stable order without volatile timestamps. Re-rendering
+unchanged inputs must be byte-identical. Check recomputes and compares both
+digests and generated content. Changed source bytes, inventory membership,
+taxonomy, structural edges, rules or config invalidate the prior report.
+
+**Gate result contract.** Separate evaluation completeness from findings:
+
+| Status / exit | Condition | Approval |
+|---|---|---|
+| `pass` / 0 | complete, valid, current; no unresolved declared conflict | eligible, still requires human approval |
+| `conflict` / 1 | complete evaluation with unresolved declared conflict | refused |
+| `invalid` / 2 | malformed input, invalid target/link/taxonomy, missing or stale persisted report in check mode | refused |
+| `incomplete` / 3 | unavailable/inconsistent inventory, unsupported schema, incomplete required structural coverage or cap | refused |
+
+Operational failures must never map to exit 0. If several conditions occur,
+`invalid` takes precedence over `incomplete`, then `conflict`; retain all
+diagnostics. Advisory findings and presentation truncation do not change a
+complete result to failure. An empty complete plane is explicitly labeled and
+may pass; the approved seed is a separate rollout prerequisite.
+
+**Publish.** Recheck snapshot revisions and verified approval immediately before
+activating the batch. Reject stale approval or partial batches; retries are
+idempotent. Effective supersession/retirement is derived from approved events,
+without silently rewriting source ADR text. A later batch failure cannot leave
+old decisions retired while successors are invisible. Projected edges may be
+rebuilt after publication and are never used as sole authority.
 
 ### Edge Cases & Error Handling
 
-- **Unresolvable target** → diagnostic with up to N suggested ids from
-  name lookup; the decision is skipped from the verdict and the gate reports
-  `spec-error` (blocking: an unresolved target means the audit is
-  incomplete, which must not read as "clean").
-- **Empty plane** (no accepted records) → report says so explicitly; never
-  silently "no findings".
-- **Spec revised after preview** → the digest in the Consequences header no
-  longer matches; `check_spec_consequences` flags `consequences-stale` and
-  `/sdd-spec` re-runs the preview before commit.
-- **Decision that supersedes a record which is itself superseded** → walk the
-  `supersedes` chain; report the head of the chain, not the first hop.
-- **Cross-namespace targets** (federated wiki) → v1 refuses targets outside
-  the local namespace with a clear diagnostic (`DecisionService` already
-  rejects `all`).
-- **Approval without the gate having run** → the ingest step refuses to
-  ingest a spec whose Consequences section is missing or stale.
-- **Spec that declares no decisions** → allowed; the report still computes
-  blast radius for symbols named in Codebase Contract, advisory only.
-- **Subsystem with no accepted decisions** → `## Governing Decisions` states
-  it explicitly ("no accepted decisions about `memory`"); an empty section
-  must never read as "nothing governs this".
-- **Unknown `about` value** → spec error with the closest taxonomy entries
-  suggested; the decision is skipped from ingestion until fixed.
-- **Dossier over budget** → truncation is marked (`truncated: true`, as
-  `DecisionDossier` already does) and the section says which subsystems were
-  cut, so the author knows to query the rest by hand.
-- **FEAT-778 lands mid-flight** → the SDD consumer is an adapter over
-  `DecisionService`; swapping it for the shared `KnowledgeResolver` `adr`
-  source is a wiring change, not a model change.
+- Missing/ambiguous/foreign targets, unknown authored taxonomy IDs, duplicate
+  entry IDs, missing referenced decisions and supersession cycles are `invalid`.
+- A superseded predecessor produces active-head suggestions; the author must
+  choose explicitly. Partial replacement and competing successors are invalid
+  in v1. Removing an entry without an explicit retirement request is invalid.
+- A no-decision spec still validates its Codebase Contract and computes impact;
+  it does not bypass input/completeness checks.
+- Accepted legacy ADRs without taxonomy/targets retain their documented links
+  and remain visible as unmapped records. Report their coverage gap explicitly;
+  do not claim exhaustive legacy rule coverage. The seed supplies explicit scope.
+- A missing dossier field/alternative says “not recorded”. Over-budget dossiers
+  list omissions; the gate still evaluates full records.
+- Approval/waiver evidence cannot be verified: activation is refused. The
+  preview may still report findings with approval pending.
+- Missing or stale generated content fails check mode; render mode is the
+  explicit repair operation. Generated content never stores authoritative
+  conflict resolution metadata.
+- FEAT-778 is already present; any shared adapter must preserve its existing
+  runtime behavior and tests while meeting this feature's stricter read contract.
+
+### Required Contract Examples
+
+These are acceptance scenarios for the future implementation, not tests claimed
+to pass today:
+
+| Scenario | Required outcome |
+|---|---|
+| Forbid httpx and require aiohttp on the same file | at most advisory potential-conflict; no automatic contradiction |
+| Explicit conflict is the 51st matching record | evaluated and blocking despite dossier limits |
+| Legacy documented accepted ADR is unreviewed | eligible unless rejected or no longer effective |
+| Two entries share one spec file | distinct stable IDs, independent revisions; rename preserves identity |
+| Rule targets a directory, proposal targets a descendant symbol | ancestor rule is collected; caller outside scope receives impact only |
+| An unresolved new symbol is named as an existing target | invalid; author must anchor to an existing container in v1 |
+| Explicit conflict points to a different domain | checked even without shared targets/about values |
+| Supersession cycle, changed predecessor revision or partial scope replacement | invalid, never silently repaired |
+| Forged owner string or changed finding participants | waiver rejected; contradiction remains blocking |
+| Identical inputs rendered twice | identical bytes and digests |
+| New accepted record or changed source bytes/structural edges | previous check becomes stale, even if consulted page hashes were unchanged |
+| Record writes succeed but batch publication fails | no partial activation or premature predecessor retirement |
+| Index cap, decode error or unsupported schema | incomplete/invalid as defined, never pass |
+| Old reader sees extended schema | explicit unsupported-schema failure; no silent data loss |
+| Already-approved batch is replayed | recorded baseline used; no self-conflict introduced by ingestion |
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `sdd-decision-audit`: (consumer) a budgeted dossier of accepted decisions
-  governing a spec's subsystems and symbols, generated into the spec before
-  design; (producer) a structured Decisions section ingested on approval;
-  (gate) a consequence preview persisted into the spec and enforced as a
-  one-rule gate; a seeded, subsystem-anchored set of architecture rules and
-  the subsystem taxonomy they attach to.
+- `sdd-decision-audit`: complete inventory evaluation, bounded governing
+  dossier, structured spec entries, explicit-conflict gate, reproducible
+  snapshots and approval-aware publication; versioned seed and taxonomy.
 
 ### Modified Capabilities
-- `sdd-spec-wiki-adr` (FEAT-578): the "no compliance/drift verdicts" non-goal
-  is reopened for the *preview* case; `DecisionLink.relation` and the ADR
-  frontmatter vocabulary gain `constrains/forbids/requires` + `targets`;
-  discovery inventory accepts approved specs in addition to `adr_globs`.
-- `sdd-spec` command and `sdd/templates/spec.md`: new generated section
-  (`## Governing Decisions`, before Section 2), new authored section
-  (`## Decisions`) and generated section (`## Consequences`); gate between
-  scaffold and commit.
-- `sdd-task` / coder contracts: the governing dossier for a task's files is
-  carried into the task's Codebase Contract so coder seats inherit decisions
-  as constraints, not only signatures.
-- `domain-experts` (FEAT-778): shares the accepted-only, budgeted ADR
-  consumer; whichever lands first defines the adapter the other reuses.
+- FEAT-578 decision plane: versioned model evolution, multi-entry ingestion,
+  authoritative domain/target fields and approved lifecycle events. v1 ADR
+  records remain readable; compliance proof stays outside this feature.
+- `/sdd-spec` and template: three generated/authored sections and shared
+  validation across Claude, Codex and Antigravity entry points.
+- FEAT-778: existing consumer to assess for shared retrieval/authority
+  primitives; its current ADRSource is not a complete gate/dossier adapter.
 
-Later phases (separate specs, not this one):
-- `sdd-task-certificate`: per-task asserted facts + derivations (AC → test →
-  commit → symbol), re-derived by an independent deterministic checker in
-  `/sdd-done` (symbol-level layer).
-- `sdd-decision-drift`: scheduled re-hash of accepted records' evidence;
-  `stale`/`missing` opens a ledger issue (`LedgerService.open_issue`,
-  kind `tech_debt`, `discovered_from: decision:<id>`).
-- `sdd-decision-backfill`: bounded `generation.py` candidates over historical
-  approved specs, human-reviewed.
+Conditional v1 delivery (owner scope still open): `/sdd-task` dossier
+propagation and CI integration. Neither is claimed shipped or mandatory here.
 
----
+Later phases: task certificates with independent verification; scheduled
+evidence drift to the ledger; human-reviewed historical backfill. These can
+reuse the plane but may require their own schema evolution.
 
 ## Impact & Integration
 
-| Affected Component | Impact Type | Notes |
-|---|---|---|
-| `parrot/knowledge/wiki/decisions/models.py` | modifies | additive relations on `DecisionLink`; optional `targets` on `DecisionRecord` (or carried as `supported_by` links with `provenance="asserted"`) |
-| `parrot/knowledge/wiki/decisions/parser.py` | modifies | `FRONTMATTER_KEYS` + list-valued `targets`; new relation vocabulary |
-| `parrot/knowledge/wiki/decisions/ingest.py` | extends | approved specs join the discovery inventory |
-| `parrot/knowledge/wiki/decisions/` (new `consequences.py`) | extends | `ConsequenceService`, `ConsequenceReport`, finding models |
-| `parrot/knowledge/wiki/structural/service.py` | depends on | `lookup()`, `blast_radius()` unchanged |
-| `parrot/knowledge/wiki/transport.py` | extends | `wiki_spec_consequences` MCP spec; the exact-set MCP tests (ledger issue `36a652416160`) will need their expected set bumped |
-| `parrot/knowledge/okf/ontology.py` | modifies | `RelationType.CONSTRAINS / FORBIDS / REQUIRES` (additive, stable strings) |
-| `scripts/sdd/check_spec_consequences.py` (new) | extends | gate script, `check_task_graph.py` shape |
-| `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` | modifies | retrieve the governing dossier in §4 (before §5 scaffolds Section 2); run gate between §5 and §6; refuse approval on blocking findings |
-| `.claude/commands/sdd-task.md` | modifies | carry the per-file governing dossier into each task's Codebase Contract |
-| `sdd/templates/spec.md` | modifies | `## Governing Decisions` (generated), `## Decisions` (authored), `## Consequences` (generated) |
-| subsystem taxonomy (new, versioned; location open) | extends | the `about` vocabulary; `KNOWN_PROJECTS` is the coarse layer above it |
-| `sdd/specs/domain-experts.spec.md` (FEAT-778, 0/22 started) | depends on / shares | same `DecisionService` consumer contract; sequencing is an open question |
-| `docs/decisions/*.md` (new) | extends | seeded architecture rules, already an `adr_glob` |
-| `.github/workflows/*` | extends | run the gate on PRs touching `sdd/specs/` |
-| `wikitoolkit` CLI | extends | `spec consequences <path>` |
+Core paths below are relative to `packages/ai-parrot/src/parrot/`.
 
-No breaking changes to existing records: `schema_version` stays 1 if the new
-fields are optional; existing ADR files without `targets` keep parsing.
+| Affected component | Required change |
+|---|---|
+| `knowledge/wiki/decisions/models.py`, `codec.py` | extended versioned records, stable entry IDs, domain/scope and lifecycle metadata; legacy reader compatibility |
+| `knowledge/wiki/decisions/parser.py` and new spec adapter | preserve single-ADR parsing; validate structured multi-entry specs and seed metadata |
+| `knowledge/wiki/decisions/repository.py`, `ingest.py` | complete snapshot contract, approval-batch publication, explicit retirement and retry semantics |
+| `knowledge/wiki/decisions/` new consequence service | evaluator, typed target/scope resolver, findings, canonical digests, dossier rendering |
+| `knowledge/wiki/structural/service.py` | reused impact traversal; expose/compose exact resolution and completeness contract as needed |
+| `knowledge/wiki/transport.py` and CLI | same typed service, read-only check and explicit render; update shared test inventory `_tool_surface.py` |
+| `knowledge/okf/ontology.py` | stable normative vocabulary; ABOUT and CONTRADICTS already exist |
+| `scripts/sdd/check_spec_consequences.py` | JSON report and defined exit-code matrix |
+| `.claude/commands/sdd-spec.md`, `.agents/skills/sdd-spec/SKILL.md`, `.agent/workflows/sdd-spec.md` | equivalent retrieve/render/check/approval handoff |
+| `sdd/templates/spec.md` | three sections plus separate authored waiver/approval references |
+| versioned taxonomy, mapping and approval manifests | exact locations/authority adapter frozen in spec before implementation |
+| `docs/decisions/*.md` | curated seed with explicit scope and verified approval; existing discovery glob only |
+| `experts/knowledge/sources/adr.py`, `resolver.py` | evaluate adapter compatibility against implemented FEAT-778; no automatic unrelated refactor |
+| SDD task entry points and CI workflows | conditional scope; if included, use identical snapshot and verdict semantics |
+
+Compatibility is directional: upgraded readers accept legacy records, but old
+strict readers cannot consume extended records. Upgrade readers first; migration
+and rollback must preserve legacy IDs and approved history. CAS protects each
+page, while the new batch protocol controls when a set becomes authoritative.
 
 ---
 
@@ -580,6 +643,9 @@ concepts: plan/apply/drift/certify/rollback, derivation certificates as
 `asserted.sha256` digest).
 
 ### Verified Codebase References
+
+The signatures below describe the existing implementation inspected in the
+audit. They are reuse boundaries, not signatures of the proposed extended API.
 
 #### Classes & Signatures
 ```python
@@ -715,19 +781,19 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 ```
 
 #### Key Attributes & Constants
-- `DecisionConfig.adr_globs` default includes `docs/decisions/**/*.md` → the seed location needs no new loader (models.py:67).
-- `DecisionLink.relation` is a closed Literal `explains|supported_by|supersedes` (models.py:144) → must be extended for `constrains/forbids/requires`.
-- `parser.FRONTMATTER_KEYS` reads only flat scalars; a list-valued `targets:` line currently raises `ADR_PARSE_FAILED` "non-flat-scalar line" (parser.py:180).
+- `DecisionConfig.adr_globs` includes `docs/decisions/**/*.md`: discovery is reused; extended metadata and approval ingestion require new code (models.py:67).
+- `DecisionLink.relation` is a closed Literal `explains|supported_by|supersedes` (models.py:144); extended links/fields require versioned compatibility, including explicit conflict and domain semantics.
+- `parser.FRONTMATTER_KEYS` keeps only known scalar keys; multiline YAML lists yield a non-flat diagnostic, while unknown inline keys may be ignored. Neither form supplies target semantics today.
 - MCP tool specs live in `transport.py` (`wiki_blast_radius` :168, `wiki_decisions_for_symbol` :192, `wiki_decision_why` :197).
 - `/sdd-spec` hook points: `.claude/commands/sdd-spec.md` §5 "Scaffold the Spec" (:444) and §6 "Commit the Spec" (:580).
 - `sdd/templates/spec.md` has `## 5. Acceptance Criteria` (:230) and `## 6. Codebase Contract` (:243); no Decisions/Consequences sections today.
-- Related closed features touching this code (no open worktrees): FEAT-578 (20/20), FEAT-675 `decisions-cli-fixes` (1/1), FEAT-760 `adr-prefixed-aliases` (8/8).
-- Related open ledger issues: `36a652416160` (MCP tests pin the exact tool set — adding a tool breaks them), `b084239103d7` (document-level `[text](sym:…)` citation extraction from FEAT-578 spec §2/§3 appears unimplemented — the Decisions section should not depend on it).
+- Related completed features: FEAT-578 (20/20), FEAT-675 `decisions-cli-fixes` (1/1), FEAT-760 `adr-prefixed-aliases` (8/8). Recheck worktree ownership at implementation start.
+- Ledger status verified 2026-10-31: `36a652416160` is closed (FEAT-700 centralized expected tools in `_tool_surface.py`; new tools still update it); `b084239103d7` remains open (document-level `[text](sym:…)` citation extraction from FEAT-578 spec §2/§3 appears unimplemented — the Decisions section should not depend on it).
 - FEAT-778 contract to share (`sdd/specs/domain-experts.spec.md`): G6 "ADR as consumer and producer" (:62); `adr` source calls `DecisionService.why()` / `for_symbol()` with `budget_tokens`, accepted only (:145); prompt layer order ends in `accepted ADRs` (:132); `KnowledgeSource.ADR = "adr"` with `filter: {"status": ["accepted"]}` (:209, :217).
 - `RelationType.ABOUT = "about"` exists (okf/ontology.py, work-lineage relations) and is the natural record → subsystem-concept edge; `DocTaxonomy.projects` / `KNOWN_PROJECTS` (sdd_meta.py:45, :220) are the coarse subsystem axis every SDD doc already declares.
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`docs/adr/`, `docs/adrs/`, `docs/decisions/`~~ — none of the three `adr_globs` directories exist in this repo; the decision plane has **zero** documented records today.
+- ~~`docs/adr/`, `docs/adrs/`, `docs/decisions/`~~ — none of the three default directories exist; the independent local-plane query also returned zero records during the audit.
 - ~~`RelationType.CONSTRAINS` / `FORBIDS` / `REQUIRES`~~ — not in `okf/ontology.py`; to be added.
 - ~~`ConsequenceService` / `ConsequenceReport`~~ — nothing under `parrot/knowledge/wiki/` by that name.
 - ~~`scripts/sdd/check_spec_consequences.py`~~ — does not exist; `check_task_graph.py` is the shape to copy.
@@ -735,7 +801,7 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 - ~~`targets:` frontmatter key in the ADR parser~~ — not read; only `id/title/status/supersedes`.
 - ~~`DecisionRecord.tags`~~ — no tag/component filter on records (FEAT-778 finding F043); retrieval is by symbol link or token overlap only.
 - ~~any decision-plane call in the SDD authoring lane~~ — `.claude/commands/sdd-spec.md`, `.claude/commands/sdd-task.md`, `.claude/agents/sdd-coder.md`, `.claude/agents/sdd-worker.md` contain zero references to `wiki_decision_why` / `wiki_decisions_for_symbol` (grep, 2026-10-31).
-- ~~`KnowledgeResolver`~~ — specified by FEAT-778 (`sdd/specs/domain-experts.spec.md`) but not in the tree; `sdd/tasks/index/domain-experts.json` shows 0 of 22 tasks done.
+- `KnowledgeResolver` **exists** under `parrot/experts/knowledge/resolver.py`; FEAT-778 has 22/22 tasks done. What does not exist is the complete, domain-scoped decision adapter required by Option A.
 - ~~`parrot.knowledge.ontology.concept_catalog` as the subsystem taxonomy~~ — it exists, but it is FEAT-159's per-tenant *topic* ontology in Postgres (content concepts, `is_a` taxonomy); it is not a taxonomy of code subsystems and should not be reused as one without a separate decision.
 - ~~a CI workflow step for `check_task_graph` / `check_e2e_closeout`~~ — grep of `.github/workflows/*.yml` found no reference; those gates run from the commands, not CI. The new gate's CI wiring is therefore new, not a copy.
 
@@ -743,24 +809,17 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: three independent lanes after the model bump:
-  (a) parser + models + ingest extension (`decisions/`), (b) the
-  `ConsequenceService` + MCP/CLI surface (depends on (a) only for the new
-  relation literals), (c) the gate script + `/sdd-spec` + template +
-  `docs/decisions/` seed (depends on (b) for the report shape). (c)'s template
-  and seed files can start in parallel with (a).
-- **Cross-feature independence**: every feature that touched
-  `parrot/knowledge/wiki/decisions/` is closed (FEAT-578, FEAT-675, FEAT-760)
-  and no worktree is open on it. FEAT-778 (domain-experts, 0/22) will *read*
-  `DecisionService` through its `adr` source; it does not modify the plane,
-  so the collision risk is on the adapter shape, not on files. Shared surfaces to watch: `transport.py`
-  (any in-flight feature adding MCP tools collides on the exact-set tests),
-  `sdd/templates/spec.md` and `.claude/commands/sdd-spec.md` (frequently
-  edited by SDD-tooling features; rebase early).
-- **Recommended isolation**: `mixed` — one feature worktree, with the
-  seed/template lane allowed as a parallel sub-worktree.
-- **Rationale**: the model/parser change is small and must land first; the
-  service and the SDD-tooling lane are otherwise disjoint file sets.
+- Freeze identity, authority/scope, snapshot and approval-batch contracts before
+  splitting implementation. Parser/model/repository changes are coupled; they
+  are not a small independent vocabulary bump.
+- After those contracts, candidate lanes are ingestion/publication, evaluator
+  and surfaces/docs. Templates can be drafted early, but final adapters depend
+  on the frozen report and approval protocol. This is design guidance, not
+  authorization to spawn implementation agents during this correction.
+- FEAT-778 is implemented. Check current file ownership/worktrees when starting
+  implementation; do not rely on the brainstorm's older no-collision claim.
+- Recommended isolation: one feature worktree with explicit ownership of shared
+  model, transport and SDD entry-point files.
 
 ---
 
@@ -771,19 +830,41 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 - [x] Granularity — *Owner: Jesús*: two layers; module-level architecture rules in v1, symbol-level task contracts in the certificate phase.
 - [x] v1 core — *Owner: Jesús*: consequence preview in `/sdd-spec`; task certificate, drift job and backfill are later phases.
 - [x] Checks in v1 — *Owner: Jesús*: contradictions, blast radius, undeclared supersedes, evidence gaps (all four).
-- [x] Verdict semantics — *Owner: Jesús*: `## Consequences` written into the spec; only an unresolved contradiction blocks.
+- [x] Verdict semantics — *Owner: Jesús*: `## Consequences` written into the spec; only an unresolved contradiction is a blocking finding. Contract clarification: invalid inputs and incomplete audits cannot authorize approval either.
 - [x] Target resolution — *Owner: Jesús*: explicit `sym:`/`file:`/`dir:` ids; unresolved target is a spec error.
 - [x] Seed — *Owner: Jesús*: curated architecture-rules file(s), approved once, ingested as accepted.
-- [ ] Decisions vocabulary: are `constrains / forbids / requires / supersedes` enough, or is an `allows` (explicit exception) relation needed so a spec can carve out an exemption without superseding the rule? — *Owner: Jesús*
-- [ ] Seed format: ADR-style markdown under `docs/decisions/` (reuses `adr_globs`, one file per rule) vs a single `sdd/decisions.yaml` (needs a new loader but is easier to review as one diff)? — *Owner: Jesús*
-- [ ] Where `targets` live on the record: a new optional `targets: list[str]` field on `DecisionRecord`, or reuse `DecisionLink(relation="supported_by", provenance="asserted")` pointing at the symbol page ids (no model change beyond the relation literals)? — *Owner: spec author*
-- [ ] Is the `## Consequences` section regenerated on every `/sdd-spec` run, or frozen at approval with its digest and only refreshed on demand? — *Owner: Jesús*
-- [ ] Gate execution: `/sdd-spec` only, or also a CI job on PRs touching `sdd/specs/`? (No CI wiring exists for the current `check_*` gates.) — *Owner: Jesús*
-- [ ] Blast-radius defaults for the preview: depth 2 with `calls/extends/implements/uses`, and should `include_tests` be off to keep reports short? — *Owner: spec author*
-- [ ] Should the preview also run for `/sdd-brief` (hotfix) specs, which never pass through `/sdd-spec`? — *Owner: Jesús*
-- [ ] Option C as an optional external cross-check (`--verifier open-ontologies`) once the plane has content: worth a spike, or out of scope until the task-certificate phase? — *Owner: Jesús*
-- [x] Should the plane also feed spec *authoring*, not only gate it? — *Owner: Jesús*: yes — decisions are curated ontological knowledge consumed by `/sdd-spec` (generated `## Governing Decisions`) and produced by it; retrieval needs a subsystem axis (`about`) besides symbols (2026-10-31).
-- [ ] Where does the subsystem taxonomy live and who curates it: a versioned file under `sdd/` (reviewed like the seed), an extension of `KNOWN_PROJECTS` in `sdd_meta.py`, or OKF concept pages in the wiki plane itself? — *Owner: Jesús*
-- [ ] Sequencing with FEAT-778: build the SDD consumer directly on `DecisionService` now and migrate to the shared `KnowledgeResolver` `adr` source later, or wait for FEAT-778's M5 to land first? — *Owner: Jesús*
-- [ ] Is `## Governing Decisions` mandatory for approval (a spec cannot be approved without having read its domain), or advisory in v1? — *Owner: Jesús*
-- [ ] Does `/sdd-task` carry the governing dossier into every task contract in v1, or only `/sdd-spec` in v1 and tasks in the certificate phase? — *Owner: spec author*
+
+### Proposed technical resolutions from the audit
+
+These resolve implementation ambiguity in Option A without asserting new owner approval.
+
+- Normative vocabulary: `constrains/forbids/requires`; `contradicts` and
+  `supersedes` are separate explicit ID links. Only explicit conflicts block;
+  an `allows` or partial-exception calculus is deferred.
+- Authority: accepted documented, non-rejected, effective records; managed
+  spec/seed records must belong to a verified approved batch. No double-review
+  requirement on legacy documented ADRs.
+- Targets/domain: explicit canonical fields, not `supported_by`. Exact local
+  resolution and ancestor scope; future nodes use existing containers in v1.
+- Retrieval: full inventory for judgment, token budget only for rendering.
+- Versioning: extended schema plus legacy readers/migration; not a silent v1 bump.
+- Output: explicit deterministic render and read-only check; frozen approval
+  evidence binds the evaluated inputs/results. No mutable generated `resolved-by`.
+- Impact defaults: depth 2, calls/extends/implements/uses, tests included,
+  inferred edges optional/advisory; coverage and cap failures remain visible.
+- FEAT-778: integrate against existing code; no “wait for M5” dependency.
+
+### Owner decisions still required before the implementation spec
+
+- [x] Approval trust adapter: which versioned, attributable approval event is authoritative for specs, seed batches, retirement and waivers? Choose the mechanism and its actor/revision verification before implementing ingestion. — *Owner: Jesús*: the authoritative event is the git commit on `base_branch` that sets the spec `**Status**: approved` (or lands a seed batch), recorded in an append-only versioned manifest `sdd/decisions/approvals.jsonl` (spec path, entry ids, sha256 of the canonical Decisions block, approving commit sha, actor = commit author; signed commits recommended). Ingestion only trusts a block whose digest matches a manifest entry; an edit without a new entry turns its records `unverified`, never authoritative. Retirement and waivers are new manifest entries with the same attribution.
+- [x] Confirm the conservative v1 explicit-conflict boundary, or expand scope to a structured proposition language with independently defined semantics. — *Owner: Jesús*: conservative boundary confirmed for v1: only explicit `contradicts` / `supersedes` ID links can block; target/polarity coincidences are rendered as advisory *possible conflicts*. A structured proposition language (subject/predicate/object/polarity) is deferred to a follow-up spec.
+- [x] Seed packaging: preferred ADR Markdown with extended metadata, or a separate structured seed source? Both require approval-aware ingestion. — *Owner: Jesús*: ADR Markdown under `docs/decisions/` with the extended metadata (`about`, `targets`), one file per rule, approved as a batch entry in the same approval manifest. No separate seed source in v1.
+- [x] Taxonomy/mapping and approval-manifest locations and curator ownership. — *Owner: Jesús*: taxonomy at `sdd/taxonomy/subsystems.yaml` (id, title, description, parent, mapped `projects`), approval manifest at `sdd/decisions/approvals.jsonl`; both curated by the repo owner through ordinary PRs to `base_branch`. Ingestion projects each subsystem as a `concept:<id>` page so `about` links resolve.
+- [x] CI in v1 or a later delivery? If included, reconstruct the same snapshot from versioned inputs and use read-only check; no dependence on local SQLite. — *Owner: Jesús*: later delivery. v1 runs the gate from `/sdd-spec` only and ships the read-only check script; the CI job (snapshot reconstructed from versioned inputs, no local SQLite dependence) is a follow-up spec.
+- [x] `/sdd-task` dossier propagation in v1 or later? If included, update all supported task entry points using the same authority/scope contract. — *Owner: Jesús*: later; v1 is `/sdd-spec` only. `/sdd-task` propagation ships with the task-certificate phase under the same authority/scope contract.
+- [x] Is generation of Governing Decisions mandatory for authoring approval, beyond the mandatory complete evaluation? It cannot prove the author read it. — *Owner: Jesús*: the *complete evaluation* is mandatory for approval (no truncation, no incomplete inventory); the rendered `## Governing Decisions` section is always produced but makes no claim that the author read it. Approval records the evaluation digest, not a reading attestation.
+- [x] Extend the preview to `/sdd-brief` in v1, or retain `/sdd-spec` only? — *Owner: Jesús*: `/sdd-spec` only in v1; `/sdd-brief` is a follow-up once the hotfix lane has an approval event to bind to.
+- [x] Optional external verifier spike after the plane has content, or defer until task certificates? No external proof guarantee is assumed by Option A. — *Owner: Jesús*: defer until task certificates exist. Option A assumes no external proof guarantee; Option C stays an exploration note.
+
+The owner answer recorded on 2026-10-31 remains: decisions should feed authoring
+as curated knowledge as well as gate proposals, using domain and structural axes.
