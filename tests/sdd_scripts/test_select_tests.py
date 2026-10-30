@@ -741,3 +741,20 @@ def test_collection_noop_only_for_support_files(paths, returncode, runner, expec
     from scripts.sdd.select_tests import _is_collection_noop
 
     assert _is_collection_noop(_invocation(*paths, runner=runner), returncode) is expected
+
+
+@pytest.mark.parametrize(
+    ("returncode", "argv", "expected"),
+    [
+        # Everything deselected by the tier's marker filter: the companion group runs these.
+        (5, ["pytest", "-q", "-m", "not e2e and not integration", "pkg/tests/test_x.py"], True),
+        (5, ["pytest", "-q", "pkg/tests/test_x.py"], False),  # no filter: collecting nothing is a failure
+        (1, ["pytest", "-q", "-m", "not integration", "pkg/tests/test_x.py"], False),  # real failures stay failures
+        (4, ["pytest", "-q", "-m", "not integration", "pkg/tests/test_x.py"], False),  # usage error stays one
+    ],
+)
+def test_collection_noop_when_marker_filter_deselects_everything(returncode, argv, expected):
+    """With a -m expression active, pytest exit 5 only means the group has nothing to run."""
+    from scripts.sdd.select_tests import _is_collection_noop
+
+    assert _is_collection_noop(_invocation("pkg/tests/test_x.py"), returncode, argv) is expected
