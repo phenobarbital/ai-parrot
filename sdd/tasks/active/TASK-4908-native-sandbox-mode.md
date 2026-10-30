@@ -142,12 +142,22 @@ docs/dev_loop/claude-native-sandbox.md: section "## Failure handling and rollbac
 {
   "schema_version": 1,
   "targets": [
-    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py", "kind": "modify"},
-    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py", "kind": "modify"},
-    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py", "kind": "modify"}
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py", "action": "MODIFY"},
+    {"path": "docs/dev_loop/claude-native-sandbox.md", "action": "MODIFY"},
+    {"path": "tests/sdd/test_launch_worker.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py", "action": "MODIFY"}
   ],
-  "classification": "standard",
-  "rationale": "additive mode resolution and a probe around existing, tested launch paths; no new subsystem"
+  "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py#native_sandbox_settings",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py#launch_worker",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py#_parse_launch_arguments",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py#ClaudeCodeDispatcher._resolve_run_options",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#hook_response"
+  ]
 }
 ```
 
