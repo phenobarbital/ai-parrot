@@ -64,7 +64,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -74,8 +74,9 @@
       "parallelism_notes": "imports type PublicKeyCredentialJSON from TASK-4898 (ui/src/lib/webauthn.ts); first writer of ui/src/lib/config.ts (TASK-4903 edits it later).",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4899-passkey-api.md"
+      "completed_at": "2026-10-30T15:47:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4899-passkey-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4900",
