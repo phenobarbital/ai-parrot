@@ -39,14 +39,17 @@ exit status, canary assertions, CLI version, cost). Raw transcripts were capture
 | file-tool-bypass (Write/Edit/NotebookEdit) | exit 0 | exit 0 | unchanged | PASS |
 | settings-widening | exit 0 | exit 0 | unchanged | PASS |
 | retry-failure | exit 0 | exit 0 | unchanged | PASS |
-| egress (`api.github.com` allowed, `example.invalid` direct) | exit 0 | exit 0 | unchanged | PASS¹ |
+| egress (`api.github.com` allowed → 200 via proxy; unlisted `pypi.org` direct and via proxy → no 200) | exit 0 | exit 0 | unchanged | PASS |
 | compatibility | exit 0 | exit 0 | unchanged | PASS |
 
 Final pytest lines: `path` → `8 passed`; `bundled` → `7 passed, 1 xfailed` on the pre-amendment scenario,
 then `1 passed` for the amended `rewrite-child` (the other seven were unaffected by the amendment).
 
-¹ The harness asserts exit status and canaries for `egress`; the allowed/denied request outcomes are
-model-reported in the transcript, not independently asserted. Noted as a follow-up for the harness.
+Post-review re-runs (2026-10-30, after the code-review fixes below): `filesystem-matrix` PASS on both paths with the
+hook control file (`worktree_environment.py` inside the task worktree) as an additional protected canary;
+`egress` PASS on both paths with the harness asserting tagged status codes (`ALLOWED_STATUS=200`, no 200 for
+`DIRECT_STATUS`/`PROXY_STATUS`) instead of model-reported outcomes. `example.invalid` was dropped as a denied
+target: a reserved TLD fails on any network and proves nothing about the allowlist.
 
 ## Restricted-host (fail-closed) evidence
 
@@ -65,6 +68,15 @@ model-reported in the transcript, not independently asserted. Noted as a follow-
 - Spec §4 "Competing rewrite" amended (operator decision, commit 467ca0387): the CLI applies one
   `updatedInput` per call and the policy hook wins, so the competing hook proves it ran through a
   side-effect marker in the task worktree; PASS also requires the child's read-only denial.
+
+## Code-review corrections (independent reviewer, 2026-10-30)
+
+- `validate_allowed_domains` accepted inet_aton forms (`127.1`, `2130706433`, `0x7f.1`, `1.2.3`) and single
+  labels (`localhost`, `metadata`); qualified hostnames with a non-numeric TLD are now required (5e35fe9da).
+- Policy/hook control files were guarded for file tools only; they are now in `denyWrite` so Bash cannot
+  rewrite them either (5e35fe9da), verified live by the `hook_control` canary (61da40324).
+- Deferred to the ledger: AC7 array-union probe (`issue:0343b49e53b3`, major), plus six minor/low items
+  (`9d8a8a9bdd4d`, `45f3f0bf6d81`, `0b6258fae845`, `c4550dcb0972`, `5dce58352f10`, `069b23de046b`, `c0843060fa09`).
 
 ## Investigation record (why earlier runs failed)
 
