@@ -16,15 +16,31 @@ User identity in ``JiraOAuthManager`` is keyed as
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from parrot.auth.jira_oauth import JiraOAuthManager
+    from parrot.auth.principal import Principal
     from parrot.integrations.slack.commands import SlackCommandRouter
 
 logger = logging.getLogger(__name__)
 
 _SLACK_CHANNEL = "slack"
+_LINK_FIRST = "Link your Slack account to the platform first, then try again."
+
+
+async def _principal(user_id: str) -> Optional["Principal"]:
+    """Resolve the platform principal bound to a Slack user.
+
+    Args:
+        user_id: Composite ``team:user`` id, passed unchanged to the resolver.
+
+    Returns:
+        The bound principal, or ``None`` when the Slack user is not linked.
+    """
+    from parrot.auth.principal import resolve_principal
+
+    return await resolve_principal(_SLACK_CHANNEL, user_id)
 
 
 def _build_connect_button(url: str) -> Dict[str, Any]:
@@ -78,6 +94,11 @@ async def connect_jira_handler(
     slack_user_id = payload.get("user_id", "")
     user_id = f"{team_id}:{slack_user_id}"
 
+    principal = await _principal(user_id)
+    if principal is None:
+        return {"response_type": "ephemeral", "text": _LINK_FIRST}
+
+    # The manager resolves the raw channel id to its principal itself.
     existing = await oauth_manager.validate_token(_SLACK_CHANNEL, user_id)
     if existing is not None:
         return {
@@ -96,6 +117,7 @@ async def connect_jira_handler(
             "team_id": team_id,
             "slack_user_id": slack_user_id,
         },
+        principal=principal,
     )
     return _build_connect_button(url)
 
@@ -119,7 +141,16 @@ async def disconnect_jira_handler(
     slack_user_id = payload.get("user_id", "")
     user_id = f"{team_id}:{slack_user_id}"
 
-    await oauth_manager.revoke(_SLACK_CHANNEL, user_id)
+    principal = await _principal(user_id)
+    if principal is None:
+        return {"response_type": "ephemeral", "text": _LINK_FIRST}
+
+    # revoke() is keyed by the principal (Navigator id), not the raw Slack id.
+    await oauth_manager.revoke(
+        _SLACK_CHANNEL,
+        principal.user_id,
+        channel_user_id=principal.channel_user_id,
+    )
     logger.info(
         "Jira disconnected for Slack user %s (team=%s)", slack_user_id, team_id
     )
@@ -147,6 +178,10 @@ async def jira_status_handler(
     team_id = payload.get("team_id", "")
     slack_user_id = payload.get("user_id", "")
     user_id = f"{team_id}:{slack_user_id}"
+
+    principal = await _principal(user_id)
+    if principal is None:
+        return {"response_type": "ephemeral", "text": _LINK_FIRST}
 
     token = await oauth_manager.validate_token(_SLACK_CHANNEL, user_id)
     if token is not None:
