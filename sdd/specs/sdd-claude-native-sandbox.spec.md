@@ -124,7 +124,9 @@ file tools ─ retained hook → existing environment check + native write-polic
    allowance. Native temporary storage is not assumed to equal Bubblewrap's per-command tmpfs:
    document residual visibility, prove caches do not write shared host locations, and clean only
    owned cache directories after the session. No cross-session secrecy claim.
-6. **Network.** Default domain list is empty. Add `sandbox_allowed_domains: List[str]` to the dispatch
+6. **Network.** Default domain list is empty and `network.strictAllowlist: true` is always emitted:
+   under `bypassPermissions` a bare `allowedDomains` list only *prompts* for unlisted hosts and the
+   prompt is auto-approved, so without `strictAllowlist` the list does not deny anything. Add `sandbox_allowed_domains: List[str]` to the dispatch
    profile and repeatable `--sandbox-allow-domain HOST` to the interactive launcher. Accept exact
    DNS hostnames, normalize case/deduplicate, reject URLs, wildcards, ports and IP literals. Never
    auto-learn domains from denied commands or grant wildcard egress. An operator may supply
@@ -161,6 +163,29 @@ file tools ─ retained hook → existing environment check + native write-polic
    is re-run. The initial strict host is the maintainer workstation (elementary OS 8.1, Ubuntu 24.04
    base) after the operator installs an AppArmor profile permitting Claude's seccomp helper; its
    current unprofiled state is the restricted-host failure evidence.
+10. **Sandbox mode (transition policy, added 2026-10-30).** The SDD flow runs in many consumer
+   repositories whose developers cannot all be asked to harden their hosts at once (FEAT-633). The
+   native sandbox therefore has an explicit, auditable mode instead of being unconditionally
+   mandatory:
+   - `required` (**default**): today's behaviour — the native sandbox must start or the session does
+     not run (launcher exit 1 with the reason; dispatcher `DispatchExecutionError`).
+   - `preferred`: use the native sandbox when the host can start it; otherwise launch in **degraded
+     mode** — the settings carry the hook (test-scope guard, RTK, bounded shell, native file-tool
+     checks) but no `sandbox` block, the child gets `PARROT_SDD_SANDBOX_BACKEND=claude-native` plus
+     `PARROT_SDD_SANDBOX_DEGRADED=1`, the launcher prints a one-line warning on stderr and the
+     dispatcher logs a warning and labels the dispatch; Bash runs with **no OS write boundary** and the
+     session is told so.
+   - `off`: never compile the `sandbox` block (ephemeral CI, disposable containers); hooks still apply.
+   Resolution order: `PARROT_SDD_SANDBOX_MODE` environment variable (empty/whitespace = unset), then
+   `[tool.parrot.sdd] sandbox = "required" | "preferred"` in the repository root `pyproject.toml`, then
+   `required`. `off` is accepted from the environment variable only: the worktree's `pyproject.toml` is
+   writable by the sandboxed session, so a repository value of `off` would be a self-disable path and is
+   rejected. Any other value, or an unreadable/malformed `pyproject.toml`, is an error (launcher exit 2,
+   dispatcher `DispatchExecutionError`). Availability is decided before launch
+   by a cheap probe (`bwrap --unshare-user --unshare-pid --ro-bind / / true` plus the `socat`/`claude`
+   prerequisites); the probe's outcome and the resolved mode are recorded in the session record and
+   dispatch telemetry. Degradation is never silent and never automatic under `required`. The default
+   flips only by an announced release once the FEAT-633 installer provisions the host prerequisites.
 
 ### Integration Points
 
@@ -360,7 +385,7 @@ not a pass. Exceeding budget stops and reports remaining cases.
 
 | Scenario | Required observation |
 |---|---|
-| Competing rewrite | A distinct marker proves the competing rewrite ran; protected canary remains unchanged |
+| Competing rewrite | A side-effect marker written by the competing hook proves it ran (the CLI applies one `updatedInput` per call and the policy hook wins, so an output marker is unobservable); protected canary remains unchanged |
 | Native Agent child | Child Bash runs under inherited policy with its task cwd; no nested bwrap; same denied writes |
 | Filesystem matrix | Task edits and scratchpad continuity work; primary source, home, venv aliases and RTK trust store remain read-only |
 | Git controls | Commits/worktree administration succeed; config, config.worktree, hooks and lock/replacement attempts fail |
@@ -373,14 +398,17 @@ not a pass. Exceeding budget stops and reports remaining cases.
 Run strict settings without `allowAllUnixSockets:true`; include Ubuntu 24.04-family restricted-host
 failure evidence and at least one supported strict host success. Host remediation is performed by
 the operator outside this feature's automated tests. Use command results and independent canary
-inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe an
-actual competing rewrite or actual child tool call makes that scenario inconclusive.
+inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe the
+competing hook's side-effect marker or an actual child tool call makes that scenario inconclusive
+(amended 2026-10-30 under FEAT-768 M4: the output-marker form of this check was unobservable on
+claude 2.1.301–2.1.314, and the boundary no longer depends on hook ordering).
 
 ## 5. Acceptance Criteria
 
 - [ ] AC1: Both official launch paths enable strict native sandboxing for SDD workers/coders.
 - [ ] AC2: Competing rewrite and native child probes pass with strict socket filtering; no double wrapping.
-- [ ] AC3: Unavailable isolation and attempted unsandboxed retries stop execution without fallback.
+- [ ] AC3: Under `required` (default) unavailable isolation and attempted unsandboxed retries stop execution without fallback; under `preferred` the only fallback is the declared, logged degraded mode; no silent fallback exists in any mode.
+- [ ] AC13: The sandbox mode resolves from `PARROT_SDD_SANDBOX_MODE`, then `[tool.parrot.sdd] sandbox`, then `required`; invalid values fail the launch; `preferred`/`off` degraded launches carry the hook, the degraded env marker and a visible warning, and the dispatcher records the resolved mode and probe outcome.
 - [ ] AC4: Path matrix, Git carve-outs and file-tool guards pass positive/negative tests, including aliases.
 - [ ] AC5: Scope guard, RTK, timeout margins, per-cwd imports, caches and scratchpad behavior are preserved.
 - [ ] AC6: Network policy enforces configured domains and rejects unlisted/direct egress without widening.

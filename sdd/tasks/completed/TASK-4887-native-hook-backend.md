@@ -252,10 +252,8 @@ def test_main_reads_backend_from_environment(tmp_path: Path) -> None: ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-30
+**Notes**: Made worktree_environment.hook_response backend-aware (PARROT_SDD_SANDBOX_BACKEND; unset defaults to bubblewrap, unknown values deny). Engine merge-tier validation green (198 passed, 10 skipped). Orchestrator read the source diff; no corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -24,7 +24,6 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 
-
 pytestmark = pytest.mark.live
 
 
@@ -33,6 +32,7 @@ async def test_concurrent_flows_respect_dispatcher_cap(
     skip_unless_redis_available,
     monkeypatch,
     tmp_path,
+    linked_worktree,
 ):
     """Spawn 4 dispatches with ``max_concurrent=2``; only 2 in flight."""
     monkeypatch.setattr(
@@ -105,7 +105,7 @@ async def test_concurrent_flows_respect_dispatcher_cap(
             output_model=ResearchOutput,
             run_id=f"run-{idx}",
             node_id="research",
-            cwd=str(tmp_path),
+            cwd=str(linked_worktree),
         )
 
     tasks = [asyncio.create_task(_dispatch_one(i)) for i in range(4)]
