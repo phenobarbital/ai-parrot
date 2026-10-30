@@ -411,12 +411,12 @@ _ADMIN_LOGIN_HTML = """\
                 binary += String.fromCharCode(bytes[i]);
             }
             var base64 = btoa(binary);
-            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
         }
 
         function toRequestOptions(json) {
             if (typeof PublicKeyCredential.parseRequestOptionsFromJSON === 'function') {
-                return PublicKeyCredential.parseRequestOptionsFromJSON(json);
+                return { publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(json) };
             }
             
             // Fallback for older browsers

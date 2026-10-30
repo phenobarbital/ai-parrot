@@ -30,3 +30,11 @@ async def test_page_offers_passkey_sign_in(aiohttp_client) -> None:
     assert 'href="/account/security"' in body
     assert "Sign in with a passkey" in body
     assert "Manage passkeys" in body
+
+
+def test_native_request_options_are_wrapped_in_public_key() -> None:
+    """The native JSON helper result must be wrapped so navigator.credentials.get sees ``publicKey``."""
+    from parrot.autonomous.admin import _ADMIN_LOGIN_HTML
+
+    assert "{ publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(json) }" in _ADMIN_LOGIN_HTML
+    assert "replace(/\\+/g, '-')" in _ADMIN_LOGIN_HTML
