@@ -450,7 +450,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -461,8 +461,9 @@
       "parallelism_notes": "EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (package-data) — a dependency manifest every task environment reads. Its wheel test needs the bundle files from TASK-4930 and TASK-4931.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4932-bundled-experts-package-data.md"
+      "completed_at": "2026-10-30T22:03:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4932-bundled-experts-package-data.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4933",
