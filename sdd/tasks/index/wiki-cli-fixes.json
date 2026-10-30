@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-30T01:10:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-30T01:00:17+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -80,7 +80,7 @@
       "feature_id": "FEAT-771",
       "feature": "wiki-cli-fixes",
       "spec": "sdd/specs/wiki-cli-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -90,8 +90,9 @@
       "parallelism_notes": "touches cli.py like TASK-4896; serial to avoid same-file conflicts in one worktree",
       "assigned_to": null,
       "started_at": "2026-10-30T00:58:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4897-ddl-changed-range.md"
+      "completed_at": "2026-10-30T01:00:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4897-ddl-changed-range.md",
+      "verification": "verified"
     }
   ]
 }

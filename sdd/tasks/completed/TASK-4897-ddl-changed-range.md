@@ -112,4 +112,14 @@ Implement inside `.claude/worktrees/feat-FEAT-771-wiki-cli-fixes`; run tests wit
 
 ## Completion Note
 
-_(filled on completion)_
+**Completed**: 2026-10-30 — verified. Implementing commit `e291a89a8`.
+
+- `cli.py`: `_git_changed_files(root, diff_range)` — explicit range → `git diff --name-only <range>`; otherwise the
+  last HEAD reflog subject decides: `merge…`/`pull…`/`commit (merge)…` → `ORIG_HEAD HEAD`, anything else →
+  `diff-tree --no-commit-id --name-only -r --root HEAD`. `_changed_ddl_paths(root, origin, diff_range=None)` uses
+  it; `schema ingest-ddl --range` (UsageError without `--changed`). Hook text in `assets.py` untouched, so
+  existing installs pick the fix up without `parrot claude install`.
+- `docs/wiki/schema-plane.md`: `--changed` range rules and `--range`.
+- Tests: 5 new in `test_cli_schema.py` against a throwaway repo (plain commit after a merge, no ORIG_HEAD, right
+  after a merge, explicit range, `--range` without `--changed`); the existing hook-argv test's lambda accepts
+  `diff_range`. Schema suites 13 passed, `test_docs_present` passes. `ruff check` clean.
