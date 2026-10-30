@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import urlencode
 
 import aiohttp
 from pydantic import Field
@@ -56,6 +57,104 @@ JIRA_DESCRIPTOR = OAuth2ProviderDescriptor(
     extra_authorize_params={"audience": "api.atlassian.com", "prompt": "consent"},
     post_exchange="atlassian_accessible_resources",
 )
+
+
+_MAX_ERROR_BODY_CHARS = 200
+
+
+def _truncate(text: str, limit: int = _MAX_ERROR_BODY_CHARS) -> str:
+    """Bound an HTTP error body before it is embedded in an exception message."""
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit] + "…[truncated]"
+
+
+def build_authorization_url(
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    scopes: Sequence[str] = DEFAULT_SCOPES,
+    authorization_url: str = AUTHORIZATION_URL,
+) -> str:
+    """Build the Atlassian 3LO authorization URL.
+
+    Args:
+        client_id: OAuth app client id.
+        redirect_uri: Registered callback URL.
+        state: CSRF state nonce.
+        scopes: Scopes to request.
+        authorization_url: Authorization endpoint override.
+
+    Returns:
+        The full authorization URL with query string.
+    """
+    params = {
+        "audience": "api.atlassian.com",
+        "client_id": client_id,
+        "scope": " ".join(scopes),
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "response_type": "code",
+        "prompt": "consent",
+    }
+    return f"{authorization_url}?{urlencode(params)}"
+
+
+async def exchange_code(
+    session: aiohttp.ClientSession,
+    *,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    token_url: str = TOKEN_URL,
+) -> Dict[str, Any]:
+    """Exchange an authorization code for tokens.
+
+    Raises:
+        ValueError: If the token endpoint answers with a non-200 status.
+    """
+    async with session.post(
+        token_url,
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        },
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"Token exchange failed with status {response.status}: {_truncate(text)}")
+        return await response.json()
+
+
+async def refresh_access_token(
+    session: aiohttp.ClientSession,
+    *,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    token_url: str = TOKEN_URL,
+) -> Dict[str, Any]:
+    """Refresh an access token using the rotating refresh token.
+
+    Raises:
+        ValueError: If the token endpoint answers with a non-200 status.
+    """
+    async with session.post(
+        token_url,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+        },
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"Token refresh failed with status {response.status}: {_truncate(text)}")
+        return await response.json()
 
 
 async def fetch_accessible_resources(
