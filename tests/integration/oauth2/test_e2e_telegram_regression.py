@@ -1,4 +1,5 @@
 """End-to-end Telegram OAuth parity through principal adapters."""
+
 from __future__ import annotations
 
 from typing import Any

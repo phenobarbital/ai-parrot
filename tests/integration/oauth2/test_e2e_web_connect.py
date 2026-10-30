@@ -1,4 +1,5 @@
 """End-to-end web OAuth flow for principal-keyed connections."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

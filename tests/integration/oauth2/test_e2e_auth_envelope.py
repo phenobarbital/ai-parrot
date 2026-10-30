@@ -1,4 +1,5 @@
 """End-to-end authorization-required serialization for both framework signals."""
+
 from __future__ import annotations
 
 from typing import Any

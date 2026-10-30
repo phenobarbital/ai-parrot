@@ -1,4 +1,5 @@
 """S11 isolation matrix for FEAT-773 (AC-17)."""
+
 from __future__ import annotations
 
 import asyncio
