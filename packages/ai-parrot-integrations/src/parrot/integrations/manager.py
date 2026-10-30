@@ -126,9 +126,7 @@ def _build_principal_resolver(app: Any) -> Any:
         set_principal_resolver(resolver)
         return resolver
     except Exception:  # noqa: BLE001 - server package is optional for integrations
-        logging.getLogger(__name__).warning(
-            "IdentityPrincipalResolver unavailable; non-web channels will fail closed."
-        )
+        logging.getLogger(__name__).warning("IdentityPrincipalResolver unavailable; non-web channels will fail closed.")
         return None
 
 
