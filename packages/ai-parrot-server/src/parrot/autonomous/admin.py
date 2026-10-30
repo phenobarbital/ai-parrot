@@ -7,8 +7,8 @@ Serves a simple HTML page at ``/autonomous/admin`` that:
 3. On success, stores the JWT token and full user payload in **localStorage**.
 4. Redirects the admin to the WhatsApp dashboard (or any protected page).
 """
-from aiohttp import web
 
+from aiohttp import web
 
 # ---------------------------------------------------------------------------
 # HTML template
@@ -590,10 +590,11 @@ _ADMIN_LOGIN_HTML = """\
 # aiohttp handler
 # ---------------------------------------------------------------------------
 
+
 async def admin_login_page(request: web.Request) -> web.Response:  # noqa: ARG001
     """Serve the admin login HTML page (no auth required)."""
     return web.Response(
         text=_ADMIN_LOGIN_HTML,
-        content_type='text/html',
-        charset='utf-8',
+        content_type="text/html",
+        charset="utf-8",
     )

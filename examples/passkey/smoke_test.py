@@ -39,9 +39,13 @@ async def main() -> int:
             check("SPA shell at /account/security", resp.status == 200, f"({resp.status})")
         async with http.get(f"{BASE}/api/v1/auth/methods") as resp:
             methods = await resp.json()
-            check("BasicAuth + PasskeyAuth advertised", {"BasicAuth", "PasskeyAuth"} <= set(methods), str(list(methods)))
+            check(
+                "BasicAuth + PasskeyAuth advertised", {"BasicAuth", "PasskeyAuth"} <= set(methods), str(list(methods))
+            )
         async with http.post(
-            f"{BASE}/api/v1/login", headers={"x-auth-method": "BasicAuth"}, json={"username": USER, "password": PASSWORD}
+            f"{BASE}/api/v1/login",
+            headers={"x-auth-method": "BasicAuth"},
+            json={"username": USER, "password": PASSWORD},
         ) as resp:
             body = await resp.json()
             token = body.get("token", "")
@@ -55,7 +59,9 @@ async def main() -> int:
             body = await resp.json()
             key = body.get("publicKey", body)
             check("passkey login options", resp.status == 200 and "challenge" in key, f"({resp.status})")
-        async with http.post(f"{BASE}/api/v1/auth/passkey/register/options", headers={**auth, **origin}, json={}) as resp:
+        async with http.post(
+            f"{BASE}/api/v1/auth/passkey/register/options", headers={**auth, **origin}, json={}
+        ) as resp:
             body = await resp.json()
             key = body.get("publicKey", body)
             check("passkey register options (signed in)", resp.status == 200 and "challenge" in key, f"({resp.status})")

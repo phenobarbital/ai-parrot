@@ -79,16 +79,14 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
     """
     if AUTH_EXCLUDE_LIST_KEY is None:
         logger.debug(
-            "navigator_auth not available: skipping exclude-list "
-            "registration for %s",
+            "navigator_auth not available: skipping exclude-list " "registration for %s",
             pattern,
         )
         return
     exclude_list = app.get(AUTH_EXCLUDE_LIST_KEY)
     if exclude_list is None:
         logger.debug(
-            "AuthHandler not installed on this app (no %s key): skipping "
-            "exclude-list registration for %s",
+            "AuthHandler not installed on this app (no %s key): skipping " "exclude-list registration for %s",
             AUTH_EXCLUDE_LIST_KEY,
             pattern,
         )
@@ -97,9 +95,7 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
         exclude_list.append(pattern)
 
 
-async def _register_auth_exclusions_on_startup(
-    app: web.Application, patterns: list[str]
-) -> None:
+async def _register_auth_exclusions_on_startup(app: web.Application, patterns: list[str]) -> None:
     """``on_startup`` callback: register the SPA exclude-list ``patterns``.
 
     Both real entrypoints (``app.py``/``appauto.py``) call
@@ -334,8 +330,6 @@ def setup_admin_ui(
     patterns = _auth_exclusion_patterns(prefix, mount_root=mount_root)
     # Deferred to on_startup — see _register_auth_exclusions_on_startup's
     # docstring for why eager registration here would race AuthHandler.setup().
-    app.on_startup.append(
-        lambda app: _register_auth_exclusions_on_startup(app, patterns)
-    )
+    app.on_startup.append(lambda app: _register_auth_exclusions_on_startup(app, patterns))
 
     return True

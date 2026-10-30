@@ -7,6 +7,7 @@ mount (direct route or middleware when ``GET /`` is already taken), no
 shadowing of ``/api/*`` routes, and navigator-auth exclude-list
 registration (with and without an installed ``AuthHandler``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,7 @@ def fake_dist(tmp_path, monkeypatch):
 
 
 class TestAbsentDist:
-    async def test_absent_dist_returns_false_and_registers_no_spa_routes(
-        self, tmp_path, monkeypatch, caplog
-    ):
+    async def test_absent_dist_returns_false_and_registers_no_spa_routes(self, tmp_path, monkeypatch, caplog):
         """No dist -> no SPA mount, but the status and catalog JSON
         endpoints are UI-agnostic and still register (TASK-2524, TASK-2584)."""
         missing = tmp_path / "no-dist-here"
@@ -87,9 +86,7 @@ class TestMountedDist:
             resp = await client.get(path)
             assert resp.status == 404, path
 
-    async def test_root_served_by_middleware_when_already_taken(
-        self, fake_dist, aiohttp_client
-    ):
+    async def test_root_served_by_middleware_when_already_taken(self, fake_dist, aiohttp_client):
         """navigator's AppHandler always registers its own ``GET /``: the SPA
         must still answer ``/`` (via a middleware scoped to exactly ``/``)
         without breaking any other route."""
@@ -163,9 +160,7 @@ class TestMountedDist:
         assert resp.status == 200
         assert (await resp.json()) == {"ok": True}
 
-    async def test_exclude_list_registered_when_auth_present(
-        self, fake_dist, aiohttp_client
-    ):
+    async def test_exclude_list_registered_when_auth_present(self, fake_dist, aiohttp_client):
         """Registration happens on ``on_startup``, not eagerly in
         ``setup_admin_ui()`` — see ``_register_auth_exclusions_on_startup``'s
         docstring. In production both real entrypoints call

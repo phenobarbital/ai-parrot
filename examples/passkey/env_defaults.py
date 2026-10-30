@@ -15,10 +15,18 @@ PORT = os.environ.get("DEMO_PORT", "5000")
 
 _DEFAULTS = {
     # Postgres + Redis from docker-compose.yml
-    "DBHOST": "localhost", "DBPORT": "55432", "DBUSER": "passkey", "DBPWD": "passkey", "DBNAME": "passkey_demo",
+    "DBHOST": "localhost",
+    "DBPORT": "55432",
+    "DBUSER": "passkey",
+    "DBPWD": "passkey",
+    "DBNAME": "passkey_demo",
     "REDIS_AUTH_URL": "redis://localhost:56379/1",
-    "CACHE_HOST": "localhost", "CACHE_PORT": "56379", "CACHEDB": "2",
-    "REDIS_HOST": "localhost", "REDIS_PORT": "56379", "REDIS_DB": "1",
+    "CACHE_HOST": "localhost",
+    "CACHE_PORT": "56379",
+    "CACHEDB": "2",
+    "REDIS_HOST": "localhost",
+    "REDIS_PORT": "56379",
+    "REDIS_DB": "1",
     "REDIS_URL": "redis://localhost:56379/1",
     # Isolation: no database-backed bots and an empty agents directory (the repo's own agents/ is NOT loaded).
     "ENABLE_DATABASE_BOTS": "false",

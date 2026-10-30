@@ -23,8 +23,11 @@ apply_defaults()
 from navigator_auth.handlers.users.passwd import set_basic_password  # noqa: E402
 
 DSN = "postgres://{u}:{p}@{h}:{port}/{db}".format(
-    u=os.environ["DBUSER"], p=os.environ["DBPWD"], h=os.environ["DBHOST"],
-    port=os.environ["DBPORT"], db=os.environ["DBNAME"],
+    u=os.environ["DBUSER"],
+    p=os.environ["DBPWD"],
+    h=os.environ["DBHOST"],
+    port=os.environ["DBPORT"],
+    db=os.environ["DBNAME"],
 )
 
 DDL = """
@@ -70,7 +73,9 @@ async def main() -> None:
             VALUES ($1, 'Demo', 'User', 'Demo User', $2, $3, true)
             ON CONFLICT (username) DO UPDATE SET password = EXCLUDED.password
             """,
-            username, f"{username}@example.com", set_basic_password(password),
+            username,
+            f"{username}@example.com",
+            set_basic_password(password),
         )
     finally:
         await conn.close()
