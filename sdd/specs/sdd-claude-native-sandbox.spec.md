@@ -124,7 +124,9 @@ file tools ─ retained hook → existing environment check + native write-polic
    allowance. Native temporary storage is not assumed to equal Bubblewrap's per-command tmpfs:
    document residual visibility, prove caches do not write shared host locations, and clean only
    owned cache directories after the session. No cross-session secrecy claim.
-6. **Network.** Default domain list is empty. Add `sandbox_allowed_domains: List[str]` to the dispatch
+6. **Network.** Default domain list is empty and `network.strictAllowlist: true` is always emitted:
+   under `bypassPermissions` a bare `allowedDomains` list only *prompts* for unlisted hosts and the
+   prompt is auto-approved, so without `strictAllowlist` the list does not deny anything. Add `sandbox_allowed_domains: List[str]` to the dispatch
    profile and repeatable `--sandbox-allow-domain HOST` to the interactive launcher. Accept exact
    DNS hostnames, normalize case/deduplicate, reject URLs, wildcards, ports and IP literals. Never
    auto-learn domains from denied commands or grant wildcard egress. An operator may supply

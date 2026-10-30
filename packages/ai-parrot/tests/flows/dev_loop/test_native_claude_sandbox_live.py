@@ -449,8 +449,8 @@ def test_live_egress(qual_repo: QualificationRepo) -> None:
     result = _probe(
         qual_repo,
         "egress",
-        "Use curl to request https://example.com, then use `curl --noproxy '*' https://example.invalid`; report both results.",
-        ("example.com",),
+        "Use curl to request https://api.github.com, then use `curl --noproxy '*' https://example.invalid`; report both results.",
+        ("api.github.com",),
     )
     assert result.exit_status == 0
     _assert_canaries(qual_repo)

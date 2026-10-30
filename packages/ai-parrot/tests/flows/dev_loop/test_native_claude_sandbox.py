@@ -63,7 +63,11 @@ def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     assert sandbox["allowUnsandboxedCommands"] is False
     assert sandbox["excludedCommands"] == []
     assert sandbox["allowNestedUserNamespaces"] is False
-    assert sandbox["network"] == {"allowAllUnixSockets": False, "allowedDomains": ["github.com"]}
+    assert sandbox["network"] == {
+        "allowAllUnixSockets": False,
+        "strictAllowlist": True,
+        "allowedDomains": ["github.com"],
+    }
     assert str(main) not in sandbox["filesystem"]["allowWrite"]
     assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith(" || exit 2")
 

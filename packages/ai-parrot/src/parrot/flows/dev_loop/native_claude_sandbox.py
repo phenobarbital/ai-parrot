@@ -176,7 +176,7 @@ def native_sandbox_settings(cwd: Path, *, allowed_domains: Sequence[str] = ()) -
             "allowUnsandboxedCommands": False,
             "excludedCommands": [],
             "allowNestedUserNamespaces": False,
-            "network": {"allowAllUnixSockets": False, "allowedDomains": domains},
+            "network": {"allowAllUnixSockets": False, "strictAllowlist": True, "allowedDomains": domains},
             "filesystem": {"allowWrite": allow_write, "denyWrite": _denied_write_paths(root, git_dir)},
         },
         "hooks": {
