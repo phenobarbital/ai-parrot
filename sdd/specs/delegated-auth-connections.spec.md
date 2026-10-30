@@ -926,6 +926,31 @@ runners:
   - tests/integration/oauth2/test_e2e_web_connect.py
   - tests/integration/oauth2/test_e2e_telegram_regression.py
   - tests/integration/oauth2/test_e2e_auth_envelope.py
+  - packages/ai-parrot/tests/unit/auth/test_principal.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_events.py
+  - packages/ai-parrot/tests/unit/auth/test_oauth2_descriptor.py
+  - packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py
+  - packages/ai-parrot/tests/unit/auth/test_oauth2_refresh_legacy.py
+  - packages/ai-parrot/tests/unit/auth/test_o365_refresh_errors.py
+  - packages/ai-parrot/tests/unit/auth/test_standard_oauth2_manager.py
+  - packages/ai-parrot/tests/unit/auth/test_auth_required_payload.py
+  - packages/ai-parrot/tests/unit/auth/test_users_integrations_model.py
+  - packages/ai-parrot-server/tests/unit/test_connections_handler.py
+  - packages/ai-parrot-server/tests/unit/test_user_objects_hydration.py
+  - packages/ai-parrot/tests/unit/auth/test_no_user_agent_toolkits.py
+  - packages/ai-parrot-server/tests/integration/test_identity_vault_store_db.py
+  - packages/ai-parrot-server/tests/unit/test_identity_reseal.py
+  - packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py
+  - packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+  - packages/ai-parrot-integrations/tests/test_telegram_jira_principal.py
+  - packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py
+  - packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py
+  - packages/ai-parrot-server/tests/unit/test_http_mcp_session_headers.py
+  - packages/ai-parrot/tests/mcp/test_mcp_delegated_principal.py
+  - packages/ai-parrot-server/tests/integration/test_mcp_delegated_http.py
+  - packages/ai-parrot/tests/unit/auth/test_legacy_audit.py
+  - packages/ai-parrot/tests/unit/auth/test_reencrypt.py
+  - tests/integration/oauth2/test_connections_isolation_matrix.py
   markers: none
 
 ### Test Data / Fixtures
@@ -1461,3 +1486,4 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
 | 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Declared S-4 (CLI-based agents + MCP-based tools in a CLI) as a fifth consumer sub-spec: Non-Goals, §8 spec-count trail, S-4 pre-check item, Worktree Strategy dependency. No module or AC changes. |
 | 0.3 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Resolved all six §8 open questions. Decisions: legacy cutover = deploy + 30 d with no unbound gate; PBAC policy in the navigator-auth PDP only; S-1 adds the Identity Vault re-encryption job (M10, AC-18). Research: R6 provider facts verified (`RefreshPolicy.sliding`, Jira descriptor values, AC-20); navigator-auth 0.28.8/0.28.9 on PyPI → floor bump + re-lock as a pre-implementation step; S-4 pre-check found a missing `updated_at` (added, AC-19). |
 | 0.4 | 2026-10-30 | Codex | Resolve four design-review findings: mixed-key-safe re-encryption and retirement gate; atomic provider-account replacement/deletion; MCP request-header forwarding and session isolation; explicit O365 typed refresh errors. Strengthen regression/integration criteria and module ownership. |
+| 0.5 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | `/sdd-task`: added the 25 package-local test files of TASK-4937…4964 to the §4 Validation Contract, as §4 requires. No module or AC changes. |
