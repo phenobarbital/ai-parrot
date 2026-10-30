@@ -35,6 +35,7 @@ the builder, never on a shared instance (AC18).
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/bots/prompts/layers.py` | MODIFY | `RULES = 12`, `EXPERT_RULES_LAYER`, `EXPERT_KNOWLEDGE_LAYER` |
+| `packages/ai-parrot/tests/bots/prompts/test_layers.py` | MODIFY | `test_all_nine_levels` asserted 9 `LayerPriority` members; `RULES` makes it 10 (contract gap found at merge) |
 | `packages/ai-parrot/src/parrot/experts/knowledge/render.py` | CREATE | Render + install |
 | `packages/ai-parrot/tests/experts/test_render.py` | CREATE | Unit tests |
 
