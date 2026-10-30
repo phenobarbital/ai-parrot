@@ -138,7 +138,12 @@ async def _handle_web_callback(
     # Persist the credential to DocumentDB.
     try:
         svc = IntegrationsService()
-        await svc.persist_credential(user_id, provider, token_set)
+        await svc.persist_credential(
+            state_payload.get("nav_user_id") or user_id,
+            provider,
+            token_set,
+            channel="web",
+        )
     except Exception:  # noqa: BLE001
         logger.exception(
             "Failed to persist web OAuth credential for user_id=%s provider=%s",

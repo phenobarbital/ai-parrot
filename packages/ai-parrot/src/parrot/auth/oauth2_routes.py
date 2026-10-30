@@ -33,6 +33,7 @@ from typing import Any, Callable, Coroutine, Dict, Optional
 
 from aiohttp import web
 
+from parrot.auth.oauth2_base import CredentialPersistenceError
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
 from parrot.auth.oauth2.service import IntegrationsService
 from parrot.mcp.oauth2_state import resolve_pending_callback, is_pending
@@ -136,7 +137,7 @@ async def _handle_web_callback(
     """
     extra: Dict[str, Any] = state_payload.get("extra") or {}
     return_origin = extra.get("return_origin")
-    user_id = state_payload.get("user_id")
+    user_id = state_payload.get("nav_user_id")
     # The provider written into extra_state by IntegrationsService.start_connect
     # takes precedence over the URL-bound provider_id, but they should match.
     provider = extra.get("provider_id") or provider_id
@@ -157,7 +158,7 @@ async def _handle_web_callback(
         )
 
     if not user_id:
-        logger.warning("Web OAuth callback: state_payload missing user_id")
+        logger.warning("Web OAuth callback: state_payload missing nav_user_id")
         return web.Response(
             text=_WEB_ERROR_TMPL.safe_substitute(
                 provider=provider,
@@ -170,7 +171,13 @@ async def _handle_web_callback(
 
     try:
         svc = IntegrationsService()
-        await svc.persist_credential(user_id, provider, token_set)
+        await svc.persist_credential(
+            user_id,
+            provider,
+            token_set,
+            channel="web",
+            canonical_identity=state_payload.get("canonical_identity"),
+        )
     except Exception:  # noqa: BLE001
         logger.exception(
             "Failed to persist web OAuth credential for user_id=%s provider=%s",
@@ -217,6 +224,12 @@ def make_oauth2_callback(provider_id: str):
 
         try:
             token_set, state_payload = await manager.handle_callback(code, state)
+        except CredentialPersistenceError:
+            logger.error("Durable credential persistence failed for provider=%s", provider_id)
+            return _error_response(
+                "Your account could not be saved. Please try again.",
+                status=500,
+            )
         except ValueError as exc:
             logger.warning("OAuth callback validation error for provider=%s: %s", provider_id, exc)
             return _error_response(
@@ -265,6 +278,21 @@ def make_oauth2_callback(provider_id: str):
         if channel == "web":
             return await _handle_web_callback(
                 request, provider_id, token_set, state_payload,
+            )
+
+        try:
+            await IntegrationsService().persist_credential(
+                state_payload["nav_user_id"],
+                provider_id,
+                token_set,
+                channel=channel,
+                canonical_identity=state_payload.get("canonical_identity"),
+            )
+        except Exception:  # noqa: BLE001 - metadata row only; the grant itself is already durable
+            logger.exception(
+                "users_integrations upsert failed for provider=%s channel=%s",
+                provider_id,
+                channel,
             )
 
         return web.Response(
