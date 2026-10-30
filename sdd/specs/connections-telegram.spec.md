@@ -13,7 +13,7 @@ tags: [oauth2, connections, telegram, principal, credentials, pbac]
 **Feature ID**: FEAT-776
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Opus 5.5)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` (FEAT-773, `accepted`) §6 row
