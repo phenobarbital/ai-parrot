@@ -24,7 +24,6 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 
-
 pytestmark = pytest.mark.live
 
 

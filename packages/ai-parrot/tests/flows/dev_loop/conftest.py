@@ -52,10 +52,7 @@ def skip_unless_private_repo_configured():
     if not os.environ.get("GITHUB_TOKEN"):
         pytest.skip("GITHUB_TOKEN not set; private-clone test skipped")
     if not os.environ.get("DEV_LOOP_TEST_PRIVATE_REPO"):
-        pytest.skip(
-            "DEV_LOOP_TEST_PRIVATE_REPO (owner/name) not set; "
-            "private-clone test skipped"
-        )
+        pytest.skip("DEV_LOOP_TEST_PRIVATE_REPO (owner/name) not set; " "private-clone test skipped")
 
 
 @pytest.fixture(autouse=True)
@@ -69,9 +66,7 @@ def _isolate_dev_loop_run_artifacts(tmp_path, monkeypatch) -> None:
     into the actual repo's ``outputs/`` directory. Applied unconditionally
     to every test in the module so pre-existing tests stay side-effect-free.
     """
-    monkeypatch.setattr(
-        "parrot.flows.dev_loop.runner.conf.OUTPUT_DIR", str(tmp_path)
-    )
+    monkeypatch.setattr("parrot.flows.dev_loop.runner.conf.OUTPUT_DIR", str(tmp_path))
 
 
 @pytest.fixture(autouse=True)
@@ -180,16 +175,12 @@ def fixture_git_repo(tmp_path) -> str:
     repo.mkdir()
 
     def _git(*args: str) -> None:
-        subprocess.run(
-            ["git", *args], cwd=repo, check=True, capture_output=True
-        )
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
     _git("init", "-q")
     _git("config", "user.email", "fixture@example.com")
     _git("config", "user.name", "fixture")
-    (repo / "calc.py").write_text(
-        "def add(a, b):\n    return a - b  # BUG: should be a + b\n"
-    )
+    (repo / "calc.py").write_text("def add(a, b):\n    return a - b  # BUG: should be a + b\n")
     _git("add", ".")
     _git("commit", "-qm", "initial (with bug)")
     return str(repo)
@@ -199,10 +190,7 @@ def fixture_git_repo(tmp_path) -> str:
 def sample_bug_brief() -> BugBrief:
     """Canonical happy-path bug brief used across the suite."""
     return BugBrief(
-        summary=(
-            "Customer sync flowtask drops the last row when the input "
-            "has >1000 records"
-        ),
+        summary=("Customer sync flowtask drops the last row when the input " "has >1000 records"),
         affected_component="etl/customers/sync.yaml",
         log_sources=[
             LogSource(
@@ -264,14 +252,7 @@ def fake_dispatch_messages():
 
     return [
         _AssistantMessage(
-            content=[
-                _TextBlock(
-                    text=(
-                        '{"jira_issue_key":"OPS-1",'
-                        '"spec_path":"sdd/specs/x.spec.md",'
-                    )
-                )
-            ]
+            content=[_TextBlock(text=('{"jira_issue_key":"OPS-1",' '"spec_path":"sdd/specs/x.spec.md",'))]
         ),
         _AssistantMessage(
             content=[
