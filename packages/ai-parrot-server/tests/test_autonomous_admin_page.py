@@ -1,4 +1,5 @@
 """FEAT-772 contract test for the inline /autonomous/admin login page (passkey sign-in markers)."""
+
 from __future__ import annotations
 
 from aiohttp import web
