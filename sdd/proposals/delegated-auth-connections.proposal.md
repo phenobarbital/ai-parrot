@@ -4,7 +4,7 @@ title: Delegated Auth Connections — principal-keyed, channel-neutral OAuth2 3L
 slug: delegated-auth-connections
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: file
   jira_key: null
