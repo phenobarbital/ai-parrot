@@ -132,7 +132,7 @@ from parrot.knowledge.wiki.ledger.outbox import (
     OutboxLockedError,
     StrictLedgerReadError,
 )
-from parrot.knowledge.wiki.ledger.integration import LedgerIntegrator
+from parrot.knowledge.wiki.ledger.integration import IntegrationError, LedgerIntegrator
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
@@ -3772,7 +3772,7 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
             err=not json_output,
         )
         raise SystemExit(2) from exc
-    except Exception as exc:
+    except IntegrationError as exc:
         click.echo(
             json.dumps({"status": "pending", "error_code": "remote-unavailable"}) if json_output else str(exc),
             err=not json_output,
@@ -3802,7 +3802,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
     remote_fresh = True
     try:
         known = _run(integrator.remote_event_ids())
-    except Exception:
+    except (IntegrationError, OSError):
         known = set()
         remote_fresh = False
     try:
@@ -3812,7 +3812,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
         payload["remote_fresh"] = remote_fresh
         try:
             payload["contaminated_paths"] = _run(integrator.check_feature_diff("HEAD"))
-        except Exception:
+        except (IntegrationError, OSError):
             payload["contaminated_paths"] = []
             payload["remote_fresh"] = False
     except StrictLedgerReadError as exc:
@@ -3863,6 +3863,24 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     if batch_id:
         batches = [batch for batch in batches if batch.batch_id == batch_id]
         if not batches:
+            try:
+                receipt = _run(outbox.receipt_for(batch_id))
+            except ValueError:  # malformed id (or a symlinked receipt) — report it as unknown
+                receipt = None
+            if receipt is not None:
+                # Already acknowledged: a retry of a delivered batch is a success, not a conflict.
+                report = LedgerDeliveryReport(
+                    status="already_delivered",
+                    batch_id=batch_id,
+                    attempts=0,
+                    remote_head=receipt.remote_head,
+                    commit_sha=None,
+                    added=0,
+                    remaining=0,
+                    skipped=receipt.skipped_event_ids,
+                )
+                _emit_delivery_reports([report], json_output, repo_root)
+                return
             report = LedgerDeliveryReport(
                 status="conflict",
                 batch_id=batch_id,

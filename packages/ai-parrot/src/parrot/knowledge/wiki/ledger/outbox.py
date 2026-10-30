@@ -84,6 +84,10 @@ class StrictLedgerReadError(ValueError):
     """A complete line is malformed, or an event id does not match its content."""
 
 
+class EventIdentityError(StrictLedgerReadError):
+    """An event's id is not the hash of its own content."""
+
+
 class OutboxLockedError(RuntimeError):
     """Another preparer holds the outbox lock, or the filesystem cannot lock."""
 
@@ -103,7 +107,7 @@ def verify_event_identity(event: LedgerEvent) -> None:
     """Raise when ``event.event_id`` is not the hash of its own content."""
     expected = compute_event_id(event.kind, event.subject, event.actor, event.ts, event.payload)
     if event.event_id != expected:
-        raise StrictLedgerReadError(f"event {event.event_id!r} does not match its content (expected {expected})")
+        raise EventIdentityError(f"event {event.event_id!r} does not match its content (expected {expected})")
 
 
 def read_strict_events(path: Path, *, end_offset: int | None = None) -> StrictRead:
@@ -139,8 +143,8 @@ def read_strict_events(path: Path, *, end_offset: int | None = None) -> StrictRe
             event = LedgerEvent(**payload)
             verify_event_identity(event)
         except Exception as exc:
-            if isinstance(exc, StrictLedgerReadError) and "does not match" in str(exc):
-                raise StrictLedgerReadError(f"{path}:{line_number}: {exc}") from exc
+            if isinstance(exc, EventIdentityError):
+                raise EventIdentityError(f"{path}:{line_number}: {exc}") from exc
             raise StrictLedgerReadError(f"{path}:{line_number}: malformed complete ledger line") from exc
         raw_lines.append(raw_line)
         events.append(event)

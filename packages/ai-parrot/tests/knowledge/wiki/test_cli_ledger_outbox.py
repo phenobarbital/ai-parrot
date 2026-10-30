@@ -10,7 +10,8 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.knowledge.wiki.cli import ledger
-from parrot.knowledge.wiki.ledger.outbox import LedgerBatch, LedgerDeliveryReport, OutboxLockedError
+from parrot.knowledge.wiki.ledger.integration import IntegrationError
+from parrot.knowledge.wiki.ledger.outbox import LedgerBatch, LedgerDeliveryReport, LedgerReceipt, OutboxLockedError
 
 
 @pytest.fixture(autouse=True)
@@ -211,3 +212,78 @@ def test_integrate_stops_on_pending(tmp_path: Path) -> None:
 
     assert result.exit_code == 2, result.output
     assert integrator.integrate.await_count == 1
+
+
+# FEAT-771 / TASK-4896 — CLI error mapping.
+
+
+def _invoke_batch_id(tmp_path: Path, receipt: LedgerReceipt | None):
+    """Run ``integrate --batch-id`` for a batch that is not pending."""
+    outbox = MagicMock()
+    outbox.pending = AsyncMock(return_value=[])
+    outbox.receipt_for = AsyncMock(return_value=receipt)
+    with patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox):
+        return CliRunner().invoke(
+            ledger,
+            [
+                "outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path),
+                "--batch-id", _batch().batch_id, "--json",
+            ],
+        )
+
+
+def test_integrate_receipted_batch_id_is_already_delivered(tmp_path: Path) -> None:
+    """Retrying a batch that already has a receipt succeeds instead of reporting an unknown batch."""
+    receipt = LedgerReceipt(
+        batch_id=_batch().batch_id,
+        manifest_sha256="a" * 64,
+        remote="origin",
+        branch="dev",
+        remote_head="c" * 40,
+        verified_digest="d" * 64,
+        skipped_event_ids=["abc123def456"],
+    )
+
+    result = _invoke_batch_id(tmp_path, receipt)
+
+    assert result.exit_code == 0, result.output
+    [report] = json.loads(result.output)
+    assert report["status"] == "already_delivered"
+    assert report["skipped"] == ["abc123def456"]
+
+
+def test_integrate_unknown_batch_id_is_conflict(tmp_path: Path) -> None:
+    """A batch id with neither a pending batch nor a receipt keeps the unknown-batch conflict."""
+    result = _invoke_batch_id(tmp_path, None)
+
+    assert result.exit_code == 3, result.output
+    assert json.loads(result.output)[0]["error_code"] == "unknown-batch"
+
+
+def _invoke_prepare(tmp_path: Path, error: Exception):
+    """Run ``outbox prepare`` with ``remote_event_ids`` raising ``error``."""
+    integrator = MagicMock()
+    integrator.remote_event_ids = AsyncMock(side_effect=error)
+    with (
+        patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=MagicMock()),
+        patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
+        patch("parrot.knowledge.wiki.cli.subprocess.run", return_value=MagicMock(stdout="HEAD\n")),
+    ):
+        return CliRunner().invoke(
+            ledger, ["outbox", "prepare", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)]
+        )
+
+
+def test_prepare_remote_failure_exits_2(tmp_path: Path) -> None:
+    """An unreachable remote is still the retryable exit code."""
+    result = _invoke_prepare(tmp_path, IntegrationError("fetch-failed"))
+
+    assert result.exit_code == 2, result.output
+
+
+def test_prepare_programmer_error_propagates(tmp_path: Path) -> None:
+    """A programming error is no longer disguised as an unavailable remote."""
+    result = _invoke_prepare(tmp_path, RuntimeError("bug"))
+
+    assert result.exit_code != 2
+    assert isinstance(result.exception, RuntimeError)

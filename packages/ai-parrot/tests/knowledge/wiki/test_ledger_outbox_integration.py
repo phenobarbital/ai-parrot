@@ -429,3 +429,40 @@ async def test_all_redundant_is_already_delivered_without_commit(two_clones: tup
     receipt = await outbox.receipt_for(batch.batch_id)
     assert receipt is not None
     assert receipt.skipped_event_ids == [redundant.event_id]
+
+
+# FEAT-771 / TASK-4896 — no leaked temp worktree or scratch directory.
+
+
+async def test_attempt_unexpected_error_removes_tmp_and_is_pending(
+    two_clones: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unexpected error inside an attempt keeps the batch pending and removes the clean temp worktree."""
+    _, first, _ = two_clones
+    event = _ev("insight.recorded", "spec:boom", {"fact": "x", "title": "x", "derived_from": "spec:FEAT-771"}, 30)
+    outbox, batch = await _batch_for(first, event)
+
+    def _boom(_root: Path) -> list[tuple[bytes, LedgerEvent]]:
+        raise OSError("disk went away")
+
+    monkeypatch.setattr("parrot.knowledge.wiki.ledger.integration.read_logical_log", _boom)
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "pending"
+    assert report.error_code == "unexpected-error"
+    assert report.recovery_path is None
+    assert list((first / ".claude" / "worktrees").glob("_ledger-outbox-*")) == []
+    assert "_ledger-outbox-" not in _run_git(first, "worktree", "list")
+    assert await outbox.receipt_for(batch.batch_id) is None
+
+
+async def test_scratch_snapshot_removes_scratch_dir(tmp_path: Path) -> None:
+    """The isolated replay directory is gone once the snapshot is exported."""
+    scratch = tmp_path / "scratch"
+    dest = tmp_path / "issues.jsonl"
+
+    await build_scratch_snapshot([_line(_opened("issue:scratch", 1))], scratch_dir=scratch, dest=dest)
+
+    assert dest.exists()
+    assert not scratch.exists()

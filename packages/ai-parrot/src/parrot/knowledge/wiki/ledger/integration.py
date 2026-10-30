@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -178,9 +179,13 @@ async def build_scratch_snapshot(merged: Sequence[bytes], *, scratch_dir: Path, 
     await asyncio.to_thread(scratch_dir.mkdir, parents=True, exist_ok=True)
     data = b"".join(line + b"\n" for line in merged)
     await asyncio.to_thread((scratch_dir / "events.jsonl").write_bytes, data)
-    service = LedgerService.from_dir(scratch_dir)
-    await service.index.sync()
-    changed = await service.export_snapshot(dest, reconcile=True)
+    try:
+        service = LedgerService.from_dir(scratch_dir)
+        await service.index.sync()
+        changed = await service.export_snapshot(dest, reconcile=True)
+    finally:
+        # The index opens a connection per transaction, so nothing holds the scratch store open.
+        await asyncio.to_thread(shutil.rmtree, scratch_dir, ignore_errors=True)
     logger.debug("Scratch ledger snapshot %s (changed=%s) from %d events", dest, changed, len(merged))
     return changed
 
@@ -302,7 +307,20 @@ class LedgerIntegrator:
                 )
             try:
                 for attempt in range(1, max_attempts + 1):
-                    report = await self._attempt(batch, attempt)
+                    try:
+                        report = await self._attempt(batch, attempt)
+                    except Exception:  # noqa: BLE001 — any failure keeps the batch pending (exit 2)
+                        self.logger.exception("ledger delivery attempt %d of %s failed", attempt, batch.batch_id)
+                        return LedgerDeliveryReport(
+                            status="pending",
+                            batch_id=batch.batch_id,
+                            attempts=attempt,
+                            remote_head=None,
+                            commit_sha=None,
+                            added=0,
+                            remaining=len(batch.event_ids),
+                            error_code="unexpected-error",
+                        )
                     if report is not None:
                         return report
                 return LedgerDeliveryReport(
@@ -596,6 +614,23 @@ class LedgerIntegrator:
                 remaining=len(batch.event_ids),
                 error_code="invalid-content",
                 recovery_path=str(tmp),
+            )
+        except Exception:  # noqa: BLE001 — never leak the owned worktree; the batch stays pending
+            self.logger.exception("ledger delivery attempt %d of %s failed", attempt, batch.batch_id)
+            try:
+                recovery = await self._remove_if_clean(tmp)
+            except Exception:  # noqa: BLE001 — best effort; keep the tree as the recovery path
+                recovery = str(tmp)
+            return LedgerDeliveryReport(
+                status="pending",
+                batch_id=batch.batch_id,
+                attempts=attempt,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=len(batch.event_ids),
+                error_code="unexpected-error",
+                recovery_path=recovery,
             )
 
     async def check_feature_diff(self, feature_ref: str) -> list[str]:
