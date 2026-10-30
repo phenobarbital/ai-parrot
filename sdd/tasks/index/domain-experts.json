@@ -65,14 +65,14 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root of the graph: creates parrot/experts/{models,__init__}.py, both knowledge __init__ export maps and the tests/experts conftest; no dependency.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4914-expert-models-and-exports.md"
     },
@@ -83,7 +83,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -92,7 +92,7 @@
       "parallel": true,
       "parallelism_notes": "Imports RuleSet, KnowledgeLayer, ExpertBundle, RuleSyntaxError from TASK-4914 (parrot/experts/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4915-governance-rules-chain.md"
     },
@@ -103,14 +103,14 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent: edits only parrot/auth/models.py (PolicyRuleConfig) and adds its own test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4916-policy-rule-resource-field.md"
     },
@@ -121,7 +121,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -131,7 +131,7 @@
       "parallel": true,
       "parallelism_notes": "Imports ExpertManifest/ExpertTier/SPAWN_TOOL_NAME from TASK-4914 (models.py); its deny rule needs the PolicyRuleConfig.resource field added by TASK-4916 (auth/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4917-expert-policy.md"
     },
@@ -142,7 +142,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -151,7 +151,7 @@
       "parallel": true,
       "parallelism_notes": "Imports KnowledgeContext/KnowledgeMode from TASK-4914 (models.py); writes knowledge/render.py inside the package whose __init__ TASK-4914 creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4918-expert-prompt-layers-render.md"
     },
@@ -162,7 +162,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -172,7 +172,7 @@
       "parallel": true,
       "parallelism_notes": "Imports models from TASK-4914 and resolve_chain/rules_to_layer from TASK-4915 (parrot/experts/rules.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4919-knowledge-resolver-core.md"
     },
@@ -183,7 +183,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -192,7 +192,7 @@
       "parallel": true,
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py) and implements the KnowledgeSource protocol of TASK-4919 (sources/base.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4920-inline-knowledge-sources.md"
     },
@@ -203,7 +203,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -212,7 +212,7 @@
       "parallel": true,
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py); implements TASK-4919's KnowledgeSource protocol.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4921-wiki-source-probe-seed.md"
     },
@@ -223,7 +223,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -232,7 +232,7 @@
       "parallel": true,
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py); implements TASK-4919's KnowledgeSource protocol.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4922-retrieval-knowledge-sources.md"
     },
@@ -243,7 +243,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -253,7 +253,7 @@
       "parallel": true,
       "parallelism_notes": "Calls KnowledgeResolver.has_handle/search_kb/invalidate from TASK-4919 (knowledge/resolver.py); the 'kb' handle it routes on is produced by LegacyKBSource from TASK-4922 (sources/kb.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4923-kb-fold-in.md"
     },
@@ -264,7 +264,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -275,7 +275,7 @@
       "parallel": true,
       "parallelism_notes": "Imports install_layers from TASK-4918 (knowledge/render.py), KnowledgeResolver from TASK-4919 (knowledge/resolver.py) and ExpertBundle from TASK-4914.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4924-expert-agent-activation.md"
     },
@@ -286,7 +286,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -296,7 +296,7 @@
       "parallel": true,
       "parallelism_notes": "Imports ExpertManifest/ExpertBundle/ExpertBundleError from TASK-4914 and parse_rules from TASK-4915 (rules.py) to load rules/governance.md.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4925-bundle-loader-view.md"
     },
@@ -307,7 +307,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -323,7 +323,7 @@
       "parallel": true,
       "parallelism_notes": "Integration hub: imports policy functions from TASK-4917 (policy.py), BundledSource/WorkspaceSource/ADRSource from TASK-4920, WikiSource from TASK-4921, BookstoreSource/GraphIndexSource from TASK-4922, ExpertAgent from TASK-4924 (agent.py), discover_expert_bundles/ExpertView from TASK-4925 (loader.py, view.py); its toolkit factory instantiates ExpertKnowledgeToolkit from TASK-4927 (parrot_tools/experts) and CVEToolkit from TASK-4929 (parrot_tools/security/cve).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4926-expert-registry.md"
     },
@@ -334,7 +334,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -343,7 +343,7 @@
       "parallel": true,
       "parallelism_notes": "Imports KnowledgeContext/ExpertManifest/ExpertCapabilityError from TASK-4914 (parrot/experts/models.py); lives in ai-parrot-tools.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4927-expert-knowledge-toolkit.md"
     },
@@ -354,14 +354,14 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent: new parrot_tools/security/cve/models.py over the existing SeverityLevel; no FEAT-778 import.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4928-cve-models.md"
     },
@@ -372,7 +372,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -381,7 +381,7 @@
       "parallel": true,
       "parallelism_notes": "Imports CVERecord/CVESearchResult/DownloadReceipt/validate_cve_id/severity_from_score from TASK-4928 (cve/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4929-cve-toolkit.md"
     },
@@ -392,7 +392,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -401,7 +401,7 @@
       "parallel": true,
       "parallelism_notes": "Writes under parrot/experts/bundled/ whose package marker TASK-4925 creates; its test calls parse_expert_bundle/BUNDLED_EXPERTS_DIR from TASK-4925 (loader.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4930-bundle-cve-analyst.md"
     },
@@ -412,7 +412,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -421,7 +421,7 @@
       "parallel": true,
       "parallelism_notes": "Writes under parrot/experts/bundled/ (package marker from TASK-4925); its test uses parse_expert_bundle from TASK-4925 (loader.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4931-bundle-cve-remediation.md"
     },
@@ -432,7 +432,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -442,7 +442,7 @@
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (package-data) — a dependency manifest every task environment reads. Its wheel test needs the bundle files from TASK-4930 and TASK-4931.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4932-bundled-experts-package-data.md"
     },
@@ -453,7 +453,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -462,7 +462,7 @@
       "parallel": true,
       "parallelism_notes": "Builds ExpertRegistry from TASK-4926 (parrot/experts/registry.py) inside the new bootstrap helper.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4933-runtime-wiring-load-experts.md"
     },
@@ -473,7 +473,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -487,7 +487,7 @@
       "parallel": true,
       "parallelism_notes": "Exercises ExpertRegistry (TASK-4926), the KB fold-in (TASK-4923), ExpertKnowledgeToolkit (TASK-4927), CVEToolkit (TASK-4929) and both shipped bundles (TASK-4930, TASK-4931) end to end.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4934-integration-tests.md"
     },
@@ -498,7 +498,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -508,7 +508,7 @@
       "parallel": true,
       "parallelism_notes": "Documents load_experts/enable_experts from TASK-4933 (bootstrap.py, manager.py) and the behaviour pinned by TASK-4934's integration tests; its test greps names those tasks created.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T20:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4935-docs-experts-cve-guide.md"
     }
