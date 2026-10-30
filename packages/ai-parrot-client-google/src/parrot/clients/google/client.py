@@ -2833,7 +2833,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not has_content_parts and not has_function_call and not has_thought:
             try:
                 if hasattr(response, "text") and response.text:
-                    if text := response.text.strip():
+                    # Stream chunks are returned verbatim: stripping them loses the
+                    # whitespace at chunk boundaries (glued words, collapsed tables).
+                    text = response.text if is_stream_chunk else response.text.strip()
+                    if text:
                         self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
                         return text
             except Exception as e:
@@ -2871,7 +2874,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                     # Check for regular text content
                     if hasattr(part, "text") and part.text:
-                        if clean_text := part.text.strip():
+                        if clean_text := (part.text if is_stream_chunk else part.text.strip()):
                             text_parts.append(clean_text)
                             self.logger.debug(f"Found text part: '{clean_text[:50]}...'")
 
@@ -2902,7 +2905,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 # Combine text parts
                 if text_parts:
-                    if combined_text := "".join(text_parts).strip():
+                    combined_text = "".join(text_parts)
+                    if not is_stream_chunk:
+                        combined_text = combined_text.strip()
+                    if combined_text:
                         self.logger.debug(f"Successfully extracted text from {len(text_parts)} parts")
                         return combined_text
                 else:

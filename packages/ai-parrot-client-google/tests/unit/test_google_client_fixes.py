@@ -82,3 +82,45 @@ class TestAttachGeminiCache:
         await client._attach_gemini_cache(client._test_genai, config, "gemini-2.5-flash", [])
         client._test_genai.aio.caches.create.assert_not_called()
         assert config.system_instruction == _PROMPT
+
+
+def _chunk(*parts: types.Part) -> types.GenerateContentResponse:
+    return types.GenerateContentResponse(
+        candidates=[types.Candidate(content=types.Content(role="model", parts=list(parts)))]
+    )
+
+
+_STREAM = [
+    "The row line with the",
+    " highest contribution is **40105",
+    "**.\n\n",
+    "| Account | Amount |\n",
+    "|---|---|\n",
+    "| 40105 | $1,278,863.13 |\n",
+]
+_EXPECTED = (
+    "The row line with the highest contribution is **40105**.\n\n"
+    "| Account | Amount |\n|---|---|\n| 40105 | $1,278,863.13 |\n"
+)
+
+
+class TestStreamChunkExtraction:
+    """issue:d34e3f558f8e — stream chunks must not be stripped."""
+
+    def test_stream_chunks_join_verbatim(self):
+        client = _bare_client()
+        joined = "".join(client._safe_extract_text(_chunk(types.Part(text=t)), is_stream_chunk=True) for t in _STREAM)
+        assert joined == _EXPECTED
+
+    def test_stream_whitespace_only_chunk_kept(self):
+        client = _bare_client()
+        assert client._safe_extract_text(_chunk(types.Part(text="\n\n")), is_stream_chunk=True) == "\n\n"
+
+    def test_non_stream_still_strips(self):
+        client = _bare_client()
+        assert client._safe_extract_text(_chunk(types.Part(text="  answer \n"))) == "answer"
+
+    def test_stream_skips_thought_parts(self):
+        client = _bare_client()
+        chunk = _chunk(types.Part(text="planning", thought=True), types.Part(text=" visible "))
+        assert client._safe_extract_text(chunk, is_stream_chunk=True) == " visible "
