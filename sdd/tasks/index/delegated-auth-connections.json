@@ -140,7 +140,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -151,8 +151,9 @@
       "parallelism_notes": "imports Principal/resolve_principal from TASK-4937 (parrot/auth/principal.py) and ConnectionEvent/ConnectionEventPublisher from TASK-4938 (parrot/auth/oauth2/events.py); first of two serialized edits to oauth2_base.py",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4940-oauth2-base-principal-binding-durable-first.md"
+      "completed_at": "2026-10-30T21:38:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4940-oauth2-base-principal-binding-durable-first.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4941",
@@ -386,7 +387,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -396,8 +397,9 @@
       "parallelism_notes": "implements PrincipalResolver/Principal from TASK-4937 (parrot/auth/principal.py); new server file only",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4952-identity-principal-resolver.md"
+      "completed_at": "2026-10-30T21:38:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4952-identity-principal-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4953",
@@ -406,7 +408,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -416,8 +418,9 @@
       "parallelism_notes": "implements ChannelNotifier over ConnectionEvent created by TASK-4938 (parrot/auth/oauth2/events.py); new integrations file only",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4953-channel-notifier-adapters.md"
+      "completed_at": "2026-10-30T21:38:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4953-channel-notifier-adapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4954",
@@ -572,7 +575,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -582,8 +585,9 @@
       "parallelism_notes": "forwards per-call headers into HttpMCPSession.call_tool(..., headers=) added by TASK-4960 (server mcp/transports/http.py)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4961-mcp-delegated-principal-per-call.md"
+      "completed_at": "2026-10-30T21:38:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4961-mcp-delegated-principal-per-call.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4962",
