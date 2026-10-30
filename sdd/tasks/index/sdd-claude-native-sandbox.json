@@ -209,6 +209,29 @@
       "completed_at": "2026-10-30T01:56:13+00:00",
       "file": "sdd/tasks/completed/TASK-4892-native-sandbox-docs.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-4908",
+      "slug": "native-sandbox-mode",
+      "title": "Sandbox mode (required | preferred | off) with declared degraded launch",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4888",
+        "TASK-4889",
+        "TASK-4892"
+      ],
+      "parallel": false,
+      "parallelism_notes": "touches the dispatcher, launcher and hook that TASK-4888/4889 delivered",
+      "assigned_to": null,
+      "started_at": "2026-10-30T11:51:09+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4908-native-sandbox-mode.md",
+      "verification": null
     }
   ]
 }
