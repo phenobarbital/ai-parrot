@@ -1,14 +1,14 @@
 """Contract tests for the bundled experts shipped in the wheel (FEAT-778 §8 Q7)."""
 
 import importlib.resources
-import sys
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
 import pytest
 
-# Skip the wheel test when uv is not available
-pytest.importorskip("uv", reason="uv is required for the wheel test")
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_bundled_resources_list_both_experts() -> None:
@@ -67,20 +67,20 @@ def test_bundled_resources_list_both_experts() -> None:
     assert (cve_remediation_dir / "rules" / "governance.md").is_file()
 
 
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is required for the wheel test")
 def test_built_wheel_contains_bundles(tmp_path: Path) -> None:
     """The built wheel contains every file of cve-analyst and cve-remediation."""
     wheel_path = tmp_path / "wheel"
 
     # Build the wheel
-    result = pytest.importorskip("uv").run(
-        "build",
-        "--wheel",
-        "packages/ai-parrot",
-        "--out-dir",
-        str(wheel_path),
+    result = subprocess.run(
+        ["uv", "build", "--wheel", "packages/ai-parrot", "--out-dir", str(wheel_path)],
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
+    assert result.returncode == 0, result.stderr[-2000:]
 
     # Find the built wheel
     wheels = list(wheel_path.glob("*.whl"))
