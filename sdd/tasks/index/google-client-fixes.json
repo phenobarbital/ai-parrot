@@ -1,0 +1,91 @@
+{
+  "feature": "google-client-fixes",
+  "feature_id": "FEAT-781",
+  "spec": "sdd/specs/google-client-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-client-google/tests/unit/test_google_client_fixes.py",
+          "packages/ai-parrot/tests/test_prompt_caching_gemini.py",
+          "packages/ai-parrot-client-google/tests/unit/test_computer_use_vocabulary.py",
+          "packages/ai-parrot-integrations/tests/voice/transcriber/test_openai_language_codes.py",
+          "packages/ai-parrot-integrations/tests/integrations/msteams/test_openai_whisper_backend.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:79650fa6c7a10d1050be5005829fa8fb81167da6a3955d34f3d4346979aa1755"
+  },
+  "created_at": "2026-10-30T19:45:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "tasks": [
+    {
+      "id": "TASK-4911",
+      "slug": "google-client-cache-attach",
+      "title": "Attach Gemini CachedContent without system_instruction/tools/tool_config",
+      "feature_id": "FEAT-781",
+      "feature": "google-client-fixes",
+      "spec": "sdd/specs/google-client-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "first of three sequential edits to client.py (ask cache block)",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4911-google-client-cache-attach.md",
+      "discovered_from": "issue:71716068e28f"
+    },
+    {
+      "id": "TASK-4912",
+      "slug": "google-client-verbatim-stream-chunks",
+      "title": "Return Gemini stream chunks verbatim in _safe_extract_text",
+      "feature_id": "FEAT-781",
+      "feature": "google-client-fixes",
+      "spec": "sdd/specs/google-client-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4911"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits _safe_extract_text in client.py after TASK-4911",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4912-google-client-verbatim-stream-chunks.md",
+      "discovered_from": "issue:d34e3f558f8e"
+    },
+    {
+      "id": "TASK-4913",
+      "slug": "google-client-feat719-leftovers",
+      "title": "Type _computer_use_vocabulary as Literal; stop making up ISO codes in the Whisper backend",
+      "feature_id": "FEAT-781",
+      "feature": "google-client-fixes",
+      "spec": "sdd/specs/google-client-fixes.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4912"
+      ],
+      "parallel": false,
+      "parallelism_notes": "touches client.py typing import + openai_backend.py; last in the chain",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4913-google-client-feat719-leftovers.md",
+      "discovered_from": "issue:461ceca67d43"
+    }
+  ]
+}
