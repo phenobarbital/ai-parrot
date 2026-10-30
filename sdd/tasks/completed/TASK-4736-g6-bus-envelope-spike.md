@@ -201,10 +201,10 @@ def test_roundtrip_and_dedup_memory_backend():
 
 ## Acceptance Criteria
 
-- [ ] Request on the bus → result consumed by the right subscriber (by `correlation_id`), bytes intact (1 MB and `\x00\xff` payloads)
-- [ ] Duplicate `idempotency_key` dropped (2 executions for 3 calls); undeliverable result visible in the DLQ (Streams run)
-- [ ] `report.md` records versions, base64 overhead, PASS/FAIL per criterion and the change request text (§8 Q2)
-- [ ] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g6_bus_envelope.py -q` passes
+- [x] Request on the bus → result consumed by the right subscriber (by `correlation_id`), bytes intact (1 MB and `\x00\xff` payloads)
+- [x] Duplicate `idempotency_key` dropped (2 executions for 3 calls); undeliverable result visible in the DLQ (Streams run)
+- [x] `report.md` records versions, base64 overhead, PASS/FAIL per criterion and the change request text (§8 Q2)
+- [x] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g6_bus_envelope.py -q` passes
 
 ---
 

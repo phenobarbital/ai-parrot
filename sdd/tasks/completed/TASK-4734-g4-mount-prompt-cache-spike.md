@@ -203,10 +203,10 @@ def test_three_turns_complete():
 
 ## Acceptance Criteria
 
-- [ ] On ≥ 2 providers turn 2 shows cache reads and turn 3's cache behaviour is recorded
-- [ ] `report.md` states, per provider, whether the mount broke the prefix, and proposes M7's premount policy (spec G4 pass criterion: mount adds definitions without breaking the cached prefix on ≥ 2 providers — or the amendment says it does not and prescribes premount-only)
-- [ ] Offline run prints the request shape and exits 0
-- [ ] Opt-in test completes on one provider
+- [x] On ≥ 2 providers turn 2 shows cache reads and turn 3's cache behaviour is recorded
+- [x] `report.md` states, per provider, whether the mount broke the prefix, and proposes M7's premount policy (spec G4 pass criterion: mount adds definitions without breaking the cached prefix on ≥ 2 providers — or the amendment says it does not and prescribes premount-only)
+- [x] Offline run prints the request shape and exits 0
+- [x] Opt-in test completes on one provider
 
 ---
 

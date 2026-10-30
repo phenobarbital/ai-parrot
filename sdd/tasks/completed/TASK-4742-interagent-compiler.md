@@ -166,10 +166,10 @@ from parrot.interagent.compiler import affordances_for, cap_id_for, compile_capa
 
 ## Acceptance Criteria
 
-- [ ] `tool_name_for`/`cap_id_for` round-trip for every `CAP_ID_PATTERN` id
-- [ ] Inline/artifact/llm_backed descriptions contain the required sentences
-- [ ] A fresh `ToolManager` with three compiled tools returns three schemas for each of OPENAI/ANTHROPIC/GOOGLE/GROQ (offline)
-- [ ] Tests pass; ruff clean
+- [x] `tool_name_for`/`cap_id_for` round-trip for every `CAP_ID_PATTERN` id
+- [x] Inline/artifact/llm_backed descriptions contain the required sentences
+- [x] A fresh `ToolManager` with three compiled tools returns three schemas for each of OPENAI/ANTHROPIC/GOOGLE/GROQ (offline)
+- [x] Tests pass; ruff clean
 
 ---
 

@@ -221,11 +221,11 @@ def test_descriptor_under_250_tokens():
 
 ## Acceptance Criteria
 
-- [ ] `python sdd/state/FEAT-746/spikes/G1-token-accounting/spike.py` runs from the repo root and prints the sweep table
-- [ ] `report.md` records versions, data provenance, the table, a PASS/FAIL verdict and the proposed caps
-- [ ] Descriptor path < 250 tokens for the chosen caps on both tokenizers (spec G1 pass criterion, AC20)
-- [ ] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g1_token_accounting.py -q` passes
-- [ ] No `polars` import anywhere in the task's files
+- [x] `python sdd/state/FEAT-746/spikes/G1-token-accounting/spike.py` runs from the repo root and prints the sweep table
+- [x] `report.md` records versions, data provenance, the table, a PASS/FAIL verdict and the proposed caps
+- [x] Descriptor path < 250 tokens for the chosen caps on both tokenizers (spec G1 pass criterion, AC20)
+- [x] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g1_token_accounting.py -q` passes
+- [x] No `polars` import anywhere in the task's files
 
 ---
 

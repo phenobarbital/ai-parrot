@@ -245,10 +245,10 @@ ai-parrot-squawk = { workspace = true }
 
 ## Acceptance Criteria
 
-- [ ] `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-squawk/src pytest packages/ai-parrot-squawk/tests/test_satellite_imports.py -q` passes
-- [ ] Root `pyproject.toml` lists `ai-parrot-squawk` in dependencies and `[tool.uv.sources]`
-- [ ] No `src/parrot/__init__.py`; no grpcio/polars declared (AC17, AC18)
-- [ ] `ruff check packages/ai-parrot-squawk` clean
+- [x] `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-squawk/src pytest packages/ai-parrot-squawk/tests/test_satellite_imports.py -q` passes
+- [x] Root `pyproject.toml` lists `ai-parrot-squawk` in dependencies and `[tool.uv.sources]`
+- [x] No `src/parrot/__init__.py`; no grpcio/polars declared (AC17, AC18)
+- [x] `ruff check packages/ai-parrot-squawk` clean
 
 ---
 

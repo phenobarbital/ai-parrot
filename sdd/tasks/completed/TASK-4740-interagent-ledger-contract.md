@@ -253,10 +253,10 @@ from parrot.interagent.ledger import CallCost, CallerIdentity, ServedLedgerEntry
 
 ## Acceptance Criteria
 
-- [ ] `category_hash` is deterministic, changes on any capability change, and is not computed from provider schemas (test constructs a category, asserts hash equality after `model_copy()` and inequality after changing one field)
-- [ ] `contract_delta` partitions changed/unchanged/removed correctly
-- [ ] `ServedLedgerEntry.canonical_bytes()` excludes `signature` and is byte-stable
-- [ ] Both test files pass; ruff clean; no satellite imports (AC22)
+- [x] `category_hash` is deterministic, changes on any capability change, and is not computed from provider schemas (test constructs a category, asserts hash equality after `model_copy()` and inequality after changing one field)
+- [x] `contract_delta` partitions changed/unchanged/removed correctly
+- [x] `ServedLedgerEntry.canonical_bytes()` excludes `signature` and is byte-stable
+- [x] Both test files pass; ruff clean; no satellite imports (AC22)
 
 ---
 

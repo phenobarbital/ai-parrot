@@ -236,10 +236,10 @@ from parrot.interagent.messages import (PROTOCOL_MAJOR, Budget, CallMessage, Can
 
 ## Acceptance Criteria
 
-- [ ] Every bus message with non-UTF-8 `bytes` round-trips `to_payload → json.dumps → json.loads → from_payload` equal to the original
-- [ ] Unknown `kind` or `v` ⇒ `SquawkError(UPSTREAM_FAILED, 'malformed')`
-- [ ] A local `EnvelopeLike(Protocol)` copy (fields from Roost's spec) accepts a `CallMessage` instance (runtime_checkable attribute presence test) — AC22
-- [ ] Tests pass; ruff clean; no satellite/pycapnp imports
+- [x] Every bus message with non-UTF-8 `bytes` round-trips `to_payload → json.dumps → json.loads → from_payload` equal to the original
+- [x] Unknown `kind` or `v` ⇒ `SquawkError(UPSTREAM_FAILED, 'malformed')`
+- [x] A local `EnvelopeLike(Protocol)` copy (fields from Roost's spec) accepts a `CallMessage` instance (runtime_checkable attribute presence test) — AC22
+- [x] Tests pass; ruff clean; no satellite/pycapnp imports
 
 ---
 

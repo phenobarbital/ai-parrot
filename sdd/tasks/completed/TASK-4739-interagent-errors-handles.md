@@ -312,11 +312,11 @@ __all__ = [
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.interagent import ArtifactHandle, HandleStore, SquawkError` works
-- [ ] Non-owner, expired and unknown claims raise `HandleClaimError` with identical `str()` (AC07)
-- [ ] Grantee in `grants` can claim; owner-only `grant`
-- [ ] `pytest packages/ai-parrot/tests/interagent/test_handles.py -q` passes; `ruff check packages/ai-parrot/src/parrot/interagent` clean
-- [ ] No import of `parrot.squawk`, `parrot.semantic`, `capnp`, `biscuit_auth` (AC22)
+- [x] `from parrot.interagent import ArtifactHandle, HandleStore, SquawkError` works
+- [x] Non-owner, expired and unknown claims raise `HandleClaimError` with identical `str()` (AC07)
+- [x] Grantee in `grants` can claim; owner-only `grant`
+- [x] `pytest packages/ai-parrot/tests/interagent/test_handles.py -q` passes; `ruff check packages/ai-parrot/src/parrot/interagent` clean
+- [x] No import of `parrot.squawk`, `parrot.semantic`, `capnp`, `biscuit_auth` (AC22)
 
 ---
 

@@ -201,9 +201,9 @@ class PromotionAnalyzer:
 
 ## Acceptance Criteria
 
-- [ ] `render_entry`/`render_envelope` output contains digests/sizes, never raw `args`/`inline` bytes
-- [ ] `candidates()` respects `min_calls` and ratio; `approve()` returns a contract whose category hash changed and ledgers one entry
-- [ ] Tests pass; ruff clean
+- [x] `render_entry`/`render_envelope` output contains digests/sizes, never raw `args`/`inline` bytes
+- [x] `candidates()` respects `min_calls` and ratio; `approve()` returns a contract whose category hash changed and ledgers one entry
+- [x] Tests pass; ruff clean
 
 ---
 

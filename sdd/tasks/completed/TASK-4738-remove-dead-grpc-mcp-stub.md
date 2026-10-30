@@ -142,9 +142,9 @@ def test_config_has_no_grpc_fields():
 
 ## Acceptance Criteria
 
-- [ ] Both files deleted; `pytest packages/ai-parrot-server/tests/mcp/test_no_grpc_stub.py -q` passes
-- [ ] `pytest packages/ai-parrot-server/tests/mcp/test_agent_mount_config.py -q` still passes
-- [ ] `ruff check packages/ai-parrot-server/src/parrot/mcp/config.py` clean
+- [x] Both files deleted; `pytest packages/ai-parrot-server/tests/mcp/test_no_grpc_stub.py -q` passes
+- [x] `pytest packages/ai-parrot-server/tests/mcp/test_agent_mount_config.py -q` still passes
+- [x] `ruff check packages/ai-parrot-server/src/parrot/mcp/config.py` clean
 
 ---
 

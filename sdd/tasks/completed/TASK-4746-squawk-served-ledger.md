@@ -205,10 +205,10 @@ def postgres_ledger_sink(dsn_or_pool: str | Any, *, table: str = "squawk_served_
 
 ## Acceptance Criteria
 
-- [ ] Signed entry verifies with `LocalHMACSigner`; tampering a field breaks `verify`
-- [ ] Sink raising + `required=True` ⇒ `LedgerUnavailable`, entry absent from `recent()`; `required=False` ⇒ retained + error logged
-- [ ] `durable` reflects sink presence; `recent(limit)` bounded
-- [ ] Tests pass; ruff clean
+- [x] Signed entry verifies with `LocalHMACSigner`; tampering a field breaks `verify`
+- [x] Sink raising + `required=True` ⇒ `LedgerUnavailable`, entry absent from `recent()`; `required=False` ⇒ retained + error logged
+- [x] `durable` reflects sink presence; `recent(limit)` bounded
+- [x] Tests pass; ruff clean
 
 ---
 

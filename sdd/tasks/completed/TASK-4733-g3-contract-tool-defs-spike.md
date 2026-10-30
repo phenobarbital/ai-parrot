@@ -213,10 +213,10 @@ def test_all_formats_accept_offline():
 
 ## Acceptance Criteria
 
-- [ ] Three capabilities compile and register; four formats produce three schemas each with zero offline violations
-- [ ] Under `PARROT_TEST_REAL_LLM=1`, each configured provider calls the tool with valid args (recorded per provider; unconfigured providers are reported as skipped, never as passed)
-- [ ] `report.md` carries the amendment (or explicitly "no wording change")
-- [ ] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g3_contract_tool_defs.py -q` passes
+- [x] Three capabilities compile and register; four formats produce three schemas each with zero offline violations
+- [x] Under `PARROT_TEST_REAL_LLM=1`, each configured provider calls the tool with valid args (recorded per provider; unconfigured providers are reported as skipped, never as passed)
+- [x] `report.md` carries the amendment (or explicitly "no wording change")
+- [x] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g3_contract_tool_defs.py -q` passes
 
 ---
 

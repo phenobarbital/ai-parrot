@@ -237,10 +237,10 @@ from parrot.squawk.blobs.sweeper import BlobSweeper
 
 ## Acceptance Criteria
 
-- [ ] The TASK-4744 conformance cases (dedup, digest mismatch, ACL, TTL, encryption, range) pass against the fake file manager
-- [ ] The fake manager proves only the six duck methods are used
-- [ ] `BlobSweeper` runs `sweep()` on the interval, survives a raising sweep, stops cleanly
-- [ ] Tests pass; ruff clean
+- [x] The TASK-4744 conformance cases (dedup, digest mismatch, ACL, TTL, encryption, range) pass against the fake file manager
+- [x] The fake manager proves only the six duck methods are used
+- [x] `BlobSweeper` runs `sweep()` on the interval, survives a raising sweep, stops cleanly
+- [x] Tests pass; ruff clean
 
 ---
 

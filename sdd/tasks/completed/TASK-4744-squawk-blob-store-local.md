@@ -263,11 +263,11 @@ class LocalDiskBlobStore(SquawkBlobStore):
 
 ## Acceptance Criteria
 
-- [ ] Same bytes twice ⇒ one object, same meta (AC10); wrong `expected_digest` ⇒ error and no object left in `root` or `.tmp`
-- [ ] Non-owner read refused with `HandleClaimError`; grantee allowed; expired refused; `sweep` removes expired
-- [ ] `data_class="hr"` object is not plaintext on disk and reads back equal
-- [ ] Range read returns exactly `[offset, offset+length)`
-- [ ] Tests pass; ruff clean
+- [x] Same bytes twice ⇒ one object, same meta (AC10); wrong `expected_digest` ⇒ error and no object left in `root` or `.tmp`
+- [x] Non-owner read refused with `HandleClaimError`; grantee allowed; expired refused; `sweep` removes expired
+- [x] `data_class="hr"` object is not plaintext on disk and reads back equal
+- [x] Range read returns exactly `[offset, offset+length)`
+- [x] Tests pass; ruff clean
 
 ---
 

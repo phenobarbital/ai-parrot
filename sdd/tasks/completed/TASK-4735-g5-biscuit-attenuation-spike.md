@@ -186,9 +186,9 @@ def test_issue_attenuate_refuse():
 
 ## Acceptance Criteria
 
-- [ ] All four cases match the expected table (spec G5 pass criterion: delegated token calls `hr.reports.*`, is refused on `hr.people.*`)
-- [ ] `report.md` records the `biscuit-python` version, the exact API and Datalog used, and the navigator-auth change request text (§8 Q4)
-- [ ] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g5_biscuit_attenuation.py -q` passes
+- [x] All four cases match the expected table (spec G5 pass criterion: delegated token calls `hr.reports.*`, is refused on `hr.people.*`)
+- [x] `report.md` records the `biscuit-python` version, the exact API and Datalog used, and the navigator-auth change request text (§8 Q4)
+- [x] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g5_biscuit_attenuation.py -q` passes
 
 ---
 

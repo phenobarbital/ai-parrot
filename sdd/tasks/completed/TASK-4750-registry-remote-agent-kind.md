@@ -197,10 +197,10 @@ from .registry import AgentKind, AgentRegistry, BotConfig, BotMetadata, RemoteAg
 
 ## Acceptance Criteria
 
-- [ ] `BotConfig(name="hr", kind="squawk", endpoint="squawk://hr:7470", contract_categories=["hr.reports"])` validates without `class_name`; `BotConfig(name="x")` (local) still requires `class_name`/`module`
-- [ ] `register_remote` + `find_serving("hr.reports")` returns the entry; `find_by_kind(AgentKind.SQUAWK)` too; `await registry.get_instance("hr")` raises `RemoteAgentNotInstantiable` (AC13)
-- [ ] Existing `test_unregister.py`, `test_yaml_roundtrip.py`, `test_registry_tooling_normalize.py` still pass
-- [ ] ruff clean
+- [x] `BotConfig(name="hr", kind="squawk", endpoint="squawk://hr:7470", contract_categories=["hr.reports"])` validates without `class_name`; `BotConfig(name="x")` (local) still requires `class_name`/`module`
+- [x] `register_remote` + `find_serving("hr.reports")` returns the entry; `find_by_kind(AgentKind.SQUAWK)` too; `await registry.get_instance("hr")` raises `RemoteAgentNotInstantiable` (AC13)
+- [x] Existing `test_unregister.py`, `test_yaml_roundtrip.py`, `test_registry_tooling_normalize.py` still pass
+- [x] ruff clean
 
 ---
 

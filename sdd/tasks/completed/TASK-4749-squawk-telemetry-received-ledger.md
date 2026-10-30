@@ -197,10 +197,10 @@ class ReceivedLedger:
 
 ## Acceptance Criteria
 
-- [ ] `record_from_call` yields `tokens_in=0` for deterministic even when `cost.tokens_in>0`; `side`/`trace_id` set
-- [ ] `emit` with a raising recorder does not raise; with a fake registry the event is published once
-- [ ] `ReceivedLedger.append`/`note_follow_up`/`recent` behave; raising sink is logged
-- [ ] Tests pass; ruff clean
+- [x] `record_from_call` yields `tokens_in=0` for deterministic even when `cost.tokens_in>0`; `side`/`trace_id` set
+- [x] `emit` with a raising recorder does not raise; with a fake registry the event is published once
+- [x] `ReceivedLedger.append`/`note_follow_up`/`recent` behave; raising sink is logged
+- [x] Tests pass; ruff clean
 
 ---
 

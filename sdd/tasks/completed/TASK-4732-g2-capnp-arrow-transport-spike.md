@@ -246,11 +246,11 @@ def test_cancel_leaves_valid_partial():
 
 ## Acceptance Criteria
 
-- [ ] 100 MB frame streams in ≤ 4 MiB frames; throughput and frame count recorded
-- [ ] Cancel mid-stream ⇒ `done("PARTIAL")` and every received frame reassembles (AC09 evidence)
-- [ ] Peer SAN and `hello` token observed server-side (M10 evidence)
-- [ ] `report.md` names the exact pycapnp API used (version pinned) and carries the amendment
-- [ ] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g2_capnp_arrow.py -q` passes (or the report explains the FAIL and the fallback)
+- [x] 100 MB frame streams in ≤ 4 MiB frames; throughput and frame count recorded
+- [x] Cancel mid-stream ⇒ `done("PARTIAL")` and every received frame reassembles (AC09 evidence)
+- [x] Peer SAN and `hello` token observed server-side (M10 evidence)
+- [x] `report.md` names the exact pycapnp API used (version pinned) and carries the amendment
+- [x] `PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g2_capnp_arrow.py -q` passes (or the report explains the FAIL and the fallback)
 
 ---
 

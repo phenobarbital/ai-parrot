@@ -193,10 +193,10 @@ from parrot.core.events.lifecycle.events.capability import CapabilityCallEvent  
 
 ## Acceptance Criteria
 
-- [ ] `from parrot.observability.recorders import CapabilityCallRecord` and `from parrot.core.events.lifecycle.events import CapabilityCallEvent` work
-- [ ] A minimal `AbstractLogger` subclass implementing only `record` instantiates and `await record_capability(...)` returns None
-- [ ] `CapabilityCallRecord` has no `provider`/`model`/`user_id` fields (AC14)
-- [ ] Existing `pytest packages/ai-parrot/tests/unit/observability/test_config.py -q` still passes; new test passes; ruff clean
+- [x] `from parrot.observability.recorders import CapabilityCallRecord` and `from parrot.core.events.lifecycle.events import CapabilityCallEvent` work
+- [x] A minimal `AbstractLogger` subclass implementing only `record` instantiates and `await record_capability(...)` returns None
+- [x] `CapabilityCallRecord` has no `provider`/`model`/`user_id` fields (AC14)
+- [x] Existing `pytest packages/ai-parrot/tests/unit/observability/test_config.py -q` still passes; new test passes; ruff clean
 
 ---
 

@@ -218,10 +218,10 @@ class ContractCache:
 
 ## Acceptance Criteria
 
-- [ ] Mismatched binding (deterministic + llm_backed) raises; duplicate cap_id raises; categories sorted and hashed
-- [ ] `check_version_rules` flags a removal without a major bump and accepts an addition
-- [ ] `ContractCache.apply` + `replace_category` + `search` behave as specified
-- [ ] Tests pass with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-squawk/src`; ruff clean
+- [x] Mismatched binding (deterministic + llm_backed) raises; duplicate cap_id raises; categories sorted and hashed
+- [x] `check_version_rules` flags a removal without a major bump and accepts an addition
+- [x] `ContractCache.apply` + `replace_category` + `search` behave as specified
+- [x] Tests pass with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-squawk/src`; ruff clean
 
 ---
 
