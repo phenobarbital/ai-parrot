@@ -124,4 +124,18 @@ Implement inside `.claude/worktrees/feat-FEAT-771-wiki-cli-fixes`; run tests wit
 
 ## Completion Note
 
-_(filled on completion)_
+**Completed**: 2026-10-30 — verified. Implementing commit `68d2fcf89`.
+
+- `integration.py`: `_attempt` gains `except Exception` after the outer `except StrictLedgerReadError` —
+  `logger.exception`, guarded `_remove_if_clean(tmp)`, `pending`/`unexpected-error` with the kept path (if any)
+  as `recovery_path`. `integrate()` wraps each `_attempt` the same way for failures before `tmp` exists.
+  `build_scratch_snapshot` removes `scratch_dir` in a `finally` (`shutil.rmtree` via `asyncio.to_thread`).
+  Deliberate recovery trees (`hook-mutated-commit`, post-commit `push-failed`, `verify-failed`) unchanged.
+- `outbox.py`: `EventIdentityError(StrictLedgerReadError)`; `verify_event_identity` raises it and
+  `read_strict_events` re-raises it by type (message text unchanged; nothing else matched on it).
+- `cli.py`: imports `IntegrationError`; `prepare` catches `IntegrationError` (not `Exception`); `status` catches
+  `(IntegrationError, OSError)` twice; `integrate --batch-id` of a receipted batch → `already_delivered`, exit 0,
+  carrying the receipt's `skipped_event_ids`; a malformed id (`ValueError`) or no receipt keeps `unknown-batch`.
+- Tests: 7 new (unexpected error leaves no worktree, scratch removed, typed identity error, receipted and unknown
+  `--batch-id`, prepare remote failure exit 2, prepare programmer error propagates). Outbox suites: 51 passed.
+  `ruff check` clean.
