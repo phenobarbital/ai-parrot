@@ -124,4 +124,18 @@ Implement inside `.claude/worktrees/feat-FEAT-771-wiki-cli-fixes`; run tests wit
 
 ## Completion Note
 
-_(filled on completion)_
+**Completed**: 2026-10-30 — verified. Implementing commit `152c5ad11`.
+
+- `integration.py`: `MergePlan.redundant_closes` and pure `drop_redundant_closes(remote, plan)`, applied in
+  `_attempt` after `merge_batch` and before `find_transition_conflicts` (unchanged). Only kept lines are
+  appended; verification and `verified_digest` cover the delivered events; `acknowledge(skipped_event_ids=…)`;
+  the report carries `skipped`; INFO log per skipped close.
+- `outbox.py`: `LedgerReceipt.skipped_event_ids`, `LedgerDeliveryReport.skipped` (default `[]`, old receipts
+  load), `acknowledge(..., skipped_event_ids=())`, `_skipped_ids_sync()`; `_prepare_sync`/`_status_sync`
+  exclude skipped ids.
+- `cli.py`: `integrate` continues past `conflict`/`unsupported`, stops on `pending`, exit = max code. Text output
+  now also prints each conflict (`conflict: <event> on <subject> (<reason>)`) — small addition, same function,
+  because diagnosing the originating incident needed `--json` plus a hand replay.
+- `docs/sdd/ledger-outbox.md`: loop/exit rule and "Redundant closes".
+- Tests: 9 new (3 unit, 2 two-clone delivery, 2 receipt/prepare, 2 CLI loop), all pass; the three outbox suites
+  44 passed, `test_transition_conflicts` untouched. `ruff check` clean.
