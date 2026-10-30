@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-306 — AgentCrew Saved Crews (Execution Persistence & Replay)
 **Spec**: `sdd/specs/agentcrew-saved-crews.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1765

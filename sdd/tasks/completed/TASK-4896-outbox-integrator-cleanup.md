@@ -3,7 +3,7 @@
 **Feature**: FEAT-771 — wikitoolkit CLI fixes
 **Spec**: `sdd/specs/wiki-cli-fixes.spec.md`
 **Discovered-from**: `issue:81330c0acb9f`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4895

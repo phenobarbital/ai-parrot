@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-180 — GitHub Repository Weekly Activity Report
 **Spec**: `sdd/specs/github-repo-weekly-activity-report.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1212

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-203 — Google Document Understanding
 **Spec**: `sdd/specs/google-document-understanding.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

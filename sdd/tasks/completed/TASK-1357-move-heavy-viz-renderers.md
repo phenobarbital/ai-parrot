@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-200 — Extract outputs/formats to ai-parrot-visualizations
 **Spec**: `sdd/proposals/ai-parrot-visualizations.proposal.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1355, TASK-1356

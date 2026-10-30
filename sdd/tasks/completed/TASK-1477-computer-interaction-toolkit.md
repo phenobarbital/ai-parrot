@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-227 — Computer-Use Agent
 **Spec**: `sdd/specs/computer-use-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1475, TASK-1476

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-718 — close_task.sh must emit `task.closed` with an interpreter that can import `parrot`
 **Spec**: `sdd/specs/fixgroup-a322afe6fc2b.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

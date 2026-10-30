@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-499 — A2UI optional-binding lowering (`parrot_optional` reaches the wire)
 **Spec**: `sdd/specs/a2ui-optional-binding-lowering.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

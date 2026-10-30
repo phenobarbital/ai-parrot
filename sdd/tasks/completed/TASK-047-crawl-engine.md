@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-013 — CrawlEngine
 **Spec**: `sdd/specs/scrapingplan-crawlengine.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-044, TASK-045, TASK-046

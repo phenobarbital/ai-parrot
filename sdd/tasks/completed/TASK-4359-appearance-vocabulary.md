@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-683 — Planogram appearance rule
 **Spec**: `sdd/specs/planogram-appearance-rule.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

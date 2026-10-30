@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-312 — EventBus Core Extraction → `navigator-eventbus`
 **Spec**: `sdd/specs/eventbus-core-extraction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1801, TASK-1802, TASK-1803, TASK-1804

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-196 — Fix Parrot Transport
 **Spec**: `sdd/specs/fix-parrot-transport.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: excelloader-migration
 **Spec**: `sdd/specs/excelloader-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

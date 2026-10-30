@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-746 — Squawk: typed binary inter-agent protocol
 **Spec**: `sdd/specs/inter-agent-protocol.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

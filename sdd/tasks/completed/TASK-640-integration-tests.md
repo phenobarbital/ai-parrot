@@ -2,7 +2,7 @@
 
 **Feature**: loader-failed-chunking
 **Spec**: `sdd/specs/loader-failed-chunking.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-633, TASK-634, TASK-635, TASK-636, TASK-637, TASK-638, TASK-639

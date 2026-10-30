@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-456 — Relational Field Cardinality for parrot-formdesigner
 **Spec**: `sdd/specs/formbuilder-fieldtype-cardinality.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2412, TASK-2413, TASK-2414, TASK-2415

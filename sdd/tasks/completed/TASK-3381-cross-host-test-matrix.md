@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-570 — `parrot toolkits` on-demand local-MCP toolkit installation
 **Spec**: `sdd/specs/expose-local-mcp-tools.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3377, TASK-3378, TASK-3379, TASK-3380

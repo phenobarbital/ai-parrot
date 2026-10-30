@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-263 — AI-Parrot ⇄ M365 Copilot via A2A (per-user credentials)
 **Spec**: `sdd/specs/copilot-a2a-percredential.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

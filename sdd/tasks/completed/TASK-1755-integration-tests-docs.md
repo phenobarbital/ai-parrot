@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-303 — UX for Custom Engine Copilot Agents (Semantic UI Model → Adaptive Cards)
 **Spec**: `sdd/specs/ux-custom-engine-copilot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1751, TASK-1752, TASK-1753, TASK-1754

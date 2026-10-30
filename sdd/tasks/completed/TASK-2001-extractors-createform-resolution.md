@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-393 — Stable UUID-Based Field Identity (field_uid)
 **Spec**: `sdd/specs/formdesigner-field-uid.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1997

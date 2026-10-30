@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-237 — PageIndex Embedding Router
 **Spec**: `sdd/specs/pageindex-embedding-router.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

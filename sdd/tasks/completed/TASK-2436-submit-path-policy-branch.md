@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-458 — Unknown-Field Capture Policy for Form Submissions
 **Spec**: `sdd/specs/formdesigner-unknown-fields-capture.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2432, TASK-2433, TASK-2434, TASK-2435

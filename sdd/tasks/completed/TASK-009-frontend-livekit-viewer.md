@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-242 — LiveAvatar Phase A (avatar as the "mouth" of AgentChat)
 **Spec**: `sdd/specs/liveavatar-phase-a-mouth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-007

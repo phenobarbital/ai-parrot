@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-779 — auth-pbac-tech-debt
 **Spec**: `sdd/specs/auth-pbac-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

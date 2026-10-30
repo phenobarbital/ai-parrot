@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-010 — TelegramCrewTransport
 **Spec**: `sdd/specs/telegram-crew-transport.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-017, TASK-018

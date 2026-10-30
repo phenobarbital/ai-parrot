@@ -2,7 +2,7 @@
 
 **Feature**: Ontological Graph RAG
 **Spec**: `sdd/specs/ontological-graph-rag.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-360

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-459 — Form Builder: Sandboxed Custom Code on Lifecycle Events
 **Spec**: `sdd/specs/formbuilder-custom-code.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3161

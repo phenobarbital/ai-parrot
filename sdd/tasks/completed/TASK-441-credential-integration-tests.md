@@ -2,7 +2,7 @@
 
 **Feature**: user-based-credentials
 **Spec**: `sdd/specs/user-based-credentials.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-437, TASK-438, TASK-439, TASK-440

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-781 — google-client-fixes
 **Spec**: `sdd/specs/google-client-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

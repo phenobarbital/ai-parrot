@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-223 — Structured Artifact Contract
 **Spec**: `sdd/specs/structured-artifact-contract.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1454

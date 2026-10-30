@@ -2,7 +2,7 @@
 
 **Feature**: vectorstore-handler-api
 **Spec**: `sdd/specs/vectorstore-handler-api.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-607, TASK-608, TASK-609, TASK-610, TASK-611

@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: W3 — Handler switch: agents, files, tooling (part 1: agents.py + shared view helpers)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3932, TASK-3935, TASK-3943

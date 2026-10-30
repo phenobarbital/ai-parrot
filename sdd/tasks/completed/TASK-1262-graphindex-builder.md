@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-187 — GraphIndex — Structured Knowledge Graph Indexing
 **Spec**: `sdd/specs/graphindex.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1254, TASK-1255, TASK-1256, TASK-1257, TASK-1258, TASK-1259, TASK-1260, TASK-1261

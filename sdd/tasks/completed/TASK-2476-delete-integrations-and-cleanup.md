@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-462 — Unified Telemetry Bus
 **Spec**: `sdd/specs/unified-telemetry-bus.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2474, TASK-2475

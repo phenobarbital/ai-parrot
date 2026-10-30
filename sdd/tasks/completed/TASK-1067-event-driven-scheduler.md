@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1060, TASK-1061, TASK-1065, TASK-1066

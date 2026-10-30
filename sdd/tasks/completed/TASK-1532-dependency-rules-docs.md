@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-234 — Form Designer — Conditional Sections (Pre/Post Dependencies)
 **Spec**: `sdd/specs/formdesigner-conditional-sections.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1526, TASK-1527, TASK-1528, TASK-1529, TASK-1530, TASK-1531

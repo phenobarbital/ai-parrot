@@ -2,7 +2,7 @@
 
 **Feature**: image-video-understanding-handler
 **Spec**: `sdd/specs/image-video-understanding-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-466

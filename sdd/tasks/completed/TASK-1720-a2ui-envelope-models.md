@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-273 — A2UI Protocol Integration — Rendering Core (parrot.outputs.a2ui)
 **Spec**: sdd/specs/a2ui-implementation.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

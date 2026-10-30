@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-305 — CompanyResearch — extend CompanyInfoToolkit
 **Spec**: `sdd/specs/companyresearch-tool.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1759

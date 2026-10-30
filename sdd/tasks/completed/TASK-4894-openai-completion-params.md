@@ -3,7 +3,7 @@
 **Feature**: FEAT-770 — OpenAI client fixes
 **Spec**: `sdd/specs/openai-client-fixes.spec.md`
 **Discovered-from**: `issue:d641d02cf6b5`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

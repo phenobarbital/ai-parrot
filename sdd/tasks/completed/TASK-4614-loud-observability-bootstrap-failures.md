@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-725 — Re-arm the Observability Auto-Boot (`set_bootstrap_hook`)
 **Spec**: `sdd/specs/fixgroup-f3ad5ee39704.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

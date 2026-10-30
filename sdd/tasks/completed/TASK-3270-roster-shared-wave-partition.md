@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-560 - Dev-Loop Pool Honours Exclusive Tasks
 **Spec**: `sdd/specs/dev-loop-pool-exclusive-tasks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-3269

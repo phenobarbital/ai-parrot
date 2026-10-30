@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-756 — Metric Definition Registry
 **Spec**: `sdd/specs/metric-definition-registry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4843

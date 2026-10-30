@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-228 — Deterministic Data-Plane Authorization for DatasetManager
 **Spec**: `sdd/specs/dataplane-authz.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

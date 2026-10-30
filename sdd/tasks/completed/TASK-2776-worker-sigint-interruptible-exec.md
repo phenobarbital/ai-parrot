@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-521 - REPL Worker Idle/Busy Detection & Memory Guardrails
 **Spec**: `sdd/specs/repl-worker-idle-detection-memory-guardrails.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

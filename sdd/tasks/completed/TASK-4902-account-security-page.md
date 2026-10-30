@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-772 — Passkey (WebAuthn) sign-in, enrollment and management in the Admin UI
 **Spec**: `sdd/specs/passkey-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4898, TASK-4899, TASK-4900

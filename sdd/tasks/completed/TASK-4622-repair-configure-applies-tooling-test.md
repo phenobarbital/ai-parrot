@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-727 — Repair `test_configure_applies_tooling` (red since birth)
 **Spec**: `sdd/specs/interfaces-test-configure-applies-tooling-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

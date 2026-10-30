@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-498 — ast-grep Structural Plane for wikitoolkit
 **Spec**: `sdd/specs/ast-grep-for-wikitoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2742, TASK-2743, TASK-2744, TASK-2745, TASK-2746, TASK-2751

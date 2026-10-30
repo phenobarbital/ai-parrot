@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-457 — Autonomous FormSchema Persistence (Standalone Forms)
 **Spec**: `sdd/specs/formbuilder-formschema-persistency.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L
 **Depends-on**: TASK-2418, TASK-2419, TASK-2420

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-716 — models-bots-fixes
 **Spec**: `sdd/specs/models-bots-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

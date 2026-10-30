@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-598 — A2UI Linked Surfaces
 **Spec**: `sdd/specs/a2ui-linked-surfaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: none (code-independent of the other FEAT-598 tasks; TASK-3796 documents the keys this task fills)

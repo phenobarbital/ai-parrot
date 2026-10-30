@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-128 — Parent-Child Retrieval with Composable Parent Searcher
 **Spec**: `sdd/specs/parent-child-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

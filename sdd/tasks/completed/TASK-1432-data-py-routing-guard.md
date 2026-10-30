@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-218 — Structured Table Output Mode
 **Spec**: `sdd/specs/structured-table.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1429, TASK-1431

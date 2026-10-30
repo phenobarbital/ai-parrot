@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-649 — Audio Form Interaction Workflow
 **Spec**: `sdd/specs/audio-form-interaction-workflow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4226, TASK-4218, TASK-4219, TASK-4222

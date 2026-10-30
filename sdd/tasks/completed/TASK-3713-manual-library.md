@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-601 — Procedure Graph (training agent)
 **Spec**: `sdd/specs/training-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-3706, TASK-3708, TASK-3709, TASK-3712

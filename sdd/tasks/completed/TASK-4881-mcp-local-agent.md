@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-769 — Example agents for the governed Semantic Layer
 **Spec**: `sdd/specs/semantic-layer-example.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4879

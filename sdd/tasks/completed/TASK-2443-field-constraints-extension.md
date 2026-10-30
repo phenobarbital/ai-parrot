@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-460 — Raw Upload Field Types
 **Spec**: `sdd/specs/raw-upload-field-types.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

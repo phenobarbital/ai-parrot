@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-165 — CloudSploit ECR Image-Scan Collector & Interactive Report
 **Spec**: `sdd/specs/cloudsploit-ecr.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1118, TASK-1119

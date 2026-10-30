@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-549 — `sdd-worker` as Orchestrator of Parallel `sdd-coder` Sub-Agents
 **Spec**: `sdd/specs/sdd-worker-subagents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3122, TASK-3124

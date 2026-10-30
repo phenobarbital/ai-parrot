@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-528 — Postgres recipe store + agent-package importability
 **Spec**: `sdd/specs/pg-recipe-store-and-agent-package-importability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-044 (Matrix Multi-Agent Crew Integration)
 **Spec**: `sdd/specs/integrations-matrix-multi.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Effort**: M
 **Depends on**: TASK-296, TASK-297, TASK-298, TASK-299, TASK-300, TASK-301

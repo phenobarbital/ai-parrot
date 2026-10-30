@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-316 — EventBus Brokers Port
 **Spec**: `sdd/specs/eventbus-brokers-port.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1818

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-108 — Jira OAuth2 3LO Authentication from Telegram WebApp
 **Spec**: `sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-757, TASK-760, TASK-761

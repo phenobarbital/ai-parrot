@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-706 — Workday Worker Event History and Job Changes
 **Spec**: `sdd/specs/workday-worker-event-history-and-job-changes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4487, TASK-4488

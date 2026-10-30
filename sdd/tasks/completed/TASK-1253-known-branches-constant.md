@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-187 — Git Parrot Flow — Staging Branch and Sync Automation
 **Spec**: `sdd/specs/git-parrot-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

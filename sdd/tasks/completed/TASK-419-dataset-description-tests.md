@@ -2,7 +2,7 @@
 
 **Feature**: add-description-datasetmanager
 **Spec**: `sdd/specs/add-description-datasetmanager.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-415, TASK-416, TASK-417, TASK-418

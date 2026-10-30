@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-149 — Ephemeral User Agents
 **Spec**: `sdd/specs/ephemeral-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1040, TASK-1041, TASK-1039

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none *(but externally BLOCKED: FEAT-313 lifecycle extraction and FEAT-316 brokers port must be delivered in `navigator-eventbus` first — see Preflight)*

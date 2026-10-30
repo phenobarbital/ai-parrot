@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-449 — Legal Librarian Answer Layer
 **Spec**: `sdd/specs/legal-librarian-answer-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2492, TASK-2494

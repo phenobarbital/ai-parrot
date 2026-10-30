@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-780 — oauth2-service-tech-debt
 **Spec**: `sdd/specs/oauth2-service-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

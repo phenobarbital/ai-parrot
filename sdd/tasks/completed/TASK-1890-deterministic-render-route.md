@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-327 — Infographic Render Endpoint — Deterministic Render-as-a-Service
 **Spec**: `sdd/specs/infographic-render-endpoint.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1888, TASK-1889

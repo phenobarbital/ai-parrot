@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-237 — Integrate FIREFLIES_API_KEY env-var support into the MCP Client definition
 **Spec**: `sdd/specs/integrate-mcp-fireflies.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

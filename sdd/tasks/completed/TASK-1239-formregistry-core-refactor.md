@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-183 — FormRegistry Multi-Tenancy
 **Spec**: `sdd/specs/formregistry-multi-tenancy.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-248 — LiveAvatar FULL Mode speak_text Integration (Backend)
 **Spec**: `sdd/specs/liveavatar-fullmode-speaktext.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1591, TASK-1592

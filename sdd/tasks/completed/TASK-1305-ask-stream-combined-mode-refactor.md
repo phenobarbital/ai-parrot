@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-193 — Google GenAI client: simultaneous tool-calling + structured output
 **Spec**: `sdd/specs/google-genai-combined-tools-and-schema.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1303
