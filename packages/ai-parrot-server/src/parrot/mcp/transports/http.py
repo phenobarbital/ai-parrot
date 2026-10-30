@@ -1,6 +1,6 @@
 import asyncio
+import hashlib
 import json
-import logging
 import ssl
 import webbrowser
 from typing import Dict, Any, Optional, Tuple
@@ -217,6 +217,10 @@ class HttpMCPSession:
         # response when the server issues them)
         self._mcp_session_id: Optional[str] = None
         self._protocol_version: Optional[str] = None
+        # Principal-partitioned MCP sessions (key = sha256(per-call
+        # Authorization)[:16]); the default partition (None) uses the fields above.
+        self._partitions: Dict[str, Dict[str, Optional[str]]] = {}
+        self._partition_locks: Dict[str, asyncio.Lock] = {}
 
     async def _setup_oauth2(self) -> None:
         """Set up MCP SDK OAuth2 provider when config.oauth2 is configured.
@@ -387,8 +391,23 @@ class HttpMCPSession:
         except Exception as e:
             raise MCPConnectionError(f"HTTP session initialization failed: {e}") from e
 
-    async def _send_request(self, method: str, params: dict = None) -> dict:
-        """Send JSON-RPC request via HTTP."""
+    async def _send_request(
+        self,
+        method: str,
+        params: dict = None,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        partition: Optional[str] = None,
+    ) -> dict:
+        """Send JSON-RPC request via HTTP.
+
+        Args:
+            method: JSON-RPC method.
+            params: Optional JSON-RPC params.
+            headers: Per-call headers applied to this request only; a per-call
+                ``Authorization`` overrides the OAuth2 provider / token supplier.
+            partition: Principal partition key (None = default session).
+        """
         if not self._session:
             raise MCPConnectionError("HTTP session not established")
 
@@ -408,11 +427,15 @@ class HttpMCPSession:
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
             }
-            if self._mcp_session_id:
-                req_headers["Mcp-Session-Id"] = self._mcp_session_id
-            if self._protocol_version:
-                req_headers["MCP-Protocol-Version"] = self._protocol_version
-            if self._oauth2_provider is not None:
+            session_id, protocol_version = self._partition_state(partition)
+            if session_id:
+                req_headers["Mcp-Session-Id"] = session_id
+            if protocol_version:
+                req_headers["MCP-Protocol-Version"] = protocol_version
+            has_override = bool(headers) and "Authorization" in headers
+            if has_override:
+                pass  # per-call Authorization wins; provider/supplier not consulted
+            elif self._oauth2_provider is not None:
                 token = await self._get_oauth2_token()
                 if token:
                     req_headers["Authorization"] = f"Bearer {token}"
@@ -420,6 +443,8 @@ class HttpMCPSession:
                 token = self.config.token_supplier()
                 if token:
                     req_headers["Authorization"] = f"Bearer {token}"
+            if headers:
+                req_headers.update(dict(headers))
 
             async with self._session.post(
                 self.config.url,
@@ -444,7 +469,12 @@ class HttpMCPSession:
                 # and echo it on subsequent requests.
                 issued_session = response.headers.get("Mcp-Session-Id")
                 if issued_session:
-                    self._mcp_session_id = issued_session
+                    if partition is None:
+                        self._mcp_session_id = issued_session
+                    else:
+                        self._partitions.setdefault(
+                            partition, {"session_id": None, "protocol_version": None}
+                        )["session_id"] = issued_session
 
                 content_type = response.headers.get("Content-Type", "")
                 if "text/event-stream" in content_type:
@@ -529,7 +559,63 @@ class HttpMCPSession:
             f"SSE stream ended without a response to request {request_id}"
         )
 
-    async def _send_notification(self, method: str, params: dict = None):
+    def _partition_state(self, partition: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        """Return ``(session_id, protocol_version)`` for a partition."""
+        if partition is None:
+            return self._mcp_session_id, self._protocol_version
+        state = self._partitions.get(partition) or {}
+        return state.get("session_id"), state.get("protocol_version")
+
+    @staticmethod
+    def _partition_for(headers: Optional[Dict[str, str]]) -> Optional[str]:
+        """None = default partition; else a non-reversible key of the per-call Authorization value."""
+        auth = (headers or {}).get("Authorization")
+        return hashlib.sha256(auth.encode()).hexdigest()[:16] if auth else None
+
+    async def _ensure_partition_initialized(
+        self, partition: Optional[str], headers: Optional[Dict[str, str]]
+    ) -> None:
+        """Run the MCP handshake once per principal partition."""
+        if partition is None or partition in self._partitions:
+            return
+        lock = self._partition_locks.setdefault(partition, asyncio.Lock())
+        async with lock:
+            if partition in self._partitions:
+                return
+            try:
+                init_result = await self._send_request(
+                    "initialize",
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "clientInfo": {"name": "ai-parrot-mcp-client", "version": "1.0.0"},
+                    },
+                    headers=headers,
+                    partition=partition,
+                )
+                state = self._partitions.setdefault(
+                    partition, {"session_id": None, "protocol_version": None}
+                )
+                negotiated = (init_result or {}).get("protocolVersion")
+                if negotiated:
+                    state["protocol_version"] = negotiated
+                await self._send_notification(
+                    "notifications/initialized", headers=headers, partition=partition
+                )
+            except Exception:
+                # Do not leave a half-initialized partition behind.
+                self._partitions.pop(partition, None)
+                raise
+            self.logger.debug("Initialized MCP session for partition %s", partition)
+
+    async def _send_notification(
+        self,
+        method: str,
+        params: dict = None,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        partition: Optional[str] = None,
+    ):
         """Send JSON-RPC notification via HTTP."""
         notification = {"jsonrpc": "2.0", "method": method}
         if params:
@@ -542,10 +628,13 @@ class HttpMCPSession:
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
             }
-            if self._mcp_session_id:
-                notif_headers["Mcp-Session-Id"] = self._mcp_session_id
-            if self._protocol_version:
-                notif_headers["MCP-Protocol-Version"] = self._protocol_version
+            session_id, protocol_version = self._partition_state(partition)
+            if session_id:
+                notif_headers["Mcp-Session-Id"] = session_id
+            if protocol_version:
+                notif_headers["MCP-Protocol-Version"] = protocol_version
+            if headers:
+                notif_headers.update(dict(headers))
 
             async with self._session.post(
                 self.config.url,
@@ -577,15 +666,22 @@ class HttpMCPSession:
 
         return tool_objects
 
-    async def call_tool(self, tool_name: str, arguments: dict):
-        """Call a tool via HTTP."""
+    async def call_tool(
+        self, tool_name: str, arguments: dict, *, headers: Optional[Dict[str, str]] = None
+    ):
+        """Call a tool via HTTP; per-call ``headers`` apply to this request only."""
         if not self._initialized:
             raise MCPConnectionError("Session not initialized")
 
-        result = await self._send_request("tools/call", {
-            "name": tool_name,
-            "arguments": arguments
-        })
+        headers = dict(headers) if headers else None
+        partition = self._partition_for(headers)
+        await self._ensure_partition_initialized(partition, headers)
+        result = await self._send_request(
+            "tools/call",
+            {"name": tool_name, "arguments": arguments},
+            headers=headers,
+            partition=partition,
+        )
 
         content_items = []
         if "content" in result:
@@ -608,3 +704,5 @@ class HttpMCPSession:
         self._base_headers.clear()
         self._mcp_session_id = None
         self._protocol_version = None
+        self._partitions.clear()
+        self._partition_locks.clear()
