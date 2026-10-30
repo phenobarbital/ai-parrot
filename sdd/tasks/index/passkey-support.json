@@ -227,7 +227,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [],
@@ -235,8 +235,9 @@
       "parallelism_notes": "Self-contained HTML string in autonomous/admin.py (vanilla JS, no SPA imports) + its new test; no shared files.",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4907-autonomous-admin-passkey-signin.md"
+      "completed_at": "2026-10-30T15:42:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4907-autonomous-admin-passkey-signin.md",
+      "verification": "verified"
     }
   ]
 }
