@@ -51,4 +51,11 @@ close with `scripts/sdd/close_task.sh TASK-4912 google-client-fixes verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-30
+**Notes**: `_safe_extract_text(..., is_stream_chunk=True)` now returns `response.text`, each non-thought
+`part.text`, and the joined parts verbatim. 4 new tests (the issue's 6-chunk sequence joins exactly). Sibling
+Google unit tests (48) pass, plus `test_google_client.py`.
+**Deviations from spec**: `packages/ai-parrot/tests/test_google_client.py::test_google_ask_stream` asserted the
+buggy `"Helloworld"` (chunks `"Hello"`, `" world"`); it is not in the task's file list and was updated to
+`"Hello world"`. Resolves `issue:d34e3f558f8e`.
