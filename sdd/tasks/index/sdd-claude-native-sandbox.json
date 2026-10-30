@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-29T01:52:39+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-30T01:56:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,9 @@
       "parallelism_notes": "documents the launch_worker.sh CLI from TASK-4889 and copies the version/host matrix from TASK-4891's native-sandbox-qualification.md",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4892-native-sandbox-docs.md"
+      "completed_at": "2026-10-30T01:56:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4892-native-sandbox-docs.md",
+      "verification": "verified"
     }
   ]
 }
