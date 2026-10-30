@@ -235,10 +235,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator; seat gpt-5.6-terra (codex), attempt 3
+**Date**: 2026-10-30
+**Notes**: Implemented per task; merged, engine lint clean. Merge-tier validation: only red is pre-existing test_invalid_state_returns_400 (issue:e7b7e5906b6e).

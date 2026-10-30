@@ -183,7 +183,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -193,8 +193,9 @@
       "parallelism_notes": "raises InvalidGrantError/RefreshTransientError defined in TASK-4940 and relies on TASK-4941's _refresh_tokens classification (oauth2_base.py); reuses _oauth2_fakes.py",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4942-o365-typed-refresh-errors.md"
+      "completed_at": "2026-10-30T22:06:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4942-o365-typed-refresh-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4943",
@@ -203,7 +204,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -214,8 +215,9 @@
       "parallelism_notes": "extends descriptor.py created by TASK-4939 (same file); subclasses AbstractOAuth2Manager and uses InvalidGrantError/RefreshTransientError/_post_exchange/_revoke_remote from TASK-4940/4941 (oauth2_base.py)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4943-standard-oauth2-manager-descriptor-provider.md"
+      "completed_at": "2026-10-30T22:06:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4943-standard-oauth2-manager-descriptor-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4944",
@@ -246,7 +248,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -256,8 +258,9 @@
       "parallelism_notes": "calls to_payload() on AuthorizationRequired/CredentialRequired created by TASK-4944 (auth/credentials.py, auth/exceptions.py); first edit of oauth2/models.py (TASK-4946/4949 follow)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4945-toolmanager-agenttalk-unified-auth-signal.md"
+      "completed_at": "2026-10-30T22:06:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4945-toolmanager-agenttalk-unified-auth-signal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4946",
@@ -370,7 +373,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -380,8 +383,9 @@
       "parallelism_notes": "second serialized edit of identity_credential_sink.py after TASK-4950 (reuses its _raw_connection/IdentityCipher transaction path); consumed by TASK-4963 (reencrypt job)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4951-identity-vault-reseal-helper.md"
+      "completed_at": "2026-10-30T22:06:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4951-identity-vault-reseal-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4952",
