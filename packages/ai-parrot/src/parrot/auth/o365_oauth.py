@@ -27,7 +27,6 @@ from parrot.auth.oauth2_base import (
     RefreshTransientError,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

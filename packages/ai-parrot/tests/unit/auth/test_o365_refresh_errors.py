@@ -1,4 +1,5 @@
 """Regression tests for typed Office 365 refresh failures."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
