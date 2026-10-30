@@ -362,7 +362,7 @@ not a pass. Exceeding budget stops and reports remaining cases.
 
 | Scenario | Required observation |
 |---|---|
-| Competing rewrite | A distinct marker proves the competing rewrite ran; protected canary remains unchanged |
+| Competing rewrite | A side-effect marker written by the competing hook proves it ran (the CLI applies one `updatedInput` per call and the policy hook wins, so an output marker is unobservable); protected canary remains unchanged |
 | Native Agent child | Child Bash runs under inherited policy with its task cwd; no nested bwrap; same denied writes |
 | Filesystem matrix | Task edits and scratchpad continuity work; primary source, home, venv aliases and RTK trust store remain read-only |
 | Git controls | Commits/worktree administration succeed; config, config.worktree, hooks and lock/replacement attempts fail |
@@ -375,8 +375,10 @@ not a pass. Exceeding budget stops and reports remaining cases.
 Run strict settings without `allowAllUnixSockets:true`; include Ubuntu 24.04-family restricted-host
 failure evidence and at least one supported strict host success. Host remediation is performed by
 the operator outside this feature's automated tests. Use command results and independent canary
-inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe an
-actual competing rewrite or actual child tool call makes that scenario inconclusive.
+inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe the
+competing hook's side-effect marker or an actual child tool call makes that scenario inconclusive
+(amended 2026-10-30 under FEAT-768 M4: the output-marker form of this check was unobservable on
+claude 2.1.301–2.1.314, and the boundary no longer depends on hook ordering).
 
 ## 5. Acceptance Criteria
 

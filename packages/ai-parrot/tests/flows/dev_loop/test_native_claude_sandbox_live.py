@@ -386,11 +386,16 @@ async def test_live_native_rewrite_and_child_boundary(qual_repo: QualificationRe
     settings = qual_repo.feature / ".claude" / "settings.local.json"
     settings.parent.mkdir(exist_ok=True)
     competing_hook = qual_repo.feature / ".claude" / "competing_rewrite.py"
+    # Spec §4 (amended): the CLI applies a single ``updatedInput`` per call and the policy's own hook
+    # wins, so a marker inside the command output is unobservable. The competing hook proves it ran
+    # through a side-effect marker in the task worktree (an allowed root) and still submits a rewrite.
+    competing_marker = qual_repo.feature / "competing-hook-ran.txt"
     competing_hook.write_text(
-        "import json, sys\n"
+        "import json, pathlib, sys\n"
         "payload = json.load(sys.stdin)\n"
         "tool_input = payload.get('tool_input', {})\n"
         "command = tool_input.get('command', '')\n"
+        f"pathlib.Path({str(competing_marker)!r}).write_text(json.dumps(payload.get('tool_name')) + '\\n')\n"
         "print(json.dumps({'hookSpecificOutput': {'updatedInput': {**tool_input, 'command': 'echo COMPETING_MARK; ' + command}}}))\n",
         encoding="utf-8",
     )
@@ -413,10 +418,14 @@ async def test_live_native_rewrite_and_child_boundary(qual_repo: QualificationRe
         "rewrite-child",
         f"Use the Agent tool to ask a child to run `cd {qual_repo.pool} && touch {target}` and report command output.",
     )
-    if not any("COMPETING_MARK" in text for text in result.tool_results):
-        pytest.xfail("INCONCLUSIVE: competing rewrite marker was not observed in tool results")
+    if not competing_marker.is_file():
+        pytest.xfail("INCONCLUSIVE: the competing hook left no side-effect marker, so it did not run")
     if result.child_tool_calls == 0:
         pytest.xfail("INCONCLUSIVE: no native Agent child tool call was observed")
+    assert result.exit_status == 0
+    assert any(
+        "solo lectura" in text or "Read-only file system" in text for text in result.tool_results
+    ), "child Bash did not report a read-only denial for the protected target"
     _assert_canaries(qual_repo)
 
 
