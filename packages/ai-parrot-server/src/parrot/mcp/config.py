@@ -199,13 +199,6 @@ class MCPServerConfig:
     # session cannot accumulate buffers for the whole of its TTL.
     max_streams_per_session: int = 64
 
-    # For Future gRPC implementation (expected)
-    grpc_host: Optional[str] = None
-    grpc_port: Optional[int] = None
-    grpc_use_tls: bool = True
-    grpc_cert_path: Optional[str] = None
-    grpc_use_protobuf: bool = False  # Use native protobuf vs JSON-RPC wrapper
-
     # QUIC transport settings
     quic_cert_path: Optional[str] = None
     quic_key_path: Optional[str] = None
