@@ -4,7 +4,7 @@ import pytest
 
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.test_scope import distribution_of
-from parrot.flows.dev_loop.test_scope.mirror import pytest_file_target_for, pytest_file_targets
+from parrot.flows.dev_loop.test_scope.mirror import pytest_file_target_for, pytest_file_targets, pytest_target_for
 
 
 @pytest.fixture
@@ -108,3 +108,18 @@ def test_file_mirror_maps_existing_test_to_itself(tmp_path):
 )
 def test_file_mirror_rejects_deleted_non_python_and_init_files(tmp_path, path):
     assert pytest_file_target_for(path, str(tmp_path)) is None
+
+
+def test_conftest_maps_to_its_directory_never_itself(tmp_path):
+    """A changed conftest.py is not a pytest target (exit 5 = red gate); its directory is (issue:380b9b5598b8)."""
+    tests_dir = tmp_path / "packages" / "ai-parrot" / "tests" / "flows"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "conftest.py").write_text("", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "conftest.py").write_text("", encoding="utf-8")
+
+    assert pytest_target_for("packages/ai-parrot/tests/flows/conftest.py", str(tmp_path)) == (
+        "packages/ai-parrot/tests/flows"
+    )
+    assert pytest_target_for("tests/conftest.py", str(tmp_path)) == "tests"
+    assert pytest_file_target_for("packages/ai-parrot/tests/flows/conftest.py", str(tmp_path)) is None
