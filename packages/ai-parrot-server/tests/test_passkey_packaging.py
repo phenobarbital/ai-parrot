@@ -29,7 +29,11 @@ def test_all_includes_passkey() -> None:
 def test_lock_resolves_passkey_capable_navigator_auth() -> None:
     """uv.lock pins navigator-auth >= 0.28.9 and contains webauthn."""
     lock = tomllib.loads(UV_LOCK.read_text())
-    packages = {package["name"]: package["version"] for package in lock["package"]}
+    packages = {
+        package["name"]: package["version"]
+        for package in lock["package"]
+        if "version" in package
+    }
 
     assert tuple(int(value) for value in packages["navigator-auth"].split(".")[:3]) >= (0, 28, 9)
     assert "webauthn" in packages
