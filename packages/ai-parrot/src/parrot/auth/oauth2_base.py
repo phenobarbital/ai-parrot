@@ -756,9 +756,7 @@ class AbstractOAuth2Manager(ABC):
                     user_id,
                     type(exc).__name__,
                 )
-                raise CredentialPersistenceError(
-                    f"{self.provider_id} credential could not be deleted"
-                ) from None
+                raise CredentialPersistenceError(f"{self.provider_id} credential could not be deleted") from None
 
             legacy_user_ids = {raw_channel_user_id, user_id}
             legacy_keys = [
