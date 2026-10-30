@@ -711,3 +711,33 @@ def test_exhausted_overall_deadline_marks_unstarted_invocations_timed_out(
     runners = payload["runners"]
     assert len(runners) == 2
     assert "overall deadline exceeded" in (tmp_path / "validation" / "validation.log").read_text()
+
+
+def _invocation(*paths: str, runner: str = "pytest"):
+    """Build a minimal invocation stand-in with the given pytest operands."""
+    return SimpleNamespace(runner=runner, targets=tuple(SimpleNamespace(path=p) for p in paths))
+
+
+@pytest.mark.parametrize(
+    ("paths", "returncode", "runner", "expected"),
+    [
+        (("tests/integration/oauth2/conftest.py",), 5, "pytest", True),
+        (("pkg/tests/conftest.py", "pkg/tests/helpers.py"), 5, "pytest", True),
+        (("pkg/tests/unit/_fakes.py",), 5, "pytest", True),
+        # Real failures and real tests are never softened.
+        (("tests/integration/oauth2/conftest.py",), 1, "pytest", False),
+        (("tests/integration/oauth2/conftest.py",), 0, "pytest", False),
+        (("pkg/tests/test_x.py",), 5, "pytest", False),
+        (("pkg/tests/x_test.py",), 5, "pytest", False),
+        (("pkg/tests/conftest.py", "pkg/tests/test_x.py"), 5, "pytest", False),
+        (("pkg/tests",), 5, "pytest", False),
+        (("pkg/tests/test_x.py::test_a",), 5, "pytest", False),
+        (("pkg/tests/conftest.py",), 5, "vitest", False),
+        ((), 5, "pytest", False),
+    ],
+)
+def test_collection_noop_only_for_support_files(paths, returncode, runner, expected):
+    """pytest exit 5 is a no-op only when every operand is an explicit non-test .py file."""
+    from scripts.sdd.select_tests import _is_collection_noop
+
+    assert _is_collection_noop(_invocation(*paths, runner=runner), returncode) is expected

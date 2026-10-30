@@ -123,6 +123,27 @@ def _record_suite(
         )
 
 
+def _is_collection_noop(invocation: object, returncode: int) -> bool:
+    """True when pytest exited 5 ("no tests collected") on support files only.
+
+    A changed ``conftest.py`` or fixtures module is mapped into the plan as its own pytest
+    operand, but it contains no tests, so pytest exits 5. That is not a failure: a directory or
+    test module collecting nothing still is, so only explicit non-test ``.py`` operands qualify.
+    """
+    if returncode != 5 or getattr(invocation, "runner", "pytest") != "pytest":
+        return False
+    paths = [str(getattr(target, "path", target)) for target in getattr(invocation, "targets", ())]
+    if not paths:
+        return False
+    for path in paths:
+        name = path.rsplit("/", 1)[-1]
+        if "::" in path or not name.endswith(".py"):
+            return False
+        if name.startswith("test_") or name.endswith("_test.py"):
+            return False
+    return True
+
+
 def _write_verdict(verdict: object) -> None:
     """Write exactly one compact verdict JSON object to stdout."""
     import test_scope.verdict as verdict_mod  # noqa: PLC0415 — path-dependent import
@@ -478,18 +499,25 @@ def main(argv: list[str] | None = None) -> int:
                 junit = None
         started = time.monotonic()
         result = subprocess.run(argv, cwd=worktree)
+        returncode = result.returncode
+        if _is_collection_noop(invocation, returncode):
+            print(
+                "# note: pytest collected no tests (support files only: "
+                f"{', '.join(str(getattr(tg, 'path', tg)) for tg in invocation.targets)}) — not a failure"
+            )  # noqa: T201 - CLI output
+            returncode = 0
         suite = None
         if report_mod is not None and junit is not None:
             suite = report_mod.parse_junit(
                 junit,
                 suite=report_mod.suite_name(invocation),
                 argv=tuple(argv),
-                exit_code=result.returncode,
+                exit_code=returncode,
                 duration_s=time.monotonic() - started,
             )
             suites.append(suite)
             _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
-        if result.returncode != 0:
+        if returncode != 0:
             exit_code = 1
             if suite is None or suite.status in {"no_junit", "report_parse_error"} or suite.unmapped:
                 unclassified_failure = True
