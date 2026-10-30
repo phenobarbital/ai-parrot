@@ -221,7 +221,7 @@ _ADMIN_LOGIN_HTML = """\
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="user" required
-                       placeholder="Enter your username" autocomplete="username">
+                       placeholder="Enter your username" autocomplete="username webauthn">
             </div>
 
             <div class="form-group">
@@ -231,6 +231,7 @@ _ADMIN_LOGIN_HTML = """\
             </div>
 
             <button type="submit" class="btn-login" id="loginBtn">Sign In</button>
+            <button type="button" class="btn-login" id="passkeyBtn" hidden>Sign in with a passkey</button>
         </form>
 
         <div class="session-info" id="sessionInfo">
@@ -242,6 +243,7 @@ _ADMIN_LOGIN_HTML = """\
 
         <div class="quick-links" id="quickLinks" style="display:none;">
             <a href="/api/whatsapp/dashboard">📱 WhatsApp Dashboard</a>
+            <a href="/account/security">🔑 Manage passkeys</a>
         </div>
 
         <button class="logout-btn" id="logoutBtn" onclick="handleLogout()">Sign Out</button>
@@ -381,6 +383,194 @@ _ADMIN_LOGIN_HTML = """\
                 showSessionState(session);
             }
         });
+    </script>
+    <script>
+    (function () {
+        var OPTIONS_URL = '/api/v1/auth/passkey/login/options';
+        var LOGIN_URL = '/api/v1/login';
+        if (!window.PublicKeyCredential || !navigator.credentials) { return; }
+        var button = document.getElementById('passkeyBtn');
+        var pending = null;
+
+        function base64UrlToBuffer(value) {
+            // Pad the value with '=' to make its length a multiple of 4
+            var padding = '='.repeat((4 - value.length % 4) % 4);
+            var base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+            var rawData = atob(base64);
+            var outputArray = new Uint8Array(rawData.length);
+            for (var i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray.buffer;
+        }
+
+        function bufferToBase64Url(buffer) {
+            var bytes = new Uint8Array(buffer);
+            var binary = '';
+            for (var i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            var base64 = btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        function toRequestOptions(json) {
+            if (typeof PublicKeyCredential.parseRequestOptionsFromJSON === 'function') {
+                return PublicKeyCredential.parseRequestOptionsFromJSON(json);
+            }
+            
+            // Fallback for older browsers
+            var publicKey = Object.assign({}, json);
+            publicKey.challenge = base64UrlToBuffer(publicKey.challenge);
+            
+            if (publicKey.allowCredentials) {
+                publicKey.allowCredentials = publicKey.allowCredentials.map(function (cred) {
+                    return Object.assign({}, cred, {
+                        id: base64UrlToBuffer(cred.id),
+                    });
+                });
+            }
+            
+            return { publicKey: publicKey };
+        }
+
+        function credentialToJSON(cred) {
+            if (typeof cred.toJSON === 'function') {
+                return cred.toJSON();
+            }
+            
+            // Fallback for older browsers
+            var copy = {
+                id: cred.id,
+                type: cred.type,
+                rawId: bufferToBase64Url(cred.rawId),
+            };
+            
+            if (cred.response) {
+                copy.response = {};
+                
+                if (cred.response.clientDataJSON) {
+                    copy.response.clientDataJSON = bufferToBase64Url(cred.response.clientDataJSON);
+                }
+                
+                if (cred.response.attestationObject) {
+                    copy.response.attestationObject = bufferToBase64Url(cred.response.attestationObject);
+                }
+                
+                if (cred.response.authenticatorData) {
+                    copy.response.authenticatorData = bufferToBase64Url(cred.response.authenticatorData);
+                }
+                
+                if (cred.response.signature) {
+                    copy.response.signature = bufferToBase64Url(cred.response.signature);
+                }
+                
+                if (cred.response.userHandle) {
+                    copy.response.userHandle = bufferToBase64Url(cred.response.userHandle);
+                }
+                
+                if (typeof cred.response.getTransports === 'function') {
+                    copy.response.transports = cred.response.getTransports();
+                }
+            }
+            
+            if (typeof cred.getClientExtensionResults === 'function') {
+                copy.clientExtensionResults = cred.getClientExtensionResults();
+            }
+            
+            if (cred.authenticatorAttachment) {
+                copy.authenticatorAttachment = cred.authenticatorAttachment;
+            }
+            
+            return copy;
+        }
+
+        async function fetchOptions(username) {
+            var resp = await fetch(OPTIONS_URL, {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(username ? { username: username } : {})
+            });
+            return resp.ok ? resp.json() : null;
+        }
+
+        async function run(started, mediation) {
+            try {
+                // Abort any pending request
+                if (pending) {
+                    pending.abort();
+                    pending = null;
+                }
+                
+                // Create new abort controller for this request
+                var controller = new AbortController();
+                pending = controller;
+                
+                var signal = controller.signal;
+                var options = toRequestOptions(started.publicKey);
+                if (mediation) {
+                    options.mediation = mediation;
+                }
+                
+                var cred = await navigator.credentials.get(Object.assign(options, { signal: signal }));
+                var credentialJSON = credentialToJSON(cred);
+                
+                var resp = await fetch(LOGIN_URL, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Auth-Method': 'PasskeyAuth'
+                    },
+                    body: JSON.stringify({
+                        challenge_id: started.challenge_id,
+                        credential: credentialJSON
+                    })
+                });
+                
+                if (!resp.ok) {
+                    throw new Error('Login failed');
+                }
+                
+                var data = await resp.json();
+                if (!data.token) {
+                    throw new Error('No token received');
+                }
+                
+                saveSession(data);
+                showAlert('success', 'Login successful! Redirecting…');
+                showSessionState(data);
+                
+                setTimeout(function () {
+                    window.location.href = '/api/whatsapp/dashboard';
+                }, 1500);
+            } catch (err) {
+                pending = null;
+                // Silent cancel for NotAllowedError or AbortError
+                if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+                    return;
+                }
+                showAlert('error', 'Passkey sign-in failed. Use your password instead.');
+            }
+        }
+
+        button.addEventListener('click', async function () {
+            hideAlerts();
+            if (pending) { pending.abort(); pending = null; }
+            var typed = document.getElementById('username').value.trim();
+            var started = await fetchOptions(typed || undefined);
+            if (!started) { showAlert('error', 'Passkey sign-in failed. Use your password instead.'); return; }
+            run(started);
+        });
+
+        fetchOptions().then(async function (started) {
+            if (!started) { return; }           // backend disabled / origin not an RP → page unchanged
+            button.hidden = false;
+            if (PublicKeyCredential.isConditionalMediationAvailable &&
+                await PublicKeyCredential.isConditionalMediationAvailable()) {
+                run(started, 'conditional');
+            }
+        });
+    })();
     </script>
 </body>
 </html>
