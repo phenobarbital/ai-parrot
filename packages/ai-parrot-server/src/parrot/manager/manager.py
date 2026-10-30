@@ -38,6 +38,7 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.a2ui import A2UIHandler
+from ..handlers.connections import ConnectionsHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
@@ -2471,6 +2472,10 @@ class BotManager:
             "/api/v1/agents/integrations/{agent_id}/{provider}",
             IntegrationsHandler,
         )
+        # Principal-level OAuth connection routes (FEAT-773).
+        router.add_view("/api/v1/connections", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view("/api/v1/user_agents", UserAgentHandler)
         router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)
