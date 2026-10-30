@@ -13,7 +13,7 @@ tags: [oauth2, connections, web-ui, sse, slack, o365]
 **Feature ID**: FEAT-777
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Opus 5.5)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Source**: S-3a row of proposal `sdd/proposals/delegated-auth-connections.proposal.md` §6 (FEAT-773,
