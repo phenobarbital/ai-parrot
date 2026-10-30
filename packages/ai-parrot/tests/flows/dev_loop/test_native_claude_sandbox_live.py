@@ -513,6 +513,13 @@ def test_live_egress(qual_repo: QualificationRepo) -> None:
         ("api.github.com",),
     )
     assert result.exit_status == 0
+    # Independent assertions on the tool results (spec §4 / AC6): the allowed host answered with the
+    # GitHub API root document, and the unlisted direct request failed inside curl.
+    assert any("current_user_url" in text for text in result.tool_results), "allowed host did not answer"
+    assert any(
+        "example.invalid" in text and ("curl: (" in text or "Could not resolve" in text or "exit" in text.lower())
+        for text in result.tool_results
+    ), "unlisted/direct egress was not observed failing"
     _assert_canaries(qual_repo)
 
 
