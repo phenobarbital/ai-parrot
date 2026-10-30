@@ -257,3 +257,31 @@ def test_descriptor_rejects_non_serializable_summary() -> None:
 
     with pytest.raises(ValidationError):
         HandleDescriptor(media_type=MediaType.ARROW, byte_size=1, summary={"x": object()})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        "CallMessage",
+        [],
+        {"kind": "CallMessage", "v": 1, "data": []},
+        {"kind": "CallMessage", "v": 1, "data": {"args": {"__b64__": 5}}},
+        {"kind": "CallMessage", "v": 1, "data": {"args": {"__b64__": "not base64!!"}}},
+    ],
+)
+def test_malformed_untrusted_payloads_raise_squawk_error(payload) -> None:
+    """Every malformed shape maps to SquawkError(UPSTREAM_FAILED, 'malformed'), never a raw exception."""
+    with pytest.raises(SquawkError) as exc_info:
+        BusPayloadSerializer().from_payload(payload)
+    assert exc_info.value.code is SquawkErrorCode.UPSTREAM_FAILED
+
+
+def test_oversized_bytes_field_is_refused(monkeypatch) -> None:
+    """A bytes field larger than the bound is refused before decoding."""
+    import parrot.interagent.bus_codec as codec
+
+    monkeypatch.setattr(codec, "_MAX_B64_CHARS", 8)
+    payload = {"kind": "CallMessage", "v": 1, "data": {"args": {"__b64__": "QUFBQUFBQUFBQUFB"}}}
+    with pytest.raises(SquawkError):
+        BusPayloadSerializer().from_payload(payload)

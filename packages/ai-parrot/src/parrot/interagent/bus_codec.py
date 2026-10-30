@@ -28,6 +28,11 @@ _BYTES_FIELDS = ("args", "inline", "frame", "token")
 
 VERSION = 1
 
+# Bound on one decoded bytes field (64 MiB of payload): a bus message is a control-plane
+# envelope; bulk artifacts travel as handles/frames, never inline on the bus.
+MAX_BYTES_FIELD = 64 * 1024 * 1024
+_MAX_B64_CHARS = 4 * ((MAX_BYTES_FIELD + 2) // 3)
+
 
 def _jsonify_value(value: Any) -> Any:
     """Recursively convert datetime, date, and Enum to JSON-safe primitives."""
@@ -65,7 +70,12 @@ class BusPayloadSerializer:
         return {"kind": type(message).__name__, "v": VERSION, "data": raw}
 
     def from_payload(self, payload: dict[str, Any]) -> BusMessage:
-        """Deserialize a JSON payload to a bus message.
+        """Deserialize an untrusted JSON payload to a bus message.
+
+        Any ``caller`` in the payload is discarded: the server sets it from the
+        handshake / envelope metadata, so a peer cannot assert another identity.
+        Every malformed input — wrong shape, bad base64, oversized bytes field,
+        unknown kind/version or failed validation — raises the same error.
 
         Args:
             payload: A dict with 'kind', 'v', and 'data' keys.
@@ -73,24 +83,30 @@ class BusPayloadSerializer:
         Returns:
             The deserialized bus message.
 
-        Any ``caller`` in the payload is discarded: the server sets it from the
-        handshake / envelope metadata, so a peer cannot assert another identity.
-
         Raises:
-            SquawkError: If kind or version is unknown, or validation fails.
+            SquawkError: ``UPSTREAM_FAILED`` / ``malformed`` for any malformed payload.
         """
-        cls = _KINDS.get(str(payload.get("kind")))
-        if cls is None or payload.get("v") != VERSION:
-            raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "malformed")
-        data = dict(payload.get("data") or {})
-        # Decode base64 bytes fields
-        for f in _BYTES_FIELDS:
-            v = data.get(f)
-            if isinstance(v, dict) and "__b64__" in v:
-                data[f] = base64.b64decode(v["__b64__"])
-        # Caller identity comes from the authenticated session/envelope, never the payload.
-        data.pop("caller", None)
         try:
+            if not isinstance(payload, dict):
+                raise TypeError("payload must be an object")
+            cls = _KINDS.get(str(payload.get("kind")))
+            if cls is None or payload.get("v") != VERSION:
+                raise ValueError("unknown kind or version")
+            raw = payload.get("data") or {}
+            if not isinstance(raw, dict):
+                raise TypeError("data must be an object")
+            data = dict(raw)
+            for f in _BYTES_FIELDS:
+                v = data.get(f)
+                if isinstance(v, dict) and "__b64__" in v:
+                    encoded = v["__b64__"]
+                    if not isinstance(encoded, str) or len(encoded) > _MAX_B64_CHARS:
+                        raise ValueError(f"invalid or oversized bytes field {f!r}")
+                    data[f] = base64.b64decode(encoded, validate=True)
+            # Caller identity comes from the authenticated session/envelope, never the payload.
+            data.pop("caller", None)
             return cls.model_validate(data)
-        except Exception as exc:  # pydantic.ValidationError and friends
+        except SquawkError:
+            raise
+        except Exception as exc:  # TypeError, ValueError, binascii.Error, pydantic.ValidationError
             raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "malformed") from exc
