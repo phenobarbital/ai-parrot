@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from parrot.interagent import CallCost, CallerIdentity, ServedLedgerEntry, SquawkCapability, SquawkContract
 from parrot.squawk.contract import CapabilityBinding, build_contract
+from parrot.squawk.contract.bindings import check_version_rules
 from parrot.squawk.server.ledger import ServedLedger
 
 
@@ -108,7 +109,8 @@ class PromotionAnalyzer:
             The rebuilt contract.
 
         Raises:
-            ValueError: If the draft targets an unknown capability or changes its I/O.
+            ValueError: If the draft targets an unknown capability, is not deterministic,
+                changes its category, I/O or policy, or violates the version rules.
         """
         current = next((b.capability for b in bindings if b.capability.cap_id == draft.capability.cap_id), None)
         if current is None:
@@ -119,8 +121,17 @@ class PromotionAnalyzer:
             or current.category != draft.capability.category
         ):
             raise ValueError("promotion must keep the capability's category, input schema and returns")
+        if draft.capability.backing != "deterministic":
+            raise ValueError("a promotion draft must be deterministic")
+        if draft.capability.policy != current.policy:
+            # A promotion swaps the backing only; it must never relax (or silently change)
+            # data class, row caps or redaction — that is a separate, major-bumped change.
+            raise ValueError("promotion must keep the capability's policy")
         new = [b for b in bindings if b.capability.cap_id != draft.capability.cap_id] + [draft]
         promoted = build_contract(new, agent_id=contract.agent_id, major=contract.major)
+        violations = check_version_rules(contract, promoted)
+        if violations:
+            raise ValueError("promotion violates contract version rules: " + "; ".join(violations))
         digest = "sha256:" + hashlib.sha256(draft.model_dump_json().encode()).hexdigest()
         await self._ledger.append(
             ServedLedgerEntry(

@@ -204,3 +204,48 @@ async def test_approve_rejects_unknown_or_retyped_draft():
     with pytest.raises(ValueError):
         await analyzer.approve(contract, [], draft, approver="h")
     assert ledger.recent(limit=10) == []
+
+
+async def test_approve_refuses_policy_downgrade_and_non_deterministic_draft():
+    """A promotion may not relax data class / row cap / redaction, nor keep llm_backed."""
+    import pytest
+
+    from parrot.interagent import (
+        CapabilityCategory,
+        PolicyAnnotations,
+        ReturnsSpec,
+        SquawkCapability,
+        SquawkContract,
+    )
+    from parrot.security.audit_ledger import LocalHMACSigner
+    from parrot.squawk.contract import LLMBackedSpec
+
+    ledger = ServedLedger(signer=LocalHMACSigner(b"test-key"))
+    analyzer = PromotionAnalyzer(ledger)
+    cap = SquawkCapability(
+        cap_id="hr.people.lookup",
+        category="hr.people",
+        description="T",
+        input_schema={},
+        returns=ReturnsSpec(kind="inline", schema={}),
+        backing="llm_backed",
+        policy=PolicyAnnotations(data_class="hr", row_cap=5, redaction="mask"),
+        version=1,
+    )
+    bindings = [CapabilityBinding(capability=cap, llm_backed=LLMBackedSpec(system_prompt="p", output_schema={}))]
+    contract = SquawkContract(
+        agent_id="a", major=1, categories=(CapabilityCategory(name="hr.people", capabilities=(cap,)),)
+    )
+    cand = PromotionCandidate(cap_id=cap.cap_id, args_digest="d", llm_backed_calls=20, deterministic_calls=0, ratio=1)
+    draft = analyzer.draft(cand, cap, tool_name="t")
+
+    relaxed = CapabilityBinding(
+        capability=draft.capability.model_copy(update={"policy": PolicyAnnotations(data_class="public")}), tool_name="t"
+    )
+    with pytest.raises(ValueError, match="policy"):
+        await analyzer.approve(contract, bindings, relaxed, approver="h")
+    assert ledger.recent(limit=10) == []
+
+    promoted = await analyzer.approve(contract, bindings, draft, approver="h")
+    kept = promoted.categories[0].capabilities[0]
+    assert kept.backing == "deterministic" and kept.policy == cap.policy
