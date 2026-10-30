@@ -167,7 +167,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,8 +178,9 @@
       "parallelism_notes": "Imports models from TASK-4914 and resolve_chain/rules_to_layer from TASK-4915 (parrot/experts/rules.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4919-knowledge-resolver-core.md"
+      "completed_at": "2026-10-30T21:39:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4919-knowledge-resolver-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4920",
@@ -291,7 +292,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -302,8 +303,9 @@
       "parallelism_notes": "Imports ExpertManifest/ExpertBundle/ExpertBundleError from TASK-4914 and parse_rules from TASK-4915 (rules.py) to load rules/governance.md.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4925-bundle-loader-view.md"
+      "completed_at": "2026-10-30T21:39:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4925-bundle-loader-view.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4926",
@@ -379,7 +381,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -389,8 +391,9 @@
       "parallelism_notes": "Imports CVERecord/CVESearchResult/DownloadReceipt/validate_cve_id/severity_from_score from TASK-4928 (cve/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4929-cve-toolkit.md"
+      "completed_at": "2026-10-30T21:39:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4929-cve-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4930",
