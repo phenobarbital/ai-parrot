@@ -58,7 +58,8 @@ chain, every new expert re-invents the same plumbing and none of them behave the
   an expert can propose a new ADR that is born `origin="inferred"`, `review_status="unreviewed"` and only a human
   review accepts it.
 - **G7 — Mandatory wiki and bookstore access, no delegation.** Every manifest must declare a `wiki` source; the
-  resolved toolkit set must include `LLMWikiToolkit` and `BookstoreToolkit` and must exclude `spawn_sub_agent`.
+  resolved toolkit set must include `LLMWikiToolkit` and `BookstoreToolkit` and must exclude `spawn_sub_agent`;
+  every loaded expert also carries a PBAC deny rule on `tool:spawn_sub_agent` (§8 Q3).
 - **G8 — Attribution.** Every expert activation is attributed to the expert (not the conductor) via
   `agent_identity()` and `usage_attribution(run_id, "<stage>.<expert>")`; no new ContextVars.
 
@@ -167,7 +168,8 @@ ExpertBundleLoader ──▶ ExpertManifest ──▶ ExpertView (tenant overlay
 | `parrot.knowledge.bookstore.toolkit.BookstoreToolkit` | uses | mandatory bookstore access; `topics`/`scope` filtering in the adapter |
 | `parrot.knowledge.retrieval` (`RetrievalRequest`, `RetrievalBudget`, `ContextBundle`) | uses | `graphindex` retrieval handle |
 | `parrot.observability.context.agent_identity` / `usage_attribution` | uses | `activate_expert()` |
-| `parrot.tools.spawn.SpawnSubAgentTool` (`name="spawn_sub_agent"`) | excludes | manifest validator + allowlist |
+| `parrot.tools.spawn.SpawnSubAgentTool` (`name="spawn_sub_agent"`) | excludes | manifest validator + allowlist + PBAC deny rule (M10, §8 Q3) |
+| `parrot.auth.models.PolicyRuleConfig` / `AgentRegistry.register_db_bot_policies` | extends / calls | optional `resource` field; the per-expert `tool:execute` deny on `tool:spawn_sub_agent` is loaded through the public DB-path registrar because `register_instance` registers no policies |
 
 ### Data Models
 ```python
@@ -248,7 +250,7 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 | M7: KB fold-in | no | — | touches `AbstractBot._build_kb_context` (248 KB file, no recent tests); thinking model pins behaviour first |
 | M8: Rules chain | yes | grammar (`## Mandated`/`## Forbidden`, `ALWAYS`/`NEVER` lines), chain order, dedupe | — |
 | M9: `parrot_tools.experts` toolkit | yes | two tools with fixed signatures; `DecisionService.generate` → candidates | — |
-| M10: Tier policy + allowlist enforcement | yes | policy table, `spawn_sub_agent` exclusion, `ModelConfig` output | — |
+| M10: Tier policy, allowlist + PBAC deny | yes | policy table, `spawn_sub_agent` exclusion, `ModelConfig` output, `PolicyRuleConfig.resource` extension + `expert_policy_rules()` | — |
 | M11: Docs | yes | `docs/experts/domain-experts.md` mirroring `docs/skills/per-tenant-skills.md` | — |
 
 ### Module 1: Manifest & models
@@ -313,7 +315,14 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
       async def load(self) -> int:
           """Discover AGENTS_DIR/experts, build one ExpertAgent per bundle, call
           agent_registry.register_instance(name, agent, tags={"expert", f"expert:{name}"})
-          (verified: parrot/registry/registry.py:633). Raises DuplicateExpertError on a repeated name."""
+          (verified: parrot/registry/registry.py:633). Raises DuplicateExpertError on a repeated name.
+          Before building the agent, probes the bundle's wiki namespace through WikiSource.probe(); an
+          unresolvable or EMPTY `expert-<slug>` store rejects the bundle — not registered, logged at ERROR,
+          report()["skipped"] gets {"path", "reason": "empty-wiki-namespace"} — and loading continues with
+          the next bundle (§8 Q2: fail at load). After register_instance(), pushes the non-delegation PBAC
+          rule with agent_registry.register_db_bot_policies(name, expert_policy_rules(bundle.manifest))
+          (verified public: registry.py:507; register_instance itself never registers policies — only
+          register() calls _collect_and_register_policies, registry.py:631) — §8 Q3."""
       def get(self, name: str, *, tenant: str | None = None) -> "ExpertAgent": """KeyError when unknown."""
       def names(self) -> list[str]: ...
       def report(self) -> dict[str, Any]:
@@ -408,9 +417,12 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
   class WikiSource:
       def __init__(self, toolkit: LLMWikiToolkit, *, namespace: str) -> None: ...   # namespace = f"expert-{slug}"
       async def layers(...) -> list[KnowledgeLayer]:
-          """handle = {"toolkit": "wiki", "wiki_name": namespace, "scope": spec.scope, "empty": bool}; raises
-          ExpertKnowledgeError when the namespace store cannot be resolved (toolkit._store_for, toolkit.py:215);
-          an existing-but-empty namespace sets handle["empty"]=True and logs a warning (S10, §8 Q2)."""
+          """handle = {"toolkit": "wiki", "wiki_name": namespace, "scope": spec.scope, "documents": int}; raises
+          ExpertKnowledgeError when the namespace store cannot be resolved (toolkit._store_for, toolkit.py:215)
+          AND when it resolves but holds zero documents (§8 Q2: fail at load — never a warning)."""
+      async def probe(self) -> int:
+          """Document count of the namespace store, no LLM call; raises ExpertKnowledgeError on an unresolvable
+          store. ExpertRegistry.load() calls it per bundle and treats 0 as a rejection (S10, §8 Q2)."""
 
   # sources/kb.py — U5 fold-in
   class LegacyKBSource:
@@ -505,10 +517,10 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
           review_status='unreviewed'; raises ExpertCapabilityError when 'write' not in manifest.capabilities."""
   ```
 
-### Module 10: Tier policy and tool allowlist enforcement
-- **Path**: `packages/ai-parrot/src/parrot/experts/policy.py`
-- **Responsibility**: `tier` → `ModelConfig`; the effective toolkit set (mandatory wiki + bookstore added, `spawn_sub_agent` excluded); the allowlist handed to `ExpertAgent`.
-- **Depends on**: M1; `ModelConfig` (verified `parrot/models/basic.py:40`); `SPAWN_TOOL_NAME`.
+### Module 10: Tier policy, tool allowlist and PBAC non-delegation rule
+- **Path**: `packages/ai-parrot/src/parrot/experts/policy.py`; modifies `packages/ai-parrot/src/parrot/auth/models.py:32-160` (`PolicyRuleConfig`)
+- **Responsibility**: `tier` → `ModelConfig`; the effective toolkit set (mandatory wiki + bookstore added, `spawn_sub_agent` excluded); the allowlist handed to `ExpertAgent`; the PBAC deny rule every expert registers (§8 Q3). The `PolicyRuleConfig` change is additive: a new optional `resource` field; when it is `None`, `to_resource_policy()` output is byte-identical to today (pinned test).
+- **Depends on**: M1; `ModelConfig` (verified `parrot/models/basic.py:40`); `SPAWN_TOOL_NAME`; `PolicyRuleConfig` (verified `parrot/auth/models.py:32`, `to_resource_policy` at `:108`).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/experts/policy.py  (new)
@@ -519,6 +531,21 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
   def effective_allowlist(manifest: ExpertManifest, discovered: Sequence[str]) -> list[str]:
       """discovered tool names ∩ (tools_allow or all) minus {SPAWN_TOOL_NAME}; raises ExpertPolicyError if the
       result would include SPAWN_TOOL_NAME (defense in depth over the manifest validator)."""
+  SPAWN_DENY_PRIORITY: Final[int] = 100   # above operator YAML (>= 20): the invariant is NOT operator-overridable
+  def expert_policy_rules(manifest: ExpertManifest) -> list[dict[str, Any]]:
+      """[{"action": "tool:execute", "effect": "deny", "resource": f"tool:{SPAWN_TOOL_NAME}",
+          "priority": SPAWN_DENY_PRIORITY, "description": f"expert {manifest.name}: no delegation (FEAT-778)"}]
+      — dict shape accepted by parse_bot_permissions (agent_guard.py:73) and matched by the TOOL_CALL check
+      (resource_type=TOOL, resource_name=tool_name, action="tool:execute": guardrails/builtin/pbac.py:278,
+      auth/resolver.py:326)."""
+
+  # packages/ai-parrot/src/parrot/auth/models.py  (modifies PolicyRuleConfig, :32)
+  class PolicyRuleConfig(BaseModel):
+      ...                                                     # existing fields unchanged
+      resource: Optional[str] = Field(default=None, description="Explicit resource id (e.g. 'tool:spawn_sub_agent'); None keeps agent:<name>")
+      def to_resource_policy(self, agent_name: str) -> dict:
+          """resources = [self.resource] if self.resource else [f"agent:{agent_name}"] (:153); the policy
+          `name` embeds the resource when set so two rules for one agent never collide; every other key unchanged."""
   ```
 
 ### Module 11: Documentation
@@ -543,6 +570,7 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 | `test_tenant_shadows_global_unless_global_only` | M2 | `ExpertView` semantics equal to `SkillView` |
 | `test_reserved_names_include_experts` | M2 | `experts`, `knowledge`, `governance` are reserved tenant ids |
 | `test_registry_registers_tagged_instance` | M2 | `AgentRegistry.get_bots_by_tag("expert")` returns the expert |
+| `test_registry_pushes_deny_rule_to_evaluator` | M2 | a fake PDP evaluator receives one policy dict with `effect="deny"`, `actions=["tool:execute"]`, `resources=["tool:spawn_sub_agent"]` per loaded expert via `register_db_bot_policies` |
 | `test_expert_agent_uses_bundle_identity_dir` | M3 | `IdentityMixin` reads `<bundle>/identity`, not the class module dir |
 | `test_activate_expert_attribution` | M3 | `current_agent_name`/`current_seat` inside the scope, restored after |
 | `test_resolver_layer_order_is_fixed` | M4 | `LAYER_ORDER` honoured regardless of source registration order |
@@ -559,8 +587,11 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 | `test_propose_adr_requires_write_capability` | M9 | `ExpertCapabilityError` without `write` |
 | `test_effective_allowlist_never_contains_spawn` | M10 | defense in depth |
 | `test_effective_toolkits_add_mandatory` | M10 | wiki + bookstore always present |
+| `test_policy_rule_resource_override` | M10 | `PolicyRuleConfig(resource="tool:spawn_sub_agent")` → `resources=["tool:spawn_sub_agent"]`; without `resource` the dict equals a pinned pre-change fixture (AC21) |
+| `test_expert_policy_rules_deny_spawn` | M10 | exactly one rule: `effect="deny"`, `action="tool:execute"`, `resource="tool:spawn_sub_agent"`, `priority=100` |
 | `test_dollar_placeholders_stay_literal` | M2/M6 | `$name` in a rules/knowledge file survives `configure()`; `$` in an identity file is rejected at load (S3) |
-| `test_missing_wiki_scope_distinct_from_empty_retrieval` | M5 | unresolvable namespace raises; empty namespace yields `handle["empty"]=True` (S10) |
+| `test_wiki_source_unresolvable_and_empty_both_raise` | M5 | unresolvable namespace and zero-document namespace both raise `ExpertKnowledgeError`; a populated one returns `handle["documents"] > 0` (S10, §8 Q2) |
+| `test_registry_rejects_empty_wiki_namespace` | M2 | bundle whose `expert-<slug>` store is empty is absent from `names()` and present in `report()["skipped"]` with reason `empty-wiki-namespace`; sibling bundles still load |
 | `test_registry_report_lists_skipped_and_shadowed` | M2 | `ExpertRegistry.report()` names skipped bundles with reasons and tenant shadows (S1) |
 
 ### Integration Tests
@@ -626,6 +657,9 @@ def decision_service_stub() -> DecisionService:
 - [ ] AC16 — No change to `packages/ai-parrot/src/parrot/clients/base.py`; no new `AgentKind`; no new ContextVar.
 - [ ] AC17 — Bundle-authored text is never template-substituted: `$name`/`$role` written in a rules or knowledge file appear verbatim in the built prompt, and an identity file containing a `$` placeholder makes the bundle fail to load with a clear error (S3).
 - [ ] AC18 — Two concurrent `activate_expert()` scopes on different experts never share a `PromptBuilder` nor leak `current_agent_name`/`current_seat` into each other (S2/S10).
+- [ ] AC19 — `ExpertRegistry.load()` rejects (never registers) a bundle whose `expert-<slug>` wiki namespace is unresolvable **or holds zero documents**; the rejection is logged at ERROR and appears in `report()["skipped"]` with reason `empty-wiki-namespace`; sibling bundles still load; the probe makes no LLM call (§8 Q2).
+- [ ] AC20 — For every loaded expert, `AgentRegistry.register_db_bot_policies()` receives exactly one rule `{effect: deny, action: tool:execute, resource: tool:spawn_sub_agent, priority: 100}`; with no PDP evaluator it returns `0` and the allowlist exclusion (AC10) still holds (§8 Q3).
+- [ ] AC21 — `PolicyRuleConfig` gains an optional `resource` field; `to_resource_policy()` for every existing rule (no `resource`) is byte-identical to the pre-change output (pinned fixture), and `tests/auth/test_policy_rules_integration.py` passes unchanged.
 
 ---
 
@@ -660,6 +694,8 @@ from parrot.observability.context import agent_identity, usage_attribution, curr
 from parrot.tools.spawn import SpawnSubAgentTool                       # verified: parrot/tools/spawn.py:88
 from parrot.stores.kb.abstract import AbstractKnowledgeBase            # verified: parrot/stores/kb/abstract.py:7
 from parrot_tools.wiki.toolkit import LLMWikiToolkit                   # verified: parrot_tools/wiki/toolkit.py:48
+from parrot.auth.models import PolicyRuleConfig                        # verified: parrot/auth/models.py:32 (re-exported by parrot.auth, __init__.py:49)
+from parrot.auth.agent_guard import parse_bot_permissions              # verified: parrot/auth/agent_guard.py:73
 ```
 
 ### Existing Class Signatures
@@ -701,6 +737,11 @@ class PromptBuilder:                                                   # line 35
 class AgentKind(str, Enum): LOCAL, A2A, SQUAWK                         # line 55
 class BotMetadata:                                                     # line 68
 class PromptConfig(BaseModel): preset, remove, add, customize          # line 243
+class PolicyRuleConfig(BaseModel): action: str, effect: Literal["allow","deny"]="allow", groups: Optional[list[str]]=None, roles: Optional[list[str]]=None, priority: int=10, description, conditions   # parrot/auth/models.py:32 — NO `resource` field today (M10 adds it)
+    def to_resource_policy(self, agent_name: str) -> dict   # models.py:108 — resources hard-coded to [f"agent:{agent_name}"] at :153
+class AgentRegistry:
+    def register_db_bot_policies(self, name: str, permissions: "dict | list | None") -> int   # registry.py:507 — public; parses via parse_bot_permissions, loads into self._evaluator; returns 0 when PBAC is disabled
+    def _collect_and_register_policies(self, name, factory, bot_config) -> None   # registry.py:423 — PRIVATE, called only from register() (:631), never from register_instance()
 class BotConfig(BaseModel): name, class_name, module, enabled, origin, tools, toolkits, mcp_servers, model, system_prompt, prompt, tags, priority, policies, kind, endpoint, contract_categories   # line 256
 class AgentRegistry:                                                   # line 302
     def register(self, name: str, factory: Type[AbstractBot], *, singleton=False, tags=None, priority=0, dependencies=None, replace=False, at_startup=False, startup_config=None, bot_config=None, roost=None, **kwargs) -> None   # line 570 — WARNS on duplicate
@@ -807,6 +848,8 @@ class ModelConfig(BaseModel)                                           # line 40
 - ~~`parrot.experts`~~ / ~~`parrot_tools.experts`~~ — no such packages today (created by M1–M10).
 - ~~`spawn_agent`~~ / ~~`spawn_ephemeral`~~ as a tool name — the registered name is `spawn_sub_agent` (`tools/spawn.py:128`); the strings only appear in `memory/compaction/policies.py`.
 - ~~`tools_deny`~~, ~~`denied_tools`~~, ~~`disallowed_tools`~~, ~~`tool_blocklist`~~, ~~`exclude_tools`~~ — no deny-list field exists anywhere in `parrot/`; gating is `allowed_tools` allowlists plus PBAC policies.
+- ~~`PolicyRuleConfig.resource`~~ — no such field today (`parrot/auth/models.py:32-160`); M10 adds it. A rule declared via `BotConfig.policies` / `policy_rules` can only target `agent:<name>` until then.
+- ~~`AgentRegistry.register_instance(..., policies=...)`~~ — `register_instance` has no policy parameter and registers no rules; use `register_db_bot_policies` (public) after it.
 - ~~`AgentKind.EXPERT`~~ — not added (U3); `AgentKind` is `{LOCAL, A2A, SQUAWK}`.
 - ~~`LayerPriority.RULES`~~, ~~`EXPERT_RULES_LAYER`~~, ~~`EXPERT_KNOWLEDGE_LAYER`~~ — do not exist yet (M6 adds them).
 - ~~`DecisionRecord.tags`~~ — ADR records have no tags/components field; filter by `source_status`, `review_status`, `links`, `evidence`.
@@ -821,6 +864,8 @@ class ModelConfig(BaseModel)                                           # line 40
 ### Edit Sites (Blueprint Anchors)
 
 Verified against: `b9502bfe3`
+
+- `packages/ai-parrot/src/parrot/auth/models.py:153` — anchor `"resources": [f"agent:{agent_name}"],` → M10 replaces with the `self.resource` fallback; field block ends before `def to_resource_policy` (`:108`).
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
@@ -863,6 +908,9 @@ Verified against: `b9502bfe3`
 - **No modification** of `clients/base.py`; `tier` → `ModelConfig` lives in `experts/policy.py`.
 
 ### Known Risks / Gotchas
+- **`SPAWN_DENY_PRIORITY = 100` breaks the stated convention** that code rules (`priority=10`) sit below operator YAML (`>= 20`, `models.py:38-39`). Deliberate: the non-delegation invariant must survive an operator `tool:*` allow. Document it in M11 and in the `PolicyRuleConfig` docstring; never lower it.
+- **`register_instance` does not register policies**; the deny rule only reaches the evaluator through `register_db_bot_policies`, which returns `0` when the registry has no PDP (`_evaluator is None`, `registry.py:417`). The allowlist exclusion (AC10) is the layer that still holds in that case — tests must cover both.
+- **Fail-at-load wiki probe needs a reachable store**: `ExpertRegistry.load()` now performs a store call per bundle (`WikiSource.probe()`); an unreachable wiki backend rejects every expert. Surface the count in `report()["skipped"]` and log once per load, not per bundle.
 - **`registry.py` is a collision hotspot** (FEAT-746/747 review fixes landed 2026-10-30). This spec touches it only through `register_instance()` calls, never edits it; if a conflict appears anyway, rebase, do not resolve by hand.
 - **Duplicate semantics differ**: `AgentRegistry.register_instance` *warns* on a duplicate; `ExpertRegistry.load` must *fail* before calling it (AC1) — check `name in agent_registry._registered_agents` is private; use `get_metadata(name)`/`names()` from the public surface instead (verify in `/sdd-task`).
 - **`_build_kb_context` has no recent tests** (file dormant 180 days). M7 lands behind a pinned fixture test of the legacy output (AC11) **before** the delegation branch is added; the legacy branch stays byte-for-byte.
@@ -894,11 +942,11 @@ Verified against: `b9502bfe3`
 - [x] U3 — Registry integration — *Resolved in proposal*: Sibling `ExpertManifest` + `ExpertRegistry` — own Pydantic manifest and loader that registers a configured agent into `AgentRegistry`; decoupled from the FEAT-746/747 churn; strict duplicate rule stays local. → §3 M2, AC1, §6 Does-NOT-Exist (`AgentKind.EXPERT`).
 - [x] U4 — Stage gates — *Resolved in proposal*: Lift `ApprovalGate` into `flows/core` — generic gate host with open `GateKind`; dev_loop becomes a consumer. → Non-Goals (phase 4; direction recorded, not implemented here).
 - [x] U5 — Phase-1 blast radius — *Resolved in proposal*: Replace in phase 1 — the KB path becomes a `mode: retrieval` source of the resolver now (higher blast radius in `abstract.py` accepted). → §3 M5 `LegacyKBSource`, M7, AC11.
-- [ ] Q1 — Per-layer budget policy: this spec adopts `KNOWLEDGE_FRACTION = 0.15` of `resolve_window(model)` with trimming by `TRIM_ORDER`; per-layer quotas are not introduced. Confirm or change before `/sdd-task`. — *Owner: Jesus Lara*
-- [ ] Q2 — Wiki minimum scope: adopted default is *warn on load when the expert namespace store is empty, raise at activation when the expert is the lead* (lead/support arrives in phase 4, so in this feature it is warn-only). Tag/topics filtering inside `LLMWikiToolkit.query` is deferred. — *Owner: Jesus Lara*
-- [ ] Q3 — Non-delegation defense in depth (codex S7, ESCALATED): beyond the allowlist exclusion (M10), should this feature also (a) emit a PBAC deny rule for `spawn_sub_agent` on every expert and (b) add a task-local nesting/owner guard to `SpawnSubAgentTool` so a nested attempt returns forbidden? Default here: (a) yes if `BotConfig.policies` accepts a per-tool deny rule (verify `PolicyRuleConfig` in `/sdd-task`), (b) no change to `tools/spawn.py`. — *Owner: Jesus Lara*
-- [ ] Q4 — Governance file location: this spec places org/team/project rules at `AGENTS_DIR/governance/{org,team,project}.md` (consistent with U2 and the reserved-name addition); the proposal's `.parrot/memory/*.md` is not used. Confirm. — *Owner: Jesus Lara*
-- [ ] Q5 — ADR inline cap: adopted default is the `DecisionService` `budget_tokens` (3000) per source call with `limit=10`; filtering is by `source_status`/`review_status` only (no tags exist). — *Owner: spec*
+- [x] Q1 — Per-layer budget policy — *Resolved 2026-10-30*: keep the single pool, `KNOWLEDGE_FRACTION = 0.15` of `resolve_window(model)`, trimmed by `TRIM_ORDER`; no per-layer quotas and no tier scaling. → §3 M4, AC5.
+- [x] Q2 — Wiki minimum scope — *Resolved 2026-10-30*: **fail at load**. `ExpertRegistry.load()` probes the `expert-<slug>` namespace store per bundle; an unresolvable **or empty** store rejects the bundle (not registered, logged at ERROR, listed in `report()["skipped"]` with reason `empty-wiki-namespace`); the other bundles still load. Onboarding documents to the wiki is therefore a precondition for an expert to exist. Tag/topics filtering inside `LLMWikiToolkit.query` stays deferred. → §3 M2, M5, AC19.
+- [x] Q3 — Non-delegation defense in depth (codex S7) — *Resolved 2026-10-30*: **allowlist + PBAC deny**, no nesting guard. Verified before deciding: `PolicyRuleConfig.to_resource_policy()` always emits `resources=["agent:<name>"]` (`parrot/auth/models.py:153`), so a per-tool deny is not expressible today, and `AgentRegistry.register_instance()` never registers policy rules (only `register()` does, `registry.py:631`). M10 therefore (a) adds an optional `resource` field to `PolicyRuleConfig` and (b) emits `{action: "tool:execute", effect: "deny", resource: "tool:spawn_sub_agent"}` per expert, which `ExpertRegistry.load()` pushes through the public `AgentRegistry.register_db_bot_policies()` (`registry.py:507`). The `SpawnSubAgentTool` owner/nesting guard is **rejected** for this feature (phase-4 brainstorm). → §3 M2, M10, AC20–AC21.
+- [x] Q4 — Governance file location — *Resolved 2026-10-30*: `AGENTS_DIR/governance/{org,team,project}.md`; `.parrot/memory/*.md` is not read. → §3 M8, AC8, AC13.
+- [x] Q5 — ADR inline cap — *Adopted by spec, confirmed 2026-10-30*: `DecisionService.why(budget_tokens=3000, limit=10)` per source call; filtering by `source_status`/`review_status` plus the optional `filter.links` match (S6); no tags exist. → §3 M5, AC9.
 - [ ] Q6 — Promoted rules persistence/audit, contributions storage, scope grid, `tier` → seat/OTEL attribute, expert memory and migration order — deferred to the phases 3–5 brainstorm (not blocking this spec). Design constraint carried from codex S9 for the U4 gate lift: extract a gate *protocol* with string identifiers plus a compatibility adapter for persisted `ApprovalGate` envelopes; never import dev-loop Literals into the expert runtime, never duplicate `parrot/human`. — *Owner: follow-up brainstorm*
 
 ---
@@ -918,12 +966,12 @@ Verified against: `b9502bfe3`
 | S4 | Add the resolver *beside* the KB path; keep `register_kb`/`KBSelector` until parity is proven (alternative) | REJECT | Contradicts the proposal's U5 answer ("replace in phase 1"); the spec already keeps the legacy branch byte-for-byte for bots without a resolver and pins it (AC11) — the reviewer's mitigation without reversing the user's decision | — |
 | S5 | `KnowledgeContext` must be structured, attributable and budget-aware (api) | CONFIRM | Already the `KnowledgeLayer`/`KnowledgeContext` contract; `revision` mandatory on every layer, `trimmed[]` serialized | §2 Data Models, AC5, AC6 |
 | S6 | v1 scope = exact wiki namespace + accepted-ADR filtering by `links` + bookstore `topics`; keep write/review out of the resolver (api) | CONFIRM | `ADRSource` gains `filter.links`; wiki namespace-only; bookstore `topics`; `propose_adr` lives in the toolkit | §3 M5, M9; §8 Q2, Q5 |
-| S7 | Enforce non-delegation in tool authorization (allowlist + PBAC denial) and a nesting/owner guard (risk) | ESCALATE | Allowlist exclusion is M10; a PBAC deny rule and a `SpawnSubAgentTool` nesting guard touch shared tool machinery — user decides | §3 M10; §8 Q3 |
+| S7 | Enforce non-delegation in tool authorization (allowlist + PBAC denial) and a nesting/owner guard (risk) | CONFIRM (partial) | Escalated to the user on 2026-10-30, who adopted allowlist + PBAC deny (`PolicyRuleConfig.resource` extension, per-expert `tool:execute` deny) and rejected the `SpawnSubAgentTool` nesting guard for this feature (phase-4 brainstorm) | §3 M2, M10; AC20–AC21; §8 Q3 |
 | S8 | Defer stage binding; do not extend `AgentDefinition`/`CrewDefinition`; specify an `ExpertStageNode` compiler later (architecture) | CONFIRM | Identical to Non-Goals | §1 Non-Goals |
 | S9 | Future generic gate = protocol with string ids + compatibility adapter for persisted `ApprovalGate` envelopes; never import dev-loop Literals (architecture) | CONFIRM (phase-4 guidance) | Consistent with U4; recorded for the follow-up brainstorm | §8 Q6 |
 | S10 | Negative isolation and concurrency tests as release gates (testing) | CONFIRM | Added concurrency, missing-scope-vs-empty and `$`-literal tests; the rest already existed | §4, AC17–AC18 |
 
-Summary: **8** confirmed · **1** rejected · **1** escalated.
+Summary: **9** confirmed (S7 partial) · **1** rejected · **0** escalated (S7 resolved by the user on 2026-10-30).
 
 ---
 
@@ -931,7 +979,7 @@ Summary: **8** confirmed · **1** rejected · **1** escalated.
 
 - **Isolation**: ONE feature worktree for FEAT-778 (`.claude/worktrees/feat-FEAT-778-domain-experts`); the `sdd-coder` engine gives each task its own sub-worktree inside it.
 - **Module dependency graph** (edges = imports):
-  - M2 → M1 (`ExpertManifest`, `ExpertBundle`), M2 → M3 (builds `ExpertAgent`), M2 → M10 (`effective_toolkits`, `model_config_for`)
+  - M2 → M1 (`ExpertManifest`, `ExpertBundle`), M2 → M3 (builds `ExpertAgent`), M2 → M10 (`effective_toolkits`, `model_config_for`, `expert_policy_rules`), M2 → M5 (`WikiSource.probe`)
   - M3 → M1, M4 (`KnowledgeResolver` attribute), M6 (`install_layers` in `configure`)
   - M4 → M1, M5 (`KnowledgeSource` protocol), M8 (`rules_to_layer`)
   - M5 → M1, M4 (`KnowledgeLayer`); `sources/kb.py` ↔ M7 (M7 calls `resolver.search_kb`, M5 reads `bot.knowledge_bases`)
@@ -942,7 +990,7 @@ Summary: **8** confirmed · **1** rejected · **1** escalated.
   - M10 → M1
   - M11 → all
   - Modules without an edge (M1 ∥ nothing; M6 ∥ M8 ∥ M10 once M1 exists; M5 ∥ M8; M9 ∥ M7) are expected to run concurrently.
-- **Shared files**: none across modules — `skills/tenancy.py` (M2 only), `bots/prompts/layers.py` (M6 only), `bots/abstract.py` (M7 only), `parrot/experts/__init__.py` (exports added by M1, M2, M3, M4 — serialize those four tasks' edits to it or let M1 pre-declare the export list).
+- **Shared files**: none across modules — `skills/tenancy.py` (M2 only), `bots/prompts/layers.py` (M6 only), `bots/abstract.py` (M7 only), `auth/models.py` (M10 only), `parrot/experts/__init__.py` (exports added by M1, M2, M3, M4 — serialize those four tasks' edits to it or let M1 pre-declare the export list).
 - **Exclusive resources**: none (no extension rebuild, no lockfile change, no migration).
 - **Cross-feature dependencies**: none to merge first. **Risk**: FEAT-746/747 follow-ups on `registry.py` — this feature does not edit that file.
 
@@ -953,3 +1001,4 @@ Summary: **8** confirmed · **1** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from FEAT-778 proposal (phases 1–2); codex design research folded (8 confirm / 1 reject / 1 escalate) |
+| 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | §8 Q1–Q5 resolved: Q2 wiki fail-at-load (M2/M5 probe, AC19); Q3 allowlist + PBAC deny (`PolicyRuleConfig.resource`, `expert_policy_rules`, `register_db_bot_policies`, AC20–AC21; S7 → confirm partial); Q1/Q4/Q5 defaults confirmed |
