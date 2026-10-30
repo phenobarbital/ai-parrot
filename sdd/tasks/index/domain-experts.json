@@ -84,7 +84,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -94,8 +94,9 @@
       "parallelism_notes": "Imports RuleSet, KnowledgeLayer, ExpertBundle, RuleSyntaxError from TASK-4914 (parrot/experts/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4915-governance-rules-chain.md"
+      "completed_at": "2026-10-30T21:34:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4915-governance-rules-chain.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4916",
@@ -123,7 +124,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -134,8 +135,9 @@
       "parallelism_notes": "Imports ExpertManifest/ExpertTier/SPAWN_TOOL_NAME from TASK-4914 (models.py); its deny rule needs the PolicyRuleConfig.resource field added by TASK-4916 (auth/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4917-expert-policy.md"
+      "completed_at": "2026-10-30T21:34:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4917-expert-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4918",
@@ -144,7 +146,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -154,8 +156,9 @@
       "parallelism_notes": "Imports KnowledgeContext/KnowledgeMode from TASK-4914 (models.py); writes knowledge/render.py inside the package whose __init__ TASK-4914 creates.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4918-expert-prompt-layers-render.md"
+      "completed_at": "2026-10-30T21:34:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4918-expert-prompt-layers-render.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4919",
@@ -336,7 +339,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -346,8 +349,9 @@
       "parallelism_notes": "Imports KnowledgeContext/ExpertManifest/ExpertCapabilityError from TASK-4914 (parrot/experts/models.py); lives in ai-parrot-tools.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4927-expert-knowledge-toolkit.md"
+      "completed_at": "2026-10-30T21:34:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4927-expert-knowledge-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4928",
