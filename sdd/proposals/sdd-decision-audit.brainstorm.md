@@ -51,6 +51,19 @@ Concrete symptoms:
 - The plane is **empty** in this repository: `docs/adr/`, `docs/adrs/` and
   `docs/decisions/` (the three `adr_globs`) do not exist, so there are zero
   documented decisions to audit against.
+- Even where records exist, **nothing in the SDD authoring lane consumes
+  them**: `/sdd-spec`, `/sdd-task`, `sdd-coder` and `sdd-worker` never call
+  `wiki_decision_why` / `wiki_decisions_for_symbol`. The Codebase Contract
+  tells a spec author *what exists*; nobody tells them *what was decided and
+  why*. FEAT-778 (domain-experts) designed exactly that consumer — a
+  `KnowledgeResolver` with an `adr` source that loads accepted decisions
+  through `DecisionService` under a token budget, as a fixed prompt layer —
+  but for runtime expert agents only, and none of its 22 tasks has started.
+- Retrieval is the ceiling: a `DecisionRecord` is found by symbol link or by
+  token overlap. There is no filter by component, subsystem or capability
+  (no `tags`, FEAT-778 finding F043), so "what is decided about conversation
+  memory?" — the question a spec author actually asks — cannot be answered
+  by the plane today.
 
 Inspiration: `fabio-rovai/open-ontologies` (MIT, Rust). Its loop is *plan a
 change → see every consequence before applying → certify → watch drift →
@@ -60,6 +73,12 @@ new axioms alter consequences that already held?), (3) a derivation
 **certificate** re-checked by a verifier that is independent of the engine
 that produced it, (4) a digest that binds the certificate to the state it was
 computed over, so drift is detectable.
+
+The decision plane therefore has to serve **two modes over the same
+records**: as *curated input* while a spec is being written (consumer), and
+as *verifier* of what the spec proposes (gate). This brainstorm covers both;
+the gate alone would only detect collisions on shared symbols, the consumer
+alone would never enforce anything.
 
 **Affected**: spec authors (Jesús, Claude/Codex seats running `/sdd-spec`),
 `sdd-worker`/`sdd-coder` seats that inherit decisions as contracts, and the
@@ -89,6 +108,11 @@ Resolved in discovery (Rounds 0–2, owner Jesús):
   resolve is a spec error. No lexical guessing in the verdict.
 - **Seed**: a curated, versioned file of architecture rules transcribed from
   `CLAUDE.md` / `CONTEXT.md`, approved once, ingested as accepted.
+- **Producer/consumer loop** (added 2026-10-31): a spec *consumes* accepted
+  decisions while it is written and *produces* its own on approval. Every
+  decision carries two axes — an ontological one (`about: <subsystem>`, for
+  retrieval by domain) and a structural one (`targets: <graph ids>`, for
+  verification). The same curation feeds both modes.
 
 Non-negotiable technical constraints:
 
@@ -106,16 +130,32 @@ Non-negotiable technical constraints:
 
 ## Options Explored
 
-### Option A: Consequence service over the existing decision plane + spec gate
+### Option A: Governing-decisions dossier + consequence service over the existing decision plane
 
-Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`:
+Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`,
+and make `/sdd-spec` both a consumer and a producer of the plane:
 
-1. **Decisions section in the spec template.** A structured block (one entry
-   per decision) with `id`, `statement`, `relation` ∈ {`constrains`, `forbids`,
-   `requires`, `supersedes`}, explicit `targets` (graph ids) and optional
-   `supersedes: <decision-id>`. The ADR parser already reads flat frontmatter
-   keys `id/title/status/supersedes`; this extends the vocabulary with a
-   `targets` list and the new relations.
+0. **Governing decisions (consumer).** Before Section 2 of a spec is
+   written, `/sdd-spec` resolves the accepted decisions that govern the
+   spec's domain and pulls them into a generated `## Governing Decisions`
+   section: a budgeted dossier (`DecisionService.why()` / `for_symbol()`,
+   `source_status == accepted`, history excluded) retrieved on two axes —
+   by **subsystem** (the frontmatter `projects` / `tags` the spec already
+   declares, matched against each record's `about` concepts) and by
+   **symbol** (the ids in the Codebase Contract). Each entry carries the
+   decision statement, its rationale/consequences, the `supersedes` chain
+   and the rejected alternatives, so a new spec does not re-derive an
+   option that was already discarded. This is the same resolver shape
+   FEAT-778 specifies for expert agents (`adr` source, accepted-only
+   filter, token budget, fixed layer order); the SDD lane is one more
+   consumer of it, not a second implementation.
+1. **Decisions section in the spec template (producer).** A structured block
+   (one entry per decision) with `id`, `statement`, `relation` ∈
+   {`constrains`, `forbids`, `requires`, `supersedes`}, `about` (one or more
+   subsystem concepts from a curated taxonomy), explicit `targets` (graph
+   ids) and optional `supersedes: <decision-id>`. The ADR parser already reads
+   flat frontmatter keys `id/title/status/supersedes`; this extends the
+   vocabulary with `about` and `targets` lists and the new relations.
 2. **Ingestion.** Approving a spec (status `approved`) runs the existing
    `refresh_decisions()` path over the spec's Decisions block, producing
    `DecisionRecord`s with `origin="documented"`, `source_status="accepted"`,
@@ -123,8 +163,17 @@ Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`:
    (hashed by `source_sha1`, exactly as ADR evidence today).
 3. **Seed.** `docs/decisions/*.md` is one of the three `adr_globs` already
    configured. The architecture rules become ADR-style markdown files there
-   with the extended `targets:` frontmatter — so the seed is ingested by the
-   code that exists, with no new loader.
+   with the extended `about:` + `targets:` frontmatter — so the seed is
+   ingested by the code that exists, with no new loader. Because every
+   seeded rule is anchored to a subsystem, the seed is also the first layer
+   of curated knowledge the consumer step returns, not just a list of
+   prohibitions.
+3b. **Subsystem taxonomy.** A small, versioned list of code-subsystem
+   concepts (memory, clients, tools, flows, skills, knowledge/wiki, server,
+   sdd-tooling, …) that `about` values must come from. It is the ontological
+   spine for retrieval by domain; `KNOWN_PROJECTS` (frontmatter `projects`)
+   is the coarse layer that already exists, the taxonomy is the finer one.
+   Records link to concepts with `RelationType.ABOUT`, which already exists.
 4. **Preview.** A `ConsequenceService` takes a spec path, resolves every
    target through `StructuralService.lookup()`, computes
    `StructuralService.blast_radius()` per target, pulls accepted records via
@@ -141,10 +190,18 @@ Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`:
 ✅ **Pros:**
 - Reuses the whole FEAT-578 stack (models, CAS persistence, review,
   freshness, dossier rendering, MCP transport). The new code is one service,
-  one gate script, one template section, one parser extension.
+  one gate script, two template sections, one parser extension.
+- Closes the loop: a spec reads accepted decisions, declares its own, the
+  preview checks consistency, approval feeds the next spec. With the `about`
+  axis the preview can also say "you are legislating about memory without
+  having read what is decided about memory", which a symbol-only check
+  never can.
 - Deterministic and offline by construction; the only LLM in the loop is the
-  human-approved spec author.
+  human-approved spec author. The consumer step is retrieval + rendering,
+  zero generation.
 - The seed path is zero-code: `docs/decisions/` is already an `adr_glob`.
+- Aligns with FEAT-778 instead of competing with it: same `DecisionService`
+  calls, same accepted-only filter, same budget semantics.
 - Each phase after v1 (task certificate, drift job, retroactive inference)
   plugs into the same records without a model change.
 
@@ -158,7 +215,14 @@ Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`:
   for unresolved targets.
 - "Contradiction" in v1 is structural (same target, opposing relation, or an
   explicit `contradicts` link), not semantic. Two prose statements that
-  contradict each other without sharing a target are not detected.
+  contradict each other without sharing a target are not detected — but the
+  `about` axis narrows the miss: two decisions on the same subsystem are at
+  least surfaced side by side in the dossier.
+- A subsystem taxonomy is one more curated artifact to keep honest. Too
+  coarse and every spec pulls everything; too fine and authors guess.
+- Sequencing with FEAT-778: if its `KnowledgeResolver` lands first the SDD
+  consumer reuses it; if not, the consumer is built directly on
+  `DecisionService` (which already has `budget_tokens`) and migrated later.
 
 📊 **Effort:** Medium
 
@@ -180,7 +244,10 @@ Add a `consequences` capability next to `parrot.knowledge.wiki.decisions`:
 - `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` — `compare_and_swap_page()` for record writes.
 - `scripts/sdd/check_task_graph.py` — `Finding`/`GraphReport`/`main()` shape for the new gate script.
 - `.claude/commands/sdd-spec.md` §5 "Scaffold the Spec" / §6 "Commit the Spec" — hook point for the preview.
-- `sdd/templates/spec.md` — gains `## Decisions` (authored) and `## Consequences` (generated).
+- `sdd/templates/spec.md` — gains `## Governing Decisions` (generated, consumer), `## Decisions` (authored, producer) and `## Consequences` (generated, gate).
+- `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` — `DocTaxonomy.projects/tags` + `KNOWN_PROJECTS`: the coarse subsystem axis a spec already declares.
+- `packages/ai-parrot/src/parrot/knowledge/okf/ontology.py` — `RelationType.ABOUT` for record → subsystem-concept edges.
+- `sdd/specs/domain-experts.spec.md` (FEAT-778) — G6 "ADR as consumer and producer" and the `adr` knowledge source (`DecisionService.why/for_symbol`, accepted only, budgeted) as the resolver contract to share.
 
 ---
 
@@ -296,6 +363,10 @@ it, never produces it.
 - It honors every discovery answer directly: human-asserted (spec section),
   two layers (module rules now, symbol contracts next), explicit targets,
   curated seed via an existing glob, advisory-with-one-blocking-rule verdict.
+- It is the only option that treats the plane as curated knowledge *for
+  writing* specs and not only for checking them. The consumer step costs
+  little (retrieval + a rendered section) and is what turns the seeded
+  architecture rules into something an author reads before designing.
 - The seed costs no code: `docs/decisions/` is already an `adr_glob`.
 - Phases 2–4 (task certificate + independent checker, drift job to the
   ledger, retroactive inference via `generation.py`) attach to the same
@@ -315,11 +386,20 @@ before anyone writes code".
 
 ### User-Facing Behavior
 
+0. **Reading before designing.** When `/sdd-spec` scaffolds a spec it fills a
+   generated `## Governing Decisions` section: the accepted decisions that
+   govern the subsystems the spec declares (`projects` / `tags`) and the
+   symbols its Codebase Contract names. Each entry shows statement,
+   rationale, consequences, what it superseded and why alternatives were
+   rejected, with its evidence freshness. If the subsystem has no accepted
+   decisions, the section says so explicitly. The author writes Section 2
+   against that dossier; the same dossier is what `/sdd-task` hands to coder
+   seats as part of the task contract.
 1. **Authoring.** `sdd/templates/spec.md` gains a `## Decisions` section.
    Each entry declares an id, a one-line statement, a relation
-   (`constrains` / `forbids` / `requires` / `supersedes`), explicit targets
-   (`sym:…`, `file:…`, `dir:…`) and, when it replaces an earlier decision,
-   the superseded id.
+   (`constrains` / `forbids` / `requires` / `supersedes`), one or more
+   `about` subsystem concepts, explicit targets (`sym:…`, `file:…`, `dir:…`)
+   and, when it replaces an earlier decision, the superseded id.
 2. **Preview.** During `/sdd-spec` (between scaffold and commit) the command
    runs the consequence gate. The output is written into the spec as a
    `## Consequences` section with four sub-blocks: *Contradictions*,
@@ -331,10 +411,11 @@ before anyone writes code".
    decision, or marking the finding `resolved-by: <owner>: <reason>` in the
    Consequences block. Everything else is informational.
 4. **On approval.** The spec's decisions are ingested as accepted
-   `DecisionRecord`s (origin `documented`, source path = the spec). From then
-   on they are visible through `wiki_decisions_for_symbol` /
-   `wiki_decision_why` to every coder seat, and they are what the *next* spec
-   is checked against.
+   `DecisionRecord`s (origin `documented`, source path = the spec, `about`
+   edges to the subsystem concepts). From then on they are visible through
+   `wiki_decisions_for_symbol` / `wiki_decision_why` to every coder seat,
+   they appear in the next spec's `## Governing Decisions` for the same
+   subsystem, and they are what the next spec's preview is checked against.
 5. **Seed.** A one-time curated set of architecture rules lives in
    `docs/decisions/` as ADR-style markdown with explicit targets, reviewed and
    committed once. The preview is useful from day one.
@@ -344,10 +425,18 @@ before anyone writes code".
 
 ### Internal Behavior
 
+- **Retrieve (consumer).** From the spec frontmatter (`projects`, `tags`)
+  and the Codebase Contract ids, build two query sets: subsystem concepts
+  and symbol ids. Collect accepted records via `DecisionService.for_symbol()`
+  for the symbols and via `about`-edge lookup for the concepts
+  (`why()` as a lexical fallback only to *suggest*, never to include).
+  Rank documented+current+accepted first (the existing `_group_rank`), pack
+  under `budget_tokens`, render as `## Governing Decisions` with per-entry
+  freshness. Zero LLM calls.
 - **Parse.** The Decisions block is parsed with the ADR parser's flat
-  frontmatter rules extended by a list-valued `targets` key and the new
-  relation vocabulary. Malformed entries are `DecisionDiagnostic`s, never
-  silent.
+  frontmatter rules extended by list-valued `about` and `targets` keys and
+  the new relation vocabulary. `about` values must belong to the subsystem
+  taxonomy. Malformed entries are `DecisionDiagnostic`s, never silent.
 - **Resolve.** Every target goes through `StructuralService.lookup()`
   (exact `sym:` / `file:` / `dir:` ids; name-based disambiguation is only
   used to *suggest* an id in the diagnostic, never to accept one).
@@ -377,7 +466,8 @@ before anyone writes code".
   `resolved-by`. JSON output for `/sdd-spec` and CI.
 - **Ingest on approval.** `refresh_decisions(paths=[spec])` with the spec
   added to the discovery inventory when its status is `approved`;
-  `project_links()` rebuilds navigation edges. Records are written via
+  `project_links()` rebuilds navigation edges, including the `about` edges
+  to subsystem concepts that make the next retrieval-by-domain possible. Records are written via
   `compare_and_swap_page`, so a concurrent edit is a visible conflict, not a
   lost update.
 
@@ -401,24 +491,44 @@ before anyone writes code".
   ingest a spec whose Consequences section is missing or stale.
 - **Spec that declares no decisions** → allowed; the report still computes
   blast radius for symbols named in Codebase Contract, advisory only.
+- **Subsystem with no accepted decisions** → `## Governing Decisions` states
+  it explicitly ("no accepted decisions about `memory`"); an empty section
+  must never read as "nothing governs this".
+- **Unknown `about` value** → spec error with the closest taxonomy entries
+  suggested; the decision is skipped from ingestion until fixed.
+- **Dossier over budget** → truncation is marked (`truncated: true`, as
+  `DecisionDossier` already does) and the section says which subsystems were
+  cut, so the author knows to query the rest by hand.
+- **FEAT-778 lands mid-flight** → the SDD consumer is an adapter over
+  `DecisionService`; swapping it for the shared `KnowledgeResolver` `adr`
+  source is a wiring change, not a model change.
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `sdd-decision-audit`: consequence preview of a spec's declared decisions
-  against the accepted decision plane, persisted into the spec and enforced
-  as a one-rule gate; seeded architecture rules.
+- `sdd-decision-audit`: (consumer) a budgeted dossier of accepted decisions
+  governing a spec's subsystems and symbols, generated into the spec before
+  design; (producer) a structured Decisions section ingested on approval;
+  (gate) a consequence preview persisted into the spec and enforced as a
+  one-rule gate; a seeded, subsystem-anchored set of architecture rules and
+  the subsystem taxonomy they attach to.
 
 ### Modified Capabilities
 - `sdd-spec-wiki-adr` (FEAT-578): the "no compliance/drift verdicts" non-goal
   is reopened for the *preview* case; `DecisionLink.relation` and the ADR
   frontmatter vocabulary gain `constrains/forbids/requires` + `targets`;
   discovery inventory accepts approved specs in addition to `adr_globs`.
-- `sdd-spec` command and `sdd/templates/spec.md`: new authored section
+- `sdd-spec` command and `sdd/templates/spec.md`: new generated section
+  (`## Governing Decisions`, before Section 2), new authored section
   (`## Decisions`) and generated section (`## Consequences`); gate between
   scaffold and commit.
+- `sdd-task` / coder contracts: the governing dossier for a task's files is
+  carried into the task's Codebase Contract so coder seats inherit decisions
+  as constraints, not only signatures.
+- `domain-experts` (FEAT-778): shares the accepted-only, budgeted ADR
+  consumer; whichever lands first defines the adapter the other reuses.
 
 Later phases (separate specs, not this one):
 - `sdd-task-certificate`: per-task asserted facts + derivations (AC → test →
@@ -444,8 +554,11 @@ Later phases (separate specs, not this one):
 | `parrot/knowledge/wiki/transport.py` | extends | `wiki_spec_consequences` MCP spec; the exact-set MCP tests (ledger issue `36a652416160`) will need their expected set bumped |
 | `parrot/knowledge/okf/ontology.py` | modifies | `RelationType.CONSTRAINS / FORBIDS / REQUIRES` (additive, stable strings) |
 | `scripts/sdd/check_spec_consequences.py` (new) | extends | gate script, `check_task_graph.py` shape |
-| `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` | modifies | run gate between §5 and §6; refuse approval on blocking findings |
-| `sdd/templates/spec.md` | modifies | `## Decisions` (authored), `## Consequences` (generated) |
+| `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` | modifies | retrieve the governing dossier in §4 (before §5 scaffolds Section 2); run gate between §5 and §6; refuse approval on blocking findings |
+| `.claude/commands/sdd-task.md` | modifies | carry the per-file governing dossier into each task's Codebase Contract |
+| `sdd/templates/spec.md` | modifies | `## Governing Decisions` (generated), `## Decisions` (authored), `## Consequences` (generated) |
+| subsystem taxonomy (new, versioned; location open) | extends | the `about` vocabulary; `KNOWN_PROJECTS` is the coarse layer above it |
+| `sdd/specs/domain-experts.spec.md` (FEAT-778, 0/22 started) | depends on / shares | same `DecisionService` consumer contract; sequencing is an open question |
 | `docs/decisions/*.md` (new) | extends | seeded architecture rules, already an `adr_glob` |
 | `.github/workflows/*` | extends | run the gate on PRs touching `sdd/specs/` |
 | `wikitoolkit` CLI | extends | `spec consequences <path>` |
@@ -610,6 +723,8 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 - `sdd/templates/spec.md` has `## 5. Acceptance Criteria` (:230) and `## 6. Codebase Contract` (:243); no Decisions/Consequences sections today.
 - Related closed features touching this code (no open worktrees): FEAT-578 (20/20), FEAT-675 `decisions-cli-fixes` (1/1), FEAT-760 `adr-prefixed-aliases` (8/8).
 - Related open ledger issues: `36a652416160` (MCP tests pin the exact tool set — adding a tool breaks them), `b084239103d7` (document-level `[text](sym:…)` citation extraction from FEAT-578 spec §2/§3 appears unimplemented — the Decisions section should not depend on it).
+- FEAT-778 contract to share (`sdd/specs/domain-experts.spec.md`): G6 "ADR as consumer and producer" (:62); `adr` source calls `DecisionService.why()` / `for_symbol()` with `budget_tokens`, accepted only (:145); prompt layer order ends in `accepted ADRs` (:132); `KnowledgeSource.ADR = "adr"` with `filter: {"status": ["accepted"]}` (:209, :217).
+- `RelationType.ABOUT = "about"` exists (okf/ontology.py, work-lineage relations) and is the natural record → subsystem-concept edge; `DocTaxonomy.projects` / `KNOWN_PROJECTS` (sdd_meta.py:45, :220) are the coarse subsystem axis every SDD doc already declares.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`docs/adr/`, `docs/adrs/`, `docs/decisions/`~~ — none of the three `adr_globs` directories exist in this repo; the decision plane has **zero** documented records today.
@@ -618,7 +733,10 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 - ~~`scripts/sdd/check_spec_consequences.py`~~ — does not exist; `check_task_graph.py` is the shape to copy.
 - ~~`## Decisions` / `## Consequences` sections in `sdd/templates/spec.md`~~ — not present.
 - ~~`targets:` frontmatter key in the ADR parser~~ — not read; only `id/title/status/supersedes`.
-- ~~`DecisionRecord.tags`~~ — no tag/component filter on records (FEAT-778 finding F043).
+- ~~`DecisionRecord.tags`~~ — no tag/component filter on records (FEAT-778 finding F043); retrieval is by symbol link or token overlap only.
+- ~~any decision-plane call in the SDD authoring lane~~ — `.claude/commands/sdd-spec.md`, `.claude/commands/sdd-task.md`, `.claude/agents/sdd-coder.md`, `.claude/agents/sdd-worker.md` contain zero references to `wiki_decision_why` / `wiki_decisions_for_symbol` (grep, 2026-10-31).
+- ~~`KnowledgeResolver`~~ — specified by FEAT-778 (`sdd/specs/domain-experts.spec.md`) but not in the tree; `sdd/tasks/index/domain-experts.json` shows 0 of 22 tasks done.
+- ~~`parrot.knowledge.ontology.concept_catalog` as the subsystem taxonomy~~ — it exists, but it is FEAT-159's per-tenant *topic* ontology in Postgres (content concepts, `is_a` taxonomy); it is not a taxonomy of code subsystems and should not be reused as one without a separate decision.
 - ~~a CI workflow step for `check_task_graph` / `check_e2e_closeout`~~ — grep of `.github/workflows/*.yml` found no reference; those gates run from the commands, not CI. The new gate's CI wiring is therefore new, not a copy.
 
 ---
@@ -633,7 +751,9 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
   and seed files can start in parallel with (a).
 - **Cross-feature independence**: every feature that touched
   `parrot/knowledge/wiki/decisions/` is closed (FEAT-578, FEAT-675, FEAT-760)
-  and no worktree is open on it. Shared surfaces to watch: `transport.py`
+  and no worktree is open on it. FEAT-778 (domain-experts, 0/22) will *read*
+  `DecisionService` through its `adr` source; it does not modify the plane,
+  so the collision risk is on the adapter shape, not on files. Shared surfaces to watch: `transport.py`
   (any in-flight feature adding MCP tools collides on the exact-set tests),
   `sdd/templates/spec.md` and `.claude/commands/sdd-spec.md` (frequently
   edited by SDD-tooling features; rebase early).
@@ -662,3 +782,8 @@ from parrot.knowledge.wiki.ledger.sdd_meta import FlowMeta, DocTaxonomy, KNOWN_P
 - [ ] Blast-radius defaults for the preview: depth 2 with `calls/extends/implements/uses`, and should `include_tests` be off to keep reports short? — *Owner: spec author*
 - [ ] Should the preview also run for `/sdd-brief` (hotfix) specs, which never pass through `/sdd-spec`? — *Owner: Jesús*
 - [ ] Option C as an optional external cross-check (`--verifier open-ontologies`) once the plane has content: worth a spike, or out of scope until the task-certificate phase? — *Owner: Jesús*
+- [x] Should the plane also feed spec *authoring*, not only gate it? — *Owner: Jesús*: yes — decisions are curated ontological knowledge consumed by `/sdd-spec` (generated `## Governing Decisions`) and produced by it; retrieval needs a subsystem axis (`about`) besides symbols (2026-10-31).
+- [ ] Where does the subsystem taxonomy live and who curates it: a versioned file under `sdd/` (reviewed like the seed), an extension of `KNOWN_PROJECTS` in `sdd_meta.py`, or OKF concept pages in the wiki plane itself? — *Owner: Jesús*
+- [ ] Sequencing with FEAT-778: build the SDD consumer directly on `DecisionService` now and migrate to the shared `KnowledgeResolver` `adr` source later, or wait for FEAT-778's M5 to land first? — *Owner: Jesús*
+- [ ] Is `## Governing Decisions` mandatory for approval (a spec cannot be approved without having read its domain), or advisory in v1? — *Owner: Jesús*
+- [ ] Does `/sdd-task` carry the governing dossier into every task contract in v1, or only `/sdd-spec` in v1 and tasks in the certificate phase? — *Owner: spec author*
