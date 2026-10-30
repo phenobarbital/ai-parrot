@@ -1,4 +1,5 @@
 """Tests for channel-neutral OAuth2 integration persistence models."""
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -6,7 +7,6 @@ import pytest
 
 from parrot.auth.oauth2.models import IntegrationDescriptor, UsersIntegrationRow
 from parrot.auth.oauth2.persistence import list_users_integrations
-
 
 CONNECTED_AT = datetime(2026, 10, 30, tzinfo=timezone.utc)
 
@@ -27,9 +27,7 @@ def _integration_document(provider: str, **overrides: object) -> dict[str, objec
 
 def test_legacy_channel_folded_into_channels() -> None:
     """Legacy persisted channel values become a single-item channels list."""
-    row = UsersIntegrationRow.model_validate(
-        _integration_document("jira", channel="telegram")
-    )
+    row = UsersIntegrationRow.model_validate(_integration_document("jira", channel="telegram"))
 
     assert row.channels == ["telegram"]
     assert row.updated_at is None

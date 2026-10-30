@@ -128,9 +128,7 @@ async def list_users_integrations(user_id: str) -> List[UsersIntegrationRow]:
         try:
             rows.append(UsersIntegrationRow.model_validate(document))
         except ValueError:
-            logger.warning(
-                "Skipping invalid users_integration for user_id=%s", user_id
-            )
+            logger.warning("Skipping invalid users_integration for user_id=%s", user_id)
     return rows
 
 
