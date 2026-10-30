@@ -1,4 +1,5 @@
 """FEAT-781 / issue:461ceca67d43 — the Whisper backend never makes up an ISO 639-1 code."""
+
 import pytest
 
 from parrot.voice.transcriber.openai_backend import OpenAIWhisperBackend, _iso_language

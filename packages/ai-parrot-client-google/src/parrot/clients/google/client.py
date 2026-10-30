@@ -309,12 +309,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return (
-            model.startswith("gemini-2.5-pro")
-            or model.startswith("gemini-3.1-pro")
-            or model.startswith("gemini-3-pro")
-            or GoogleGenAIClient._is_computer_use_model(model)
-        )
+        return model.startswith(
+            ("gemini-2.5-pro", "gemini-3.1-pro", "gemini-3-pro")
+        ) or GoogleGenAIClient._is_computer_use_model(model)
 
     @staticmethod
     def _rejects_zero_thinking_budget(model: str) -> bool:
@@ -420,7 +417,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith("gemini-2.5-computer-use") or model.startswith("gemini-3-flash-preview")
+        return model.startswith(("gemini-2.5-computer-use", "gemini-3-flash-preview"))
 
     @staticmethod
     def _supports_combined_tools_and_schema(
@@ -2271,7 +2268,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Lazy Loading Check
             if lazy_loading:
                 found_new = False
-                for fc, result in zip(function_calls, tool_results):
+                for fc, result in zip(function_calls, tool_results, strict=False):
                     if fc.name == "search_tools" and isinstance(result, str):
                         new_tools = self._check_new_tools(fc.name, result)
                         for nt in new_tools:
@@ -2286,7 +2283,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
             # Update tool call objects
-            for tc, result in zip(tool_call_objects, tool_results):
+            for tc, result in zip(tool_call_objects, tool_results, strict=False):
                 tc.execution_time = execution_time / len(tool_call_objects)
                 if isinstance(result, HumanInteractionInterrupt):
                     result.session_id = session_id
@@ -2347,7 +2344,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             is_computer_use = self._computer_use_enabled(model)
             function_response_parts = []
-            for fc, result in zip(function_calls, tool_results):
+            for fc, result in zip(function_calls, tool_results, strict=False):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
@@ -3866,9 +3863,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                     # Check if text looks like JSON before trying to parse (avoids warnings)
                     text_to_check = assistant_response_text.strip()
-                    is_json_candidate = (
-                        text_to_check.startswith("{") or text_to_check.startswith("[") or "```json" in text_to_check
-                    )
+                    is_json_candidate = text_to_check.startswith(("{", "[")) or "```json" in text_to_check
 
                     if is_json_candidate:
                         # We accept the result if it is NOT just the original string (which implies parsing failure return)
@@ -4542,7 +4537,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                         if lazy_loading:
                             found_new = False
-                            for fc, result in zip(collected_function_calls, tool_results):
+                            for fc, result in zip(collected_function_calls, tool_results, strict=False):
                                 if fc.name == "search_tools" and isinstance(result, str):
                                     new_tools = self._check_new_tools(fc.name, result)
                                     for nt in new_tools:
@@ -4557,7 +4552,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 chat._config.tools = new_tools_list
                                 self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
-                        for tc, fc, result in zip(tool_call_objects, collected_function_calls, tool_results):
+                        for tc, fc, result in zip(
+                            tool_call_objects, collected_function_calls, tool_results, strict=False
+                        ):
                             tc.execution_time = execution_time / len(tool_call_objects) if tool_call_objects else 0
                             if isinstance(result, HumanInteractionInterrupt):
                                 result.session_id = current_session_id.get()
@@ -4579,7 +4576,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         all_tool_calls_history.extend(tool_call_objects)
 
                         function_response_parts = []
-                        for fc, result in zip(collected_function_calls, tool_results):
+                        for fc, result in zip(collected_function_calls, tool_results, strict=False):
                             response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                             function_response_parts.append(
                                 Part(function_response=types.FunctionResponse(name=fc.name, response=response_content))
@@ -5698,7 +5695,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Build contents for the stateless call
         contents = []
         if files:
-            for file_path in files:
+            for _file_path in files:
                 # In a real scenario, you'd handle file uploads to Gemini properly
                 # This is a placeholder for file content
                 contents.append(
@@ -5742,7 +5739,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
                 execution_time = time.time() - start_time
 
-                for tc, result in zip(tool_call_objects, tool_results):
+                for tc, result in zip(tool_call_objects, tool_results, strict=False):
                     tc.execution_time = execution_time / len(tool_call_objects)
                     if isinstance(result, Exception):
                         tc.error = str(result)
