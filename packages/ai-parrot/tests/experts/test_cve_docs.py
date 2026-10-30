@@ -1,4 +1,5 @@
 """AC30: the CVE operator guide only references names that exist."""
+
 from __future__ import annotations
 
 import re
@@ -66,7 +67,9 @@ def test_cve_docs_reference_real_names() -> None:
             continue
 
         # Check if it's a tool we need to verify
-        is_tool = any(tool in name for tool in ["lookup_cve", "search_cves", "download_cve", "knowledge_search", "propose_adr"])
+        is_tool = any(
+            tool in name for tool in ["lookup_cve", "search_cves", "download_cve", "knowledge_search", "propose_adr"]
+        )
         is_endpoint = name.startswith("/api/v1/")
         is_cli = name.startswith("parrot")
 
@@ -158,9 +161,7 @@ def test_cve_docs_prompt_table_covers_tools() -> None:
     content = GUIDE.read_text()
 
     # Find the table section
-    table_section = re.search(
-        r"## Prompts that trigger each action.*?(?=## |\Z)", content, re.DOTALL
-    )
+    table_section = re.search(r"## Prompts that trigger each action.*?(?=## |\Z)", content, re.DOTALL)
     assert table_section, "Prompts section not found"
 
     table_text = table_section.group(0)
